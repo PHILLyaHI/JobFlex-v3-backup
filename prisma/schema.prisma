@@ -1,0 +1,710 @@
+// JobFlex Prisma schema — SQLite for local dev (easy swap to Postgres later).
+// Enums moved to src/lib/prismaEnums.ts; string[] stored as JSON-encoded strings.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Tenancy + Auth
+// ─────────────────────────────────────────────
+
+model Organization {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  logoUrl         String?
+  primaryColor    String?
+  billingEmail    String?
+  phone           String?
+  address         String?
+  website         String?
+  timezone        String   @default("America/New_York")
+  defaultTaxRate  Float    @default(0)
+  aiPromptCustom  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  memberships     Membership[]
+  invites         Invite[]
+  clients         Client[]
+  leads           Lead[]
+  proposals       Proposal[]
+  templates       ProposalTemplate[]
+  jobs            Job[]
+  jobEvents       JobEvent[]
+  workerProfiles  WorkerProfile[]
+  payments        Payment[]
+  invoices        Invoice[]
+  activities      ActivityEvent[]
+  conversations   Conversation[]
+  announcements   Announcement[]
+  emailTemplates  EmailTemplate[]
+  followUpRules   FollowUpRule[]
+  followUps       FollowUp[]
+  aiDrafts        AiDraft[]
+  aiPromptPacks   AiPromptPack[]
+  aiEstimates     AiEstimate[]
+  tags            Tag[]
+  subscription    Subscription?
+  supportTickets  SupportTicket[]
+  specialties     Specialty[]
+  homeownerReqs   HomeownerRequest[]
+
+  @@index([slug])
+}
+
+model User {
+  id              String        @id @default(cuid())
+  email           String        @unique
+  name            String?
+  image           String?
+  hashedPassword  String?
+  emailVerified   DateTime?
+  locale          String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  activeOrgId     String?
+
+  accounts        Account[]
+  sessions        Session[]
+  memberships     Membership[]
+  workerProfile   WorkerProfile?
+  assignedLeads   Lead[]            @relation("LeadAssignee")
+  claimedLeads    Lead[]            @relation("LeadClaimer")
+  proposals       Proposal[]        @relation("ProposalOwner")
+  activities      ActivityEvent[]
+  messages        Message[]
+  sentInvites     Invite[]          @relation("InviteSender")
+}
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  type              String
+  access_token      String?
+  refresh_token     String?
+  expires_at        Int?
+  scope             String?
+  token_type        String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           String       @default("USER")
+  createdAt      DateTime     @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Invite {
+  id             String       @id @default(cuid())
+  organizationId String
+  email          String
+  role           String       @default("USER")
+  token          String       @unique
+  invitedById    String?
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User?        @relation("InviteSender", fields: [invitedById], references: [id])
+
+  @@index([organizationId, email])
+}
+
+// ─────────────────────────────────────────────
+// CRM
+// ─────────────────────────────────────────────
+
+model Client {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  email          String?
+  phone          String?
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  notes          String?
+  customFields   String?
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposals    Proposal[]
+  jobs         Job[]
+  activities   ActivityEvent[]
+  tags         ClientTag[]
+  payments     Payment[]
+
+  @@index([organizationId])
+  @@index([organizationId, deletedAt])
+}
+
+model Tag {
+  id             String       @id @default(cuid())
+  organizationId String
+  label          String
+  color          String       @default("#4F46E5")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clients      ClientTag[]
+
+  @@unique([organizationId, label])
+}
+
+model ClientTag {
+  clientId String
+  tagId    String
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, tagId])
+}
+
+model Lead {
+  id                 String      @id @default(cuid())
+  organizationId     String
+  name               String
+  email              String?
+  phone              String?
+  address            String?
+  city               String?
+  state              String?
+  zip                String?
+  projectType        String?
+  description        String?
+  photos             String?     @default("[]")
+  source             String?
+  status             String      @default("NEW")
+  aiCategory         String?
+  aiConfidence       Float?
+  assignedToId       String?
+  claimedById        String?
+  claimedAt          DateTime?
+  contactedAt        DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedTo   User?        @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  claimedBy    User?        @relation("LeadClaimer", fields: [claimedById], references: [id])
+  activities   ActivityEvent[]
+
+  @@index([organizationId, status])
+  @@index([assignedToId])
+}
+
+model HomeownerRequest {
+  id              String   @id @default(cuid())
+  organizationId  String?
+  name            String
+  email           String
+  phone           String?
+  address         String?
+  zip             String?
+  projectType     String?
+  description     String?
+  photos          String?  @default("[]")
+  createdAt       DateTime @default(now())
+  convertedLeadId String?
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// Proposals + Money
+// ─────────────────────────────────────────────
+
+model Proposal {
+  id              String         @id @default(cuid())
+  publicId        String         @unique
+  organizationId  String
+  ownerId         String?
+  clientId        String?
+  title           String
+  description     String?
+  scopeOfWork     String?
+  notes           String?
+  status          String         @default("DRAFT")
+  subtotal        Float          @default(0)
+  discountTotal   Float          @default(0)
+  taxRate         Float          @default(0)
+  taxTotal        Float          @default(0)
+  total           Float          @default(0)
+  currency        String         @default("USD")
+  validUntil      DateTime?
+  sentAt          DateTime?
+  viewedAt        DateTime?
+  viewCount       Int            @default(0)
+  acceptedAt      DateTime?
+  acceptedIp      String?
+  declinedAt      DateTime?
+  paidAt          DateTime?
+  pdfUrl          String?
+  aiDraftId       String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner          User?          @relation("ProposalOwner", fields: [ownerId], references: [id])
+  client         Client?        @relation(fields: [clientId], references: [id])
+  lineItems      LineItem[]
+  discounts      Discount[]
+  installments   Installment[]
+  invoices       Invoice[]
+  payments       Payment[]
+  activities     ActivityEvent[]
+  jobs           Job[]
+  aiDraft        AiDraft?       @relation(fields: [aiDraftId], references: [id])
+
+  @@index([organizationId, status])
+  @@index([publicId])
+}
+
+model LineItem {
+  id              String   @id @default(cuid())
+  proposalId      String
+  name            String
+  description     String?
+  measurementType String   @default("UNIT")
+  quantity        Float    @default(1)
+  unitPrice       Float    @default(0)
+  materialCost    Float    @default(0)
+  laborCost       Float    @default(0)
+  total           Float    @default(0)
+  position        Int      @default(0)
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+}
+
+model Discount {
+  id         String @id @default(cuid())
+  proposalId String
+  label      String
+  amount     Float  @default(0)
+  isPercent  Boolean @default(false)
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+}
+
+model Installment {
+  id         String   @id @default(cuid())
+  proposalId String
+  label      String
+  amount     Float
+  isPercent  Boolean  @default(false)
+  dueDate    DateTime?
+  position   Int      @default(0)
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+}
+
+model ProposalTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  body           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  organizationId String
+  proposalId     String?
+  clientId       String?
+  number         String
+  amount         Float
+  status         String   @default("PENDING")
+  provider       String   @default("MANUAL")
+  externalId     String?
+  dueDate        DateTime?
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposal     Proposal?    @relation(fields: [proposalId], references: [id])
+  payments     Payment[]
+
+  @@index([organizationId, status])
+}
+
+model Payment {
+  id             String   @id @default(cuid())
+  organizationId String
+  proposalId     String?
+  invoiceId      String?
+  clientId       String?
+  amount         Float
+  currency       String   @default("USD")
+  provider       String   @default("STRIPE")
+  status         String   @default("PENDING")
+  externalId     String?
+  method         String?
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposal     Proposal?    @relation(fields: [proposalId], references: [id])
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id])
+  client       Client?      @relation(fields: [clientId], references: [id])
+
+  @@index([organizationId, status])
+}
+
+// ─────────────────────────────────────────────
+// Scheduling + Jobs + Workers
+// ─────────────────────────────────────────────
+
+model Job {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String?
+  proposalId     String?
+  title          String
+  status         String    @default("SCHEDULED")
+  notes          String?
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?        @relation(fields: [clientId], references: [id])
+  proposal     Proposal?      @relation(fields: [proposalId], references: [id])
+  events       JobEvent[]
+  assignments  JobAssignment[]
+  photos       JobPhoto[]
+  expenses     JobExpense[]
+  messages     JobMessage[]
+
+  @@index([organizationId, status])
+}
+
+model JobEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  jobId          String?
+  title          String
+  startsAt       DateTime
+  endsAt         DateTime
+  notes          String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id])
+
+  @@index([organizationId, startsAt])
+}
+
+model WorkerProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  organizationId String
+  displayName    String
+  phone          String?
+  specialties    String?  @default("[]")
+  hourlyRate     Float?
+  token          String   @unique @default(cuid())
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignments  JobAssignment[]
+
+  @@index([organizationId])
+}
+
+model JobAssignment {
+  id         String   @id @default(cuid())
+  jobId      String
+  workerId   String
+  status     String   @default("PENDING")
+  assignedAt DateTime @default(now())
+
+  job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, workerId])
+}
+
+model JobPhoto {
+  id        String   @id @default(cuid())
+  jobId     String
+  url       String
+  kind      String   @default("BEFORE")
+  caption   String?
+  createdAt DateTime @default(now())
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model JobExpense {
+  id        String   @id @default(cuid())
+  jobId     String
+  category  String
+  amount    Float
+  note      String?
+  createdAt DateTime @default(now())
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model JobMessage {
+  id        String   @id @default(cuid())
+  jobId     String
+  authorId  String?
+  body      String
+  createdAt DateTime @default(now())
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────
+// Comms
+// ─────────────────────────────────────────────
+
+model Conversation {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages     Message[]
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  authorId       String?
+  body           String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User?        @relation(fields: [authorId], references: [id])
+}
+
+model Announcement {
+  id             String    @id @default(cuid())
+  organizationId String
+  title          String
+  body           String
+  priority       Int       @default(0)
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model EmailTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  subject        String
+  body           String
+  category       String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────
+// Automation
+// ─────────────────────────────────────────────
+
+model FollowUpRule {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  triggerStatus  String
+  delayMinutes   Int
+  enabled        Boolean  @default(true)
+  template       String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model FollowUp {
+  id             String    @id @default(cuid())
+  organizationId String
+  proposalId     String?
+  runAt          DateTime
+  completedAt    DateTime?
+  note           String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, runAt])
+}
+
+// ─────────────────────────────────────────────
+// AI
+// ─────────────────────────────────────────────
+
+model AiDraft {
+  id             String   @id @default(cuid())
+  organizationId String
+  prompt         String
+  model          String
+  result         String
+  tokensIn       Int?
+  tokensOut      Int?
+  costCents      Int?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposals    Proposal[]
+}
+
+model AiPromptPack {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  purpose        String
+  prompt         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model AiEstimate {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectType    String
+  location       String?
+  materials      String
+  labor          String
+  categories     String
+  assumptions    String?
+  total          Float
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────
+// Activity
+// ─────────────────────────────────────────────
+
+model ActivityEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  actorId        String?
+  clientId       String?
+  leadId         String?
+  proposalId     String?
+  kind           String
+  summary        String
+  meta           String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id])
+  client       Client?      @relation(fields: [clientId], references: [id])
+  lead         Lead?        @relation(fields: [leadId], references: [id])
+  proposal     Proposal?    @relation(fields: [proposalId], references: [id])
+
+  @@index([organizationId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// Billing / Admin
+// ─────────────────────────────────────────────
+
+model Subscription {
+  id                  String    @id @default(cuid())
+  organizationId      String    @unique
+  plan                String    @default("FREE")
+  status              String    @default("FREE")
+  provider            String    @default("STRIPE")
+  externalCustomerId  String?
+  externalSubId       String?
+  currentPeriodEnd    DateTime?
+  trialEndsAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model PricingPlan {
+  id          String @id @default(cuid())
+  slug        String @unique
+  name        String
+  description String?
+  priceCents  Int
+  interval    String @default("month")
+  order       Int    @default(0)
+  features    String
+  createdAt   DateTime @default(now())
+}
+
+model SupportTicket {
+  id             String   @id @default(cuid())
+  organizationId String
+  subject        String
+  body           String
+  status         String   @default("OPEN")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Specialty {
+  id             String @id @default(cuid())
+  organizationId String
+  name           String
+  promptPreamble String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+}
