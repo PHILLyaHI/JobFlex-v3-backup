@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { createJobFromProposalInternal } from "@/actions/jobs";
 
 export async function POST(
   req: Request,
@@ -30,5 +31,14 @@ export async function POST(
     },
   });
 
-  return NextResponse.json({ ok: true });
+  // Auto-create a Job + JobEvent so the new work shows up on calendar + jobs list immediately.
+  let jobId: string | null = null;
+  try {
+    const { id } = await createJobFromProposalInternal(proposal.id, proposal.organizationId);
+    jobId = id;
+  } catch (err) {
+    console.warn("[accept] Couldn't auto-create job:", err);
+  }
+
+  return NextResponse.json({ ok: true, jobId });
 }

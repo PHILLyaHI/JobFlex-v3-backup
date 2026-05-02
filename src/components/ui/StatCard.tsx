@@ -16,6 +16,7 @@ interface StatCardProps {
 export function StatCard({ label, value, delta, hint, className }: StatCardProps) {
   return (
     <motion.div variants={listItem} className={cn("paper-card p-5 flex flex-col gap-3", className)}>
+
       <div className="flex items-start justify-between">
         <span className="quiet-caps">{label}</span>
         {delta && (

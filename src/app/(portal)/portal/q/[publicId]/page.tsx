@@ -51,8 +51,18 @@ export default async function PublicProposalPortal({ params }: { params: Promise
             </div>
             <span className="font-display text-[17px] tracking-[-0.015em]">{proposal.organization.name}</span>
           </Link>
-          <div className="text-[11px] text-[color:var(--ink-muted)]">
-            Proposal · {longDate(proposal.createdAt)}
+          <div className="flex items-center gap-4">
+            <a
+              href={`/api/public-quote/${publicId}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] inline-flex items-center gap-1.5 transition-colors"
+            >
+              Download PDF
+            </a>
+            <div className="text-[11px] text-[color:var(--ink-muted)]">
+              Proposal · {longDate(proposal.createdAt)}
+            </div>
           </div>
         </div>
       </header>

@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/ui/ComingSoon";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <ComingSoon eyebrow="Settings" title="Billing" description="Subscription plan, invoices, payment methods." />;
+export default function BillingRedirectPage() {
+  redirect("/dashboard/settings/account" as any);
 }

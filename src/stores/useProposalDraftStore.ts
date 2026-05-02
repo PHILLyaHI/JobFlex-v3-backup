@@ -33,6 +33,18 @@ interface ProposalDraft {
   lineItems: DraftLineItem[];
   installments: DraftInstallment[];
   taxRate: number;
+  // Estimating engine markups (percentages 0-100)
+  materialMarkupPct: number;
+  laborMarkupPct: number;
+  overheadPct: number;
+  profitPct: number;
+}
+
+interface MarkupPatch {
+  materialMarkupPct?: number;
+  laborMarkupPct?: number;
+  overheadPct?: number;
+  profitPct?: number;
 }
 
 interface DraftStore {
@@ -46,7 +58,16 @@ interface DraftStore {
   updateInstallment: (id: string, patch: Partial<DraftInstallment>) => void;
   removeInstallment: (id: string) => void;
   hydrate: (d: ProposalDraft) => void;
-  computed: () => { subtotal: number; tax: number; total: number; materialCost: number; laborCost: number };
+  setMarkup: (patch: MarkupPatch) => void;
+  computed: () => {
+    subtotal: number;
+    tax: number;
+    total: number;
+    materialCost: number;
+    laborCost: number;
+    grandTotal: number;
+    margin: number;
+  };
 }
 
 const emptyDraft = (): ProposalDraft => ({
@@ -70,6 +91,10 @@ const emptyDraft = (): ProposalDraft => ({
     { id: nanoid(6), label: "Completion", amount: 70, isPercent: true },
   ],
   taxRate: 0,
+  materialMarkupPct: 15,
+  laborMarkupPct: 10,
+  overheadPct: 10,
+  profitPct: 15,
 });
 
 export const useProposalDraftStore = create<DraftStore>()(
@@ -111,14 +136,45 @@ export const useProposalDraftStore = create<DraftStore>()(
       set((s) => {
         s.draft.installments = s.draft.installments.filter((x) => x.id !== id);
       }),
-    hydrate: (d) => set((s) => { s.draft = d; }),
+    hydrate: (d) =>
+      set((s) => {
+        // Backwards-compat: hydrate from older proposals without markup fields
+        s.draft = {
+          ...d,
+          materialMarkupPct: d.materialMarkupPct ?? 0,
+          laborMarkupPct: d.laborMarkupPct ?? 0,
+          overheadPct: d.overheadPct ?? 0,
+          profitPct: d.profitPct ?? 0,
+        };
+      }),
+    setMarkup: (patch) =>
+      set((s) => {
+        Object.assign(s.draft, patch);
+      }),
     computed: () => {
       const d = get().draft;
       const subtotal = d.lineItems.reduce((acc, l) => acc + l.quantity * l.unitPrice, 0);
       const tax = subtotal * (d.taxRate ?? 0);
       const materialCost = d.lineItems.reduce((acc, l) => acc + l.quantity * l.materialCost, 0);
       const laborCost = d.lineItems.reduce((acc, l) => acc + l.quantity * l.laborCost, 0);
-      return { subtotal, tax, total: subtotal + tax, materialCost, laborCost };
+      const matAfter = materialCost * (1 + (d.materialMarkupPct ?? 0) / 100);
+      const labAfter = laborCost * (1 + (d.laborMarkupPct ?? 0) / 100);
+      const sub = matAfter + labAfter;
+      const overhead = sub * ((d.overheadPct ?? 0) / 100);
+      const subWithOverhead = sub + overhead;
+      const profit = subWithOverhead * ((d.profitPct ?? 0) / 100);
+      const grandTotal = subWithOverhead + profit;
+      const baseTotal = materialCost + laborCost;
+      const margin = grandTotal > 0 ? ((grandTotal - baseTotal) / grandTotal) * 100 : 0;
+      return {
+        subtotal,
+        tax,
+        total: subtotal + tax,
+        materialCost,
+        laborCost,
+        grandTotal,
+        margin,
+      };
     },
   })),
 );

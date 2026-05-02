@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { motion, type PanInfo } from "framer-motion";
 import { cn } from "@/lib/cn";
 import { statusAccent } from "@/components/jobs/JobStatusBadge";
 import type { CalendarEvent } from "./EventChip";
@@ -8,11 +9,14 @@ interface WeekGridProps {
   cursor: Date;
   events: CalendarEvent[];
   onSelectEvent: (e: CalendarEvent) => void;
+  onMoveEvent?: (eventId: string, newDate: Date) => void; // cross-day drag preserves time
+  onResizeEvent?: (eventId: string, newStartISO: string, newEndISO: string) => void;
+  onSelectSlot?: (start: Date) => void; // clicking empty space → quick-add
   startHour?: number;
   endHour?: number;
 }
 
-const HOUR_PX = 52;
+const HOUR_PX = 56;
 
 function startOfWeek(d: Date) {
   const x = new Date(d);
@@ -32,14 +36,21 @@ function sameDay(a: Date, b: Date) {
     a.getDate() === b.getDate()
   );
 }
+function isoKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export function WeekGrid({
   cursor,
   events,
   onSelectEvent,
+  onMoveEvent,
+  onResizeEvent,
+  onSelectSlot,
   startHour = 7,
   endHour = 19,
 }: WeekGridProps) {
+  const cellRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
   const weekStart = startOfWeek(cursor);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
@@ -52,7 +63,7 @@ export function WeekGrid({
     const top =
       (start.getHours() - startHour) * HOUR_PX + (start.getMinutes() / 60) * HOUR_PX;
     const durMs = end.getTime() - start.getTime();
-    const height = Math.max(22, (durMs / (1000 * 60 * 60)) * HOUR_PX);
+    const height = Math.max(28, (durMs / (1000 * 60 * 60)) * HOUR_PX);
     return { top, height };
   }
 
@@ -60,6 +71,39 @@ export function WeekGrid({
     today.getHours() >= startHour && today.getHours() < endHour
       ? (today.getHours() - startHour) * HOUR_PX + (today.getMinutes() / 60) * HOUR_PX
       : null;
+
+  function handleMoveEnd(event: CalendarEvent, info: PanInfo) {
+    if (!onMoveEvent) return;
+    let newDate: Date | null = null;
+    cellRefs.current.forEach((el, iso) => {
+      const r = el.getBoundingClientRect();
+      if (
+        info.point.x >= r.left &&
+        info.point.x <= r.right &&
+        info.point.y >= r.top &&
+        info.point.y <= r.bottom
+      ) {
+        const [y, m, d] = iso.split("-").map(Number);
+        newDate = new Date(y, m - 1, d);
+      }
+    });
+    if (newDate && !sameDay(newDate, new Date(event.startsAt))) {
+      onMoveEvent(event.id, newDate);
+    }
+  }
+
+  function handleSlotClick(day: Date, e: React.MouseEvent<HTMLDivElement>) {
+    if (!onSelectSlot) return;
+    if (e.target !== e.currentTarget) return; // ignore clicks on event chips
+    const r = e.currentTarget.getBoundingClientRect();
+    const offsetY = e.clientY - r.top;
+    const hourFloat = startHour + offsetY / HOUR_PX;
+    const hr = Math.floor(hourFloat);
+    const mins = Math.round((hourFloat - hr) * 4) * 15;
+    const start = new Date(day);
+    start.setHours(hr, mins, 0, 0);
+    onSelectSlot(start);
+  }
 
   return (
     <div className="paper-card p-0 overflow-hidden">
@@ -95,37 +139,43 @@ export function WeekGrid({
 
       {/* Time grid */}
       <div className="relative grid grid-cols-[56px_repeat(7,1fr)]">
-        {/* Hours column */}
         <div>
           {hours.map((h) => (
             <div
               key={h}
               style={{ height: HOUR_PX }}
-              className="text-[10px] text-[color:var(--ink-faint)] text-right pr-2 pt-1 tabular border-t border-[color:var(--ink-line)]"
+              className="text-[10px] text-[color:var(--ink-muted)] text-right pr-2 pt-1 tabular border-t border-[color:var(--ink-line)]"
             >
               {h === 12 ? "Noon" : h > 12 ? `${h - 12} pm` : `${h} am`}
             </div>
           ))}
         </div>
 
-        {/* Day columns */}
         {days.map((d) => {
           const weekend = d.getDay() === 0 || d.getDay() === 6;
           const isToday = sameDay(d, today);
+          const iso = isoKey(d);
           return (
             <div
               key={d.toISOString()}
+              data-cal-day={iso}
+              ref={(el) => {
+                if (el) cellRefs.current.set(iso, el);
+                else cellRefs.current.delete(iso);
+              }}
+              onClick={(e) => handleSlotClick(d, e)}
               className={cn(
                 "relative border-l border-[color:var(--ink-line)]",
                 weekend && "bg-black/[0.008]",
                 isToday && "bg-[color:var(--accent-soft)]/30",
+                onSelectSlot && "cursor-pointer",
               )}
               style={{ height: hours.length * HOUR_PX }}
             >
               {hours.map((h) => (
                 <div
                   key={h}
-                  className="border-t border-[color:var(--ink-line)]"
+                  className="border-t border-[color:var(--ink-line)] pointer-events-none"
                   style={{ height: HOUR_PX }}
                 />
               ))}
@@ -145,28 +195,25 @@ export function WeekGrid({
                   const pos = positionFor(e, d);
                   if (!pos) return null;
                   return (
-                    <button
+                    <WeekEventChip
                       key={e.id}
-                      type="button"
+                      event={e}
+                      top={pos.top}
+                      height={pos.height}
+                      hourPx={HOUR_PX}
                       onClick={() => onSelectEvent(e)}
-                      style={{
-                        position: "absolute",
-                        top: pos.top,
-                        height: pos.height,
-                        left: 4,
-                        right: 4,
-                        borderLeftColor: statusAccent(e.status),
+                      onMoveEnd={(info) => handleMoveEnd(e, info)}
+                      onResize={(deltaPx) => {
+                        if (!onResizeEvent) return;
+                        // Convert pixel delta → minutes (snapped to 15min)
+                        const deltaMin = Math.round((deltaPx / HOUR_PX) * 60 / 15) * 15;
+                        const start = new Date(e.startsAt);
+                        const end = new Date(e.endsAt);
+                        const newEnd = new Date(end.getTime() + deltaMin * 60 * 1000);
+                        if (newEnd.getTime() - start.getTime() < 15 * 60 * 1000) return;
+                        onResizeEvent(e.id, start.toISOString(), newEnd.toISOString());
                       }}
-                      className="flex flex-col justify-start rounded-[var(--r-sm)] bg-white dark:bg-white/[0.08] border border-[color:var(--ink-line)] border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight truncate shadow-[0_1px_0_rgba(17,17,19,0.04)] hover:shadow-[0_4px_14px_-6px_rgba(17,17,19,0.18)] transition-shadow"
-                    >
-                      <div className="font-medium text-[color:var(--ink)] truncate">{e.title}</div>
-                      <div className="text-[10px] text-[color:var(--ink-muted)] tabular">
-                        {new Intl.DateTimeFormat("en-US", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        }).format(new Date(e.startsAt))}
-                      </div>
-                    </button>
+                    />
                   );
                 })}
             </div>
@@ -175,4 +222,119 @@ export function WeekGrid({
       </div>
     </div>
   );
+}
+
+interface WeekEventChipProps {
+  event: CalendarEvent;
+  top: number;
+  height: number;
+  hourPx: number;
+  onClick: () => void;
+  onMoveEnd: (info: PanInfo) => void;
+  onResize: (deltaPx: number) => void;
+}
+
+function WeekEventChip({
+  event,
+  top,
+  height,
+  hourPx,
+  onClick,
+  onMoveEnd,
+  onResize,
+}: WeekEventChipProps) {
+  const [resizing, setResizing] = React.useState(false);
+  const [resizeDelta, setResizeDelta] = React.useState(0);
+  const startTime = new Date(event.startsAt);
+  const endTime = new Date(event.endsAt);
+
+  const previewEnd = new Date(
+    endTime.getTime() + Math.round((resizeDelta / hourPx) * 60 / 15) * 15 * 60 * 1000,
+  );
+  const previewDurationMin = Math.max(
+    15,
+    Math.round((previewEnd.getTime() - startTime.getTime()) / 60000),
+  );
+  const liveHeight = Math.max(28, (previewDurationMin / 60) * hourPx);
+
+  return (
+    <motion.div
+      drag={!resizing}
+      dragSnapToOrigin
+      dragElastic={0.12}
+      whileDrag={{
+        scale: 0.97,
+        rotate: 0.3,
+        boxShadow: "0 18px 40px -16px rgba(17,17,19,0.32)",
+        zIndex: 30,
+      }}
+      onDragEnd={(_, info) => onMoveEnd(info)}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      style={{
+        position: "absolute",
+        top,
+        height: resizing ? liveHeight : height,
+        left: 4,
+        right: 4,
+        borderLeftColor: statusAccent(event.status),
+        touchAction: "none",
+        zIndex: resizing ? 20 : 10,
+      }}
+      className="group flex flex-col justify-start rounded-[var(--r-sm)] bg-white dark:bg-white/[0.08] border border-[color:var(--ink-line)] border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight overflow-hidden shadow-[0_1px_0_rgba(17,17,19,0.04)] hover:shadow-[0_4px_14px_-6px_rgba(17,17,19,0.18)] transition-shadow cursor-grab active:cursor-grabbing"
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        className="text-left flex-1 min-w-0"
+      >
+        <div className="font-medium text-[color:var(--ink)] truncate">{event.title}</div>
+        <div className="text-[10px] text-[color:var(--ink-muted)] tabular">
+          {formatTime(startTime)}
+        </div>
+      </button>
+
+      {/* Resize handle — persistently visible grip dots */}
+      <motion.div
+        drag="y"
+        dragMomentum={false}
+        dragElastic={0}
+        onDragStart={() => {
+          setResizing(true);
+          setResizeDelta(0);
+        }}
+        onDrag={(_, info) => setResizeDelta(info.offset.y)}
+        onDragEnd={(_, info) => {
+          onResize(info.offset.y);
+          setResizing(false);
+          setResizeDelta(0);
+        }}
+        className="absolute left-0 right-0 bottom-0 h-2 cursor-ns-resize flex items-center justify-center group/handle"
+        style={{ touchAction: "none" }}
+      >
+        <span
+          className="flex items-center gap-[3px] opacity-30 group-hover/handle:opacity-0 transition-opacity"
+          aria-hidden
+        >
+          <span className="h-[2px] w-[2px] rounded-full bg-[color:var(--ink)]" />
+          <span className="h-[2px] w-[2px] rounded-full bg-[color:var(--ink)]" />
+          <span className="h-[2px] w-[2px] rounded-full bg-[color:var(--ink)]" />
+        </span>
+        <span className="absolute left-1.5 right-1.5 bottom-0 h-[3px] bg-[color:var(--accent)] opacity-0 group-hover/handle:opacity-100 transition-opacity rounded-full" />
+      </motion.div>
+
+      {resizing && (
+        <div className="absolute -right-1 translate-x-full top-1/2 -translate-y-1/2 ml-2 paper-card px-2 py-1 text-[10px] tabular shadow-pop pointer-events-none whitespace-nowrap">
+          {formatTime(previewEnd)} · {Math.floor(previewDurationMin / 60)}h
+          {previewDurationMin % 60 ? `${previewDurationMin % 60}m` : ""}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function formatTime(d: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
 }

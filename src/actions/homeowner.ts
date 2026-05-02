@@ -11,6 +11,7 @@ const homeownerSchema = z.object({
   zip: z.string().optional(),
   projectType: z.string().optional(),
   description: z.string().min(1),
+  referralCode: z.string().optional(),
 });
 
 export async function submitHomeownerRequest(raw: unknown) {
@@ -59,6 +60,24 @@ export async function submitHomeownerRequest(raw: unknown) {
       summary: `New homeowner request: ${lead.name} · ${lead.projectType ?? "general inquiry"}`,
     },
   });
+
+  // Best-effort email + SMS notify to the owner / assigned user
+  try {
+    const { notifyLeadCreated } = await import("./notify");
+    await notifyLeadCreated(lead.id);
+  } catch (err) {
+    console.warn("[homeowner] notify failed:", err);
+  }
+
+  // Record referral conversion if a valid ref code accompanied the signup
+  if (data.referralCode) {
+    try {
+      const { recordReferralConversion } = await import("./referrals");
+      await recordReferralConversion(data.referralCode, data.email);
+    } catch (err) {
+      console.warn("[homeowner] referral tracking failed:", err);
+    }
+  }
 
   return { ok: true, leadId: lead.id };
 }

@@ -32,6 +32,10 @@ const proposalInput = z.object({
   taxRate: z.number().min(0).max(1).default(0),
   lineItems: z.array(lineItemSchema).min(1),
   installments: z.array(installmentSchema).default([]),
+  materialMarkupPct: z.number().min(0).max(500).optional(),
+  laborMarkupPct: z.number().min(0).max(500).optional(),
+  overheadPct: z.number().min(0).max(200).optional(),
+  profitPct: z.number().min(0).max(200).optional(),
 });
 
 type ProposalInput = z.infer<typeof proposalInput>;
@@ -59,6 +63,10 @@ export async function saveProposal(raw: unknown) {
         scopeOfWork: data.scopeOfWork,
         notes: data.notes,
         taxRate: data.taxRate,
+        materialMarkupPct: data.materialMarkupPct ?? undefined,
+        laborMarkupPct: data.laborMarkupPct ?? undefined,
+        overheadPct: data.overheadPct ?? undefined,
+        profitPct: data.profitPct ?? undefined,
         subtotal,
         taxTotal,
         total,
@@ -92,6 +100,10 @@ export async function saveProposal(raw: unknown) {
       scopeOfWork: data.scopeOfWork,
       notes: data.notes,
       taxRate: data.taxRate,
+      materialMarkupPct: data.materialMarkupPct ?? 0,
+      laborMarkupPct: data.laborMarkupPct ?? 0,
+      overheadPct: data.overheadPct ?? 0,
+      profitPct: data.profitPct ?? 0,
       subtotal,
       taxTotal,
       total,
@@ -133,6 +145,7 @@ export async function sendProposal(id: string) {
     where: { id },
     data: { status: "SENT", sentAt: new Date() },
   });
+  await snapshotProposal(id, "sent");
   await db.activityEvent.create({
     data: {
       organizationId,
@@ -143,6 +156,21 @@ export async function sendProposal(id: string) {
       summary: `Sent "${p.title}" to ${p.client?.name ?? p.client?.email ?? "client"}`,
     },
   });
+
+  // Best-effort notifications + follow-up scheduling — never block the save.
+  try {
+    const { notifyProposalSent } = await import("./notify");
+    await notifyProposalSent({ proposalId: id });
+  } catch (err) {
+    console.warn("[sendProposal] notify failed:", err);
+  }
+  try {
+    const { scheduleFollowUpsFor } = await import("./followUps");
+    await scheduleFollowUpsFor(id, "SENT");
+  } catch (err) {
+    console.warn("[sendProposal] schedule failed:", err);
+  }
+
   revalidatePath("/dashboard/proposals");
   revalidatePath(`/dashboard/proposals/${id}`);
   return { ok: true };
@@ -156,6 +184,16 @@ export async function updateProposalStatus(id: string, status: ProposalStatus) {
     where: { id },
     data: { status, ...(status === "PAID" ? { paidAt: new Date() } : {}) },
   });
+  if (status === "ACCEPTED" || status === "PAID") {
+    await snapshotProposal(id, status === "ACCEPTED" ? "accepted" : "manual");
+  }
+  // Schedule any follow-ups watching this status
+  try {
+    const { scheduleFollowUpsFor } = await import("./followUps");
+    await scheduleFollowUpsFor(id, status);
+  } catch (err) {
+    console.warn("[updateProposalStatus] schedule failed:", err);
+  }
   await db.activityEvent.create({
     data: {
       organizationId,
@@ -167,6 +205,74 @@ export async function updateProposalStatus(id: string, status: ProposalStatus) {
   });
   revalidatePath("/dashboard/proposals");
   revalidatePath(`/dashboard/proposals/${id}`);
+}
+
+// ── Pricing snapshots ──────────────────────────────────────
+
+type SnapshotReason = "manual" | "sent" | "accepted" | "edited";
+
+async function snapshotProposal(proposalId: string, reason: SnapshotReason) {
+  const p = await db.proposal.findUnique({
+    where: { id: proposalId },
+    include: { lineItems: { orderBy: { position: "asc" } } },
+  });
+  if (!p) return;
+  await db.pricingSnapshot.create({
+    data: {
+      proposalId: p.id,
+      organizationId: p.organizationId,
+      reason,
+      subtotal: p.subtotal,
+      discountTotal: p.discountTotal,
+      taxRate: p.taxRate,
+      taxTotal: p.taxTotal,
+      total: p.total,
+      currency: p.currency,
+      lineItemsJson: JSON.stringify(
+        p.lineItems.map((l) => ({
+          name: l.name,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          total: l.total,
+          measurementType: l.measurementType,
+        })),
+      ),
+    },
+  });
+}
+
+export async function saveSnapshotManual(proposalId: string) {
+  const { organizationId } = await requireOrg();
+  const p = await db.proposal.findUnique({ where: { id: proposalId } });
+  if (!p || p.organizationId !== organizationId) throw new Error("Not found");
+  await snapshotProposal(proposalId, "manual");
+  revalidatePath(`/dashboard/proposals/${proposalId}`);
+}
+
+// ── Bulk operations ────────────────────────────────────────
+
+export async function bulkUpdateProposalStatus(ids: string[], status: ProposalStatus) {
+  const { organizationId } = await requireOrg();
+  if (ids.length === 0) return { updated: 0 };
+  const { count } = await db.proposal.updateMany({
+    where: { id: { in: ids }, organizationId },
+    data: {
+      status,
+      ...(status === "PAID" ? { paidAt: new Date() } : {}),
+    },
+  });
+  revalidatePath("/dashboard/proposals");
+  return { updated: count };
+}
+
+export async function bulkDeleteProposals(ids: string[]) {
+  const { organizationId } = await requireOrg();
+  if (ids.length === 0) return { deleted: 0 };
+  const { count } = await db.proposal.deleteMany({
+    where: { id: { in: ids }, organizationId },
+  });
+  revalidatePath("/dashboard/proposals");
+  return { deleted: count };
 }
 
 export async function duplicateProposal(id: string) {

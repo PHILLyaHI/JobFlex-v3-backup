@@ -12,17 +12,46 @@ export default async function ProposalsListPage() {
   const proposals = await db.proposal.findMany({
     where: { organizationId },
     orderBy: { updatedAt: "desc" },
-    include: { client: { select: { name: true } } },
+    include: {
+      client: {
+        select: { name: true, email: true, address: true, city: true, state: true, zip: true },
+      },
+      lineItems: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          measurementType: true,
+          quantity: true,
+          materialCost: true,
+        },
+        orderBy: { position: "asc" },
+      },
+    },
   });
 
   const rows: ProposalRow[] = proposals.map((p) => ({
     id: p.id,
+    publicId: p.publicId,
     title: p.title,
     status: p.status,
     total: p.total,
     clientName: p.client?.name ?? "Unassigned",
+    clientEmail: p.client?.email ?? null,
+    clientAddress: p.client?.address ?? null,
+    clientCity: p.client?.city ?? null,
+    clientState: p.client?.state ?? null,
+    clientZip: p.client?.zip ?? null,
     updatedAt: p.updatedAt,
     viewCount: p.viewCount,
+    materials: p.lineItems.map((l) => ({
+      id: l.id,
+      name: l.name,
+      description: l.description,
+      measurementType: l.measurementType,
+      quantity: l.quantity,
+      materialCost: l.materialCost,
+    })),
   }));
 
   return (

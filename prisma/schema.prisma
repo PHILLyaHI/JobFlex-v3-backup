@@ -27,6 +27,11 @@ model Organization {
   timezone        String   @default("America/New_York")
   defaultTaxRate  Float    @default(0)
   aiPromptCustom  String?
+  publicProfileEnabled Boolean @default(false)
+  landingHeroTitle    String?
+  landingHeroSubtitle String?
+  heroImageUrl        String?
+  servicesJson        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -55,6 +60,17 @@ model Organization {
   supportTickets  SupportTicket[]
   specialties     Specialty[]
   homeownerReqs   HomeownerRequest[]
+  changeOrders    ChangeOrder[]
+  reviewRequests  ReviewRequest[]
+  referralCodes   ReferralCode[]
+  tradePosts      TradePost[]
+  phoneCalls      AiPhoneCall[]
+  appointments    Appointment[]
+  blockedTimes    BlockedTime[]
+  projects        Project[]
+  applicants      Applicant[]
+  influencerPayouts    InfluencerPayout[]
+  influencerStatements InfluencerStatement[]
 
   @@index([slug])
 }
@@ -81,6 +97,10 @@ model User {
   activities      ActivityEvent[]
   messages        Message[]
   sentInvites     Invite[]          @relation("InviteSender")
+  referralCodes   ReferralCode[]
+  tradePosts      TradePost[]
+  tradeReplies    TradeReply[]
+  blockedTimes    BlockedTime[]
 }
 
 model Account {
@@ -175,6 +195,7 @@ model Client {
   activities   ActivityEvent[]
   tags         ClientTag[]
   payments     Payment[]
+  reviewRequests ReviewRequest[]
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
@@ -230,6 +251,8 @@ model Lead {
   assignedTo   User?        @relation("LeadAssignee", fields: [assignedToId], references: [id])
   claimedBy    User?        @relation("LeadClaimer", fields: [claimedById], references: [id])
   activities   ActivityEvent[]
+  phoneCalls   AiPhoneCall[]
+  appointments Appointment[]
 
   @@index([organizationId, status])
   @@index([assignedToId])
@@ -274,6 +297,12 @@ model Proposal {
   taxTotal        Float          @default(0)
   total           Float          @default(0)
   currency        String         @default("USD")
+
+  // Estimating engine — markup ladder applied to base material/labor costs
+  materialMarkupPct Float        @default(0)
+  laborMarkupPct    Float        @default(0)
+  overheadPct       Float        @default(0)
+  profitPct         Float        @default(0)
   validUntil      DateTime?
   sentAt          DateTime?
   viewedAt        DateTime?
@@ -298,9 +327,29 @@ model Proposal {
   activities     ActivityEvent[]
   jobs           Job[]
   aiDraft        AiDraft?       @relation(fields: [aiDraftId], references: [id])
+  snapshots      PricingSnapshot[]
 
   @@index([organizationId, status])
   @@index([publicId])
+}
+
+model PricingSnapshot {
+  id             String   @id @default(cuid())
+  proposalId     String
+  organizationId String
+  reason         String   @default("manual") // manual | sent | accepted | edited
+  subtotal       Float
+  discountTotal  Float    @default(0)
+  taxRate        Float    @default(0)
+  taxTotal       Float
+  total          Float
+  currency       String   @default("USD")
+  lineItemsJson  String   // JSON-encoded snapshot of line items
+  createdAt      DateTime @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId, createdAt])
 }
 
 model LineItem {
@@ -408,6 +457,7 @@ model Job {
   organizationId String
   clientId       String?
   proposalId     String?
+  projectId      String?
   title          String
   status         String    @default("SCHEDULED")
   notes          String?
@@ -419,13 +469,17 @@ model Job {
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client       Client?        @relation(fields: [clientId], references: [id])
   proposal     Proposal?      @relation(fields: [proposalId], references: [id])
+  project      Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
   events       JobEvent[]
   assignments  JobAssignment[]
   photos       JobPhoto[]
   expenses     JobExpense[]
   messages     JobMessage[]
+  changeOrders   ChangeOrder[]
+  reviewRequests ReviewRequest[]
 
   @@index([organizationId, status])
+  @@index([projectId])
 }
 
 model JobEvent {
@@ -467,6 +521,7 @@ model JobAssignment {
   workerId   String
   status     String   @default("PENDING")
   assignedAt DateTime @default(now())
+  pingedAt   DateTime?
 
   job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
   worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
@@ -480,18 +535,21 @@ model JobPhoto {
   url       String
   kind      String   @default("BEFORE")
   caption   String?
+  analysis  String?   // JSON-encoded vision output
   createdAt DateTime @default(now())
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 }
 
 model JobExpense {
-  id        String   @id @default(cuid())
-  jobId     String
-  category  String
-  amount    Float
-  note      String?
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  jobId      String
+  category   String
+  amount     Float
+  note       String?
+  receiptUrl String?
+  ocrJson    String?   // JSON-encoded OCR output
+  createdAt  DateTime @default(now())
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
 }
@@ -537,10 +595,13 @@ model Announcement {
   title          String
   body           String
   priority       Int       @default(0)
+  scope          String    @default("ORG") // ORG | PLATFORM
   expiresAt      DateTime?
   createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([scope, createdAt])
 }
 
 model EmailTemplate {
@@ -707,4 +768,258 @@ model Specialty {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, name])
+}
+
+// ─────────────────────────────────────────────
+// Stage 2E — New domains
+// ─────────────────────────────────────────────
+
+model ChangeOrder {
+  id             String    @id @default(cuid())
+  organizationId String
+  jobId          String
+  title          String
+  description    String?
+  amount         Float     // signed: positive adds, negative reduces
+  status         String    @default("DRAFT") // DRAFT | SENT | APPROVED | DECLINED
+  publicToken    String    @unique @default(cuid())
+  sentAt         DateTime?
+  approvedAt     DateTime?
+  declinedAt     DateTime?
+  approvedIp     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, status])
+  @@index([organizationId, status])
+}
+
+model ReviewRequest {
+  id             String    @id @default(cuid())
+  organizationId String
+  jobId          String
+  clientId       String?
+  publicToken    String    @unique @default(cuid())
+  status         String    @default("PENDING") // PENDING | SENT | COMPLETED
+  rating         Int?
+  comment        String?
+  sentAt         DateTime?
+  completedAt   DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  client       Client?      @relation(fields: [clientId], references: [id])
+
+  @@index([organizationId, status])
+  @@index([jobId])
+}
+
+model ReferralCode {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  code           String   @unique
+  rewardAmount   Float    @default(50)
+  rewardType     String   @default("CREDIT") // CREDIT | CASH | DISCOUNT
+  note           String?
+  createdAt      DateTime @default(now())
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversions  ReferralConversion[]
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model ReferralConversion {
+  id          String    @id @default(cuid())
+  codeId      String
+  signupEmail String
+  signupOrgId String?
+  status      String    @default("PENDING") // PENDING | CONVERTED | PAID
+  note        String?
+  createdAt   DateTime  @default(now())
+  convertedAt DateTime?
+
+  code ReferralCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+
+  @@index([codeId, status])
+}
+
+model TradePost {
+  id             String   @id @default(cuid())
+  organizationId String
+  authorId       String
+  title          String
+  body           String
+  category       String?  // equipment | subcontractor | job-share | question
+  status         String   @default("OPEN") // OPEN | CLOSED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User         @relation(fields: [authorId], references: [id])
+  replies      TradeReply[]
+
+  @@index([organizationId, status])
+}
+
+model TradeReply {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   TradePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User      @relation(fields: [authorId], references: [id])
+
+  @@index([postId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// Stage 2F — Telephony & Advanced AI
+// ─────────────────────────────────────────────
+
+model AiPhoneCall {
+  id              String    @id @default(cuid())
+  organizationId  String
+  direction       String    @default("INBOUND") // INBOUND | OUTBOUND
+  fromNumber      String
+  toNumber        String
+  status          String    @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED | FAILED
+  durationSeconds Int?
+  recordingUrl    String?
+  transcript      String?
+  summary         String?
+  leadId          String?
+  callSid         String    @unique
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id])
+
+  @@index([organizationId, startedAt])
+}
+
+// ─────────────────────────────────────────────
+// Calendar — Appointments + Blocked Time
+// ─────────────────────────────────────────────
+
+model Appointment {
+  id             String    @id @default(cuid())
+  organizationId String
+  leadId         String?
+  title          String
+  status         String    @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELED | NO_SHOW
+  startsAt       DateTime
+  endsAt         DateTime
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id])
+
+  @@index([organizationId, startsAt])
+}
+
+model BlockedTime {
+  id             String   @id @default(cuid())
+  organizationId String
+  ownerId        String?  // user it belongs to (vacation, etc); null = whole-org block
+  reason         String   @default("Blocked")
+  startsAt       DateTime
+  endsAt         DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User?        @relation(fields: [ownerId], references: [id])
+
+  @@index([organizationId, startsAt])
+}
+
+// ─────────────────────────────────────────────
+// Projects (multi-job grouping)
+// ─────────────────────────────────────────────
+
+model Project {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  status         String    @default("ACTIVE") // ACTIVE | ON_HOLD | COMPLETED | ARCHIVED
+  startsAt       DateTime?
+  endsAt         DateTime?
+  budget         Float     @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobs         Job[]
+
+  @@index([organizationId])
+}
+
+// ─────────────────────────────────────────────
+// Applicants (hiring)
+// ─────────────────────────────────────────────
+
+model Applicant {
+  id             String   @id @default(cuid())
+  organizationId String
+  fullName       String
+  email          String
+  phone          String?
+  role           String
+  status         String   @default("APPLIED") // APPLIED | INTERVIEWING | HIRED | REJECTED
+  source         String?
+  notes          String?
+  resumeUrl      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+}
+
+// ─────────────────────────────────────────────
+// Influencer / affiliate
+// ─────────────────────────────────────────────
+
+model InfluencerPayout {
+  id             String    @id @default(cuid())
+  organizationId String
+  influencerName String
+  amount         Float
+  status         String    @default("PENDING") // PENDING | PAID | FAILED
+  period         String
+  paidAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+model InfluencerStatement {
+  id             String   @id @default(cuid())
+  organizationId String
+  influencerName String
+  clicks         Int      @default(0)
+  conversions    Int      @default(0)
+  earnings       Float    @default(0)
+  period         String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, period])
 }

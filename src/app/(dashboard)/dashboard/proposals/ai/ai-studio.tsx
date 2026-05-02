@@ -65,6 +65,10 @@ export function AiStudio({
           { id: nanoid(6), label: "Deposit", amount: 30, isPercent: true },
           { id: nanoid(6), label: "Completion", amount: 70, isPercent: true },
         ],
+      materialMarkupPct: 15,
+      laborMarkupPct: 10,
+      overheadPct: 10,
+      profitPct: 15,
     });
     setGenerated(true);
     toast.success(res.disabled ? "Draft loaded · demo mode" : "Draft ready", "Review, edit, then save.");

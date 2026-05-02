@@ -12,9 +12,21 @@ import {
   Sparkles,
   HardHat,
   MessagesSquare,
+  Megaphone,
   Clock,
   BarChart3,
   Settings,
+  Star,
+  Gift,
+  MessageSquare,
+  Phone,
+  Home,
+  Fence,
+  Folder,
+  UserPlus,
+  Wallet,
+  Building2,
+  Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -37,6 +49,8 @@ const groups: NavGroup[] = [
       { href: "/dashboard/proposals", label: "Proposals", icon: <FileText className="h-4 w-4" /> },
       { href: "/dashboard/clients", label: "Clients", icon: <Users className="h-4 w-4" /> },
       { href: "/dashboard/leads", label: "Leads", icon: <Inbox className="h-4 w-4" /> },
+      { href: "/dashboard/projects", label: "Projects", icon: <Folder className="h-4 w-4" /> },
+      { href: "/dashboard/crm", label: "CRM", icon: <Workflow className="h-4 w-4" /> },
     ],
   },
   {
@@ -45,20 +59,37 @@ const groups: NavGroup[] = [
       { href: "/dashboard/calendar", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
       { href: "/dashboard/jobs", label: "Jobs", icon: <Hammer className="h-4 w-4" /> },
       { href: "/dashboard/workers", label: "Workers", icon: <HardHat className="h-4 w-4" /> },
+      { href: "/dashboard/hire", label: "Hire", icon: <UserPlus className="h-4 w-4" /> },
+    ],
+  },
+  {
+    title: "Money",
+    items: [
+      { href: "/dashboard/financials", label: "Financials", icon: <Wallet className="h-4 w-4" /> },
     ],
   },
   {
     title: "Automation",
     items: [
       { href: "/dashboard/advanced-ai", label: "AI Estimator", icon: <Sparkles className="h-4 w-4" /> },
+      { href: "/dashboard/advanced-ai/roof", label: "Roof estimator", icon: <Home className="h-4 w-4" /> },
+      { href: "/dashboard/advanced-ai/fence", label: "Fence estimator", icon: <Fence className="h-4 w-4" /> },
+      { href: "/dashboard/phone", label: "Phone", icon: <Phone className="h-4 w-4" /> },
       { href: "/dashboard/messages", label: "Messages", icon: <MessagesSquare className="h-4 w-4" /> },
+      { href: "/dashboard/announcements", label: "Announcements", icon: <Megaphone className="h-4 w-4" /> },
+      { href: "/dashboard/reviews", label: "Reviews", icon: <Star className="h-4 w-4" /> },
+      { href: "/dashboard/trade", label: "Trade board", icon: <MessageSquare className="h-4 w-4" /> },
+      { href: "/dashboard/referrals", label: "Referrals", icon: <Gift className="h-4 w-4" /> },
       { href: "/dashboard/follow-ups", label: "Follow-ups", icon: <Clock className="h-4 w-4" /> },
       { href: "/dashboard/reports", label: "Reports", icon: <BarChart3 className="h-4 w-4" /> },
     ],
   },
   {
     title: "Account",
-    items: [{ href: "/dashboard/settings", label: "Settings", icon: <Settings className="h-4 w-4" /> }],
+    items: [
+      { href: "/dashboard/company", label: "Company", icon: <Building2 className="h-4 w-4" /> },
+      { href: "/dashboard/settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
+    ],
   },
 ];
 

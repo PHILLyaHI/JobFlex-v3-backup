@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ProposalEditor } from "@/components/proposal/ProposalEditor";
 import { HydrateDraft } from "./hydrate-draft";
 import { ProposalActions } from "./proposal-actions";
+import { SnapshotHistory } from "@/components/proposal/SnapshotHistory";
 import { money, longDate } from "@/lib/format";
 import { ExternalLink } from "lucide-react";
 
@@ -16,7 +17,12 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
   const { organizationId } = await requireOrg();
   const proposal = await db.proposal.findUnique({
     where: { id },
-    include: { lineItems: { orderBy: { position: "asc" } }, installments: { orderBy: { position: "asc" } }, client: true },
+    include: {
+      lineItems: { orderBy: { position: "asc" } },
+      installments: { orderBy: { position: "asc" } },
+      client: true,
+      snapshots: { orderBy: { createdAt: "desc" }, take: 10 },
+    },
   });
   if (!proposal || proposal.organizationId !== organizationId) return notFound();
 
@@ -48,7 +54,11 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
                 Public portal
               </Button>
             </Link>
-            <ProposalActions id={proposal.id} status={proposal.status} />
+            <ProposalActions
+              id={proposal.id}
+              status={proposal.status}
+              defaultTemplateName={proposal.title}
+            />
           </>
         }
       />
@@ -77,9 +87,26 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
             amount: i.amount,
             isPercent: i.isPercent,
           })),
+          materialMarkupPct: proposal.materialMarkupPct ?? 0,
+          laborMarkupPct: proposal.laborMarkupPct ?? 0,
+          overheadPct: proposal.overheadPct ?? 0,
+          profitPct: proposal.profitPct ?? 0,
         }}
       />
       <ProposalEditor clients={clients} existingId={proposal.id} orgName={org?.name} />
+      <div className="mt-6">
+        <SnapshotHistory
+          proposalId={proposal.id}
+          snapshots={proposal.snapshots.map((s) => ({
+            id: s.id,
+            reason: s.reason,
+            total: s.total,
+            subtotal: s.subtotal,
+            taxTotal: s.taxTotal,
+            createdAt: s.createdAt,
+          }))}
+        />
+      </div>
     </>
   );
 }

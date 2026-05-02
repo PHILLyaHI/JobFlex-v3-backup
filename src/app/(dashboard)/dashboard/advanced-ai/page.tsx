@@ -1,12 +1,16 @@
-import { ComingSoon } from "@/components/ui/ComingSoon";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { isOpenAIEnabled } from "@/lib/sdk/openai";
+import { EstimatorStudio } from "./estimator-studio";
 
 export default function AdvancedAiPage() {
   return (
-    <ComingSoon
-      eyebrow="Automation"
-      title="Advanced AI estimator"
-      description="Project-type aware pricing, location adjustments, material/labor breakdowns, and image-analysis workflows."
-      body="The AI quick draft in the Proposals section is the first slice. The advanced estimator layers on roof segmentation (FAL.ai) and project-type pricing packs — coming next."
-    />
+    <>
+      <PageHeader
+        eyebrow="Automation · AI"
+        title="Advanced AI Estimator"
+        description="Project-type aware pricing with separate material + labor breakdowns. Tune anything, then convert to a proposal in one click."
+      />
+      <EstimatorStudio aiEnabled={isOpenAIEnabled()} />
+    </>
   );
 }

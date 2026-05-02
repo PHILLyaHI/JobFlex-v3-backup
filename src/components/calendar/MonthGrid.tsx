@@ -98,6 +98,7 @@ export function MonthGrid({
           return (
             <div
               key={iso}
+              data-cal-day={iso}
               ref={(el) => {
                 if (el) cellRefs.current.set(iso, el);
                 else cellRefs.current.delete(iso);

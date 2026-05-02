@@ -57,6 +57,16 @@ export async function generateAiProposal(prompt: string): Promise<
 > {
   const { organizationId } = await requireOrg();
 
+  // Plan gate
+  try {
+    const { requireFeatureOrThrow } = await import("@/lib/entitlements");
+    const { getOrgPlanById } = await import("@/lib/orgPlan");
+    const plan = await getOrgPlanById(organizationId);
+    requireFeatureOrThrow(plan, "ai_proposals");
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? "Upgrade required" };
+  }
+
   if (!isOpenAIEnabled()) {
     return { ok: true, draft: STUB_DRAFT, disabled: true };
   }

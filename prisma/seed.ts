@@ -372,6 +372,296 @@ async function main() {
     },
   });
 
+  // ── Projects ──────────────────────────────────────────
+  const today = new Date();
+  const inDays = (n: number) => new Date(today.getTime() + n * 86_400_000);
+
+  const project1 = await prisma.project.create({
+    data: {
+      organizationId: org.id,
+      name: "Lakeside Heights — Phase 1",
+      description: "Six-house subdivision on Lakeside, full envelope + finish work.",
+      status: "ACTIVE",
+      startsAt: inDays(-14),
+      endsAt: inDays(120),
+      budget: 850_000,
+    },
+  });
+
+  const project2 = await prisma.project.create({
+    data: {
+      organizationId: org.id,
+      name: "Patel Residence Renovation",
+      description: "Roof, kitchen, deck — coordinated across three crews.",
+      status: "ACTIVE",
+      startsAt: inDays(-3),
+      endsAt: inDays(45),
+      budget: 92_000,
+    },
+  });
+
+  const projectJobs = await Promise.all(
+    [
+      { project: project1, title: "Foundation pour — Lot A1", start: -14, end: -3, status: "COMPLETED", clientId: clients[0].id },
+      { project: project1, title: "Framing — Lot A1", start: -2, end: 18, status: "IN_PROGRESS", clientId: clients[0].id },
+      { project: project1, title: "Roofing — Lot A1", start: 21, end: 35, status: "SCHEDULED", clientId: clients[0].id },
+      { project: project1, title: "Foundation pour — Lot A2", start: 7, end: 24, status: "SCHEDULED", clientId: clients[1].id },
+      { project: project2, title: "Patel — Roof tear-off", start: -3, end: 4, status: "IN_PROGRESS", clientId: clients[0].id },
+      { project: project2, title: "Patel — Kitchen demo", start: 5, end: 12, status: "SCHEDULED", clientId: clients[0].id },
+      { project: project2, title: "Patel — Cabinet install", start: 14, end: 28, status: "SCHEDULED", clientId: clients[0].id },
+    ].map((j) =>
+      prisma.job.create({
+        data: {
+          organizationId: org.id,
+          projectId: j.project.id,
+          clientId: j.clientId,
+          title: j.title,
+          status: j.status,
+          startsAt: inDays(j.start),
+          endsAt: inDays(j.end),
+        },
+      }),
+    ),
+  );
+
+  // ── Job expenses (across past 6 months for rich charts) ──
+  const expenseSeed = [
+    { jobIdx: 0, category: "Materials", amount: 18_400, daysAgo: 90, note: "Concrete & rebar" },
+    { jobIdx: 0, category: "Labor",     amount: 9_800,  daysAgo: 88, note: "Concrete crew" },
+    { jobIdx: 1, category: "Materials", amount: 22_300, daysAgo: 60, note: "Lumber package" },
+    { jobIdx: 1, category: "Equipment", amount: 1_400,  daysAgo: 55, note: "Lift rental" },
+    { jobIdx: 4, category: "Materials", amount: 4_600,  daysAgo: 30, note: "Shingles & underlayment" },
+    { jobIdx: 4, category: "Permits",   amount: 240,    daysAgo: 28 },
+    { jobIdx: 4, category: "Fuel",      amount: 180,    daysAgo: 14 },
+    { jobIdx: 4, category: "Materials", amount: 850,    daysAgo: 7,  note: "Drip edge + flashing" },
+  ];
+  await Promise.all(
+    expenseSeed.map((e) =>
+      prisma.jobExpense.create({
+        data: {
+          jobId: projectJobs[e.jobIdx].id,
+          category: e.category,
+          amount: e.amount,
+          note: e.note ?? null,
+          createdAt: inDays(-e.daysAgo),
+        },
+      }),
+    ),
+  );
+
+  // ── Backdated payments for revenue trend ──
+  await prisma.payment.createMany({
+    data: [
+      { organizationId: org.id, clientId: clients[0].id, amount: 12_500, provider: "STRIPE", status: "PAID", paidAt: inDays(-95), method: "ach" },
+      { organizationId: org.id, clientId: clients[0].id, amount: 24_000, provider: "STRIPE", status: "PAID", paidAt: inDays(-65), method: "ach" },
+      { organizationId: org.id, clientId: clients[1].id, amount: 8_400,  provider: "STRIPE", status: "PAID", paidAt: inDays(-40), method: "card" },
+      { organizationId: org.id, clientId: clients[1].id, amount: 6_200,  provider: "SQUARE", status: "PAID", paidAt: inDays(-20), method: "card" },
+      { organizationId: org.id, clientId: clients[2].id, amount: 18_900, provider: "STRIPE", status: "PAID", paidAt: inDays(-9),  method: "ach" },
+    ],
+  });
+
+  // ── Invoices ──
+  await prisma.invoice.createMany({
+    data: [
+      {
+        organizationId: org.id,
+        proposalId: proposal1.id,
+        clientId: clients[0].id,
+        number: "INV-1041",
+        amount: 18_444,
+        status: "PENDING",
+        provider: "STRIPE",
+        dueDate: inDays(7),
+      },
+      {
+        organizationId: org.id,
+        clientId: clients[1].id,
+        number: "INV-1042",
+        amount: 6_200,
+        status: "PAID",
+        provider: "SQUARE",
+        dueDate: inDays(-25),
+        paidAt: inDays(-20),
+      },
+      {
+        organizationId: org.id,
+        clientId: clients[2].id,
+        number: "INV-1043",
+        amount: 4_980,
+        status: "PENDING",
+        provider: "STRIPE",
+        dueDate: inDays(-3), // overdue
+      },
+      {
+        organizationId: org.id,
+        clientId: clients[2].id,
+        number: "INV-1040",
+        amount: 18_900,
+        status: "PAID",
+        provider: "STRIPE",
+        dueDate: inDays(-16),
+        paidAt: inDays(-9),
+      },
+    ],
+  });
+
+  // ── Change orders ──
+  await prisma.changeOrder.createMany({
+    data: [
+      {
+        organizationId: org.id,
+        jobId: projectJobs[4].id,
+        title: "Decking replacement (rotted area)",
+        description: "Discovered rot above the kitchen wall. Adds 6 sheets of OSB + labor.",
+        amount: 1_240,
+        status: "SENT",
+        publicToken: randomUUID(),
+        sentAt: inDays(-2),
+      },
+      {
+        organizationId: org.id,
+        jobId: projectJobs[1].id,
+        title: "Upgrade to Hardie siding",
+        description: "Client wants Hardie instead of vinyl on front elevation.",
+        amount: 4_800,
+        status: "DRAFT",
+        publicToken: randomUUID(),
+      },
+      {
+        organizationId: org.id,
+        jobId: projectJobs[0].id,
+        title: "Trim window count down to 8",
+        description: "Final plans dropped two windows.",
+        amount: -1_200,
+        status: "APPROVED",
+        publicToken: randomUUID(),
+        sentAt: inDays(-30),
+        approvedAt: inDays(-28),
+      },
+    ],
+  });
+
+  // ── Applicants ──
+  await prisma.applicant.createMany({
+    data: [
+      { organizationId: org.id, fullName: "Marcus Reyes", email: "marcus.reyes@example.com", phone: "(555) 552-2103", role: "Roofer", source: "Indeed", status: "APPLIED", notes: "10 years residential roofing." },
+      { organizationId: org.id, fullName: "Aisha Brown", email: "aisha.brown@example.com", phone: "(555) 552-2104", role: "Estimator", source: "Referral", status: "APPLIED", notes: "Strong with takeoff software." },
+      { organizationId: org.id, fullName: "Diego Salinas", email: "diego.s@example.com", phone: "(555) 552-2105", role: "Foreman", source: "Walk-in", status: "INTERVIEWING", notes: "2026-04-22 09:00 — Phone screen went well, schedule on-site next." },
+      { organizationId: org.id, fullName: "Hannah Kim", email: "hannah.k@example.com", phone: "(555) 552-2106", role: "Carpenter", source: "Indeed", status: "INTERVIEWING" },
+      { organizationId: org.id, fullName: "Robert Cole", email: "robert.cole@example.com", role: "Roofer", source: "LinkedIn", status: "HIRED", notes: "Onboarded 2026-04-25." },
+      { organizationId: org.id, fullName: "Sam Liu", email: "sam.liu@example.com", role: "Apprentice", source: "Job fair", status: "REJECTED", notes: "Not enough experience for the open role." },
+    ],
+  });
+
+  // ── Influencer affiliate stats (last 3 months) ──
+  const periodFor = (offset: number) => {
+    const d = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  await prisma.influencerStatement.createMany({
+    data: [
+      { organizationId: org.id, influencerName: "Jenna Vargas (TikTok)", clicks: 1830, conversions: 41, earnings: 2050, period: periodFor(0) },
+      { organizationId: org.id, influencerName: "ContractorBros (YT)",  clicks: 920,  conversions: 18, earnings: 900,  period: periodFor(0) },
+      { organizationId: org.id, influencerName: "Local-Reno-Mom (IG)",  clicks: 410,  conversions: 9,  earnings: 450,  period: periodFor(0) },
+      { organizationId: org.id, influencerName: "Jenna Vargas (TikTok)", clicks: 1620, conversions: 38, earnings: 1900, period: periodFor(-1) },
+      { organizationId: org.id, influencerName: "ContractorBros (YT)",  clicks: 880,  conversions: 14, earnings: 700,  period: periodFor(-1) },
+      { organizationId: org.id, influencerName: "Jenna Vargas (TikTok)", clicks: 1410, conversions: 32, earnings: 1600, period: periodFor(-2) },
+    ],
+  });
+  await prisma.influencerPayout.createMany({
+    data: [
+      { organizationId: org.id, influencerName: "Jenna Vargas (TikTok)", amount: 1900, period: periodFor(-1), status: "PAID", paidAt: inDays(-15) },
+      { organizationId: org.id, influencerName: "ContractorBros (YT)",  amount: 700,  period: periodFor(-1), status: "PAID", paidAt: inDays(-15) },
+      { organizationId: org.id, influencerName: "Jenna Vargas (TikTok)", amount: 1600, period: periodFor(-2), status: "PAID", paidAt: inDays(-45) },
+      { organizationId: org.id, influencerName: "Jenna Vargas (TikTok)", amount: 2050, period: periodFor(0),  status: "PENDING" },
+      { organizationId: org.id, influencerName: "ContractorBros (YT)",  amount: 900,  period: periodFor(0),  status: "PENDING" },
+    ],
+  });
+
+  // ── Org landing builder defaults ─────────────────────
+  await prisma.organization.update({
+    where: { id: org.id },
+    data: {
+      publicProfileEnabled: true,
+      landingHeroTitle: "A premium roof in 7 days, guaranteed.",
+      landingHeroSubtitle:
+        "Family-owned. Licensed in 4 states. Free same-week quotes — every season.",
+      heroImageUrl: null,
+      servicesJson: JSON.stringify(["Roofing", "Kitchen", "Fencing", "Decking"]),
+    },
+  });
+
+  // ── Follow-up rules + scheduled follow-ups for the CRM module ──
+  const rule1 = await prisma.followUpRule.upsert({
+    where: { id: "seed-rule-day2" },
+    update: {},
+    create: {
+      id: "seed-rule-day2",
+      organizationId: org.id,
+      name: "Day-2 nudge",
+      triggerStatus: "SENT",
+      delayMinutes: 60 * 24 * 2,
+      enabled: true,
+      template: null,
+    },
+  });
+  const rule2 = await prisma.followUpRule.upsert({
+    where: { id: "seed-rule-won" },
+    update: {},
+    create: {
+      id: "seed-rule-won",
+      organizationId: org.id,
+      name: "Won welcome",
+      triggerStatus: "ACCEPTED",
+      delayMinutes: 30,
+      enabled: true,
+      template: null,
+    },
+  });
+
+  // 4 scheduled follow-ups: 1 already overdue, 3 upcoming
+  await prisma.followUp.createMany({
+    data: [
+      {
+        organizationId: org.id,
+        proposalId: proposal1.id,
+        runAt: inDays(-1), // overdue
+        note: "Day-2 nudge · SENT + 2d",
+      },
+      {
+        organizationId: org.id,
+        proposalId: proposal1.id,
+        runAt: inDays(2),
+        note: "Day-2 nudge · second pass",
+      },
+      {
+        organizationId: org.id,
+        proposalId: proposal1.id,
+        runAt: inDays(7),
+        note: "Week-1 check-in",
+      },
+      {
+        organizationId: org.id,
+        proposalId: proposal1.id,
+        runAt: inDays(14),
+        note: "Two-week final-call",
+      },
+    ],
+  });
+
+  // ── Platform-scope announcement (visible to every tenant) ──
+  await prisma.announcement.create({
+    data: {
+      organizationId: org.id,
+      title: "JobFlex 2.5 — CRM hub, Health, and Landing builder",
+      body: "Three new hubs are live: a unified CRM at /dashboard/crm, a platform health dashboard at /admin/health, and a public-form Landing builder under /dashboard/company.",
+      scope: "PLATFORM",
+      priority: 1,
+      expiresAt: inDays(21),
+    },
+  });
+
+  console.log("   seeded follow-up rules:", rule1.id, rule2.id);
   console.log("✓ Seed complete");
   console.log("   owner@acme.test / password123");
   console.log("   sales@acme.test / password123");

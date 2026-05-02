@@ -1,11 +1,92 @@
-import { ComingSoon } from "@/components/ui/ComingSoon";
+import { requireOrg } from "@/lib/orgContext";
+import { db } from "@/lib/db";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/Button";
+import { Plus } from "lucide-react";
+import { MessagesInbox, type ConversationSummary, type MessageItem } from "@/components/comms/MessagesInbox";
+import { StartConversationButton } from "./start-conversation-button";
 
-export default function MessagesPage() {
+export default async function MessagesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ c?: string }>;
+}) {
+  const { c: activeId } = await searchParams;
+  const { organizationId, user } = await requireOrg();
+
+  const conversations = await db.conversation.findMany({
+    where: { organizationId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      messages: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { body: true, createdAt: true },
+      },
+    },
+  });
+
+  const summaries: ConversationSummary[] = conversations.map((c) => ({
+    id: c.id,
+    title: c.title,
+    lastMessagePreview: c.messages[0]?.body ?? null,
+    lastMessageAt: c.messages[0]?.createdAt ?? null,
+    unreadCount: 0,
+  }));
+
+  let activeMessages: MessageItem[] = [];
+  let activeTitle: string | null = null;
+  let activeConvId: string | null = null;
+  if (activeId) {
+    const active = conversations.find((x) => x.id === activeId);
+    if (active) {
+      activeConvId = active.id;
+      activeTitle = active.title;
+      const msgs = await db.message.findMany({
+        where: { conversationId: active.id },
+        orderBy: { createdAt: "asc" },
+        include: { author: { select: { id: true, name: true, email: true } } },
+      });
+      activeMessages = msgs.map((m) => ({
+        id: m.id,
+        body: m.body,
+        authorName: m.author?.name ?? m.author?.email ?? "Anonymous",
+        isMe: m.authorId === user.id,
+        createdAt: m.createdAt,
+      }));
+    }
+  } else if (summaries[0]) {
+    activeConvId = summaries[0].id;
+    activeTitle = summaries[0].title;
+    const msgs = await db.message.findMany({
+      where: { conversationId: summaries[0].id },
+      orderBy: { createdAt: "asc" },
+      include: { author: { select: { id: true, name: true, email: true } } },
+    });
+    activeMessages = msgs.map((m) => ({
+      id: m.id,
+      body: m.body,
+      authorName: m.author?.name ?? m.author?.email ?? "Anonymous",
+      isMe: m.authorId === user.id,
+      createdAt: m.createdAt,
+    }));
+  }
+
   return (
-    <ComingSoon
-      eyebrow="Automation"
-      title="Messages"
-      description="Internal + client threads. Email (Resend or Gmail OAuth) and SMS (Twilio) in one inbox."
-    />
+    <>
+      <PageHeader
+        eyebrow="Communication"
+        title="Messages"
+        description="Internal threads for the team. Client-facing email still flows through the proposal editor."
+        actions={<StartConversationButton />}
+      />
+      <MessagesInbox
+        conversations={summaries}
+        activeConversationId={activeConvId}
+        activeConversationTitle={activeTitle}
+        messages={activeMessages}
+        currentUserId={user.id}
+      />
+    </>
   );
 }

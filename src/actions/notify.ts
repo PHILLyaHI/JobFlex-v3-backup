@@ -1,0 +1,186 @@
+"use server";
+import { db } from "@/lib/db";
+import { sendEmail, isResendEnabled } from "@/lib/sdk/resend";
+import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
+import { renderTemplate, wrapEmail, type TemplateVars } from "@/lib/email/render";
+
+interface NotifyProposalSentInput {
+  proposalId: string;
+}
+
+// Uses an EmailTemplate matching the given category; falls back to a reasonable default body.
+async function pickTemplate(organizationId: string, category: string) {
+  return db.emailTemplate.findFirst({
+    where: { organizationId, category },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+function defaultBodyFor(category: string): { subject: string; body: string } {
+  switch (category) {
+    case "proposal-send":
+      return {
+        subject: "Your proposal from {{org}}",
+        body: `Hi {{client_name}},
+
+Thanks for meeting with us. Here is the proposal we put together for your project — {{total}} in total.
+
+View and accept online:
+{{link}}
+
+— {{org}}`,
+      };
+    case "thank-you":
+      return {
+        subject: "Thanks for accepting — {{org}}",
+        body: `Hi {{client_name}},
+
+We just saw your acceptance on {{title}} — thank you! We'll be in touch shortly to get the work scheduled.
+
+— {{org}}`,
+      };
+    case "reminder":
+      return {
+        subject: "A quick nudge — {{title}}",
+        body: `Hi {{client_name}},
+
+Circling back on the proposal we sent. It's ready to review here:
+{{link}}
+
+Any questions, just reply to this email.
+
+— {{org}}`,
+      };
+    default:
+      return { subject: "A message from {{org}}", body: "Hi {{client_name}},\n\n" };
+  }
+}
+
+export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput) {
+  const proposal = await db.proposal.findUnique({
+    where: { id: proposalId },
+    include: { client: true, organization: { select: { name: true } } },
+  });
+  if (!proposal) return { skipped: true as const, reason: "not-found" };
+  if (!proposal.client?.email) return { skipped: true as const, reason: "no-client-email" };
+
+  const tpl = await pickTemplate(proposal.organizationId, "proposal-send");
+  const fallback = defaultBodyFor("proposal-send");
+  const subject = tpl?.subject ?? fallback.subject;
+  const body = tpl?.body ?? fallback.body;
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const vars: TemplateVars = {
+    client_name: proposal.client.name,
+    total: formatUSD(proposal.total),
+    link: `${appUrl}/portal/q/${proposal.publicId}`,
+    org: proposal.organization.name,
+    title: proposal.title,
+  };
+
+  const wrapped = wrapEmail({
+    subject: renderTemplate(subject, vars),
+    body: renderTemplate(body, vars),
+    orgName: proposal.organization.name,
+  });
+
+  const res = await sendEmail({
+    to: proposal.client.email,
+    subject: wrapped.subject,
+    html: wrapped.html,
+  });
+
+  return {
+    skipped: false as const,
+    delivery: res.skipped ? "disabled" : "sent",
+    enabled: isResendEnabled(),
+  };
+}
+
+export async function notifyLeadCreated(leadId: string) {
+  const lead = await db.lead.findUnique({
+    where: { id: leadId },
+    include: {
+      organization: { select: { name: true, phone: true, billingEmail: true } },
+    },
+  });
+  if (!lead || !lead.organization) return { skipped: true as const };
+
+  const ownerEmail = lead.organization.billingEmail;
+  if (ownerEmail) {
+    const { subject, body } = defaultBodyFor("custom");
+    const bodyFilled = `A new lead came in: ${lead.name} (${lead.email ?? lead.phone ?? "no contact"}).
+
+Project: ${lead.projectType ?? "—"}
+${lead.description ? `Details: ${lead.description.slice(0, 400)}` : ""}
+
+Triage in JobFlex.`;
+    const wrapped = wrapEmail({
+      subject: `New lead — ${lead.name}`,
+      body: bodyFilled,
+      orgName: lead.organization.name,
+    });
+    await sendEmail({ to: ownerEmail, subject: wrapped.subject, html: wrapped.html });
+  }
+
+  // Optional SMS if owner phone is set
+  if (lead.organization.phone && isTwilioEnabled()) {
+    await sendSMS(
+      lead.organization.phone,
+      `New JobFlex lead: ${lead.name} — ${lead.projectType ?? "inquiry"}`,
+    ).catch(() => null);
+  }
+  return { skipped: false as const };
+}
+
+export async function notifyAssignmentCreated(assignmentId: string) {
+  const a = await db.jobAssignment.findUnique({
+    where: { id: assignmentId },
+    include: {
+      worker: { include: { user: { select: { email: true } } } },
+      job: { select: { title: true, organizationId: true, startsAt: true } },
+    },
+  });
+  if (!a) return { skipped: true as const };
+
+  const email = a.worker.user?.email;
+  if (email) {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const org = await db.organization.findUnique({
+      where: { id: a.job.organizationId },
+      select: { name: true },
+    });
+    const wrapped = wrapEmail({
+      subject: `New job assignment — ${a.job.title}`,
+      body: `Hi ${a.worker.displayName.split(" ")[0]},
+
+You have a new job assignment${a.job.startsAt ? ` on ${new Date(a.job.startsAt).toLocaleDateString()}` : ""}:
+
+${a.job.title}
+
+Open your portal to confirm or decline:
+${appUrl}/w/${a.worker.token}
+
+— ${org?.name ?? "Your team"}`,
+      orgName: org?.name ?? "JobFlex",
+    });
+    await sendEmail({ to: email, subject: wrapped.subject, html: wrapped.html });
+  }
+
+  if (a.worker.phone && isTwilioEnabled()) {
+    await sendSMS(
+      a.worker.phone,
+      `JobFlex: you were assigned to "${a.job.title}". Open your portal to confirm.`,
+    ).catch(() => null);
+  }
+
+  return { skipped: false as const };
+}
+
+function formatUSD(n: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: n % 1 === 0 ? 0 : 2,
+  }).format(n);
+}

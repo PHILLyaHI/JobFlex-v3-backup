@@ -5,13 +5,15 @@ import { Search, Bell, Plus, Command } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useUiStore } from "@/stores/useUiStore";
+import { OrgSwitcher, type OrgMembershipItem } from "@/components/layout/OrgSwitcher";
 
 interface TopbarProps {
   user?: { name?: string | null; email: string };
-  orgName?: string;
+  memberships?: OrgMembershipItem[];
+  plan?: string | null;
 }
 
-export function Topbar({ user, orgName }: TopbarProps) {
+export function Topbar({ user, memberships = [] }: TopbarProps) {
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
   return (
     <header className="sticky top-0 z-30 flex items-center gap-3 h-16 px-6 border-b border-[color:var(--ink-line)] bg-[color:var(--paper)]/80 backdrop-blur-md">
@@ -30,26 +32,26 @@ export function Topbar({ user, orgName }: TopbarProps) {
       <div className="flex-1" />
 
       <div className="flex items-center gap-2">
+        {memberships.length > 0 && <OrgSwitcher memberships={memberships} />}
         <Link href={"/dashboard/proposals/ai" as any}>
           <Button size="sm" variant="primary" icon={<Plus className="h-3.5 w-3.5" />}>
             New Proposal
           </Button>
         </Link>
-        <button className="relative h-9 w-9 grid place-items-center rounded-[var(--r-md)] hover:bg-black/[0.04] dark:hover:bg-white/[0.05] text-[color:var(--ink-soft)]">
+        <button
+          aria-label="Notifications"
+          className="relative h-9 w-9 grid place-items-center rounded-[var(--r-md)] hover:bg-black/[0.04] dark:hover:bg-white/[0.05] text-[color:var(--ink-soft)]"
+        >
           <Bell className="h-4 w-4" />
           <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]" />
         </button>
-        <div className="flex items-center gap-2 pl-2 border-l border-[color:var(--ink-line)]">
-          <Avatar name={user?.name ?? user?.email ?? "?"} size={28} />
-          <div className="hidden md:flex flex-col leading-tight">
-            <span className="text-[12px] font-medium text-[color:var(--ink)]">{user?.name ?? user?.email ?? "Guest"}</span>
-            {orgName && (
-              <span className="text-[10px] text-[color:var(--ink-muted)] tracking-[0.06em]">
-                {orgName}
-              </span>
-            )}
-          </div>
-        </div>
+        <button
+          aria-label="Account menu"
+          title={user?.name ?? user?.email ?? "Guest"}
+          className="ml-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/40"
+        >
+          <Avatar name={user?.name ?? user?.email ?? "?"} size={32} />
+        </button>
       </div>
     </header>
   );

@@ -1,0 +1,75 @@
+"use server";
+import { revalidatePath } from "next/cache";
+import { requireOrg } from "@/lib/orgContext";
+import { db } from "@/lib/db";
+
+function generateCode(seed: string) {
+  // Short, shareable, not cryptographically unique — uniqueness guaranteed by DB constraint + retry loop.
+  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const prefix = seed
+    .replace(/[^a-z]/gi, "")
+    .slice(0, 3)
+    .toUpperCase()
+    .padEnd(3, "X");
+  let suffix = "";
+  for (let i = 0; i < 5; i++) {
+    suffix += letters[Math.floor(Math.random() * letters.length)];
+  }
+  return `${prefix}-${suffix}`;
+}
+
+export async function getOrCreateMyReferralCode() {
+  const { organizationId, user } = await requireOrg();
+  const existing = await db.referralCode.findFirst({
+    where: { organizationId, userId: user.id },
+  });
+  if (existing) return existing;
+
+  const seed = (user.name ?? user.email ?? "JOB").slice(0, 6);
+  let code = generateCode(seed);
+  // Retry on collision
+  for (let i = 0; i < 5; i++) {
+    try {
+      const created = await db.referralCode.create({
+        data: {
+          organizationId,
+          userId: user.id,
+          code,
+          rewardAmount: 50,
+          rewardType: "CREDIT",
+        },
+      });
+      return created;
+    } catch {
+      code = generateCode(seed);
+    }
+  }
+  throw new Error("Couldn't generate a unique code");
+}
+
+export async function recordReferralConversion(code: string, signupEmail: string) {
+  const ref = await db.referralCode.findUnique({ where: { code } });
+  if (!ref) return { skipped: true as const };
+  await db.referralConversion.create({
+    data: {
+      codeId: ref.id,
+      signupEmail,
+      status: "PENDING",
+    },
+  });
+  return { skipped: false as const, codeId: ref.id };
+}
+
+export async function markConversionConverted(conversionId: string) {
+  const { organizationId } = await requireOrg();
+  const conv = await db.referralConversion.findUnique({
+    where: { id: conversionId },
+    include: { code: true },
+  });
+  if (!conv || conv.code.organizationId !== organizationId) throw new Error("Not found");
+  await db.referralConversion.update({
+    where: { id: conversionId },
+    data: { status: "CONVERTED", convertedAt: new Date() },
+  });
+  revalidatePath("/dashboard/referrals");
+}

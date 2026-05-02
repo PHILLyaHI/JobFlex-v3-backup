@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronRight, ChevronLeft } from "lucide-react";
 import { Input } from "@/components/ui/Input";
@@ -24,6 +25,8 @@ const PROJECT_TYPES = [
 const STEPS = ["About you", "The project", "Details"] as const;
 
 export function HomeownerForm() {
+  const searchParams = useSearchParams();
+  const referralCode = searchParams.get("ref") ?? "";
   const [step, setStep] = React.useState(0);
   const [submitting, setSubmitting] = React.useState(false);
   const [done, setDone] = React.useState(false);
@@ -50,7 +53,7 @@ export function HomeownerForm() {
   async function onSubmit() {
     setSubmitting(true);
     try {
-      await submitHomeownerRequest(values);
+      await submitHomeownerRequest({ ...values, referralCode: referralCode || undefined });
       setDone(true);
     } catch (e) {
       console.error(e);

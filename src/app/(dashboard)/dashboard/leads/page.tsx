@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Inbox } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Inbox, KanbanSquare } from "lucide-react";
 import { LeadsBoard } from "./leads-board";
 
 export default async function LeadsPage() {
@@ -19,6 +21,13 @@ export default async function LeadsPage() {
         eyebrow="Pipeline"
         title="Leads"
         description="Triage new inquiries, claim them, and convert to proposals. AI pre-tags each one by specialty."
+        actions={
+          <Link href={"/dashboard/leads/kanban" as any}>
+            <Button variant="outline" size="sm" icon={<KanbanSquare className="h-3.5 w-3.5" />}>
+              Kanban view
+            </Button>
+          </Link>
+        }
       />
       {leads.length === 0 ? (
         <EmptyState

@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { LineItemRow } from "@/components/proposal/LineItemRow";
+import { EstimateBreakdown } from "@/components/proposal/EstimateBreakdown";
 import { ProposalPreview } from "@/components/proposal/ProposalPreview";
 import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
 import { toast } from "@/components/ui/Toast";
@@ -60,6 +61,10 @@ export function ProposalEditor({ clients, existingId, orgName }: ProposalEditorP
           amount: i.amount,
           isPercent: i.isPercent,
         })),
+        materialMarkupPct: draft.materialMarkupPct,
+        laborMarkupPct: draft.laborMarkupPct,
+        overheadPct: draft.overheadPct,
+        profitPct: draft.profitPct,
       });
       if (opts?.sendAfter) {
         setSending(true);
@@ -145,6 +150,8 @@ export function ProposalEditor({ clients, existingId, orgName }: ProposalEditorP
             />
           </div>
         </Card>
+
+        <EstimateBreakdown />
 
         <Card>
           <CardHeader>

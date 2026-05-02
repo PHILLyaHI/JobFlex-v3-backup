@@ -110,3 +110,42 @@ export const ActivityKind = {
   SMS: "SMS",
 } as const;
 export type ActivityKind = (typeof ActivityKind)[keyof typeof ActivityKind];
+
+export const ProjectStatus = {
+  ACTIVE: "ACTIVE",
+  ON_HOLD: "ON_HOLD",
+  COMPLETED: "COMPLETED",
+  ARCHIVED: "ARCHIVED",
+} as const;
+export type ProjectStatus = (typeof ProjectStatus)[keyof typeof ProjectStatus];
+
+export const ApplicantStatus = {
+  APPLIED: "APPLIED",
+  INTERVIEWING: "INTERVIEWING",
+  HIRED: "HIRED",
+  REJECTED: "REJECTED",
+} as const;
+export type ApplicantStatus = (typeof ApplicantStatus)[keyof typeof ApplicantStatus];
+
+export const ChangeOrderStatus = {
+  DRAFT: "DRAFT",
+  SENT: "SENT",
+  APPROVED: "APPROVED",
+  DECLINED: "DECLINED",
+} as const;
+export type ChangeOrderStatus = (typeof ChangeOrderStatus)[keyof typeof ChangeOrderStatus];
+
+export const InvoiceStatus = {
+  PENDING: "PENDING",
+  PAID: "PAID",
+  FAILED: "FAILED",
+  REFUNDED: "REFUNDED",
+} as const;
+export type InvoiceStatus = (typeof InvoiceStatus)[keyof typeof InvoiceStatus];
+
+export const InfluencerPayoutStatus = {
+  PENDING: "PENDING",
+  PAID: "PAID",
+  FAILED: "FAILED",
+} as const;
+export type InfluencerPayoutStatus = (typeof InfluencerPayoutStatus)[keyof typeof InfluencerPayoutStatus];
