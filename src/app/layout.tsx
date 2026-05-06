@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import { ToastHost } from "@/components/ui/Toast";
@@ -15,6 +15,10 @@ export const metadata: Metadata = {
   description:
     "The modern operating system for contractors. AI-powered proposals, lead pipelines, scheduling, and client portals.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+};
+
+export const viewport: Viewport = {
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

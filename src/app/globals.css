@@ -155,3 +155,21 @@ body::before {
   font-weight: 600;
 }
 
+/* ── Safe-area (iOS notch / home indicator) ─────── */
+/* Environment infrastructure, not a design token. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+@layer utilities {
+  .pt-safe { padding-top: var(--safe-top); }
+  .pb-safe { padding-bottom: var(--safe-bottom); }
+  .pl-safe { padding-left: var(--safe-left); }
+  .pr-safe { padding-right: var(--safe-right); }
+  .mt-safe { margin-top: var(--safe-top); }
+  .mb-safe { margin-bottom: var(--safe-bottom); }
+}
+
