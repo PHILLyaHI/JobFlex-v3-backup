@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-12T00:00:00Z",
+  "title": "Design System: JobFlex",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "#f6f5f2",
+        "tonalRamp": ["#1a1816", "#2e2b27", "#454139", "#5e574d", "#7c7468", "#a09786", "#cbc2af", "#f6f5f2"]
+      },
+      "paper-deep": {
+        "role": "neutral",
+        "displayName": "Paper Deep",
+        "canonical": "#ecebe6",
+        "tonalRamp": ["#181613", "#2b2823", "#413d35", "#5a544a", "#766f62", "#9a917f", "#c5bca7", "#ecebe6"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Pressroom Ink",
+        "canonical": "#111113",
+        "tonalRamp": ["#080809", "#111113", "#1c1c20", "#2a2a2e", "#3b3a3f", "#5a5a5f", "#85848a", "#c7c6cc"]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Ink Soft",
+        "canonical": "#2a2a2e"
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Ink Muted",
+        "canonical": "#6b6a64"
+      },
+      "ink-faint": {
+        "role": "neutral",
+        "displayName": "Ink Faint",
+        "canonical": "#a6a49d"
+      },
+      "ink-line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#d8d6cd"
+      },
+      "pressroom-indigo": {
+        "role": "primary",
+        "displayName": "Pressroom Indigo",
+        "canonical": "#4f46e5",
+        "tonalRamp": ["#1e1b4b", "#2c277d", "#3a35a6", "#4339c7", "#4f46e5", "#7a73ee", "#a59ff4", "#dad7fa"]
+      },
+      "pressroom-indigo-soft": {
+        "role": "primary",
+        "displayName": "Pressroom Indigo Soft",
+        "canonical": "#eef0ff"
+      },
+      "pressroom-indigo-ink": {
+        "role": "primary",
+        "displayName": "Pressroom Indigo Ink",
+        "canonical": "#1e1b4b"
+      },
+      "emerald": {
+        "role": "status",
+        "displayName": "Emerald (Success)",
+        "canonical": "#059669"
+      },
+      "rose": {
+        "role": "status",
+        "displayName": "Rose (Destructive)",
+        "canonical": "#e11d48"
+      },
+      "amber": {
+        "role": "status",
+        "displayName": "Muted Amber (Pending)",
+        "canonical": "#c89450"
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Page titles, hero headlines, sheet titles. Tight negative letter-spacing carries the editorial signal." },
+      "headline": { "displayName": "Headline", "purpose": "Section headers inside dense screens, card titles." },
+      "title": { "displayName": "Title", "purpose": "List-item titles, primary inline labels." },
+      "body": { "displayName": "Body", "purpose": "Paragraph prose. Capped at 65–75ch." },
+      "label": { "displayName": "Quiet Caps", "purpose": "Section captions, group labels, form labels. The 14% tracking is the system's rhythm." }
+    },
+    "shadows": [
+      { "name": "hairline", "value": "inset 0 0 0 0.5px rgba(17, 17, 19, 0.10)", "purpose": "Default boundary on outline buttons, input chrome, and any element that needs to be present without being framed." },
+      { "name": "card", "value": "0 1px 0 rgba(17, 17, 19, 0.04), 0 4px 16px -8px rgba(17, 17, 19, 0.08)", "purpose": "The paper-card resting elevation. Whisper, not lift." },
+      { "name": "pop", "value": "0 20px 48px -24px rgba(17, 17, 19, 0.25)", "purpose": "Popovers and floating menus. The lift moment." },
+      { "name": "glow", "value": "0 0 0 6px rgba(79, 70, 229, 0.08)", "purpose": "Hover focus aura on primary actions." },
+      { "name": "sheet-lift", "value": "0 -16px 48px -12px rgba(17, 17, 19, 0.18)", "purpose": "BottomSheet upward-facing elevation when the sheet hovers above the page." }
+    ],
+    "motion": [
+      { "name": "editorial-ease", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "The project's universal exponential ease-out curve. Used by all sheet/drawer transitions, page enters, and list staggers." },
+      { "name": "sheet-spring", "value": "spring(stiffness: 320, damping: 36, mass: 0.9)", "purpose": "BottomSheet open motion. Snappy without bounce." },
+      { "name": "popover-duration", "value": "180ms", "purpose": "Default duration for popovers and quick fades." },
+      { "name": "sheet-duration", "value": "320ms enter / 220ms exit", "purpose": "Side Sheet slide duration." },
+      { "name": "drawer-duration", "value": "280ms", "purpose": "MobileDrawer slide duration." },
+      { "name": "page-enter-duration", "value": "400ms", "purpose": "Page-level fade-up on route enter." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "(max-width: 767px)" },
+      { "name": "tablet", "value": "(min-width: 768px) and (max-width: 1023px)" },
+      { "name": "desktop", "value": "(min-width: 1024px)" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Default tactile primary action. Ink on Paper. Press shifts down 1px.",
+      "html": "<button class=\"ds-btn-primary\">Save draft</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 500; letter-spacing: -0.005em; color: #f6f5f2; background: #111113; border: none; border-radius: 10px; cursor: pointer; transition: background 0.2s cubic-bezier(0.22, 1, 0.36, 1), transform 0.2s cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-primary:hover { background: #2a2a2e; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 1px #f6f5f2, 0 0 0 4px rgba(79, 70, 229, 0.55); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Quiet secondary action. Transparent until hover.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 500; letter-spacing: -0.005em; color: #111113; background: transparent; border: none; border-radius: 10px; cursor: pointer; transition: background 0.2s cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-ghost:hover { background: rgba(17, 17, 19, 0.04); } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 1px #f6f5f2, 0 0 0 4px rgba(79, 70, 229, 0.55); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Hairline-bordered button. The boundary itself is the affordance.",
+      "html": "<button class=\"ds-btn-outline\">View proposal</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 500; letter-spacing: -0.005em; color: #111113; background: transparent; border: none; border-radius: 10px; box-shadow: inset 0 0 0 0.5px rgba(17, 17, 19, 0.10); cursor: pointer; transition: background 0.2s cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-outline:hover { background: rgba(17, 17, 19, 0.025); } .ds-btn-outline:focus-visible { outline: none; box-shadow: inset 0 0 0 0.5px rgba(17, 17, 19, 0.10), 0 0 0 1px #f6f5f2, 0 0 0 4px rgba(79, 70, 229, 0.55); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Hairline-bounded input with a soft indigo glow on focus.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-quiet-caps\" for=\"ds-field-1\">Title</label><div class=\"ds-input-wrap\"><input id=\"ds-field-1\" class=\"ds-input\" type=\"text\" value=\"Kitchen renovation\" /></div></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; font-family: Geist, ui-sans-serif, system-ui, sans-serif; } .ds-quiet-caps { font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #2a2a2e; } .ds-input-wrap { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; background: rgba(255, 255, 255, 0.6); border-radius: 10px; box-shadow: inset 0 0 0 0.5px rgba(17, 17, 19, 0.10); transition: box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1); } .ds-input-wrap:focus-within { box-shadow: inset 0 0 0 0.5px rgba(17, 17, 19, 0.10), 0 0 0 3px rgba(79, 70, 229, 0.18); } .ds-input { flex: 1; background: transparent; border: none; outline: none; font-family: inherit; font-size: 14px; color: #111113; } .ds-input::placeholder { color: #a6a49d; }"
+    },
+    {
+      "name": "Paper Card",
+      "kind": "card",
+      "refersTo": "paper-card",
+      "description": "Signature surface. Pure white on warm Paper background, hairline border, whisper-shadow.",
+      "html": "<article class=\"ds-paper-card\"><div class=\"ds-quiet-caps ds-card-cap\">Crew confirmations</div><h3 class=\"ds-card-title\">3 pending</h3><p class=\"ds-card-body\">Pending assignments that haven't been accepted yet.</p></article>",
+      "css": ".ds-paper-card { background: #ffffff; border-radius: 16px; padding: 16px; box-shadow: inset 0 0 0 0.5px rgba(17, 17, 19, 0.10), 0 1px 0 rgba(17, 17, 19, 0.04), 0 4px 16px -8px rgba(17, 17, 19, 0.08); font-family: Geist, ui-sans-serif, system-ui, sans-serif; max-width: 320px; } .ds-card-cap { font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #2a2a2e; margin: 0 0 8px; } .ds-card-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; color: #111113; margin: 0 0 6px; } .ds-card-body { font-size: 13px; line-height: 1.65; color: #2a2a2e; margin: 0; }"
+    },
+    {
+      "name": "Accent Badge",
+      "kind": "chip",
+      "refersTo": "badge-accent",
+      "description": "Pill chip in Pressroom Indigo Soft. Used for tags and category labels.",
+      "html": "<span class=\"ds-badge-accent\">Renovation</span>",
+      "css": ".ds-badge-accent { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 9999px; font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0.01em; background: #eef0ff; color: #1e1b4b; }"
+    },
+    {
+      "name": "Neutral Badge",
+      "kind": "chip",
+      "refersTo": "badge-neutral",
+      "description": "Quiet inline tag. Subtle ink-tint background, no border.",
+      "html": "<span class=\"ds-badge-neutral\">draft</span>",
+      "css": ".ds-badge-neutral { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 9999px; font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 500; letter-spacing: 0.01em; background: rgba(17, 17, 19, 0.05); color: #2a2a2e; }"
+    },
+    {
+      "name": "Bottom Sheet (signature)",
+      "kind": "custom",
+      "description": "Mobile signature surface. Drag-handle, paper-card body, 24px top corners, sheet-lift shadow.",
+      "html": "<div class=\"ds-bottom-sheet\"><div class=\"ds-bottom-sheet-handle\" aria-hidden=\"true\"><span></span></div><div class=\"ds-bottom-sheet-header\"><h2>New proposal</h2><button aria-label=\"Close\" class=\"ds-bottom-sheet-close\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\"><path d=\"M3 3l10 10M13 3L3 13\" stroke=\"currentColor\" stroke-width=\"1.5\" fill=\"none\" stroke-linecap=\"round\"/></svg></button></div><div class=\"ds-bottom-sheet-body\"><p>Draft a proposal for Margaret Chen. Title, scope, and total then send for review.</p></div></div>",
+      "css": ".ds-bottom-sheet { position: relative; max-width: 420px; background: #f6f5f2; border-top: 0.5px solid rgba(17, 17, 19, 0.10); border-radius: 24px 24px 0 0; box-shadow: 0 -16px 48px -12px rgba(17, 17, 19, 0.18); font-family: Geist, ui-sans-serif, system-ui, sans-serif; } .ds-bottom-sheet-handle { display: flex; justify-content: center; padding: 14px 0 8px; cursor: grab; } .ds-bottom-sheet-handle span { display: block; width: 40px; height: 4px; border-radius: 9999px; background: #a6a49d; } .ds-bottom-sheet-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 0 20px 12px; } .ds-bottom-sheet-header h2 { margin: 0; font-family: Geist, ui-sans-serif, system-ui, sans-serif; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; color: #111113; line-height: 1.15; } .ds-bottom-sheet-close { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; background: transparent; color: #6b6a64; border-radius: 6px; cursor: pointer; transition: background 0.15s; } .ds-bottom-sheet-close:hover { background: rgba(17, 17, 19, 0.05); } .ds-bottom-sheet-body { padding: 0 20px 20px; font-size: 13px; line-height: 1.65; color: #2a2a2e; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Well-Kept Shop",
+    "overview": "JobFlex's interface is a workshop that has been kept. Organized, a little beautiful, ready for the next job. Type and whitespace carry the weight; color is a tool, not a uniform. The aesthetic family is small-shop editorial: Cabin, Sutro, Mast, the early Stripe blog era. Magazine-quarterly composure applied to a contractor's workbook.\n\nThis is a deliberate counter-positioning against the four traps that 'contractor software' snaps to: hi-vis construction-cliché, generic SaaS-cream, AI-startup purple-gradient, and consumer-cute. Every visual choice should read as 'a team of contractors-turned-builders made this for themselves,' not 'an agency themed a CRM in October.'\n\nThe system serves three scenes simultaneously: a contractor in direct sunlight on a jobsite, a contractor at a desk at 9pm finishing invoices, and a contractor standing next to a homeowner presenting an estimate. No choice is allowed that only works in one scene.",
+    "keyCharacteristics": [
+      "Warm paper background, dense black ink, restrained accent.",
+      "Hairline borders (0.5px) where most products use 1px. Lines whisper.",
+      "Geist as the single typeface; weight + size do all the hierarchy work.",
+      "Flat at rest. Elevation is a state, not a default.",
+      "The accent (Pressroom Indigo) is rare. Used ≤10% of any screen."
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Pressroom Indigo appears on ≤10% of any given screen. Its rarity is the point. If two indigo elements compete on the same screen, one of them is wrong.", "section": "colors" },
+      { "name": "The Warm-Tinted Neutral Rule", "body": "Every neutral is tinted warm. #000 and #fff are prohibited as surface or text colors. The closest legal equivalents are Ink (#111113) and pure white only inside .paper-card.", "section": "colors" },
+      { "name": "The Status-Is-Not-Decoration Rule", "body": "Emerald, Rose, and Amber appear only when they encode state. They never decorate.", "section": "colors" },
+      { "name": "The Single-Typeface Rule", "body": "Geist does the entire hierarchy. Don't introduce a serif, script, or second sans. Hierarchy comes from scale, weight, and letter-spacing within the one family.", "section": "typography" },
+      { "name": "The Tabular Numeric Rule", "body": "Money, counts, dates, durations, percentages use font-variant-numeric: tabular-nums. Mixed proportional and tabular numbers in the same column is forbidden.", "section": "typography" },
+      { "name": "The Quiet-Caps Rule", "body": "The quiet-caps style (11px, 500, +0.14em, uppercase, --ink-soft) is the system's section caption. Do not bump its size to make it more important.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat unless they are temporarily floating. The shadow vocabulary is exhaustive; anything not in it is invented and wrong.", "section": "elevation" },
+      { "name": "The Hairline-Beats-Border Rule", "body": "Default to 0.5px hairlines. Use full 1px borders only when the element must remain legible on top of a colored surface. 2px+ borders are prohibited as decorative accents.", "section": "elevation" },
+      { "name": "The No-Decorative-Card Rule", "body": "Cards are not the default container. Use .paper-card only when the contained content is logically a discrete object that benefits from being lifted off the background.", "section": "components" },
+      { "name": "The Hairline-Is-The-Boundary Rule", "body": "The 0.5px hairline (--ink-line) is how the system signals structure. Full borders, ruled lines, and shadow-only separators are wrong unless explicitly called for by a Component spec.", "section": "components" }
+    ],
+    "dos": [
+      "Do use Pressroom Indigo (#4f46e5) sparingly: focus rings, primary links, active nav, ≤10% of any screen.",
+      "Do prefer hairline 0.5px borders (--ink-line) over full 1px borders.",
+      "Do use quiet-caps (11px, 500, +0.14em tracking, uppercase, --ink-soft) for every section caption, group label, and form label.",
+      "Do use tabular numerals for money, dates, durations, counts, percentages.",
+      "Do treat shadow as a state, not a style. Static elements are flat; elevation appears only when something temporarily lifts.",
+      "Do tint every neutral toward warm. --paper and --paper-deep are not pure gray for a reason.",
+      "Do keep body line length to 65–75ch.",
+      "Do respect prefers-reduced-motion everywhere.",
+      "Do ensure all mobile touch targets are ≥44px and contrast meets WCAG 2.2 AA, with sun-readability as an additional informal constraint."
+    ],
+    "donts": [
+      "Don't use construction-cliché visuals: no hi-vis safety yellow, no hardhat icons, no hammer mascots, no blueprint backgrounds, no jobsite-photo heroes, no orange CTAs.",
+      "Don't drift toward generic SaaS-cream: no HubSpot blue, no identical card grids, no hero-metric template tiles, no marketing-template chrome bolted onto product UI.",
+      "Don't use AI-startup purple-gradients, sparkle icons on every AI feature, glassmorphism as default, or Linear-clone dark.",
+      "Don't use mascot illustrations, playful pastels, gamified streaks, or oversized emoji icons.",
+      "Don't use #000 or #fff as surface or text colors.",
+      "Don't introduce a second typeface. Geist is the entire system.",
+      "Don't use side-stripe borders greater than 1px as colored accents.",
+      "Don't use gradient text.",
+      "Don't reach for a modal as the first thought.",
+      "Don't invent a new accent color. Pressroom Indigo is the only accent.",
+      "Don't add md: / lg: / xl: Tailwind responsive variants in new mobile work.",
+      "Don't add dark-mode (.dark) variants in new work.",
+      "Don't introduce a token that doesn't already exist in globals.css or tailwind.config.ts."
+    ]
+  }
+}
