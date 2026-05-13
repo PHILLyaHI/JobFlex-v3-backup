@@ -1,6 +1,7 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { CalendarView } from "./calendar-view";
+import { MobileCalendar } from "./mobile-calendar";
 
 export default async function CalendarPage() {
   const { organizationId } = await requireOrg();
@@ -136,7 +137,25 @@ export default async function CalendarPage() {
     clientName: null,
   }));
 
+  const mobileEvents = [...jobEventsRaw, ...appointmentsRaw, ...blockedRaw];
+  const mobileWorkers = workers.map((w) => ({ id: w.id, name: w.displayName }));
+  const mobilePending = pendingAssignments.map((a) => ({
+    id: a.id,
+    workerName: a.worker.displayName,
+    jobTitle: a.job.title,
+    jobStartsAt: a.job.startsAt,
+  }));
+
   return (
+    <>
+      <div className="md:hidden">
+        <MobileCalendar
+          events={mobileEvents}
+          workers={mobileWorkers}
+          pendingAssignments={mobilePending}
+        />
+      </div>
+      <div className="hidden md:block">
     <CalendarView
       events={[...jobEventsRaw, ...appointmentsRaw, ...blockedRaw]}
       unscheduledJobs={unscheduledJobs.map((j) => ({
@@ -183,6 +202,8 @@ export default async function CalendarPage() {
         pingedAt: a.pingedAt,
       }))}
     />
+      </div>
+    </>
   );
 }
 
