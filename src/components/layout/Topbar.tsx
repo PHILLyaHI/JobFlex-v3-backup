@@ -16,7 +16,7 @@ interface TopbarProps {
 export function Topbar({ user, memberships = [] }: TopbarProps) {
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
   return (
-    <header className="sticky top-0 z-30 flex items-center gap-3 h-16 px-6 border-b border-[color:var(--ink-line)] bg-[color:var(--paper)]/80 backdrop-blur-md">
+    <header className="sticky top-0 z-30 hidden md:flex items-center gap-3 h-16 px-6 border-b border-[color:var(--ink-line)] bg-[color:var(--paper)]/80 backdrop-blur-md">
       <button
         onClick={() => setCommandOpen(true)}
         className="flex items-center gap-2 h-9 px-3 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline text-[12px] text-[color:var(--ink-muted)] w-[360px] max-w-[40vw] transition-all hover:shadow-[0_0_0_3px_rgba(79,70,229,0.12)]"
@@ -33,6 +33,7 @@ export function Topbar({ user, memberships = [] }: TopbarProps) {
 
       <div className="flex items-center gap-2">
         {memberships.length > 0 && <OrgSwitcher memberships={memberships} />}
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         <Link href={"/dashboard/proposals/ai" as any}>
           <Button size="sm" variant="primary" icon={<Plus className="h-3.5 w-3.5" />}>
             New Proposal
