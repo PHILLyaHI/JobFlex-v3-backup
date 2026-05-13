@@ -6,6 +6,7 @@ import { signIn } from "next-auth/react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
+import { MobileLogin } from "./mobile-login";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,8 +41,10 @@ export default function LoginPage() {
         toast.error("Sign in failed", msg);
         return;
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       router.push(nextPath as any);
       router.refresh();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setLoading(false);
       const msg = err?.message ?? "Unexpected error — check the terminal running `npm run dev`.";
@@ -51,7 +54,20 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-dvh grid lg:grid-cols-2">
+    <main className="min-h-dvh">
+      <div className="md:hidden">
+        <MobileLogin
+          email={email}
+          setEmail={setEmail}
+          password={password}
+          setPassword={setPassword}
+          loading={loading}
+          inlineError={inlineError}
+          onSubmit={onSubmit}
+          onGoogle={() => signIn("google", { callbackUrl: nextPath })}
+        />
+      </div>
+      <div className="hidden md:grid lg:grid-cols-2 min-h-dvh">
       <section className="flex flex-col justify-center p-8 lg:p-16 max-w-xl w-full mx-auto">
         <Link href="/" className="flex items-center gap-2.5 mb-12">
           <div className="h-8 w-8 rounded-[8px] bg-[color:var(--ink)] text-[color:var(--paper)] grid place-items-center font-display text-[15px]">
@@ -89,7 +105,7 @@ export default function LoginPage() {
           </Button>
           {inlineError && (
             <div className="rounded-[var(--r-md)] border border-rose-200 bg-rose-50 px-4 py-3 text-[12.5px] leading-relaxed text-rose-900">
-              <div className="font-medium mb-0.5">Couldn't sign in</div>
+              <div className="font-medium mb-0.5">Couldn&apos;t sign in</div>
               <div className="text-rose-800/90">{inlineError}</div>
             </div>
           )}
@@ -111,6 +127,7 @@ export default function LoginPage() {
 
         <div className="mt-10 text-[13px] text-[color:var(--ink-muted)]">
           New to JobFlex?{" "}
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           <Link href={"/auth/register" as any} className="text-[color:var(--ink)] underline underline-offset-[3px]">
             Create an account
           </Link>
@@ -125,13 +142,14 @@ export default function LoginPage() {
         <div className="absolute bottom-10 right-10 max-w-sm paper-card p-6">
           <div className="quiet-caps mb-2">Today</div>
           <div className="font-display text-[22px] leading-snug tracking-[-0.015em]">
-            "Rohan Patel accepted the roof proposal — deposit collected at 10:42am."
+            &ldquo;Rohan Patel accepted the roof proposal &mdash; deposit collected at 10:42am.&rdquo;
           </div>
           <div className="mt-4 text-[11px] text-[color:var(--ink-muted)]">
-            The editorial dashboard, in a real contractor's hands.
+            The editorial dashboard, in a real contractor&apos;s hands.
           </div>
         </div>
       </section>
+      </div>
     </main>
   );
 }
