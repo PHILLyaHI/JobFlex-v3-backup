@@ -12,6 +12,7 @@ import { StaggerGrid } from "@/components/ui/StaggerGrid";
 import { PipelineBoard } from "@/components/dashboard/PipelineBoard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { ArrowUpRight, Sparkles, FileText } from "lucide-react";
+import { MobileDashboard } from "./mobile-dashboard";
 
 export default async function DashboardOverview() {
   const { organizationId } = await requireOrg();
@@ -55,18 +56,57 @@ export default async function DashboardOverview() {
     .reduce((acc, p) => acc + p.total, 0);
 
   const sparkData = buildSparkline(payments);
+  const newLeadsCount = leads.slice(0, 20).length;
+  const todayLabel = shortDate(new Date());
 
   return (
     <>
+      <div className="md:hidden">
+        <MobileDashboard
+          greeting={greeting()}
+          todayLabel={todayLabel}
+          totalRevenue={totalRevenue}
+          pipelineValue={pipelineValue}
+          openProposals={openProposals}
+          acceptedProposals={acceptedProposals}
+          newLeadsCount={newLeadsCount}
+          proposals={proposals.map((p) => ({
+            id: p.id,
+            title: p.title,
+            status: p.status,
+            total: p.total,
+            updatedAt: p.updatedAt,
+            client: p.client ? { name: p.client.name } : null,
+          }))}
+          leads={leads.map((l) => ({
+            id: l.id,
+            name: l.name,
+            status: l.status,
+            projectType: l.projectType,
+            aiCategory: l.aiCategory,
+          }))}
+          activities={activities}
+          jobEvents={jobEvents.map((j) => ({
+            id: j.id,
+            title: j.title,
+            startsAt: j.startsAt,
+            notes: j.notes,
+          }))}
+          sparkData={sparkData}
+        />
+      </div>
+      <div className="hidden md:block">
       <PageHeader
         eyebrow={`Good ${greeting()} · ${shortDate(new Date())}`}
         title="Overview"
         description="Everything that needs your attention today — revenue, pipeline, and the next moves."
         actions={
           <>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Link href={"/dashboard/proposals/ai" as any}>
               <Button icon={<Sparkles className="h-3.5 w-3.5" />}>Draft with AI</Button>
             </Link>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Link href={"/dashboard/proposals/new" as any}>
               <Button variant="outline" icon={<FileText className="h-3.5 w-3.5" />}>
                 Manual proposal
@@ -107,6 +147,7 @@ export default async function DashboardOverview() {
               <CardTitle>Revenue trend</CardTitle>
               <CardSubtitle>Paid invoices over the last 30 days</CardSubtitle>
             </div>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Link href={"/dashboard/reports" as any} className="text-[12px] text-[color:var(--ink-muted)] inline-flex items-center gap-1 hover:text-[color:var(--ink)]">
               View reports <ArrowUpRight className="h-3 w-3" />
             </Link>
@@ -131,6 +172,7 @@ export default async function DashboardOverview() {
             <div className="quiet-caps mb-1">Pipeline</div>
             <h2 className="font-display text-[24px] tracking-[-0.015em]">Lead flow</h2>
           </div>
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           <Link href={"/dashboard/leads" as any} className="text-[12px] text-[color:var(--ink-muted)] inline-flex items-center gap-1">
             Open leads <ArrowUpRight className="h-3 w-3" />
           </Link>
@@ -145,6 +187,7 @@ export default async function DashboardOverview() {
               <CardTitle>Latest proposals</CardTitle>
               <CardSubtitle>Draft, sent, viewed, or accepted</CardSubtitle>
             </div>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Link href={"/dashboard/proposals" as any} className="text-[12px] text-[color:var(--ink-muted)]">
               View all →
             </Link>
@@ -153,6 +196,7 @@ export default async function DashboardOverview() {
             {proposals.slice(0, 6).map((p) => (
               <Link
                 key={p.id}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 href={`/dashboard/proposals/${p.id}` as any}
                 className="flex items-center justify-between py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.03] -mx-6 px-6 transition-colors"
               >
@@ -206,6 +250,7 @@ export default async function DashboardOverview() {
           )}
         </Card>
       </section>
+      </div>
     </>
   );
 }
