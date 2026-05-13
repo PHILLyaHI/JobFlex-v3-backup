@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Sparkles, FileText, Plus } from "lucide-react";
 import { ProposalsTable, type ProposalRow } from "./proposals-table";
+import { MobileProposalsList, type MobileProposalRow } from "./mobile-proposals-list";
 
 export default async function ProposalsListPage() {
   const { organizationId } = await requireOrg();
@@ -54,17 +55,32 @@ export default async function ProposalsListPage() {
     })),
   }));
 
+  const mobileRows: MobileProposalRow[] = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    status: r.status,
+    total: r.total,
+    clientName: r.clientName,
+    updatedAt: r.updatedAt,
+  }));
+
   return (
     <>
+      <div className="md:hidden">
+        <MobileProposalsList rows={mobileRows} />
+      </div>
+      <div className="hidden md:block">
       <PageHeader
         eyebrow="Sales"
         title="Proposals"
         description="Draft, sent, viewed, accepted. Your full pipeline of quotes in one editorial table."
         actions={
           <>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Link href={"/dashboard/proposals/ai" as any}>
               <Button icon={<Sparkles className="h-3.5 w-3.5" />}>AI proposal</Button>
             </Link>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
             <Link href={"/dashboard/proposals/new" as any}>
               <Button variant="outline" icon={<Plus className="h-3.5 w-3.5" />}>
                 Manual
@@ -81,9 +97,11 @@ export default async function ProposalsListPage() {
           description="Draft your first proposal with AI or start from scratch. Both end up in the same place — looking sharp."
           action={
             <div className="flex gap-2">
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <Link href={"/dashboard/proposals/ai" as any}>
                 <Button icon={<Sparkles className="h-3.5 w-3.5" />}>AI draft</Button>
               </Link>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <Link href={"/dashboard/proposals/new" as any}>
                 <Button variant="outline">Manual</Button>
               </Link>
@@ -93,6 +111,7 @@ export default async function ProposalsListPage() {
       ) : (
         <ProposalsTable rows={rows} />
       )}
+      </div>
     </>
   );
 }
