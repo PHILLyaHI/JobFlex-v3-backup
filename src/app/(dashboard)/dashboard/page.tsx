@@ -56,43 +56,26 @@ export default async function DashboardOverview() {
     .reduce((acc, p) => acc + p.total, 0);
 
   const sparkData = buildSparkline(payments);
-  const newLeadsCount = leads.slice(0, 20).length;
-  const todayLabel = shortDate(new Date());
+  const now = new Date();
 
   return (
     <>
       <div className="md:hidden">
         <MobileDashboard
-          greeting={greeting()}
-          todayLabel={todayLabel}
-          totalRevenue={totalRevenue}
-          pipelineValue={pipelineValue}
-          openProposals={openProposals}
-          acceptedProposals={acceptedProposals}
-          newLeadsCount={newLeadsCount}
-          proposals={proposals.map((p) => ({
-            id: p.id,
-            title: p.title,
-            status: p.status,
-            total: p.total,
-            updatedAt: p.updatedAt,
-            client: p.client ? { name: p.client.name } : null,
-          }))}
-          leads={leads.map((l) => ({
-            id: l.id,
-            name: l.name,
-            status: l.status,
-            projectType: l.projectType,
-            aiCategory: l.aiCategory,
-          }))}
-          activities={activities}
+          now={now}
           jobEvents={jobEvents.map((j) => ({
             id: j.id,
+            jobId: j.jobId,
             title: j.title,
             startsAt: j.startsAt,
             notes: j.notes,
           }))}
-          sparkData={sparkData}
+          proposals={proposals.map((p) => ({
+            status: p.status,
+            viewCount: p.viewCount ?? 0,
+          }))}
+          leads={leads.map((l) => ({ status: l.status }))}
+          activities={activities}
         />
       </div>
       <div className="hidden md:block">
