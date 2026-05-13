@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { CommandK } from "@/components/layout/CommandK";
+import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { DashboardAnnouncementDismiss } from "./announcement-dismiss";
 
@@ -68,7 +69,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             memberships={membershipItems}
             plan={subscription?.plan ?? "FREE"}
           />
-          <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto">
+          <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto pb-24 md:pb-8">
             <DashboardAnnouncementDismiss
               announcements={announcements.map((a) => ({
                 id: a.id,
@@ -83,6 +84,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </main>
         <CommandK />
+        <div className="md:hidden">
+          <MobileTabBar />
+        </div>
       </div>
     </SessionProvider>
   );
