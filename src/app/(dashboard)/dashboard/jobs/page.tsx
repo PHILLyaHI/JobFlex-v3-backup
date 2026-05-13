@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Plus, Hammer } from "lucide-react";
 import { JobsTable, type JobRow } from "./jobs-table";
+import { MobileJobsList, type MobileJobRow } from "./mobile-jobs-list";
 
 export default async function JobsPage() {
   const { organizationId } = await requireOrg();
@@ -31,13 +32,29 @@ export default async function JobsPage() {
     notes: j.notes,
   }));
 
+  const mobileRows: MobileJobRow[] = jobs.map((j) => ({
+    id: j.id,
+    title: j.title,
+    status: j.status,
+    clientName: j.client?.name ?? null,
+    startsAt: j.startsAt,
+    endsAt: j.endsAt,
+    crew: j.assignments.map((a) => ({ id: a.worker.id, name: a.worker.displayName })),
+    notes: j.notes,
+  }));
+
   return (
     <>
+      <div className="md:hidden">
+        <MobileJobsList rows={mobileRows} />
+      </div>
+      <div className="hidden md:block">
       <PageHeader
         eyebrow="Delivery"
         title="Jobs"
         description="Every accepted proposal becomes a job. Track schedule, crew, photos, and expenses in one place."
         actions={
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           <Link href={"/dashboard/jobs/new" as any}>
             <Button icon={<Plus className="h-3.5 w-3.5" />}>New job</Button>
           </Link>
@@ -52,6 +69,7 @@ export default async function JobsPage() {
       ) : (
         <JobsTable rows={rows} />
       )}
+      </div>
     </>
   );
 }
