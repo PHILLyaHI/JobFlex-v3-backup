@@ -24,12 +24,20 @@ export function MobileDashboard({
 }: MobileDashboardProps) {
   return (
     <div className="-mx-6 -my-8 pt-safe pb-6">
-      <div className="space-y-6 pt-2">
+      <div className="pt-2">
         <GreetingHeader now={now} />
-        <TodayAgenda events={jobEvents} now={now} />
-        <QuickCapture />
-        <AttentionList proposals={proposals} leads={leads} />
-        <WhatHappenedFeed activities={activities} />
+        <div className="mt-4">
+          <TodayAgenda events={jobEvents} now={now} />
+        </div>
+        <div className="mt-6">
+          <QuickCapture />
+        </div>
+        <div className="mt-6">
+          <AttentionList proposals={proposals} leads={leads} />
+        </div>
+        <div className="mt-8">
+          <WhatHappenedFeed activities={activities} />
+        </div>
       </div>
     </div>
   );

@@ -50,7 +50,7 @@ export function WhatHappenedFeed({ activities }: WhatHappenedFeedProps) {
           const tone = dotToneFor(a.kind);
           return (
             <li key={a.id} className="flex items-start gap-3 py-3">
-              <div className="shrink-0 w-12 pt-1">
+              <div className="shrink-0 w-16 pt-1">
                 <span className="tabular text-[11px] text-[color:var(--ink-muted)]">
                   {relative(a.createdAt)}
                 </span>

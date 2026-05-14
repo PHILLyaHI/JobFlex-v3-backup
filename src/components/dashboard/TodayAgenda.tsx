@@ -84,7 +84,7 @@ function Row({ href, startsAt, title, notes }: RowProps) {
       href={href as never}
       className="flex items-start gap-4 py-3.5 -mx-1 px-1 rounded-[var(--r-sm)] hover:bg-black/[0.02] focus-ring"
     >
-      <div className="shrink-0 w-14 pt-0.5">
+      <div className="shrink-0 w-16 pt-0.5">
         <div className="tabular text-[13px] font-medium text-[color:var(--ink)] leading-none">
           {TIME.format(startsAt)}
         </div>

@@ -24,12 +24,12 @@ export function GreetingHeader({ now }: GreetingHeaderProps) {
   return (
     <header className="px-5 pt-1 pb-1">
       <div className="quiet-caps">
-        <span className="tabular">{day}</span>
+        <span>{day}</span>
         <span className="mx-1.5 text-[color:var(--ink-faint)]">·</span>
         <span className="tabular">{date}</span>
       </div>
-      <h1 className="mt-2 font-display text-[22px] tracking-[-0.015em] leading-tight">
-        Good {greeting}.
+      <h1 className="mt-2 font-display text-[24px] tracking-[-0.015em] leading-tight">
+        Good {greeting}
       </h1>
     </header>
   );
