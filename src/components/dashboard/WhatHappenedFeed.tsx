@@ -14,7 +14,7 @@ interface WhatHappenedFeedProps {
   activities: ActivityRow[];
 }
 
-type DotTone = "success" | "accent" | "danger" | "neutral";
+type DotTone = "success" | "danger" | "neutral";
 
 function dotToneFor(kind: string): DotTone {
   const k = kind.toLowerCase();
@@ -30,15 +30,11 @@ function dotToneFor(kind: string): DotTone {
   if (k.includes("declined") || k.includes("expired") || k.includes("failed") || k.includes("cancelled")) {
     return "danger";
   }
-  if (k.includes("viewed") || k.includes("sent") || k.includes("received") || k.includes("opened")) {
-    return "accent";
-  }
   return "neutral";
 }
 
 const DOT_CLASS: Record<DotTone, string> = {
   success: "bg-[color:var(--emerald)]",
-  accent: "bg-[color:var(--accent)]",
   danger: "bg-[color:var(--rose)]",
   neutral: "bg-[color:var(--ink-faint)]",
 };
