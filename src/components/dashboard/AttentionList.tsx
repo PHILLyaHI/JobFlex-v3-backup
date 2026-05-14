@@ -77,7 +77,7 @@ export function AttentionList({ proposals, leads }: AttentionListProps) {
           <li key={it.key}>
             <Link
               href={it.href as never}
-              className="flex items-center gap-3 py-3 -mx-1 px-1 rounded-[var(--r-sm)] hover:bg-black/[0.02] focus-ring"
+              className="flex items-center gap-3 py-3.5 min-h-[44px] -mx-1 px-1 rounded-[var(--r-sm)] hover:bg-black/[0.02] focus-ring transition-colors"
             >
               <span className="text-[13px] text-[color:var(--ink-soft)] leading-snug min-w-0 flex-1">
                 {it.verb}{" "}

@@ -31,7 +31,7 @@ export function QuickCapture() {
           <Link
             key={entry.label}
             href={entry.href as never}
-            className="paper-card flex items-center gap-2.5 px-3.5 py-3 hover:bg-black/[0.02] focus-ring transition-colors"
+            className="paper-card flex items-center gap-2.5 px-3.5 py-4 min-h-[44px] hover:bg-black/[0.02] active:translate-y-[1px] focus-ring transition-[background-color,transform]"
           >
             <span className="text-[color:var(--ink-muted)] shrink-0">{entry.icon}</span>
             <span className="text-[13px] font-medium text-[color:var(--ink)] truncate">
