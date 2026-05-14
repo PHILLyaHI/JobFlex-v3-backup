@@ -45,7 +45,7 @@ function buildItems(proposals: AttentionProposal[], leads: AttentionLead[]): Att
       key: "viewed",
       verb: "Follow up on",
       count: viewedAwaiting,
-      tail: viewedAwaiting === 1 ? "viewed, no reply" : "viewed, no reply",
+      tail: viewedAwaiting === 1 ? "viewed proposal" : "viewed proposals",
       href: "/dashboard/proposals",
     });
   }
