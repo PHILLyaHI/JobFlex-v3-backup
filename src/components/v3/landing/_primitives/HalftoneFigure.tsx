@@ -46,16 +46,30 @@ function mountainPath(
 }
 
 function silhouettePath(width: number, height: number, seed: number) {
-  const segments = 56;
+  // Tall asymmetric monolith — single dominant peak with a smaller
+  // foothill, like a stylized obelisk fronted by a buttress.
+  const segments = 80;
   const points: string[] = [`M 0 ${height}`];
+  const peakCenter = 0.52;
+  const peakWidth = 0.18;
+  const peakHeight = 0.94;
+  const foothillCenter = 0.22;
+  const foothillWidth = 0.16;
+  const foothillHeight = 0.42;
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
-    const tail = 1 - Math.abs(0.5 - t) * 2;
-    const ridge =
-      0.45 +
-      0.4 * Math.sin(t * Math.PI * 3 + seed) +
-      0.22 * Math.sin(t * Math.PI * 6.5 + seed * 1.7);
-    const y = Math.max(0, height - ridge * tail * height * 0.9);
+    // Sharp asymmetric peak (steeper on left, gentler on right)
+    const peakOffset = (t - peakCenter) / peakWidth;
+    const peakSkew = peakOffset < 0 ? 1.05 : 1.55;
+    const peak = Math.exp(-Math.pow(Math.abs(peakOffset), peakSkew) * 1.8);
+    // Smaller smooth foothill
+    const foothill =
+      Math.exp(-Math.pow((t - foothillCenter) / foothillWidth, 2) * 2.2) *
+      foothillHeight;
+    // Subtle base undulation so the silhouette isn't perfectly flat
+    const base = 0.06 + 0.04 * Math.sin(t * Math.PI * 4 + seed);
+    const composite = Math.max(base, peak * peakHeight, foothill);
+    const y = Math.max(0, height - composite * height);
     points.push(`L ${(t * width).toFixed(2)} ${y.toFixed(2)}`);
   }
   points.push(`L ${width} ${height} Z`);

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Hero } from "@/components/v3/landing/Hero";
+import { ProblemSection } from "@/components/v3/landing/ProblemSection";
 import { TrustedByStrip } from "@/components/v3/landing/TrustedByStrip";
 import "./_styles/landing.css";
 
@@ -15,6 +16,7 @@ export default function V3Landing() {
     <main className="min-h-screen bg-[color:var(--paper)] text-[color:var(--ink)]">
       <Hero />
       <TrustedByStrip />
+      <ProblemSection />
     </main>
   );
 }
