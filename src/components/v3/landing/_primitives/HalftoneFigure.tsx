@@ -7,7 +7,10 @@ type Variant =
   | "monolith"
   | "portrait"
   | "window"
-  | "wordmark";
+  | "wordmark"
+  | "diamond"
+  | "stack"
+  | "spark";
 
 type Props = {
   variant: Variant;
@@ -107,6 +110,57 @@ function windowPath(width: number, height: number) {
   ].join(" ");
 }
 
+function diamondPath(width: number, height: number) {
+  const cx = width / 2;
+  const cy = height / 2;
+  const w = Math.min(width, height) * 0.45;
+  return [
+    `M ${cx} ${cy - w}`,
+    `L ${cx + w * 0.78} ${cy}`,
+    `L ${cx} ${cy + w}`,
+    `L ${cx - w * 0.78} ${cy}`,
+    "Z",
+  ].join(" ");
+}
+
+function stackPath(width: number, height: number) {
+  const barH = height * 0.18;
+  const gap = height * 0.08;
+  const startY = (height - (3 * barH + 2 * gap)) / 2;
+  const inset = width * 0.08;
+  const parts: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    const y = startY + i * (barH + gap);
+    const w = width - inset * 2 - i * width * 0.04;
+    parts.push(
+      `M ${inset + (i * width * 0.02)} ${y}`,
+      `L ${inset + (i * width * 0.02) + w} ${y}`,
+      `L ${inset + (i * width * 0.02) + w} ${y + barH}`,
+      `L ${inset + (i * width * 0.02)} ${y + barH}`,
+      "Z",
+    );
+  }
+  return parts.join(" ");
+}
+
+function sparkPath(width: number, height: number) {
+  const cx = width / 2;
+  const cy = height / 2;
+  const r = Math.min(width, height) * 0.42;
+  const inner = r * 0.32;
+  const arms = 4;
+  const points: string[] = [];
+  for (let i = 0; i < arms * 2; i++) {
+    const angle = (i * Math.PI) / arms - Math.PI / 2;
+    const radius = i % 2 === 0 ? r : inner;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    points.push(`${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`);
+  }
+  points.push("Z");
+  return points.join(" ");
+}
+
 export function HalftoneFigure({
   variant,
   width,
@@ -133,6 +187,9 @@ export function HalftoneFigure({
   else if (variant === "monolith") shapePath = silhouettePath(width, height, 1.2);
   else if (variant === "portrait") shapePath = portraitPath(width, height);
   else if (variant === "window") shapePath = windowPath(width, height);
+  else if (variant === "diamond") shapePath = diamondPath(width, height);
+  else if (variant === "stack") shapePath = stackPath(width, height);
+  else if (variant === "spark") shapePath = sparkPath(width, height);
 
   return (
     <svg
