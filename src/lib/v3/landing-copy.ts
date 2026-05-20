@@ -149,19 +149,34 @@ export const buildingBlocks = {
   } satisfies AccentLine,
   body:
     "Twelve modules. One operating system. Each one designed for how contracting actually runs — not how a SaaS startup imagined it should.",
-  modules: [
-    "Leads",
-    "Proposals",
-    "Jobs",
-    "Invoices",
-    "AI Estimator",
-    "Crew portal",
-    "Reviews",
-    "Payments",
-    "Meta Ads",
-    "SMS & Email",
-    "Webhooks",
-    "Skills",
+  groups: [
+    {
+      label: "Pipeline",
+      modules: [
+        { icon: "leads", label: "Leads" },
+        { icon: "proposals", label: "Proposals" },
+        { icon: "jobs", label: "Jobs" },
+        { icon: "invoices", label: "Invoices" },
+      ],
+    },
+    {
+      label: "Automation",
+      modules: [
+        { icon: "ai", label: "AI Estimator" },
+        { icon: "meta", label: "Meta Ads" },
+        { icon: "sms", label: "SMS & Email" },
+        { icon: "webhooks", label: "Webhooks" },
+      ],
+    },
+    {
+      label: "Field & Finance",
+      modules: [
+        { icon: "crew", label: "Crew portal" },
+        { icon: "reviews", label: "Reviews" },
+        { icon: "payments", label: "Payments" },
+        { icon: "skills", label: "Skills" },
+      ],
+    },
   ],
 };
 

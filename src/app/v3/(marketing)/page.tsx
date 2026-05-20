@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { BuildingBlocks01 } from "@/components/v3/landing/BuildingBlocks01";
+import { ContractorOwnedOps03 } from "@/components/v3/landing/ContractorOwnedOps03";
 import { Hero } from "@/components/v3/landing/Hero";
 import { ProblemSection } from "@/components/v3/landing/ProblemSection";
 import { SolutionIntro } from "@/components/v3/landing/SolutionIntro";
@@ -19,6 +21,8 @@ export default function V3Landing() {
       <TrustedByStrip />
       <ProblemSection />
       <SolutionIntro />
+      <BuildingBlocks01 />
+      <ContractorOwnedOps03 />
     </main>
   );
 }
