@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Hero } from "@/components/v3/landing/Hero";
+import { TrustedByStrip } from "@/components/v3/landing/TrustedByStrip";
 import "./_styles/landing.css";
 
 export const metadata: Metadata = {
@@ -13,6 +14,7 @@ export default function V3Landing() {
   return (
     <main className="min-h-screen bg-[color:var(--paper)] text-[color:var(--ink)]">
       <Hero />
+      <TrustedByStrip />
     </main>
   );
 }
