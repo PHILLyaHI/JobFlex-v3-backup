@@ -95,10 +95,10 @@ export function Footer() {
 
           {/* Bottom row */}
           <div className="mt-12 flex flex-col-reverse items-start justify-between gap-4 border-t border-[color:var(--ink-line)] pt-6 sm:flex-row sm:items-center">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--ink-faint)]">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--ink-muted)]">
               {footer.copyright}
             </span>
-            <span className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--ink-faint)]">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-[color:var(--ink-muted)]">
               v3 · marketing
             </span>
           </div>

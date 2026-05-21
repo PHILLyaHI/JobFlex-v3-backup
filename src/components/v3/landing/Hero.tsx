@@ -30,13 +30,16 @@ export function Hero() {
           >
             {hero.eyebrow}
           </p>
-          <h1 className="font-display v3-headline mt-7 text-[44px] leading-[1.02] tracking-[-0.035em] sm:text-[60px] md:text-[72px] lg:text-[84px]">
-            <span className="v3-line-mask">
+          <h1
+            className="font-display v3-headline mt-7 text-[44px] leading-[1.02] tracking-[-0.035em] sm:text-[60px] md:text-[72px] lg:text-[84px]"
+            aria-label={`${hero.headline.lead} ${hero.headline.accent}`}
+          >
+            <span className="v3-line-mask" aria-hidden>
               <span style={{ animationDelay: "60ms" }}>
                 {hero.headline.lead}
               </span>
             </span>
-            <span className="v3-line-mask">
+            <span className="v3-line-mask" aria-hidden>
               <span
                 className="v3-italic text-[color:var(--ink-soft)]"
                 style={{ animationDelay: "200ms" }}
@@ -67,6 +70,7 @@ export function Hero() {
         <div
           className="v3-blueprint relative mx-auto mt-20 max-w-[1080px]"
           aria-hidden
+          inert
         >
           <AppMockup />
           <ChatPanel />
@@ -112,7 +116,6 @@ function TopNav() {
         <Link
           href={"/v3" as never}
           className="group inline-flex items-center gap-2.5"
-          aria-label="JobFlex home"
         >
           <span
             className="grid h-8 w-8 place-items-center bg-[color:var(--ink)] font-display text-[14px] font-semibold leading-none text-[color:var(--paper)]"

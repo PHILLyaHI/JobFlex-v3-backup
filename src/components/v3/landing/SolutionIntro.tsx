@@ -3,6 +3,7 @@ import { solution } from "@/lib/v3/landing-copy";
 import { HalftoneFigure } from "./_primitives/HalftoneFigure";
 import { SectionLabel } from "./_primitives/SectionLabel";
 import { PlusCorner } from "./_primitives/PlusCorner";
+import { Reveal, RevealStagger } from "./_primitives/Reveal";
 
 type Variant = "diamond" | "stack" | "spark";
 
@@ -18,19 +19,29 @@ export function SolutionIntro() {
     <section className="relative bg-[color:var(--paper)] pb-28 pt-8 lg:pb-40 lg:pt-12">
       <div className="mx-auto max-w-[1280px] px-6 lg:px-10">
         <div className="max-w-2xl">
-          <SectionLabel tone="light">{solution.label}</SectionLabel>
-          <h2 className="font-display v3-headline mt-6 text-[36px] leading-[1.04] tracking-[-0.03em] sm:text-[44px] lg:text-[56px]">
-            {solution.headline.lead}{" "}
-            <span className="v3-italic text-[color:var(--ink-soft)]">
-              {solution.headline.accent}
-            </span>
-          </h2>
-          <p className="mt-6 max-w-[52ch] text-[15.5px] leading-[1.7] text-[color:var(--ink-soft)] lg:text-[16px]">
-            {solution.body}
-          </p>
+          <Reveal>
+            <SectionLabel tone="light">{solution.label}</SectionLabel>
+          </Reveal>
+          <Reveal delay={0.1} duration={0.7}>
+            <h2 className="font-display v3-headline mt-6 text-[36px] leading-[1.04] tracking-[-0.03em] sm:text-[44px] lg:text-[56px]">
+              {solution.headline.lead}{" "}
+              <span className="v3-italic text-[color:var(--ink-soft)]">
+                {solution.headline.accent}
+              </span>
+            </h2>
+          </Reveal>
+          <Reveal delay={0.22}>
+            <p className="mt-6 max-w-[52ch] text-[15.5px] leading-[1.7] text-[color:var(--ink-soft)] lg:text-[16px]">
+              {solution.body}
+            </p>
+          </Reveal>
         </div>
 
-        <ul className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-3 lg:gap-6">
+        <RevealStagger
+          className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-3 lg:gap-6"
+          delay={0.3}
+          step={0.1}
+        >
           {solution.cards.map((card, i) => (
             <Card
               key={card.title}
@@ -42,7 +53,7 @@ export function SolutionIntro() {
               color={CARD_COLORS[i] ?? CARD_COLORS[0]}
             />
           ))}
-        </ul>
+        </RevealStagger>
       </div>
     </section>
   );
@@ -64,7 +75,7 @@ function Card({
   color: string;
 }) {
   return (
-    <li className="group relative flex flex-col overflow-hidden bg-white shadow-card transition-shadow duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:shadow-pop">
+    <article className="group relative flex flex-col overflow-hidden bg-white shadow-card transition-shadow duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:shadow-pop">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[color:var(--ink-line)]"
@@ -119,6 +130,6 @@ function Card({
           </span>
         </div>
       </div>
-    </li>
+    </article>
   );
 }

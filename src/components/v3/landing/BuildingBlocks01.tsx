@@ -16,6 +16,7 @@ import {
 import { buildingBlocks } from "@/lib/v3/landing-copy";
 import { SectionLabel } from "./_primitives/SectionLabel";
 import { PlusCorner } from "./_primitives/PlusCorner";
+import { Reveal, RevealStagger } from "./_primitives/Reveal";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   leads: Inbox,
@@ -38,19 +39,27 @@ export function BuildingBlocks01() {
       <div className="mx-auto grid max-w-[1320px] grid-cols-1 gap-x-12 gap-y-16 px-6 lg:grid-cols-12 lg:px-10">
         {/* Indicator + headline column */}
         <div className="lg:col-span-5">
-          <Indicator number={buildingBlocks.indicator} />
-          <SectionLabel tone="light" className="mt-10">
-            {buildingBlocks.label}
-          </SectionLabel>
-          <h2 className="font-display v3-headline mt-6 text-[36px] leading-[1.02] tracking-[-0.03em] sm:text-[44px] lg:text-[52px]">
-            {buildingBlocks.headline.lead}{" "}
-            <span className="v3-italic text-[color:var(--ink-soft)]">
-              {buildingBlocks.headline.accent}
-            </span>
-          </h2>
-          <p className="mt-6 max-w-[44ch] text-[15px] leading-[1.7] text-[color:var(--ink-soft)] lg:text-[16px]">
-            {buildingBlocks.body}
-          </p>
+          <Reveal>
+            <Indicator number={buildingBlocks.indicator} />
+          </Reveal>
+          <Reveal delay={0.1}>
+            <SectionLabel tone="light" className="mt-10">
+              {buildingBlocks.label}
+            </SectionLabel>
+          </Reveal>
+          <Reveal delay={0.18} duration={0.7}>
+            <h2 className="font-display v3-headline mt-6 text-[36px] leading-[1.02] tracking-[-0.03em] sm:text-[44px] lg:text-[52px]">
+              {buildingBlocks.headline.lead}{" "}
+              <span className="v3-italic text-[color:var(--ink-soft)]">
+                {buildingBlocks.headline.accent}
+              </span>
+            </h2>
+          </Reveal>
+          <Reveal delay={0.28}>
+            <p className="mt-6 max-w-[44ch] text-[15px] leading-[1.7] text-[color:var(--ink-soft)] lg:text-[16px]">
+              {buildingBlocks.body}
+            </p>
+          </Reveal>
         </div>
 
         {/* Module visual column */}
@@ -63,7 +72,11 @@ export function BuildingBlocks01() {
                 "radial-gradient(circle at 30% 50%, rgba(79,70,229,0.1), transparent 60%)",
             }}
           />
-          <div className="relative grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <RevealStagger
+            className="relative grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            delay={0.15}
+            step={0.1}
+          >
             {buildingBlocks.groups.map((group) => (
               <GroupCard
                 key={group.label}
@@ -71,7 +84,7 @@ export function BuildingBlocks01() {
                 modules={group.modules}
               />
             ))}
-          </div>
+          </RevealStagger>
         </div>
       </div>
     </section>

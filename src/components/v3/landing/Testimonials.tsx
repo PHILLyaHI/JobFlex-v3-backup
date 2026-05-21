@@ -59,7 +59,7 @@ export function Testimonials() {
           <div className="mt-10 flex items-center gap-6">
             <span className="font-display text-[44px] font-medium leading-none tabular-nums tracking-[-0.03em] text-[color:var(--ink)]">
               {index + 1}
-              <span className="text-[color:var(--ink-faint)]">/{total}</span>
+              <span className="text-[color:var(--ink-muted)]">/{total}</span>
             </span>
             <div className="flex items-center gap-2">
               <button

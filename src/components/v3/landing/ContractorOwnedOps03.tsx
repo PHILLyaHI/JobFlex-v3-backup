@@ -3,34 +3,47 @@ import { ownership } from "@/lib/v3/landing-copy";
 import { HalftoneFigure } from "./_primitives/HalftoneFigure";
 import { SectionLabel } from "./_primitives/SectionLabel";
 import { PlusCorner } from "./_primitives/PlusCorner";
+import { Reveal, RevealStagger } from "./_primitives/Reveal";
 
 export function ContractorOwnedOps03() {
   return (
     <section className="relative bg-[color:var(--paper)] py-24 lg:py-32">
       <div className="mx-auto grid max-w-[1320px] grid-cols-1 gap-x-12 gap-y-16 px-6 lg:grid-cols-12 lg:px-10">
         {/* Visual column (mirror — left on desktop, top on mobile) */}
-        <div className="relative lg:col-span-7 lg:order-1">
+        <Reveal className="relative lg:col-span-7 lg:order-1" duration={0.7}>
           <Visual />
-        </div>
+        </Reveal>
 
         {/* Text column */}
         <div className="lg:col-span-5 lg:order-2 lg:pl-6">
-          <Indicator number={ownership.indicator} />
-          <SectionLabel tone="light" className="mt-10">
-            {ownership.label}
-          </SectionLabel>
-          <h2 className="font-display v3-headline mt-6 text-[36px] leading-[1.02] tracking-[-0.03em] sm:text-[44px] lg:text-[52px]">
-            {ownership.headline.lead}{" "}
-            <span className="v3-italic text-[color:var(--ink-soft)]">
-              {ownership.headline.accent}
-            </span>
-          </h2>
-          <p className="mt-6 max-w-[44ch] text-[15px] leading-[1.7] text-[color:var(--ink-soft)] lg:text-[16px]">
-            {ownership.body}
-          </p>
-          <ul className="mt-7 space-y-3.5">
+          <Reveal>
+            <Indicator number={ownership.indicator} />
+          </Reveal>
+          <Reveal delay={0.1}>
+            <SectionLabel tone="light" className="mt-10">
+              {ownership.label}
+            </SectionLabel>
+          </Reveal>
+          <Reveal delay={0.18} duration={0.7}>
+            <h2 className="font-display v3-headline mt-6 text-[36px] leading-[1.02] tracking-[-0.03em] sm:text-[44px] lg:text-[52px]">
+              {ownership.headline.lead}{" "}
+              <span className="v3-italic text-[color:var(--ink-soft)]">
+                {ownership.headline.accent}
+              </span>
+            </h2>
+          </Reveal>
+          <Reveal delay={0.28}>
+            <p className="mt-6 max-w-[44ch] text-[15px] leading-[1.7] text-[color:var(--ink-soft)] lg:text-[16px]">
+              {ownership.body}
+            </p>
+          </Reveal>
+          <RevealStagger
+            className="mt-7 space-y-3.5"
+            delay={0.36}
+            step={0.06}
+          >
             {ownership.bullets.map((b) => (
-              <li
+              <div
                 key={b}
                 className="flex items-start gap-3 text-[13.5px] leading-[1.55] text-[color:var(--ink-soft)]"
               >
@@ -38,9 +51,9 @@ export function ContractorOwnedOps03() {
                   <Check className="h-2.5 w-2.5" strokeWidth={3} />
                 </span>
                 <span>{b}</span>
-              </li>
+              </div>
             ))}
-          </ul>
+          </RevealStagger>
         </div>
       </div>
     </section>
@@ -64,7 +77,7 @@ function Indicator({ number }: { number: string }) {
 
 function Visual() {
   return (
-    <div className="relative isolate">
+    <div className="relative isolate" aria-hidden inert>
       {/* Halftone wallpaper behind */}
       <div
         aria-hidden

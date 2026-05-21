@@ -2,6 +2,7 @@ import { finalCta } from "@/lib/v3/landing-copy";
 import { BevelButton } from "./_primitives/BevelButton";
 import { HalftoneFigure } from "./_primitives/HalftoneFigure";
 import { SectionLabel } from "./_primitives/SectionLabel";
+import { Reveal } from "./_primitives/Reveal";
 
 export function FinalCTA() {
   return (
@@ -33,31 +34,37 @@ export function FinalCTA() {
 
       <div className="relative mx-auto max-w-[1200px] px-6 lg:px-10">
         <div className="max-w-3xl">
-          <SectionLabel tone="dark">{finalCta.label}</SectionLabel>
-          <h2 className="font-display v3-headline mt-7 text-[40px] leading-[1.04] tracking-[-0.03em] text-[color:var(--paper)] sm:text-[56px] lg:text-[68px]">
-            {finalCta.headline.lead}{" "}
-            <span className="v3-italic text-[color:var(--paper)]/80">
-              {finalCta.headline.accent}
-            </span>
-          </h2>
-          <div className="mt-9 flex flex-wrap items-center gap-3">
-            <BevelButton
-              href={finalCta.ctas.primary.href}
-              size="lg"
-              variant="filled"
-              tone="dark"
-            >
-              {finalCta.ctas.primary.label}
-            </BevelButton>
-            <BevelButton
-              href={finalCta.ctas.secondary.href}
-              size="lg"
-              variant="outline"
-              tone="dark"
-            >
-              {finalCta.ctas.secondary.label}
-            </BevelButton>
-          </div>
+          <Reveal>
+            <SectionLabel tone="dark">{finalCta.label}</SectionLabel>
+          </Reveal>
+          <Reveal delay={0.12} duration={0.7}>
+            <h2 className="font-display v3-headline mt-7 text-[40px] leading-[1.04] tracking-[-0.03em] text-[color:var(--paper)] sm:text-[56px] lg:text-[68px]">
+              {finalCta.headline.lead}{" "}
+              <span className="v3-italic text-[color:var(--paper)]/80">
+                {finalCta.headline.accent}
+              </span>
+            </h2>
+          </Reveal>
+          <Reveal delay={0.25}>
+            <div className="mt-9 flex flex-wrap items-center gap-3">
+              <BevelButton
+                href={finalCta.ctas.primary.href}
+                size="lg"
+                variant="filled"
+                tone="dark"
+              >
+                {finalCta.ctas.primary.label}
+              </BevelButton>
+              <BevelButton
+                href={finalCta.ctas.secondary.href}
+                size="lg"
+                variant="outline"
+                tone="dark"
+              >
+                {finalCta.ctas.secondary.label}
+              </BevelButton>
+            </div>
+          </Reveal>
         </div>
       </div>
     </section>

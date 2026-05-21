@@ -53,7 +53,7 @@ export function TrustedByStrip() {
               ))}
             </ul>
             <span aria-hidden className="h-3 w-px shrink-0 bg-[color:var(--ink-line)]" />
-            <span className="quiet-caps shrink-0 text-[color:var(--ink-faint)]">
+            <span className="quiet-caps shrink-0 text-[color:var(--ink-muted)]">
               + 1,240 shops
             </span>
           </div>
@@ -64,7 +64,7 @@ export function TrustedByStrip() {
               <span className="quiet-caps text-[color:var(--ink-muted)]">
                 {trustedBy.label}
               </span>
-              <span className="quiet-caps text-[color:var(--ink-faint)]">
+              <span className="quiet-caps text-[color:var(--ink-muted)]">
                 +1.2k shops
               </span>
             </div>

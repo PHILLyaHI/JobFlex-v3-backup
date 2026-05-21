@@ -11,25 +11,36 @@ import {
 import { gtmFeatures } from "@/lib/v3/landing-copy";
 import { SectionLabel } from "./_primitives/SectionLabel";
 import { PlusCorner } from "./_primitives/PlusCorner";
+import { Reveal, RevealStagger } from "./_primitives/Reveal";
 
 export function GTMFeatures() {
   return (
     <section className="relative bg-[color:var(--paper)] py-24 lg:py-32">
       <div className="mx-auto max-w-[1320px] px-6 lg:px-10">
         <div className="max-w-2xl">
-          <SectionLabel tone="light">{gtmFeatures.label}</SectionLabel>
-          <h2 className="font-display v3-headline mt-6 text-[36px] leading-[1.04] tracking-[-0.03em] sm:text-[44px] lg:text-[54px]">
-            {gtmFeatures.headline.lead}{" "}
-            <span className="v3-italic text-[color:var(--ink-soft)]">
-              {gtmFeatures.headline.accent}
-            </span>
-          </h2>
-          <p className="mt-6 max-w-[52ch] text-[15.5px] leading-[1.7] text-[color:var(--ink-soft)]">
-            {gtmFeatures.body}
-          </p>
+          <Reveal>
+            <SectionLabel tone="light">{gtmFeatures.label}</SectionLabel>
+          </Reveal>
+          <Reveal delay={0.1} duration={0.7}>
+            <h2 className="font-display v3-headline mt-6 text-[36px] leading-[1.04] tracking-[-0.03em] sm:text-[44px] lg:text-[54px]">
+              {gtmFeatures.headline.lead}{" "}
+              <span className="v3-italic text-[color:var(--ink-soft)]">
+                {gtmFeatures.headline.accent}
+              </span>
+            </h2>
+          </Reveal>
+          <Reveal delay={0.22}>
+            <p className="mt-6 max-w-[52ch] text-[15.5px] leading-[1.7] text-[color:var(--ink-soft)]">
+              {gtmFeatures.body}
+            </p>
+          </Reveal>
         </div>
 
-        <ul className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-3">
+        <RevealStagger
+          className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-3"
+          delay={0.3}
+          step={0.1}
+        >
           <FeatureCard
             eyebrow={gtmFeatures.cards[0].eyebrow}
             title={gtmFeatures.cards[0].title}
@@ -51,7 +62,7 @@ export function GTMFeatures() {
           >
             <CommandPalettePreview />
           </FeatureCard>
-        </ul>
+        </RevealStagger>
       </div>
     </section>
   );
@@ -69,7 +80,7 @@ function FeatureCard({
   children: React.ReactNode;
 }) {
   return (
-    <li className="group relative overflow-hidden bg-white shadow-card transition-shadow duration-200 hover:shadow-pop">
+    <article className="group relative overflow-hidden bg-white shadow-card transition-shadow duration-200 hover:shadow-pop">
       <div
         aria-hidden
         className="absolute inset-0 border border-[color:var(--ink-line)]"
@@ -94,7 +105,7 @@ function FeatureCard({
           {body}
         </p>
       </div>
-    </li>
+    </article>
   );
 }
 

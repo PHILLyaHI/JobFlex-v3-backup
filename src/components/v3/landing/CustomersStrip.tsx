@@ -3,6 +3,7 @@ import { customers } from "@/lib/v3/landing-copy";
 import { HalftoneFigure } from "./_primitives/HalftoneFigure";
 import { SectionLabel } from "./_primitives/SectionLabel";
 import { PlusCorner } from "./_primitives/PlusCorner";
+import { Reveal, RevealStagger } from "./_primitives/Reveal";
 
 export function CustomersStrip() {
   return (
@@ -20,18 +21,26 @@ export function CustomersStrip() {
 
       <div className="relative mx-auto max-w-[1320px] px-6 lg:px-10">
         <div className="mx-auto max-w-3xl text-center">
-          <div className="inline-flex">
-            <SectionLabel tone="dark">{customers.label}</SectionLabel>
-          </div>
-          <h2 className="font-display v3-headline mt-6 text-[40px] leading-[1.04] tracking-[-0.03em] text-[color:var(--paper)] sm:text-[56px] lg:text-[68px]">
-            {customers.headline.lead}{" "}
-            <span className="v3-italic text-[color:var(--paper)]/85">
-              {customers.headline.accent}
-            </span>
-          </h2>
+          <Reveal>
+            <div className="inline-flex">
+              <SectionLabel tone="dark">{customers.label}</SectionLabel>
+            </div>
+          </Reveal>
+          <Reveal delay={0.12} duration={0.7}>
+            <h2 className="font-display v3-headline mt-6 text-[40px] leading-[1.04] tracking-[-0.03em] text-[color:var(--paper)] sm:text-[56px] lg:text-[68px]">
+              {customers.headline.lead}{" "}
+              <span className="v3-italic text-[color:var(--paper)]/85">
+                {customers.headline.accent}
+              </span>
+            </h2>
+          </Reveal>
         </div>
 
-        <div className="relative mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:mt-16">
+        <RevealStagger
+          className="relative mt-14 grid grid-cols-1 gap-6 md:grid-cols-2 lg:mt-16"
+          delay={0.25}
+          step={0.12}
+        >
           {customers.cards.map((c, i) => (
             <CustomerCard
               key={c.brand}
@@ -43,7 +52,7 @@ export function CustomersStrip() {
               offset={i % 2 === 0 ? "down" : "up"}
             />
           ))}
-        </div>
+        </RevealStagger>
       </div>
     </section>
   );
