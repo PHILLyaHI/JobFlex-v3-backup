@@ -2,10 +2,14 @@ import type { Metadata } from "next";
 import { BuildingBlocks01 } from "@/components/v3/landing/BuildingBlocks01";
 import { ContractorOwnedOps03 } from "@/components/v3/landing/ContractorOwnedOps03";
 import { CustomersStrip } from "@/components/v3/landing/CustomersStrip";
+import { FAQ } from "@/components/v3/landing/FAQ";
+import { FinalCTA } from "@/components/v3/landing/FinalCTA";
+import { Footer } from "@/components/v3/landing/Footer";
 import { GTMFeatures } from "@/components/v3/landing/GTMFeatures";
 import { Hero } from "@/components/v3/landing/Hero";
 import { ProblemSection } from "@/components/v3/landing/ProblemSection";
 import { SolutionIntro } from "@/components/v3/landing/SolutionIntro";
+import { Testimonials } from "@/components/v3/landing/Testimonials";
 import { TrustedByStrip } from "@/components/v3/landing/TrustedByStrip";
 import "./_styles/landing.css";
 
@@ -27,6 +31,10 @@ export default function V3Landing() {
       <ContractorOwnedOps03 />
       <GTMFeatures />
       <CustomersStrip />
+      <Testimonials />
+      <FinalCTA />
+      <FAQ />
+      <Footer />
     </main>
   );
 }

@@ -51,6 +51,28 @@
   }
 }
 
+@keyframes v3-portrait-fade {
+  0% {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes v3-quote-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .v3-line-mask {
   display: block;
   overflow: hidden;
