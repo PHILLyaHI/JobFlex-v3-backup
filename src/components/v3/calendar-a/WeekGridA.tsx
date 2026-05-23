@@ -1,12 +1,17 @@
 "use client";
-// V3 calendar-a — week grid with click-and-drag slot creation.
+// V3 calendar-a — week grid.
 //
-// New behavior: pointer-down on an empty slot starts a drag region. As the
-// user drags downward (or upward), an indigo outline previews the duration.
-// Releasing fires `onSelectSlot(start, durationMin)` so the quick-add sheet
-// opens pre-filled with both the start time and the drawn duration. A simple
-// click (no drag) still works — it opens the sheet with the clicked hour and
-// no duration override, matching the original behaviour.
+// Slot behaviour:
+//  - Single click on empty space → fires onSelectSlot(start, start+30min).
+//  - Click-and-drag downward → fires onSelectSlot(start, end) using the dragged
+//    span. While dragging, an indigo outline previews the slot in real time.
+//  - After release, the WeekGrid's own preview is cleared. The parent passes
+//    `slotPreview` back so the outline stays pinned to the calendar while
+//    the QuickAdd sheet is open. The parent clears it on sheet dismiss.
+//
+// Hover-over-during-tray-drag:
+//  - `hoveredDayIso` lights up the cell currently under the dragged tray
+//    card so the user sees where the drop will land before releasing.
 
 import * as React from "react";
 import { motion, type PanInfo } from "framer-motion";
@@ -14,13 +19,21 @@ import { cn } from "@/lib/cn";
 import { statusAccent } from "@/components/jobs/JobStatusBadge";
 import type { CalendarEvent } from "@/components/calendar/EventChip";
 
+export interface SlotPreview {
+  iso: string;
+  startTotalMin: number; // minutes from local midnight
+  endTotalMin: number;
+}
+
 interface WeekGridProps {
   cursor: Date;
   events: CalendarEvent[];
   onSelectEvent: (e: CalendarEvent) => void;
   onMoveEvent?: (eventId: string, newDate: Date) => void;
   onResizeEvent?: (eventId: string, newStartISO: string, newEndISO: string) => void;
-  onSelectSlot?: (start: Date, durationMin?: number) => void;
+  onSelectSlot?: (start: Date, end: Date) => void;
+  slotPreview?: SlotPreview | null;
+  hoveredDayIso?: string | null;
   startHour?: number;
   endHour?: number;
 }
@@ -28,6 +41,7 @@ interface WeekGridProps {
 const HOUR_PX = 56;
 const SNAP_MIN = 15;
 const CLICK_THRESHOLD_PX = 5;
+const CLICK_DEFAULT_DURATION_MIN = 30;
 
 function startOfWeek(d: Date) {
   const x = new Date(d);
@@ -50,19 +64,22 @@ function sameDay(a: Date, b: Date) {
 function isoKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-
-function yToHourMin(y: number, startHour: number, snapMin = SNAP_MIN) {
-  const hourFloat = startHour + y / HOUR_PX;
-  const totalMinutes = Math.round(hourFloat * 60 / snapMin) * snapMin;
-  const hr = Math.floor(totalMinutes / 60);
-  const min = totalMinutes % 60;
-  return { hr, min, totalMinutes };
+function parseIso(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+function snapMinutes(min: number) {
+  return Math.round(min / SNAP_MIN) * SNAP_MIN;
 }
 
-interface SlotDrag {
+interface ActiveDrag {
   iso: string;
+  startTotalMin: number;
+  currentTotalMin: number;
   startY: number;
-  currentY: number;
   cellRect: DOMRect;
 }
 
@@ -73,6 +90,8 @@ export function WeekGridA({
   onMoveEvent,
   onResizeEvent,
   onSelectSlot,
+  slotPreview,
+  hoveredDayIso,
   startHour = 7,
   endHour = 19,
 }: WeekGridProps) {
@@ -82,7 +101,7 @@ export function WeekGridA({
   const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
   const today = new Date();
 
-  const [slotDrag, setSlotDrag] = React.useState<SlotDrag | null>(null);
+  const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null);
 
   function positionFor(e: CalendarEvent, day: Date) {
     const start = new Date(e.startsAt);
@@ -102,72 +121,91 @@ export function WeekGridA({
 
   function handleMoveEnd(event: CalendarEvent, info: PanInfo) {
     if (!onMoveEvent) return;
-    let newDate: Date | null = null;
-    cellRefs.current.forEach((el, iso) => {
-      const r = el.getBoundingClientRect();
-      if (
-        info.point.x >= r.left &&
-        info.point.x <= r.right &&
-        info.point.y >= r.top &&
-        info.point.y <= r.bottom
-      ) {
-        const [y, m, d] = iso.split("-").map(Number);
-        newDate = new Date(y, m - 1, d);
-      }
-    });
+    // Use elementsFromPoint so the dragged chip itself doesn't mask the cell.
+    const newDate = findDayAt(info.point);
     if (newDate && !sameDay(newDate, new Date(event.startsAt))) {
       onMoveEvent(event.id, newDate);
     }
   }
 
-  function startSlotDrag(day: Date, iso: string, e: React.PointerEvent<HTMLDivElement>) {
+  function findDayAt(point: { x: number; y: number }): Date | null {
+    if (typeof document === "undefined") return null;
+    const els = document.elementsFromPoint(point.x, point.y);
+    for (const el of els) {
+      const cell = (el as HTMLElement).closest?.("[data-cal-day]") as HTMLElement | null;
+      if (cell) {
+        const iso = cell.getAttribute("data-cal-day");
+        if (iso) return parseIso(iso);
+      }
+    }
+    return null;
+  }
+
+  function yToTotalMin(y: number) {
+    const min = startHour * 60 + (y / HOUR_PX) * 60;
+    return clamp(snapMinutes(min), startHour * 60, endHour * 60);
+  }
+
+  function startSlotDrag(iso: string, e: React.PointerEvent<HTMLDivElement>) {
     if (!onSelectSlot) return;
-    if (e.target !== e.currentTarget) return; // ignore clicks on chips/children
-    if (e.button !== 0) return; // primary button only
+    if (e.target !== e.currentTarget) return;
+    if (e.button !== 0) return;
     const cellRect = e.currentTarget.getBoundingClientRect();
     const startY = e.clientY - cellRect.top;
-    setSlotDrag({ iso, startY, currentY: startY, cellRect });
+    const startTotalMin = yToTotalMin(startY);
+    setActiveDrag({
+      iso,
+      startTotalMin,
+      currentTotalMin: startTotalMin,
+      startY,
+      cellRect,
+    });
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
   function moveSlotDrag(e: React.PointerEvent<HTMLDivElement>) {
-    if (!slotDrag) return;
-    const { cellRect } = slotDrag;
-    const currentY = clamp(e.clientY - cellRect.top, 0, hours.length * HOUR_PX);
-    setSlotDrag({ ...slotDrag, currentY });
+    if (!activeDrag) return;
+    const currentY = clamp(
+      e.clientY - activeDrag.cellRect.top,
+      0,
+      hours.length * HOUR_PX,
+    );
+    const currentTotalMin = yToTotalMin(currentY);
+    if (currentTotalMin === activeDrag.currentTotalMin) return;
+    setActiveDrag({ ...activeDrag, currentTotalMin });
   }
 
   function endSlotDrag(e: React.PointerEvent<HTMLDivElement>) {
-    const drag = slotDrag;
-    if (!drag) return;
+    if (!activeDrag) return;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      /* no-op if not captured */
+      /* not captured */
     }
-    setSlotDrag(null);
+    const drag = activeDrag;
+    setActiveDrag(null);
     if (!onSelectSlot) return;
 
-    const [y, m, d] = drag.iso.split("-").map(Number);
-    const day = new Date(y, m - 1, d);
-    const dist = Math.abs(drag.currentY - drag.startY);
+    const day = parseIso(drag.iso);
+    const dist = Math.abs(drag.currentTotalMin - drag.startTotalMin);
 
-    if (dist < CLICK_THRESHOLD_PX) {
-      const { hr, min } = yToHourMin(drag.startY, startHour);
+    const startMin = Math.min(drag.startTotalMin, drag.currentTotalMin);
+    const endMinRaw = Math.max(drag.startTotalMin, drag.currentTotalMin);
+
+    if (dist === 0) {
+      // Pure click — use 30 minute default duration.
       const start = new Date(day);
-      start.setHours(hr, min, 0, 0);
-      onSelectSlot(start);
+      start.setHours(0, drag.startTotalMin, 0, 0);
+      const end = new Date(start.getTime() + CLICK_DEFAULT_DURATION_MIN * 60_000);
+      onSelectSlot(start, end);
       return;
     }
 
-    const lowY = Math.min(drag.startY, drag.currentY);
-    const highY = Math.max(drag.startY, drag.currentY);
-    const startInfo = yToHourMin(lowY, startHour);
-    const endInfo = yToHourMin(highY, startHour);
     const start = new Date(day);
-    start.setHours(startInfo.hr, startInfo.min, 0, 0);
-    const durationMin = Math.max(SNAP_MIN, endInfo.totalMinutes - startInfo.totalMinutes);
-    onSelectSlot(start, durationMin);
+    start.setHours(0, startMin, 0, 0);
+    const end = new Date(day);
+    end.setHours(0, Math.max(endMinRaw, startMin + SNAP_MIN), 0, 0);
+    onSelectSlot(start, end);
   }
 
   return (
@@ -220,7 +258,10 @@ export function WeekGridA({
           const weekend = d.getDay() === 0 || d.getDay() === 6;
           const isToday = sameDay(d, today);
           const iso = isoKey(d);
-          const dragActiveHere = slotDrag?.iso === iso;
+          const dragActiveHere = activeDrag?.iso === iso;
+          const isHovered = hoveredDayIso === iso;
+          const pinnedHere = !activeDrag && slotPreview?.iso === iso ? slotPreview : null;
+
           return (
             <div
               key={d.toISOString()}
@@ -229,14 +270,15 @@ export function WeekGridA({
                 if (el) cellRefs.current.set(iso, el);
                 else cellRefs.current.delete(iso);
               }}
-              onPointerDown={(e) => startSlotDrag(d, iso, e)}
+              onPointerDown={(e) => startSlotDrag(iso, e)}
               onPointerMove={dragActiveHere ? moveSlotDrag : undefined}
               onPointerUp={dragActiveHere ? endSlotDrag : undefined}
               onPointerCancel={dragActiveHere ? endSlotDrag : undefined}
               className={cn(
-                "relative border-l border-[color:var(--ink-line)] select-none",
+                "relative border-l border-[color:var(--ink-line)] select-none transition-colors",
                 weekend && "bg-black/[0.008]",
                 isToday && "bg-[color:var(--accent-soft)]/30",
+                isHovered && "bg-[color:var(--accent-soft)]/70 ring-1 ring-inset ring-[color:var(--accent)]/40",
                 onSelectSlot && "cursor-pointer",
               )}
               style={{ height: hours.length * HOUR_PX }}
@@ -259,8 +301,21 @@ export function WeekGridA({
                 </div>
               )}
 
-              {dragActiveHere && slotDrag && (
-                <SlotPreview drag={slotDrag} startHour={startHour} />
+              {dragActiveHere && activeDrag && (
+                <SlotOutline
+                  startTotalMin={activeDrag.startTotalMin}
+                  endTotalMin={activeDrag.currentTotalMin}
+                  startHour={startHour}
+                  live
+                />
+              )}
+              {pinnedHere && (
+                <SlotOutline
+                  startTotalMin={pinnedHere.startTotalMin}
+                  endTotalMin={pinnedHere.endTotalMin}
+                  startHour={startHour}
+                  live={false}
+                />
               )}
 
               {events
@@ -297,37 +352,50 @@ export function WeekGridA({
   );
 }
 
-function SlotPreview({ drag, startHour }: { drag: SlotDrag; startHour: number }) {
-  const top = Math.min(drag.startY, drag.currentY);
-  const bottom = Math.max(drag.startY, drag.currentY);
-  const height = Math.max(SNAP_MIN / 60 * HOUR_PX, bottom - top);
-  const startInfo = yToHourMin(top, startHour);
-  const endInfo = yToHourMin(top + height, startHour);
-  const durationMin = endInfo.totalMinutes - startInfo.totalMinutes;
-  const durLabel =
-    durationMin >= 60
-      ? `${Math.floor(durationMin / 60)}h${durationMin % 60 ? ` ${durationMin % 60}m` : ""}`
-      : `${durationMin}m`;
+interface SlotOutlineProps {
+  startTotalMin: number;
+  endTotalMin: number;
+  startHour: number;
+  live: boolean;
+}
+
+function SlotOutline({ startTotalMin, endTotalMin, startHour, live }: SlotOutlineProps) {
+  const lo = Math.min(startTotalMin, endTotalMin);
+  const hi = Math.max(startTotalMin, endTotalMin);
+  const top = ((lo - startHour * 60) / 60) * HOUR_PX;
+  const minSpan = Math.max(SNAP_MIN, hi - lo);
+  const height = (minSpan / 60) * HOUR_PX;
+  const durLabel = formatDuration(minSpan);
 
   return (
     <div
-      className="absolute left-1 right-1 rounded-[var(--r-sm)] border-2 border-[color:var(--accent)] bg-[color:var(--accent-soft)]/60 pointer-events-none flex items-start justify-between px-1.5 py-1 text-[10px] tabular text-[color:var(--accent)]"
+      className={cn(
+        "absolute left-1 right-1 rounded-[var(--r-sm)] pointer-events-none flex items-start justify-between px-1.5 py-1 text-[10px] tabular text-[color:var(--accent)] transition-all",
+        live
+          ? "border-2 border-[color:var(--accent)] bg-[color:var(--accent-soft)]/60"
+          : "border-2 border-dashed border-[color:var(--accent)]/70 bg-[color:var(--accent-soft)]/35",
+      )}
       style={{ top, height }}
     >
-      <span>{fmtTime(startInfo)}</span>
+      <span>{fmtTimeFromTotalMin(lo)}</span>
       <span className="font-medium">{durLabel}</span>
     </div>
   );
 }
 
-function fmtTime({ hr, min }: { hr: number; min: number }) {
+function formatDuration(minutes: number) {
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function fmtTimeFromTotalMin(total: number) {
+  const hr = Math.floor(total / 60);
+  const min = total % 60;
   const h12 = ((hr + 11) % 12) + 1;
   const ampm = hr < 12 ? "am" : "pm";
   return min === 0 ? `${h12}${ampm}` : `${h12}:${String(min).padStart(2, "0")}${ampm}`;
-}
-
-function clamp(n: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, n));
 }
 
 interface WeekEventChipProps {
@@ -389,11 +457,7 @@ function WeekEventChip({
       }}
       className="group flex flex-col justify-start rounded-[var(--r-sm)] bg-white dark:bg-white/[0.08] border border-[color:var(--ink-line)] border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight overflow-hidden shadow-[0_1px_0_rgba(17,17,19,0.04)] hover:shadow-[0_4px_14px_-6px_rgba(17,17,19,0.18)] transition-shadow cursor-grab active:cursor-grabbing"
     >
-      <button
-        type="button"
-        onClick={onClick}
-        className="text-left flex-1 min-w-0"
-      >
+      <button type="button" onClick={onClick} className="text-left flex-1 min-w-0">
         <div className="font-medium text-[color:var(--ink)] truncate">{event.title}</div>
         <div className="text-[10px] text-[color:var(--ink-muted)] tabular">
           {formatTime(startTime)}

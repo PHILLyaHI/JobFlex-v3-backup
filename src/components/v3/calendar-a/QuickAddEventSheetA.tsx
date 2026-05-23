@@ -1,22 +1,23 @@
 "use client";
-// V3 calendar-a — quick-add sheet redesign.
+// V3 calendar-a — quick-add sheet redesign (v2).
 //
-// Changes vs. the original sheet:
-//  - Title moved above the linked-job / linked-lead picker (so the user can
-//    name the event before deciding what to link, instead of after).
-//  - Picker list shows only the 2 most recent jobs/leads by default. The full
-//    list is hidden behind a "Search jobs" / "Search leads" toggle — the
-//    list is not noise in the common case, but is one click away.
-//  - Added client email + location (job mode) and client name + location
-//    (appointment mode). These are persisted by encoding them into the
-//    existing `notes` field so we do not touch server actions or schema.
-//  - Fixed the "Starts" date field: the native datetime picker indicator
-//    is replaced with an in-field Calendar button that calls showPicker().
-//  - Honors `defaultDurationMin` from the WeekGridA click-and-drag preview.
+// Major changes vs. the previous iteration:
+//  - Starts + Ends instead of starts + duration. Events can now span multiple
+//    days. A simple click on an empty slot pre-fills ends = start + 30 min;
+//    a click-and-drag in the week grid pre-fills the dragged span.
+//  - Both date fields use a custom DateTimePicker so the trigger icon stays
+//    anchored inside the field, the entire field opens the picker, and the
+//    calendar popover matches our design language instead of the native
+//    browser surface.
+//
+// Other behaviour kept from v1:
+//  - Title above the linked-job / linked-lead picker.
+//  - Latest-2 + search-reveal pickers.
+//  - Client email + location encoded into notes.
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, Calendar as CalendarIcon } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
@@ -32,6 +33,7 @@ import { assignWorker } from "@/actions/workers";
 import { createAppointment } from "@/actions/appointments";
 import { createBlockedTime } from "@/actions/blockedTime";
 import { EventTypeTabs, type CalendarEventKind } from "@/components/calendar/EventTypeTabs";
+import { DateTimePicker } from "./DateTimePicker";
 
 export interface QuickAddJobOption {
   id: string;
@@ -62,41 +64,15 @@ interface Props {
   leads: QuickAddLeadOption[];
   workers: QuickAddWorkerOption[];
   defaultStart: Date | null;
+  defaultEnd: Date | null;
   defaultKind?: CalendarEventKind;
-  defaultDurationMin?: number;
 }
-
-const DURATIONS = [
-  { value: "30", label: "30 min" },
-  { value: "60", label: "1h" },
-  { value: "120", label: "2h" },
-  { value: "240", label: "Half day · 4h" },
-  { value: "480", label: "Full day · 8h" },
-];
 
 const BLOCKED_REASONS = ["Vacation", "Sick day", "Holiday", "Office hours", "Other"];
 
 const LATEST_VISIBLE = 2;
 const SEARCH_LIMIT = 8;
-
-function toLocalInput(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function pickClosestDurationValue(min: number | undefined): string {
-  if (!min || !Number.isFinite(min)) return "120";
-  let best = DURATIONS[0];
-  let bestDelta = Math.abs(Number(best.value) - min);
-  for (const d of DURATIONS) {
-    const delta = Math.abs(Number(d.value) - min);
-    if (delta < bestDelta) {
-      best = d;
-      bestDelta = delta;
-    }
-  }
-  return best.value;
-}
+const DEFAULT_DURATION_MIN = 30;
 
 function buildNotes(parts: Array<{ label: string; value: string }>, userNotes: string) {
   const structured = parts
@@ -115,29 +91,29 @@ export function QuickAddEventSheetA({
   leads,
   workers,
   defaultStart,
+  defaultEnd,
   defaultKind = "job",
-  defaultDurationMin,
 }: Props) {
   const router = useRouter();
 
-  const initialStart = React.useMemo(() => {
-    const base = defaultStart ?? new Date();
-    if (!defaultStart) base.setHours(9, 0, 0, 0);
-    return toLocalInput(base);
+  const initialStart = React.useMemo<Date>(() => {
+    if (defaultStart) return new Date(defaultStart);
+    const base = new Date();
+    base.setHours(9, 0, 0, 0);
+    return base;
   }, [defaultStart]);
 
-  const initialDuration = React.useMemo(
-    () => pickClosestDurationValue(defaultDurationMin),
-    [defaultDurationMin],
-  );
+  const initialEnd = React.useMemo<Date>(() => {
+    if (defaultEnd) return new Date(defaultEnd);
+    return new Date(initialStart.getTime() + DEFAULT_DURATION_MIN * 60_000);
+  }, [defaultEnd, initialStart]);
 
   const [kind, setKind] = React.useState<CalendarEventKind>(defaultKind);
-  const [startsAt, setStartsAt] = React.useState(initialStart);
-  const [duration, setDuration] = React.useState(initialDuration);
+  const [startsAt, setStartsAt] = React.useState<Date>(initialStart);
+  const [endsAt, setEndsAt] = React.useState<Date>(initialEnd);
   const [title, setTitle] = React.useState("");
   const [notes, setNotes] = React.useState("");
 
-  // job-event state
   const [jobId, setJobId] = React.useState<string>("");
   const [jobQuery, setJobQuery] = React.useState("");
   const [jobSearchOpen, setJobSearchOpen] = React.useState(false);
@@ -145,25 +121,20 @@ export function QuickAddEventSheetA({
   const [jobClientEmail, setJobClientEmail] = React.useState("");
   const [jobLocation, setJobLocation] = React.useState("");
 
-  // appointment state
   const [leadId, setLeadId] = React.useState<string>("");
   const [leadQuery, setLeadQuery] = React.useState("");
   const [leadSearchOpen, setLeadSearchOpen] = React.useState(false);
   const [aptClientName, setAptClientName] = React.useState("");
   const [aptLocation, setAptLocation] = React.useState("");
 
-  // blocked-time state
   const [blockReason, setBlockReason] = React.useState("Vacation");
-
   const [busy, setBusy] = React.useState(false);
-
-  const startsInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!open) return;
     setKind(defaultKind);
     setStartsAt(initialStart);
-    setDuration(initialDuration);
+    setEndsAt(initialEnd);
     setJobId("");
     setJobQuery("");
     setJobSearchOpen(false);
@@ -178,7 +149,28 @@ export function QuickAddEventSheetA({
     setJobLocation("");
     setAptClientName("");
     setAptLocation("");
-  }, [open, initialStart, initialDuration, defaultKind]);
+  }, [open, initialStart, initialEnd, defaultKind]);
+
+  // When user moves Starts past Ends, push Ends forward by the previous span
+  // (or default to 30 min). When user pulls Ends before Starts, clamp to
+  // Starts + 30 min so we never submit a negative duration.
+  function updateStarts(next: Date) {
+    setStartsAt(next);
+    if (next.getTime() >= endsAt.getTime()) {
+      const span = Math.max(
+        DEFAULT_DURATION_MIN * 60_000,
+        endsAt.getTime() - startsAt.getTime(),
+      );
+      setEndsAt(new Date(next.getTime() + span));
+    }
+  }
+  function updateEnds(next: Date) {
+    if (next.getTime() <= startsAt.getTime()) {
+      setEndsAt(new Date(startsAt.getTime() + DEFAULT_DURATION_MIN * 60_000));
+      return;
+    }
+    setEndsAt(next);
+  }
 
   const filteredJobs = React.useMemo(() => {
     const q = jobQuery.trim().toLowerCase();
@@ -216,7 +208,7 @@ export function QuickAddEventSheetA({
     setBusy(true);
     try {
       const start = new Date(startsAt);
-      const end = new Date(start.getTime() + Number(duration) * 60 * 1000);
+      const end = new Date(endsAt);
 
       if (kind === "job") {
         const finalTitle = title.trim() || selectedJob?.title || "Event";
@@ -282,11 +274,7 @@ export function QuickAddEventSheetA({
     }
   }
 
-  const startDate = new Date(startsAt);
-  const endDate = new Date(startDate.getTime() + Number(duration) * 60 * 1000);
-  const subtitle = isNaN(startDate.getTime())
-    ? undefined
-    : `${longDate(startDate)} · ${formatTime(startDate)}–${formatTime(endDate)}`;
+  const subtitle = formatSpan(startsAt, endsAt);
 
   return (
     <Sheet
@@ -314,27 +302,22 @@ export function QuickAddEventSheetA({
         <EventTypeTabs value={kind} onChange={setKind} />
 
         <div className="grid grid-cols-2 gap-3">
-          <StartsField
+          <DateTimePicker
+            label="Starts"
             value={startsAt}
-            onChange={setStartsAt}
-            inputRef={startsInputRef}
+            onChange={updateStarts}
+            fallbackDate={initialStart}
           />
-          <Select
-            label="Duration"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-          >
-            {DURATIONS.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
-          </Select>
+          <DateTimePicker
+            label="Ends"
+            value={endsAt}
+            onChange={updateEnds}
+            fallbackDate={initialEnd}
+          />
         </div>
 
         {kind === "job" && (
           <>
-            {/* Title sits above the linked-job picker. */}
             <Input
               label="Title"
               value={title}
@@ -510,7 +493,6 @@ export function QuickAddEventSheetA({
 
         {kind === "appointment" && (
           <>
-            {/* Title sits above the linked-lead picker. */}
             <Input
               label="Title"
               value={title}
@@ -683,56 +665,23 @@ export function QuickAddEventSheetA({
   );
 }
 
-interface StartsFieldProps {
-  value: string;
-  onChange: (v: string) => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+function formatSpan(start: Date, end: Date): string {
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return "";
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+  if (sameDay) {
+    return `${longDate(start)} · ${formatTime(start)}–${formatTime(end)}`;
+  }
+  return `${longDate(start)} ${formatTime(start)} → ${longDate(end)} ${formatTime(end)}`;
 }
 
-// Custom Starts field. The native datetime-local picker indicator is hidden
-// and replaced with a Calendar button that stays anchored inside the field.
-function StartsField({ value, onChange, inputRef }: StartsFieldProps) {
-  const id = React.useId();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="quiet-caps">
-        Starts
-      </label>
-      <div className="flex h-10 items-center gap-2 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] pl-3 pr-2 transition-all hairline focus-within:shadow-[0_0_0_3px_rgba(79,70,229,0.18)]">
-        <input
-          ref={inputRef}
-          id={id}
-          type="datetime-local"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={cn(
-            "peer flex-1 bg-transparent text-sm text-[color:var(--ink)] outline-none",
-            // Hide the native picker indicator so our own icon owns the right edge.
-            "[&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:w-0 [&::-webkit-calendar-picker-indicator]:h-0 [&::-webkit-calendar-picker-indicator]:p-0 [&::-webkit-calendar-picker-indicator]:m-0",
-          )}
-        />
-        <button
-          type="button"
-          onClick={() => {
-            const el = inputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
-            if (el && typeof el.showPicker === "function") {
-              try {
-                el.showPicker();
-              } catch {
-                el.focus();
-              }
-            } else {
-              inputRef.current?.focus();
-            }
-          }}
-          className="h-7 w-7 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05] hover:text-[color:var(--ink)] transition-colors shrink-0"
-          aria-label="Open date picker"
-        >
-          <CalendarIcon className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
+function formatTime(d: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
 }
 
 interface PickerSectionProps {
@@ -774,18 +723,13 @@ function PickerSection({
 }
 
 function LatestList({ children }: { children: React.ReactNode }) {
-  return <ul className="paper-card overflow-hidden divide-y divide-[color:var(--ink-line)]">{children}</ul>;
-}
-
-function EmptyHint({ children }: { children: React.ReactNode }) {
   return (
-    <li className="px-3 py-3 text-[11px] text-[color:var(--ink-muted)]">{children}</li>
+    <ul className="paper-card overflow-hidden divide-y divide-[color:var(--ink-line)]">
+      {children}
+    </ul>
   );
 }
 
-function formatTime(d: Date) {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(d);
+function EmptyHint({ children }: { children: React.ReactNode }) {
+  return <li className="px-3 py-3 text-[11px] text-[color:var(--ink-muted)]">{children}</li>;
 }

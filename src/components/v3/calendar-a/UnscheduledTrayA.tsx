@@ -20,9 +20,10 @@ interface Props {
   open: boolean;
   onToggle: () => void;
   onJobDragEnd: (jobId: string, info: PanInfo) => void;
+  onJobDragMove?: (jobId: string, point: { x: number; y: number }) => void;
 }
 
-export function UnscheduledTrayA({ jobs, open, onToggle, onJobDragEnd }: Props) {
+export function UnscheduledTrayA({ jobs, open, onToggle, onJobDragEnd, onJobDragMove }: Props) {
   const count = jobs.length;
   const [anyDragging, setAnyDragging] = React.useState(false);
 
@@ -99,6 +100,7 @@ export function UnscheduledTrayA({ jobs, open, onToggle, onJobDragEnd }: Props) 
                       <JobDispatchCardA
                         job={j}
                         onDragEnd={(info) => onJobDragEnd(j.id, info)}
+                        onDragMove={(pt) => onJobDragMove?.(j.id, pt)}
                         onDragStateChange={setAnyDragging}
                       />
                     </motion.div>

@@ -31,6 +31,8 @@ interface Props {
   events: TeamEvent[];
   onSelectEvent: (e: CalendarEvent) => void;
   onAssignEvent: (eventId: string, workerId: string | null, newDate: Date) => void;
+  /** Key shaped as `${workerId|_none_}|${iso}` highlighting the drop target while a tray card is being dragged. */
+  hoveredCellKey?: string | null;
 }
 
 function startOfWeek(d: Date) {
@@ -58,6 +60,7 @@ export function TeamGridA({
   events,
   onSelectEvent,
   onAssignEvent,
+  hoveredCellKey,
 }: Props) {
   const cellRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
   const weekStart = startOfWeek(cursor);
@@ -200,6 +203,7 @@ export function TeamGridA({
               const items = byCell.get(cellKey) ?? [];
               const weekend = d.getDay() === 0 || d.getDay() === 6;
               const isToday = sameDay(d, today);
+              const isHovered = hoveredCellKey === cellKey;
               return (
                 <div
                   key={cellKey}
@@ -213,6 +217,8 @@ export function TeamGridA({
                     "relative border-l border-[color:var(--ink-line)] p-2 min-h-[88px] transition-colors group-hover:bg-black/[0.008]",
                     weekend && !isUnassigned && "bg-black/[0.005]",
                     isToday && "bg-[color:var(--accent-soft)]/30",
+                    isHovered &&
+                      "bg-[color:var(--accent-soft)]/70 ring-1 ring-inset ring-[color:var(--accent)]/40",
                   )}
                 >
                   <AnimatePresence initial={false}>

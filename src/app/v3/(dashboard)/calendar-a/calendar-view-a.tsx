@@ -1,8 +1,16 @@
 "use client";
-// V3 calendar-a — frontend-design orchestrator. Mirrors the original
-// calendar-view but wires the modified WeekGridA / TeamGridA / UnscheduledTrayA
-// / JobDispatchCardA / QuickAddEventSheetA, and auto-opens the detail sheet
-// after a reschedule.
+// V3 calendar-a — orchestrator.
+//
+// Notable wiring vs. the original calendar-view:
+//  - Tray-card drop uses elementsFromPoint so the high-z dragged card no
+//    longer masks the drop target.
+//  - Tray-card drag fires `onJobDragMove`, which we use to light up the
+//    currently-hovered cell in WeekGridA / TeamGridA before release.
+//  - Slot creation lifts the preview to this component so the dashed
+//    outline stays pinned to the calendar while the QuickAdd sheet is
+//    open, and clears when the sheet closes.
+//  - QuickAdd consumes start + end (no more `duration`) and supports
+//    multi-day spans.
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -10,7 +18,7 @@ import type { PanInfo } from "framer-motion";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CalendarToolbar } from "@/components/calendar/CalendarToolbar";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
-import { WeekGridA } from "@/components/v3/calendar-a/WeekGridA";
+import { WeekGridA, type SlotPreview } from "@/components/v3/calendar-a/WeekGridA";
 import { TeamGridA, type TeamWorker, type TeamEvent } from "@/components/v3/calendar-a/TeamGridA";
 import { EventDetailSheet } from "@/components/calendar/EventDetailSheet";
 import { UnscheduledTrayA } from "@/components/v3/calendar-a/UnscheduledTrayA";
@@ -61,10 +69,42 @@ interface Props {
   pendingAssignments: InboxAssignment[];
 }
 
+interface HoverTarget {
+  iso: string;
+  workerKey: string | null;
+}
+
+const DEFAULT_DURATION_MIN = 30;
+
 function parseEventId(id: string): { kind: CalendarEventKind; dbId: string } {
   if (id.startsWith("apt:")) return { kind: "appointment", dbId: id.slice(4) };
   if (id.startsWith("block:")) return { kind: "blocked", dbId: id.slice(6) };
   return { kind: "job", dbId: id };
+}
+
+// Walk the elements at the pointer (top-down) and return the first one that's
+// a calendar cell. The plural form is essential — the dragged card itself sits
+// at z-60 on top, so elementFromPoint (singular) would hand us the card and
+// we'd never see the cell beneath.
+function findDropTarget(point: {
+  x: number;
+  y: number;
+}): { date: Date; workerKey: string | null; iso: string } | null {
+  if (typeof document === "undefined") return null;
+  const els = document.elementsFromPoint(point.x, point.y);
+  for (const el of els) {
+    const cell = (el as HTMLElement).closest?.("[data-cal-day]") as HTMLElement | null;
+    if (!cell) continue;
+    const iso = cell.getAttribute("data-cal-day");
+    if (!iso) continue;
+    const [y, m, d] = iso.split("-").map(Number);
+    return {
+      date: new Date(y, m - 1, d),
+      workerKey: cell.getAttribute("data-cal-worker"),
+      iso,
+    };
+  }
+  return null;
 }
 
 export function CalendarViewA({
@@ -95,10 +135,17 @@ export function CalendarViewA({
 
   const [selected, setSelected] = React.useState<CalendarEvent | null>(null);
   const [quickAddOpen, setQuickAddOpen] = React.useState(false);
-  const [quickAddDate, setQuickAddDate] = React.useState<Date | null>(null);
-  const [quickAddDuration, setQuickAddDuration] = React.useState<number | null>(null);
+  const [quickAddStart, setQuickAddStart] = React.useState<Date | null>(null);
+  const [quickAddEnd, setQuickAddEnd] = React.useState<Date | null>(null);
   const [quickAddKind, setQuickAddKind] = React.useState<CalendarEventKind>("job");
   const [inboxOpen, setInboxOpen] = React.useState(false);
+
+  // Pinned slot outline shown in the week grid while the QuickAdd sheet is
+  // open. Cleared when the sheet closes.
+  const [slotPreview, setSlotPreview] = React.useState<SlotPreview | null>(null);
+
+  // Cell currently under a dragged tray card. Cleared on drop/cancel.
+  const [hoverTarget, setHoverTarget] = React.useState<HoverTarget | null>(null);
 
   const cursor = new Date(cursorISO);
 
@@ -111,7 +158,10 @@ export function CalendarViewA({
         !e.workerIds.some((w) => selectedWorkerIds.includes(w))
       )
         return false;
-      if (q && !((e.clientName ?? "").toLowerCase().includes(q) || e.title.toLowerCase().includes(q)))
+      if (
+        q &&
+        !((e.clientName ?? "").toLowerCase().includes(q) || e.title.toLowerCase().includes(q))
+      )
         return false;
       return true;
     });
@@ -137,14 +187,12 @@ export function CalendarViewA({
       return e.workerIds.map<TeamEvent>((workerId) => ({ ...e, workerId, kind: e.kind }));
     });
 
-  // Find the calendar-shaped view of a raw event id, so we can pop the detail
-  // sheet open after a move with the freshly-updated startsAt.
-  function buildMovedSelection(eventId: string, newStart: Date, durationMs?: number): CalendarEvent | null {
+  function buildMovedSelection(eventId: string, newStart: Date): CalendarEvent | null {
     const raw = events.find((e) => e.id === eventId);
     if (!raw) return null;
     const origStart = new Date(raw.startsAt);
     const origEnd = new Date(raw.endsAt);
-    const dur = durationMs ?? (origEnd.getTime() - origStart.getTime());
+    const dur = origEnd.getTime() - origStart.getTime();
     const newEnd = new Date(newStart.getTime() + dur);
     return {
       id: raw.id,
@@ -193,6 +241,7 @@ export function CalendarViewA({
   }
 
   async function handleTrayDrop(jobId: string, info: PanInfo) {
+    setHoverTarget(null);
     const target = findDropTarget(info.point);
     if (!target) {
       toast.info("Drop on a calendar date to schedule");
@@ -200,9 +249,9 @@ export function CalendarViewA({
     }
     try {
       const res = await scheduleJobFromTray(jobId, target.date.toISOString());
-      if (target.workerId && res.id) {
+      if (target.workerKey && target.workerKey !== "_none_" && res.id) {
         try {
-          await assignWorker(jobId, target.workerId);
+          await assignWorker(jobId, target.workerKey);
           toast.success("Scheduled & assigned");
         } catch {
           toast.success("Scheduled (assign failed)");
@@ -213,6 +262,21 @@ export function CalendarViewA({
       router.refresh();
     } catch (err: any) {
       toast.error("Couldn't schedule", err?.message);
+    }
+  }
+
+  function handleTrayDragMove(_jobId: string, point: { x: number; y: number }) {
+    const target = findDropTarget(point);
+    if (!target) {
+      if (hoverTarget !== null) setHoverTarget(null);
+      return;
+    }
+    const next: HoverTarget = { iso: target.iso, workerKey: target.workerKey };
+    if (
+      hoverTarget?.iso !== next.iso ||
+      hoverTarget?.workerKey !== next.workerKey
+    ) {
+      setHoverTarget(next);
     }
   }
 
@@ -250,6 +314,39 @@ export function CalendarViewA({
     }
   }
 
+  function openQuickAddForSlot(start: Date, end: Date) {
+    setQuickAddStart(start);
+    setQuickAddEnd(end);
+    setQuickAddKind("job");
+    const iso = isoKey(start);
+    setSlotPreview({
+      iso,
+      startTotalMin: start.getHours() * 60 + start.getMinutes(),
+      // If the event spans days, cap the in-grid outline at end-of-day.
+      endTotalMin:
+        sameLocalDay(start, end) ? end.getHours() * 60 + end.getMinutes() : 24 * 60,
+    });
+    setQuickAddOpen(true);
+  }
+
+  function openQuickAddForDate(d: Date) {
+    const start = new Date(d);
+    start.setHours(9, 0, 0, 0);
+    const end = new Date(start.getTime() + DEFAULT_DURATION_MIN * 60_000);
+    openQuickAddForSlot(start, end);
+  }
+
+  function closeQuickAdd() {
+    setQuickAddOpen(false);
+    setSlotPreview(null);
+  }
+
+  // ISO key for the week grid's hover highlight. Team grid expects worker|iso.
+  const hoveredDayIso = hoverTarget?.iso ?? null;
+  const hoveredTeamCellKey = hoverTarget
+    ? `${hoverTarget.workerKey ?? "_none_"}|${hoverTarget.iso}`
+    : null;
+
   return (
     <>
       <PageHeader
@@ -264,12 +361,7 @@ export function CalendarViewA({
         onPrev={prev}
         onNext={next}
         onToday={today}
-        onNew={() => {
-          setQuickAddDate(cursor);
-          setQuickAddDuration(null);
-          setQuickAddKind("job");
-          setQuickAddOpen(true);
-        }}
+        onNew={() => openQuickAddForDate(cursor)}
         trayOpen={trayOpen}
         onToggleTray={() => setTrayOpen(!trayOpen)}
         unscheduledCount={unscheduledJobs.length}
@@ -288,9 +380,6 @@ export function CalendarViewA({
         onClear={clearFilters}
       />
 
-      {/* `isolate` creates a stacking context on the grid so the tray's
-          dragged card (z-index 60) can always sit above the calendar even
-          when the grid contains absolutely-positioned event chips. */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-5 items-start isolate">
         <div className="min-w-0 relative z-0">
           {view === "month" && (
@@ -299,12 +388,7 @@ export function CalendarViewA({
               events={calendarEvents}
               onSelectEvent={setSelected}
               onReschedule={handleReschedule}
-              onSelectDate={(d) => {
-                setQuickAddDate(d);
-                setQuickAddDuration(null);
-                setQuickAddKind("job");
-                setQuickAddOpen(true);
-              }}
+              onSelectDate={openQuickAddForDate}
             />
           )}
           {view === "week" && (
@@ -314,12 +398,9 @@ export function CalendarViewA({
               onSelectEvent={setSelected}
               onMoveEvent={handleReschedule}
               onResizeEvent={handleResize}
-              onSelectSlot={(start, durationMin) => {
-                setQuickAddDate(start);
-                setQuickAddDuration(durationMin ?? null);
-                setQuickAddKind("job");
-                setQuickAddOpen(true);
-              }}
+              onSelectSlot={openQuickAddForSlot}
+              slotPreview={slotPreview}
+              hoveredDayIso={hoveredDayIso}
             />
           )}
           {view === "team" && (
@@ -329,6 +410,7 @@ export function CalendarViewA({
               events={teamEvents}
               onSelectEvent={setSelected}
               onAssignEvent={handleAssignEvent}
+              hoveredCellKey={hoveredTeamCellKey}
             />
           )}
         </div>
@@ -339,6 +421,7 @@ export function CalendarViewA({
             open={trayOpen}
             onToggle={() => setTrayOpen(!trayOpen)}
             onJobDragEnd={handleTrayDrop}
+            onJobDragMove={handleTrayDragMove}
           />
         </div>
       </div>
@@ -351,13 +434,13 @@ export function CalendarViewA({
 
       <QuickAddEventSheetA
         open={quickAddOpen}
-        onClose={() => setQuickAddOpen(false)}
+        onClose={closeQuickAdd}
         jobs={pickerJobs}
         leads={pickerLeads}
         workers={pickerWorkers}
-        defaultStart={quickAddDate}
+        defaultStart={quickAddStart}
+        defaultEnd={quickAddEnd}
         defaultKind={quickAddKind}
-        defaultDurationMin={quickAddDuration ?? undefined}
       />
 
       <InboxSheet
@@ -369,20 +452,14 @@ export function CalendarViewA({
   );
 }
 
-function findDropTarget(
-  point: { x: number; y: number },
-): { date: Date; workerId: string | null } | null {
-  if (typeof document === "undefined") return null;
-  const el = document.elementFromPoint(point.x, point.y);
-  if (!el) return null;
-  const cell = (el as HTMLElement).closest("[data-cal-day]") as HTMLElement | null;
-  if (!cell) return null;
-  const iso = cell.getAttribute("data-cal-day");
-  if (!iso) return null;
-  const [y, m, d] = iso.split("-").map(Number);
-  const workerKey = cell.getAttribute("data-cal-worker");
-  return {
-    date: new Date(y, m - 1, d),
-    workerId: workerKey && workerKey !== "_none_" ? workerKey : null,
-  };
+function isoKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function sameLocalDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }

@@ -31,10 +31,17 @@ interface Props {
   job: DispatchableJob;
   onDragEnd: (info: PanInfo) => void;
   onDragStateChange?: (dragging: boolean) => void;
+  onDragMove?: (point: { x: number; y: number }) => void;
   className?: string;
 }
 
-export function JobDispatchCardA({ job, onDragEnd, onDragStateChange, className }: Props) {
+export function JobDispatchCardA({
+  job,
+  onDragEnd,
+  onDragStateChange,
+  onDragMove,
+  className,
+}: Props) {
   return (
     <motion.div
       layout
@@ -49,6 +56,7 @@ export function JobDispatchCardA({ job, onDragEnd, onDragStateChange, className 
         boxShadow: "0 28px 56px -18px rgba(17,17,19,0.36)",
       }}
       onDragStart={() => onDragStateChange?.(true)}
+      onDrag={(_, info) => onDragMove?.({ x: info.point.x, y: info.point.y })}
       onDragEnd={(_, info) => {
         onDragEnd(info);
         onDragStateChange?.(false);
