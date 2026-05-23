@@ -1,8 +1,16 @@
 // Central registry of v3-ported routes. Anything that has a v3 sibling lives
 // here so internal links use a single source of truth and we can sweep them
 // during the v3 → main port.
+//
+// IMPORTANT: only add the entry for the page you own — never delete or
+// overwrite another agent's entry. If you must edit a sibling entry the
+// user will resolve the merge by keeping both.
 export const V3_PORTED_ROUTES = {
   manualBuilderA: "/v3/proposals/manual-builder-a",
+  // The frontend-design build of the calendar redesign. Lives under
+  // app/v3/(dashboard)/calendar-a — the `(dashboard)` segment is a route
+  // group, so it does not appear in the URL.
+  "calendar-a": "/v3/calendar-a",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;
