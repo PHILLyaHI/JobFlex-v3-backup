@@ -3,8 +3,13 @@ import * as React from "react";
 import { Plus } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/Card";
 import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
-import { BuilderSection } from "./BuilderSection";
 import { LineItemRow } from "./LineItemRow";
 import type { ClientLite } from "./ClientField";
 
@@ -66,11 +71,15 @@ export function LineItemsBlock({ clients }: { clients: ClientLite[] }) {
     clients.find((c) => c.id === clientId)?.name ?? "No client yet";
 
   return (
-    <BuilderSection
-      index="02"
-      title="Line items"
-      subtitle="Each line carries its own measurement unit and material / labor split."
-      action={
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Line items</CardTitle>
+          <CardSubtitle>
+            Separate materials and labor per line. Measurement unit is up to
+            you.
+          </CardSubtitle>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -79,34 +88,20 @@ export function LineItemsBlock({ clients }: { clients: ClientLite[] }) {
         >
           Add line
         </Button>
-      }
-    >
-      {lineItems.length === 0 ? (
-        <div className="rounded-[var(--r-md)] bg-white/40 px-5 py-9 text-center hairline">
-          <p className="text-[13px] text-[color:var(--ink-muted)]">
-            No line items yet.
-          </p>
-          <p className="mx-auto mt-1 max-w-[42ch] text-[12px] leading-relaxed text-[color:var(--ink-faint)]">
-            Add a line for each material or labor item. The live preview and
-            estimate update as you go.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {lineItems.map((l) => (
-            <LineItemRow
-              key={l.id}
-              item={l}
-              proposalTitle={title}
-              clientName={clientName}
-            />
-          ))}
-        </div>
-      )}
-
-      <div className="mt-6 border-t border-[color:var(--ink-line)] pt-5">
+      </CardHeader>
+      <div className="space-y-2">
+        {lineItems.map((l) => (
+          <LineItemRow
+            key={l.id}
+            item={l}
+            proposalTitle={title}
+            clientName={clientName}
+          />
+        ))}
+      </div>
+      <div className="mt-5">
         <TaxRateField />
       </div>
-    </BuilderSection>
+    </Card>
   );
 }

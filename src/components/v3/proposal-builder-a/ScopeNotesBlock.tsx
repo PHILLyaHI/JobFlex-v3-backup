@@ -1,7 +1,12 @@
 "use client";
 import { Textarea } from "@/components/ui/Textarea";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/Card";
 import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
-import { BuilderSection } from "./BuilderSection";
 
 export function ScopeNotesBlock() {
   const scopeOfWork = useProposalDraftStore((s) => s.draft.scopeOfWork);
@@ -9,11 +14,13 @@ export function ScopeNotesBlock() {
   const set = useProposalDraftStore((s) => s.set);
 
   return (
-    <BuilderSection
-      index="03"
-      title="Scope & notes"
-      subtitle="What's included, in plain English."
-    >
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Scope &amp; notes</CardTitle>
+          <CardSubtitle>What&apos;s included, in plain English.</CardSubtitle>
+        </div>
+      </CardHeader>
       <Textarea
         label="Scope of work"
         rows={6}
@@ -30,6 +37,6 @@ export function ScopeNotesBlock() {
           placeholder="Warranty, assumptions, exclusions…"
         />
       </div>
-    </BuilderSection>
+    </Card>
   );
 }

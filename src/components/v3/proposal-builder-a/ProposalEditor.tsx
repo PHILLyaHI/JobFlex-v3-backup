@@ -104,20 +104,21 @@ export function ProposalEditor({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-8 2xl:grid-cols-[minmax(0,1fr)_minmax(380px,420px)]">
-        <div>
+      {/* Two-column at 2xl+ so contractors on real desktop monitors see the
+          live preview alongside the form. Laptop and smaller stack the preview
+          below — see also FloatingCostsCard for the in-corner running total. */}
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-5">
+        <div className="space-y-5 2xl:col-span-3">
           <BasicsBlock clients={clients} projects={projects} />
           <LineItemsBlock clients={clients} />
-          <div className="border-t border-[color:var(--ink-line)] pb-8 pt-3">
-            <EstimateBreakdown />
-          </div>
+          <EstimateBreakdown />
           <ScopeNotesBlock />
           <OptionsBlock />
           <TermsBlock />
           <PaymentScheduleBlock />
           <FilesBlock />
 
-          <div className="flex flex-wrap gap-2 border-t border-[color:var(--ink-line)] pt-7">
+          <div className="flex flex-wrap gap-2 pt-2">
             <Button
               loading={saving}
               onClick={() => persist()}
@@ -136,7 +137,7 @@ export function ProposalEditor({
           </div>
         </div>
 
-        <div>
+        <div className="2xl:col-span-2">
           <div className="2xl:sticky 2xl:top-20">
             <ProposalPreview orgName={orgName} totalsRef={totalsRef} />
           </div>

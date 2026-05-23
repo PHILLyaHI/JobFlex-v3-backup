@@ -1,7 +1,12 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/cn";
-import { BuilderSection } from "./BuilderSection";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/Card";
 import { PreviewTag, PreviewNote } from "./PreviewTag";
 
 function ToggleRow({
@@ -62,12 +67,17 @@ export function OptionsBlock() {
   const [showScope, setShowScope] = React.useState(true);
 
   return (
-    <BuilderSection
-      index="04"
-      title="Proposal options"
-      subtitle="Tweaks that change what the client sees on the final PDF."
-      badge={<PreviewTag />}
-    >
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="inline-flex items-center gap-2">
+            Proposal options <PreviewTag />
+          </CardTitle>
+          <CardSubtitle>
+            Tweaks that change what the client sees on the final PDF.
+          </CardSubtitle>
+        </div>
+      </CardHeader>
       <div className="divide-y divide-[color:var(--ink-line)]">
         <ToggleRow
           label="Hide breakdown costs"
@@ -99,6 +109,6 @@ export function OptionsBlock() {
         (`hideBreakdown`, `laborOnly`, `showSignature`, `showScope`). For now
         they hold their state inside the builder only.
       </PreviewNote>
-    </BuilderSection>
+    </Card>
   );
 }

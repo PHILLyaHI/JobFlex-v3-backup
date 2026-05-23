@@ -3,8 +3,13 @@ import * as React from "react";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Select } from "@/components/ui/Select";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/Card";
 import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
-import { BuilderSection } from "./BuilderSection";
 import { ClientField, type ClientLite } from "./ClientField";
 import { PreviewTag, PreviewNote } from "./PreviewTag";
 
@@ -26,13 +31,14 @@ export function BasicsBlock({
   const [projectId, setProjectId] = React.useState("");
 
   return (
-    <BuilderSection
-      first
-      index="01"
-      title="Basics"
-      subtitle="Who it's for and what it's about."
-    >
-      <div className="grid items-start gap-4 md:grid-cols-2">
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Basics</CardTitle>
+          <CardSubtitle>Who it&apos;s for and what it&apos;s about</CardSubtitle>
+        </div>
+      </CardHeader>
+      <div className="grid md:grid-cols-2 gap-4">
         <Input
           label="Proposal title"
           value={title}
@@ -60,11 +66,9 @@ export function BasicsBlock({
           </div>
         </div>
       </div>
-
       <div className="mt-4">
         <ClientField clients={clients} />
       </div>
-
       <div className="mt-4">
         <Textarea
           label="Description"
@@ -74,12 +78,11 @@ export function BasicsBlock({
           placeholder="One-paragraph overview your client will see first."
         />
       </div>
-
       <PreviewNote>
         Associating a proposal with a project needs a `projectId` column on the
         Proposal model — not added yet, so the project picker above does not
         persist.
       </PreviewNote>
-    </BuilderSection>
+    </Card>
   );
 }

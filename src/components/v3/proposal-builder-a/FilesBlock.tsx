@@ -1,7 +1,12 @@
 "use client";
 import * as React from "react";
 import { File, Paperclip, Upload, X } from "lucide-react";
-import { BuilderSection } from "./BuilderSection";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/Card";
 import { PreviewTag, PreviewNote } from "./PreviewTag";
 
 interface StagedFile {
@@ -55,12 +60,18 @@ export function FilesBlock() {
   const totalSize = files.reduce((a, f) => a + f.size, 0);
 
   return (
-    <BuilderSection
-      index="07"
-      title="Files & Documents"
-      subtitle="Drop site photos, permits, spec sheets — everything the proposal needs alongside the quote."
-      badge={<PreviewTag />}
-    >
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="inline-flex items-center gap-2">
+            Files &amp; Documents <PreviewTag />
+          </CardTitle>
+          <CardSubtitle>
+            Drop site photos, permits, spec sheets — anything alongside the
+            quote.
+          </CardSubtitle>
+        </div>
+      </CardHeader>
       <div
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -97,42 +108,41 @@ export function FilesBlock() {
       </div>
 
       {files.length > 0 && (
-        <ul className="mt-4 divide-y divide-[color:var(--ink-line)]">
-          {files.map((f) => (
-            <li
-              key={f.id}
-              className="flex items-center gap-3 py-2.5 text-[12.5px]"
-            >
-              <File className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-faint)]" />
-              <span className="min-w-0 flex-1 truncate text-[color:var(--ink)]">
-                {f.name}
-              </span>
-              <span className="shrink-0 tabular text-[11px] text-[color:var(--ink-muted)]">
-                {humanSize(f.size)}
-              </span>
-              <button
-                type="button"
-                onClick={() => remove(f.id)}
-                aria-label={`Remove ${f.name}`}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-rose-50 hover:text-[color:var(--rose)] focus-ring"
+        <>
+          <ul className="mt-4 divide-y divide-[color:var(--ink-line)]">
+            {files.map((f) => (
+              <li
+                key={f.id}
+                className="flex items-center gap-3 py-2.5 text-[12.5px]"
               >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {files.length > 0 && (
-        <div className="mt-3 flex items-center justify-between text-[11px] text-[color:var(--ink-muted)]">
-          <span className="flex items-center gap-1.5">
-            <Upload className="h-3 w-3" />
-            <span>
-              {files.length} file{files.length === 1 ? "" : "s"} staged ·{" "}
-              {humanSize(totalSize)}
+                <File className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-faint)]" />
+                <span className="min-w-0 flex-1 truncate text-[color:var(--ink)]">
+                  {f.name}
+                </span>
+                <span className="shrink-0 tabular text-[11px] text-[color:var(--ink-muted)]">
+                  {humanSize(f.size)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => remove(f.id)}
+                  aria-label={`Remove ${f.name}`}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-rose-50 hover:text-[color:var(--rose)] focus-ring"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex items-center justify-between text-[11px] text-[color:var(--ink-muted)]">
+            <span className="flex items-center gap-1.5">
+              <Upload className="h-3 w-3" />
+              <span>
+                {files.length} file{files.length === 1 ? "" : "s"} staged ·{" "}
+                {humanSize(totalSize)}
+              </span>
             </span>
-          </span>
-        </div>
+          </div>
+        </>
       )}
 
       <PreviewNote>
@@ -140,6 +150,6 @@ export function FilesBlock() {
         endpoint (Vercel Blob is already wired for the rest of JobFlex). Until
         then files only live in this builder session.
       </PreviewNote>
-    </BuilderSection>
+    </Card>
   );
 }

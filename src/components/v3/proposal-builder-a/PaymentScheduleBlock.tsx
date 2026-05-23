@@ -4,13 +4,19 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/Card";
+import {
   useProposalDraftStore,
   type DraftInstallment,
 } from "@/stores/useProposalDraftStore";
-import { BuilderSection } from "./BuilderSection";
 
-// Flattened from the live builder: installments are a hairline-ruled register,
-// not a stack of bordered boxes inside a card. (DESIGN.md: No-Decorative-Card.)
+// The card stays — the redesign is INSIDE: each installment is a row in a
+// hairline-divided register, not its own bordered box inside the card. That
+// drops the nested-card-outlines look the live builder has today.
 function InstallmentRow({
   installment,
   position,
@@ -74,11 +80,12 @@ export function PaymentScheduleBlock() {
   const addInstallment = useProposalDraftStore((s) => s.addInstallment);
 
   return (
-    <BuilderSection
-      index="06"
-      title="Payment schedule"
-      subtitle="One or more installments, fixed or percent of the total."
-      action={
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Payment schedule</CardTitle>
+          <CardSubtitle>One or more installments, fixed or percent.</CardSubtitle>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -87,17 +94,11 @@ export function PaymentScheduleBlock() {
         >
           Add installment
         </Button>
-      }
-    >
+      </CardHeader>
       {installments.length === 0 ? (
-        <div className="rounded-[var(--r-md)] bg-white/40 px-5 py-8 text-center hairline">
-          <p className="text-[13px] text-[color:var(--ink-muted)]">
-            No payment schedule.
-          </p>
-          <p className="mt-1 text-[12px] text-[color:var(--ink-faint)]">
-            The full amount is treated as due on completion.
-          </p>
-        </div>
+        <p className="text-[12.5px] text-[color:var(--ink-muted)]">
+          No payment schedule — the full amount is treated as due on completion.
+        </p>
       ) : (
         <div className="divide-y divide-[color:var(--ink-line)]">
           {installments.map((i, idx) => (
@@ -105,6 +106,6 @@ export function PaymentScheduleBlock() {
           ))}
         </div>
       )}
-    </BuilderSection>
+    </Card>
   );
 }

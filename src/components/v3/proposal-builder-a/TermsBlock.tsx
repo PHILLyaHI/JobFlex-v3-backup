@@ -1,7 +1,12 @@
 "use client";
 import * as React from "react";
 import { Textarea } from "@/components/ui/Textarea";
-import { BuilderSection } from "./BuilderSection";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/Card";
 import { PreviewTag, PreviewNote } from "./PreviewTag";
 
 const TEMPLATE_TERMS = `1. Payment due as scheduled.
@@ -15,12 +20,16 @@ export function TermsBlock() {
   const [terms, setTerms] = React.useState("");
 
   return (
-    <BuilderSection
-      index="05"
-      title="Terms & Conditions"
-      subtitle="The fine print that follows the line items on the proposal PDF."
-      badge={<PreviewTag />}
-      action={
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="inline-flex items-center gap-2">
+            Terms &amp; Conditions <PreviewTag />
+          </CardTitle>
+          <CardSubtitle>
+            The fine print that follows the line items on the proposal PDF.
+          </CardSubtitle>
+        </div>
         <button
           type="button"
           onClick={() => setTerms(TEMPLATE_TERMS)}
@@ -28,8 +37,7 @@ export function TermsBlock() {
         >
           Insert starter template
         </button>
-      }
-    >
+      </CardHeader>
       <Textarea
         label="Terms"
         rows={8}
@@ -42,6 +50,6 @@ export function TermsBlock() {
         existing `notes` field carries warranty / assumptions / exclusions and
         keeps a separate role.
       </PreviewNote>
-    </BuilderSection>
+    </Card>
   );
 }
