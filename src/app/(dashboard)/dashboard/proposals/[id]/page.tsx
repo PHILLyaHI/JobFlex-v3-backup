@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { ProposalEditor } from "@/components/proposal/ProposalEditor";
+import { ProposalEditor } from "@/components/v3/proposal-builder-a/ProposalEditor";
 import { HydrateDraft } from "./hydrate-draft";
 import { ProposalActions } from "./proposal-actions";
 import { SnapshotHistory } from "@/components/proposal/SnapshotHistory";
@@ -26,9 +26,23 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
   });
   if (!proposal || proposal.organizationId !== organizationId) return notFound();
 
-  const [clients, org] = await Promise.all([
+  const [clients, projects, org] = await Promise.all([
     db.client.findMany({
       where: { organizationId, deletedAt: null },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        address: true,
+        city: true,
+        state: true,
+        zip: true,
+      },
+    }),
+    db.project.findMany({
+      where: { organizationId },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
@@ -49,7 +63,7 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
         }
         actions={
           <>
-            <Link href={`/portal/q/${proposal.publicId}` as any} target="_blank">
+            <Link href={`/portal/q/${proposal.publicId}` as never} target="_blank">
               <Button variant="outline" size="sm" icon={<ExternalLink className="h-3 w-3" />}>
                 Public portal
               </Button>
@@ -75,7 +89,8 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
             id: l.id,
             name: l.name,
             description: l.description ?? undefined,
-            measurementType: l.measurementType as any,
+            measurementType:
+              l.measurementType as "SQFT" | "LINEAR_FT" | "CUBIC_FT" | "UNIT" | "HOUR" | "LUMP_SUM",
             quantity: l.quantity,
             unitPrice: l.unitPrice,
             materialCost: l.materialCost,
@@ -93,7 +108,12 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
           profitPct: proposal.profitPct ?? 0,
         }}
       />
-      <ProposalEditor clients={clients} existingId={proposal.id} orgName={org?.name} />
+      <ProposalEditor
+        clients={clients}
+        projects={projects}
+        existingId={proposal.id}
+        orgName={org?.name ?? undefined}
+      />
       <div className="mt-6">
         <SnapshotHistory
           proposalId={proposal.id}

@@ -21,12 +21,14 @@ import type { ClientLite } from "./ClientField";
 interface ProposalEditorProps {
   clients: ClientLite[];
   projects: ProjectLite[];
+  existingId?: string;
   orgName?: string;
 }
 
 export function ProposalEditor({
   clients,
   projects,
+  existingId,
   orgName,
 }: ProposalEditorProps) {
   const router = useRouter();
@@ -53,6 +55,7 @@ export function ProposalEditor({
     setSaving(true);
     try {
       const res = await saveProposal({
+        id: existingId,
         title: draft.title,
         clientId: draft.clientId,
         description: draft.description,
@@ -124,7 +127,7 @@ export function ProposalEditor({
               onClick={() => persist()}
               icon={<Save className="h-3.5 w-3.5" />}
             >
-              Save draft
+              {existingId ? "Save changes" : "Save draft"}
             </Button>
             <Button
               variant="outline"
