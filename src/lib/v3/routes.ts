@@ -11,6 +11,10 @@ export const V3_PORTED_ROUTES = {
   // app/v3/(dashboard)/calendar-a — the `(dashboard)` segment is a route
   // group, so it does not appear in the URL.
   "calendar-a": "/v3/calendar-a",
+  company: "/v3/company",
+  companyLandingBuilder: "/v3/company/landing-builder",
+  companyTeam: "/v3/company/team",
+  companySubscription: "/v3/company/subscription",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;
