@@ -15,6 +15,11 @@ export const V3_PORTED_ROUTES = {
   companyLandingBuilder: "/v3/company/landing-builder",
   companyTeam: "/v3/company/team",
   companySubscription: "/v3/company/subscription",
+  // From-scratch desktop-first workers page. Lives under
+  // app/v3/(dashboard)/workers-new. The same WorkersLedger component is now
+  // also the live /dashboard/workers page — both routes share it via
+  // src/components/v3/workers-new/workers-ledger.tsx.
+  "workers-new": "/v3/workers-new",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;

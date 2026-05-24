@@ -1,6 +1,6 @@
-// Live workers page. Renders the v3 WorkersLedger from
-// src/components/v3/workers-new/. The /v3/workers-new route renders the same
-// component against the same data shape.
+// V3 workers-new alias — points at the same shared ledger component that
+// /dashboard/workers now renders. Kept for parity with the v3 route registry
+// and any link that already targets /v3/workers-new.
 
 import { redirect } from "next/navigation";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
@@ -22,7 +22,7 @@ function parseSpec(raw: string | null): string[] {
   }
 }
 
-export default async function WorkersPage() {
+export default async function WorkersNewPage() {
   let organizationId: string | null = null;
   try {
     const ctx = await requireOrg();
