@@ -7,9 +7,10 @@
 // user will resolve the merge by keeping both.
 export const V3_PORTED_ROUTES = {
   manualBuilderA: "/v3/proposals/manual-builder-a",
-  // The frontend-design build of the calendar redesign. Lives under
-  // app/v3/(dashboard)/calendar-a — the `(dashboard)` segment is a route
-  // group, so it does not appear in the URL.
+  // Frontend-design calendar redesign. Lives under
+  // app/v3/(dashboard)/calendar-a. The same CalendarViewA orchestrator now
+  // also serves the live /dashboard/calendar page — both routes share it via
+  // src/components/v3/calendar-a/*.
   "calendar-a": "/v3/calendar-a",
   company: "/v3/company",
   companyLandingBuilder: "/v3/company/landing-builder",

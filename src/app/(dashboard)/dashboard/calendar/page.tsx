@@ -1,6 +1,9 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { CalendarView } from "./calendar-view";
+// The live /dashboard/calendar page now renders the v3 calendar-a orchestrator
+// (frontend-design build). The same component also serves /v3/calendar-a so
+// both routes stay in sync via src/components/v3/calendar-a/*.
+import { CalendarViewA as CalendarView } from "@/app/v3/(dashboard)/calendar-a/calendar-view-a";
 import { MobileCalendar } from "./mobile-calendar";
 
 export default async function CalendarPage() {
