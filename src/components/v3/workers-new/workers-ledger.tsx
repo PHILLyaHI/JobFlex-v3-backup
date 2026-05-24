@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   Search,
   Plus,
@@ -43,6 +43,7 @@ type FilterKey = "all" | "on-job" | "available" | "unrated";
 
 export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry[] }) {
   const router = useRouter();
+  const reduceMotion = useReducedMotion();
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<FilterKey>("all");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -92,17 +93,21 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
               <span className="text-[color:var(--ink-faint)]">/</span>
               <span>Roster</span>
               <span className="text-[color:var(--ink-faint)]">/</span>
-              <span className="tabular">
-                Folio No. {String(serverEntries.length).padStart(2, "0")}
+              <span>
+                <span className="tabular">{serverEntries.length}</span> on the books
               </span>
+              {totalActive > 0 && (
+                <>
+                  <span className="text-[color:var(--ink-faint)]">/</span>
+                  <span>
+                    <span className="tabular">{totalActive}</span> active
+                  </span>
+                </>
+              )}
             </div>
             <h1 className="font-display text-[44px] leading-none tracking-[-0.02em]">
               Workers
             </h1>
-            <p className="mt-3 max-w-[58ch] text-[13px] leading-[1.7] text-[color:var(--ink-muted)]">
-              The crew on your books — specialties they cover, jobs they&apos;re carrying, and the
-              portal links you hand out. Pick a name to inspect.
-            </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <div className="w-[280px]">
@@ -124,10 +129,10 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
 
         {/* ─── Stat filter tiles ───────────────────────────────────────── */}
         <motion.section
-          className="mt-8 grid grid-cols-4 gap-4"
-          initial="hidden"
+          className="mt-8 grid grid-cols-4 gap-3"
+          initial={reduceMotion ? false : "hidden"}
           animate="visible"
-          variants={{ visible: { transition: { staggerChildren: 0.05 } } }}
+          variants={{ visible: { transition: { staggerChildren: reduceMotion ? 0 : 0.05 } } }}
         >
           <StatFilterTile
             label="All crew"
@@ -159,13 +164,13 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
           />
         </motion.section>
 
-        {/* ─── Sub-toolbar ─────────────────────────────────────────────── */}
-        <div className="mt-8 flex items-baseline justify-between border-b border-[color:var(--ink-line)] pb-3">
-          <div className="quiet-caps">
-            Showing <span className="tabular">{filtered.length}</span> of{" "}
-            <span className="tabular">{serverEntries.length}</span>
-          </div>
-          {filter !== "all" && (
+        {/* ─── Sub-toolbar (only when filtered) ────────────────────────── */}
+        {filter !== "all" ? (
+          <div className="mt-8 flex items-baseline justify-between border-b border-[color:var(--ink-line)] pb-3">
+            <div className="quiet-caps">
+              Showing <span className="tabular">{filtered.length}</span> of{" "}
+              <span className="tabular">{serverEntries.length}</span>
+            </div>
             <button
               type="button"
               onClick={() => setFilter("all")}
@@ -174,8 +179,10 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
               <RotateCcw className="h-3 w-3" />
               clear filter
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="mt-8" />
+        )}
 
         {/* ─── Workspace: ledger + inspector ───────────────────────────── */}
         <div className="mt-6 grid grid-cols-[minmax(0,1fr)_380px] gap-8">
@@ -188,9 +195,9 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
             ) : (
               <motion.ul
                 className="border-t border-[color:var(--ink-line)]"
-                initial="hidden"
+                initial={reduceMotion ? false : "hidden"}
                 animate="visible"
-                variants={{ visible: { transition: { staggerChildren: 0.02 } } }}
+                variants={{ visible: { transition: { staggerChildren: reduceMotion ? 0 : 0.02 } } }}
               >
                 {filtered.map((entry) => (
                   <LedgerRow
@@ -215,7 +222,7 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
                     try {
                       await revokeWorker(selected.id);
                       router.refresh();
-                      toast.success("Access revoked", "Magic link rotated — the old one is dead.");
+                      toast.success("Access revoked", "Magic link rotated. The old one is dead.");
                     } catch (err) {
                       toast.error("Revoke failed", (err as Error)?.message);
                     }
@@ -257,29 +264,23 @@ function StatFilterTile({
   return (
     <motion.button
       type="button"
-      variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}
+      variants={{ hidden: { opacity: 0, y: 6 }, visible: { opacity: 1, y: 0 } }}
       onClick={onClick}
       className={cn(
-        "focus-ring group relative flex flex-col items-start gap-3 rounded-[var(--r-lg)] bg-white px-5 py-5 text-left transition-shadow",
+        "focus-ring group relative flex flex-col items-start gap-2 rounded-[var(--r-md)] px-4 py-3.5 text-left transition-colors",
         active
-          ? "shadow-[inset_0_0_0_1px_var(--accent),0_1px_0_rgba(17,17,19,0.04),0_4px_16px_-8px_rgba(17,17,19,0.10)]"
-          : "shadow-[inset_0_0_0_0.5px_rgba(17,17,19,0.10),0_1px_0_rgba(17,17,19,0.04)] hover:shadow-[inset_0_0_0_0.5px_rgba(17,17,19,0.22),0_1px_0_rgba(17,17,19,0.04)]",
+          ? "bg-[color:var(--accent-soft)] shadow-[inset_0_0_0_1px_var(--accent)]"
+          : "bg-transparent shadow-[inset_0_0_0_0.5px_var(--ink-line)] hover:bg-black/[0.02]",
       )}
       aria-pressed={active}
     >
-      <div className="flex w-full items-center justify-between">
-        <span className={cn("quiet-caps", active && "text-[color:var(--accent-ink)]")}>{label}</span>
-        {active && (
-          <span
-            className="h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]"
-            aria-hidden
-          />
-        )}
+      <span className={cn("quiet-caps", active && "text-[color:var(--accent-ink)]")}>{label}</span>
+      <div className="flex items-baseline gap-2">
+        <span className="stat-numeric text-[28px] leading-none text-[color:var(--ink)]">
+          {value}
+        </span>
+        <span className="text-[11px] text-[color:var(--ink-muted)]">{hint}</span>
       </div>
-      <div className="stat-numeric text-[36px] leading-none text-[color:var(--ink)]">
-        {String(value).padStart(2, "0")}
-      </div>
-      <div className="text-[11px] text-[color:var(--ink-muted)]">{hint}</div>
     </motion.button>
   );
 }
@@ -323,20 +324,15 @@ function LedgerRow({
           className={cn(
             "grid h-10 w-10 shrink-0 place-items-center rounded-full text-[12px] font-semibold uppercase tracking-[-0.01em]",
             selected
-              ? "bg-[color:var(--accent)] text-white"
+              ? "bg-[color:var(--accent)] text-[color:var(--paper)]"
               : "bg-[color:var(--paper-deep)] text-[color:var(--ink-soft)]",
           )}
         >
           {initials}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate font-display text-[15px] tracking-[-0.005em]">
-              {entry.name}
-            </span>
-            {entry.activeJobs.length === 0 && entry.specialties.length === 0 && (
-              <span className="quiet-caps text-[color:var(--amber)]">attention</span>
-            )}
+          <div className="truncate font-display text-[15px] tracking-[-0.005em]">
+            {entry.name}
           </div>
           <div className="mt-0.5 truncate text-[12px] text-[color:var(--ink-muted)]">
             {entry.email ?? <span className="italic">no email</span>}
@@ -416,7 +412,7 @@ function LedgerEmpty({
           No workers on the books yet.
         </h2>
         <p className="mx-auto mt-3 max-w-[44ch] text-[13px] leading-[1.7] text-[color:var(--ink-muted)]">
-          Invite your first crew member. They get a token portal — no password, no account juggling.
+          Invite your first crew member. They get a token portal: no password, no account juggling.
           You stay in control of the link.
         </p>
         <div className="mt-6 inline-flex">
@@ -455,22 +451,20 @@ function InspectorEmpty({
       transition={{ duration: 0.18 }}
       className="paper-card p-6"
     >
-      <div className="quiet-caps">Today, at a glance</div>
-      <div className="mt-2 font-display text-[22px] leading-tight tracking-[-0.015em]">
+      <div className="quiet-caps">
         {totalActive === 0
-          ? "Quiet on the boards."
-          : `${totalActive} active assignment${totalActive === 1 ? "" : "s"} across the crew.`}
+          ? "Quiet on the boards"
+          : `${totalActive} active assignment${totalActive === 1 ? "" : "s"} across the crew`}
       </div>
-      <p className="mt-3 text-[12px] leading-[1.7] text-[color:var(--ink-muted)]">
-        Pick a name from the ledger to inspect that worker — specialties, contact, magic link,
-        and what they&apos;re carrying.
-      </p>
-      <div className="mt-6 grid grid-cols-2 gap-4 border-t border-[color:var(--ink-line)] pt-5">
+      <div className="mt-5 grid grid-cols-2 gap-4">
         <Mini label="On a job" value={counts.onJob} />
         <Mini label="Available" value={counts.available} />
         <Mini label="Unrated" value={counts.unrated} />
         <Mini label="Total" value={counts.all} />
       </div>
+      <p className="mt-6 border-t border-[color:var(--ink-line)] pt-4 text-[12px] leading-[1.6] text-[color:var(--ink-muted)]">
+        Pick a name from the ledger to see specialties, contact, magic link, and active jobs.
+      </p>
     </motion.div>
   );
 }
@@ -480,7 +474,7 @@ function Mini({ label, value }: { label: string; value: number }) {
     <div>
       <div className="quiet-caps">{label}</div>
       <div className="tabular mt-1 text-[22px] leading-none text-[color:var(--ink)]">
-        {String(value).padStart(2, "0")}
+        {value}
       </div>
     </div>
   );
@@ -605,7 +599,7 @@ function InspectorWorker({
 
       <div className="border-t border-[color:var(--ink-line)] bg-[color:var(--paper-deep)]/40 px-6 py-5">
         <div className="quiet-caps mb-2">Magic link</div>
-        <div className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-white px-3 py-2">
+        <div className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-[color:var(--paper)] px-3 py-2">
           <code className="flex-1 truncate font-mono text-[11px] text-[color:var(--ink-soft)]">
             {magicLink || `…/w/${entry.token.slice(0, 12)}…`}
           </code>
@@ -625,7 +619,7 @@ function InspectorWorker({
         </div>
         <p className="mt-2 text-[11px] leading-[1.6] text-[color:var(--ink-muted)]">
           Anyone with this link can view and accept jobs assigned to {entry.name.split(" ")[0]}.
-          Revoke to rotate it — the old link dies immediately.
+          Revoke to rotate it. The previous link dies immediately.
         </p>
 
         <div className="mt-4 flex items-center justify-between">
@@ -645,8 +639,8 @@ function InspectorWorker({
               Revoke access
             </button>
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-[color:var(--ink-muted)]">Sure?</span>
+            <div className="flex items-center gap-3">
+              <span className="quiet-caps">Rotate link?</span>
               <button
                 type="button"
                 onClick={() => setConfirmRevoke(false)}
@@ -668,7 +662,7 @@ function InspectorWorker({
                 }}
                 className="text-[12px] font-medium text-[color:var(--rose)] underline underline-offset-[3px] disabled:opacity-50"
               >
-                {revoking ? "Rotating…" : "Yes, rotate link"}
+                {revoking ? "Rotating…" : "Rotate"}
               </button>
             </div>
           )}
@@ -929,8 +923,8 @@ function InviteSheet({
                     </div>
                   </div>
                   <p className="text-[12px] leading-[1.7] text-[color:var(--ink-muted)]">
-                    Share the link directly. You can rotate it any time from the inspector — anyone
-                    with the old link loses access immediately.
+                    Share the link directly. Rotate it any time from the inspector. Anyone with the
+                    old link loses access immediately.
                   </p>
                 </div>
               )}
