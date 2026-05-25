@@ -21,6 +21,10 @@ export const V3_PORTED_ROUTES = {
   // also the live /dashboard/workers page — both routes share it via
   // src/components/v3/workers-new/workers-ledger.tsx.
   "workers-new": "/v3/workers-new",
+  // Frontend-design proposals redesign — Pressroom edition. Three-tab layout
+  // (All / Accepted / Completed) with masthead revenue headlines. Duplicate of
+  // the live proposals page; original at /dashboard/proposals stays untouched.
+  proposalsC: "/v3/proposals-c",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;
