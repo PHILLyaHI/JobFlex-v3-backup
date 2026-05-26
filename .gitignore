@@ -15,5 +15,18 @@ pnpm-debug.log*
 .idea
 coverage
 .prisma
+prisma/dev.db
+prisma/dev.db-journal
 prisma/migrations/**/migration_lock.toml.bak
 next-env.d.ts
+
+# Screenshot dumps & temp HTML — keep out of repo root
+/*.png
+/UserstradeAppDataLocalTempsandbox-resp.html
+
+# Local project planning artifacts
+/.planning/
+/.impeccable/
+/.playwright-cli/
+/.claude/settings.local.json
+/.claude/scheduled_tasks.lock

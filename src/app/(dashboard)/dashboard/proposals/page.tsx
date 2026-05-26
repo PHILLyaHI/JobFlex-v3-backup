@@ -1,22 +1,43 @@
-import Link from "next/link";
+// Live proposals page — promoted to the Pressroom 3-tab build
+// (All · Accepted · Completed) on desktop. Mobile keeps the existing
+// MobileProposalsList. The desktop view is shared with /v3/proposals-c
+// via the same ProposalsCView orchestrator at
+// src/components/v3/proposals-c/proposals-c-view.tsx — both routes render
+// the identical layout.
+
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Sparkles, FileText, Plus } from "lucide-react";
-import { ProposalsTable, type ProposalRow } from "./proposals-table";
-import { MobileProposalsList, type MobileProposalRow } from "./mobile-proposals-list";
+import { ProposalsCView } from "@/components/v3/proposals-c/proposals-c-view";
+import {
+  MobileProposalsList,
+  type MobileProposalRow,
+} from "./mobile-proposals-list";
+import type {
+  InstallmentLine,
+  ProposalCRow,
+  ProposalCStatus,
+} from "@/components/v3/proposals-c/types";
+
+export const dynamic = "force-dynamic";
 
 export default async function ProposalsListPage() {
   const { organizationId } = await requireOrg();
+
   const proposals = await db.proposal.findMany({
     where: { organizationId },
     orderBy: { updatedAt: "desc" },
     include: {
       client: {
-        select: { name: true, email: true, address: true, city: true, state: true, zip: true },
+        select: {
+          name: true,
+          email: true,
+          address: true,
+          city: true,
+          state: true,
+          zip: true,
+        },
       },
+      installments: { orderBy: { position: "asc" } },
       lineItems: {
         select: {
           id: true,
@@ -31,20 +52,35 @@ export default async function ProposalsListPage() {
     },
   });
 
-  const rows: ProposalRow[] = proposals.map((p) => ({
+  const rows: ProposalCRow[] = proposals.map((p) => ({
     id: p.id,
     publicId: p.publicId,
     title: p.title,
-    status: p.status,
+    status: p.status as ProposalCStatus,
     total: p.total,
+    subtotal: p.subtotal,
+    taxTotal: p.taxTotal,
     clientName: p.client?.name ?? "Unassigned",
     clientEmail: p.client?.email ?? null,
     clientAddress: p.client?.address ?? null,
     clientCity: p.client?.city ?? null,
     clientState: p.client?.state ?? null,
     clientZip: p.client?.zip ?? null,
-    updatedAt: p.updatedAt,
+    createdAtISO: p.createdAt.toISOString(),
+    updatedAtISO: p.updatedAt.toISOString(),
+    sentAtISO: p.sentAt?.toISOString() ?? null,
+    acceptedAtISO: p.acceptedAt?.toISOString() ?? null,
+    paidAtISO: p.paidAt?.toISOString() ?? null,
+    validUntilISO: p.validUntil?.toISOString() ?? null,
     viewCount: p.viewCount,
+    installments: p.installments.map<InstallmentLine>((i) => ({
+      id: i.id,
+      label: i.label,
+      amount: i.amount,
+      isPercent: i.isPercent,
+      dueDate: i.dueDate?.toISOString() ?? null,
+      position: i.position,
+    })),
     materials: p.lineItems.map((l) => ({
       id: l.id,
       name: l.name,
@@ -55,13 +91,16 @@ export default async function ProposalsListPage() {
     })),
   }));
 
+  const accepted = rows.filter((r) => r.status === "ACCEPTED");
+  const completed = rows.filter((r) => r.status === "PAID");
+
   const mobileRows: MobileProposalRow[] = rows.map((r) => ({
     id: r.id,
     title: r.title,
     status: r.status,
     total: r.total,
     clientName: r.clientName,
-    updatedAt: r.updatedAt,
+    updatedAt: new Date(r.updatedAtISO),
   }));
 
   return (
@@ -70,47 +109,7 @@ export default async function ProposalsListPage() {
         <MobileProposalsList rows={mobileRows} />
       </div>
       <div className="hidden md:block">
-      <PageHeader
-        eyebrow="Sales"
-        title="Proposals"
-        description="Draft, sent, viewed, accepted. Your full pipeline of quotes in one editorial table."
-        actions={
-          <>
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            <Link href={"/dashboard/proposals/ai" as any}>
-              <Button icon={<Sparkles className="h-3.5 w-3.5" />}>AI proposal</Button>
-            </Link>
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            <Link href={"/dashboard/proposals/new" as any}>
-              <Button variant="outline" icon={<Plus className="h-3.5 w-3.5" />}>
-                Manual
-              </Button>
-            </Link>
-          </>
-        }
-      />
-
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={<FileText className="h-5 w-5" />}
-          title="No proposals yet"
-          description="Draft your first proposal with AI or start from scratch. Both end up in the same place — looking sharp."
-          action={
-            <div className="flex gap-2">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              <Link href={"/dashboard/proposals/ai" as any}>
-                <Button icon={<Sparkles className="h-3.5 w-3.5" />}>AI draft</Button>
-              </Link>
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              <Link href={"/dashboard/proposals/new" as any}>
-                <Button variant="outline">Manual</Button>
-              </Link>
-            </div>
-          }
-        />
-      ) : (
-        <ProposalsTable rows={rows} />
-      )}
+        <ProposalsCView all={rows} accepted={accepted} completed={completed} />
       </div>
     </>
   );
