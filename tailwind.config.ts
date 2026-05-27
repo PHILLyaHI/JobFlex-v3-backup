@@ -11,22 +11,23 @@ const config: Config = {
         mono: ["ui-monospace", "SFMono-Regular", "monospace"],
       },
       colors: {
+        // cool-neutral / Pressed Sage
         paper: {
-          DEFAULT: "#FAFAF7",
-          deep: "#F3F1EA",
-          ink: "#111113",
+          DEFAULT: "#F7F8FA",
+          deep: "#EEF1F4",
+          ink: "#14181F",
         },
         ink: {
-          DEFAULT: "#111113",
-          soft: "#2A2A2E",
-          muted: "#6B6A64",
-          faint: "#A6A49D",
-          line: "#E8E6DE",
+          DEFAULT: "#14181F",
+          soft: "#3A4150",
+          muted: "#5A6473",
+          faint: "#8A93A1",
+          line: "#E4E8EE",
         },
         accent: {
-          DEFAULT: "#4F46E5",
-          soft: "#EEF0FF",
-          ink: "#1E1B4B",
+          DEFAULT: "#1F7A52",
+          soft: "#E0F0E8",
+          ink: "#155637",
         },
         brand: {
           amber: "#C89450",
@@ -37,16 +38,16 @@ const config: Config = {
       borderRadius: {
         xs: "4px",
         sm: "6px",
-        md: "10px",
-        lg: "16px",
+        md: "8px",
+        lg: "14px",
         xl: "24px",
         "2xl": "32px",
       },
       boxShadow: {
-        hairline: "inset 0 0 0 0.5px rgba(17,17,19,0.10)",
-        card: "0 1px 0 rgba(17,17,19,0.04), 0 4px 16px -8px rgba(17,17,19,0.08)",
-        pop: "0 20px 48px -24px rgba(17,17,19,0.25)",
-        glow: "0 0 0 6px rgba(79,70,229,0.08)",
+        hairline: "inset 0 0 0 0.5px rgba(20,24,31,0.10)",
+        card: "0 1px 2px rgba(20,24,31,0.05), 0 1px 3px rgba(20,24,31,0.05)",
+        pop: "0 2px 6px rgba(20,24,31,0.05), 0 8px 24px rgba(20,24,31,0.08)",
+        glow: "0 0 0 6px rgba(31,122,82,0.08)",
       },
       keyframes: {
         "fade-up": {

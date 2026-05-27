@@ -10,10 +10,11 @@ interface StatCardProps {
   value: string;
   delta?: { value: string; direction: "up" | "down" };
   hint?: string;
+  accent?: boolean;
   className?: string;
 }
 
-export function StatCard({ label, value, delta, hint, className }: StatCardProps) {
+export function StatCard({ label, value, delta, hint, accent, className }: StatCardProps) {
   return (
     <motion.div variants={listItem} className={cn("paper-card p-5 flex flex-col gap-3", className)}>
 
@@ -23,7 +24,7 @@ export function StatCard({ label, value, delta, hint, className }: StatCardProps
           <span
             className={cn(
               "inline-flex items-center gap-0.5 text-[11px] font-medium",
-              delta.direction === "up" ? "text-emerald-700" : "text-rose-700",
+              delta.direction === "up" ? "text-[color:var(--accent)]" : "text-rose-700",
             )}
           >
             {delta.direction === "up" ? (
@@ -35,7 +36,14 @@ export function StatCard({ label, value, delta, hint, className }: StatCardProps
           </span>
         )}
       </div>
-      <div className="stat-numeric text-[40px] leading-none text-[color:var(--ink)]">{value}</div>
+      <div
+        className={cn(
+          "stat-numeric text-[40px] leading-none",
+          accent ? "text-[color:var(--accent)]" : "text-[color:var(--ink)]",
+        )}
+      >
+        {value}
+      </div>
       {hint && <div className="text-[11px] text-[color:var(--ink-muted)]">{hint}</div>}
     </motion.div>
   );

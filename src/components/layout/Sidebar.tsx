@@ -124,16 +124,22 @@ export function Sidebar() {
                   key={item.href}
                   href={item.href as any}
                   className={cn(
-                    "group flex items-center gap-2.5 px-3 h-9 rounded-[var(--r-sm)] text-[13px] transition-colors",
+                    "group relative flex items-center gap-2.5 px-3 h-9 rounded-[var(--r-sm)] text-[13px] transition-colors",
                     active
-                      ? "bg-[color:var(--ink)] text-[color:var(--paper)]"
+                      ? "bg-[color:var(--accent-soft)] text-[color:var(--accent)] font-medium"
                       : "text-[color:var(--ink-soft)] hover:bg-black/[0.04] dark:hover:bg-white/[0.05]",
                   )}
                 >
+                  {active && (
+                    <span
+                      aria-hidden
+                      className="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-r bg-[color:var(--accent)]"
+                    />
+                  )}
                   <span className={cn("opacity-80", active && "opacity-100")}>{item.icon}</span>
                   <span className="truncate">{item.label}</span>
                   {active && (
-                    <span className="ml-auto h-1 w-1 rounded-full bg-[color:var(--paper)]" />
+                    <span className="ml-auto h-1 w-1 rounded-full bg-[color:var(--accent)]" />
                   )}
                 </Link>
               );

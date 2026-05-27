@@ -115,6 +115,7 @@ export default async function DashboardOverview() {
           label="Open proposals"
           value={String(openProposals)}
           delta={{ value: `${acceptedProposals} won`, direction: "up" }}
+          accent
         />
         <StatCard
           label="New leads · 7d"
