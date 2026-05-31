@@ -52,10 +52,11 @@ export async function saveProposal(raw: unknown) {
   const { subtotal, taxTotal, total } = computeTotals(data);
 
   if (data.id) {
-    const existing = await db.proposal.findUnique({ where: { id: data.id } });
-    if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
-    const updated = await db.proposal.update({
-      where: { id: data.id },
+    // Ownership-gated update in a single Prisma call (no TOCTOU window).
+    // Proposal has no compound unique on (id, organizationId), so we use
+    // updateMany which accepts non-unique filter fields and reports count.
+    const { count } = await db.proposal.updateMany({
+      where: { id: data.id, organizationId },
       data: {
         title: data.title,
         clientId: data.clientId ?? null,
@@ -70,23 +71,51 @@ export async function saveProposal(raw: unknown) {
         subtotal,
         taxTotal,
         total,
-        lineItems: {
-          deleteMany: {},
-          create: data.lineItems.map((l, i) => ({
-            ...l,
-            total: l.quantity * l.unitPrice,
-            position: i,
-          })),
-        },
-        installments: {
-          deleteMany: {},
-          create: data.installments.map((i, idx) => ({ ...i, position: idx })),
-        },
       },
     });
+    if (count === 0) throw new Error("Not found");
+    // Nested writes aren't allowed on updateMany; rewrite children scoped
+    // by proposalId. These only execute if the ownership-gated update above
+    // succeeded, so they remain org-isolated.
+    const proposalId = data.id;
+    await db.lineItem.deleteMany({ where: { proposalId } });
+    for (let i = 0; i < data.lineItems.length; i += 1) {
+      const l = data.lineItems[i];
+      await db.lineItem.create({
+        data: {
+          proposalId,
+          name: l.name,
+          description: l.description,
+          measurementType: l.measurementType,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          materialCost: l.materialCost,
+          laborCost: l.laborCost,
+          total: l.quantity * l.unitPrice,
+          position: i,
+        },
+      });
+    }
+    await db.installment.deleteMany({ where: { proposalId } });
+    for (let idx = 0; idx < data.installments.length; idx += 1) {
+      const inst = data.installments[idx];
+      await db.installment.create({
+        data: {
+          proposalId,
+          label: inst.label,
+          amount: inst.amount,
+          isPercent: inst.isPercent,
+          position: idx,
+        },
+      });
+    }
+    const refreshed = await db.proposal.findUnique({
+      where: { id: proposalId },
+      select: { id: true, publicId: true },
+    });
     revalidatePath("/dashboard/proposals");
-    revalidatePath(`/dashboard/proposals/${updated.id}`);
-    return { id: updated.id, publicId: updated.publicId };
+    revalidatePath(`/dashboard/proposals/${proposalId}`);
+    return { id: refreshed!.id, publicId: refreshed!.publicId };
   }
 
   const created = await db.proposal.create({
