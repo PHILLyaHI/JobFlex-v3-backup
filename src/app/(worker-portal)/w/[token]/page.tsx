@@ -51,10 +51,10 @@ export default async function WorkerDashboard({
   return (
     <>
       <div className="quiet-caps mb-2">Welcome back</div>
-      <h1 className="font-display text-[32px] tracking-[-0.02em] leading-none">
+      <h1 className="font-display text-[34px] tracking-[-0.02em] leading-[1.05]">
         Hi, {worker.displayName.split(" ")[0]}.
       </h1>
-      <p className="mt-2 text-[13px] text-[color:var(--ink-muted)]">
+      <p className="mt-2 text-[14px] text-[color:var(--ink-muted)]">
         Your jobs. Confirm, upload photos, and stay on schedule — no login needed.
       </p>
 

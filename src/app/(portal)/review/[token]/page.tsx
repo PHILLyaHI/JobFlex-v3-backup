@@ -29,7 +29,7 @@ export default async function ReviewPublicPage({
         className="fixed inset-0 pointer-events-none"
         style={{
           backgroundImage:
-            "radial-gradient(ellipse 60% 40% at 30% 10%, rgba(234,179,8,0.07), transparent 60%)",
+            "radial-gradient(ellipse 60% 40% at 30% 10%, rgba(200,148,80,0.07), transparent 60%)",
         }}
       />
       <div className="relative z-10 w-full">
