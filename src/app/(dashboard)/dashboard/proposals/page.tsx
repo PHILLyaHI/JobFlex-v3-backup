@@ -37,6 +37,11 @@ export default async function ProposalsListPage() {
           zip: true,
         },
       },
+      owner: {
+        select: {
+          name: true,
+        },
+      },
       installments: { orderBy: { position: "asc" } },
       lineItems: {
         select: {
@@ -73,6 +78,7 @@ export default async function ProposalsListPage() {
     paidAtISO: p.paidAt?.toISOString() ?? null,
     validUntilISO: p.validUntil?.toISOString() ?? null,
     viewCount: p.viewCount,
+    creatorName: p.owner?.name ?? null,
     installments: p.installments.map<InstallmentLine>((i) => ({
       id: i.id,
       label: i.label,

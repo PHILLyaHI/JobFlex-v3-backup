@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/cn";
 import { Badge } from "@/components/ui/Badge";
+import { Avatar } from "@/components/ui/Avatar";
 import { RowActions } from "@/components/proposal/RowActions";
 import { money, relative } from "@/lib/format";
 import type { ProposalCRow, StatusSubFilter } from "./types";
@@ -94,6 +95,7 @@ export function AllLedger({ rows, statusFilter, onStatusFilterChange }: AllLedge
                     No.
                   </th>
                   <th className="quiet-caps px-5 py-3 text-left">Proposal</th>
+                  <th className="quiet-caps px-5 py-3 text-left w-[180px]">Created by</th>
                   <th className="quiet-caps px-5 py-3 text-left w-[120px]">Status</th>
                   <th className="quiet-caps px-5 py-3 text-right w-[80px]">Views</th>
                   <th className="quiet-caps px-5 py-3 text-left w-[120px]">Updated</th>
@@ -130,6 +132,18 @@ export function AllLedger({ rows, statusFilter, onStatusFilterChange }: AllLedge
                           {r.clientName}
                         </div>
                       </Link>
+                    </td>
+                    <td className="px-5 py-3.5 align-middle">
+                      {r.creatorName ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Avatar name={r.creatorName} size={24} />
+                          <span className="text-[13px] text-[color:var(--ink)] truncate">
+                            {r.creatorName}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-[12px] text-[color:var(--ink-faint)]">Unassigned</span>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 align-middle">
                       <Badge tone={toneFor(r.status)} dot>

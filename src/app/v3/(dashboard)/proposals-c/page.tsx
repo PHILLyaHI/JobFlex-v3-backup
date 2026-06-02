@@ -45,6 +45,11 @@ export default async function ProposalsCPage() {
           zip: true,
         },
       },
+      owner: {
+        select: {
+          name: true,
+        },
+      },
       installments: {
         orderBy: { position: "asc" },
       },
@@ -83,6 +88,7 @@ export default async function ProposalsCPage() {
     paidAtISO: p.paidAt?.toISOString() ?? null,
     validUntilISO: p.validUntil?.toISOString() ?? null,
     viewCount: p.viewCount,
+    creatorName: p.owner?.name ?? null,
     installments: p.installments.map<InstallmentLine>((i) => ({
       id: i.id,
       label: i.label,

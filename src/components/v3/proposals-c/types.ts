@@ -44,6 +44,7 @@ export interface ProposalCRow {
   paidAtISO: string | null;
   validUntilISO: string | null;
   viewCount: number;
+  creatorName: string | null;
   installments: InstallmentLine[];
   materials: MaterialLine[];
 }
