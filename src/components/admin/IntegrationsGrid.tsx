@@ -28,8 +28,8 @@ const ICON: Record<string, React.ReactNode> = {
 };
 
 const ACCENT: Record<string, string> = {
-  openai: "rgba(79,70,229,0.10)",
-  stripe: "rgba(79,70,229,0.10)",
+  openai: "rgba(31,122,82,0.10)",
+  stripe: "rgba(31,122,82,0.10)",
   square: "rgba(5,150,105,0.10)",
   paypal: "rgba(0,128,255,0.10)",
   resend: "rgba(225,29,72,0.10)",

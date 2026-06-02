@@ -147,7 +147,7 @@ export function RatioSlider({ total, materialPct, onChange }: RatioSliderProps) 
           style={{
             width: `${pct}%`,
             transition,
-            background: "linear-gradient(90deg, rgba(79,70,229,0.35), rgba(79,70,229,0.62))",
+            background: "linear-gradient(90deg, rgba(31,122,82,0.35), rgba(31,122,82,0.62))",
           }}
         />
 

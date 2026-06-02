@@ -19,7 +19,7 @@ export function PlanBadge({ plan = "FREE" }: { plan?: string | null }) {
       <span
         className={cn(
           "h-1.5 w-1.5 rounded-full",
-          paid ? "bg-[color:var(--accent)] shadow-[0_0_0_3px_rgba(79,70,229,0.15)]" : "bg-[color:var(--ink-faint)]",
+          paid ? "bg-[color:var(--accent)] shadow-[0_0_0_3px_rgba(31,122,82,0.15)]" : "bg-[color:var(--ink-faint)]",
         )}
       />
       <span className="text-[10px] tracking-[0.14em] uppercase font-medium text-[color:var(--ink-soft)]">

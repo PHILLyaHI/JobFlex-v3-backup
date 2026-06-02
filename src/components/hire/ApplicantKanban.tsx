@@ -22,7 +22,7 @@ export interface KanbanApplicant {
 }
 
 const COLUMNS = [
-  { key: "APPLIED", label: "Applied", tone: "rgba(79,70,229,0.16)" },
+  { key: "APPLIED", label: "Applied", tone: "rgba(31,122,82,0.16)" },
   { key: "INTERVIEWING", label: "Interviewing", tone: "rgba(200,148,80,0.16)" },
   { key: "HIRED", label: "Hired", tone: "rgba(5,150,105,0.16)" },
   { key: "REJECTED", label: "Rejected", tone: "rgba(225,29,72,0.10)" },

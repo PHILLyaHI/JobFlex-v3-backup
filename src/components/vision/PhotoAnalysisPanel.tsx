@@ -54,7 +54,7 @@ export function PhotoAnalysisPanel({
           className="absolute inset-0 pointer-events-none opacity-70"
           style={{
             background:
-              "radial-gradient(ellipse at top right, rgba(79,70,229,0.08), transparent 60%)",
+              "radial-gradient(ellipse at top right, rgba(31,122,82,0.08), transparent 60%)",
           }}
         />
         <div className="relative flex items-center justify-between gap-2">

@@ -88,7 +88,7 @@ export function ProjectCard({ project }: { project: ProjectCardData }) {
                   background:
                     pct >= 100
                       ? "#059669"
-                      : "linear-gradient(90deg, var(--accent), rgba(79,70,229,0.6))",
+                      : "linear-gradient(90deg, var(--accent), rgba(31,122,82,0.6))",
                 }}
               />
             </div>

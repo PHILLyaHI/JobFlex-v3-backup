@@ -5,7 +5,7 @@ export default function HomeownersPage() {
   return (
     <main className="min-h-dvh grid md:grid-cols-5">
       <aside className="md:col-span-2 p-8 md:p-14 bg-[color:var(--paper-deep)] relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_80%_10%,rgba(79,70,229,0.12),transparent_60%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_80%_10%,rgba(31,122,82,0.12),transparent_60%)]" />
         <Link href="/" className="relative flex items-center gap-2.5 mb-16">
           <div className="h-8 w-8 rounded-[8px] bg-[color:var(--ink)] text-[color:var(--paper)] grid place-items-center font-display text-[15px]">
             J

@@ -19,7 +19,7 @@ export function Topbar({ user, memberships = [] }: TopbarProps) {
     <header className="sticky top-0 z-30 hidden md:flex items-center gap-3 h-16 px-6 border-b border-[color:var(--ink-line)] bg-[color:var(--paper)]/80 backdrop-blur-md">
       <button
         onClick={() => setCommandOpen(true)}
-        className="flex items-center gap-2 h-9 px-3 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline text-[12px] text-[color:var(--ink-muted)] w-[360px] max-w-[40vw] transition-all hover:shadow-[0_0_0_3px_rgba(79,70,229,0.12)]"
+        className="flex items-center gap-2 h-9 px-3 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline text-[12px] text-[color:var(--ink-muted)] w-[360px] max-w-[40vw] transition-all hover:shadow-[0_0_0_3px_rgba(31,122,82,0.12)]"
       >
         <Search className="h-3.5 w-3.5" />
         <span>Search clients, proposals, leads…</span>

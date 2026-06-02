@@ -69,7 +69,7 @@ export function BuildingBlocks01() {
             className="pointer-events-none absolute -left-8 top-12 hidden h-[80%] w-32 opacity-60 lg:block"
             style={{
               backgroundImage:
-                "radial-gradient(circle at 30% 50%, rgba(79,70,229,0.1), transparent 60%)",
+                "radial-gradient(circle at 30% 50%, rgba(31,122,82,0.1), transparent 60%)",
             }}
           />
           <RevealStagger

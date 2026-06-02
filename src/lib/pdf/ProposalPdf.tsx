@@ -9,7 +9,7 @@ const C = {
   muted: "#6B6A64",
   faint: "#A6A49D",
   line: "#E8E6DE",
-  accent: "#4F46E5",
+  accent: "#1F7A52",
 };
 
 const s = StyleSheet.create({

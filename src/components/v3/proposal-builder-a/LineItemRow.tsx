@@ -86,7 +86,7 @@ export function LineItemRow({
     <div
       className={cn(
         "rounded-[var(--r-md)] bg-white/50 hairline transition-shadow",
-        "focus-within:shadow-[0_0_0_3px_rgba(79,70,229,0.18)]",
+        "focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]",
       )}
     >
       <div className="flex items-center gap-2 p-2.5">

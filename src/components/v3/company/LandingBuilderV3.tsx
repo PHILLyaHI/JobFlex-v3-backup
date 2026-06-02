@@ -82,7 +82,7 @@ export function LandingBuilderV3({ org }: { org: OrgLanding }) {
     }
   }
 
-  const accent = org.primaryColor ?? "#4F46E5";
+  const accent = org.primaryColor ?? "#1F7A52";
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[1fr_480px] gap-8">

@@ -13,14 +13,14 @@ const CATEGORY_LABELS: Record<MarkupCategory, string> = {
 };
 
 const CATEGORY_FILL: Record<MarkupCategory, string> = {
-  materials: "linear-gradient(90deg, rgba(79,70,229,0.30), rgba(79,70,229,0.55))",
+  materials: "linear-gradient(90deg, rgba(31,122,82,0.30), rgba(31,122,82,0.55))",
   labor: "linear-gradient(90deg, rgba(217,119,6,0.30), rgba(217,119,6,0.55))",
   overhead: "linear-gradient(90deg, rgba(100,116,139,0.30), rgba(100,116,139,0.55))",
   profit: "linear-gradient(90deg, rgba(5,150,105,0.30), rgba(5,150,105,0.55))",
 };
 
 const CATEGORY_DOT: Record<MarkupCategory, string> = {
-  materials: "#4F46E5",
+  materials: "#1F7A52",
   labor: "#D97706",
   overhead: "#64748B",
   profit: "#059669",

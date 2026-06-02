@@ -43,7 +43,7 @@ export function LineItemRow({ item }: { item: DraftLineItem }) {
     <div
       className={cn(
         "rounded-[var(--r-md)] hairline bg-white/40 dark:bg-white/[0.02] transition-shadow",
-        "focus-within:shadow-[0_0_0_3px_rgba(79,70,229,0.18)]",
+        "focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]",
       )}
     >
       {/* Compact row — 12 col grid, single-line height */}

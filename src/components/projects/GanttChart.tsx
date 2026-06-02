@@ -81,7 +81,7 @@ export function GanttChart({ jobs, windowStart, windowEnd }: Props) {
               ((j.endsAt.getTime() - j.startsAt.getTime()) / span) * 100;
             const accent = statusAccent(j.status);
             const colorVar =
-              accent === "var(--accent)" ? "rgba(79,70,229,1)" : accent;
+              accent === "var(--accent)" ? "rgba(31,122,82,1)" : accent;
             return (
               <div
                 key={j.id}

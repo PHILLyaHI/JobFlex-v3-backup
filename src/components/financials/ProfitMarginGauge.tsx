@@ -13,7 +13,7 @@ interface Props {
 export function ProfitMarginGauge({ marginPct, revenue, expenses, profit }: Props) {
   const value = Math.max(-50, Math.min(100, marginPct));
   const tone =
-    value >= 25 ? "#059669" : value >= 10 ? "#4F46E5" : value >= 0 ? "#C89450" : "#E11D48";
+    value >= 25 ? "#059669" : value >= 10 ? "#1F7A52" : value >= 0 ? "#C89450" : "#E11D48";
   const data = [{ name: "Margin", value: Math.max(0, value), fill: tone }];
 
   return (

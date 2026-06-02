@@ -29,8 +29,8 @@ export function RevenueExpenseChart({ data }: { data: MonthBucket[] }) {
           <AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="g-rev" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#4F46E5" stopOpacity={0.4} />
-                <stop offset="100%" stopColor="#4F46E5" stopOpacity={0.02} />
+                <stop offset="0%" stopColor="#1F7A52" stopOpacity={0.4} />
+                <stop offset="100%" stopColor="#1F7A52" stopOpacity={0.02} />
               </linearGradient>
               <linearGradient id="g-exp" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="#C89450" stopOpacity={0.36} />
@@ -70,7 +70,7 @@ export function RevenueExpenseChart({ data }: { data: MonthBucket[] }) {
               type="monotone"
               name="Revenue"
               dataKey="revenue"
-              stroke="#4F46E5"
+              stroke="#1F7A52"
               strokeWidth={1.5}
               fill="url(#g-rev)"
               activeDot={{ r: 4, strokeWidth: 0 }}

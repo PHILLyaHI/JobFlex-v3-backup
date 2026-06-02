@@ -68,7 +68,7 @@ export function BevelButton(props: Props) {
     "group relative inline-flex items-center justify-center font-medium uppercase tracking-[0.08em] select-none",
     "transition-[transform,filter] duration-200 ease-[cubic-bezier(.22,1,.36,1)]",
     "hover:-translate-y-[1px] active:translate-y-0",
-    "focus-visible:outline-none focus-visible:[--ring:1] focus-visible:drop-shadow-[0_0_0_3px_rgba(79,70,229,0.35)]",
+    "focus-visible:outline-none focus-visible:[--ring:1] focus-visible:drop-shadow-[0_0_0_3px_rgba(31,122,82,0.35)]",
     SIZE[size],
     className,
   );

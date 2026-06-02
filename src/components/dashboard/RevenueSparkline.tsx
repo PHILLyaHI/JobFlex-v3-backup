@@ -8,8 +8,8 @@ export function RevenueSparkline({ data }: { data: { day: string; revenue: numbe
         <AreaChart data={data} margin={{ top: 6, right: 0, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#4F46E5" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="#4F46E5" stopOpacity={0} />
+              <stop offset="0%" stopColor="#1F7A52" stopOpacity={0.25} />
+              <stop offset="100%" stopColor="#1F7A52" stopOpacity={0} />
             </linearGradient>
           </defs>
           <Tooltip
@@ -25,7 +25,7 @@ export function RevenueSparkline({ data }: { data: { day: string; revenue: numbe
           <Area
             type="monotone"
             dataKey="revenue"
-            stroke="#4F46E5"
+            stroke="#1F7A52"
             strokeWidth={1.5}
             fill="url(#rev)"
           />

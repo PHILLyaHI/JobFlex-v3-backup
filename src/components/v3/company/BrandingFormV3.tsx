@@ -23,7 +23,7 @@ interface Org {
 }
 
 const COLOR_PRESETS = [
-  "#4F46E5", // pressroom indigo (default)
+  "#1F7A52", // pressroom indigo (default)
   "#0EA5E9", // sky
   "#059669", // emerald
   "#C89450", // amber-bronze
@@ -40,7 +40,7 @@ export function BrandingFormV3({ org }: { org: Org }) {
   const [billingEmail, setBillingEmail] = React.useState(org.billingEmail ?? "");
   const [address, setAddress] = React.useState(org.address ?? "");
   const [website, setWebsite] = React.useState(org.website ?? "");
-  const [primaryColor, setPrimaryColor] = React.useState(org.primaryColor ?? "#4F46E5");
+  const [primaryColor, setPrimaryColor] = React.useState(org.primaryColor ?? "#1F7A52");
   const [logoUrl, setLogoUrl] = React.useState<string | null>(org.logoUrl);
   const [busy, setBusy] = React.useState(false);
 
@@ -50,7 +50,7 @@ export function BrandingFormV3({ org }: { org: Org }) {
     (billingEmail || null) !== org.billingEmail ||
     (address || null) !== org.address ||
     (website || null) !== org.website ||
-    primaryColor !== (org.primaryColor ?? "#4F46E5") ||
+    primaryColor !== (org.primaryColor ?? "#1F7A52") ||
     logoUrl !== org.logoUrl;
 
   async function save() {
@@ -240,7 +240,7 @@ export function BrandingFormV3({ org }: { org: Org }) {
               />
             </div>
             <p className="mt-4 text-[11px] text-[color:var(--ink-muted)] leading-relaxed">
-              Keep it to one strong accent. Pressroom Indigo (<code className="font-mono">#4F46E5</code>) is
+              Keep it to one strong accent. Pressroom Indigo (<code className="font-mono">#1F7A52</code>) is
               the system default — your color overrides it across every customer-facing surface.
             </p>
           </Card>

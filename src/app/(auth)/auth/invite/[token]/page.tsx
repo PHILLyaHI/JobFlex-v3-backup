@@ -23,7 +23,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
         className="fixed inset-0 pointer-events-none"
         style={{
           backgroundImage:
-            "radial-gradient(ellipse 60% 40% at 70% 10%, rgba(79,70,229,0.07), transparent 60%)",
+            "radial-gradient(ellipse 60% 40% at 70% 10%, rgba(31,122,82,0.07), transparent 60%)",
         }}
       />
       <div className="relative z-10 w-full">

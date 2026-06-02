@@ -240,7 +240,7 @@ function MessageComposer({
 
   return (
     <div className="border-t border-[color:var(--ink-line)] p-3">
-      <div className="flex items-end gap-2 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline p-2 focus-within:shadow-[0_0_0_3px_rgba(79,70,229,0.18)] transition-shadow">
+      <div className="flex items-end gap-2 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline p-2 focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)] transition-shadow">
         <textarea
           ref={ref}
           rows={1}

@@ -21,7 +21,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function 
           {label}
         </label>
       )}
-      <div className="relative flex h-10 items-center rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline transition-all focus-within:shadow-[0_0_0_3px_rgba(79,70,229,0.18)]">
+      <div className="relative flex h-10 items-center rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline transition-all focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]">
         <select
           ref={ref}
           id={inputId}

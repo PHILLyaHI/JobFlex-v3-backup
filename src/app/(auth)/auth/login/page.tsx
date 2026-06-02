@@ -138,7 +138,7 @@ export default function LoginPage() {
       </section>
 
       <section className="hidden lg:block relative bg-[color:var(--paper-deep)] overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_80%_20%,rgba(79,70,229,0.08),transparent_60%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_80%_20%,rgba(31,122,82,0.08),transparent_60%)]" />
         <div className="absolute bottom-10 right-10 max-w-sm paper-card p-6">
           <div className="quiet-caps mb-2">Today</div>
           <div className="font-display text-[22px] leading-snug tracking-[-0.015em]">

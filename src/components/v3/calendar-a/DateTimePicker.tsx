@@ -89,7 +89,7 @@ export function DateTimePicker({
         className={cn(
           "flex h-10 items-center justify-between gap-2 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] pl-3 pr-2.5 transition-all hairline text-left w-full",
           open
-            ? "shadow-[0_0_0_3px_rgba(79,70,229,0.18)] bg-white/90"
+            ? "shadow-[0_0_0_3px_rgba(31,122,82,0.18)] bg-white/90"
             : "hover:bg-white/85",
         )}
       >
@@ -115,7 +115,7 @@ export function DateTimePicker({
           style={{
             // Distinct elevation so the popover doesn't blend into the sheet behind it.
             boxShadow:
-              "0 28px 56px -12px rgba(17,17,19,0.22), 0 2px 0 rgba(79,70,229,0.06)",
+              "0 28px 56px -12px rgba(17,17,19,0.22), 0 2px 0 rgba(31,122,82,0.06)",
             borderRadius: "var(--r-lg)",
           }}
           onMouseDown={(e) => e.stopPropagation()}
@@ -315,7 +315,7 @@ function TimePicker({ value, onChange }: { value: Date; onChange: (d: Date) => v
           const n = Math.max(1, Math.min(12, raw || 1));
           setHour(n, ampm);
         }}
-        className="w-12 h-7 text-center text-[13px] tabular bg-white/70 hairline rounded-[var(--r-sm)] outline-none focus:shadow-[0_0_0_2px_rgba(79,70,229,0.18)]"
+        className="w-12 h-7 text-center text-[13px] tabular bg-white/70 hairline rounded-[var(--r-sm)] outline-none focus:shadow-[0_0_0_2px_rgba(31,122,82,0.18)]"
       />
       <span className="text-[color:var(--ink-muted)] font-medium">:</span>
       <input
@@ -329,7 +329,7 @@ function TimePicker({ value, onChange }: { value: Date; onChange: (d: Date) => v
           const n = Math.max(0, Math.min(59, raw || 0));
           setMinute(n);
         }}
-        className="w-12 h-7 text-center text-[13px] tabular bg-white/70 hairline rounded-[var(--r-sm)] outline-none focus:shadow-[0_0_0_2px_rgba(79,70,229,0.18)]"
+        className="w-12 h-7 text-center text-[13px] tabular bg-white/70 hairline rounded-[var(--r-sm)] outline-none focus:shadow-[0_0_0_2px_rgba(31,122,82,0.18)]"
       />
       <div className="flex hairline rounded-[var(--r-sm)] overflow-hidden ml-auto">
         <button

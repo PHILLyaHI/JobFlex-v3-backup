@@ -21,7 +21,7 @@ interface Org {
 }
 
 const COLOR_PRESETS = [
-  "#4F46E5", // indigo (default)
+  "#1F7A52", // indigo (default)
   "#0EA5E9", // sky
   "#059669", // emerald
   "#C89450", // amber-bronze
@@ -38,7 +38,7 @@ export function BrandingForm({ org }: { org: Org }) {
   const [billingEmail, setBillingEmail] = React.useState(org.billingEmail ?? "");
   const [address, setAddress] = React.useState(org.address ?? "");
   const [website, setWebsite] = React.useState(org.website ?? "");
-  const [primaryColor, setPrimaryColor] = React.useState(org.primaryColor ?? "#4F46E5");
+  const [primaryColor, setPrimaryColor] = React.useState(org.primaryColor ?? "#1F7A52");
   const [logoUrl, setLogoUrl] = React.useState<string | null>(org.logoUrl);
   const [busy, setBusy] = React.useState(false);
 

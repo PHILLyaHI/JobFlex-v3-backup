@@ -196,10 +196,10 @@ function ActionRow({
     tone === "danger"
       ? "rgba(225,29,72,0.10)"
       : tone === "accent"
-        ? "rgba(79,70,229,0.10)"
+        ? "rgba(31,122,82,0.10)"
         : "rgba(17,17,19,0.04)";
   const fg =
-    tone === "danger" ? "#BE123C" : tone === "accent" ? "#4F46E5" : "#6B6A64";
+    tone === "danger" ? "#BE123C" : tone === "accent" ? "#1F7A52" : "#6B6A64";
   return (
     <li>
       <Link

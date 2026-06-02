@@ -23,7 +23,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(fun
       )}
       <div
         className={cn(
-          "rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] p-3 transition-all hairline focus-within:shadow-[0_0_0_3px_rgba(79,70,229,0.18)]",
+          "rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] p-3 transition-all hairline focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]",
           error && "shadow-[0_0_0_3px_rgba(225,29,72,0.22)]",
         )}
       >

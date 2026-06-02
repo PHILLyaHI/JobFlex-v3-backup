@@ -119,8 +119,8 @@ export function RowActions({
         label: "Edit proposal",
         hint: "Open editor",
         icon: <Pencil className="h-3.5 w-3.5" />,
-        iconBg: "rgba(79,70,229,0.12)",
-        iconFg: "#4F46E5",
+        iconBg: "rgba(31,122,82,0.12)",
+        iconFg: "#1F7A52",
         onClick: () => {
           setOpen(false);
           router.push(`/dashboard/proposals/${proposalId}` as any);

@@ -171,7 +171,7 @@ function CompletedCard({ row, index }: { row: ProposalCRow; index: number }) {
               className={cn(
                 "h-9 w-full px-3 rounded-[var(--r-md)] text-[13px]",
                 "bg-white/60 hairline text-[color:var(--ink)]",
-                "focus:outline-none focus:shadow-[0_0_0_3px_rgba(79,70,229,0.18)]",
+                "focus:outline-none focus:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]",
                 "tabular",
               )}
             />

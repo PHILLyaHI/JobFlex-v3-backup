@@ -49,7 +49,7 @@ export function ReferralHeroCard({ code, shareUrl, rewardSummary }: Props) {
         className="absolute -top-24 -right-28 h-72 w-72 rounded-full blur-3xl pointer-events-none"
         style={{
           background:
-            "radial-gradient(closest-side, rgba(79,70,229,0.18), rgba(79,70,229,0.05) 60%, transparent 80%)",
+            "radial-gradient(closest-side, rgba(31,122,82,0.18), rgba(31,122,82,0.05) 60%, transparent 80%)",
         }}
       />
       <div className="relative grid grid-cols-1 md:grid-cols-[1fr_auto] items-end gap-8">

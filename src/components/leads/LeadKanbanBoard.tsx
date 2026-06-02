@@ -36,8 +36,8 @@ const COLUMNS = [
 type Status = (typeof COLUMNS)[number]["key"];
 
 const COLUMN_TONE: Record<Status, string> = {
-  NEW: "rgba(79,70,229,0.18)",
-  ROUTED: "rgba(79,70,229,0.12)",
+  NEW: "rgba(31,122,82,0.18)",
+  ROUTED: "rgba(31,122,82,0.12)",
   CLAIMED: "rgba(200,148,80,0.16)",
   CONTACTED: "rgba(200,148,80,0.12)",
   QUOTED: "rgba(14,165,233,0.14)",

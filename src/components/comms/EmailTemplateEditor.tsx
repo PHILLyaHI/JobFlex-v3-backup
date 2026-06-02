@@ -257,7 +257,7 @@ export function EmailTemplateEditor({ templates, orgName }: EmailTemplateEditorP
                   className="px-5 py-3 border-b border-[color:var(--ink-line)]"
                   style={{
                     background:
-                      "linear-gradient(90deg, rgba(79,70,229,0.05), rgba(200,148,80,0.03) 50%, transparent)",
+                      "linear-gradient(90deg, rgba(31,122,82,0.05), rgba(200,148,80,0.03) 50%, transparent)",
                   }}
                 >
                   <div className="flex items-center gap-2 text-[11px] text-[color:var(--ink-muted)]">
