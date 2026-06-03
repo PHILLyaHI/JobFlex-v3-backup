@@ -25,6 +25,13 @@ export const V3_PORTED_ROUTES = {
   // (All / Accepted / Completed) with masthead revenue headlines. Duplicate of
   // the live proposals page; original at /dashboard/proposals stays untouched.
   proposalsC: "/v3/proposals-c",
+  // Variant-2v parallel build — faithful port of the standalone Vite reference
+  // at c:/jobflex-variants/variant-2v-neutral/. Three pages: dashboard / proposals /
+  // calendar. Wired to real Prisma data, BEM CSS layer at src/styles/variant-2v.css.
+  // Lives alongside (does not replace) /dashboard, /dashboard/proposals, /dashboard/calendar.
+  dashboard2v: "/v3/dashboard-2v",
+  proposals2v: "/v3/proposals-2v",
+  calendar2v: "/v3/calendar-2v",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;
