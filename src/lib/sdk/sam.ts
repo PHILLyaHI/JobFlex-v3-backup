@@ -20,7 +20,10 @@ export async function segmentImage(imageUrl: string, points: SamPoint[]): Promis
       prompts: points.map((p) => ({
         x: Math.round(p.x),
         y: Math.round(p.y),
-        label: ((p.label ?? 1) === 1 ? "1" : "0") as "0" | "1", // fal expects the string enum
+        // fal's TS types declare label as "0"|"1" (string), but the deployed model
+        // validates a NUMBER 0|1 (string is rejected 422). Send the number and cast
+        // past the incorrect type.
+        label: (p.label ?? 1) as unknown as "0" | "1",
       })),
       apply_mask: true,
       output_format: "png",
