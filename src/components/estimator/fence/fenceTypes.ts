@@ -24,15 +24,43 @@ export interface PathPoint {
   y: number;
 }
 
-// A gate on a segment. `segmentIndex` indexes points[i]→points[i+1]; `t` is the
-// 0..1 position of the gate centre along that segment. Geometry for gates lands
-// in Phase 3; Phase 1 uses the count for pricing only.
+export type OpeningKind = "gate" | "door";
+export type OpeningVariant = "single" | "double" | "arched" | "solid" | "slatted";
+
+// A gate or door on a segment. `segmentIndex` indexes points[i]→points[i+1]; `t`
+// is the 0..1 position of the opening centre along that segment.
 export interface GateSpec {
   id: string;
   segmentIndex: number;
   t: number;
   widthFt: number;
+  kind: OpeningKind;
+  variant: OpeningVariant;
 }
+
+export interface OpeningPreset {
+  kind: OpeningKind;
+  variant: OpeningVariant;
+  label: string;
+  widthFt: number;
+}
+
+// Pickable opening types for the toolbelt. Gates are wider; doors are pedestrian.
+export const OPENING_PRESETS: OpeningPreset[] = [
+  { kind: "gate", variant: "single", label: "Single", widthFt: 4 },
+  { kind: "gate", variant: "double", label: "Double", widthFt: 10 },
+  { kind: "gate", variant: "arched", label: "Arched", widthFt: 4 },
+  { kind: "door", variant: "solid", label: "Solid", widthFt: 3 },
+  { kind: "door", variant: "slatted", label: "Slatted", widthFt: 3 },
+];
+
+export const VARIANT_LABEL: Record<OpeningVariant, string> = {
+  single: "Single",
+  double: "Double",
+  arched: "Arched",
+  solid: "Solid",
+  slatted: "Slatted",
+};
 
 // The full, serialisable description of a fence — everything the geometry engine
 // and pricing need. `points.length - 1` segments; if the last point equals the

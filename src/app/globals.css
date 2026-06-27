@@ -178,3 +178,18 @@ body::before {
   .mb-safe { margin-bottom: var(--safe-bottom); }
 }
 
+/* ── Google Places autocomplete (PlaceAutocompleteElement) ──────────────────
+   The widget follows the OS color-scheme and renders a black bar on dark-mode
+   systems. Force light and align it to the app's input look. Reuses tokens. */
+.ev-places { color-scheme: light; width: 100%; }
+.ev-places gmp-place-autocomplete {
+  color-scheme: light;
+  width: 100%;
+  border-radius: var(--r-md);
+  --gmp-mat-color-surface: var(--paper);
+  --gmp-mat-color-on-surface: var(--ink);
+  --gmp-mat-color-on-surface-variant: var(--ink-muted);
+  --gmp-mat-color-outline: var(--ink-line);
+  --gmp-mat-color-primary: var(--accent);
+}
+

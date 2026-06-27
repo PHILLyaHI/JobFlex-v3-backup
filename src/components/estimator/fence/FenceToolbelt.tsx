@@ -1,13 +1,21 @@
 "use client";
-// Sandbox control rail — material / height / runs / gates / demolition.
-// Presentational: it reads and writes the studio store and holds no business
-// logic. Material is shown as real colour swatches (the studio's memorable
-// anchor); selecting a Run highlights it in 3D and targets where gates land.
+// Sandbox control rail — material / height / runs / openings / demolition.
+// Presentational: reads and writes the studio store, no business logic. Material
+// is shown as real colour swatches (the studio's memorable anchor); selecting a
+// Run highlights it in 3D and targets where new openings land.
 import * as React from "react";
-import { Plus, Minus, Check } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useFenceStudioStore } from "@/stores/useFenceStudioStore";
-import { FENCE_MATERIALS, FENCE_HEIGHTS, MATERIAL_LABEL, type FenceMaterial } from "./fenceTypes";
+import {
+  FENCE_MATERIALS,
+  FENCE_HEIGHTS,
+  MATERIAL_LABEL,
+  OPENING_PRESETS,
+  VARIANT_LABEL,
+  type FenceMaterial,
+  type OpeningKind,
+} from "./fenceTypes";
 
 // Swatch ≈ the rendered material, so the chip previews the 3D result.
 const MATERIAL_SWATCH: Record<FenceMaterial, string> = {
@@ -17,6 +25,8 @@ const MATERIAL_SWATCH: Record<FenceMaterial, string> = {
   aluminum: "#2c3036",
   composite: "#6f6a60",
 };
+
+const OPENING_KINDS: OpeningKind[] = ["gate", "door"];
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -37,11 +47,9 @@ export function FenceToolbelt() {
   const setMaterial = useFenceStudioStore((s) => s.setMaterial);
   const setHeight = useFenceStudioStore((s) => s.setHeight);
   const setDemolition = useFenceStudioStore((s) => s.setDemolition);
-  const addGate = useFenceStudioStore((s) => s.addGate);
+  const addOpening = useFenceStudioStore((s) => s.addOpening);
   const removeGate = useFenceStudioStore((s) => s.removeGate);
   const selectSegment = useFenceStudioStore((s) => s.selectSegment);
-
-  const gateCount = gates.length;
 
   const runs = React.useMemo(() => {
     const out: { i: number; len: number }[] = [];
@@ -53,6 +61,12 @@ export function FenceToolbelt() {
     }
     return out;
   }, [points]);
+
+  const runNumber = (segIdx: number) => {
+    const k = runs.findIndex((r) => r.i === segIdx);
+    return k >= 0 ? k + 1 : null;
+  };
+  const targetRun = selectedSegment ?? runs[0]?.i ?? 0;
 
   return (
     <div className="space-y-6">
@@ -140,33 +154,58 @@ export function FenceToolbelt() {
         )}
       </Section>
 
-      <Section label="Gates">
-        <div className="inline-flex items-center rounded-[var(--r-md)] hairline bg-white/60">
-          <button
-            type="button"
-            onClick={() => {
-              if (gateCount > 0) removeGate(gates[gates.length - 1].id);
-            }}
-            disabled={gateCount === 0}
-            className="h-9 w-9 grid place-items-center text-[color:var(--ink-muted)] hover:bg-black/[0.04] disabled:opacity-40"
-            aria-label="Remove gate"
-          >
-            <Minus className="h-3.5 w-3.5" />
-          </button>
-          <div className="w-14 text-center font-display tabular text-[20px]">{gateCount}</div>
-          <button
-            type="button"
-            onClick={() => addGate(selectedSegment ?? runs[0]?.i ?? 0)}
-            disabled={runs.length === 0}
-            className="h-9 w-9 grid place-items-center text-[color:var(--ink-muted)] hover:bg-black/[0.04] disabled:opacity-40"
-            aria-label="Add gate"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        {runs.length > 0 && (
-          <div className="text-[11px] text-[color:var(--ink-faint)]">
-            Adds to {selectedSegment != null ? `the selected run` : `Run 1`}.
+      <Section label="Openings">
+        {runs.length === 0 ? (
+          <div className="text-[12px] text-[color:var(--ink-muted)]">Draw a fence to add gates or doors.</div>
+        ) : (
+          <div className="space-y-2.5">
+            {OPENING_KINDS.map((kind) => (
+              <div key={kind}>
+                <div className="text-[11px] text-[color:var(--ink-faint)] mb-1 capitalize">{kind}s</div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {OPENING_PRESETS.filter((p) => p.kind === kind).map((p) => (
+                    <button
+                      key={p.variant}
+                      type="button"
+                      onClick={() => addOpening(p.kind, p.variant, targetRun)}
+                      className="h-8 px-3 rounded-full text-[12px] font-medium hairline text-[color:var(--ink-soft)] hover:bg-[color:var(--accent-soft)] hover:text-[color:var(--accent-ink)] transition-colors"
+                    >
+                      + {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {gates.length > 0 && (
+              <div className="space-y-1 pt-1">
+                {gates.map((g) => {
+                  const rn = runNumber(g.segmentIndex);
+                  return (
+                    <div
+                      key={g.id}
+                      className="flex items-center justify-between gap-2 rounded-[var(--r-sm)] hairline px-2.5 py-1.5 text-[12px]"
+                    >
+                      <span className="text-[color:var(--ink-soft)]">
+                        {VARIANT_LABEL[g.variant]} {g.kind}
+                        {rn ? ` · Run ${rn}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeGate(g.id)}
+                        aria-label="Remove opening"
+                        className="grid h-6 w-6 place-items-center rounded-full text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="text-[11px] text-[color:var(--ink-faint)]">
+              Adds to {selectedSegment != null ? "the selected run" : "Run 1"}.
+            </div>
           </div>
         )}
       </Section>

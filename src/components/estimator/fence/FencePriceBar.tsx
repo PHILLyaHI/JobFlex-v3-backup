@@ -17,16 +17,16 @@ export function FencePriceBar({ onConvert, converting }: { onConvert: () => void
   const points = useFenceStudioStore((s) => s.spec.points);
   const height = useFenceStudioStore((s) => s.spec.height);
   const material = useFenceStudioStore((s) => s.spec.material);
-  const gateCount = useFenceStudioStore((s) => s.spec.gates.length);
+  const gates = useFenceStudioStore((s) => s.spec.gates);
   const demolition = useFenceStudioStore((s) => s.spec.demolition);
 
   const { lengthFt, price } = React.useMemo(() => {
-    const layout = computeFenceLayout(points);
+    const layout = computeFenceLayout(points, gates);
     return {
       lengthFt: layout.totalLengthFt,
-      price: priceFence({ lengthFt: layout.totalLengthFt, height, material, gateCount, demolition }),
+      price: priceFence({ lengthFt: layout.totalLengthFt, height, material, openings: gates, demolition }),
     };
-  }, [points, height, material, gateCount, demolition]);
+  }, [points, height, material, gates, demolition]);
 
   const empty = lengthFt <= 0;
 

@@ -7,7 +7,7 @@
 // unit height and aligned by yaw, so height changes are a cheap matrix re-write
 // and material changes a cheap material swap. Only a change in instance COUNT
 // (the path or gates) forces a rebuild.
-import type { PathPoint, GateSpec } from "./fenceTypes";
+import type { PathPoint, GateSpec, OpeningKind, OpeningVariant } from "./fenceTypes";
 
 export const POST_SPACING_FT = 8; // max bay width; runs subdivide evenly to stay ≤ this
 export const PICKET_WIDTH_FT = 0.46; // ~5.5"
@@ -23,6 +23,8 @@ export interface GateUnit {
   y: number;
   yaw: number;
   widthFt: number;
+  kind: OpeningKind;
+  variant: OpeningVariant;
 }
 
 export interface FenceLayout {
@@ -106,7 +108,7 @@ export function computeFenceLayout(points: PathPoint[], gates: GateSpec[] = []):
       const c = Math.min(Math.max(g.t, 0), 1) * len;
       const half = w / 2;
       openings.push([c - half, c + half]);
-      gateUnits.push({ x: a.x + ux * c, y: a.y + uy * c, yaw, widthFt: w });
+      gateUnits.push({ x: a.x + ux * c, y: a.y + uy * c, yaw, widthFt: w, kind: g.kind, variant: g.variant });
     }
 
     // Pickets: centred, evenly distributed, skipping any gate opening.

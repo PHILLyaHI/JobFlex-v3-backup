@@ -49,16 +49,21 @@ export function FenceStudio() {
         lengthFt,
         height,
         material,
-        gateCount: gates.length,
+        openings: gates,
         demolition,
       });
       // Both hero panels stay mounted (opacity toggle keeps the 3D sized + live),
       // so the snapshot is available regardless of which view is active.
       const previewDataUrl = modelRef.current?.capture() ?? undefined;
+      const gateCount = gates.filter((g) => g.kind === "gate").length;
+      const doorCount = gates.filter((g) => g.kind === "door").length;
+      const openingNotes: string[] = [];
+      if (gateCount > 0) openingNotes.push(`${gateCount} gate${gateCount === 1 ? "" : "s"}`);
+      if (doorCount > 0) openingNotes.push(`${doorCount} door${doorCount === 1 ? "" : "s"}`);
       const assumptions = [
         `${MATERIAL_LABEL[material]} fence, ${height} ft tall`,
         `${Math.round(lengthFt)} linear ft across ${layout.segCount} run${layout.segCount === 1 ? "" : "s"}`,
-        `${gates.length} gate${gates.length === 1 ? "" : "s"}`,
+        openingNotes.length ? openingNotes.join(", ") : "No gates or doors",
         demolition ? "Includes removal & haul-away of the existing fence" : "No demolition included",
       ];
       const res = await convertFenceEstimateToProposal({
@@ -118,6 +123,7 @@ export function FenceStudio() {
               material={material}
               gates={gates}
               selectedSegment={selectedSegment}
+              active={view === "3d"}
               className="h-full w-full"
             />
           </div>

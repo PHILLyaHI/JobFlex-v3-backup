@@ -6,7 +6,15 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { nanoid } from "nanoid";
-import type { FenceMaterial, FenceHeightFt, PathPoint, GateSpec } from "@/components/estimator/fence/fenceTypes";
+import {
+  OPENING_PRESETS,
+  type FenceMaterial,
+  type FenceHeightFt,
+  type PathPoint,
+  type GateSpec,
+  type OpeningKind,
+  type OpeningVariant,
+} from "@/components/estimator/fence/fenceTypes";
 import { computeFenceLayout } from "@/components/estimator/fence/fenceGeometry";
 import { priceFence, type FencePriceResult } from "@/components/estimator/fence/fencePricing";
 
@@ -33,7 +41,7 @@ interface FenceStudioStore {
   setHeight: (h: FenceHeightFt) => void;
   setMaterial: (m: FenceMaterial) => void;
   setDemolition: (b: boolean) => void;
-  addGate: (segmentIndex?: number, t?: number) => void;
+  addOpening: (kind: OpeningKind, variant: OpeningVariant, segmentIndex?: number, t?: number) => void;
   updateGate: (id: string, patch: Partial<GateSpec>) => void;
   removeGate: (id: string) => void;
   selectSegment: (i: number | null) => void;
@@ -57,7 +65,7 @@ const initialSpec = (): FenceStudioSpec => ({
   points: MOCK_PATH.map((p) => ({ ...p })),
   height: 6,
   material: "cedar",
-  gates: [{ id: nanoid(6), segmentIndex: 0, t: 0.5, widthFt: 4 }],
+  gates: [{ id: nanoid(6), segmentIndex: 0, t: 0.5, widthFt: 4, kind: "gate", variant: "single" }],
   demolition: false,
   selectedSegment: null,
 });
@@ -110,14 +118,17 @@ export const useFenceStudioStore = create<FenceStudioStore>()(
         set((s) => {
           s.spec.demolition = b;
         }),
-      addGate: (segmentIndex = 0, t = 0.5) =>
+      addOpening: (kind, variant, segmentIndex = 0, t = 0.5) =>
         set((s) => {
           const maxSeg = Math.max(0, s.spec.points.length - 2);
+          const preset = OPENING_PRESETS.find((p) => p.kind === kind && p.variant === variant);
           s.spec.gates.push({
             id: nanoid(6),
             segmentIndex: Math.min(Math.max(0, segmentIndex), maxSeg),
             t,
-            widthFt: 4,
+            widthFt: preset?.widthFt ?? 4,
+            kind,
+            variant,
           });
         }),
       updateGate: (id, patch) =>
@@ -144,7 +155,7 @@ export const useFenceStudioStore = create<FenceStudioStore>()(
           lengthFt: layout.totalLengthFt,
           height: s.height,
           material: s.material,
-          gateCount: s.gates.length,
+          openings: s.gates,
           demolition: s.demolition,
         });
         return { lengthFt: layout.totalLengthFt, price };

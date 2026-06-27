@@ -7,7 +7,7 @@ import * as React from "react";
 import { Spline, Trash2, Undo2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { loadMapsLibrary, isMapsBrowserEnabled } from "@/lib/googleMaps";
-import { pathToFeet, pathToLatLng, type LatLng } from "./mapProjection";
+import { pathToFeet, pathToLatLng, latLngToLocalFeet, type LatLng } from "./mapProjection";
 import type { PathPoint } from "./fenceTypes";
 
 const ACCENT = "#1f7a52"; // Pressed Sage (locked accent) for the drawn line
@@ -83,14 +83,48 @@ export function FenceDrawMap({
           });
         };
 
+        const SNAP_FT = 3;
+        let snapping = false;
+        const ll2ft = (ll: GMaps) => latLngToLocalFeet(origin, { lat: ll.lat(), lng: ll.lng() });
+        const onSetAt = (index: number) => {
+          // Drag a dot within a few feet of another dot to JOIN them (and close
+          // the loop when the last dot lands on the first). Needs >2 points so a
+          // 2-point line can't collapse to nothing.
+          if (!snapping && path.getLength() > 2) {
+            const m = ll2ft(path.getAt(index));
+            const n = path.getLength();
+            for (let j = 0; j < n; j++) {
+              if (j === index) continue;
+              const f = ll2ft(path.getAt(j));
+              if (Math.hypot(m.x - f.x, m.y - f.y) <= SNAP_FT) {
+                snapping = true;
+                path.setAt(index, path.getAt(j));
+                snapping = false;
+                break;
+              }
+            }
+          }
+          commit();
+        };
         const listeners = [
-          path.addListener("set_at", commit),
+          path.addListener("set_at", onSetAt),
           path.addListener("insert_at", commit),
           path.addListener("remove_at", commit),
           map.addListener("click", (e: GMaps) => {
             if (e.latLng) {
               path.push(e.latLng);
               commit();
+            }
+          }),
+          polyline.addListener("click", (e: GMaps) => {
+            // Click the first dot to close the loop.
+            if (e.vertex === 0 && path.getLength() >= 3) {
+              const a = ll2ft(path.getAt(0));
+              const b = ll2ft(path.getAt(path.getLength() - 1));
+              if (Math.hypot(a.x - b.x, a.y - b.y) > SNAP_FT) {
+                path.push(path.getAt(0));
+                commit();
+              }
             }
           }),
           polyline.addListener("rightclick", (e: GMaps) => {
@@ -107,7 +141,11 @@ export function FenceDrawMap({
             commit();
           },
           closeLoop: () => {
-            if (path.getLength() >= 3) {
+            const n = path.getLength();
+            if (n < 3) return;
+            const a = ll2ft(path.getAt(0));
+            const b = ll2ft(path.getAt(n - 1));
+            if (Math.hypot(a.x - b.x, a.y - b.y) > SNAP_FT) {
               path.push(path.getAt(0));
               commit();
             }
@@ -173,7 +211,7 @@ export function FenceDrawMap({
       </div>
       <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
         <span className="rounded-full bg-white/85 backdrop-blur hairline px-3 py-1 text-[11px] text-[color:var(--ink-muted)]">
-          Click to add points · drag to adjust · right-click a point to remove
+          Click to add · drag a dot onto another to join · click the first dot to close · right-click to remove
         </span>
       </div>
     </div>

@@ -13,6 +13,7 @@
 import * as React from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { cn } from "@/lib/cn";
 import { computeFenceLayout, type FenceLayout, type GateUnit } from "./fenceGeometry";
@@ -66,12 +67,18 @@ export const FenceModel3D = React.forwardRef<
     material: FenceMaterial;
     gates: GateSpec[];
     selectedSegment: number | null;
+    active?: boolean;
     className?: string;
   }
->(function FenceModel3D({ points, height, material, gates, selectedSegment, className }, ref) {
+>(function FenceModel3D({ points, height, material, gates, selectedSegment, active = true, className }, ref) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   const [supported] = React.useState(webglSupported);
   const rendererRef = React.useRef<THREE.WebGLRenderer | null>(null);
+  const [mode, setMode] = React.useState<"orbit" | "fly">("orbit");
+  const modeRef = React.useRef<"orbit" | "fly">("orbit");
+  React.useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
 
   React.useImperativeHandle(ref, () => ({
     capture: () => {
@@ -89,6 +96,16 @@ export const FenceModel3D = React.forwardRef<
   React.useEffect(() => {
     applyRef.current({ points, height, material, gates, selectedSegment });
   }, [points, height, material, gates, selectedSegment]);
+
+  // When the studio hides this panel (Draw view), release pointer-lock/keys so a
+  // fly session can't keep driving an invisible scene; on re-show, re-frame if the
+  // fence changed size while hidden.
+  const activateRef = React.useRef<() => void>(() => {});
+  const suspendRef = React.useRef<() => void>(() => {});
+  React.useEffect(() => {
+    if (active) activateRef.current();
+    else suspendRef.current();
+  }, [active]);
 
   React.useEffect(() => {
     const mount = mountRef.current;
@@ -343,11 +360,73 @@ export const FenceModel3D = React.forwardRef<
       const leafMat = getMaterial(m);
       const postH = fenceH + POST_CAP;
       for (const gu of l.gateUnits) {
-        buildGate(gu, fenceH, postH, leafMat, cx, cy);
+        buildOpening(gu, fenceH, postH, leafMat, cx, cy);
       }
     };
 
-    const buildGate = (
+    // A framed rectangular leaf (top/bottom rails, two stiles, diagonal brace),
+    // centred at the leaf-group origin. Local x = along run, y = up, z = depth.
+    const framedLeaf = (W: number, H: number, leafMat: THREE.Material) => {
+      const g = new THREE.Group();
+      addBox(g, new THREE.BoxGeometry(W, BAR_T, BAR_D), leafMat, 0, H / 2 - BAR_T / 2, 0);
+      addBox(g, new THREE.BoxGeometry(W, BAR_T, BAR_D), leafMat, 0, -H / 2 + BAR_T / 2, 0);
+      addBox(g, new THREE.BoxGeometry(BAR_T, H, BAR_D), leafMat, -W / 2 + BAR_T / 2, 0, 0);
+      addBox(g, new THREE.BoxGeometry(BAR_T, H, BAR_D), leafMat, W / 2 - BAR_T / 2, 0, 0);
+      const diagLen = Math.hypot(W, H) * 0.96;
+      const brace = addBox(g, new THREE.BoxGeometry(diagLen, BAR_T, BAR_D * 0.8), leafMat, 0, 0, 0);
+      brace.rotation.z = Math.atan2(H, W);
+      return g;
+    };
+
+    const buildGateLeaf = (W: number, H: number, variant: GateUnit["variant"], leafMat: THREE.Material) => {
+      if (variant === "double") {
+        const g = new THREE.Group();
+        const lw = W * 0.43;
+        const lh = H * 0.84;
+        const a = framedLeaf(lw, lh, leafMat);
+        a.position.x = -W * 0.22;
+        const b = framedLeaf(lw, lh, leafMat);
+        b.position.x = W * 0.22;
+        g.add(a, b);
+        return g;
+      }
+      if (variant === "arched") {
+        const g = new THREE.Group();
+        const lw = W * 0.86;
+        const lh = H * 0.78;
+        g.add(framedLeaf(lw, lh, leafMat));
+        const peakY = lh / 2 - BAR_T / 2;
+        const rise = H * 0.16;
+        const span = lw / 2;
+        const barLen = Math.hypot(span, rise) * 1.04;
+        const left = addBox(g, new THREE.BoxGeometry(barLen, BAR_T, BAR_D), leafMat, -span / 2, peakY + rise / 2, 0);
+        left.rotation.z = Math.atan2(rise, span);
+        const right = addBox(g, new THREE.BoxGeometry(barLen, BAR_T, BAR_D), leafMat, span / 2, peakY + rise / 2, 0);
+        right.rotation.z = -Math.atan2(rise, span);
+        return g;
+      }
+      return framedLeaf(W * 0.86, H * 0.84, leafMat); // single
+    };
+
+    const buildDoorLeaf = (W: number, H: number, variant: GateUnit["variant"], leafMat: THREE.Material) => {
+      if (variant === "slatted") {
+        const g = new THREE.Group();
+        const lw = W * 0.9;
+        const lh = H * 0.9;
+        g.add(framedLeaf(lw, lh, leafMat));
+        const slats = 6;
+        for (let k = 1; k < slats; k++) {
+          const y = -lh / 2 + (lh * k) / slats;
+          addBox(g, new THREE.BoxGeometry(lw - BAR_T * 2, BAR_T * 0.7, BAR_D * 0.7), leafMat, 0, y, 0);
+        }
+        return g;
+      }
+      const g = new THREE.Group(); // solid slab
+      addBox(g, new THREE.BoxGeometry(W * 0.9, H * 0.9, BAR_D * 1.6), leafMat, 0, 0, 0);
+      return g;
+    };
+
+    const buildOpening = (
       gu: GateUnit,
       fenceH: number,
       postH: number,
@@ -361,30 +440,21 @@ export const FenceModel3D = React.forwardRef<
       const tx = (x: number) => x - cx;
       const tz = (y: number) => -(y - cy);
 
-      // Two heavier gate posts at the opening edges (own geometry per build).
-      for (const s of [-half, half]) {
-        const px = gu.x + cos * s;
-        const py = gu.y + sin * s;
+      // Two heavier posts at the opening edges (own geometry per build).
+      for (const sEdge of [-half, half]) {
+        const px = gu.x + cos * sEdge;
+        const py = gu.y + sin * sEdge;
         const geo = new THREE.BoxGeometry(GATE_POST_SIZE, postH, GATE_POST_SIZE);
         const mesh = addBox(gateGroup, geo, gatePostMat, tx(px), postH / 2, tz(py));
         mesh.rotation.y = gu.yaw;
       }
 
-      // Braced gate leaf: a framed rectangle that clearly reads as a gate.
-      const leaf = new THREE.Group();
+      const leaf =
+        gu.kind === "door"
+          ? buildDoorLeaf(gu.widthFt, fenceH, gu.variant, leafMat)
+          : buildGateLeaf(gu.widthFt, fenceH, gu.variant, leafMat);
       leaf.position.set(tx(gu.x), fenceH / 2, tz(gu.y));
       leaf.rotation.y = gu.yaw;
-      const W = gu.widthFt * 0.86;
-      const H = fenceH * 0.84;
-      // frame: top, bottom, two stiles (local x = along run, y = up, z = depth)
-      addBox(leaf, new THREE.BoxGeometry(W, BAR_T, BAR_D), leafMat, 0, H / 2 - BAR_T / 2, 0);
-      addBox(leaf, new THREE.BoxGeometry(W, BAR_T, BAR_D), leafMat, 0, -H / 2 + BAR_T / 2, 0);
-      addBox(leaf, new THREE.BoxGeometry(BAR_T, H, BAR_D), leafMat, -W / 2 + BAR_T / 2, 0, 0);
-      addBox(leaf, new THREE.BoxGeometry(BAR_T, H, BAR_D), leafMat, W / 2 - BAR_T / 2, 0, 0);
-      // diagonal brace
-      const diagLen = Math.hypot(W, H) * 0.96;
-      const brace = addBox(leaf, new THREE.BoxGeometry(diagLen, BAR_T, BAR_D * 0.8), leafMat, 0, 0, 0);
-      brace.rotation.z = Math.atan2(H, W);
       gateGroup.add(leaf);
     };
 
@@ -447,8 +517,35 @@ export const FenceModel3D = React.forwardRef<
       highlight.scale.set(len, 1, 1);
     };
 
+    // Resize the whole view envelope to a span so a fence larger than the seed
+    // path isn't clipped (shadow frustum, sky, ground, far plane, zoom limits).
+    let worldSpan = span;
+    let lastFramedSpan = span;
+    const layoutSpan = (l: FenceLayout) =>
+      Math.max(l.bounds.maxX - l.bounds.minX, l.bounds.maxY - l.bounds.minY, 10);
+    const applyWorldScale = (sp: number) => {
+      camera.far = sp * 40;
+      camera.updateProjectionMatrix();
+      sky.scale.setScalar(sp * 20);
+      key.position.set(sp * 1.0, sp * 1.7, sp * 0.7);
+      const shadowCam = key.shadow.camera as THREE.OrthographicCamera;
+      shadowCam.left = -sp * 1.3;
+      shadowCam.right = sp * 1.3;
+      shadowCam.top = sp * 1.3;
+      shadowCam.bottom = -sp * 1.3;
+      shadowCam.far = sp * 8;
+      shadowCam.updateProjectionMatrix();
+      key.shadow.normalBias = sp * 0.0015;
+      ground.scale.setScalar(sp / span);
+      orbit.minDistance = sp * 0.25;
+      orbit.maxDistance = sp * 12;
+      worldSpan = sp;
+    };
+
     const frameCamera = (l: FenceLayout) => {
-      const sp = Math.max(l.bounds.maxX - l.bounds.minX, l.bounds.maxY - l.bounds.minY, 10);
+      const sp = layoutSpan(l);
+      applyWorldScale(sp);
+      lastFramedSpan = sp;
       camera.position.set(sp * 0.95, sp * 0.8, sp * 0.95);
       camera.updateProjectionMatrix();
       orbit.target.set(0, 2, 0);
@@ -463,6 +560,70 @@ export const FenceModel3D = React.forwardRef<
     orbit.maxPolarAngle = Math.PI * 0.495;
     orbit.target.set(0, 2, 0);
     orbit.update();
+
+    // First-person fly-through: click the canvas to enter pointer lock, WASD to
+    // move, Q/E (or Space/Shift) up·down, mouse to look, Esc to exit to orbit.
+    const plc = new PointerLockControls(camera, renderer.domElement);
+    plc.enabled = false;
+    plc.minPolarAngle = Math.PI * 0.04;
+    plc.maxPolarAngle = Math.PI * 0.96;
+    plc.pointerSpeed = 0.9;
+    const keys = new Set<string>();
+    const onLock = () => {
+      orbit.enabled = false;
+      plc.enabled = true;
+      modeRef.current = "fly";
+      setMode("fly");
+    };
+    const onUnlock = () => {
+      plc.enabled = false;
+      orbit.enabled = true;
+      keys.clear();
+      modeRef.current = "orbit";
+      setMode("orbit");
+      const dir = new THREE.Vector3();
+      plc.getDirection(dir);
+      dir.y = 0; // flatten so the orbit handoff respects the horizon clamp (no snap)
+      if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+      dir.normalize();
+      orbit.target.copy(camera.position).addScaledVector(dir, worldSpan * 0.3);
+      orbit.update();
+    };
+    plc.addEventListener("lock", onLock);
+    plc.addEventListener("unlock", onUnlock);
+    // Track pointer travel so a drag-to-orbit that ends as a click doesn't drop
+    // the user into fly mode — only a near-stationary click enters pointer lock.
+    let downX = 0;
+    let downY = 0;
+    const onPointerDown = (e: PointerEvent) => {
+      downX = e.clientX;
+      downY = e.clientY;
+    };
+    const onCanvasClick = (e: MouseEvent) => {
+      if (modeRef.current !== "orbit") return;
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return;
+      try {
+        plc.lock();
+      } catch {
+        /* needs a user gesture / pointer-lock permission */
+      }
+    };
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("click", onCanvasClick);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (modeRef.current !== "fly") return;
+      if (e.code === "Space") e.preventDefault();
+      if (e.code === "Escape") {
+        plc.unlock();
+        return;
+      }
+      keys.add(e.code);
+    };
+    const onKeyUp = (e: KeyboardEvent) => keys.delete(e.code);
+    const onBlur = () => keys.clear();
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
 
     const applySpec = (next: ViewSpec) => {
       const geoChanged =
@@ -502,6 +663,10 @@ export const FenceModel3D = React.forwardRef<
         if (!framed) {
           frameCamera(l);
           framed = true;
+        } else {
+          // Keep the view envelope (shadows/ground/zoom) in step as the fence grows.
+          const sp = layoutSpan(l);
+          if (sp > worldSpan * 1.05 || sp < worldSpan * 0.6) applyWorldScale(sp);
         }
       }
 
@@ -515,13 +680,41 @@ export const FenceModel3D = React.forwardRef<
     applySpec({ points, height, material, gates, selectedSegment });
     applyRef.current = applySpec;
 
+    activateRef.current = () => {
+      if (!built) return;
+      const sp = layoutSpan(built);
+      // Re-frame only when the fence size changed meaningfully since last framing,
+      // so toggling back to 3D without edits keeps the user's camera.
+      if (Math.abs(sp - lastFramedSpan) > lastFramedSpan * 0.12) frameCamera(built);
+    };
+    suspendRef.current = () => {
+      keys.clear();
+      if (document.pointerLockElement === renderer.domElement) plc.unlock();
+    };
+
     let raf = 0;
-    const animate = () => {
+    let prev = performance.now();
+    const baseSpeed = span * 0.6;
+    const animate = (now: number) => {
       raf = requestAnimationFrame(animate);
-      orbit.update();
+      const dt = Math.min((now - prev) / 1000, 0.05);
+      prev = now;
+      if (modeRef.current === "fly" && plc.isLocked) {
+        const v = baseSpeed * dt;
+        if (keys.has("KeyW")) plc.moveForward(v);
+        if (keys.has("KeyS")) plc.moveForward(-v);
+        if (keys.has("KeyD")) plc.moveRight(v);
+        if (keys.has("KeyA")) plc.moveRight(-v);
+        let dy = 0;
+        if (keys.has("KeyE") || keys.has("Space")) dy += v;
+        if (keys.has("KeyQ") || keys.has("ShiftLeft")) dy -= v;
+        camera.position.y = Math.max(camera.position.y + dy, span * 0.02);
+      } else if (modeRef.current === "orbit") {
+        orbit.update();
+      }
       renderer.render(scene, camera);
     };
-    animate();
+    animate(prev);
 
     const ro = new ResizeObserver(() => {
       const nw = mount.clientWidth || w;
@@ -536,6 +729,15 @@ export const FenceModel3D = React.forwardRef<
       cancelAnimationFrame(raf);
       ro.disconnect();
       orbit.dispose();
+      plc.removeEventListener("lock", onLock);
+      plc.removeEventListener("unlock", onUnlock);
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("click", onCanvasClick);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      if (document.pointerLockElement === renderer.domElement) plc.unlock();
+      plc.dispose();
       disposeInstances();
       clearGroup(gateGroup, false);
       clearGroup(chainGroup, true);
@@ -586,11 +788,19 @@ export const FenceModel3D = React.forwardRef<
           Live · 3D
         </span>
       </div>
-      <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
-        <span className="rounded-full bg-white/85 backdrop-blur hairline px-3 py-1 text-[11px] text-[color:var(--ink-muted)]">
-          Drag to orbit · scroll to zoom
-        </span>
-      </div>
+      {mode === "orbit" ? (
+        <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
+          <span className="rounded-full bg-white/85 backdrop-blur hairline px-3 py-1 text-[11px] text-[color:var(--ink-muted)]">
+            Click to walk through · WASD move · Q/E up·down · Esc exit · drag to orbit
+          </span>
+        </div>
+      ) : (
+        <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
+          <span className="rounded-full bg-[color:var(--accent)] text-white px-3 py-1 text-[11px] shadow-[var(--shadow-sm)]">
+            Walking · move mouse to look · WASD · Esc to exit
+          </span>
+        </div>
+      )}
     </div>
   );
 });

@@ -1,10 +1,16 @@
 // Pricing matrix for the fence studio. Pure, deterministic, no env/network — the
 // live sandbox price runs through here on every toolbelt change (must be instant,
 // so OpenAI/`estimateFence` is NOT on this path; it is reused only at export).
-import { MATERIAL_LABEL, type FenceMaterial, type FenceHeightFt } from "./fenceTypes";
+import {
+  MATERIAL_LABEL,
+  VARIANT_LABEL,
+  type FenceMaterial,
+  type FenceHeightFt,
+  type OpeningKind,
+  type OpeningVariant,
+} from "./fenceTypes";
 
-// $/linear-ft installed base price per material, reconciled with the hardcoded
-// constants the simple fence estimator already uses. Tunable.
+// $/linear-ft installed base price per material. Tunable.
 export const MATERIAL_BASE_PRICE: Record<FenceMaterial, number> = {
   cedar: 28,
   vinyl: 40,
@@ -21,14 +27,40 @@ export const HEIGHT_MULTIPLIER: Record<FenceHeightFt, number> = {
   8: 1.4,
 };
 
-export const GATE_PREMIUM = 350; // per gate
-export const DEMOLITION_FEE_PER_FT = 6; // teardown + haul, applied per linear foot
+export const GATE_PREMIUM = 350; // single walk gate
+export const DEMOLITION_FEE_PER_FT = 6; // teardown + haul, per linear foot
+
+// Installed price per opening, by kind + variant.
+export const OPENING_PRICE: Record<OpeningKind, Record<string, number>> = {
+  gate: { single: GATE_PREMIUM, double: 850, arched: 600 },
+  door: { solid: 280, slatted: 340 },
+};
+
+export type OpeningLite = { kind: OpeningKind; variant: OpeningVariant };
+
+function openingPrice(o: OpeningLite): number {
+  return OPENING_PRICE[o.kind]?.[o.variant] ?? GATE_PREMIUM;
+}
+
+// Group openings by kind+variant → display label, count, unit price, line total.
+function aggregateOpenings(openings: OpeningLite[]) {
+  const m = new Map<string, { label: string; n: number; unit: number; amount: number }>();
+  for (const o of openings) {
+    const key = `${o.kind}:${o.variant}`;
+    const unit = openingPrice(o);
+    const e = m.get(key) ?? { label: `${VARIANT_LABEL[o.variant]} ${o.kind}`, n: 0, unit, amount: 0 };
+    e.n += 1;
+    e.amount += unit;
+    m.set(key, e);
+  }
+  return [...m.values()];
+}
 
 export interface FencePriceInput {
   lengthFt: number;
   height: FenceHeightFt;
   material: FenceMaterial;
-  gateCount: number;
+  openings: OpeningLite[];
   demolition: boolean;
 }
 
@@ -47,13 +79,13 @@ export interface FencePriceResult {
 }
 
 // Total = (Length × MaterialBasePrice × HeightMultiplier)
-//       + (GateCount × GatePremium)
+//       + Σ openingPrice(opening)
 //       + DemolitionFee
 export function priceFence(i: FencePriceInput): FencePriceResult {
   const len = Math.max(0, i.lengthFt);
-  const gateCount = Math.max(0, Math.round(i.gateCount));
+  const agg = aggregateOpenings(i.openings ?? []);
   const base = len * MATERIAL_BASE_PRICE[i.material] * HEIGHT_MULTIPLIER[i.height];
-  const gatesCost = gateCount * GATE_PREMIUM;
+  const gatesCost = agg.reduce((s, e) => s + e.amount, 0);
   const demoCost = i.demolition ? len * DEMOLITION_FEE_PER_FT : 0;
   const total = base + gatesCost + demoCost;
   const perFoot = len > 0 ? total / len : 0;
@@ -61,7 +93,7 @@ export function priceFence(i: FencePriceInput): FencePriceResult {
   const breakdown: FencePriceLine[] = [
     { label: `${MATERIAL_LABEL[i.material]} · ${i.height} ft · ${Math.round(len)} lf`, amount: base },
   ];
-  if (gatesCost > 0) breakdown.push({ label: `Gates × ${gateCount}`, amount: gatesCost });
+  for (const e of agg) breakdown.push({ label: `${e.label} × ${e.n}`, amount: e.amount });
   if (demoCost > 0) breakdown.push({ label: "Demolition & haul-away", amount: demoCost });
 
   return { total, base, gatesCost, demoCost, perFoot, breakdown };
@@ -81,14 +113,13 @@ export interface FenceLineItems {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-// Turn a price input into proposal-ready line items. The shape matches
+// Turn a price input into proposal-ready line items. Shape matches
 // convertFenceEstimateToProposal's schema ({name, quantity, unitPrice, unit?}).
-// The installed base is split material/labor ~55/45; gates and demolition become
-// their own lines so the proposal reads clearly. "ln ft" maps to LINEAR_FT.
+// Installed base is split material/labor ~55/45; each opening type and demolition
+// become their own lines so the proposal reads clearly. "ln ft" maps to LINEAR_FT.
 export function buildFenceLineItems(i: FencePriceInput): FenceLineItems {
   const len = Math.max(0, Math.round(i.lengthFt * 10) / 10);
   const perFt = MATERIAL_BASE_PRICE[i.material] * HEIGHT_MULTIPLIER[i.height];
-  const gateCount = Math.max(0, Math.round(i.gateCount));
 
   const materials: FenceExportLine[] = [
     {
@@ -106,8 +137,8 @@ export function buildFenceLineItems(i: FencePriceInput): FenceLineItems {
       unit: "ln ft",
     },
   ];
-  if (gateCount > 0) {
-    materials.push({ name: "Gate + hardware", quantity: gateCount, unitPrice: GATE_PREMIUM, unit: "ea" });
+  for (const e of aggregateOpenings(i.openings ?? [])) {
+    materials.push({ name: `${e.label} + hardware`, quantity: e.n, unitPrice: e.unit, unit: "ea" });
   }
   if (i.demolition) {
     labor.push({
