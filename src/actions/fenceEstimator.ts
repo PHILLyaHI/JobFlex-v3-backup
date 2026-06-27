@@ -4,8 +4,9 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
-import { estimateSchema, type GeneratedEstimate } from "./advancedEstimator";
+import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
 
 const STUB: GeneratedEstimate = {
@@ -82,20 +83,22 @@ const convertSchema = z.object({
   materials: z.array(
     z.object({
       name: z.string(),
-      quantity: z.number(),
-      unitPrice: z.number(),
+      quantity: z.number().finite(),
+      unitPrice: z.number().finite(),
       unit: z.string().optional(),
     }),
   ),
   labor: z.array(
     z.object({
       name: z.string(),
-      quantity: z.number(),
-      unitPrice: z.number(),
+      quantity: z.number().finite(),
+      unitPrice: z.number().finite(),
       unit: z.string().optional(),
     }),
   ),
   assumptions: z.array(z.string()),
+  // Optional 3D snapshot (PNG data URL) — uploaded to Blob and attached when present.
+  previewDataUrl: z.string().optional(),
 });
 
 export async function convertFenceEstimateToProposal(raw: unknown) {
@@ -125,11 +128,25 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
 
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
 
+  // Best-effort: persist the 3D snapshot to Blob so it can ride along in the
+  // proposal/PDF. Never blocks proposal creation if Blob is off or upload fails.
+  let beforePhotos: string | undefined;
+  if (data.previewDataUrl?.startsWith("data:image/") && data.previewDataUrl.length <= 5_000_000 && isBlobEnabled()) {
+    try {
+      const base64 = data.previewDataUrl.split(",")[1] ?? "";
+      const { url } = await uploadBlob(`fence-preview/${randomUUID()}.png`, Buffer.from(base64, "base64"));
+      beforePhotos = JSON.stringify([url]);
+    } catch {
+      /* preview is optional */
+    }
+  }
+
   const proposal = await db.proposal.create({
     data: {
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,
+      ...(beforePhotos ? { beforePhotos } : {}),
       title: data.title,
       scopeOfWork:
         (data.scope ?? "") +

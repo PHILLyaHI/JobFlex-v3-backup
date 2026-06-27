@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 
 // ── Palette (hardcoded — react-pdf can't use CSS vars) ─────────
 const C = {
@@ -142,6 +142,13 @@ const s = StyleSheet.create({
     lineHeight: 1.65,
   },
 
+  previewImg: {
+    width: "100%",
+    height: 230,
+    objectFit: "cover",
+    borderRadius: 6,
+  },
+
   installmentsRow: {
     flexDirection: "row",
     gap: 12,
@@ -201,6 +208,7 @@ export interface ProposalPdfData {
   validUntil?: Date | null;
   publicId: string;
   orgName: string;
+  previewImageUrl?: string | null;
   clientName?: string | null;
   clientAddress?: string | null;
   lineItems: Array<{
@@ -291,6 +299,14 @@ export function ProposalPdfDocument({ data }: { data: ProposalPdfData }) {
             <Text style={s.prose}>{data.description}</Text>
           </View>
         )}
+
+        {data.previewImageUrl ? (
+          <View style={s.section} wrap={false}>
+            <Text style={s.sectionLabel}>3D preview</Text>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image has no alt prop */}
+            <Image src={data.previewImageUrl} style={s.previewImg} />
+          </View>
+        ) : null}
 
         <View style={s.section}>
           <Text style={s.sectionLabel}>Line items</Text>

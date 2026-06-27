@@ -26,6 +26,21 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  let previewImageUrl: string | undefined;
+  try {
+    const arr = JSON.parse(proposal.beforePhotos ?? "[]");
+    // Only trust https Vercel Blob URLs for server-side <Image> fetch (SSRF guard).
+    if (
+      Array.isArray(arr) &&
+      typeof arr[0] === "string" &&
+      /^https:\/\/[a-z0-9.-]+\.public\.blob\.vercel-storage\.com\//i.test(arr[0])
+    ) {
+      previewImageUrl = arr[0];
+    }
+  } catch {
+    /* beforePhotos may be malformed; skip the preview */
+  }
+
   const data: ProposalPdfData = {
     title: proposal.title,
     description: proposal.description,
@@ -43,6 +58,7 @@ export async function GET(
     orgName: proposal.organization.name,
     clientName: proposal.client?.name,
     clientAddress: proposal.client?.address,
+    previewImageUrl,
     lineItems: proposal.lineItems.map((l) => ({
       name: l.name,
       description: l.description,
