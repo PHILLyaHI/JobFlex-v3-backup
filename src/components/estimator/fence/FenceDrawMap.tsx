@@ -20,12 +20,14 @@ export function FenceDrawMap({
   lng,
   points,
   onChange,
+  revision,
   className,
 }: {
   lat?: number;
   lng?: number;
   points: PathPoint[];
   onChange: (pts: PathPoint[]) => void;
+  revision?: number; // bump to re-seed the polyline from `points` (AI trace / reset)
   className?: string;
 }) {
   const mountRef = React.useRef<HTMLDivElement>(null);
@@ -38,7 +40,23 @@ export function FenceDrawMap({
     pointsRef.current = points;
   }, [points]);
 
-  const apiRef = React.useRef<{ clear: () => void; closeLoop: () => void; undo: () => void } | null>(null);
+  const apiRef = React.useRef<{
+    clear: () => void;
+    closeLoop: () => void;
+    undo: () => void;
+    setFromPoints: () => void;
+  } | null>(null);
+
+  // External replacements (AI trace, Reset) bump `revision`; re-seed the editable
+  // polyline from the store points. Map edits never bump it, so there's no loop.
+  const firstRev = React.useRef(true);
+  React.useEffect(() => {
+    if (firstRev.current) {
+      firstRev.current = false;
+      return;
+    }
+    apiRef.current?.setFromPoints();
+  }, [revision]);
 
   const enabled = isMapsBrowserEnabled();
   const hasOrigin = typeof lat === "number" && typeof lng === "number";
@@ -50,8 +68,12 @@ export function FenceDrawMap({
 
     (async () => {
       try {
-        const maps = await loadMapsLibrary<GMaps>("maps");
+        const [maps, core] = await Promise.all([
+          loadMapsLibrary<GMaps>("maps"),
+          loadMapsLibrary<GMaps>("core"),
+        ]);
         if (cancelled || !mountRef.current) return;
+        const LatLng = core.LatLng;
         const origin: LatLng = { lat: lat as number, lng: lng as number };
         const map = new maps.Map(mountRef.current, {
           center: origin,
@@ -74,7 +96,9 @@ export function FenceDrawMap({
         const path = polyline.getPath();
 
         let raf = 0;
+        let syncing = false;
         const commit = () => {
+          if (syncing) return; // external re-seed in progress — don't echo back
           cancelAnimationFrame(raf);
           raf = requestAnimationFrame(() => {
             const arr: LatLng[] = [];
@@ -156,6 +180,16 @@ export function FenceDrawMap({
               path.removeAt(n - 1);
               commit();
             }
+          },
+          setFromPoints: () => {
+            // External set (AI trace / Reset): rebuild the path from store points
+            // without echoing back (syncing guard skips commit during the rebuild).
+            syncing = true;
+            path.clear();
+            for (const ll of pathToLatLng(origin, pointsRef.current)) {
+              path.push(new LatLng(ll.lat, ll.lng));
+            }
+            syncing = false;
           },
         };
 

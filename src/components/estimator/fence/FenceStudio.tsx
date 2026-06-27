@@ -6,15 +6,18 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-import { RotateCcw, Map as MapIcon, Box } from "lucide-react";
+import { RotateCcw, Map as MapIcon, Box, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { toast } from "@/components/ui/Toast";
+import { Button } from "@/components/ui/Button";
 import { PlacesAutocomplete } from "@/components/estimator/roof/PlacesAutocomplete";
 import { useFenceStudioStore } from "@/stores/useFenceStudioStore";
 import { MATERIAL_LABEL } from "./fenceTypes";
 import { computeFenceLayout } from "./fenceGeometry";
 import { buildFenceLineItems } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
+import { traceFenceBoundary } from "@/actions/fenceVision";
+import { maskToPathPoints } from "./maskTrace";
 import { FenceModel3D, type FenceModel3DHandle } from "./FenceModel3D";
 import { FenceDrawMap } from "./FenceDrawMap";
 import { FenceToolbelt } from "./FenceToolbelt";
@@ -38,7 +41,37 @@ export function FenceStudio() {
 
   const [view, setView] = React.useState<View>("3d");
   const [converting, setConverting] = React.useState(false);
+  const [tracing, setTracing] = React.useState(false);
+  const [drawRev, setDrawRev] = React.useState(0); // bump to re-seed the draw map after external point changes
   const modelRef = React.useRef<FenceModel3DHandle>(null);
+
+  async function handleTrace() {
+    if (typeof lat !== "number" || typeof lng !== "number") {
+      toast.info("Search a property address first");
+      return;
+    }
+    setTracing(true);
+    try {
+      const res = await traceFenceBoundary({ lat, lng, zoom: 20 });
+      if (!res.ok) {
+        toast.error("Couldn't trace", res.error);
+        return;
+      }
+      const pts = await maskToPathPoints(res.data.maskUrl, res.data);
+      if (pts.length < 3) {
+        toast.error("No boundary found", "Try drawing it manually instead.");
+        return;
+      }
+      setPoints(pts);
+      setDrawRev((v) => v + 1);
+      setView("draw");
+      toast.success("Boundary traced by AI", "Drag the dots to fine-tune it.");
+    } catch (err) {
+      toast.error("Trace failed", err instanceof Error ? err.message : undefined);
+    } finally {
+      setTracing(false);
+    }
+  }
 
   async function handleConvert() {
     setConverting(true);
@@ -97,10 +130,23 @@ export function FenceStudio() {
             }}
           />
         </div>
+        <Button
+          size="md"
+          variant="outline"
+          onClick={handleTrace}
+          loading={tracing}
+          disabled={typeof lat !== "number"}
+          icon={<Sparkles className="h-4 w-4" />}
+        >
+          Trace with AI
+        </Button>
         <ViewToggle value={view} onChange={setView} />
         <button
           type="button"
-          onClick={reset}
+          onClick={() => {
+            reset();
+            setDrawRev((v) => v + 1);
+          }}
           className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[var(--r-md)] hairline text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] hover:bg-black/[0.03] transition-colors"
         >
           <RotateCcw className="h-3.5 w-3.5" />
@@ -133,7 +179,14 @@ export function FenceStudio() {
               view === "draw" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none",
             )}
           >
-            <FenceDrawMap lat={lat} lng={lng} points={points} onChange={setPoints} className="h-full w-full" />
+            <FenceDrawMap
+              lat={lat}
+              lng={lng}
+              points={points}
+              onChange={setPoints}
+              revision={drawRev}
+              className="h-full w-full"
+            />
           </div>
 
           {empty3d && (
