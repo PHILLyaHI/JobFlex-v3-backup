@@ -6,7 +6,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-import { RotateCcw, Map as MapIcon, Box, Sparkles } from "lucide-react";
+import { RotateCcw, Map as MapIcon, Box, LandPlot } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { toast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
@@ -16,16 +16,16 @@ import { MATERIAL_LABEL } from "./fenceTypes";
 import { computeFenceLayout } from "./fenceGeometry";
 import { buildFenceLineItems } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
-import { traceFenceBoundary } from "@/actions/fenceVision";
-import { maskToPathPoints } from "./maskTrace";
-import { latLngToLocalFeet } from "./mapProjection";
-import { localFeetToTileFraction } from "@/lib/geo/mercator";
+import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
+import { latLngToLocalFeet, simplifyPath } from "./mapProjection";
 import { FenceModel3D, type FenceModel3DHandle } from "./FenceModel3D";
 import { FenceDrawMap } from "./FenceDrawMap";
 import { FenceToolbelt } from "./FenceToolbelt";
 import { FencePriceBar } from "./FencePriceBar";
 
 type View = "draw" | "3d";
+
+const PARCEL_SIMPLIFY_FT = 1; // Douglas–Peucker tolerance for trimming redundant parcel vertices
 
 export function FenceStudio() {
   const router = useRouter();
@@ -43,53 +43,37 @@ export function FenceStudio() {
 
   const [view, setView] = React.useState<View>("3d");
   const [converting, setConverting] = React.useState(false);
-  const [tracing, setTracing] = React.useState(false);
+  const [loadingBoundary, setLoadingBoundary] = React.useState(false);
   const [drawRev, setDrawRev] = React.useState(0); // bump to re-seed the draw map after external point changes
-  const [aiming, setAiming] = React.useState(false); // armed: the next map tap picks the AI segment point
   const modelRef = React.useRef<FenceModel3DHandle>(null);
 
-  // Arm aim mode — the user then taps their yard on the satellite (not the house).
-  function handleTrace() {
+  // Load the exact property parcel polygon (Regrid) as the starting fence outline.
+  async function handleLoadBoundary() {
     if (typeof lat !== "number" || typeof lng !== "number") {
       toast.info("Search a property address first");
       return;
     }
-    setView("draw");
-    setAiming(true);
-    toast.info("Tap your yard on the map", "The AI will trace that area's boundary.");
-  }
-
-  // The aim tap → translate to a SAM prompt point in the address-centred tile,
-  // segment, vectorise, and drop the boundary onto the editable polyline.
-  async function handleAimPick(ll: { lat: number; lng: number }) {
-    if (typeof lat !== "number" || typeof lng !== "number") return;
-    setAiming(false);
-    setTracing(true);
+    setLoadingBoundary(true);
     try {
-      const ZOOM = 20;
-      const feet = latLngToLocalFeet({ lat, lng }, ll);
-      const frac = localFeetToTileFraction({ centerLat: lat, zoom: ZOOM, scale: 2, imgW: 1280, imgH: 1280 }, feet);
-      const point = {
-        xFrac: Math.min(1, Math.max(0, frac.xFrac)),
-        yFrac: Math.min(1, Math.max(0, frac.yFrac)),
-      };
-      const res = await traceFenceBoundary({ lat, lng, zoom: ZOOM, point });
+      const res = await fetchPropertyBoundary(lat, lng);
       if (!res.ok) {
-        toast.error("Couldn't trace", res.error);
+        toast.error("Couldn't load property lines", res.error);
         return;
       }
-      const pts = await maskToPathPoints(res.data.maskUrl, res.data);
+      const origin = { lat, lng };
+      const pts = simplifyPath(res.ring.map((ll) => latLngToLocalFeet(origin, ll)), PARCEL_SIMPLIFY_FT);
       if (pts.length < 3) {
-        toast.error("No boundary found", "Try a spot more central in the yard, or draw it manually.");
+        toast.error("Parcel boundary too small", "Draw the fence manually instead.");
         return;
       }
       setPoints(pts);
       setDrawRev((v) => v + 1);
-      toast.success("Boundary traced by AI", "Drag the dots to fine-tune it.");
+      setView("draw");
+      toast.success("Property lines loaded", "Drag the dots to match the fence line.");
     } catch (err) {
-      toast.error("Trace failed", err instanceof Error ? err.message : undefined);
+      toast.error("Failed to load", err instanceof Error ? err.message : undefined);
     } finally {
-      setTracing(false);
+      setLoadingBoundary(false);
     }
   }
 
@@ -152,13 +136,13 @@ export function FenceStudio() {
         </div>
         <Button
           size="md"
-          variant={aiming ? "primary" : "outline"}
-          onClick={() => (aiming ? setAiming(false) : handleTrace())}
-          loading={tracing}
-          disabled={typeof lat !== "number"}
-          icon={<Sparkles className="h-4 w-4" />}
+          variant="outline"
+          onClick={handleLoadBoundary}
+          loading={loadingBoundary}
+          disabled={typeof lat !== "number" || typeof lng !== "number"}
+          icon={<LandPlot className="h-4 w-4" />}
         >
-          {aiming ? "Tap your yard…" : "Trace with AI"}
+          Load Property Lines
         </Button>
         <ViewToggle value={view} onChange={setView} />
         <button
@@ -205,8 +189,6 @@ export function FenceStudio() {
               points={points}
               onChange={setPoints}
               revision={drawRev}
-              aiming={aiming}
-              onAimPick={handleAimPick}
               className="h-full w-full"
             />
           </div>

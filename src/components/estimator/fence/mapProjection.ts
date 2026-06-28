@@ -36,3 +36,43 @@ export function pathToFeet(origin: LatLng, pts: LatLng[]): PathPoint[] {
 export function pathToLatLng(origin: LatLng, pts: PathPoint[]): LatLng[] {
   return pts.map((p) => localFeetToLatLng(origin, p));
 }
+
+function perpDistance(p: PathPoint, a: PathPoint, b: PathPoint): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-9) return Math.hypot(p.x - a.x, p.y - a.y);
+  const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+// Douglas–Peucker simplification in local feet — trims redundant parcel vertices
+// (Regrid polygons can be detailed) so the editable polyline stays manageable,
+// without distorting the shape. Endpoints are always kept (preserves a closed ring).
+export function simplifyPath(points: PathPoint[], toleranceFt: number): PathPoint[] {
+  if (points.length <= 3) return points.slice();
+  const keep = new Array<boolean>(points.length).fill(false);
+  keep[0] = true;
+  keep[points.length - 1] = true;
+  const stack: Array<[number, number]> = [[0, points.length - 1]];
+  while (stack.length) {
+    const seg = stack.pop();
+    if (!seg) break;
+    const [s, e] = seg;
+    let maxD = 0;
+    let idx = -1;
+    for (let i = s + 1; i < e; i++) {
+      const d = perpDistance(points[i], points[s], points[e]);
+      if (d > maxD) {
+        maxD = d;
+        idx = i;
+      }
+    }
+    if (maxD > toleranceFt && idx > 0) {
+      keep[idx] = true;
+      stack.push([s, idx]);
+      stack.push([idx, e]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
+}
