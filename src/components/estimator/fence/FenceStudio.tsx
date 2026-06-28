@@ -18,6 +18,8 @@ import { buildFenceLineItems } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { traceFenceBoundary } from "@/actions/fenceVision";
 import { maskToPathPoints } from "./maskTrace";
+import { latLngToLocalFeet } from "./mapProjection";
+import { localFeetToTileFraction } from "@/lib/geo/mercator";
 import { FenceModel3D, type FenceModel3DHandle } from "./FenceModel3D";
 import { FenceDrawMap } from "./FenceDrawMap";
 import { FenceToolbelt } from "./FenceToolbelt";
@@ -43,28 +45,46 @@ export function FenceStudio() {
   const [converting, setConverting] = React.useState(false);
   const [tracing, setTracing] = React.useState(false);
   const [drawRev, setDrawRev] = React.useState(0); // bump to re-seed the draw map after external point changes
+  const [aiming, setAiming] = React.useState(false); // armed: the next map tap picks the AI segment point
   const modelRef = React.useRef<FenceModel3DHandle>(null);
 
-  async function handleTrace() {
+  // Arm aim mode — the user then taps their yard on the satellite (not the house).
+  function handleTrace() {
     if (typeof lat !== "number" || typeof lng !== "number") {
       toast.info("Search a property address first");
       return;
     }
+    setView("draw");
+    setAiming(true);
+    toast.info("Tap your yard on the map", "The AI will trace that area's boundary.");
+  }
+
+  // The aim tap → translate to a SAM prompt point in the address-centred tile,
+  // segment, vectorise, and drop the boundary onto the editable polyline.
+  async function handleAimPick(ll: { lat: number; lng: number }) {
+    if (typeof lat !== "number" || typeof lng !== "number") return;
+    setAiming(false);
     setTracing(true);
     try {
-      const res = await traceFenceBoundary({ lat, lng, zoom: 20 });
+      const ZOOM = 20;
+      const feet = latLngToLocalFeet({ lat, lng }, ll);
+      const frac = localFeetToTileFraction({ centerLat: lat, zoom: ZOOM, scale: 2, imgW: 1280, imgH: 1280 }, feet);
+      const point = {
+        xFrac: Math.min(1, Math.max(0, frac.xFrac)),
+        yFrac: Math.min(1, Math.max(0, frac.yFrac)),
+      };
+      const res = await traceFenceBoundary({ lat, lng, zoom: ZOOM, point });
       if (!res.ok) {
         toast.error("Couldn't trace", res.error);
         return;
       }
       const pts = await maskToPathPoints(res.data.maskUrl, res.data);
       if (pts.length < 3) {
-        toast.error("No boundary found", "Try drawing it manually instead.");
+        toast.error("No boundary found", "Try a spot more central in the yard, or draw it manually.");
         return;
       }
       setPoints(pts);
       setDrawRev((v) => v + 1);
-      setView("draw");
       toast.success("Boundary traced by AI", "Drag the dots to fine-tune it.");
     } catch (err) {
       toast.error("Trace failed", err instanceof Error ? err.message : undefined);
@@ -132,13 +152,13 @@ export function FenceStudio() {
         </div>
         <Button
           size="md"
-          variant="outline"
-          onClick={handleTrace}
+          variant={aiming ? "primary" : "outline"}
+          onClick={() => (aiming ? setAiming(false) : handleTrace())}
           loading={tracing}
           disabled={typeof lat !== "number"}
           icon={<Sparkles className="h-4 w-4" />}
         >
-          Trace with AI
+          {aiming ? "Tap your yard…" : "Trace with AI"}
         </Button>
         <ViewToggle value={view} onChange={setView} />
         <button
@@ -185,6 +205,8 @@ export function FenceStudio() {
               points={points}
               onChange={setPoints}
               revision={drawRev}
+              aiming={aiming}
+              onAimPick={handleAimPick}
               className="h-full w-full"
             />
           </div>

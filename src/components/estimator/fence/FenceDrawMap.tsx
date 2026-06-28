@@ -21,6 +21,8 @@ export function FenceDrawMap({
   points,
   onChange,
   revision,
+  aiming,
+  onAimPick,
   className,
 }: {
   lat?: number;
@@ -28,6 +30,8 @@ export function FenceDrawMap({
   points: PathPoint[];
   onChange: (pts: PathPoint[]) => void;
   revision?: number; // bump to re-seed the polyline from `points` (AI trace / reset)
+  aiming?: boolean; // when true, a map click picks the AI segment point instead of adding a vertex
+  onAimPick?: (ll: { lat: number; lng: number }) => void;
   className?: string;
 }) {
   const mountRef = React.useRef<HTMLDivElement>(null);
@@ -39,6 +43,14 @@ export function FenceDrawMap({
   React.useEffect(() => {
     pointsRef.current = points;
   }, [points]);
+  const aimingRef = React.useRef(false);
+  React.useEffect(() => {
+    aimingRef.current = !!aiming;
+  }, [aiming]);
+  const onAimPickRef = React.useRef(onAimPick);
+  React.useEffect(() => {
+    onAimPickRef.current = onAimPick;
+  });
 
   const apiRef = React.useRef<{
     clear: () => void;
@@ -135,10 +147,14 @@ export function FenceDrawMap({
           path.addListener("insert_at", commit),
           path.addListener("remove_at", commit),
           map.addListener("click", (e: GMaps) => {
-            if (e.latLng) {
-              path.push(e.latLng);
-              commit();
+            if (!e.latLng) return;
+            if (aimingRef.current) {
+              // Aim mode: this click picks where the AI segments, not a vertex.
+              onAimPickRef.current?.({ lat: e.latLng.lat(), lng: e.latLng.lng() });
+              return;
             }
+            path.push(e.latLng);
+            commit();
           }),
           polyline.addListener("click", (e: GMaps) => {
             // Click the first dot to close the loop.
@@ -238,6 +254,13 @@ export function FenceDrawMap({
   return (
     <div className={cn("relative overflow-hidden", className)}>
       <div ref={mountRef} className="absolute inset-0" />
+      {aiming && (
+        <div className="absolute inset-x-0 top-3 flex justify-center pointer-events-none">
+          <span className="rounded-full bg-[color:var(--accent)] text-white px-3 py-1 text-[11px] shadow-[var(--shadow-sm)]">
+            Tap your yard to trace it with AI
+          </span>
+        </div>
+      )}
       <div className="absolute left-3 top-3 flex gap-1.5">
         <MapBtn onClick={() => apiRef.current?.closeLoop()} icon={<Spline className="h-3.5 w-3.5" />} label="Close loop" />
         <MapBtn onClick={() => apiRef.current?.undo()} icon={<Undo2 className="h-3.5 w-3.5" />} label="Undo" />

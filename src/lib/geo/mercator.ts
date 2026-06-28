@@ -28,3 +28,16 @@ export function pixelToLocalFeet(geo: StaticTileGeo, px: number, py: number): { 
   const northM = -(py - geo.imgH / 2) * mpp; // image y grows downward
   return { x: eastM * FT_PER_M, y: northM * FT_PER_M };
 }
+
+// Inverse of pixelToLocalFeet → fraction (0..1) of the tile for a feet offset
+// from the tile centre. Translates a map click into a SAM prompt point so the
+// user can aim segmentation at the yard instead of the house.
+export function localFeetToTileFraction(
+  geo: StaticTileGeo,
+  feet: { x: number; y: number },
+): { xFrac: number; yFrac: number } {
+  const ftPerPx = metersPerPixel(geo.centerLat, geo.zoom, geo.scale) * FT_PER_M;
+  const px = geo.imgW / 2 + feet.x / ftPerPx;
+  const py = geo.imgH / 2 - feet.y / ftPerPx;
+  return { xFrac: px / geo.imgW, yFrac: py / geo.imgH };
+}
