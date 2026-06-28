@@ -98,9 +98,11 @@ export async function fetchPropertyBoundary(
     };
   }
   try {
-    // v1 point endpoint per the plan. Regrid also documents /api/v2/parcels/point —
-    // switch the path here if v1 returns 404/410 for the account.
-    const url = `https://app.regrid.com/api/v1/parcels/point.json?lat=${lat}&lon=${lng}&token=${encodeURIComponent(
+    // v2 point endpoint (v1 is gone → 404). Returns { parcels: FeatureCollection,
+    // buildings, zoning }; requires lat + lon (NOT lng). Note: results are limited
+    // to the area your Regrid plan covers — out-of-coverage points return 200 with
+    // empty features.
+    const url = `https://app.regrid.com/api/v2/parcels/point.json?lat=${lat}&lon=${lng}&token=${encodeURIComponent(
       process.env.REGRID_API_KEY as string,
     )}`;
     const res = await fetch(url);
@@ -110,7 +112,13 @@ export async function fetchPropertyBoundary(
     if (!res.ok) return { ok: false, error: `Regrid request failed (${res.status}).` };
     const data = (await res.json()) as RegridResponse;
     const ring = extractRing(data, lat, lng);
-    if (ring.length < 3) return { ok: false, error: "No parcel boundary found at this location." };
+    if (ring.length < 3) {
+      return {
+        ok: false,
+        error:
+          "No parcel found here — your Regrid plan may not cover this area. Drop the pin inside the lot, or draw the fence manually.",
+      };
+    }
     return { ok: true, ring };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Failed to load property lines." };
