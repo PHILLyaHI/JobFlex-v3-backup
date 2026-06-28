@@ -24,7 +24,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={geist.variable}>
-      <body className="min-h-dvh antialiased">
+      {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) inject
+          data-gr-* attributes on <body> before React hydrates — benign mismatch. */}
+      <body className="min-h-dvh antialiased" suppressHydrationWarning>
         <div className="relative z-10">{children}</div>
         <ToastHost />
       </body>
