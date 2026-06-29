@@ -1,13 +1,16 @@
-// JobFlex Prisma schema — SQLite for local dev (easy swap to Postgres later).
+// JobFlex Prisma schema — PostgreSQL (Neon) for the Vercel deploy.
 // Enums moved to src/lib/prismaEnums.ts; string[] stored as JSON-encoded strings.
+// directUrl (DIRECT_URL) is Neon's unpooled connection for migrations/db push;
+// url (DATABASE_URL) is the pooled connection used at runtime.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────
