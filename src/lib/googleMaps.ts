@@ -10,33 +10,44 @@ export function isMapsBrowserEnabled(): boolean {
 
 let scriptPromise: Promise<void> | null = null;
 
+// importLibrary is the readiness signal. With loading=async the bootstrap defines
+// it a tick AFTER the loader script's onload fires, so we must poll for the
+// function itself rather than trust onload (or a mere `google.maps` object).
+function mapsReady(): boolean {
+  const g = (window as { google?: { maps?: { importLibrary?: unknown } } }).google;
+  return typeof g?.maps?.importLibrary === "function";
+}
+
 function ensureScript(): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
-  const existingGoogle = (window as { google?: { maps?: { importLibrary?: unknown } } }).google;
-  if (existingGoogle?.maps?.importLibrary) return Promise.resolve();
+  if (mapsReady()) return Promise.resolve();
   if (scriptPromise) return scriptPromise;
 
   scriptPromise = new Promise<void>((resolve, reject) => {
-    // Another loader (e.g. PlacesAutocomplete) may already be fetching the SDK —
-    // wait for readiness rather than injecting a second <script> tag.
-    const already = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
-    if (already) {
-      const start = Date.now();
-      const tick = () => {
-        const g = (window as { google?: { maps?: { importLibrary?: unknown } } }).google;
-        if (g?.maps?.importLibrary) return resolve();
-        if (Date.now() - start > 15000) return reject(new Error("Google Maps load timed out"));
-        window.setTimeout(tick, 50);
+    // Inject the modern bootstrap once. Another loader (e.g. PlacesAutocomplete)
+    // may already have added the tag — in that case just wait for readiness rather
+    // than injecting a second <script>.
+    if (!document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
+      const s = document.createElement("script");
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${KEY}&v=weekly&loading=async`;
+      s.async = true;
+      s.onerror = () => {
+        scriptPromise = null; // allow a later retry
+        reject(new Error("Failed to load Google Maps"));
       };
-      tick();
-      return;
+      document.head.appendChild(s);
     }
-    const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${KEY}&v=weekly&loading=async`;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Failed to load Google Maps"));
-    document.head.appendChild(s);
+    // Resolve only once importLibrary is actually callable.
+    const start = Date.now();
+    const tick = () => {
+      if (mapsReady()) return resolve();
+      if (Date.now() - start > 15000) {
+        scriptPromise = null; // don't wedge future callers — let them retry
+        return reject(new Error("Google Maps load timed out"));
+      }
+      window.setTimeout(tick, 50);
+    };
+    tick();
   });
   return scriptPromise;
 }
