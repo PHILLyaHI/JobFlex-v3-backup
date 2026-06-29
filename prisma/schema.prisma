@@ -1,7 +1,7 @@
 // JobFlex Prisma schema — PostgreSQL (Neon) for the Vercel deploy.
 // Enums moved to src/lib/prismaEnums.ts; string[] stored as JSON-encoded strings.
-// directUrl (DIRECT_URL) is Neon's unpooled connection for migrations/db push;
-// url (DATABASE_URL) is the pooled connection used at runtime.
+// Uses Neon's Vercel-injected vars: POSTGRES_PRISMA_URL (pooled, pgbouncer=true)
+// for runtime and POSTGRES_URL_NON_POOLING (direct) for migrations / db push.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,8 +9,8 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
 // ─────────────────────────────────────────────
