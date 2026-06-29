@@ -4,7 +4,7 @@
 // feet and push commits to the studio store (debounced to one frame so a drag
 // doesn't thrash the 3D rebuild). The store stays the source of truth in feet.
 import * as React from "react";
-import { Spline, Trash2, Undo2 } from "lucide-react";
+import { Move, Spline, Trash2, Undo2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { loadMapsLibrary, isMapsBrowserEnabled } from "@/lib/googleMaps";
 import { pathToFeet, pathToLatLng, latLngToLocalFeet, type LatLng } from "./mapProjection";
@@ -45,7 +45,20 @@ export function FenceDrawMap({
     closeLoop: () => void;
     undo: () => void;
     setFromPoints: () => void;
+    setAlign: (on: boolean) => void;
   } | null>(null);
+
+  // Align mode drags the whole parcel as one rigid piece (to correct the
+  // survey-vs-satellite registration offset) without changing its shape/size.
+  // Held in a ref so a map rebuild re-applies it without a setState-in-effect.
+  const [aligning, setAligning] = React.useState(false);
+  const aligningRef = React.useRef(false);
+  const toggleAlign = React.useCallback(() => {
+    const next = !aligningRef.current;
+    aligningRef.current = next;
+    setAligning(next);
+    apiRef.current?.setAlign(next);
+  }, []);
 
   // External replacements (AI trace, Reset) bump `revision`; re-seed the editable
   // polyline from the store points. Map edits never bump it, so there's no loop.
@@ -93,6 +106,8 @@ export function FenceDrawMap({
           strokeWeight: 3,
           strokeOpacity: 1,
         });
+        // Re-apply align mode if it was on before a rebuild (address change).
+        if (aligningRef.current) polyline.setOptions({ draggable: true, editable: false });
         const path = polyline.getPath();
 
         let raf = 0;
@@ -135,11 +150,14 @@ export function FenceDrawMap({
           path.addListener("insert_at", commit),
           path.addListener("remove_at", commit),
           map.addListener("click", (e: GMaps) => {
+            if (aligningRef.current) return; // align mode: don't add stray vertices
             if (e.latLng) {
               path.push(e.latLng);
               commit();
             }
           }),
+          // Whole-parcel drag (align mode): path coords update in place; commit once.
+          polyline.addListener("dragend", commit),
           polyline.addListener("click", (e: GMaps) => {
             // Click the first dot to close the loop.
             if (e.vertex === 0 && path.getLength() >= 3) {
@@ -191,6 +209,11 @@ export function FenceDrawMap({
             }
             syncing = false;
           },
+          setAlign: (on: boolean) => {
+            // Draggable = move the whole shape; editable off so vertices can't be
+            // grabbed by accident while aligning. Toggle back to edit when off.
+            polyline.setOptions({ draggable: on, editable: !on });
+          },
         };
 
         cleanup = () => {
@@ -198,8 +221,8 @@ export function FenceDrawMap({
           for (const l of listeners) l?.remove?.();
           polyline.setMap(null);
         };
-      } catch {
-        /* leave the disabled message in place */
+      } catch (err) {
+        console.error("[FenceDrawMap] failed to build the map:", err);
       }
     })();
 
@@ -239,25 +262,49 @@ export function FenceDrawMap({
     <div className={cn("relative overflow-hidden", className)}>
       <div ref={mountRef} className="absolute inset-0" />
       <div className="absolute left-3 top-3 flex gap-1.5">
+        <MapBtn
+          onClick={toggleAlign}
+          active={aligning}
+          icon={<Move className="h-3.5 w-3.5" />}
+          label={aligning ? "Aligning" : "Align"}
+        />
         <MapBtn onClick={() => apiRef.current?.closeLoop()} icon={<Spline className="h-3.5 w-3.5" />} label="Close loop" />
         <MapBtn onClick={() => apiRef.current?.undo()} icon={<Undo2 className="h-3.5 w-3.5" />} label="Undo" />
         <MapBtn onClick={() => apiRef.current?.clear()} icon={<Trash2 className="h-3.5 w-3.5" />} label="Clear" />
       </div>
       <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
         <span className="rounded-full bg-white/85 backdrop-blur hairline px-3 py-1 text-[11px] text-[color:var(--ink-muted)]">
-          Click to add · drag a dot onto another to join · click the first dot to close · right-click to remove
+          {aligning
+            ? "Drag the whole outline to line it up with the lot — shape & size stay locked"
+            : "Click to add · drag a dot onto another to join · click the first dot to close · right-click to remove"}
         </span>
       </div>
     </div>
   );
 }
 
-function MapBtn({ onClick, icon, label }: { onClick: () => void; icon: React.ReactNode; label: string }) {
+function MapBtn({
+  onClick,
+  icon,
+  label,
+  active,
+}: {
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full bg-white/90 backdrop-blur hairline px-2.5 py-1 text-[11px] font-medium text-[color:var(--ink-soft)] hover:bg-white shadow-[var(--shadow-sm)]"
+      aria-pressed={active}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full backdrop-blur hairline px-2.5 py-1 text-[11px] font-medium shadow-[var(--shadow-sm)]",
+        active
+          ? "bg-[color:var(--accent)] text-white hover:bg-[color:var(--accent)]"
+          : "bg-white/90 text-[color:var(--ink-soft)] hover:bg-white",
+      )}
     >
       {icon}
       {label}

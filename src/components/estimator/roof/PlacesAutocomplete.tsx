@@ -177,8 +177,8 @@ export function PlacesAutocomplete({
       onPickRef.current({ address: street, city, state, zip, lat, lng });
       setText(formatted);
       tokenRef.current = null; // fetchFields ends the session — start a fresh token next time
-    } catch {
-      /* ignore selection parse errors */
+    } catch (err) {
+      console.error("[PlacesAutocomplete] failed to resolve the picked place:", err);
     }
   }
 
