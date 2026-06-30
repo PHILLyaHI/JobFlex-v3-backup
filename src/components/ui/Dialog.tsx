@@ -1,19 +1,27 @@
 "use client";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
-import { popover } from "@/lib/theme/motion";
+import { modal, scrimFade } from "@/lib/theme/motion";
 
 interface DialogProps {
   open: boolean;
   onClose: () => void;
   title?: string;
   description?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   footer?: React.ReactNode;
 }
 
 export function Dialog({ open, onClose, title, description, children, footer }: DialogProps) {
+  // Portal to <body> so the fixed overlay escapes any transformed ancestor (e.g.
+  // a framer-motion panel). A `transform` on a parent makes `position: fixed`
+  // resolve to that parent's box, so otherwise the scrim only dims the nested
+  // content region and leaves the sidebar/topbar bright.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -21,20 +29,23 @@ export function Dialog({ open, onClose, title, description, children, footer }: 
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <AnimatePresence>
       {open && (
         <>
           <motion.div
-            className="fixed inset-0 z-40 bg-[color:var(--ink)]/35 backdrop-blur-[2px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 bg-[color-mix(in_srgb,var(--ink)_60%,transparent)] backdrop-blur-[2px]"
+            variants={scrimFade}
+            initial="initial"
+            animate="animate"
+            exit="exit"
             onClick={onClose}
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
             <motion.div
-              variants={popover}
+              variants={modal}
               initial="initial"
               animate="animate"
               exit="exit"
@@ -56,7 +67,7 @@ export function Dialog({ open, onClose, title, description, children, footer }: 
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="px-6 pb-6">{children}</div>
+              {children && <div className="px-6 pb-6">{children}</div>}
               {footer && (
                 <div className="border-t border-[color:var(--ink-line)] px-6 py-4 flex justify-end gap-2">
                   {footer}
@@ -66,6 +77,7 @@ export function Dialog({ open, onClose, title, description, children, footer }: 
           </div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

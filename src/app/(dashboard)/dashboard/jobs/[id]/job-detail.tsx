@@ -78,6 +78,7 @@ interface ExpenseDTO {
 interface MessageDTO {
   id: string;
   authorId: string | null;
+  authorName: string | null;
   body: string;
   createdAt: Date;
 }
@@ -714,19 +715,25 @@ function MessagesTab({
             No messages yet. Start the thread below.
           </p>
         )}
-        {messages.map((m) => (
-          <div key={m.id} className="flex gap-3">
-            <Avatar name={m.authorId ? "Team" : "Client"} size={28} />
-            <div className="flex-1 min-w-0">
-              <div className="text-[11px] text-[color:var(--ink-muted)] tabular">
-                {relative(m.createdAt)}
-              </div>
-              <div className="text-[13px] text-[color:var(--ink-soft)] whitespace-pre-wrap leading-relaxed mt-0.5">
-                {m.body}
+        {messages.map((m) => {
+          const who = m.authorName ?? (m.authorId ? "Team" : "Client");
+          return (
+            <div key={m.id} className="flex gap-3">
+              <Avatar name={who} size={28} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-medium text-[color:var(--ink)]">{who}</span>
+                  <span className="text-[11px] text-[color:var(--ink-muted)] tabular">
+                    {relative(m.createdAt)}
+                  </span>
+                </div>
+                <div className="text-[13px] text-[color:var(--ink-soft)] whitespace-pre-wrap leading-relaxed mt-0.5">
+                  {m.body}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="mt-5 pt-5 border-t border-[color:var(--ink-line)]">
         <Textarea

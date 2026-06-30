@@ -18,7 +18,6 @@ import { Input } from "@/components/ui/Input";
 import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
 import type { ClientRecord } from "@/actions/clients";
 import { ClientFormSheet } from "./ClientFormSheet";
-import { PreviewTag, PreviewNote } from "./PreviewTag";
 
 // Full client shape the builder needs — matches createClient/updateClient
 // output so an inline edit can round-trip every field.
@@ -151,10 +150,7 @@ export function ClientField({ clients }: { clients: ClientLite[] }) {
 
   return (
     <div ref={rootRef} className="relative">
-      <div className="flex items-center gap-2">
-        <span className="quiet-caps">Client</span>
-        {freeTextMode && <PreviewTag />}
-      </div>
+      <span className="quiet-caps">Client</span>
 
       <div className="mt-1.5">
         {selected ? (
@@ -251,11 +247,6 @@ export function ClientField({ clients }: { clients: ClientLite[] }) {
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
-            <PreviewNote>
-              Free-text client names aren&apos;t saved against the proposal yet —
-              the schema doesn&apos;t hold a non-FK client name. Use &ldquo;Save
-              as client&rdquo; to promote it into a real record.
-            </PreviewNote>
           </div>
         ) : (
           /* ── No selection — search trigger ────────────────────────── */

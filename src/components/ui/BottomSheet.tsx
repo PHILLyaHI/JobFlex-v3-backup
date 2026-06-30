@@ -112,7 +112,7 @@ export function BottomSheet({
       {open && (
         <>
           <motion.div
-            className="fixed inset-0 z-40 bg-[color:var(--ink)]/35 backdrop-blur-[1px]"
+            className="fixed inset-0 z-40 bg-[color-mix(in_srgb,var(--ink)_50%,transparent)] backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

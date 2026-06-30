@@ -19,6 +19,13 @@ interface Props {
   placeholder?: string;
   // Highlight only date (no time row). Useful if we ever want a date-only mode.
   dateOnly?: boolean;
+  // Render the trailing calendar icon as a tonal chip so the whole field reads
+  // as a tappable control (used in the create-job form where the affordance was
+  // previously too subtle to notice).
+  iconButton?: boolean;
+  // Which edge to anchor the popover to. Use "right" for fields in the right
+  // column of a narrow sheet so the popover opens inward instead of off-screen.
+  align?: "left" | "right";
 }
 
 const DAYS_OF_WEEK = ["S", "M", "T", "W", "T", "F", "S"];
@@ -37,6 +44,8 @@ export function DateTimePicker({
   onChange,
   fallbackDate,
   placeholder = "Pick a date & time",
+  iconButton = false,
+  align = "left",
 }: Props) {
   const [open, setOpen] = React.useState(false);
   const [viewMonth, setViewMonth] = React.useState<Date>(() => {
@@ -101,17 +110,33 @@ export function DateTimePicker({
         >
           {display}
         </span>
-        <CalendarIcon
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 transition-colors",
-            open ? "text-[color:var(--accent)]" : "text-[color:var(--ink-muted)]",
-          )}
-        />
+        {iconButton ? (
+          <span
+            className={cn(
+              "grid h-7 w-7 shrink-0 place-items-center rounded-[var(--r-sm)] transition-colors",
+              open
+                ? "bg-[color:var(--accent-soft)] text-[color:var(--accent)]"
+                : "bg-black/[0.04] text-[color:var(--ink-muted)]",
+            )}
+          >
+            <CalendarIcon className="h-3.5 w-3.5" />
+          </span>
+        ) : (
+          <CalendarIcon
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 transition-colors",
+              open ? "text-[color:var(--accent)]" : "text-[color:var(--ink-muted)]",
+            )}
+          />
+        )}
       </button>
       {open && (
         <div
           ref={popoverRef}
-          className="absolute top-[calc(100%+6px)] left-0 z-50 paper-card p-3 min-w-[268px]"
+          className={cn(
+            "absolute top-[calc(100%+6px)] z-50 paper-card p-3 min-w-[268px]",
+            align === "right" ? "right-0" : "left-0",
+          )}
           style={{
             // Distinct elevation so the popover doesn't blend into the sheet behind it.
             boxShadow:

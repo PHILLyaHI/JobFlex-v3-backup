@@ -2,10 +2,10 @@
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
-import { estimateSchema, type GeneratedEstimate } from "./advancedEstimator";
+import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
 
 const STUB: GeneratedEstimate = {
@@ -38,12 +38,16 @@ export async function estimateRoof(input: {
   pitch: string;
   squares: number;
   wastePct: number;
+  // Optional EagleView-measured facet/edge detail, fed verbatim to the AI so it
+  // can price ridge vent, valley/flashing metal, and steep-slope labor off real
+  // geometry rather than a single average pitch.
+  measurementNotes?: string;
 }): Promise<
   | { ok: true; data: GeneratedEstimate; disabled?: false }
   | { ok: true; data: GeneratedEstimate; disabled: true }
   | { ok: false; error: string }
 > {
-  await requireOrg();
+  await requireManager();
   if (!isOpenAIEnabled()) {
     return { ok: true, data: STUB, disabled: true };
   }
@@ -64,7 +68,7 @@ export async function estimateRoof(input: {
           content: `Address: ${input.address ?? "unknown"}
 Pitch: ${input.pitch}
 Roof size: ${input.squares} squares (${input.squares * 100} sqft)
-Waste factor: ${input.wastePct}%`,
+Waste factor: ${input.wastePct}%${input.measurementNotes ? `\n${input.measurementNotes}` : ""}`,
         },
       ],
     });
@@ -99,7 +103,7 @@ const convertSchema = z.object({
 });
 
 export async function convertRoofEstimateToProposal(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const data = convertSchema.parse(raw);
 
   const lines = [

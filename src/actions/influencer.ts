@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const payoutInput = z.object({
@@ -11,7 +11,7 @@ const payoutInput = z.object({
 });
 
 export async function recordPayout(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = payoutInput.parse(raw);
   const p = await db.influencerPayout.create({
     data: {
@@ -27,7 +27,7 @@ export async function recordPayout(raw: unknown) {
 }
 
 export async function markPayoutPaid(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const p = await db.influencerPayout.findUnique({ where: { id } });
   if (!p || p.organizationId !== organizationId) throw new Error("Not found");
   await db.influencerPayout.update({

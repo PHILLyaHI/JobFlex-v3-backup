@@ -4,6 +4,7 @@
 export const Role = {
   OWNER: "OWNER",
   ADMIN: "ADMIN",
+  MANAGER: "MANAGER",
   SALES: "SALES",
   ESTIMATOR: "ESTIMATOR",
   INSTALLER: "INSTALLER",
@@ -11,6 +12,37 @@ export const Role = {
   USER: "USER",
 } as const;
 export type Role = (typeof Role)[keyof typeof Role];
+
+// Roles offered when adding/editing a team member from the Workers roster.
+// INSTALLER is the field-worker role (restricted, self-scoped dashboard via
+// isWorkerRole in orgContext); SALES/ESTIMATOR/MANAGER are office staff with
+// manager-level access. OWNER/ADMIN/ACCOUNTANT/USER stay valid but are managed
+// elsewhere, not offered in the worker-add dropdown.
+export const WORKER_ROLES = [Role.INSTALLER, Role.SALES, Role.ESTIMATOR, Role.MANAGER] as const;
+export type WorkerRole = (typeof WORKER_ROLES)[number];
+
+// Human-friendly label for a role — used in invite copy, the accept card, and
+// roster pills so we never surface a raw enum or a generic "crew member".
+export function roleLabel(role: string): string {
+  switch (role) {
+    case Role.INSTALLER:
+      return "Installer";
+    case Role.SALES:
+      return "Sales rep";
+    case Role.ESTIMATOR:
+      return "Estimator";
+    case Role.MANAGER:
+      return "Manager";
+    case Role.OWNER:
+      return "Owner";
+    case Role.ADMIN:
+      return "Admin";
+    case Role.ACCOUNTANT:
+      return "Accountant";
+    default:
+      return role ? role.charAt(0) + role.slice(1).toLowerCase() : "Member";
+  }
+}
 
 export const LeadStatus = {
   NEW: "NEW",
@@ -99,11 +131,14 @@ export type SubscriptionPlan = (typeof SubscriptionPlan)[keyof typeof Subscripti
 export const ActivityKind = {
   CREATED: "CREATED",
   UPDATED: "UPDATED",
+  EDITED: "EDITED",
   SENT: "SENT",
   VIEWED: "VIEWED",
   ACCEPTED: "ACCEPTED",
   DECLINED: "DECLINED",
+  SCHEDULED: "SCHEDULED",
   PAID: "PAID",
+  COMPLETED: "COMPLETED",
   NOTE: "NOTE",
   CALL: "CALL",
   EMAIL: "EMAIL",
@@ -149,3 +184,111 @@ export const InfluencerPayoutStatus = {
   FAILED: "FAILED",
 } as const;
 export type InfluencerPayoutStatus = (typeof InfluencerPayoutStatus)[keyof typeof InfluencerPayoutStatus];
+
+// ─────────────────────────────────────────────
+// Admin console — influencers, promo codes, commission & payouts.
+// All money in this subsystem is integer cents; these enums back the
+// Stripe-truth attribution + commission ledger + Connect payout flow.
+// ─────────────────────────────────────────────
+
+// Session discriminator: a NextAuth session belongs to either an app USER
+// (org member) or a platform INFLUENCER (separate login, no org).
+export const Principal = {
+  USER: "USER",
+  INFLUENCER: "INFLUENCER",
+} as const;
+export type Principal = (typeof Principal)[keyof typeof Principal];
+
+export const InfluencerStatus = {
+  PENDING: "PENDING",
+  ACTIVE: "ACTIVE",
+  SUSPENDED: "SUSPENDED",
+  TERMINATED: "TERMINATED",
+} as const;
+export type InfluencerStatus = (typeof InfluencerStatus)[keyof typeof InfluencerStatus];
+
+// Mirror of the Stripe Connect account's onboarding/capability state.
+export const ConnectStatus = {
+  NONE: "NONE",
+  ONBOARDING: "ONBOARDING",
+  RESTRICTED: "RESTRICTED",
+  ENABLED: "ENABLED",
+  DISABLED: "DISABLED",
+} as const;
+export type ConnectStatus = (typeof ConnectStatus)[keyof typeof ConnectStatus];
+
+export const CommissionType = {
+  PERCENT: "PERCENT",
+  FLAT: "FLAT",
+} as const;
+export type CommissionType = (typeof CommissionType)[keyof typeof CommissionType];
+
+// NET pays on money actually collected (invoice.amount_paid); GROSS on subtotal.
+export const CommissionBasis = {
+  NET: "NET",
+  GROSS: "GROSS",
+} as const;
+export type CommissionBasis = (typeof CommissionBasis)[keyof typeof CommissionBasis];
+
+// Our commission window (decoupled from the customer's Stripe discount duration).
+export const PromoDurationType = {
+  ONCE: "ONCE",
+  REPEATING: "REPEATING",
+  FOREVER: "FOREVER",
+} as const;
+export type PromoDurationType = (typeof PromoDurationType)[keyof typeof PromoDurationType];
+
+export const AttributionStatus = {
+  ACTIVE: "ACTIVE",
+  ENDED: "ENDED",
+  VOID: "VOID",
+} as const;
+export type AttributionStatus = (typeof AttributionStatus)[keyof typeof AttributionStatus];
+
+export const LedgerEntryType = {
+  ACCRUED: "ACCRUED",
+  REVERSED: "REVERSED",
+  PAID: "PAID",
+  ADJUSTMENT: "ADJUSTMENT",
+} as const;
+export type LedgerEntryType = (typeof LedgerEntryType)[keyof typeof LedgerEntryType];
+
+export const LedgerEntryState = {
+  PENDING: "PENDING",
+  CLEARED: "CLEARED",
+  PAID: "PAID",
+  VOID: "VOID",
+} as const;
+export type LedgerEntryState = (typeof LedgerEntryState)[keyof typeof LedgerEntryState];
+
+export const PayoutRequestStatus = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+  PROCESSING: "PROCESSING",
+  PAID: "PAID",
+  FAILED: "FAILED",
+} as const;
+export type PayoutRequestStatus = (typeof PayoutRequestStatus)[keyof typeof PayoutRequestStatus];
+
+export const PayoutTransferStatus = {
+  PENDING: "PENDING",
+  PAID: "PAID",
+  FAILED: "FAILED",
+  REVERSED: "REVERSED",
+} as const;
+export type PayoutTransferStatus = (typeof PayoutTransferStatus)[keyof typeof PayoutTransferStatus];
+
+export const BillingInterval = {
+  MONTH: "MONTH",
+  YEAR: "YEAR",
+} as const;
+export type BillingInterval = (typeof BillingInterval)[keyof typeof BillingInterval];
+
+export const WebhookEventStatus = {
+  RECEIVED: "RECEIVED",
+  PROCESSED: "PROCESSED",
+  FAILED: "FAILED",
+  IGNORED: "IGNORED",
+} as const;
+export type WebhookEventStatus = (typeof WebhookEventStatus)[keyof typeof WebhookEventStatus];

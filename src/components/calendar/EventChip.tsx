@@ -22,6 +22,7 @@ interface EventChipProps {
   event: CalendarEvent;
   onClick?: (e: React.MouseEvent) => void;
   onDragEnd?: (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void;
+  onDrag?: (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void;
   draggable?: boolean;
   compact?: boolean;
   style?: React.CSSProperties;
@@ -38,11 +39,14 @@ export function EventChip({
   event,
   onClick,
   onDragEnd,
+  onDrag,
   draggable,
   compact = true,
   style,
   className,
 }: EventChipProps) {
+  // Suppress the trailing click after a drag so a move doesn't open the sheet.
+  const movedRef = React.useRef(false);
   const time = new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -66,16 +70,29 @@ export function EventChip({
   return (
     <motion.button
       type="button"
-      onClick={onClick}
+      onClick={(e) => {
+        if (movedRef.current) {
+          movedRef.current = false;
+          return;
+        }
+        onClick?.(e);
+      }}
       drag={draggable}
       dragSnapToOrigin
       dragElastic={0.15}
+      onPointerDown={() => {
+        movedRef.current = false;
+      }}
+      onDragStart={() => {
+        movedRef.current = true;
+      }}
       whileDrag={{
         scale: 0.98,
         rotate: 0.3,
         boxShadow: "0 20px 48px -24px rgba(17,17,19,0.35)",
         zIndex: 30,
       }}
+      onDrag={onDrag}
       onDragEnd={onDragEnd}
       initial={{ opacity: 0, y: 2 }}
       animate={{ opacity: 1, y: 0 }}

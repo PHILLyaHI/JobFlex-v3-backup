@@ -3,6 +3,8 @@ import Link from "next/link";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagedList } from "@/lib/usePagedList";
 import { money, shortDate } from "@/lib/format";
 
 export type ClientRow = {
@@ -13,19 +15,29 @@ export type ClientRow = {
   proposalCount: number;
   pipelineValue: number;
   tags: { label: string; color: string }[];
+  vip: boolean;
   updated: Date;
 };
 
 export function ClientsTable({ rows }: { rows: ClientRow[] }) {
+  const { page, pageCount, setPage, pageItems } = usePagedList(rows, 20);
+
   const columns: Column<ClientRow>[] = [
     {
       key: "name",
       header: "Client",
       render: (r) => (
-        <Link href={`/dashboard/clients/${r.id}` as any} className="flex items-center gap-3">
+        <Link
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          href={`/dashboard/clients/${r.id}` as any}
+          className="flex items-center gap-3"
+        >
           <Avatar name={r.name} size={34} />
           <div>
-            <div className="font-medium text-[color:var(--ink)]">{r.name}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium text-[color:var(--ink)]">{r.name}</span>
+              {r.vip && <Badge tone="accent">VIP</Badge>}
+            </div>
             <div className="text-[11px] text-[color:var(--ink-muted)]">{r.email ?? "—"}</div>
           </div>
         </Link>
@@ -69,5 +81,10 @@ export function ClientsTable({ rows }: { rows: ClientRow[] }) {
     },
   ];
 
-  return <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} />;
+  return (
+    <>
+      <DataTable columns={columns} rows={pageItems} rowKey={(r) => r.id} />
+      <Pagination page={page} pageCount={pageCount} onPage={setPage} />
+    </>
+  );
 }

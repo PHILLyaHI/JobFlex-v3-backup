@@ -58,11 +58,14 @@ Let us know if you have any questions.
   category: "proposal-send",
 };
 
-const DEMO_VARS = {
-  client_name: "Rohan Patel",
-  total: "$18,444",
-  link: "https://jobflex.app/portal/q/abc123",
-  org: "Acme Contracting",
+// Illustrative sample values used ONLY to render the live template preview —
+// never sent or stored. Bracketed labels make the substitution slots obvious and
+// keep the preview from looking like a real client record. `org` uses the real name.
+const PREVIEW_VARS = {
+  client_name: "[Client name]",
+  total: "[Total]",
+  link: "[Proposal link]",
+  org: "[Your company]",
 };
 
 export function EmailTemplateEditor({ templates, orgName }: EmailTemplateEditorProps) {
@@ -134,8 +137,8 @@ export function EmailTemplateEditor({ templates, orgName }: EmailTemplateEditorP
     setDirty(true);
   }
 
-  const renderedSubject = renderTemplate(draft.subject, { ...DEMO_VARS, org: orgName });
-  const renderedBody = renderTemplate(draft.body, { ...DEMO_VARS, org: orgName });
+  const renderedSubject = renderTemplate(draft.subject, { ...PREVIEW_VARS, org: orgName });
+  const renderedBody = renderTemplate(draft.body, { ...PREVIEW_VARS, org: orgName });
 
   return (
     <>

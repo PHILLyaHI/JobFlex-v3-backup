@@ -17,6 +17,7 @@ import type {
   ProposalCRow,
   ProposalCStatus,
 } from "@/components/v3/proposals-c/types";
+import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,10 @@ export default async function ProposalsListPage() {
           measurementType: true,
           quantity: true,
           materialCost: true,
+          store: true,
+          productUrl: true,
+          imageUrl: true,
+          dimensions: true,
         },
         orderBy: { position: "asc" },
       },
@@ -94,7 +99,13 @@ export default async function ProposalsListPage() {
       measurementType: l.measurementType,
       quantity: l.quantity,
       materialCost: l.materialCost,
+      store: l.store,
+      productUrl: l.productUrl,
+      imageUrl: l.imageUrl,
+      dimensions: l.dimensions,
     })),
+    beforePhotos: parseProposalPhotos(p.beforePhotos),
+    afterPhotos: parseProposalPhotos(p.afterPhotos),
   }));
 
   const accepted = rows.filter((r) => r.status === "ACCEPTED");

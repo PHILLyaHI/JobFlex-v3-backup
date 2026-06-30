@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { nanoid } from "nanoid";
 
@@ -14,6 +15,11 @@ export interface DraftLineItem {
   unitPrice: number;
   materialCost: number;
   laborCost: number;
+  // Live-pricing product metadata, carried through edits so it isn't wiped on save.
+  store?: string | null;
+  productUrl?: string | null;
+  imageUrl?: string | null;
+  dimensions?: string | null;
 }
 
 export interface DraftInstallment {
@@ -88,7 +94,8 @@ const emptyDraft = (): ProposalDraft => ({
   ],
   installments: [
     { id: nanoid(6), label: "Deposit", amount: 30, isPercent: true },
-    { id: nanoid(6), label: "Completion", amount: 70, isPercent: true },
+    { id: nanoid(6), label: "Start of work", amount: 30, isPercent: true },
+    { id: nanoid(6), label: "Completion", amount: 40, isPercent: true },
   ],
   taxRate: 0,
   materialMarkupPct: 15,
@@ -98,7 +105,8 @@ const emptyDraft = (): ProposalDraft => ({
 });
 
 export const useProposalDraftStore = create<DraftStore>()(
-  immer((set, get) => ({
+  persist(
+    immer((set, get) => ({
     draft: emptyDraft(),
     reset: () => set((s) => { s.draft = emptyDraft(); }),
     set: (patch) => set((s) => { Object.assign(s.draft, patch); }),
@@ -176,5 +184,12 @@ export const useProposalDraftStore = create<DraftStore>()(
         margin,
       };
     },
-  })),
+    })),
+    {
+      // Mirror the in-progress draft to localStorage so it survives a reload
+      // even before the first server autosave. Only the draft itself is persisted.
+      name: "jobflex-proposal-draft",
+      partialize: (s) => ({ draft: s.draft }),
+    },
+  ),
 );

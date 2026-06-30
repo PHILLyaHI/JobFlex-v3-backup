@@ -9,6 +9,11 @@ interface MonthGridProps {
   onSelectEvent: (e: CalendarEvent) => void;
   onReschedule: (eventId: string, newDate: Date) => void;
   onSelectDate?: (date: Date) => void;
+  // Day to outline while an event is being created (the chosen start date).
+  previewIso?: string | null;
+  // Day currently under a dragged tray card (resolved by the parent). Highlights
+  // the drop target the same way an in-grid event-chip drag does.
+  hoveredDayIso?: string | null;
 }
 
 function startOfMonth(d: Date) {
@@ -39,8 +44,23 @@ export function MonthGrid({
   onSelectEvent,
   onReschedule,
   onSelectDate,
+  previewIso,
+  hoveredDayIso,
 }: MonthGridProps) {
   const cellRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
+  // Day currently under a dragged event chip (outline only).
+  const [dragOverIso, setDragOverIso] = React.useState<string | null>(null);
+  // Timestamp of the last drag release. The browser fires a trailing `click`
+  // after a drag, and a rescheduled chip remounts into its new day cell (losing
+  // any per-chip "did I move" flag), so the click guard lives here in the parent
+  // — which survives the remount — instead of on the chip.
+  const lastDragEndAt = React.useRef(0);
+  // True from the moment a real drag starts (set in handleEventDrag, which fires
+  // before pointer-up) until just after it ends. The browser's trailing click can
+  // fire BEFORE framer-motion's async onDragEnd updates lastDragEndAt, so the
+  // timestamp alone misses it; this boolean — already set during the drag —
+  // catches the click regardless of ordering, and survives the chip's remount.
+  const draggingRef = React.useRef(false);
 
   const first = startOfMonth(cursor);
   const gridStart = addDays(first, -first.getDay());
@@ -57,16 +77,35 @@ export function MonthGrid({
     return m;
   }, [events]);
 
-  function handleEventDragEnd(event: CalendarEvent, point: { x: number; y: number }) {
-    let dropDate: Date | null = null;
+  function dayIsoAt(point: { x: number; y: number }): string | null {
+    let found: string | null = null;
     cellRefs.current.forEach((el, iso) => {
       const r = el.getBoundingClientRect();
       if (point.x >= r.left && point.x <= r.right && point.y >= r.top && point.y <= r.bottom) {
-        const [y, m, d] = iso.split("-").map(Number);
-        dropDate = new Date(y, m - 1, d);
+        found = iso;
       }
     });
-    if (dropDate && !sameDay(dropDate, new Date(event.startsAt))) {
+    return found;
+  }
+
+  function handleEventDrag(point: { x: number; y: number }) {
+    draggingRef.current = true;
+    const iso = dayIsoAt(point);
+    setDragOverIso((prev) => (prev === iso ? prev : iso));
+  }
+
+  function handleEventDragEnd(event: CalendarEvent, point: { x: number; y: number }) {
+    setDragOverIso(null);
+    lastDragEndAt.current = Date.now();
+    // Release the flag after the trailing click has had its chance to fire.
+    setTimeout(() => {
+      draggingRef.current = false;
+    }, 0);
+    const iso = dayIsoAt(point);
+    if (!iso) return;
+    const [y, m, d] = iso.split("-").map(Number);
+    const dropDate = new Date(y, m - 1, d);
+    if (!sameDay(dropDate, new Date(event.startsAt))) {
       onReschedule(event.id, dropDate);
     }
   }
@@ -103,7 +142,11 @@ export function MonthGrid({
                 if (el) cellRefs.current.set(iso, el);
                 else cellRefs.current.delete(iso);
               }}
-              onClick={() => onSelectDate?.(d)}
+              onClick={() => {
+                // Don't treat the click that trails a drag as a "create on this day".
+                if (draggingRef.current || Date.now() - lastDragEndAt.current < 300) return;
+                onSelectDate?.(d);
+              }}
               className={cn(
                 "relative p-2 min-h-[104px] transition-colors cursor-pointer",
                 "border-r border-b border-[color:var(--ink-line)]",
@@ -112,6 +155,10 @@ export function MonthGrid({
                 !inMonth && "bg-black/[0.02]",
                 weekend && inMonth && "bg-black/[0.008]",
                 isToday && "bg-[color:var(--accent-soft)]/50",
+                previewIso === iso &&
+                  "ring-1 ring-inset ring-[color-mix(in_srgb,var(--accent)_45%,transparent)]",
+                (dragOverIso === iso || hoveredDayIso === iso) &&
+                  "bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
               )}
             >
               <div className="flex items-center justify-between mb-1.5">
@@ -135,8 +182,12 @@ export function MonthGrid({
                     event={e}
                     onClick={(evt) => {
                       evt.stopPropagation();
+                      // Ignore the click that trails a drag-to-reschedule; only a
+                      // real click (no preceding drag) opens the edit sheet.
+                      if (draggingRef.current || Date.now() - lastDragEndAt.current < 300) return;
                       onSelectEvent(e);
                     }}
+                    onDrag={(_, info) => handleEventDrag(info.point)}
                     onDragEnd={(_, info) => handleEventDragEnd(e, info.point)}
                     draggable
                     compact

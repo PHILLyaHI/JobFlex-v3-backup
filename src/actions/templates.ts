@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ProposalStatus } from "@/lib/prismaEnums";
 
@@ -32,7 +32,7 @@ export async function saveProposalAsTemplate(
   name: string,
   description?: string | null,
 ) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const proposal = await db.proposal.findUnique({
     where: { id: proposalId },
     include: {
@@ -108,7 +108,7 @@ const directTemplateSchema = z.object({
 });
 
 export async function createTemplate(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = directTemplateSchema.parse(raw);
   const template = await db.proposalTemplate.create({
     data: {
@@ -123,7 +123,7 @@ export async function createTemplate(raw: unknown) {
 }
 
 export async function deleteTemplate(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const t = await db.proposalTemplate.findUnique({ where: { id } });
   if (!t || t.organizationId !== organizationId) throw new Error("Not found");
   await db.proposalTemplate.delete({ where: { id } });
@@ -131,7 +131,7 @@ export async function deleteTemplate(id: string) {
 }
 
 export async function createProposalFromTemplate(templateId: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const t = await db.proposalTemplate.findUnique({ where: { id: templateId } });
   if (!t || t.organizationId !== organizationId) throw new Error("Not found");
 

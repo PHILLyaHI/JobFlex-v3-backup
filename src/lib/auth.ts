@@ -11,6 +11,11 @@ declare module "next-auth" {
       activeOrgId?: string | null;
       role?: string | null;
       orgName?: string | null;
+      // Discriminates an app USER (org member) from a platform INFLUENCER
+      // (separate login, no org). The JWT identifies WHO; server guards
+      // re-read the DB to authorize WHAT (defends against the 7-day stale JWT).
+      principal?: string | null;
+      influencerId?: string | null;
     };
   }
 }
@@ -47,6 +52,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         };
       },
     }),
+    // Separate influencer login surface, same NextAuth instance. Authenticates
+    // against the Influencer table (not User), so it carries no org/membership.
+    Credentials({
+      id: "influencer",
+      name: "Influencer",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(raw) {
+        const email = String(raw?.email ?? "").toLowerCase().trim();
+        const password = String(raw?.password ?? "");
+        if (!email || !password) return null;
+        const inf = await db.influencer.findUnique({
+          where: { email },
+          select: { id: true, email: true, displayName: true, hashedPassword: true, status: true },
+        });
+        if (!inf?.hashedPassword) return null;
+        // Suspended/terminated influencers cannot obtain a session at all
+        // (guards also re-check status on every privileged call).
+        if (inf.status === "SUSPENDED" || inf.status === "TERMINATED") return null;
+        const ok = await bcrypt.compare(password, inf.hashedPassword);
+        if (!ok) return null;
+        return { id: inf.id, email: inf.email, name: inf.displayName };
+      },
+    }),
   ],
   callbacks: {
     async signIn({ user, account }) {
@@ -65,7 +96,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return true;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
+      // Influencer login (separate Credentials provider) — no org/membership lookup.
+      if (account?.provider === "influencer" && user) {
+        token.id = user.id;
+        token.principal = "INFLUENCER";
+        token.influencerId = user.id;
+        token.activeOrgId = null;
+        token.role = null;
+        token.orgName = null;
+        return token;
+      }
       if (user?.email) {
         const dbUser = await db.user.findUnique({
           where: { email: user.email },
@@ -79,6 +120,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
         if (dbUser) {
           token.id = dbUser.id;
+          token.principal = "USER";
+          token.influencerId = null;
           const m = dbUser.memberships[0];
           token.activeOrgId = dbUser.activeOrgId ?? m?.organizationId ?? null;
           token.role = m?.role ?? null;
@@ -93,6 +136,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.activeOrgId = (token.activeOrgId as string | null) ?? null;
         session.user.role = (token.role as string | null) ?? null;
         session.user.orgName = (token.orgName as string | null) ?? null;
+        // Default to USER so pre-existing JWTs (issued before this field) behave.
+        session.user.principal = (token.principal as string | null) ?? "USER";
+        session.user.influencerId = (token.influencerId as string | null) ?? null;
       }
       return session;
     },

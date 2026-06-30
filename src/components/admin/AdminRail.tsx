@@ -11,6 +11,8 @@ import {
   Megaphone,
   Activity,
   Plug,
+  Receipt,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -32,6 +34,8 @@ const GROUPS: NavGroup[] = [
   {
     title: "Manage",
     items: [
+      { href: "/admin/subscribers", label: "Subscribers", icon: <Receipt className="h-3.5 w-3.5" /> },
+      { href: "/admin/influencers", label: "Influencers", icon: <Star className="h-3.5 w-3.5" /> },
       { href: "/admin/users", label: "Users", icon: <Users className="h-3.5 w-3.5" /> },
       { href: "/admin/plans", label: "Pricing plans", icon: <CreditCard className="h-3.5 w-3.5" /> },
       { href: "/admin/specialties", label: "Specialties", icon: <Tag className="h-3.5 w-3.5" /> },
@@ -40,7 +44,14 @@ const GROUPS: NavGroup[] = [
   },
 ];
 
-export function AdminLayout({ children }: { children: React.ReactNode }) {
+export function AdminLayout({
+  children,
+  unreadSupport = 0,
+}: {
+  children: React.ReactNode;
+  /** Unread support tickets — badges the "Support tickets" nav item. */
+  unreadSupport?: number;
+}) {
   const pathname = usePathname();
   return (
     <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-8">
@@ -54,10 +65,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                   item.href === "/admin"
                     ? pathname === "/admin"
                     : pathname === item.href || pathname.startsWith(item.href + "/");
+                const badge = item.href === "/admin/support" ? unreadSupport : 0;
                 return (
                   <Link
                     key={item.href}
-                    href={item.href as any}
+                    href={item.href as never}
                     className={cn(
                       "relative flex items-center gap-2.5 h-9 px-3 rounded-[var(--r-sm)] text-[13px] transition-colors",
                       active
@@ -67,6 +79,18 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                   >
                     <span className={cn(active ? "opacity-100" : "opacity-70")}>{item.icon}</span>
                     <span>{item.label}</span>
+                    {badge > 0 && (
+                      <span
+                        className={cn(
+                          "ml-auto grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10px] font-semibold tabular",
+                          active
+                            ? "bg-white/20 text-[color:var(--paper)]"
+                            : "bg-[color:var(--accent)] text-white",
+                        )}
+                      >
+                        {badge > 9 ? "9+" : badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

@@ -7,7 +7,7 @@ export function ProposalPreview({ orgName = "Your Company" }: { orgName?: string
   const { subtotal, tax, total } = useProposalDraftStore((s) => s.computed)();
 
   return (
-    <div className="paper-card p-8 sticky top-20">
+    <div className="paper-card p-8 sticky top-20 xl:max-h-[calc(100dvh_-_6rem)] xl:overflow-y-auto">
       <div className="flex items-start justify-between pb-6 border-b border-[color:var(--ink-line)]">
         <div>
           <div className="quiet-caps">Preview</div>

@@ -1,6 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 
@@ -129,7 +129,7 @@ async function summarizeAndMaybeCreateLead(callId: string) {
 }
 
 export async function createLeadFromCall(callId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const call = await db.aiPhoneCall.findUnique({ where: { id: callId } });
   if (!call || call.organizationId !== organizationId) throw new Error("Not found");
   if (call.leadId) return { leadId: call.leadId };

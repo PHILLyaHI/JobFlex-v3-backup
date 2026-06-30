@@ -1,9 +1,10 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { JobStatus } from "@/lib/prismaEnums";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 const jobInput = z.object({
   title: z.string().min(1),
@@ -13,6 +14,7 @@ const jobInput = z.object({
   notes: z.string().optional().nullable(),
   startsAt: z.union([z.string(), z.date()]).optional().nullable(),
   endsAt: z.union([z.string(), z.date()]).optional().nullable(),
+  workerIds: z.array(z.string()).optional().nullable(),
 });
 
 function toDate(v: string | Date | null | undefined): Date | null {
@@ -21,7 +23,8 @@ function toDate(v: string | Date | null | undefined): Date | null {
 }
 
 export async function createJob(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId, user } = await requireManager();
+  await enforcePlanLimit(organizationId, "jobs");
   const data = jobInput.parse(raw);
   const starts = toDate(data.startsAt);
   const ends = toDate(data.endsAt);
@@ -50,6 +53,31 @@ export async function createJob(raw: unknown) {
         notes: data.notes ?? null,
       },
     });
+    await db.activityEvent.create({
+      data: {
+        organizationId,
+        actorId: user.id,
+        proposalId: job.proposalId ?? null,
+        clientId: job.clientId ?? null,
+        kind: "SCHEDULED",
+        summary: `Scheduled "${job.title}" — starts ${starts.toLocaleDateString()}`,
+      },
+    });
+  }
+
+  // Crew picked at creation. Only workers that belong to this org are attached
+  // (guards a tampered payload); ids are de-duped before insert.
+  if (data.workerIds && data.workerIds.length) {
+    const ids = Array.from(new Set(data.workerIds));
+    const valid = await db.workerProfile.findMany({
+      where: { organizationId, id: { in: ids } },
+      select: { id: true },
+    });
+    if (valid.length) {
+      await db.jobAssignment.createMany({
+        data: valid.map((w) => ({ jobId: job.id, workerId: w.id })),
+      });
+    }
   }
 
   revalidatePath("/dashboard/jobs");
@@ -58,7 +86,7 @@ export async function createJob(raw: unknown) {
 }
 
 export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput>>) {
-  const { organizationId } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const existing = await db.job.findUnique({ where: { id } });
   if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
 
@@ -83,6 +111,16 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
     } catch (err) {
       console.warn("[updateJob] review request failed:", err);
     }
+    await db.activityEvent.create({
+      data: {
+        organizationId,
+        actorId: user.id,
+        proposalId: existing.proposalId ?? null,
+        clientId: existing.clientId ?? null,
+        kind: "COMPLETED",
+        summary: `Completed "${existing.title}"`,
+      },
+    });
   }
 
   revalidatePath("/dashboard/jobs");
@@ -92,7 +130,7 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
 }
 
 export async function createJobFromProposal(proposalId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const proposal = await db.proposal.findUnique({ where: { id: proposalId } });
   if (!proposal || proposal.organizationId !== organizationId) throw new Error("Not found");
 
@@ -135,10 +173,11 @@ export async function createJobFromProposal(proposalId: string) {
   await db.activityEvent.create({
     data: {
       organizationId,
+      actorId: user.id,
       proposalId: proposal.id,
       clientId: proposal.clientId,
-      kind: "CREATED",
-      summary: `Job created from accepted proposal "${proposal.title}"`,
+      kind: "SCHEDULED",
+      summary: `Scheduled "${proposal.title}" — starts ${startsAt.toLocaleDateString()}`,
     },
   });
 
@@ -201,7 +240,8 @@ const eventInput = z.object({
 });
 
 export async function createJobEvent(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
+  await enforcePlanLimit(organizationId, "calendarEvents");
   const data = eventInput.parse(raw);
   const ev = await db.jobEvent.create({
     data: {
@@ -220,7 +260,7 @@ export async function createJobEvent(raw: unknown) {
 }
 
 export async function rescheduleJobEvent(id: string, newStartISO: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
   const newStart = new Date(newStartISO);
@@ -238,10 +278,30 @@ export async function rescheduleJobEvent(id: string, newStartISO: string) {
 }
 
 export async function deleteJobEvent(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
   await db.jobEvent.delete({ where: { id } });
+  revalidatePath("/dashboard/calendar");
+  if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
+}
+
+// Edit a job event's own fields (title / notes) from the calendar detail sheet.
+// Time, worker assignment, and job status are handled by their own actions.
+export async function updateJobEvent(
+  id: string,
+  data: { title?: string; notes?: string | null },
+) {
+  const { organizationId } = await requireManager();
+  const ev = await db.jobEvent.findUnique({ where: { id } });
+  if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
+  await db.jobEvent.update({
+    where: { id },
+    data: {
+      title: data.title?.trim() ? data.title.trim() : undefined,
+      notes: data.notes === undefined ? undefined : data.notes,
+    },
+  });
   revalidatePath("/dashboard/calendar");
   if (ev.jobId) revalidatePath(`/dashboard/jobs/${ev.jobId}`);
 }
@@ -253,7 +313,7 @@ export async function rescheduleJobEventTime(
   newStartISO: string,
   newEndISO: string,
 ) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
   const start = roundTo15(new Date(newStartISO));
@@ -281,7 +341,7 @@ function roundTo15(d: Date): Date {
 // Drag a job from the unscheduled tray onto a calendar date — creates a
 // JobEvent at 9am-2pm by default, links it to the job.
 export async function scheduleJobFromTray(jobId: string, dateISO: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
 
@@ -312,7 +372,9 @@ export async function scheduleJobFromTray(jobId: string, dateISO: string) {
     data: {
       organizationId,
       actorId: user.id,
-      kind: "UPDATED",
+      proposalId: job.proposalId ?? null,
+      clientId: job.clientId ?? null,
+      kind: "SCHEDULED",
       summary: `Scheduled "${job.title}" for ${day.toLocaleDateString()}`,
     },
   });
@@ -330,7 +392,7 @@ export async function assignEventWorker(
   workerId: string | null,
   newDateISO?: string,
 ) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const ev = await db.jobEvent.findUnique({
     where: { id: eventId },
     include: { job: { include: { assignments: true } } },

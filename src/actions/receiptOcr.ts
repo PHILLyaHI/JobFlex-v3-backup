@@ -1,6 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
@@ -34,7 +34,7 @@ export async function scanReceipt(input: {
   | { ok: true; ocr: OcrResult; disabled: true }
   | { ok: false; error: string }
 > {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const job = await db.job.findUnique({ where: { id: input.jobId } });
   if (!job || job.organizationId !== organizationId) return { ok: false, error: "Not found" };
 
@@ -64,7 +64,7 @@ export async function saveReceiptExpense(input: {
   note: string | null;
   ocrJson: OcrResult | null;
 }) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const job = await db.job.findUnique({ where: { id: input.jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
 

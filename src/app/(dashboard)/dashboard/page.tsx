@@ -9,15 +9,61 @@ import { Badge } from "@/components/ui/Badge";
 import { money, longDate, shortDate } from "@/lib/format";
 import { RevenueSparkline } from "@/components/dashboard/RevenueSparkline";
 import { StaggerGrid } from "@/components/ui/StaggerGrid";
-import { PipelineBoard } from "@/components/dashboard/PipelineBoard";
+import { LeadKanbanBoard } from "@/components/leads/LeadKanbanBoard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
+import { WeekScheduleCard } from "@/components/dashboard/WeekScheduleCard";
 import { ArrowUpRight, Sparkles, FileText } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { MobileDashboard } from "./mobile-dashboard";
+
+// Grounded resting elevation for the dashboard's content cards. Lifts them off
+// the cool-paper background so they read as distinct surfaces, not a blended
+// field. shadow-md is the system's "Pop" token, sanctioned for "larger surfaces
+// that benefit from definition" (DESIGN.md §4). The `!` beats .paper-card's
+// own unlayered resting shadow.
+const liftedCard =
+  "!shadow-[var(--shadow-md)] transition duration-200 ease-[var(--ease)] hover:-translate-y-0.5 hover:!shadow-[var(--shadow-md)]";
 
 export default async function DashboardOverview() {
   const { organizationId } = await requireOrg();
 
-  const [proposals, leads, payments, activities, jobEvents] = await Promise.all([
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(now.getDate() - 30);
+  const sixtyDaysAgo = new Date(now);
+  sixtyDaysAgo.setDate(now.getDate() - 60);
+  const sevenDaysAgo = new Date(now);
+  sevenDaysAgo.setDate(now.getDate() - 7);
+
+  // Current week, Sunday 00:00 → next Sunday 00:00 (matches the calendar's
+  // Sunday-first convention). Drives the "This week" schedule card.
+  const weekStart = new Date(now);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 7);
+
+  const ACTIVE_PIPELINE = { notIn: ["DECLINED", "ARCHIVED", "EXPIRED"] };
+
+  // Display lists are capped for rendering; the headline stats below are real
+  // org-wide aggregates (counts/sums across ALL rows), not derived from the slice.
+  const [
+    proposals,
+    leads,
+    paymentsLast30,
+    activities,
+    jobEvents,
+    pipelineAgg,
+    openProposals,
+    acceptedProposals,
+    activeProposalCount,
+    prevRevenueAgg,
+    newLeads7,
+    unviewedProposals,
+    viewedProposals,
+    newLeadsTotal,
+    weekEvents,
+  ] = await Promise.all([
     db.proposal.findMany({
       where: { organizationId },
       orderBy: { updatedAt: "desc" },
@@ -25,15 +71,27 @@ export default async function DashboardOverview() {
       include: { client: { select: { name: true } } },
     }),
     db.lead.findMany({
-      where: { organizationId },
+      where: { organizationId, status: { not: "ARCHIVED" } },
       orderBy: { createdAt: "desc" },
-      take: 40,
-      select: { id: true, name: true, status: true, projectType: true, aiCategory: true },
+      take: 60,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        status: true,
+        projectType: true,
+        description: true,
+        aiCategory: true,
+        aiConfidence: true,
+        createdAt: true,
+        assignedTo: { select: { name: true, email: true } },
+      },
     }),
     db.payment.findMany({
-      where: { organizationId, status: "PAID", paidAt: { not: null } },
+      where: { organizationId, status: "PAID", paidAt: { gte: thirtyDaysAgo } },
       orderBy: { paidAt: "desc" },
-      take: 30,
+      select: { amount: true, paidAt: true },
     }),
     db.activityEvent.findMany({
       where: { organizationId },
@@ -42,21 +100,48 @@ export default async function DashboardOverview() {
       select: { id: true, kind: true, summary: true, createdAt: true },
     }),
     db.jobEvent.findMany({
-      where: { organizationId, startsAt: { gte: new Date() } },
+      where: { organizationId, startsAt: { gte: now } },
       orderBy: { startsAt: "asc" },
       take: 4,
     }),
+    db.proposal.aggregate({
+      where: { organizationId, status: ACTIVE_PIPELINE },
+      _sum: { total: true },
+    }),
+    db.proposal.count({ where: { organizationId, status: { in: ["DRAFT", "SENT", "VIEWED"] } } }),
+    db.proposal.count({ where: { organizationId, status: { in: ["ACCEPTED", "PAID"] } } }),
+    db.proposal.count({ where: { organizationId, status: ACTIVE_PIPELINE } }),
+    db.payment.aggregate({
+      where: { organizationId, status: "PAID", paidAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } },
+      _sum: { amount: true },
+    }),
+    db.lead.count({ where: { organizationId, createdAt: { gte: sevenDaysAgo } } }),
+    db.proposal.count({ where: { organizationId, status: "SENT", viewCount: 0 } }),
+    db.proposal.count({ where: { organizationId, status: "VIEWED" } }),
+    db.lead.count({ where: { organizationId, status: "NEW" } }),
+    db.jobEvent.findMany({
+      where: { organizationId, startsAt: { gte: weekStart, lt: weekEnd } },
+      orderBy: { startsAt: "asc" },
+      select: { id: true, title: true, startsAt: true },
+    }),
   ]);
 
-  const totalRevenue = payments.reduce((acc, p) => acc + p.amount, 0);
-  const openProposals = proposals.filter((p) => ["DRAFT", "SENT", "VIEWED"].includes(p.status)).length;
-  const acceptedProposals = proposals.filter((p) => p.status === "ACCEPTED" || p.status === "PAID").length;
-  const pipelineValue = proposals
-    .filter((p) => p.status !== "DECLINED" && p.status !== "ARCHIVED" && p.status !== "EXPIRED")
-    .reduce((acc, p) => acc + p.total, 0);
+  const totalRevenue = paymentsLast30.reduce((acc, p) => acc + p.amount, 0);
+  const prevRevenue = prevRevenueAgg._sum.amount ?? 0;
+  const pipelineValue = pipelineAgg._sum.total ?? 0;
 
-  const sparkData = buildSparkline(payments);
-  const now = new Date();
+  // Real 30-day-over-prior-30-day revenue change for the Revenue card delta.
+  const revenueDelta: { value: string; direction: "up" | "down" } | undefined =
+    prevRevenue > 0
+      ? (() => {
+          const pct = Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100);
+          return { value: `${pct >= 0 ? "+" : ""}${pct}%`, direction: pct >= 0 ? "up" : "down" };
+        })()
+      : totalRevenue > 0
+        ? { value: "new", direction: "up" }
+        : undefined;
+
+  const sparkData = buildSparkline(paymentsLast30);
 
   return (
     <>
@@ -70,11 +155,11 @@ export default async function DashboardOverview() {
             startsAt: j.startsAt,
             notes: j.notes,
           }))}
-          proposals={proposals.map((p) => ({
-            status: p.status,
-            viewCount: p.viewCount ?? 0,
-          }))}
-          leads={leads.map((l) => ({ status: l.status }))}
+          attention={{
+            unviewed: unviewedProposals,
+            viewed: viewedProposals,
+            newLeads: newLeadsTotal,
+          }}
           activities={activities}
         />
       </div>
@@ -86,7 +171,7 @@ export default async function DashboardOverview() {
         actions={
           <>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            <Link href={"/dashboard/proposals/ai" as any}>
+            <Link href={"/dashboard/advanced-ai" as any}>
               <Button icon={<Sparkles className="h-3.5 w-3.5" />}>Draft with AI</Button>
             </Link>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -101,45 +186,39 @@ export default async function DashboardOverview() {
 
       <StaggerGrid className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
+          hover
           label="Revenue · 30d"
           value={money(totalRevenue)}
-          delta={{ value: "+18%", direction: "up" }}
+          delta={revenueDelta}
           hint="Collected across all providers"
         />
         <StatCard
+          hover
           label="Pipeline value"
           value={money(pipelineValue)}
-          hint={`${proposals.length} active proposals`}
+          hint={`${activeProposalCount} active proposal${activeProposalCount === 1 ? "" : "s"}`}
         />
         <StatCard
+          hover
           label="Open proposals"
           value={String(openProposals)}
-          delta={{ value: `${acceptedProposals} won`, direction: "up" }}
+          delta={acceptedProposals > 0 ? { value: `${acceptedProposals} won`, direction: "up" } : undefined}
           accent
         />
         <StatCard
+          hover
           label="New leads · 7d"
-          value={String(leads.slice(0, 20).length)}
+          value={String(newLeads7)}
           hint="AI-categorized, ready to triage"
         />
       </StaggerGrid>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <div>
-              <CardTitle>Revenue trend</CardTitle>
-              <CardSubtitle>Paid invoices over the last 30 days</CardSubtitle>
-            </div>
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            <Link href={"/dashboard/reports" as any} className="text-[12px] text-[color:var(--ink-muted)] inline-flex items-center gap-1 hover:text-[color:var(--ink)]">
-              View reports <ArrowUpRight className="h-3 w-3" />
-            </Link>
-          </CardHeader>
+        <Card className={cn(liftedCard, "lg:col-span-2")}>
           <RevenueSparkline data={sparkData} />
         </Card>
 
-        <Card>
+        <Card className={liftedCard}>
           <CardHeader>
             <div>
               <CardTitle>Recent activity</CardTitle>
@@ -147,6 +226,45 @@ export default async function DashboardOverview() {
             </div>
           </CardHeader>
           <ActivityFeed items={activities} />
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">
+        <Card className={liftedCard}>
+          <WeekScheduleCard
+            weekStart={weekStart}
+            now={now}
+            events={weekEvents}
+            calendarHref="/dashboard/calendar"
+          />
+        </Card>
+
+        <Card className={liftedCard}>
+          <CardHeader>
+            <div>
+              <CardTitle>Upcoming jobs</CardTitle>
+              <CardSubtitle>Next installs on the calendar</CardSubtitle>
+            </div>
+          </CardHeader>
+          {jobEvents.length === 0 ? (
+            <p className="text-[12px] text-[color:var(--ink-muted)]">Your calendar is clear.</p>
+          ) : (
+            <ul className="space-y-3">
+              {jobEvents.map((j) => (
+                <li key={j.id} className="flex gap-3 items-start">
+                  <div className="h-10 w-10 shrink-0 rounded-[var(--r-sm)] bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)] grid place-items-center font-display text-[14px] tabular">
+                    {shortDate(j.startsAt).split(" ")[1]}
+                  </div>
+                  <div>
+                    <div className="text-[13px] font-medium text-[color:var(--ink)]">{j.title}</div>
+                    <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5">
+                      {longDate(j.startsAt)} — {j.notes ?? "scheduled"}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
 
@@ -161,11 +279,26 @@ export default async function DashboardOverview() {
             Open leads <ArrowUpRight className="h-3 w-3" />
           </Link>
         </div>
-        <PipelineBoard leads={leads.slice(0, 24)} />
+        <LeadKanbanBoard
+          heightClass="h-[460px]"
+          leads={leads.map((l) => ({
+            id: l.id,
+            name: l.name,
+            email: l.email,
+            phone: l.phone,
+            projectType: l.projectType,
+            description: l.description,
+            status: l.status,
+            aiCategory: l.aiCategory,
+            aiConfidence: l.aiConfidence,
+            createdAt: l.createdAt,
+            assignee: l.assignedTo?.name ?? l.assignedTo?.email ?? null,
+          }))}
+        />
       </section>
 
-      <section className="mt-10 grid grid-cols-1 lg:grid-cols-5 gap-5">
-        <Card className="lg:col-span-3">
+      <section className="mt-10">
+        <Card className={liftedCard}>
           <CardHeader>
             <div>
               <CardTitle>Latest proposals</CardTitle>
@@ -205,34 +338,6 @@ export default async function DashboardOverview() {
             )}
           </div>
         </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <div>
-              <CardTitle>Upcoming jobs</CardTitle>
-              <CardSubtitle>Next installs on the calendar</CardSubtitle>
-            </div>
-          </CardHeader>
-          {jobEvents.length === 0 ? (
-            <p className="text-[12px] text-[color:var(--ink-muted)]">Your calendar is clear.</p>
-          ) : (
-            <ul className="space-y-3">
-              {jobEvents.map((j) => (
-                <li key={j.id} className="flex gap-3 items-start">
-                  <div className="h-10 w-10 shrink-0 rounded-[var(--r-sm)] bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)] grid place-items-center font-display text-[14px] tabular">
-                    {shortDate(j.startsAt).split(" ")[1]}
-                  </div>
-                  <div>
-                    <div className="text-[13px] font-medium text-[color:var(--ink)]">{j.title}</div>
-                    <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5">
-                      {longDate(j.startsAt)} — {j.notes ?? "scheduled"}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
       </section>
       </div>
     </>
@@ -253,7 +358,7 @@ function statusTone(s: string): "neutral" | "accent" | "success" | "warn" | "dan
 }
 
 function buildSparkline(payments: { amount: number; paidAt: Date | null }[]) {
-  const days: { day: string; revenue: number }[] = [];
+  const days: { day: string; revenue: number; iso: string }[] = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
@@ -263,7 +368,7 @@ function buildSparkline(payments: { amount: number; paidAt: Date | null }[]) {
     const sum = payments
       .filter((p) => p.paidAt && p.paidAt.toISOString().slice(0, 10) === key)
       .reduce((acc, p) => acc + p.amount, 0);
-    days.push({ day: label, revenue: sum });
+    days.push({ day: label, revenue: sum, iso: key });
   }
   return days;
 }

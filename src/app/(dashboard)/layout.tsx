@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { CommandK } from "@/components/layout/CommandK";
+import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { DashboardAnnouncementDismiss } from "./announcement-dismiss";
@@ -59,15 +61,34 @@ export default async function DashboardLayout({ children }: { children: React.Re
     current: m.organizationId === activeOrgId,
   }));
 
+  // Active-org role drives the worker (INSTALLER) read-only experience: a
+  // restricted nav and no manager tools (global search, notifications, create).
+  const activeRole =
+    membershipItems.find((m) => m.current)?.role ?? membershipItems[0]?.role ?? null;
+  const isWorker = activeRole === "INSTALLER";
+
+  // Server-side worker route-gate (defense-in-depth behind the middleware).
+  // Role comes from the DB above, and the path from the middleware-set header,
+  // so this fails CLOSED even if the middleware's JWT decode threw and let a
+  // worker through to a manager route.
+  if (isWorker) {
+    const pathname = (await headers()).get("x-pathname") ?? "";
+    const allowed = ["/dashboard/jobs", "/dashboard/calendar", "/dashboard/messages"].some(
+      (p) => pathname === p || pathname.startsWith(p + "/"),
+    );
+    if (pathname && !allowed) redirect("/dashboard/jobs");
+  }
+
   return (
     <SessionProvider>
       <div className="flex">
-        <Sidebar />
+        <Sidebar role={activeRole} />
         <main className="flex-1 min-w-0 min-h-dvh">
           <Topbar
             user={{ name: session.user.name, email: session.user.email ?? "" }}
             memberships={membershipItems}
             plan={subscription?.plan ?? "FREE"}
+            isWorker={isWorker}
           />
           <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto pb-24 md:pb-8">
             <DashboardAnnouncementDismiss
@@ -83,9 +104,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
             {children}
           </div>
         </main>
-        <CommandK />
+        {!isWorker && <CommandK />}
+        <PlanLimitDialog />
         <div className="md:hidden">
-          <MobileTabBar />
+          <MobileTabBar role={activeRole} />
         </div>
       </div>
     </SessionProvider>

@@ -11,14 +11,19 @@ import {
   CheckCircle2,
   ExternalLink,
   ArrowUpRight,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
-import { money, longDate, relative } from "@/lib/format";
+import { money, relative } from "@/lib/format";
 import { updateProposalStatus } from "@/actions/proposals";
+import { notifyPaymentReminder } from "@/actions/notify";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagedList } from "@/lib/usePagedList";
 import { PaymentSchedule } from "./payment-schedule";
+import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
 import type { ProposalCRow } from "./types";
 
 // Stack of accepted proposals. Each card is a self-contained "work in motion"
@@ -31,15 +36,20 @@ interface AcceptedStackProps {
 }
 
 export function AcceptedStack({ rows }: AcceptedStackProps) {
+  const { page, pageCount, setPage, pageItems } = usePagedList(rows, 20);
+
   if (rows.length === 0) {
     return <EmptyAccepted />;
   }
 
   return (
-    <div className="pt-8 space-y-5">
-      {rows.map((r, i) => (
-        <AcceptedCard key={r.id} row={r} index={i} />
-      ))}
+    <div className="pt-8">
+      <div className="space-y-5">
+        {pageItems.map((r, i) => (
+          <AcceptedCard key={r.id} row={r} index={i} />
+        ))}
+      </div>
+      <Pagination page={page} pageCount={pageCount} onPage={setPage} />
     </div>
   );
 }
@@ -48,6 +58,11 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
   const router = useRouter();
   const [paidLines, setPaidLines] = React.useState<Set<string>>(new Set());
   const [busy, setBusy] = React.useState(false);
+  const [busyUnaccept, setBusyUnaccept] = React.useState(false);
+  const [materialsOpen, setMaterialsOpen] = React.useState(false);
+
+  // Count of purchasable material lines — matches what the module shows.
+  const materialCount = row.materials.filter((m) => (m.materialCost ?? 0) > 0).length;
 
   function togglePaid(lineId: string) {
     setPaidLines((prev) => {
@@ -62,12 +77,19 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
     );
   }
 
-  function sendReminder(lineId: string) {
+  async function sendReminder(lineId: string) {
     const line = row.installments.find((l) => l.id === lineId);
-    toast.success(
-      "Reminder queued",
-      line ? `We'll nudge ${row.clientName} about "${line.label}."` : "We'll follow up with the client.",
-    );
+    try {
+      await notifyPaymentReminder({ proposalId: row.id, installmentId: lineId });
+      toast.success(
+        "Reminder sent",
+        line && row.clientEmail
+          ? `Email sent to ${row.clientEmail} about "${line.label}."`
+          : `Reminder sent to ${row.clientName}.`,
+      );
+    } catch {
+      toast.error("Couldn't send reminder", "Check that the client has an email on file.");
+    }
   }
 
   async function markCompleted() {
@@ -84,6 +106,20 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
     }
   }
 
+  async function unaccept() {
+    setBusyUnaccept(true);
+    try {
+      await updateProposalStatus(row.id, "DRAFT");
+      toast.success("Proposal un-accepted", `${row.title} is back in draft — you can edit and re-send it.`);
+      router.refresh();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Try again.";
+      toast.error("Couldn't un-accept", msg);
+    } finally {
+      setBusyUnaccept(false);
+    }
+  }
+
   return (
     <motion.article
       initial={{ opacity: 0, y: 8 }}
@@ -92,15 +128,15 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
       className="paper-card p-0 overflow-hidden"
     >
       {/* Header strip */}
-      <header className="px-6 pt-5 pb-4 flex items-start justify-between gap-6">
+      <header className="px-6 pt-5 pb-5 flex items-start justify-between gap-6">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <Badge tone="success" dot>
+          <div className="flex items-center gap-2.5 mb-2">
+            <Badge tone="success">
               Accepted
             </Badge>
             <span className="quiet-caps !mb-0 text-[color:var(--ink-faint)]">
               {row.acceptedAtISO
-                ? `accepted ${relative(new Date(row.acceptedAtISO))}`
+                ? `signed ${relative(new Date(row.acceptedAtISO))}`
                 : `updated ${relative(new Date(row.updatedAtISO))}`}
             </span>
           </div>
@@ -133,7 +169,7 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
       </header>
 
       {/* Payment schedule */}
-      <div className="px-6 pt-1 pb-4">
+      <div className="border-t border-[color:var(--ink-line)]">
         <PaymentSchedule
           installments={row.installments}
           total={row.total}
@@ -160,8 +196,8 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
           />
           <ActionChip
             icon={<Package className="h-3.5 w-3.5" />}
-            label={`Materials${row.materials.length ? ` · ${row.materials.length}` : ""}`}
-            href={`/dashboard/proposals/${row.id}` as never}
+            label={`Materials${materialCount ? ` · ${materialCount}` : ""}`}
+            onClick={() => setMaterialsOpen(true)}
             tone="muted"
           />
           <ActionChip
@@ -178,16 +214,35 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
           />
         </div>
 
-        <Button
-          size="sm"
-          variant="outline"
-          icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-          onClick={markCompleted}
-          loading={busy}
-        >
-          Mark completed
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<RotateCcw className="h-3.5 w-3.5" />}
+            onClick={unaccept}
+            loading={busyUnaccept}
+          >
+            Un-accept
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+            onClick={markCompleted}
+            loading={busy}
+          >
+            Mark completed
+          </Button>
+        </div>
       </div>
+
+      <MaterialsSheet
+        open={materialsOpen}
+        onClose={() => setMaterialsOpen(false)}
+        proposalTitle={row.title}
+        clientName={row.clientName}
+        items={row.materials}
+      />
     </motion.article>
   );
 }

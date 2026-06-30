@@ -20,6 +20,7 @@ import type {
   ProposalCRow,
   ProposalCStatus,
 } from "@/components/v3/proposals-c/types";
+import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 
 export const dynamic = "force-dynamic";
 
@@ -105,6 +106,8 @@ export default async function ProposalsCPage() {
       quantity: l.quantity,
       materialCost: l.materialCost,
     })),
+    beforePhotos: parseProposalPhotos(p.beforePhotos),
+    afterPhotos: parseProposalPhotos(p.afterPhotos),
   }));
 
   // Split for the three tabs. ACCEPTED → Accepted tab. PAID → Completed tab.

@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const brandingInput = z.object({
@@ -15,7 +15,7 @@ const brandingInput = z.object({
 });
 
 export async function updateBranding(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = brandingInput.parse(raw);
   await db.organization.update({
     where: { id: organizationId },
@@ -42,7 +42,7 @@ const landingInput = z.object({
 });
 
 export async function updateLanding(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = landingInput.parse(raw);
   await db.organization.update({
     where: { id: organizationId },

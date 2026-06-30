@@ -34,7 +34,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
           ref={ref}
           id={inputId}
           className={cn(
-            "peer flex-1 bg-transparent text-sm text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)] outline-none",
+            // min-w-0 lets the input shrink inside flex/grid cells; without it an
+            // <input>'s intrinsic min-width (~20ch) forces overflow when several
+            // sit side-by-side in a narrow container (e.g. the client sheet grids).
+            "peer min-w-0 flex-1 bg-transparent text-sm text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)] outline-none",
             className,
           )}
           {...props}

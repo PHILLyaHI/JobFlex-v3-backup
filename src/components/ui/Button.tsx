@@ -43,6 +43,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
       disabled={disabled || loading}
       className={cn(
         "group relative inline-flex items-center justify-center gap-2 font-medium tracking-[-0.005em] transition-all duration-200 ease-[cubic-bezier(.22,1,.36,1)] focus-ring disabled:opacity-50 disabled:pointer-events-none select-none",
+        // Tactile press: a subtle scale-in on tap gives every button instant
+        // feedback. Releases over the 200ms ease above. Links stay flat.
+        !isLink && "active:scale-[0.98]",
         !isLink && sizes[size],
         variants[variant],
         className,

@@ -7,8 +7,6 @@ import {
   CardTitle,
   CardSubtitle,
 } from "@/components/ui/Card";
-import { PreviewTag, PreviewNote } from "./PreviewTag";
-
 const TEMPLATE_TERMS = `1. Payment due as scheduled.
 2. Changes to scope handled via written change order.
 3. Warranty: workmanship covered for 12 months from completion.`;
@@ -23,9 +21,7 @@ export function TermsBlock() {
     <Card>
       <CardHeader>
         <div>
-          <CardTitle className="inline-flex items-center gap-2">
-            Terms &amp; Conditions <PreviewTag />
-          </CardTitle>
+          <CardTitle>Terms &amp; Conditions</CardTitle>
           <CardSubtitle>
             The fine print that follows the line items on the proposal PDF.
           </CardSubtitle>
@@ -45,11 +41,6 @@ export function TermsBlock() {
         onChange={(e) => setTerms(e.target.value)}
         placeholder="Payment terms, change-order policy, warranty, dispute resolution…"
       />
-      <PreviewNote>
-        Persisting Terms needs a `terms` column on the Proposal model — the
-        existing `notes` field carries warranty / assumptions / exclusions and
-        keeps a separate role.
-      </PreviewNote>
     </Card>
   );
 }

@@ -39,13 +39,13 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         title={client.name}
         description={client.notes ?? "No notes yet."}
         actions={
-          <Link href={"/dashboard/proposals/ai" as any}>
+          <Link href={"/dashboard/advanced-ai" as any}>
             <Button icon={<Sparkles className="h-3.5 w-3.5" />}>New proposal</Button>
           </Link>
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         <Card className="lg:col-span-1">
           <div className="flex items-center gap-3 mb-5">
             <Avatar name={client.name} size={52} />
@@ -102,7 +102,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-5 items-start">
         <Card className="lg:col-span-2">
           <CardHeader>
             <div>

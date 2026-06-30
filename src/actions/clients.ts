@@ -1,6 +1,6 @@
 "use server";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 // Tight client shape returned to the v3 builder. Matches the columns the
@@ -49,13 +49,26 @@ const clientInput = z.object({
 
 export type ClientInput = z.infer<typeof clientInput>;
 
+// VIP isn't a Client column — it's modeled as an org-scoped "VIP" Tag. Kept out
+// of `clientInput` so it can never be spread into db.client.create.
+const createClientInput = clientInput.extend({ vip: z.boolean().optional() });
+
 export async function createClient(raw: unknown): Promise<ClientRecord> {
-  const { organizationId } = await requireOrg();
-  const data = clientInput.parse(raw);
+  const { organizationId } = await requireManager();
+  const { vip, ...data } = createClientInput.parse(raw);
   const created = await db.client.create({
     data: { organizationId, ...data },
     select: CLIENT_SELECT,
   });
+  if (vip) {
+    // Upsert the org's VIP tag (unique on [organizationId, label]), then link it.
+    const tag = await db.tag.upsert({
+      where: { organizationId_label: { organizationId, label: "VIP" } },
+      update: {},
+      create: { organizationId, label: "VIP", color: "#1f7a52" },
+    });
+    await db.clientTag.create({ data: { clientId: created.id, tagId: tag.id } });
+  }
   return created;
 }
 
@@ -63,7 +76,7 @@ export async function updateClient(
   id: string,
   raw: unknown,
 ): Promise<ClientRecord> {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const existing = await db.client.findUnique({
     where: { id },
     select: { organizationId: true, deletedAt: true },

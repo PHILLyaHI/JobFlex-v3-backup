@@ -1,10 +1,8 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Save } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
-import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { LogoDropzone } from "./LogoDropzone";
 import { updateBranding } from "@/actions/company";
@@ -21,7 +19,7 @@ interface Org {
 }
 
 const COLOR_PRESETS = [
-  "#1F7A52", // indigo (default)
+  "#1F7A52", // sage (default)
   "#0EA5E9", // sky
   "#059669", // emerald
   "#C89450", // amber-bronze
@@ -40,28 +38,38 @@ export function BrandingForm({ org }: { org: Org }) {
   const [website, setWebsite] = React.useState(org.website ?? "");
   const [primaryColor, setPrimaryColor] = React.useState(org.primaryColor ?? "#1F7A52");
   const [logoUrl, setLogoUrl] = React.useState<string | null>(org.logoUrl);
-  const [busy, setBusy] = React.useState(false);
+  const [status, setStatus] = React.useState<"idle" | "saving" | "saved" | "error">("idle");
+  // Skip the autosave on first mount (initial state already equals server state).
+  const firstRun = React.useRef(true);
 
-  async function save() {
-    setBusy(true);
-    try {
-      await updateBranding({
-        name,
-        phone: phone || null,
-        billingEmail: billingEmail || null,
-        address: address || null,
-        website: website || null,
-        primaryColor,
-        logoUrl,
-      });
-      toast.success("Branding saved");
-      router.refresh();
-    } catch (err: any) {
-      toast.error("Couldn't save", err?.message);
-    } finally {
-      setBusy(false);
+  // Debounced autosave — persists ~700ms after the last edit; no Save button.
+  React.useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
     }
-  }
+    setStatus("saving");
+    const t = setTimeout(async () => {
+      try {
+        await updateBranding({
+          name,
+          phone: phone || null,
+          billingEmail: billingEmail || null,
+          address: address || null,
+          website: website || null,
+          primaryColor,
+          logoUrl,
+        });
+        setStatus("saved");
+        router.refresh();
+      } catch (err: any) {
+        setStatus("error");
+        toast.error("Couldn't save", err?.message);
+      }
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, phone, billingEmail, address, website, primaryColor, logoUrl]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
@@ -115,10 +123,15 @@ export function BrandingForm({ org }: { org: Org }) {
             (when public profile is on).
           </p>
         </div>
-        <div className="mt-5 flex gap-2">
-          <Button onClick={save} loading={busy} icon={<Save className="h-3.5 w-3.5" />}>
-            Save branding
-          </Button>
+        <div
+          className="mt-5 flex justify-end text-[11px] text-[color:var(--ink-muted)] tabular"
+          aria-live="polite"
+        >
+          {status === "saving" && <span>Saving…</span>}
+          {status === "saved" && <span className="text-[color:var(--accent-ink)]">All changes saved</span>}
+          {status === "error" && (
+            <span className="text-[color:var(--rose)]">Save failed — retrying on next edit</span>
+          )}
         </div>
       </Card>
 

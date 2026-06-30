@@ -3,9 +3,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Check, Clock, AlarmClock } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
+import { Send, Check, Clock, ChevronDown } from "lucide-react";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
@@ -20,7 +19,20 @@ export interface QueueRow {
   runAt: Date;
   note: string | null;
   isOverdue: boolean;
+  /** Whole days past runAt; 0 for not-yet-overdue or due earlier today. */
+  overdueDays: number;
 }
+
+/** Age tiers — rose deepens with how late a follow-up is (status, not decoration). */
+function overdueTier(days: number) {
+  if (days >= 7)
+    return { border: "border-l-[color:var(--rose)]", chip: "bg-[color:var(--rose)] text-white" };
+  if (days >= 3)
+    return { border: "border-l-rose-400", chip: "bg-rose-100 text-rose-800" };
+  return { border: "border-l-rose-300", chip: "bg-rose-50 text-rose-700" };
+}
+
+const ageLabel = (days: number) => (days <= 0 ? "today" : `${days}d late`);
 
 export function FollowUpQueue({ rows }: { rows: QueueRow[] }) {
   const router = useRouter();
@@ -34,8 +46,8 @@ export function FollowUpQueue({ rows }: { rows: QueueRow[] }) {
       setRemoved((s) => new Set([...s, id]));
       toast.success("Sent", "Email dispatched (or stubbed if Resend isn't configured).");
       router.refresh();
-    } catch (err: any) {
-      toast.error("Couldn't send", err?.message);
+    } catch (err: unknown) {
+      toast.error("Couldn't send", err instanceof Error ? err.message : undefined);
     } finally {
       setBusy(null);
     }
@@ -48,8 +60,8 @@ export function FollowUpQueue({ rows }: { rows: QueueRow[] }) {
       setRemoved((s) => new Set([...s, id]));
       toast.success("Marked done");
       router.refresh();
-    } catch (err: any) {
-      toast.error("Couldn't update", err?.message);
+    } catch (err: unknown) {
+      toast.error("Couldn't update", err instanceof Error ? err.message : undefined);
     } finally {
       setBusy(null);
     }
@@ -58,6 +70,7 @@ export function FollowUpQueue({ rows }: { rows: QueueRow[] }) {
   const visible = rows.filter((r) => !removed.has(r.id));
   const overdue = visible.filter((r) => r.isOverdue);
   const upcoming = visible.filter((r) => !r.isOverdue);
+  const oldest = overdue.reduce((m, r) => Math.max(m, r.overdueDays), 0);
 
   if (rows.length === 0) {
     return (
@@ -66,7 +79,7 @@ export function FollowUpQueue({ rows }: { rows: QueueRow[] }) {
           <Clock className="h-6 w-6 text-[color:var(--ink-faint)] mx-auto mb-3" />
           <div className="font-medium text-[color:var(--ink)]">Queue is clear</div>
           <div className="text-[12px] text-[color:var(--ink-muted)] mt-1.5 leading-relaxed max-w-sm mx-auto">
-            Follow-ups are scheduled by your workflow rules. When proposals trigger them, they'll
+            Follow-ups are scheduled by your workflow rules. When proposals trigger them, they&rsquo;ll
             land here.
           </div>
         </div>
@@ -75,25 +88,110 @@ export function FollowUpQueue({ rows }: { rows: QueueRow[] }) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {overdue.length > 0 && (
-        <QueueGroup
-          title="Overdue"
-          subtitle={`${overdue.length} item${overdue.length === 1 ? "" : "s"} past their runAt`}
-          tone="danger"
-          rows={overdue}
-          busy={busy}
-          onExecute={execute}
-          onDone={done}
-        />
+        <section>
+          <header className="mb-3">
+            <h2 className="font-display text-[15px] leading-none tracking-[-0.01em] text-[color:var(--ink)]">
+              Overdue
+            </h2>
+            <p className="text-[11px] text-[color:var(--ink-muted)] mt-1 tabular">
+              {overdue.length} past due · oldest {oldest <= 0 ? "today" : `${oldest}d`}
+            </p>
+          </header>
+
+          <ul className="space-y-2.5">
+            <AnimatePresence initial={false}>
+              {overdue.map((r) => {
+                const tier = overdueTier(r.overdueDays);
+                return (
+                  <motion.li
+                    key={r.id}
+                    layout
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, x: 8, height: 0, marginBottom: 0 }}
+                    transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <div
+                      className={cn(
+                        "paper-card !shadow-none p-3.5 border-l-[3px] transition-colors",
+                        tier.border,
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-[14px] text-[color:var(--ink)] truncate">
+                              {r.clientName ?? "Unknown client"}
+                            </span>
+                            <span
+                              className={cn(
+                                "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular tracking-[0.01em]",
+                                tier.chip,
+                              )}
+                            >
+                              {ageLabel(r.overdueDays)}
+                            </span>
+                          </div>
+                          <div className="text-[12px] text-[color:var(--ink-muted)] mt-0.5 truncate">
+                            {r.proposalTitle ?? "Follow-up"}
+                          </div>
+                          {r.note && (
+                            <div className="text-[11px] text-[color:var(--ink-faint)] mt-1 truncate">
+                              {r.note}
+                            </div>
+                          )}
+                          <div className="text-[10.5px] tabular mt-1.5 text-rose-700">
+                            Due {longDate(r.runAt)}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy === r.id}
+                            onClick={() => done(r.id)}
+                            icon={<Check className="h-3 w-3" />}
+                          >
+                            Done
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={busy === r.id}
+                            loading={busy === r.id}
+                            onClick={() => execute(r.id)}
+                            icon={<Send className="h-3 w-3" />}
+                          >
+                            Send
+                          </Button>
+                        </div>
+                      </div>
+                      {r.proposalId && (
+                        <div className="mt-2.5 pt-2.5 border-t border-[color:var(--ink-line)]">
+                          <Link
+                            href={`/dashboard/proposals/${r.proposalId}` as never}
+                            className="text-[11px] text-[color:var(--accent)] hover:underline focus-ring rounded-sm"
+                          >
+                            Open proposal →
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  </motion.li>
+                );
+              })}
+            </AnimatePresence>
+          </ul>
+        </section>
       )}
+
       {upcoming.length > 0 && (
-        <QueueGroup
-          title="Scheduled"
-          subtitle="Will run when their time arrives"
-          tone="accent"
+        <ScheduledGroup
           rows={upcoming}
           busy={busy}
+          defaultOpen={overdue.length === 0}
           onExecute={execute}
           onDone={done}
         />
@@ -102,127 +200,87 @@ export function FollowUpQueue({ rows }: { rows: QueueRow[] }) {
   );
 }
 
-function QueueGroup({
-  title,
-  subtitle,
-  tone,
+function ScheduledGroup({
   rows,
   busy,
+  defaultOpen,
   onExecute,
   onDone,
 }: {
-  title: string;
-  subtitle: string;
-  tone: "danger" | "accent";
   rows: QueueRow[];
   busy: string | null;
+  defaultOpen: boolean;
   onExecute: (id: string) => void;
   onDone: (id: string) => void;
 }) {
-  const dotColor = tone === "danger" ? "#E11D48" : "var(--accent)";
+  const [open, setOpen] = React.useState(defaultOpen);
   return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>
-            <span className="inline-flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: dotColor }} />
-              {title}
-            </span>
-          </CardTitle>
-          <CardSubtitle>{subtitle}</CardSubtitle>
-        </div>
-        <Badge tone={tone === "danger" ? "danger" : "accent"} dot>
-          {rows.length}
-        </Badge>
-      </CardHeader>
-
-      <div className="relative pl-5">
-        <span
-          aria-hidden
-          className="absolute top-1.5 bottom-1.5 left-[7px] w-px bg-[color:var(--ink-line)]"
+    <section className="paper-card !shadow-none overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 focus-ring hover:bg-black/[0.015] transition-colors"
+      >
+        <span className="flex items-center gap-2.5">
+          <span className="h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden />
+          <span className="quiet-caps !mb-0">Scheduled</span>
+          <span className="text-[11px] text-[color:var(--ink-muted)] tabular">{rows.length}</span>
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 text-[color:var(--ink-faint)] transition-transform",
+            open && "rotate-180",
+          )}
         />
-        <ul className="space-y-3">
-          <AnimatePresence initial={false}>
-            {rows.map((r) => (
-              <motion.li
-                key={r.id}
-                layout
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 6 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                className="relative"
-              >
-                <span
-                  className="absolute -left-5 top-1.5 h-3 w-3 rounded-full grid place-items-center"
-                  style={{ background: dotColor, color: "#fff" }}
-                >
-                  <AlarmClock className="h-2 w-2" />
-                </span>
-                <div
-                  className={cn(
-                    "paper-card !shadow-none p-3 transition-colors",
-                    tone === "danger" && "border-l-[3px] border-l-rose-400/70",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-[13px] text-[color:var(--ink)] truncate">
-                        {r.proposalTitle ?? "Follow-up"}
-                      </div>
-                      <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5">
-                        {r.clientName ?? "—"}
-                        {r.note && ` · ${r.note}`}
-                      </div>
-                      <div
-                        className={cn(
-                          "text-[10.5px] tabular mt-1.5",
-                          tone === "danger" ? "text-rose-700" : "text-[color:var(--ink-soft)]",
-                        )}
-                      >
-                        {tone === "danger" ? "Overdue · " : "Runs · "}
-                        {longDate(r.runAt)} <span className="text-[color:var(--ink-muted)]">({relative(r.runAt)})</span>
-                      </div>
-                    </div>
+      </button>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy === r.id}
-                        onClick={() => onDone(r.id)}
-                        icon={<Check className="h-3 w-3" />}
-                      >
-                        Done
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={busy === r.id}
-                        loading={busy === r.id}
-                        onClick={() => onExecute(r.id)}
-                        icon={<Send className="h-3 w-3" />}
-                      >
-                        Execute now
-                      </Button>
-                    </div>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.ul
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+            className="border-t border-[color:var(--ink-line)] divide-y divide-[color:var(--ink-line)]"
+          >
+            {rows.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-[13px] text-[color:var(--ink)] truncate">
+                    {r.proposalTitle ?? "Follow-up"}
                   </div>
-                  {r.proposalId && (
-                    <div className="mt-2 pt-2 border-t border-[color:var(--ink-line)]">
-                      <Link
-                        href={`/dashboard/proposals/${r.proposalId}` as any}
-                        className="text-[11px] text-[color:var(--accent)] hover:underline"
-                      >
-                        Open proposal →
-                      </Link>
-                    </div>
-                  )}
+                  <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5 tabular truncate">
+                    {r.clientName ?? "—"} · runs {longDate(r.runAt)}{" "}
+                    <span className="text-[color:var(--ink-faint)]">({relative(r.runAt)})</span>
+                  </div>
                 </div>
-              </motion.li>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy === r.id}
+                    onClick={() => onDone(r.id)}
+                    icon={<Check className="h-3 w-3" />}
+                  >
+                    Done
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy === r.id}
+                    loading={busy === r.id}
+                    onClick={() => onExecute(r.id)}
+                    icon={<Send className="h-3 w-3" />}
+                  >
+                    Send
+                  </Button>
+                </div>
+              </li>
             ))}
-          </AnimatePresence>
-        </ul>
-      </div>
-    </Card>
+          </motion.ul>
+        )}
+      </AnimatePresence>
+    </section>
   );
 }

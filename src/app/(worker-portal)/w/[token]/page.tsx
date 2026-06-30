@@ -1,9 +1,9 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
+import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
+import { WorkerInviteCard } from "@/components/workers/WorkerInviteCard";
 import { longDate, shortDate, relative } from "@/lib/format";
 import { ChevronRight } from "lucide-react";
 
@@ -16,6 +16,8 @@ export default async function WorkerDashboard({
   const worker = await db.workerProfile.findUnique({
     where: { token },
     include: {
+      organization: { select: { name: true } },
+      user: { select: { id: true, email: true, hashedPassword: true } },
       assignments: {
         include: {
           job: {
@@ -34,6 +36,49 @@ export default async function WorkerDashboard({
     },
   });
   if (!worker) return notFound();
+
+  // Role lives on the membership; surface the real one on the invite card.
+  const membership = await db.membership.findUnique({
+    where: {
+      userId_organizationId: { userId: worker.userId, organizationId: worker.organizationId },
+    },
+    select: { role: true },
+  });
+  const role = membership?.role ?? "INSTALLER";
+
+  // ── Invite gate ──────────────────────────────────────────────────────────
+  // The magic link is the invite link until the worker responds.
+  if (worker.inviteStatus === "PENDING") {
+    return (
+      <WorkerInviteCard
+        token={token}
+        orgName={worker.organization?.name ?? "the team"}
+        workerName={worker.displayName}
+        email={worker.user?.email ?? ""}
+        role={role}
+      />
+    );
+  }
+  if (worker.inviteStatus === "DECLINED") {
+    return (
+      <div className="max-w-md mx-auto paper-card p-10 text-center">
+        <h1 className="font-display text-[26px] leading-[1.1] tracking-[-0.02em]">
+          Invite declined
+        </h1>
+        <p className="mt-2 text-[13px] text-[color:var(--ink-muted)]">
+          This invitation was declined. Ask {worker.organization?.name ?? "your manager"} to send a
+          new one if you&apos;d like to join.
+        </p>
+      </div>
+    );
+  }
+  // ACCEPTED with a real password → the magic link becomes the dashboard link.
+  // Legacy passwordless workers keep this token portal so they're never locked out.
+  if (worker.user?.hashedPassword) {
+    const session = await auth();
+    if (session?.user?.id === worker.userId) redirect("/dashboard/jobs");
+    redirect(`/auth/login?next=/dashboard/jobs`);
+  }
 
   const now = new Date();
   const today = worker.assignments.filter(

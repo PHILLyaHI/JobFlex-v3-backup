@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { NextResponse } from "next/server";
 import { renderToStream } from "@react-pdf/renderer";
 import { db } from "@/lib/db";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { ProposalPdfDocument, type ProposalPdfData } from "@/lib/pdf/ProposalPdf";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params;
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const proposal = await db.proposal.findUnique({
     where: { id },
     include: {

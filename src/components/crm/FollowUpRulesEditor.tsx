@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Save, Trash2, Workflow } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
+import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
@@ -38,6 +39,8 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = React.useState<RuleRow | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
 
   async function toggle(id: string, next: boolean) {
     setBusy(id);
@@ -51,16 +54,19 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
     }
   }
 
-  async function remove(id: string) {
-    if (!confirm("Delete this rule? Existing scheduled follow-ups will keep running.")) return;
-    setBusy(id);
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setBusy(pendingDelete.id);
     try {
-      await deleteFollowUpRule(id);
+      await deleteFollowUpRule(pendingDelete.id);
       toast.success("Rule deleted");
+      setPendingDelete(null);
       router.refresh();
     } catch (err: any) {
       toast.error("Couldn't delete", err?.message);
     } finally {
+      setDeleting(false);
       setBusy(null);
     }
   }
@@ -169,7 +175,7 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
                     <button
                       type="button"
                       disabled={busy === r.id}
-                      onClick={() => remove(r.id)}
+                      onClick={() => setPendingDelete(r)}
                       aria-label="Delete rule"
                       className="h-7 w-7 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
                     >
@@ -182,6 +188,27 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
           ))}
         </AnimatePresence>
       </ul>
+
+      <Dialog
+        open={!!pendingDelete}
+        onClose={() => { if (!deleting) setPendingDelete(null); }}
+        title="Delete rule?"
+        description={
+          pendingDelete
+            ? `"${pendingDelete.name}" will be removed. Existing scheduled follow-ups will keep running.`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="danger" loading={deleting} onClick={confirmDelete}>
+              Delete rule
+            </Button>
+          </>
+        }
+      />
     </Card>
   );
 }

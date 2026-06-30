@@ -89,7 +89,7 @@ export function LineItemRow({
         "focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]",
       )}
     >
-      <div className="flex items-center gap-2 p-2.5">
+      <div className="flex items-center gap-2.5 p-3">
         <GripVertical className="h-4 w-4 shrink-0 text-[color:var(--ink-faint)]" />
 
         <OverflowTooltip text={item.name} className="flex-1">
@@ -118,7 +118,7 @@ export function LineItemRow({
           </Select>
         </div>
 
-        <div className="w-[64px] shrink-0">
+        <div className="w-[96px] shrink-0">
           <Input
             type="number"
             step="0.01"
@@ -130,7 +130,7 @@ export function LineItemRow({
           />
         </div>
 
-        <div className="w-[112px] shrink-0 text-right leading-tight">
+        <div className="w-[124px] shrink-0 text-right leading-tight">
           <div className="font-display text-[15px] tabular tracking-[-0.01em] text-[color:var(--ink)]">
             {money(total)}
           </div>

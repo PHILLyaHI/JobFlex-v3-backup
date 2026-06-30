@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const input = z.object({
@@ -16,7 +16,7 @@ function toDate(v: string | Date): Date {
 }
 
 export async function createBlockedTime(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const data = input.parse(raw);
   const block = await db.blockedTime.create({
     data: {
@@ -32,7 +32,7 @@ export async function createBlockedTime(raw: unknown) {
 }
 
 export async function deleteBlockedTime(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const b = await db.blockedTime.findUnique({ where: { id } });
   if (!b || b.organizationId !== organizationId) throw new Error("Not found");
   await db.blockedTime.delete({ where: { id } });
@@ -40,7 +40,7 @@ export async function deleteBlockedTime(id: string) {
 }
 
 export async function rescheduleBlockedTime(id: string, newStartISO: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const b = await db.blockedTime.findUnique({ where: { id } });
   if (!b || b.organizationId !== organizationId) throw new Error("Not found");
   const newStart = new Date(newStartISO);

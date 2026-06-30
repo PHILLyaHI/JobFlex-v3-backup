@@ -1,7 +1,5 @@
-// JobFlex Prisma schema — PostgreSQL (Neon) for the Vercel deploy.
+// JobFlex Prisma schema — SQLite for local dev (easy swap to Postgres later).
 // Enums moved to src/lib/prismaEnums.ts; string[] stored as JSON-encoded strings.
-// Uses Neon's Vercel-injected vars: POSTGRES_PRISMA_URL (pooled, pgbouncer=true)
-// for runtime and POSTGRES_URL_NON_POOLING (direct) for migrations / db push.
 
 generator client {
   provider = "prisma-client-js"
@@ -35,6 +33,12 @@ model Organization {
   landingHeroSubtitle String?
   heroImageUrl        String?
   servicesJson        String?
+  // Settings persistence — one JSON-as-String blob per settings page (hydrated whole on load).
+  paymentSettingsJson  String? // settings/payment  {stripe,square,paypal,ach,currency,depositPct,netTerms,lateFeePct,autoRemind,lateFees}
+  leadsSettingsJson    String? // settings/leads     {strategy,zips[],travelRadius,maxPerDay,maxPerRep,aiCategorize,instantSms,businessHours}
+  gmailSettingsJson    String? // settings/gmail     {sendFromUser,trackOpens,autoSync,displayName,replyTo,signature}
+  metaSettingsJson     String? // settings/meta      {connected,autoCreate,autoText,defaultPage,formCategory}
+  proposalSettingsJson String? // settings/proposals {validityDays,markups{...},schedule[],terms,requireSig,autoFollowUp}
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -74,8 +78,43 @@ model Organization {
   applicants      Applicant[]
   influencerPayouts    InfluencerPayout[]
   influencerStatements InfluencerStatement[]
+  eagleViewReports     EagleViewReport[]
 
   @@index([slug])
+}
+
+// Cached EagleView roof-measurement reports. A report is a billable order, so we
+// fetch + parse it once and reuse the result. modelJson holds the parsed
+// RoofModel geometry (points/lines/faces); summaryJson the raw GetReport header.
+model EagleViewReport {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reportId         Int
+  status           String       @default("In Process")
+  statusId         Int?
+  address          String?
+  city             String?
+  state            String?
+  zip              String?
+  lat              Float?
+  lng              Float?
+  productId        Int?
+  totalCost        Float?
+  // Headline measurements (parsed from geometry; mirror EagleView's summary).
+  areaSqft         Float?
+  squares          Float?
+  predominantPitch String?
+  facetCount       Int?
+  // JSON-as-String (SQLite): parsed RoofModel geometry + raw GetReport summary.
+  modelJson        String?
+  summaryJson      String?
+  orderedById      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([organizationId, reportId])
+  @@index([organizationId])
 }
 
 model User {
@@ -86,11 +125,17 @@ model User {
   hashedPassword  String?
   emailVerified   DateTime?
   locale          String?
+  // Platform-admin authority for the (admin) console. Distinct from the
+  // org-level Membership.role — only flagged users may reach platform-wide
+  // money/influencer pages. Tightens the old "any OWNER/ADMIN of any org" gate.
+  isPlatformAdmin Boolean       @default(false)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   activeOrgId     String?
 
   accounts        Account[]
+  influencer      Influencer?
+  supportTickets  SupportTicket[]
   sessions        Session[]
   memberships     Membership[]
   workerProfile   WorkerProfile?
@@ -104,6 +149,14 @@ model User {
   tradePosts      TradePost[]
   tradeReplies    TradeReply[]
   blockedTimes    BlockedTime[]
+
+  // Trade & Services (contractor-to-contractor job network)
+  tradeNetworkProfile  TradeNetworkProfile?
+  tradeJobsAuthored    TradeJob[]             @relation("TradeJobAuthor")
+  tradeJobRecipients   TradeJobRecipient[]    @relation("TradeJobRecipientUser")
+  tradeJobConvAuthored TradeJobConversation[] @relation("TradeJobConvAuthor")
+  tradeJobConvReceived TradeJobConversation[] @relation("TradeJobConvRecipient")
+  tradeJobMessages     TradeJobMessage[]      @relation("TradeJobMessageAuthor")
 }
 
 model Account {
@@ -316,6 +369,8 @@ model Proposal {
   paidAt          DateTime?
   pdfUrl          String?
   aiDraftId       String?
+  beforePhotos    String?        @default("[]")
+  afterPhotos     String?        @default("[]")
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -329,6 +384,7 @@ model Proposal {
   payments       Payment[]
   activities     ActivityEvent[]
   jobs           Job[]
+  changeOrders   ChangeOrder[]
   aiDraft        AiDraft?       @relation(fields: [aiDraftId], references: [id])
   snapshots      PricingSnapshot[]
 
@@ -367,6 +423,14 @@ model LineItem {
   laborCost       Float    @default(0)
   total           Float    @default(0)
   position        Int      @default(0)
+
+  // Live-pricing product metadata from the AI estimator's SerpAPI matches, so
+  // the Materials Request view can render a shoppable line. Null for hand-typed
+  // or labor lines.
+  store           String?
+  productUrl      String?
+  imageUrl        String?
+  dimensions      String?
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
@@ -478,6 +542,7 @@ model Job {
   photos       JobPhoto[]
   expenses     JobExpense[]
   messages     JobMessage[]
+  conversation Conversation?
   changeOrders   ChangeOrder[]
   reviewRequests ReviewRequest[]
 
@@ -509,6 +574,12 @@ model WorkerProfile {
   specialties    String?  @default("[]")
   hourlyRate     Float?
   token          String   @unique @default(cuid())
+  // Invite lifecycle: PENDING (sent, awaiting response) → ACCEPTED / DECLINED.
+  // Defaults to ACCEPTED so legacy profiles (created before this feature) stay
+  // active; createWorkerInvite sets PENDING explicitly for new/re-invites.
+  // DECLINED is excluded from the "workers" plan-limit count (frees the seat).
+  inviteStatus   String   @default("ACCEPTED")
+  respondedAt    DateTime?
   createdAt      DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -574,10 +645,12 @@ model JobMessage {
 model Conversation {
   id             String   @id @default(cuid())
   organizationId String
+  jobId          String?  @unique
   title          String?
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: Cascade)
   messages     Message[]
 }
 
@@ -732,6 +805,12 @@ model Subscription {
   externalSubId       String?
   currentPeriodEnd    DateTime?
   trialEndsAt         DateTime?
+  // Stripe-truth mirror fields, synced from subscription/invoice webhooks.
+  stripePriceId          String?
+  appliedPromotionCodeId String?   // promo_... read off the subscription discount
+  appliedCouponId        String?   // coupon_... fallback
+  attributionId          String?   // → Attribution (influencer promo link)
+  canceledAt             DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -743,23 +822,31 @@ model PricingPlan {
   slug        String @unique
   name        String
   description String?
-  priceCents  Int
-  interval    String @default("month")
-  order       Int    @default(0)
-  features    String
-  createdAt   DateTime @default(now())
+  priceCents      Int           // monthly price
+  yearlyPriceCents Int?         // optional annual price (enables yearly checkout + savings display)
+  interval        String  @default("month")
+  trialDays       Int     @default(0)
+  order           Int     @default(0)
+  features        String
+  limitsJson      String?  // numeric per-plan limits (see src/lib/planLimits.ts); null/absent key = unlimited
+  createdAt       DateTime @default(now())
 }
 
 model SupportTicket {
   id             String   @id @default(cuid())
   organizationId String
+  userId         String?  // submitter, when raised from the in-app support form
   subject        String
   body           String
+  category       String   @default("general") // billing | technical | account | feature | general — for admin triage
+  priority       String   @default("normal")  // low | normal | high — submitter-declared urgency
   status         String   @default("OPEN")
+  adminReadAt    DateTime? // platform-admin "seen" marker; null = new/unread in the admin notification feed
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
 model Specialty {
@@ -780,7 +867,10 @@ model Specialty {
 model ChangeOrder {
   id             String    @id @default(cuid())
   organizationId String
-  jobId          String
+  // A change order amends a contract. It attaches to either a Job (legacy) or a
+  // Proposal (the contract itself) — exactly one is set, enforced in the action.
+  jobId          String?
+  proposalId     String?
   title          String
   description    String?
   amount         Float     // signed: positive adds, negative reduces
@@ -794,9 +884,11 @@ model ChangeOrder {
   updatedAt      DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job          Job?         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  proposal     Proposal?    @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
   @@index([jobId, status])
+  @@index([proposalId, status])
   @@index([organizationId, status])
 }
 
@@ -883,6 +975,98 @@ model TradeReply {
   author User      @relation(fields: [authorId], references: [id])
 
   @@index([postId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// Trade & Services — contractor-to-contractor job network (cross-org, opt-in)
+// SQLite-safe: statuses are checked Strings, specialties/tradeTypes are JSON strings.
+// ─────────────────────────────────────────────
+
+model TradeNetworkProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  optIn       Boolean  @default(false)
+  tradeTypes  String   @default("[]") // JSON string[] of trades this contractor does
+  specialties String   @default("[]") // JSON string[] of skills
+  serviceArea String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([optIn])
+}
+
+model TradeJob {
+  id          String   @id @default(cuid())
+  authorId    String
+  authorOrgId String
+  title       String
+  description String
+  tradeType   String
+  specialties String   @default("[]") // JSON string[]
+  location    String?
+  budget      String?
+  timeWindow  String?
+  urgency     String? // low | medium | high | urgent
+  status      String   @default("OPEN") // OPEN | FILLED | CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  author        User                   @relation("TradeJobAuthor", fields: [authorId], references: [id])
+  recipients    TradeJobRecipient[]
+  conversations TradeJobConversation[]
+
+  @@index([authorId, createdAt])
+  @@index([status, createdAt])
+}
+
+model TradeJobRecipient {
+  id              String    @id @default(cuid())
+  tradeJobId      String
+  recipientId     String
+  status          String    @default("NEW") // NEW | INTERESTED | NOT_INTERESTED
+  interestedAt    DateTime?
+  notInterestedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tradeJob  TradeJob @relation(fields: [tradeJobId], references: [id], onDelete: Cascade)
+  recipient User     @relation("TradeJobRecipientUser", fields: [recipientId], references: [id])
+
+  @@unique([tradeJobId, recipientId])
+  @@index([recipientId, status, updatedAt])
+}
+
+model TradeJobConversation {
+  id          String   @id @default(cuid())
+  tradeJobId  String
+  authorId    String // job poster
+  recipientId String // interested contractor
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tradeJob  TradeJob          @relation(fields: [tradeJobId], references: [id], onDelete: Cascade)
+  author    User              @relation("TradeJobConvAuthor", fields: [authorId], references: [id])
+  recipient User              @relation("TradeJobConvRecipient", fields: [recipientId], references: [id])
+  messages  TradeJobMessage[]
+
+  @@unique([tradeJobId, recipientId])
+  @@index([authorId])
+  @@index([recipientId])
+}
+
+model TradeJobMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  authorId       String
+  body           String
+  createdAt      DateTime @default(now())
+
+  conversation TradeJobConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User                 @relation("TradeJobMessageAuthor", fields: [authorId], references: [id])
+
+  @@index([conversationId, createdAt])
 }
 
 // ─────────────────────────────────────────────
@@ -1012,6 +1196,9 @@ model InfluencerPayout {
   @@index([organizationId])
 }
 
+// DEPRECATED (kept read-only for the legacy /dashboard/trade view): these are
+// org-scoped, name-keyed and carry no Stripe attribution. The platform-scoped
+// Influencer/PromoCode/Attribution/CommissionLedger models below supersede them.
 model InfluencerStatement {
   id             String   @id @default(cuid())
   organizationId String
@@ -1025,4 +1212,205 @@ model InfluencerStatement {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, period])
+}
+
+// ─────────────────────────────────────────────
+// Admin console — Stripe-truth influencer / promo / commission / payouts.
+// Money is integer cents. Stripe is the source of truth; these tables cache it
+// and are fully rebuildable from Stripe via webhooks + reconciliation.
+// ─────────────────────────────────────────────
+
+// A platform influencer/affiliate. Optionally linked to a User login; otherwise
+// authenticates via its own credentials (separate influencer login surface).
+model Influencer {
+  id               String   @id @default(cuid())
+  userId           String?  @unique
+  email            String   @unique
+  displayName      String
+  hashedPassword   String?  // set when the influencer logs in via the separate surface
+  status           String   @default("PENDING") // InfluencerStatus
+  connectAccountId String?  @unique              // Stripe Connect acct_...
+  connectStatus    String   @default("NONE")     // ConnectStatus (mirror of account state)
+  payoutsEnabled   Boolean  @default(false)      // mirror of account.payouts_enabled
+  defaultCurrency  String   @default("usd")
+  minPayoutCents   Int      @default(2500)        // payout request threshold
+  holdDays         Int      @default(30)          // escrow window before commission clears
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  promoCodes     PromoCode[]
+  attributions   Attribution[]
+  ledgerEntries  CommissionLedger[]
+  payoutRequests PayoutRequest[]
+  transfers      PayoutTransfer[]
+
+  @@index([status])
+  @@index([connectAccountId])
+}
+
+// A Stripe coupon/promotion code owned by an influencer, plus OUR per-code
+// commission rule (Stripe knows the customer discount; the payout rate is ours).
+model PromoCode {
+  id                    String   @id @default(cuid())
+  influencerId          String
+  stripeCouponId        String                          // coupon_...
+  stripePromotionCodeId String   @unique                 // promo_...
+  code                  String   @unique                 // redeemable string, e.g. JAMIE20
+  active                Boolean  @default(true)
+  commissionType        String                           // CommissionType: PERCENT | FLAT
+  commissionRateBps     Int?                             // basis points when PERCENT (2000 = 20%)
+  commissionFlatCents   Int?                             // flat cents when FLAT
+  commissionBasis       String   @default("NET")         // CommissionBasis
+  durationType          String   @default("REPEATING")   // PromoDurationType
+  durationMonths        Int?                             // required when REPEATING
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  influencer   Influencer    @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  attributions Attribution[]
+
+  @@index([influencerId])
+  @@index([stripeCouponId])
+}
+
+// One row per Stripe subscription that ever carried a qualifying discount.
+// Created ONLY from a Stripe-issued object (subscription/invoice), never from
+// pre-checkout frontend intent — abandoned checkouts produce no attribution.
+model Attribution {
+  id                   String    @id @default(cuid())
+  influencerId         String
+  promoCodeId          String
+  organizationId       String?                          // resolved via the Subscription mirror
+  stripeCustomerId     String                            // cus_...
+  stripeSubscriptionId String    @unique                 // sub_... — one attribution per subscription
+  status               String    @default("ACTIVE")      // AttributionStatus
+  firstPaidInvoiceAt   DateTime?
+  qualifyingMonths     Int       @default(0)             // accrual counter for ONCE/REPEATING caps
+  endedAt              DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  influencer    Influencer         @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  promoCode     PromoCode          @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  ledgerEntries CommissionLedger[]
+
+  @@index([influencerId, status])
+  @@index([stripeCustomerId])
+}
+
+// Append-only financial truth. Signed integer cents; balance = SUM(amountCents).
+// idempotencyKey @unique is the linchpin against double-accrual across webhook
+// retries and reconciliation re-runs.
+model CommissionLedger {
+  id               String    @id @default(cuid())
+  influencerId     String
+  attributionId    String?                              // null for PAID / ADJUSTMENT (span many attributions)
+  entryType        String                               // LedgerEntryType
+  amountCents      Int                                   // signed: ACCRUED +, REVERSED/PAID -
+  currency         String    @default("usd")
+  stripeInvoiceId  String?                               // in_...
+  stripeChargeId   String?                               // ch_... (refund clawback source)
+  stripeEventId    String?                               // evt_...
+  clearsAt         DateTime?                             // ACCRUED clears after holdDays
+  state            String    @default("PENDING")         // LedgerEntryState
+  payoutTransferId String?
+  idempotencyKey   String    @unique                     // accrue:<invoiceId> / reverse:<chargeId>:<refundId> / pay:<transferId>:<entryId>
+  memo             String?
+  createdAt        DateTime  @default(now())
+
+  influencer  Influencer      @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  attribution Attribution?    @relation(fields: [attributionId], references: [id], onDelete: SetNull)
+  transfer    PayoutTransfer? @relation(fields: [payoutTransferId], references: [id], onDelete: SetNull)
+
+  @@index([influencerId, state])
+  @@index([stripeInvoiceId])
+  @@index([attributionId])
+}
+
+// Influencer-initiated payout request; snapshots the cleared balance at request
+// time. Admin approves, then a cron processes it into a PayoutTransfer.
+model PayoutRequest {
+  id             String    @id @default(cuid())
+  influencerId   String
+  amountCents    Int
+  currency       String    @default("usd")
+  status         String    @default("PENDING")          // PayoutRequestStatus
+  requestedBy    String?                                 // admin userId or null (auto)
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedReason String?
+  periodLabel    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  influencer Influencer       @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  transfers  PayoutTransfer[]
+
+  @@index([influencerId, status])
+}
+
+// A Stripe Connect transfer of cleared commission to an influencer's account.
+model PayoutTransfer {
+  id                     String    @id @default(cuid())
+  influencerId           String
+  payoutRequestId        String?
+  amountCents            Int
+  currency               String    @default("usd")
+  status                 String    @default("PENDING")   // PayoutTransferStatus
+  stripeTransferId       String?   @unique                // tr_...
+  stripeConnectAccountId String                           // acct_... destination
+  failureReason          String?
+  idempotencyKey         String    @unique                // passed to stripe.transfers.create
+  createdAt              DateTime  @default(now())
+  paidAt                 DateTime?
+
+  influencer    Influencer         @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  payoutRequest PayoutRequest?     @relation(fields: [payoutRequestId], references: [id], onDelete: SetNull)
+  ledgerEntries CommissionLedger[]
+
+  @@index([influencerId, status])
+}
+
+// Idempotency log for inbound Stripe webhooks — eventId @unique drops replays.
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String    @default("STRIPE")
+  eventId     String    @unique                          // evt_...
+  type        String
+  status      String    @default("RECEIVED")             // WebhookEventStatus
+  payloadHash String?
+  error       String?
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([type, receivedAt])
+}
+
+// Stripe Price mirror. At most one active price per (plan, interval). Stripe
+// Prices are immutable, so editing a price archives the old and points here.
+// entitlements.ts remains the feature-gate source of truth.
+model PlanPrice {
+  id              String   @id @default(cuid())
+  planSlug        String                                  // matches PLAN_TIERS (lowercased)
+  interval        String                                  // BillingInterval: MONTH | YEAR
+  stripeProductId String                                  // prod_...
+  stripePriceId   String   @unique                         // price_... (active price)
+  unitAmountCents Int
+  currency        String   @default("usd")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  // "At most one active price per (plan, interval)" is enforced in the
+  // repoint transaction (archive old → insert new), not by a DB constraint:
+  // SQLite has no partial unique index, and many archived rows must coexist.
+  @@index([planSlug, interval, active])
+}
+
+// Watermarks for the Stripe reconciliation backstop (list cursors per resource).
+model SyncState {
+  key       String   @id
+  cursor    String
+  updatedAt DateTime @updatedAt
 }

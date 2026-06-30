@@ -13,17 +13,6 @@ export interface PlatformStats {
   organizationsTrend: { label: string; count: number }[];
 }
 
-const PLAN_PRICE: Record<string, number> = {
-  STARTER: 29,
-  PROFESSIONAL: 99,
-  ENTERPRISE: 299,
-  FREE: 0,
-};
-
-export function planMrr(plan: string) {
-  return PLAN_PRICE[plan] ?? 0;
-}
-
 export function PlatformStatsHero({ stats }: { stats: PlatformStats }) {
   const items = [
     {

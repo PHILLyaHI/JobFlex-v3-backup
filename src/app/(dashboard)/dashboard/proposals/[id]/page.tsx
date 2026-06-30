@@ -9,6 +9,7 @@ import { ProposalEditor } from "@/components/v3/proposal-builder-a/ProposalEdito
 import { HydrateDraft } from "./hydrate-draft";
 import { ProposalActions } from "./proposal-actions";
 import { SnapshotHistory } from "@/components/proposal/SnapshotHistory";
+import { MaterialPurchasingList } from "@/components/materials/MaterialPurchasingList";
 import { money, longDate } from "@/lib/format";
 import { ExternalLink } from "lucide-react";
 
@@ -95,6 +96,10 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
             unitPrice: l.unitPrice,
             materialCost: l.materialCost,
             laborCost: l.laborCost,
+            store: l.store,
+            productUrl: l.productUrl,
+            imageUrl: l.imageUrl,
+            dimensions: l.dimensions,
           })),
           installments: proposal.installments.map((i) => ({
             id: i.id,
@@ -113,7 +118,11 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
         projects={projects}
         existingId={proposal.id}
         orgName={org?.name ?? undefined}
+        initialStatus={proposal.status}
       />
+      <div className="mt-6">
+        <MaterialPurchasingList proposalId={proposal.id} />
+      </div>
       <div className="mt-6">
         <SnapshotHistory
           proposalId={proposal.id}

@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
@@ -44,7 +44,7 @@ export async function estimateFence(input: {
   | { ok: true; data: GeneratedEstimate; disabled: true }
   | { ok: false; error: string }
 > {
-  await requireOrg();
+  await requireManager();
   if (!isOpenAIEnabled()) return { ok: true, data: STUB, disabled: true };
   try {
     const client = getOpenAI();
@@ -102,7 +102,7 @@ const convertSchema = z.object({
 });
 
 export async function convertFenceEstimateToProposal(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const data = convertSchema.parse(raw);
 
   const lines = [

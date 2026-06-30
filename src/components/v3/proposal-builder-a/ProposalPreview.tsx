@@ -65,7 +65,7 @@ export function ProposalPreview({
               key={l.id}
               className="border-b border-[color:var(--ink-line)]/60 last:border-0 align-top"
             >
-              <td className="py-2.5 pr-3">
+              <td className="py-3 pr-3">
                 <OverflowTooltip text={l.name}>
                   <div
                     data-ot-measure=""
@@ -83,9 +83,9 @@ export function ProposalPreview({
                   {UNIT_LABEL[l.measurementType] ?? l.measurementType}
                 </div>
               </td>
-              <td className="py-2.5 text-right tabular">{l.quantity}</td>
-              <td className="py-2.5 text-right tabular">{money(l.unitPrice)}</td>
-              <td className="py-2.5 text-right font-display tabular">
+              <td className="py-3 text-right tabular">{l.quantity}</td>
+              <td className="py-3 text-right tabular">{money(l.unitPrice)}</td>
+              <td className="py-3 text-right font-display tabular">
                 {money(l.quantity * l.unitPrice)}
               </td>
             </tr>

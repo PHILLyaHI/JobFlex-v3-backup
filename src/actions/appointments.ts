@@ -1,8 +1,9 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 const input = z.object({
   id: z.string().optional(),
@@ -19,7 +20,8 @@ function toDate(v: string | Date): Date {
 }
 
 export async function createAppointment(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
+  await enforcePlanLimit(organizationId, "calendarCards");
   const data = input.parse(raw);
   const apt = await db.appointment.create({
     data: {
@@ -37,7 +39,7 @@ export async function createAppointment(raw: unknown) {
 }
 
 export async function updateAppointment(id: string, raw: Partial<z.infer<typeof input>>) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const apt = await db.appointment.findUnique({ where: { id } });
   if (!apt || apt.organizationId !== organizationId) throw new Error("Not found");
   await db.appointment.update({
@@ -55,7 +57,7 @@ export async function updateAppointment(id: string, raw: Partial<z.infer<typeof 
 }
 
 export async function deleteAppointment(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const apt = await db.appointment.findUnique({ where: { id } });
   if (!apt || apt.organizationId !== organizationId) throw new Error("Not found");
   await db.appointment.delete({ where: { id } });
@@ -63,7 +65,7 @@ export async function deleteAppointment(id: string) {
 }
 
 export async function rescheduleAppointment(id: string, newStartISO: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const apt = await db.appointment.findUnique({ where: { id } });
   if (!apt || apt.organizationId !== organizationId) throw new Error("Not found");
   const newStart = new Date(newStartISO);

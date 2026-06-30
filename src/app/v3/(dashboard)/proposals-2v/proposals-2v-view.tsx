@@ -104,9 +104,9 @@ export function Proposals2vView({ rows }: { rows: Proposal2vRow[] }) {
         </div>
         <div className="v2v-page__actions">
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          <Link href={"/dashboard/proposals/ai" as any} className="v2v-btn v2v-btn--ghost-accent">
+          <Link href={"/dashboard/advanced-ai" as any} className="v2v-btn v2v-btn--ghost-accent">
             <Sparkles size={14} strokeWidth={1.8} />
-            AI proposal
+            Smart Proposal
           </Link>
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           <Link href={"/dashboard/proposals/new" as any} className="v2v-btn v2v-btn--primary">

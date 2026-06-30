@@ -6,9 +6,9 @@ export default function AdvancedAiPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Automation · AI"
-        title="Advanced AI Estimator"
-        description="Project-type aware pricing with separate material + labor breakdowns. Tune anything, then convert to a proposal in one click."
+        eyebrow="Sales · AI"
+        title="Smart Proposal"
+        description="Describe the job and AI prices real materials (live retail links), labor, and scope — separate material and labor breakdowns. Tune anything, then convert to a proposal in one click."
       />
       <EstimatorStudio aiEnabled={isOpenAIEnabled()} />
     </>

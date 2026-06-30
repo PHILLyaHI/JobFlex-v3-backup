@@ -29,6 +29,7 @@ export default async function QueuePage() {
 
   const rows: QueueRow[] = followUps.map((f) => {
     const p = f.proposalId ? proposalById.get(f.proposalId) : null;
+    const isOverdue = f.runAt <= now;
     return {
       id: f.id,
       proposalId: f.proposalId,
@@ -36,7 +37,10 @@ export default async function QueuePage() {
       clientName: p?.client?.name ?? null,
       runAt: f.runAt,
       note: f.note,
-      isOverdue: f.runAt <= now,
+      isOverdue,
+      overdueDays: isOverdue
+        ? Math.floor((now.getTime() - f.runAt.getTime()) / 86_400_000)
+        : 0,
     };
   });
 

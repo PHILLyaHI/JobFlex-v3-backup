@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { requireFeatureOrThrow } from "@/lib/entitlements";
 import { getOrgPlanById } from "@/lib/orgPlan";
@@ -8,7 +8,7 @@ import { toCsv } from "@/lib/csv";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const plan = await getOrgPlanById(organizationId);
   try {
     requireFeatureOrThrow(plan, "csv_export");

@@ -1,6 +1,6 @@
 "use server";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 
@@ -55,7 +55,7 @@ export async function generateAiProposal(prompt: string): Promise<
   | { ok: true; draft: AiProposalDraft; disabled: true }
   | { ok: false; error: string }
 > {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
 
   // Plan gate
   try {
@@ -94,7 +94,8 @@ export async function generateAiProposal(prompt: string): Promise<
         organizationId,
         prompt,
         model: OPENAI_MODEL,
-        result: parsed as any,
+        // AiDraft.result is a String column — store the draft as JSON text.
+        result: JSON.stringify(parsed),
         tokensIn: completion.usage?.prompt_tokens,
         tokensOut: completion.usage?.completion_tokens,
       },

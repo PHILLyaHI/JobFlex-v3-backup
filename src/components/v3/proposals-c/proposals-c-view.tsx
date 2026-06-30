@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { Sparkles, Plus, FileText } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SegmentedTabs } from "./segmented-tabs";
 import { RevenueMasthead } from "./revenue-masthead";
@@ -50,7 +50,7 @@ export function ProposalsCView({ all, accepted, completed }: ProposalsCViewProps
       const drafts = all.filter((r) => r.status === "DRAFT").length;
       const sent = all.filter((r) => r.status === "SENT" || r.status === "VIEWED").length;
       return {
-        primaryLabel: "Pipeline value",
+        primaryLabel: "",
         primaryAmount: totals.allPipeline,
         count: all.length,
         countLabel: "Open proposals",
@@ -90,27 +90,14 @@ export function ProposalsCView({ all, accepted, completed }: ProposalsCViewProps
     <div className="mx-auto max-w-[1320px] px-6 lg:px-10 py-10">
       {/* Dateline header */}
       <div className="flex items-center justify-between gap-4 mb-2">
-        <div className="flex items-center gap-3">
-          <span className="quiet-caps text-[color:var(--accent-ink)]">
-            JobFlex · Sales
-          </span>
-          <span aria-hidden className="h-px w-10 bg-[color:var(--ink-line)]" />
-          <span className="quiet-caps text-[color:var(--ink-faint)]">
-            Proposals · Pressroom edition
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href={"/dashboard/proposals/ai" as never}>
-            <Button size="sm" icon={<Sparkles className="h-3.5 w-3.5" />}>
-              AI proposal
-            </Button>
-          </Link>
-          <Link href={"/dashboard/proposals/new" as never}>
-            <Button size="sm" variant="outline" icon={<Plus className="h-3.5 w-3.5" />}>
-              Manual
-            </Button>
-          </Link>
-        </div>
+        <span className="quiet-caps text-[color:var(--accent-ink)]">
+          JobFlex · Proposals
+        </span>
+        <Link href={"/dashboard/proposals/create" as never}>
+          <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />}>
+            Create proposal
+          </Button>
+        </Link>
       </div>
 
       <RevenueMasthead

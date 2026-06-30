@@ -1,4 +1,4 @@
-import { requireOrg } from "@/lib/orgContext";
+import { requireOrg, isWorkerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 // The live /dashboard/calendar page now renders the v3 calendar-a orchestrator
 // (frontend-design build). The same component also serves /v3/calendar-a so
@@ -7,11 +7,70 @@ import { CalendarViewA as CalendarView } from "@/app/v3/(dashboard)/calendar-a/c
 import { MobileCalendar } from "./mobile-calendar";
 
 export default async function CalendarPage() {
-  const { organizationId } = await requireOrg();
+  const { organizationId, role, user } = await requireOrg();
   const from = new Date();
   from.setDate(from.getDate() - 45);
   const to = new Date();
   to.setDate(to.getDate() + 180);
+
+  // ── Field-worker calendar: read-only, scoped to the worker's own job events.
+  // No appointments, blocked time, dispatch tray, inbox, or pickers.
+  if (isWorkerRole(role)) {
+    const wp = await db.workerProfile.findUnique({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+    const workerId = wp?.id ?? "__none__";
+    const events = await db.jobEvent.findMany({
+      where: {
+        organizationId,
+        startsAt: { gte: from, lte: to },
+        job: { assignments: { some: { workerId } } },
+      },
+      orderBy: { startsAt: "asc" },
+      include: {
+        job: {
+          select: {
+            status: true,
+            client: { select: { name: true } },
+            assignments: { select: { workerId: true } },
+          },
+        },
+      },
+    });
+    const workerEvents = events.map((e) => ({
+      id: e.id,
+      kind: "job" as const,
+      jobId: e.jobId,
+      leadId: null,
+      title: e.title,
+      startsAt: e.startsAt.toISOString(),
+      endsAt: e.endsAt.toISOString(),
+      status: e.job?.status ?? "SCHEDULED",
+      notes: e.notes,
+      workerIds: e.job?.assignments.map((a) => a.workerId) ?? [],
+      clientName: e.job?.client?.name ?? null,
+    }));
+    return (
+      <>
+        <div className="md:hidden">
+          <MobileCalendar events={workerEvents} workers={[]} pendingAssignments={[]} />
+        </div>
+        <div className="hidden md:block">
+          <CalendarView
+            events={workerEvents}
+            unscheduledJobs={[]}
+            workers={[]}
+            pickerJobs={[]}
+            pickerLeads={[]}
+            pickerWorkers={[]}
+            pendingAssignments={[]}
+            readOnly
+          />
+        </div>
+      </>
+    );
+  }
 
   const [
     events,

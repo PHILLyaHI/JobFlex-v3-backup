@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const startInput = z.object({
@@ -9,7 +9,7 @@ const startInput = z.object({
 });
 
 export async function startConversation(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = startInput.parse(raw ?? {});
   const c = await db.conversation.create({
     data: {
@@ -22,7 +22,7 @@ export async function startConversation(raw: unknown) {
 }
 
 export async function postMessage(conversationId: string, body: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const conv = await db.conversation.findUnique({ where: { id: conversationId } });
   if (!conv || conv.organizationId !== organizationId) throw new Error("Not found");
   const trimmed = body.trim();

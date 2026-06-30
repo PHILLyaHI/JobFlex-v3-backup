@@ -1,56 +1,57 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUser } from "@/lib/orgContext";
+import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { LIMIT_KEYS, serializePlanLimits } from "@/lib/planLimits";
 
 // ── Pricing plans ─────────────────────────────────────
+
+// Limits arrive as a partial map of LimitKey → numeric cap. A negative value
+// (or an omitted key) means "unlimited"; serializePlanLimits drops those.
+const limitsInput = z
+  .record(z.enum(LIMIT_KEYS as [string, ...string[]]), z.number())
+  .optional();
 
 const planInput = z.object({
   id: z.string().optional(),
   slug: z.string().min(1),
   name: z.string().min(1),
   description: z.string().nullable().optional(),
-  priceCents: z.number().min(0),
+  priceCents: z.number().int().min(0),
+  yearlyPriceCents: z.number().int().min(0).nullable().optional(),
+  trialDays: z.number().int().min(0).max(365).default(0),
   interval: z.enum(["month", "year"]),
   order: z.number().default(0),
   features: z.array(z.string()).default([]),
+  limits: limitsInput,
 });
 
 export async function upsertPricingPlan(raw: unknown) {
-  await requireUser();
+  await requirePlatformAdmin();
   const data = planInput.parse(raw);
+  const fields = {
+    slug: data.slug,
+    name: data.name,
+    description: data.description ?? null,
+    priceCents: data.priceCents,
+    yearlyPriceCents: data.yearlyPriceCents ?? null,
+    trialDays: data.trialDays,
+    interval: data.interval,
+    order: data.order,
+    features: JSON.stringify(data.features),
+    limitsJson: serializePlanLimits(data.limits ?? {}),
+  };
   if (data.id) {
-    await db.pricingPlan.update({
-      where: { id: data.id },
-      data: {
-        slug: data.slug,
-        name: data.name,
-        description: data.description ?? null,
-        priceCents: data.priceCents,
-        interval: data.interval,
-        order: data.order,
-        features: JSON.stringify(data.features),
-      },
-    });
+    await db.pricingPlan.update({ where: { id: data.id }, data: fields });
   } else {
-    await db.pricingPlan.create({
-      data: {
-        slug: data.slug,
-        name: data.name,
-        description: data.description ?? null,
-        priceCents: data.priceCents,
-        interval: data.interval,
-        order: data.order,
-        features: JSON.stringify(data.features),
-      },
-    });
+    await db.pricingPlan.create({ data: fields });
   }
   revalidatePath("/admin/plans");
 }
 
 export async function deletePricingPlan(id: string) {
-  await requireUser();
+  await requirePlatformAdmin();
   await db.pricingPlan.delete({ where: { id } });
   revalidatePath("/admin/plans");
 }
@@ -63,7 +64,7 @@ export async function upsertSpecialty(raw: {
   name: string;
   promptPreamble?: string | null;
 }) {
-  await requireUser();
+  await requirePlatformAdmin();
   if (raw.id) {
     await db.specialty.update({
       where: { id: raw.id },
@@ -82,17 +83,23 @@ export async function upsertSpecialty(raw: {
 }
 
 export async function deleteSpecialty(id: string) {
-  await requireUser();
+  await requirePlatformAdmin();
   await db.specialty.delete({ where: { id } });
   revalidatePath("/admin/specialties");
 }
 
 // ── Support tickets ───────────────────────────────────
 
+const TICKET_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"] as const;
+
 export async function updateTicketStatus(id: string, status: string) {
-  await requireUser();
-  await db.supportTicket.update({ where: { id }, data: { status } });
+  await requirePlatformAdmin();
+  // Whitelist the status the same way the customer-side write validates its
+  // fields — the column is a free String, so this is the only guard.
+  const next = z.enum(TICKET_STATUSES).parse(status);
+  await db.supportTicket.update({ where: { id }, data: { status: next } });
   revalidatePath("/admin/support");
+  revalidatePath("/admin");
 }
 
 // ── Platform-wide email campaigns ─────────────────────
@@ -107,7 +114,7 @@ const campaignInput = z.object({
 });
 
 export async function sendPlatformCampaign(raw: unknown) {
-  const user = await requireUser();
+  const user = await requirePlatformAdmin();
   const data = campaignInput.parse(raw);
 
   // We need *some* organizationId for the FK; pick the user's first
@@ -140,7 +147,7 @@ export async function sendPlatformCampaign(raw: unknown) {
 }
 
 export async function deletePlatformCampaign(id: string) {
-  await requireUser();
+  await requirePlatformAdmin();
   await db.announcement.delete({ where: { id } });
   revalidatePath("/admin/campaigns");
   revalidatePath("/dashboard");

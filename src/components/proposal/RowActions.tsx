@@ -56,7 +56,7 @@ export function RowActions({
 }: RowActionsProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const [coords, setCoords] = React.useState<{ top: number; right: number } | null>(null);
+  const [coords, setCoords] = React.useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
 
   // Sub-modals
@@ -70,7 +70,16 @@ export function RowActions({
     const el = triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setCoords({ top: r.bottom + 6, right: window.innerWidth - r.right });
+    const right = window.innerWidth - r.right;
+    const spaceBelow = window.innerHeight - r.bottom;
+    // Flip the menu above the trigger when it would overflow the bottom edge and
+    // there's more room above. Height capped by max-h on the menu itself.
+    const estimatedHeight = 380;
+    if (spaceBelow < estimatedHeight && r.top > spaceBelow) {
+      setCoords({ bottom: window.innerHeight - r.top + 6, right });
+    } else {
+      setCoords({ top: r.bottom + 6, right });
+    }
   }, []);
 
   React.useEffect(() => {
@@ -236,9 +245,9 @@ export function RowActions({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: -4 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            style={{ top: coords.top, right: coords.right }}
+            style={{ top: coords.top, bottom: coords.bottom, right: coords.right }}
             className={cn(
-              "fixed z-50 w-[260px] rounded-[var(--r-md)] overflow-hidden",
+              "fixed z-50 w-[260px] rounded-[var(--r-md)] overflow-y-auto max-h-[calc(100vh-24px)]",
               "bg-white/85 dark:bg-[#1a1a1d]/85 backdrop-blur-xl",
               "border border-[color:var(--ink-line)]",
               "shadow-[0_24px_48px_-20px_rgba(17,17,19,0.30),0_2px_8px_-2px_rgba(17,17,19,0.10)]",

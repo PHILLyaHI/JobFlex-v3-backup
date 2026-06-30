@@ -16,6 +16,7 @@ import {
   Inbox,
   BarChart3,
   HardHat,
+  MessagesSquare,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/cn";
@@ -52,6 +53,20 @@ const MORE_NAV: MoreNavItem[] = [
   { label: "Settings", href: "/dashboard/settings", icon: <Settings className="h-4 w-4" /> },
 ];
 
+// Workers get Messages in their "More" drawer; their primary tabs stay Schedule
+// + Jobs, and sign-out renders below this list unconditionally.
+const WORKER_MORE_NAV: MoreNavItem[] = [
+  { label: "Messages", href: "/dashboard/messages", icon: <MessagesSquare className="h-4 w-4" /> },
+];
+
+// Field workers (INSTALLER) get only their two surfaces; "More" holds Messages
+// plus sign-out (rendered unconditionally below the drawer list).
+const WORKER_TABS: Tab[] = [
+  { key: "schedule", label: "Schedule", href: "/dashboard/calendar", icon: <Calendar className="h-5 w-5" /> },
+  { key: "jobs", label: "Jobs", href: "/dashboard/jobs", icon: <Hammer className="h-5 w-5" /> },
+  { key: "more", label: "More", href: "#more", icon: <MoreHorizontal className="h-5 w-5" /> },
+];
+
 function getActiveKey(pathname: string): TabKey {
   if (pathname === "/dashboard") return "dashboard";
   if (pathname.startsWith("/dashboard/proposals")) return "proposals";
@@ -69,15 +84,18 @@ interface FabConfig {
 function fabFor(active: TabKey): FabConfig | null {
   if (active === "more") return null;
   if (active === "dashboard" || active === "proposals") {
-    return { href: "/dashboard/proposals/ai", icon: <Sparkles className="h-5 w-5" />, label: "Draft proposal" };
+    return { href: "/dashboard/proposals/create", icon: <Sparkles className="h-5 w-5" />, label: "Create proposal" };
   }
   return { href: "/dashboard/jobs/new", icon: <Plus className="h-5 w-5" />, label: "New job" };
 }
 
-export function MobileTabBar() {
+export function MobileTabBar({ role }: { role?: string | null }) {
   const pathname = usePathname();
+  const isWorker = role === "INSTALLER";
   const active = getActiveKey(pathname ?? "");
-  const fab = fabFor(active);
+  const tabs = isWorker ? WORKER_TABS : TABS;
+  const moreNav: MoreNavItem[] = isWorker ? WORKER_MORE_NAV : MORE_NAV;
+  const fab = isWorker ? null : fabFor(active);
   const [moreOpen, setMoreOpen] = React.useState(false);
 
   return (
@@ -110,7 +128,7 @@ export function MobileTabBar() {
         )}
       >
         <ul className="flex items-stretch h-14">
-          {TABS.map((tab) => {
+          {tabs.map((tab) => {
             const isActive = tab.key === active;
             const isMoreTab = tab.key === "more";
             const itemClass = cn(
@@ -166,7 +184,7 @@ export function MobileTabBar() {
         title="More"
       >
         <nav className="space-y-1">
-          {MORE_NAV.map((item) => (
+          {moreNav.map((item) => (
             <Link
               key={item.href}
               href={item.href as never}

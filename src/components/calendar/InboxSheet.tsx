@@ -2,8 +2,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Send, MoreHorizontal, Check, ExternalLink, X, CheckCircle2 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Send, MoreHorizontal, Check, X, CheckCircle2 } from "lucide-react";
+import { motion } from "framer-motion";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
@@ -38,24 +38,11 @@ interface Props {
 }
 
 export function InboxSheet({ open, onClose, pending }: Props) {
-  // Group by jobId
-  const byJob = React.useMemo(() => {
-    const m = new Map<string, { jobId: string; jobTitle: string; rows: InboxAssignment[] }>();
-    for (const a of pending) {
-      if (!m.has(a.jobId)) {
-        m.set(a.jobId, { jobId: a.jobId, jobTitle: a.jobTitle, rows: [] });
-      }
-      m.get(a.jobId)!.rows.push(a);
-    }
-    return Array.from(m.values());
-  }, [pending]);
-
   return (
     <Sheet
       open={open}
       onClose={onClose}
       title={`Crew confirmations · ${pending.length} pending`}
-      description="Pending assignments that haven't been accepted yet."
       width="min(440px, 100vw)"
     >
       {pending.length === 0 ? (
@@ -65,36 +52,11 @@ export function InboxSheet({ open, onClose, pending }: Props) {
           description="All crew assignments have been accepted. Nothing to follow up on."
         />
       ) : (
-        <div className="space-y-5">
-          <AnimatePresence initial={false}>
-            {byJob.map((g) => (
-              <motion.div
-                key={g.jobId}
-                layout
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="quiet-caps !mb-0">{g.jobTitle}</div>
-                  <Link
-                    href={`/dashboard/jobs/${g.jobId}` as any}
-                    className="text-[10px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] inline-flex items-center gap-1"
-                  >
-                    Open job
-                    <ExternalLink className="h-2.5 w-2.5" />
-                  </Link>
-                </div>
-                <ul className="paper-card divide-y divide-[color:var(--ink-line)] overflow-hidden">
-                  {g.rows.map((row) => (
-                    <InboxAssignmentRow key={row.id} row={row} />
-                  ))}
-                </ul>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
+        <ul className="paper-card divide-y divide-[color:var(--ink-line)]">
+          {pending.map((row) => (
+            <InboxAssignmentRow key={row.id} row={row} />
+          ))}
+        </ul>
       )}
     </Sheet>
   );
@@ -175,6 +137,12 @@ function InboxAssignmentRow({ row }: { row: InboxAssignment }) {
         <div className="text-[13px] font-medium text-[color:var(--ink)] truncate">
           {row.workerName}
         </div>
+        <Link
+          href={`/dashboard/jobs/${row.jobId}` as any}
+          className="block text-[11px] text-[color:var(--ink-soft)] hover:text-[color:var(--accent)] truncate transition-colors"
+        >
+          {row.jobTitle}
+        </Link>
         <div className="text-[11px] text-[color:var(--ink-muted)] truncate">
           {row.jobStartsAt ? longDate(row.jobStartsAt) : "Unscheduled"}
           <span className="mx-1.5 text-[color:var(--ink-faint)]">·</span>

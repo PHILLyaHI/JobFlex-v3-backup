@@ -4,6 +4,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
+import { cn } from "@/lib/cn";
 import {
   createClient,
   updateClient,
@@ -41,6 +42,9 @@ export function ClientFormSheet({
       city: initial?.city ?? "",
       state: initial?.state ?? "",
       zip: initial?.zip ?? "",
+      // VIP is a tag, not a Client column; only the create flow exposes/persists
+      // it (see createClient), so it starts off and edit mode never shows it.
+      vip: false,
     }),
     [initial, initialName],
   );
@@ -55,7 +59,7 @@ export function ClientFormSheet({
     if (open) setForm(blank);
   }, [open, blank]);
 
-  function patch<K extends keyof typeof form>(k: K, v: string) {
+  function patch<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => ({ ...f, [k]: v }));
   }
 
@@ -139,7 +143,7 @@ export function ClientFormSheet({
           onChange={(e) => patch("address", e.target.value)}
           placeholder="Street address"
         />
-        <div className="grid gap-4 sm:grid-cols-[1fr_120px_120px]">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <Input
             label="City"
             value={form.city}
@@ -156,6 +160,32 @@ export function ClientFormSheet({
             onChange={(e) => patch("zip", e.target.value)}
           />
         </div>
+        {mode === "create" && (
+          <div className="flex flex-col gap-1.5">
+            <span className="quiet-caps">Tags</span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => patch("vip", !form.vip)}
+                aria-pressed={form.vip}
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors",
+                  form.vip
+                    ? "bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)]"
+                    : "hairline text-[color:var(--ink-muted)] hover:bg-black/[0.025]",
+                )}
+              >
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full transition-colors",
+                    form.vip ? "bg-[color:var(--accent)]" : "bg-[color:var(--ink-faint)]",
+                  )}
+                />
+                VIP
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </Sheet>
   );

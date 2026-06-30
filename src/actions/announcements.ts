@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const input = z.object({
@@ -12,7 +12,7 @@ const input = z.object({
 });
 
 export async function createAnnouncement(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = input.parse(raw);
   const expiresAt = data.expiresAt
     ? data.expiresAt instanceof Date

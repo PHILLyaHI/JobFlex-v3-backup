@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { requireOrg, requireUser } from "@/lib/orgContext";
+import { requireManager, requireUser } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { Role } from "@/lib/prismaEnums";
 
@@ -12,7 +12,7 @@ const inviteInput = z.object({
 });
 
 export async function createInvite(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const data = inviteInput.parse(raw);
 
   const email = data.email.toLowerCase().trim();
@@ -67,7 +67,7 @@ ${appUrl}/auth/invite/${token}`,
 }
 
 export async function revokeInvite(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const invite = await db.invite.findUnique({ where: { id } });
   if (!invite || invite.organizationId !== organizationId) throw new Error("Not found");
   await db.invite.delete({ where: { id } });
@@ -140,7 +140,7 @@ export async function declineInvite(token: string) {
 }
 
 export async function updateMembershipRole(membershipId: string, role: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const m = await db.membership.findUnique({ where: { id: membershipId } });
   if (!m || m.organizationId !== organizationId) throw new Error("Not found");
   if (!["OWNER", "ADMIN", "SALES", "ESTIMATOR", "INSTALLER", "ACCOUNTANT", "USER"].includes(role))
@@ -150,7 +150,7 @@ export async function updateMembershipRole(membershipId: string, role: string) {
 }
 
 export async function removeMember(membershipId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const m = await db.membership.findUnique({ where: { id: membershipId } });
   if (!m || m.organizationId !== organizationId) throw new Error("Not found");
   // Prevent removing the last OWNER

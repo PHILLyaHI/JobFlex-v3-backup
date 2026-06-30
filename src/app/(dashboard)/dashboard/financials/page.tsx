@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Route } from "next";
 import { ArrowUpRight, AlertTriangle } from "lucide-react";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
@@ -27,6 +28,17 @@ export default async function FinancialsOverview() {
 
   return (
     <>
+      {/* Showcase band — the revenue story and margin health lead the page. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5 mb-6">
+        <RevenueExpenseChart data={monthly} />
+        <ProfitMarginGauge
+          marginPct={rollup.marginPct}
+          revenue={rollup.revenue30d}
+          expenses={rollup.expenses30d}
+          profit={rollup.profit30d}
+        />
+      </div>
+
       <StaggerGrid className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
           label="Revenue · 30d"
@@ -57,16 +69,6 @@ export default async function FinancialsOverview() {
           hint="Open proposals"
         />
       </StaggerGrid>
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5 mb-6">
-        <RevenueExpenseChart data={monthly} />
-        <ProfitMarginGauge
-          marginPct={rollup.marginPct}
-          revenue={rollup.revenue30d}
-          expenses={rollup.expenses30d}
-          profit={rollup.profit30d}
-        />
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
         <ReceiptDropzone jobs={jobs} />
@@ -136,7 +138,7 @@ function AttentionRow({
         >
           {count}
         </span>
-        <Link href={href as any}>
+        <Link href={href as Route}>
           <Button variant="ghost" size="sm" icon={<ArrowUpRight className="h-3 w-3" />}>
             Open
           </Button>

@@ -88,6 +88,7 @@ export default async function WorkerAssignmentPage({
         assignmentId={assignment.id}
         jobId={job.id}
         status={assignment.status}
+        jobStatus={job.status}
         token={token}
         photos={job.photos.map((p) => ({
           id: p.id,

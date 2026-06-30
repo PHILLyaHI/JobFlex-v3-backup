@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { sendEmail } from "@/lib/sdk/resend";
 import { renderTemplate, wrapEmail } from "@/lib/email/render";
@@ -16,7 +16,7 @@ const ruleInput = z.object({
 });
 
 export async function upsertFollowUpRule(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = ruleInput.parse(raw);
 
   if (data.id) {
@@ -51,7 +51,7 @@ export async function upsertFollowUpRule(raw: unknown) {
 }
 
 export async function setFollowUpRuleEnabled(id: string, enabled: boolean) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const rule = await db.followUpRule.findUnique({ where: { id } });
   if (!rule || rule.organizationId !== organizationId) throw new Error("Not found");
   await db.followUpRule.update({ where: { id }, data: { enabled } });
@@ -59,7 +59,7 @@ export async function setFollowUpRuleEnabled(id: string, enabled: boolean) {
 }
 
 export async function deleteFollowUpRule(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const rule = await db.followUpRule.findUnique({ where: { id } });
   if (!rule || rule.organizationId !== organizationId) throw new Error("Not found");
   await db.followUpRule.delete({ where: { id } });
@@ -112,7 +112,7 @@ export async function runDueFollowUps(): Promise<{ processed: number; delivered:
 }
 
 export async function runFollowUpNow(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const fu = await db.followUp.findUnique({ where: { id } });
   if (!fu || fu.organizationId !== organizationId) throw new Error("Not found");
   await dispatchOne(fu.id);
@@ -121,7 +121,7 @@ export async function runFollowUpNow(id: string) {
 }
 
 export async function markFollowUpDone(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const fu = await db.followUp.findUnique({ where: { id } });
   if (!fu || fu.organizationId !== organizationId) throw new Error("Not found");
   if (fu.completedAt) return;

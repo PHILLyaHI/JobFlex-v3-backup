@@ -6,13 +6,13 @@ import { cn } from "@/lib/cn";
 import { money } from "@/lib/format";
 import type { InstallmentLine } from "./types";
 
-// A horizontal "ledger strip" of payment lines. Each segment shows a label,
-// an amount, and (on hover) line-level actions: Mark paid + Send reminder.
-// A paid segment crosses with an emerald tick. Below the strip sits a thin
-// progress meter showing paid amount vs total. Per-line paid state is held
-// locally — server-side schema only tracks proposal-level `paidAt`, so when
-// the user marks the final unpaid line, the optional `onAllPaid` callback
-// can flip the whole proposal to PAID.
+// Payment lines laid out on the same flat, full-bleed divide-x grid as the
+// Completed tear-sheet's dateline triplet: each cell is a quiet-caps label, a
+// large font-display tabular amount, and a small sub-line. A paid cell takes an
+// emerald tint + struck amount; line-level actions (Mark paid / Send reminder)
+// fade in at the cell's bottom edge on hover. A thin progress meter sits below.
+// Per-line paid state is held by the parent (server schema tracks only
+// proposal-level paidAt).
 
 interface PaymentScheduleProps {
   installments: InstallmentLine[];
@@ -20,6 +20,9 @@ interface PaymentScheduleProps {
   paidLineIds: Set<string>;
   onTogglePaid: (lineId: string) => void;
   onSendReminder: (lineId: string) => void;
+  // Read-only rendering for filed (Completed) records: no hover actions, the
+  // strip is a settled receipt rather than a workbench.
+  readOnly?: boolean;
 }
 
 export function PaymentSchedule({
@@ -28,6 +31,7 @@ export function PaymentSchedule({
   paidLineIds,
   onTogglePaid,
   onSendReminder,
+  readOnly = false,
 }: PaymentScheduleProps) {
   // Resolve dollar amounts (percent installments compute against total).
   const resolved = installments.map((l) => ({
@@ -42,50 +46,36 @@ export function PaymentSchedule({
 
   if (resolved.length === 0) {
     return (
-      <div className="rounded-[var(--r-md)] border border-dashed border-[color:var(--ink-line)] px-4 py-4">
-        <div className="flex items-center gap-2 text-[12px] text-[color:var(--ink-muted)]">
-          <CircleDollarSign className="h-3.5 w-3.5 text-[color:var(--ink-faint)]" />
-          <span>No payment schedule on this proposal. Add installments in the editor.</span>
+      <div className="px-6 py-5">
+        <div className="rounded-[var(--r-md)] border border-dashed border-[color:var(--ink-line)] px-4 py-4">
+          <div className="flex items-center gap-2 text-[12px] text-[color:var(--ink-muted)]">
+            <CircleDollarSign className="h-3.5 w-3.5 text-[color:var(--ink-faint)]" />
+            <span>No installments on this proposal. Add them in the editor.</span>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <span className="quiet-caps text-[color:var(--ink-faint)]">Payment schedule</span>
-        <div className="flex items-baseline gap-2">
-          <span className="tabular text-[12px] text-[color:var(--ink-muted)]">
-            {money(paidTotal)} <span className="text-[color:var(--ink-faint)]">/ {money(scheduledTotal)}</span>
-          </span>
-          <span className="tabular text-[10.5px] text-[color:var(--ink-faint)]">
-            {Math.round(paidPct)}%
-          </span>
-        </div>
-      </div>
-
-      <div className="grid gap-px overflow-hidden rounded-[var(--r-md)] hairline bg-[color:var(--ink-line)]"
-           style={{ gridTemplateColumns: `repeat(${resolved.length}, minmax(0, 1fr))` }}>
+    <div>
+      {/* Ledger grid — flat, full-bleed, divide-x, matching the Completed dateline */}
+      <div
+        className="grid divide-x divide-[color:var(--ink-line)]"
+        style={{ gridTemplateColumns: `repeat(${resolved.length}, minmax(0, 1fr))` }}
+      >
         {resolved.map((line) => {
           const isPaid = paidLineIds.has(line.id);
           return (
             <div
               key={line.id}
               className={cn(
-                "group relative bg-white px-3.5 py-3 flex flex-col gap-1.5",
-                "transition-colors",
-                isPaid && "bg-emerald-50/60",
+                "group relative px-6 py-3 transition-colors",
+                isPaid && "bg-emerald-50/50",
               )}
             >
-              <div className="flex items-center justify-between gap-2 min-h-[18px]">
-                <span
-                  className={cn(
-                    "text-[11px] font-medium tracking-[-0.005em] truncate",
-                    isPaid ? "text-emerald-800" : "text-[color:var(--ink-soft)]",
-                  )}
-                  title={line.label}
-                >
+              <div className="quiet-caps text-[color:var(--ink-faint)] mb-1.5 flex items-center justify-between gap-2">
+                <span className="truncate" title={line.label}>
                   {line.label}
                 </span>
                 {isPaid && (
@@ -95,38 +85,28 @@ export function PaymentSchedule({
                 )}
               </div>
 
-              <div className="flex items-baseline justify-between gap-2">
-                <span
-                  className={cn(
-                    "font-display tabular text-[16px] font-semibold tracking-[-0.015em]",
-                    isPaid
-                      ? "text-emerald-900 line-through decoration-emerald-700/40"
-                      : "text-[color:var(--ink)]",
-                  )}
-                >
-                  {money(line.dollars)}
-                </span>
-                {line.isPercent && (
-                  <span className="tabular text-[10px] text-[color:var(--ink-faint)]">
-                    {line.amount}%
-                  </span>
-                )}
-              </div>
-
-              {/* Hover actions */}
               <div
                 className={cn(
-                  "flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
-                  "absolute inset-x-0 -bottom-px translate-y-full pt-1.5 px-1 z-10",
+                  "font-display tabular text-[18px] font-semibold leading-tight tracking-[-0.012em]",
+                  isPaid
+                    ? "text-emerald-900 line-through decoration-emerald-700/40"
+                    : "text-[color:var(--ink)]",
                 )}
               >
+                {money(line.dollars)}
+              </div>
+              <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5">
+                {isPaid ? "Paid" : line.isPercent ? `${line.amount}% of total` : "Due"}
+              </div>
+
+              {/* Hover actions — fade in pinned to the cell's bottom edge */}
+              {!readOnly && (
+              <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 px-3 pb-2.5 pt-6 bg-gradient-to-t from-white via-white to-transparent opacity-0 transition-opacity group-hover:opacity-100">
                 <button
                   type="button"
                   onClick={() => onTogglePaid(line.id)}
                   className={cn(
-                    "h-6 px-2 rounded-[var(--r-sm)] text-[10.5px] font-medium",
-                    "bg-white hairline shadow-[0_4px_16px_-8px_rgba(17,17,19,0.20)]",
-                    "hover:bg-[color:var(--paper)] focus-ring",
+                    "h-6 px-2 rounded-[var(--r-sm)] text-[10.5px] font-medium bg-white hairline shadow-[0_4px_16px_-8px_rgba(17,17,19,0.20)] hover:bg-[color:var(--paper)] focus-ring",
                     isPaid ? "text-[color:var(--ink-muted)]" : "text-emerald-800",
                   )}
                 >
@@ -136,32 +116,34 @@ export function PaymentSchedule({
                   <button
                     type="button"
                     onClick={() => onSendReminder(line.id)}
-                    className={cn(
-                      "h-6 px-2 rounded-[var(--r-sm)] text-[10.5px] font-medium",
-                      "bg-white hairline shadow-[0_4px_16px_-8px_rgba(17,17,19,0.20)]",
-                      "hover:bg-[color:var(--paper)] focus-ring text-[color:var(--ink-soft)]",
-                      "inline-flex items-center gap-1",
-                    )}
+                    className="h-6 px-2 rounded-[var(--r-sm)] text-[10.5px] font-medium bg-white hairline shadow-[0_4px_16px_-8px_rgba(17,17,19,0.20)] hover:bg-[color:var(--paper)] focus-ring text-[color:var(--ink-soft)] inline-flex items-center gap-1"
                   >
                     <Bell className="h-3 w-3" />
                     Remind
                   </button>
                 )}
               </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Progress meter */}
-      <div className="h-[3px] w-full overflow-hidden rounded-full bg-[color:var(--ink-line)]/60">
-        <motion.div
-          className="h-full bg-emerald-600"
-          initial={false}
-          animate={{ width: `${paidPct}%` }}
-          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-        />
-      </div>
+      {/* Progress meter — only when there's a real total to fill. Hugs the
+          figures above as a snug baseline fill-rule rather than floating in a
+          padded void (which read as dead space at 0% paid). */}
+      {scheduledTotal > 0 && (
+        <div className="px-6 pt-1 pb-2">
+          <div className="h-[3px] w-full overflow-hidden rounded-full bg-[color:var(--ink-line)]/60">
+            <motion.div
+              className="h-full bg-emerald-600"
+              initial={false}
+              animate={{ width: `${paidPct}%` }}
+              transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

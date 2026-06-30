@@ -32,6 +32,7 @@ import { createJobEvent } from "@/actions/jobs";
 import { assignWorker } from "@/actions/workers";
 import { createAppointment } from "@/actions/appointments";
 import { createBlockedTime } from "@/actions/blockedTime";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { EventTypeTabs, type CalendarEventKind } from "@/components/calendar/EventTypeTabs";
 import { DateTimePicker } from "./DateTimePicker";
 
@@ -206,6 +207,13 @@ export function QuickAddEventSheetA({
 
   async function submit() {
     setBusy(true);
+    // Pre-flight the matching plan limit (job event → calendarEvents,
+    // appointment → calendarCards; blocked time is not metered).
+    const limitKey = kind === "job" ? "calendarEvents" : kind === "appointment" ? "calendarCards" : null;
+    if (limitKey && !(await ensureWithinLimit(limitKey))) {
+      setBusy(false);
+      return;
+    }
     try {
       const start = new Date(startsAt);
       const end = new Date(endsAt);
@@ -268,6 +276,7 @@ export function QuickAddEventSheetA({
       router.refresh();
       onClose();
     } catch (err: any) {
+      if (reportPlanLimit(err)) return;
       toast.error("Couldn't save", err?.message);
     } finally {
       setBusy(false);
@@ -313,6 +322,7 @@ export function QuickAddEventSheetA({
             value={endsAt}
             onChange={updateEnds}
             fallbackDate={initialEnd}
+            align="right"
           />
         </div>
 
@@ -423,6 +433,12 @@ export function QuickAddEventSheetA({
                       </button>
                     </li>
                   ))}
+                  {jobs.length > LATEST_VISIBLE && (
+                    <MoreRow
+                      onClick={() => setJobSearchOpen(true)}
+                      label={`More jobs (${jobs.length - LATEST_VISIBLE})…`}
+                    />
+                  )}
                 </LatestList>
               )}
             </PickerSection>
@@ -608,6 +624,12 @@ export function QuickAddEventSheetA({
                       </button>
                     </li>
                   ))}
+                  {leads.length > LATEST_VISIBLE && (
+                    <MoreRow
+                      onClick={() => setLeadSearchOpen(true)}
+                      label={`More leads (${leads.length - LATEST_VISIBLE})…`}
+                    />
+                  )}
                 </LatestList>
               )}
             </PickerSection>
@@ -732,4 +754,19 @@ function LatestList({ children }: { children: React.ReactNode }) {
 
 function EmptyHint({ children }: { children: React.ReactNode }) {
   return <li className="px-3 py-3 text-[11px] text-[color:var(--ink-muted)]">{children}</li>;
+}
+
+function MoreRow({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[11px] font-medium text-[color:var(--ink-muted)] transition-colors hover:bg-black/[0.02] hover:text-[color:var(--ink)]"
+      >
+        <Search className="h-3 w-3" />
+        {label}
+      </button>
+    </li>
+  );
 }

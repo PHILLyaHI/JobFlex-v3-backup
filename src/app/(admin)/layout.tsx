@@ -3,21 +3,33 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { AdminLayout } from "@/components/admin/AdminRail";
+import { AdminNotificationBell } from "@/components/admin/AdminNotificationBell";
+import { recentSupportTickets, unreadSupportCount } from "@/actions/support";
 
 export default async function AdminShell({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/auth/login?next=/admin");
 
-  // Gate: at least one membership at OWNER or ADMIN level on any org.
-  const elevated = await db.membership.findFirst({
-    where: { userId: session.user.id, role: { in: ["OWNER", "ADMIN"] } },
-    select: { id: true },
+  // Gate: dedicated platform-admin flag (not org-level OWNER/ADMIN). Only
+  // explicitly-flagged users see platform-wide subscribers/revenue/payouts.
+  const admin = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { isPlatformAdmin: true },
   });
-  if (!elevated) redirect("/dashboard" as any);
+  if (!admin?.isPlatformAdmin) redirect("/dashboard" as never);
+
+  // Support notification feed for the header bell + nav badge (platform-wide).
+  const [feed, unreadSupport] = await Promise.all([
+    recentSupportTickets(8),
+    unreadSupportCount(),
+  ]);
 
   return (
     <div>
-      <header className="border-b border-[color:var(--ink-line)] bg-[color:var(--paper)]/85 backdrop-blur sticky top-0 z-20">
+      <header
+        className="border-b border-[color:var(--ink-line)] backdrop-blur sticky top-0 z-20"
+        style={{ backgroundColor: "color-mix(in srgb, var(--paper) 85%, transparent)" }}
+      >
         <div className="max-w-[1400px] mx-auto h-14 px-6 lg:px-10 flex items-center justify-between">
           <Link href="/admin" className="flex items-center gap-2.5">
             <div className="h-7 w-7 rounded-[6px] bg-[color:var(--ink)] text-[color:var(--paper)] grid place-items-center font-display text-[13px] leading-none">
@@ -28,15 +40,18 @@ export default async function AdminShell({ children }: { children: React.ReactNo
               <span className="quiet-caps">Admin</span>
             </div>
           </Link>
-          <Link
-            href={"/dashboard" as any}
-            className="text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
-          >
-            ← Back to dashboard
-          </Link>
+          <div className="flex items-center gap-2">
+            <AdminNotificationBell items={feed} unread={unreadSupport} />
+            <Link
+              href={"/dashboard" as never}
+              className="text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
+            >
+              ← Back to dashboard
+            </Link>
+          </div>
         </div>
       </header>
-      <AdminLayout>{children}</AdminLayout>
+      <AdminLayout unreadSupport={unreadSupport}>{children}</AdminLayout>
     </div>
   );
 }

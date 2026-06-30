@@ -63,30 +63,19 @@ export function TeamGridA({
   hoveredCellKey,
 }: Props) {
   const cellRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
+  // Worker|day cell under a dragged event chip — lights up the drop target the
+  // same way a tray-card drag does (hoveredCellKey), so a chip move previews
+  // where it will land before release.
+  const [dragOverKey, setDragOverKey] = React.useState<string | null>(null);
+  // Drag guard: true during a chip drag so the browser's trailing click (which
+  // can fire before framer-motion's async onDragEnd) doesn't open the detail sheet.
+  const draggingRef = React.useRef(false);
+  const lastDragEndAt = React.useRef(0);
   const weekStart = startOfWeek(cursor);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = new Date();
 
   const allRows: { id: string | null; label: string; node: React.ReactNode }[] = [
-    {
-      id: null,
-      label: "Unassigned",
-      node: (
-        <div className="flex items-center gap-2.5 px-3">
-          <div className="h-7 w-7 rounded-full bg-[color:var(--accent-soft)]/60 grid place-items-center text-[color:var(--accent)] text-[10px] font-semibold">
-            UN
-          </div>
-          <div className="min-w-0">
-            <div className="text-[12.5px] font-medium text-[color:var(--ink)]">
-              Unassigned
-            </div>
-            <div className="text-[10px] text-[color:var(--ink-muted)] tabular">
-              Drag onto a worker to assign
-            </div>
-          </div>
-        </div>
-      ),
-    },
     ...workers.map((w) => ({
       id: w.id,
       label: w.name,
@@ -106,25 +95,42 @@ export function TeamGridA({
     })),
   ];
 
-  function handleDragEnd(event: TeamEvent, info: PanInfo) {
-    const { x, y } = info.point;
-    let dropWorkerId: string | null = null;
-    let dropDate: Date | null = null;
+  // Hit-test the worker|day cell under a point (chip drag-over + drop both use it).
+  function cellKeyAt(point: { x: number; y: number }): string | null {
+    let found: string | null = null;
     cellRefs.current.forEach((el, key) => {
-      const rect = el.getBoundingClientRect();
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-        const [workerKey, isoDate] = key.split("|");
-        const [yr, mo, da] = isoDate.split("-").map(Number);
-        dropWorkerId = workerKey === "_none_" ? null : workerKey;
-        dropDate = new Date(yr, mo - 1, da);
+      const r = el.getBoundingClientRect();
+      if (point.x >= r.left && point.x <= r.right && point.y >= r.top && point.y <= r.bottom) {
+        found = key;
       }
     });
-    if (!dropDate) return;
+    return found;
+  }
+
+  function handleDrag(info: PanInfo) {
+    draggingRef.current = true;
+    const key = cellKeyAt(info.point);
+    setDragOverKey((prev) => (prev === key ? prev : key));
+  }
+
+  function handleDragEnd(event: TeamEvent, info: PanInfo) {
+    setDragOverKey(null);
+    lastDragEndAt.current = Date.now();
+    // Release the flag after the trailing click has had its chance to fire.
+    setTimeout(() => {
+      draggingRef.current = false;
+    }, 0);
+
+    const key = cellKeyAt(info.point);
+    if (!key) return;
+    const [workerKey, isoDate] = key.split("|");
+    const [yr, mo, da] = isoDate.split("-").map(Number);
+    const dropWorkerId = workerKey === "_none_" ? null : workerKey;
+    const dropDate = new Date(yr, mo - 1, da);
 
     const startDate = new Date(event.startsAt);
     const sameWorker = dropWorkerId === (event.workerId ?? null);
-    const sameCell = sameWorker && sameDay(dropDate, startDate);
-    if (sameCell) return;
+    if (sameWorker && sameDay(dropDate, startDate)) return;
 
     onAssignEvent(event.id, dropWorkerId, dropDate);
   }
@@ -203,7 +209,7 @@ export function TeamGridA({
               const items = byCell.get(cellKey) ?? [];
               const weekend = d.getDay() === 0 || d.getDay() === 6;
               const isToday = sameDay(d, today);
-              const isHovered = hoveredCellKey === cellKey;
+              const isHovered = hoveredCellKey === cellKey || dragOverKey === cellKey;
               return (
                 <div
                   key={cellKey}
@@ -238,8 +244,12 @@ export function TeamGridA({
                           compact
                           onClick={(evt) => {
                             evt.stopPropagation();
+                            // Suppress the click that trails a drag-to-reassign.
+                            if (draggingRef.current || Date.now() - lastDragEndAt.current < 300)
+                              return;
                             onSelectEvent(e);
                           }}
+                          onDrag={(_, info) => handleDrag(info)}
                           onDragEnd={(_, info) => handleDragEnd(e, info)}
                         />
                       </motion.div>

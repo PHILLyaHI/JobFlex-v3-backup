@@ -28,7 +28,7 @@ export function ScopeNotesBlock() {
         onChange={(e) => set({ scopeOfWork: e.target.value })}
         placeholder="Remove existing shingles, install underlayment…"
       />
-      <div className="mt-4">
+      <div className="mt-6">
         <Textarea
           label="Notes"
           rows={3}

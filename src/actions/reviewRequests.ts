@@ -1,11 +1,11 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 export async function createReviewRequest(jobId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const job = await db.job.findUnique({ where: { id: jobId }, include: { client: true } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
 

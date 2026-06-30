@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { MobileLogin } from "./mobile-login";
 
-export default function LoginPage() {
+function LoginInner() {
   const router = useRouter();
   const search = useSearchParams();
   const nextPath = search.get("next") ?? "/dashboard";
@@ -151,5 +151,15 @@ export default function LoginPage() {
       </section>
       </div>
     </main>
+  );
+}
+
+// useSearchParams() must sit under a Suspense boundary for static prerender
+// (Next.js CSR-bailout requirement).
+export default function LoginPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <LoginInner />
+    </React.Suspense>
   );
 }

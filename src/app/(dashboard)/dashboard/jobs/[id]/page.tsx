@@ -1,19 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireOrg } from "@/lib/orgContext";
+import { requireOrg, isWorkerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { JobDetail } from "./job-detail";
+import { WorkerJobView } from "./worker-job-view";
 import { money, longDate } from "@/lib/format";
 import { ExternalLink } from "lucide-react";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { organizationId } = await requireOrg();
+  const { organizationId, role, user } = await requireOrg();
+
+  // Field workers get a read-only, assignment-scoped view (no expenses, change
+  // orders, crew management, or messages).
+  if (isWorkerRole(role)) {
+    return <WorkerJobView id={id} organizationId={organizationId} userId={user.id} />;
+  }
 
   const job = await db.job.findUnique({
     where: { id },
@@ -27,7 +34,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       },
       photos: { orderBy: { createdAt: "desc" } },
       expenses: { orderBy: { createdAt: "desc" } },
-      messages: { orderBy: { createdAt: "asc" } },
+      conversation: {
+        include: {
+          messages: {
+            orderBy: { createdAt: "asc" },
+            include: { author: { select: { id: true, name: true, email: true } } },
+          },
+        },
+      },
       changeOrders: { orderBy: { createdAt: "desc" } },
     },
   });
@@ -122,9 +136,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           createdAt: e.createdAt,
         }))}
         expenseTotal={expenseTotal}
-        messages={job.messages.map((m) => ({
+        messages={(job.conversation?.messages ?? []).map((m) => ({
           id: m.id,
           authorId: m.authorId,
+          authorName: m.author?.name ?? m.author?.email ?? null,
           body: m.body,
           createdAt: m.createdAt,
         }))}

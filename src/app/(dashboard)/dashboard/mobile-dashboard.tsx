@@ -3,23 +3,22 @@ import * as React from "react";
 import { GreetingHeader } from "@/components/dashboard/GreetingHeader";
 import { TodayAgenda, type TodayAgendaEvent } from "@/components/dashboard/TodayAgenda";
 import { QuickCapture } from "@/components/dashboard/QuickCapture";
-import { AttentionList } from "@/components/dashboard/AttentionList";
+import { AttentionList, type AttentionCounts } from "@/components/dashboard/AttentionList";
 import { WhatHappenedFeed, type ActivityRow } from "@/components/dashboard/WhatHappenedFeed";
 
 interface MobileDashboardProps {
   /** Reference moment passed from the server so "today" is deterministic. */
   now: Date;
   jobEvents: TodayAgendaEvent[];
-  proposals: { status: string; viewCount: number }[];
-  leads: { status: string }[];
+  /** Real org-wide counts for the "Needs you" list (not a capped slice). */
+  attention: AttentionCounts;
   activities: ActivityRow[];
 }
 
 export function MobileDashboard({
   now,
   jobEvents,
-  proposals,
-  leads,
+  attention,
   activities,
 }: MobileDashboardProps) {
   return (
@@ -33,7 +32,7 @@ export function MobileDashboard({
           <QuickCapture />
         </div>
         <div className="mt-6">
-          <AttentionList proposals={proposals} leads={leads} />
+          <AttentionList counts={attention} />
         </div>
         <div className="mt-8">
           <WhatHappenedFeed activities={activities} />

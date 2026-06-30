@@ -4,13 +4,15 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { PhotoUploadDrawer, type PhotoDraft } from "@/components/jobs/PhotoUploadDrawer";
+import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { toast } from "@/components/ui/Toast";
-import { Check, X, Upload } from "lucide-react";
+import { Check, X, Upload, Play } from "lucide-react";
 
 interface WorkerAssignmentPanelProps {
   assignmentId: string;
   jobId: string;
   status: string;
+  jobStatus: string;
   token: string;
   photos: PhotoDraft[];
 }
@@ -19,12 +21,33 @@ export function WorkerAssignmentPanel({
   assignmentId,
   jobId,
   status,
+  jobStatus,
   token,
   photos,
 }: WorkerAssignmentPanelProps) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
   const [drawer, setDrawer] = React.useState(false);
+
+  // Workers can only move the job forward (start / complete). Reschedule,
+  // reassignment, and edits stay with the office.
+  async function updateJobStatus(newStatus: "IN_PROGRESS" | "COMPLETED") {
+    try {
+      setBusy(newStatus);
+      const res = await fetch(`/api/worker/job/${jobId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, status: newStatus }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast.success(newStatus === "COMPLETED" ? "Marked complete" : "Work started");
+      router.refresh();
+    } catch (err: any) {
+      toast.error("Couldn't update", err?.message);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function respond(newStatus: "ACCEPTED" | "DECLINED") {
     try {
@@ -95,6 +118,44 @@ export function WorkerAssignmentPanel({
           </div>
         </Card>
       )}
+
+      <Card className="mt-5">
+        <CardHeader>
+          <div>
+            <CardTitle>Job status</CardTitle>
+            <CardSubtitle>Keep the office in the loop as you work.</CardSubtitle>
+          </div>
+          <JobStatusBadge status={jobStatus} />
+        </CardHeader>
+        {jobStatus === "SCHEDULED" && (
+          <Button
+            loading={busy === "IN_PROGRESS"}
+            onClick={() => updateJobStatus("IN_PROGRESS")}
+            icon={<Play className="h-4 w-4" />}
+          >
+            Start work
+          </Button>
+        )}
+        {jobStatus === "IN_PROGRESS" && (
+          <Button
+            loading={busy === "COMPLETED"}
+            onClick={() => updateJobStatus("COMPLETED")}
+            icon={<Check className="h-4 w-4" />}
+          >
+            Mark completed
+          </Button>
+        )}
+        {jobStatus === "COMPLETED" && (
+          <p className="text-[12px] text-[color:var(--ink-muted)]">
+            This job is marked complete. Thanks for the work.
+          </p>
+        )}
+        {jobStatus === "CANCELED" && (
+          <p className="text-[12px] text-[color:var(--ink-muted)]">
+            This job was canceled by the office.
+          </p>
+        )}
+      </Card>
 
       <Card className="mt-5">
         <CardHeader>

@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const expenseInput = z.object({
@@ -14,7 +14,7 @@ const expenseInput = z.object({
 });
 
 export async function addJobExpense(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = expenseInput.parse(raw);
   const job = await db.job.findUnique({ where: { id: data.jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
@@ -35,7 +35,7 @@ export async function addJobExpense(raw: unknown) {
 }
 
 export async function deleteJobExpense(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const exp = await db.jobExpense.findUnique({
     where: { id },
     include: { job: { select: { organizationId: true } } },

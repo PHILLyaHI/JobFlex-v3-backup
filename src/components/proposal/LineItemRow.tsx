@@ -50,7 +50,7 @@ export function LineItemRow({ item }: { item: DraftLineItem }) {
       <div className="grid grid-cols-12 gap-2 items-center p-3">
         <GripVertical className="col-span-1 h-4 w-4 text-[color:var(--ink-faint)] shrink-0" />
 
-        <div className="col-span-4 min-w-0">
+        <div className="col-span-3 min-w-0">
           <Input
             placeholder="Line item name"
             value={item.name}
@@ -73,24 +73,24 @@ export function LineItemRow({ item }: { item: DraftLineItem }) {
           </Select>
         </div>
 
-        <div className="col-span-1">
+        <div className="col-span-2">
           <Input
             type="number"
             step="0.01"
+            aria-label="Quantity"
             value={item.quantity}
             onChange={(e) => update(item.id, { quantity: Number(e.target.value) })}
           />
         </div>
 
-        <div className="col-span-1 text-right text-[12px] text-[color:var(--ink-muted)] tabular leading-tight">
-          {money(item.unitPrice || perUnit)}
-          <div className="text-[9px] text-[color:var(--ink-faint)] tracking-[0.10em] uppercase">
-            ea
+        {/* Total, with the per-unit figure folded underneath (frees the qty column). */}
+        <div className="col-span-2 text-right leading-tight">
+          <div className="font-display tabular text-[14px] text-[color:var(--ink)]">
+            {money(total)}
           </div>
-        </div>
-
-        <div className="col-span-1 text-right font-display tabular text-[14px]">
-          {money(total)}
+          <div className="mt-0.5 text-[10px] tabular text-[color:var(--ink-faint)]">
+            {money(item.unitPrice || perUnit)} / ea
+          </div>
         </div>
 
         <div className="col-span-2 flex items-center justify-end gap-1">

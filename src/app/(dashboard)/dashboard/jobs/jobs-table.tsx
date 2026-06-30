@@ -5,6 +5,8 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { shortDate, relative } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagedList } from "@/lib/usePagedList";
 
 export type JobRow = {
   id: string;
@@ -31,6 +33,7 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
     () => (tab === "ALL" ? rows : rows.filter((r) => r.status === tab)),
     [rows, tab],
   );
+  const { page, pageCount, setPage, pageItems } = usePagedList(filtered, 20);
 
   const columns: Column<JobRow>[] = [
     {
@@ -102,7 +105,8 @@ export function JobsTable({ rows }: { rows: JobRow[] }) {
           );
         })}
       </div>
-      <DataTable columns={columns} rows={filtered} rowKey={(r) => r.id} />
+      <DataTable columns={columns} rows={pageItems} rowKey={(r) => r.id} />
+      <Pagination page={page} pageCount={pageCount} onPage={setPage} />
     </>
   );
 }

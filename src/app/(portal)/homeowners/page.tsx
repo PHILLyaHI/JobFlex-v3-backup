@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { HomeownerForm } from "./homeowner-form";
 
 export default function HomeownersPage() {
@@ -34,7 +35,9 @@ export default function HomeownersPage() {
         </div>
       </aside>
       <section className="md:col-span-3 p-8 md:p-14 flex items-center justify-center">
-        <HomeownerForm />
+        <Suspense fallback={null}>
+          <HomeownerForm />
+        </Suspense>
       </section>
     </main>
   );
