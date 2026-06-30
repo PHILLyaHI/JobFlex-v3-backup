@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { GoogleIcon } from "@/components/auth/GoogleIcon";
 
 interface MobileLoginProps {
   email: string;
@@ -61,6 +62,14 @@ export function MobileLogin({
             onChange={(e) => setPassword(e.target.value)}
             required
           />
+          <div className="-mt-1 text-right">
+            <Link
+              href={"/auth/forgot" as never}
+              className="text-[12px] text-[color:var(--ink-muted)] underline underline-offset-[3px] hover:text-[color:var(--ink)]"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <Button type="submit" size="lg" loading={loading} className="w-full">
             Continue
           </Button>
@@ -81,7 +90,13 @@ export function MobileLogin({
           <div className="flex-1 border-t border-[color:var(--ink-line)]" />
         </div>
 
-        <Button variant="outline" size="lg" onClick={onGoogle} className="w-full">
+        <Button
+          variant="outline"
+          size="lg"
+          onClick={onGoogle}
+          className="w-full"
+          icon={<GoogleIcon className="h-[18px] w-[18px]" />}
+        >
           Continue with Google
         </Button>
 

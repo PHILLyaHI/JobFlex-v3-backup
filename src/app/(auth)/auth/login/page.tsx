@@ -6,12 +6,16 @@ import { signIn } from "next-auth/react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
+import { GoogleIcon } from "@/components/auth/GoogleIcon";
 import { MobileLogin } from "./mobile-login";
 
 function LoginInner() {
   const router = useRouter();
   const search = useSearchParams();
-  const nextPath = search.get("next") ?? "/dashboard";
+  // Only honor same-site relative paths so `?next=` can't be used as an open
+  // redirect (reject absolute URLs and protocol-relative `//evil.com`).
+  const rawNext = search.get("next");
+  const nextPath = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
   const [loading, setLoading] = React.useState(false);
   const [email, setEmail] = React.useState("owner@acme.test");
   const [password, setPassword] = React.useState("password123");
@@ -100,6 +104,14 @@ function LoginInner() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
+          <div className="-mt-1 text-right">
+            <Link
+              href={"/auth/forgot" as never}
+              className="text-[12px] text-[color:var(--ink-muted)] underline underline-offset-[3px] hover:text-[color:var(--ink)]"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <Button type="submit" size="lg" loading={loading} className="w-full">
             Continue
           </Button>
@@ -121,6 +133,7 @@ function LoginInner() {
           size="lg"
           onClick={() => signIn("google", { callbackUrl: nextPath })}
           className="w-full"
+          icon={<GoogleIcon className="h-[18px] w-[18px]" />}
         >
           Continue with Google
         </Button>
