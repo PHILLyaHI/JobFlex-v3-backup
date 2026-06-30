@@ -9,8 +9,6 @@ import {
   Search,
   Plus,
   ArrowUpRight,
-  Copy,
-  Check,
   AlertCircle,
   ChevronRight,
   X,
@@ -478,7 +476,6 @@ function InspectorWorker({
   React.useEffect(() => setOrigin(window.location.origin), []);
   const magicLink = `${origin}/w/${entry.token}`;
 
-  const [copied, setCopied] = React.useState(false);
   const [removing, setRemoving] = React.useState(false);
   const [confirmRemove, setConfirmRemove] = React.useState(false);
 
@@ -589,28 +586,21 @@ function InspectorWorker({
       </div>
 
       <div className="border-t border-[color:var(--ink-line)] bg-[color:var(--paper-deep)]/40 px-6 py-5">
-        <div className="quiet-caps mb-2">Magic link</div>
-        <div className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-[color:var(--paper)] px-3 py-2">
-          <code className="flex-1 truncate font-mono text-[11px] text-[color:var(--ink-soft)]">
+        <div className="quiet-caps mb-2">Worker dashboard</div>
+        <a
+          href={magicLink || `/w/${entry.token}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-[color:var(--paper)] px-3 py-2 transition-colors hover:bg-black/[0.03]"
+        >
+          <span className="flex-1 truncate font-mono text-[11px] text-[color:var(--ink-soft)]">
             {magicLink || `…/w/${entry.token.slice(0, 12)}…`}
-          </code>
-          <button
-            type="button"
-            aria-label="Copy magic link"
-            onClick={() => {
-              if (!magicLink) return;
-              navigator.clipboard.writeText(magicLink);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }}
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-          >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
-        </div>
+          </span>
+          <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)]" />
+        </a>
         <p className="mt-2 text-[11px] leading-[1.6] text-[color:var(--ink-muted)]">
-          Anyone with this link can view and accept jobs assigned to {firstName}. Removing the
-          worker kills this link and drops them from the company immediately.
+          Opens {firstName}&apos;s dashboard — they see and accept only the jobs assigned to them.
+          Removing the worker disables this link immediately.
         </p>
 
         <div className="mt-4 flex items-center justify-between">
@@ -656,7 +646,7 @@ function InspectorWorker({
         }
       >
         <p className="text-[13px] leading-[1.7] text-[color:var(--ink-soft)]">
-          {firstName}&apos;s magic link stops working and they&apos;re taken off the roster. Their
+          {firstName}&apos;s dashboard link stops working and they&apos;re taken off the roster. Their
           job assignments are cleared. Past job history and activity are kept. This can&apos;t be
           undone.
         </p>
@@ -735,7 +725,6 @@ function InviteSheet({
   const [role, setRole] = React.useState<string>("INSTALLER");
   const [busy, setBusy] = React.useState(false);
   const [created, setCreated] = React.useState<{ token: string; name: string } | null>(null);
-  const [copied, setCopied] = React.useState(false);
   const [origin, setOrigin] = React.useState("");
   React.useEffect(() => setOrigin(window.location.origin), []);
 
@@ -745,7 +734,6 @@ function InviteSheet({
     setPhone("");
     setRole("INSTALLER");
     setCreated(null);
-    setCopied(false);
   }
 
   const close = React.useCallback(() => {
@@ -800,7 +788,7 @@ function InviteSheet({
       });
       setCreated({ token: res.token, name: name.trim() });
       onInvited();
-      toast.success("Worker invited", "Magic link ready to share.");
+      toast.success("Worker invited", "Dashboard link ready to share.");
     } catch (err) {
       if (reportPlanLimit(err)) return;
       toast.error(editEntry ? "Update failed" : "Invite failed", (err as Error)?.message);
@@ -919,28 +907,22 @@ function InviteSheet({
               ) : (
                 <div className="space-y-5">
                   <div className="paper-card p-4">
-                    <div className="quiet-caps mb-2">Magic link</div>
-                    <div className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-black/[0.03] px-3 py-2">
-                      <code className="flex-1 break-all font-mono text-[11px] text-[color:var(--ink-soft)]">
+                    <div className="quiet-caps mb-2">Worker dashboard</div>
+                    <a
+                      href={magicLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-black/[0.03] px-3 py-2 transition-colors hover:bg-black/[0.05]"
+                    >
+                      <span className="flex-1 break-all font-mono text-[11px] text-[color:var(--ink-soft)]">
                         {magicLink}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(magicLink);
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 1500);
-                        }}
-                        aria-label="Copy"
-                        className="grid h-7 w-7 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-                      >
-                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
+                      </span>
+                      <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)]" />
+                    </a>
                   </div>
                   <p className="text-[12px] leading-[1.7] text-[color:var(--ink-muted)]">
-                    Share the link directly. Rotate it any time from the inspector. Anyone with the
-                    old link loses access immediately.
+                    Send this link to the worker — it opens their dashboard. Rotate it any time from
+                    the inspector; anyone with the old link loses access immediately.
                   </p>
                 </div>
               )}

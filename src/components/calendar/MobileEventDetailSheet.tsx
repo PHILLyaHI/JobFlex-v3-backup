@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { ExternalLink, Clock, MapPin, FileText } from "lucide-react";
+import { ExternalLink, Clock, MapPin, FileText, User, Phone, ClipboardList } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { BottomSheet } from "@/components/ui/BottomSheet";
@@ -18,6 +18,9 @@ export interface MobileCalendarEvent {
   notes: string | null;
   workerIds: string[];
   clientName: string | null;
+  clientPhone?: string | null;
+  clientAddress?: string | null;
+  scopeOfWork?: string | null;
 }
 
 interface WorkerLite {
@@ -76,8 +79,30 @@ export function MobileEventDetailSheet({ event, workers, onClose }: Props) {
             </Row>
 
             {event.clientName && (
-              <Row icon={<MapPin className="h-4 w-4" />} label="Client">
-                {event.clientName}
+              <Row icon={<User className="h-4 w-4" />} label="Client">
+                <span className="font-medium text-[color:var(--ink)]">{event.clientName}</span>
+              </Row>
+            )}
+
+            {event.clientPhone && (
+              <Row icon={<Phone className="h-4 w-4" />} label="Phone">
+                <a href={`tel:${event.clientPhone}`} className="tabular text-[color:var(--accent-ink)]">
+                  {event.clientPhone}
+                </a>
+              </Row>
+            )}
+
+            {event.clientAddress && (
+              <Row icon={<MapPin className="h-4 w-4" />} label="Address">
+                <span className="text-[color:var(--ink-soft)] leading-relaxed">{event.clientAddress}</span>
+              </Row>
+            )}
+
+            {event.scopeOfWork && (
+              <Row icon={<ClipboardList className="h-4 w-4" />} label="Scope of work">
+                <span className="block max-h-44 overflow-y-auto whitespace-pre-wrap leading-relaxed text-[color:var(--ink-soft)]">
+                  {event.scopeOfWork}
+                </span>
               </Row>
             )}
 

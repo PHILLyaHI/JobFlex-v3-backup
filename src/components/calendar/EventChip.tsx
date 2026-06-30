@@ -16,6 +16,11 @@ export interface CalendarEvent {
   jobId?: string | null;
   notes?: string | null;
   kind?: CalendarEventKind;
+  // Optional context shown in the detail sheet (job events carry these).
+  clientName?: string | null;
+  clientPhone?: string | null;
+  clientAddress?: string | null;
+  scopeOfWork?: string | null;
 }
 
 interface EventChipProps {

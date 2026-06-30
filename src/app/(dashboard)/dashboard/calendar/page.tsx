@@ -32,7 +32,8 @@ export default async function CalendarPage() {
         job: {
           select: {
             status: true,
-            client: { select: { name: true } },
+            client: { select: { name: true, phone: true, address: true, city: true, state: true } },
+            proposal: { select: { scopeOfWork: true } },
             assignments: { select: { workerId: true } },
           },
         },
@@ -50,6 +51,9 @@ export default async function CalendarPage() {
       notes: e.notes,
       workerIds: e.job?.assignments.map((a) => a.workerId) ?? [],
       clientName: e.job?.client?.name ?? null,
+      clientPhone: e.job?.client?.phone ?? null,
+      clientAddress: clientAddr(e.job?.client),
+      scopeOfWork: e.job?.proposal?.scopeOfWork ?? null,
     }));
     return (
       <>
@@ -89,7 +93,8 @@ export default async function CalendarPage() {
         job: {
           select: {
             status: true,
-            client: { select: { name: true } },
+            client: { select: { name: true, phone: true, address: true, city: true, state: true } },
+            proposal: { select: { scopeOfWork: true } },
             assignments: { select: { workerId: true } },
           },
         },
@@ -169,6 +174,9 @@ export default async function CalendarPage() {
     notes: e.notes,
     workerIds: e.job?.assignments.map((a) => a.workerId) ?? [],
     clientName: e.job?.client?.name ?? null,
+    clientPhone: e.job?.client?.phone ?? null,
+    clientAddress: clientAddr(e.job?.client),
+    scopeOfWork: e.job?.proposal?.scopeOfWork ?? null,
   }));
 
   const appointmentsRaw = appointments.map((a) => ({
@@ -267,6 +275,15 @@ export default async function CalendarPage() {
       </div>
     </>
   );
+}
+
+// Compose a one-line client address from the parts we have, or null.
+function clientAddr(
+  c: { address?: string | null; city?: string | null; state?: string | null } | null | undefined,
+): string | null {
+  if (!c) return null;
+  const line = [c.address, c.city, c.state].filter(Boolean).join(", ").trim();
+  return line || null;
 }
 
 function parseSpec(raw: string | null): string[] {

@@ -61,6 +61,9 @@ interface RawEvent {
   notes: string | null;
   workerIds: string[];
   clientName: string | null;
+  clientPhone?: string | null;
+  clientAddress?: string | null;
+  scopeOfWork?: string | null;
 }
 
 interface Props {
@@ -249,6 +252,10 @@ export function CalendarViewA({
     status: e.status,
     notes: e.notes,
     kind: e.kind,
+    clientName: e.clientName,
+    clientPhone: e.clientPhone ?? null,
+    clientAddress: e.clientAddress ?? null,
+    scopeOfWork: e.scopeOfWork ?? null,
   }));
 
   const teamEvents: TeamEvent[] = filteredEvents

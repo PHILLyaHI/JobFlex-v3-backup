@@ -70,7 +70,10 @@ export function PaymentSchedule({
             <div
               key={line.id}
               className={cn(
-                "group relative px-6 py-3 transition-colors",
+                // pb reserves a bottom band for the hover action row so its
+                // buttons never overlap the amount above (the "line over the
+                // number" bug). pt stays tight.
+                "group relative px-6 pt-3 pb-9 transition-colors",
                 isPaid && "bg-emerald-50/50",
               )}
             >
@@ -101,7 +104,7 @@ export function PaymentSchedule({
 
               {/* Hover actions — fade in pinned to the cell's bottom edge */}
               {!readOnly && (
-              <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 px-3 pb-2.5 pt-6 bg-gradient-to-t from-white via-white to-transparent opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 px-3 pb-2.5 pt-4 bg-gradient-to-t from-white via-white to-transparent opacity-0 transition-opacity group-hover:opacity-100">
                 <button
                   type="button"
                   onClick={() => onTogglePaid(line.id)}

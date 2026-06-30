@@ -71,11 +71,20 @@ export async function createJob(raw: unknown) {
     const ids = Array.from(new Set(data.workerIds));
     const valid = await db.workerProfile.findMany({
       where: { organizationId, id: { in: ids } },
-      select: { id: true },
+      select: { id: true, userId: true },
     });
     if (valid.length) {
       await db.jobAssignment.createMany({
         data: valid.map((w) => ({ jobId: job.id, workerId: w.id })),
+      });
+      // Auto-create the job's group chat with the invited crew + the manager who
+      // built it, so it shows up on the Messages page ready to use.
+      const { ensureJobConversation } = await import("@/lib/jobConversation");
+      await ensureJobConversation({
+        jobId: job.id,
+        organizationId,
+        title: job.title,
+        userIds: [user.id, ...valid.map((w) => w.userId)],
       });
     }
   }

@@ -1,10 +1,8 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Button } from "@/components/ui/Button";
-import { Plus } from "lucide-react";
 import { MessagesInbox, type ConversationSummary, type MessageItem } from "@/components/comms/MessagesInbox";
-import { StartConversationButton } from "./start-conversation-button";
+import { StartConversationButton, type MemberOption } from "./start-conversation-button";
 
 export default async function MessagesPage({
   searchParams,
@@ -13,30 +11,22 @@ export default async function MessagesPage({
 }) {
   const { c: activeId } = await searchParams;
   const { organizationId, user, role } = await requireOrg();
-
-  // Field workers (INSTALLER) only see threads they're part of — ones they've
-  // posted in, or the direct thread opened for them (titled with their name).
-  // Managers see all org threads. Robust participant-based scoping arrives with
-  // the unified messaging model; this is the interim guard so opening Messages to
-  // workers doesn't expose the whole org's internal chats.
   const isWorker = role === "INSTALLER";
-  const me = isWorker
-    ? await db.workerProfile.findFirst({
-        where: { userId: user.id, organizationId },
-        select: { displayName: true },
-      })
-    : null;
+
+  // Participant-scoped: you see threads you're a member of. Managers also see
+  // legacy org threads created before participants existed (no participant rows),
+  // so nothing pre-existing disappears.
   const conversationWhere = isWorker
-    ? {
+    ? { organizationId, participants: { some: { userId: user.id } } }
+    : {
         organizationId,
         OR: [
-          { messages: { some: { authorId: user.id } } },
-          ...(me?.displayName ? [{ title: me.displayName }] : []),
+          { participants: { some: { userId: user.id } } },
+          { participants: { none: {} } },
         ],
-      }
-    : { organizationId };
+      };
 
-  const [conversations, workers] = await Promise.all([
+  const [conversations, members] = await Promise.all([
     db.conversation.findMany({
       where: conversationWhere,
       orderBy: { createdAt: "desc" },
@@ -48,12 +38,21 @@ export default async function MessagesPage({
         },
       },
     }),
-    db.workerProfile.findMany({
-      where: { organizationId },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
+    // Everyone on the team (any role) except the current user — a manager can
+    // direct-message or group any of them.
+    db.membership.findMany({
+      where: { organizationId, NOT: { userId: user.id } },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
+
+  const memberOptions: MemberOption[] = members.map((m) => ({
+    userId: m.userId,
+    name: m.user?.name ?? m.user?.email ?? "Member",
+    email: m.user?.email ?? "",
+    role: m.role,
+  }));
 
   const summaries: ConversationSummary[] = conversations.map((c) => ({
     id: c.id,
@@ -64,36 +63,13 @@ export default async function MessagesPage({
     unreadCount: 0,
   }));
 
-  let activeMessages: MessageItem[] = [];
-  let activeTitle: string | null = null;
-  let activeConvId: string | null = null;
-  if (activeId) {
-    const active = conversations.find((x) => x.id === activeId);
-    if (active) {
-      activeConvId = active.id;
-      activeTitle = active.title;
-      const msgs = await db.message.findMany({
-        where: { conversationId: active.id },
-        orderBy: { createdAt: "asc" },
-        include: { author: { select: { id: true, name: true, email: true } } },
-      });
-      activeMessages = msgs.map((m) => ({
-        id: m.id,
-        body: m.body,
-        authorName: m.author?.name ?? m.author?.email ?? "Anonymous",
-        isMe: m.authorId === user.id,
-        createdAt: m.createdAt,
-      }));
-    }
-  } else if (summaries[0]) {
-    activeConvId = summaries[0].id;
-    activeTitle = summaries[0].title;
+  async function loadMessages(conversationId: string): Promise<MessageItem[]> {
     const msgs = await db.message.findMany({
-      where: { conversationId: summaries[0].id },
+      where: { conversationId },
       orderBy: { createdAt: "asc" },
       include: { author: { select: { id: true, name: true, email: true } } },
     });
-    activeMessages = msgs.map((m) => ({
+    return msgs.map((m) => ({
       id: m.id,
       body: m.body,
       authorName: m.author?.name ?? m.author?.email ?? "Anonymous",
@@ -102,13 +78,30 @@ export default async function MessagesPage({
     }));
   }
 
+  let activeMessages: MessageItem[] = [];
+  let activeTitle: string | null = null;
+  let activeConvId: string | null = null;
+  // Only open a thread that's in the (scoped) list — never an arbitrary id.
+  const active =
+    (activeId && conversations.find((x) => x.id === activeId)) || conversations[0] || null;
+  if (active) {
+    activeConvId = active.id;
+    activeTitle = active.title;
+    activeMessages = await loadMessages(active.id);
+  }
+
   return (
     <>
       <PageHeader
         eyebrow="Communication"
         title="Messages"
-        description="Internal threads for the team. Client-facing email still flows through the proposal editor."
-        actions={<StartConversationButton workers={workers} />}
+        description={
+          isWorker
+            ? "Your threads with the office. Reply here; the team will see it."
+            : "Internal threads for the team. Client-facing email still flows through the proposal editor."
+        }
+        // Workers reply in threads the office opens for them; only managers start new ones.
+        actions={isWorker ? undefined : <StartConversationButton members={memberOptions} />}
       />
       <MessagesInbox
         conversations={summaries}
@@ -116,6 +109,7 @@ export default async function MessagesPage({
         activeConversationTitle={activeTitle}
         messages={activeMessages}
         currentUserId={user.id}
+        canManage={!isWorker}
       />
     </>
   );

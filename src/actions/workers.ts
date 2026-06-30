@@ -298,7 +298,7 @@ export async function removeWorker(workerId: string) {
 }
 
 export async function assignWorker(jobId: string, workerId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, user } = await requireManager();
   const [job, worker] = await Promise.all([
     db.job.findUnique({ where: { id: jobId } }),
     db.workerProfile.findUnique({ where: { id: workerId } }),
@@ -327,6 +327,20 @@ export async function assignWorker(jobId: string, workerId: string) {
     await notifyAssignmentCreated(assignment.id);
   } catch (err) {
     console.warn("[assignWorker] notify failed:", err);
+  }
+
+  // Keep the job's group chat in sync — add the newly-assigned worker (and the
+  // manager) so they can message about this job.
+  try {
+    const { ensureJobConversation } = await import("@/lib/jobConversation");
+    await ensureJobConversation({
+      jobId,
+      organizationId,
+      title: job.title,
+      userIds: [user.id, worker.userId],
+    });
+  } catch (err) {
+    console.warn("[assignWorker] job chat sync failed:", err);
   }
 
   revalidatePath(`/dashboard/jobs/${jobId}`);

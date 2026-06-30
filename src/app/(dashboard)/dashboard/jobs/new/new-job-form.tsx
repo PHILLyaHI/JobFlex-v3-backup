@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
-import { Select } from "@/components/ui/Select";
+import { StyledSelect } from "@/components/ui/StyledSelect";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { Avatar } from "@/components/ui/Avatar";
@@ -109,24 +109,21 @@ export function NewJobForm({ clients, proposals, workers }: NewJobFormProps) {
           />
           <div className="grid grid-cols-2 gap-3">
             <ClientPicker label="Client" clients={clients} value={clientId} onChange={setClientId} />
-            <Select
+            <StyledSelect
               label="Linked proposal"
               value={proposalId}
-              onChange={(e) => {
-                const id = e.target.value;
+              onChange={(id) => {
                 setProposalId(id);
                 const p = proposals.find((x) => x.id === id);
                 if (p?.clientId) setClientId(p.clientId);
                 if (p) setTitle((t) => t || p.title);
               }}
-            >
-              <option value="">— None —</option>
-              {proposals.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </Select>
+              options={proposals.map((p) => ({ id: p.id, label: p.title }))}
+              placeholder="— None —"
+              noneLabel="— None —"
+              searchPlaceholder="Search proposals…"
+              emptyText="No proposals yet."
+            />
           </div>
           <Textarea
             label="Notes"
@@ -144,24 +141,20 @@ export function NewJobForm({ clients, proposals, workers }: NewJobFormProps) {
               </p>
             ) : (
               <>
-                <Select
+                <StyledSelect
                   value=""
-                  onChange={(e) => {
-                    const id = e.target.value;
+                  onChange={(id) => {
                     if (id) setWorkerIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
                   }}
-                >
-                  <option value="">
-                    {workerIds.length ? "Add another crew member…" : "Assign crew (optional)…"}
-                  </option>
-                  {workers
+                  options={workers
                     .filter((w) => !workerIds.includes(w.id))
-                    .map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.displayName}
-                      </option>
-                    ))}
-                </Select>
+                    .map((w) => ({ id: w.id, label: w.displayName }))}
+                  avatars
+                  noneLabel={null}
+                  placeholder={workerIds.length ? "Add another crew member…" : "Assign crew (optional)…"}
+                  searchPlaceholder="Search crew…"
+                  emptyText="Everyone's already assigned."
+                />
                 {workerIds.length > 0 && (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {workerIds.map((id) => {

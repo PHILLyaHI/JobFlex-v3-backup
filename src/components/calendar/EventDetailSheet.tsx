@@ -9,7 +9,7 @@ import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { longDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { CalendarEvent } from "./EventChip";
-import { ExternalLink, Clock, Trash2, Save, Inbox } from "lucide-react";
+import { ExternalLink, Clock, Trash2, Save, Inbox, User, Phone, MapPin, ClipboardList } from "lucide-react";
 
 export interface EventEditPatch {
   title: string;
@@ -119,6 +119,8 @@ export function EventDetailSheet({
               <Badge tone="neutral">Linked to job</Badge>
             </div>
 
+            <ClientScopeInfo event={e} />
+
             <Field label="Title">
               <input className={fieldCls} value={title} onChange={(ev) => setTitle(ev.target.value)} />
             </Field>
@@ -215,6 +217,8 @@ export function EventDetailSheet({
                 </div>
               )}
             </div>
+
+            <ClientScopeInfo event={e} />
             <div className="pt-4 border-t border-[color:var(--ink-line)] flex gap-2 flex-wrap">
               {e.jobId && (
                 <Link href={`/dashboard/jobs/${e.jobId}` as any}>
@@ -240,6 +244,52 @@ export function EventDetailSheet({
           </div>
         ))}
     </Sheet>
+  );
+}
+
+// Client contact + scope of work, shown when the event carries them (job events).
+function ClientScopeInfo({ event }: { event: CalendarEvent }) {
+  const hasClient = !!(event.clientName || event.clientPhone || event.clientAddress);
+  if (!hasClient && !event.scopeOfWork) return null;
+  return (
+    <div className="space-y-4">
+      {hasClient && (
+        <div className="space-y-2 rounded-[var(--r-md)] bg-[color:var(--paper-deep)]/60 p-3.5">
+          {event.clientName && (
+            <div className="flex items-center gap-2.5 text-[13px] text-[color:var(--ink)]">
+              <User className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)]" />
+              <span className="font-medium">{event.clientName}</span>
+            </div>
+          )}
+          {event.clientPhone && (
+            <a
+              href={`tel:${event.clientPhone}`}
+              className="flex items-center gap-2.5 text-[13px] text-[color:var(--ink-soft)] hover:text-[color:var(--accent-ink)]"
+            >
+              <Phone className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)]" />
+              <span className="tabular">{event.clientPhone}</span>
+            </a>
+          )}
+          {event.clientAddress && (
+            <div className="flex items-start gap-2.5 text-[12.5px] text-[color:var(--ink-soft)]">
+              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)]" />
+              <span className="leading-relaxed">{event.clientAddress}</span>
+            </div>
+          )}
+        </div>
+      )}
+      {event.scopeOfWork && (
+        <div>
+          <div className="quiet-caps mb-1.5 flex items-center gap-1.5 text-[color:var(--ink-faint)]">
+            <ClipboardList className="h-3 w-3" />
+            Scope of work
+          </div>
+          <p className="max-h-52 overflow-y-auto whitespace-pre-wrap text-[12.5px] leading-relaxed text-[color:var(--ink-soft)]">
+            {event.scopeOfWork}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 

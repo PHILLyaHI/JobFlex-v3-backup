@@ -137,7 +137,6 @@ export function JobDetail(props: JobDetailProps) {
           { key: "changes", label: "Changes", count: changeOrders.length },
           { key: "photos", label: "Photos", count: photos.length },
           { key: "expenses", label: "Expenses", count: expenses.length },
-          { key: "messages", label: "Messages", count: messages.length },
         ]}
       />
 
@@ -368,13 +367,6 @@ export function JobDetail(props: JobDetailProps) {
         <ChangeOrderList jobId={job.id} orders={changeOrders} />
       )}
 
-      {tab === "messages" && (
-        <MessagesTab
-          jobId={job.id}
-          messages={messages}
-          onChange={() => router.refresh()}
-        />
-      )}
     </>
   );
 }

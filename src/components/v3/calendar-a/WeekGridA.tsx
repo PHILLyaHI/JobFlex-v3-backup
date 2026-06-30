@@ -393,7 +393,13 @@ export function WeekGridA({
               )}
 
               {events
-                .filter((e) => sameDay(new Date(e.startsAt), d))
+                .filter((e) => {
+                  const s = new Date(e.startsAt);
+                  // Multi-day events are hidden from the time grid — a days-long
+                  // block would overflow the day column. They show as spanning
+                  // bars on the month view instead.
+                  return sameDay(s, d) && sameDay(s, new Date(e.endsAt));
+                })
                 .map((e) => {
                   const pos = positionFor(e, d);
                   if (!pos) return null;

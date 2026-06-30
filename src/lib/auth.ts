@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { slugify, uniqueOrgSlug } from "@/lib/orgSlug";
 
 declare module "next-auth" {
   interface Session {
@@ -83,15 +84,41 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user, account }) {
       if (!user?.email) return false;
       if (account?.provider === "google") {
-        const existing = await db.user.findUnique({ where: { email: user.email } });
-        if (!existing) {
-          await db.user.create({
-            data: {
-              email: user.email,
-              name: user.name,
-              image: user.image,
-            },
+        const email = user.email;
+        const existing = await db.user.findUnique({
+          where: { email },
+          select: { id: true, hashedPassword: true },
+        });
+        if (existing) {
+          // A password-based account already owns this email — don't let Google
+          // silently adopt it (pre-account-takeover defense). They can sign in
+          // with their password; linking Google to a password account is a
+          // future feature. A passwordless (Google-created) account is fine.
+          if (existing.hashedPassword) return false;
+          return true;
+        }
+        // First Google sign-in → provision a usable workspace so the user isn't
+        // an org-less orphan (mirrors registerAccount: Org + OWNER Membership).
+        const firstName = user.name?.trim().split(" ")[0];
+        const orgName = firstName ? `${firstName}'s workspace` : "My workspace";
+        const slug = await uniqueOrgSlug(slugify(user.name ?? email.split("@")[0] ?? "workspace"));
+        try {
+          await db.$transaction(async (tx) => {
+            const org = await tx.organization.create({
+              data: { name: orgName, slug, billingEmail: email },
+              select: { id: true },
+            });
+            const created = await tx.user.create({
+              data: { email, name: user.name, image: user.image, activeOrgId: org.id },
+              select: { id: true },
+            });
+            await tx.membership.create({
+              data: { userId: created.id, organizationId: org.id, role: "OWNER" },
+            });
           });
+        } catch (e) {
+          console.error("[auth] Google account provisioning failed:", e);
+          return false;
         }
       }
       return true;

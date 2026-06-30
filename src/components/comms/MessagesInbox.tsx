@@ -2,7 +2,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Send } from "lucide-react";
+import { Search, Send, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
 import { Input } from "@/components/ui/Input";
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { relative } from "@/lib/format";
 import { toast } from "@/components/ui/Toast";
-import { postMessage } from "@/actions/messages";
+import { postMessage, clearConversation, clearAllConversations } from "@/actions/messages";
 
 export interface ConversationSummary {
   id: string;
@@ -35,6 +35,7 @@ interface MessagesInboxProps {
   activeConversationTitle: string | null;
   messages: MessageItem[];
   currentUserId: string;
+  canManage?: boolean;
 }
 
 export function MessagesInbox({
@@ -43,9 +44,31 @@ export function MessagesInbox({
   activeConversationTitle,
   messages,
   currentUserId,
+  canManage = true,
 }: MessagesInboxProps) {
   const router = useRouter();
   const [search, setSearch] = React.useState("");
+
+  async function handleClear(id: string) {
+    if (!window.confirm("Clear every message in this thread? This can't be undone.")) return;
+    try {
+      await clearConversation(id);
+      toast.success("Chat cleared");
+      router.refresh();
+    } catch (err: any) {
+      toast.error("Couldn't clear", err?.message);
+    }
+  }
+  async function handleClearAll() {
+    if (!window.confirm("Clear messages in ALL your threads? This can't be undone.")) return;
+    try {
+      const res = await clearAllConversations();
+      toast.success("Cleared", `${res.cleared} thread${res.cleared === 1 ? "" : "s"} wiped.`);
+      router.refresh();
+    } catch (err: any) {
+      toast.error("Couldn't clear", err?.message);
+    }
+  }
 
   const filtered = React.useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -72,13 +95,23 @@ export function MessagesInbox({
   return (
     <div className="paper-card p-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[280px_1fr] min-h-[640px]">
       <aside className="border-r border-[color:var(--ink-line)] flex flex-col">
-        <div className="p-3 border-b border-[color:var(--ink-line)]">
+        <div className="p-3 border-b border-[color:var(--ink-line)] space-y-2">
           <Input
             placeholder="Search conversations…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             prefix={<Search className="h-3.5 w-3.5" />}
           />
+          {canManage && conversations.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="inline-flex items-center gap-1.5 text-[11px] text-[color:var(--ink-muted)] transition-colors hover:text-[color:var(--rose)]"
+            >
+              <Trash2 className="h-3 w-3" />
+              Clear all chats
+            </button>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
@@ -160,6 +193,17 @@ export function MessagesInbox({
                   {messages.length} message{messages.length === 1 ? "" : "s"}
                 </div>
               </div>
+              {activeConversationId && messages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleClear(activeConversationId)}
+                  title="Clear this chat"
+                  className="inline-flex items-center gap-1.5 rounded-[var(--r-sm)] px-2 py-1 text-[11px] text-[color:var(--ink-muted)] transition-colors hover:bg-rose-50 hover:text-[color:var(--rose)]"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              )}
             </header>
 
             <div className="flex-1 overflow-y-auto px-6 py-5">

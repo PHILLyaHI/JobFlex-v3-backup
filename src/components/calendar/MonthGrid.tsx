@@ -2,6 +2,7 @@
 import * as React from "react";
 import { cn } from "@/lib/cn";
 import { EventChip, type CalendarEvent } from "./EventChip";
+import { statusAccent } from "@/components/jobs/JobStatusBadge";
 
 interface MonthGridProps {
   cursor: Date;
@@ -37,6 +38,26 @@ function sameDay(a: Date, b: Date) {
 function isoKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function diffDays(a: Date, b: Date) {
+  return Math.round((startOfDay(b).getTime() - startOfDay(a).getTime()) / 86400000);
+}
+// Spans more than one calendar day → drawn as a continuous bar across the days
+// it covers (month) and hidden from the week time grid, where a days-long block
+// would overflow the column.
+function isMultiDay(e: CalendarEvent) {
+  const s = new Date(e.startsAt);
+  const en = new Date(e.endsAt);
+  return en.getTime() > s.getTime() && !sameDay(s, en);
+}
+
+const BAR_H = 16; // multi-day bar height
+const BAR_GAP = 3; // gap between stacked bar lanes
+const NUM_BAND = 26; // space above the bars reserved for the day number
 
 export function MonthGrid({
   cursor,
@@ -70,12 +91,69 @@ export function MonthGrid({
   const eventsByDay = React.useMemo(() => {
     const m = new Map<string, CalendarEvent[]>();
     for (const e of events) {
+      if (isMultiDay(e)) continue; // multi-day events render as spanning bars below
       const key = isoKey(new Date(e.startsAt));
       if (!m.has(key)) m.set(key, []);
       m.get(key)!.push(e);
     }
     return m;
   }, [events]);
+
+  // Multi-day events → continuous bars. Per week, assign lanes (so overlapping
+  // spans stack) and record which segment covers each day, where the true
+  // start/end falls (for rounding), and where to show the title.
+  const { spanByDay, lanesByWeek } = React.useMemo(() => {
+    const multi = events.filter(isMultiDay);
+    const spanByDay = new Map<
+      string,
+      { event: CalendarEvent; lane: number; roundLeft: boolean; roundRight: boolean; label: boolean }[]
+    >();
+    const lanesByWeek = new Map<number, number>();
+    for (let w = 0; w < 6; w++) {
+      const week = days.slice(w * 7, w * 7 + 7);
+      const weekStart = startOfDay(week[0]);
+      const weekEnd = startOfDay(week[6]);
+      const segs = multi
+        .map((e) => {
+          const s = startOfDay(new Date(e.startsAt));
+          const en = startOfDay(new Date(e.endsAt));
+          if (en < weekStart || s > weekEnd) return null;
+          return {
+            event: e,
+            s,
+            en,
+            startCol: Math.max(0, diffDays(weekStart, s)),
+            endCol: Math.min(6, diffDays(weekStart, en)),
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null)
+        .sort((a, b) => a.startCol - b.startCol || b.endCol - a.endCol);
+
+      const laneEnds: number[] = []; // last column occupied in each lane
+      for (const seg of segs) {
+        let lane = laneEnds.findIndex((end) => end < seg.startCol);
+        if (lane === -1) {
+          lane = laneEnds.length;
+          laneEnds.push(seg.endCol);
+        } else {
+          laneEnds[lane] = seg.endCol;
+        }
+        for (let c = seg.startCol; c <= seg.endCol; c++) {
+          const key = isoKey(week[c]);
+          if (!spanByDay.has(key)) spanByDay.set(key, []);
+          spanByDay.get(key)!.push({
+            event: seg.event,
+            lane,
+            roundLeft: c === seg.startCol && sameDay(week[c], seg.s),
+            roundRight: c === seg.endCol && sameDay(week[c], seg.en),
+            label: c === seg.startCol,
+          });
+        }
+      }
+      lanesByWeek.set(w, laneEnds.length);
+    }
+    return { spanByDay, lanesByWeek };
+  }, [events, days]);
 
   function dayIsoAt(point: { x: number; y: number }): string | null {
     let found: string | null = null;
@@ -129,6 +207,8 @@ export function MonthGrid({
         {days.map((d, i) => {
           const iso = isoKey(d);
           const list = eventsByDay.get(iso) ?? [];
+          const spans = spanByDay.get(iso) ?? [];
+          const barReserve = (lanesByWeek.get(Math.floor(i / 7)) ?? 0) * (BAR_H + BAR_GAP);
           const inMonth = d.getMonth() === first.getMonth();
           const isToday = sameDay(d, today);
           const weekend = d.getDay() === 0 || d.getDay() === 6;
@@ -175,7 +255,39 @@ export function MonthGrid({
                   {d.getDate()}
                 </span>
               </div>
-              <div className="flex flex-col gap-1">
+
+              {/* Multi-day events — continuous bars spanning the days they cover,
+                  stacked by lane. Rounded only at the true start/end day; flush
+                  with the neighbour where the event continues. */}
+              {spans.map((b) => (
+                <button
+                  key={b.event.id}
+                  type="button"
+                  title={b.event.title}
+                  onClick={(evt) => {
+                    evt.stopPropagation();
+                    if (draggingRef.current || Date.now() - lastDragEndAt.current < 300) return;
+                    onSelectEvent(b.event);
+                  }}
+                  className={cn(
+                    "absolute z-[1] flex items-center overflow-hidden text-[10px] font-medium leading-none text-white transition-opacity hover:opacity-90",
+                    b.roundLeft && "rounded-l-[var(--r-sm)]",
+                    b.roundRight && "rounded-r-[var(--r-sm)]",
+                  )}
+                  style={{
+                    top: NUM_BAND + b.lane * (BAR_H + BAR_GAP),
+                    left: b.roundLeft ? 4 : 0,
+                    right: b.roundRight ? 4 : 0,
+                    height: BAR_H,
+                    background:
+                      b.event.kind === "blocked" ? "#6B6A64" : statusAccent(b.event.status),
+                  }}
+                >
+                  {b.label && <span className="truncate px-1.5">{b.event.title}</span>}
+                </button>
+              ))}
+
+              <div className="flex flex-col gap-1" style={{ marginTop: barReserve }}>
                 {list.slice(0, 3).map((e) => (
                   <EventChip
                     key={e.id}

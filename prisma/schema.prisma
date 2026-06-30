@@ -144,6 +144,7 @@ model User {
   proposals       Proposal[]        @relation("ProposalOwner")
   activities      ActivityEvent[]
   messages        Message[]
+  conversationParticipants ConversationParticipant[]
   sentInvites     Invite[]          @relation("InviteSender")
   referralCodes   ReferralCode[]
   tradePosts      TradePost[]
@@ -646,12 +647,28 @@ model Conversation {
   id             String   @id @default(cuid())
   organizationId String
   jobId          String?  @unique
+  // DIRECT (1:1) | GROUP (manager-created, multi-person) | JOB (auto-created from a job's crew)
+  kind           String   @default("DIRECT")
   title          String?
   createdAt      DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  job          Job?         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          Job?                      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   messages     Message[]
+  participants ConversationParticipant[]
+}
+
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
 }
 
 model Message {
