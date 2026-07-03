@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { GoogleIcon } from "@/components/auth/GoogleIcon";
@@ -80,9 +81,8 @@ export default function RegisterPage() {
         onChange={(e) => setEmail(e.target.value)}
         required
       />
-      <Input
+      <PasswordInput
         label="Password"
-        type="password"
         autoComplete="new-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}

@@ -15,7 +15,7 @@ export default async function ChangeOrdersPage() {
   const rows: ChangeOrderRow[] = cos.map((c) => ({
     id: c.id,
     jobId: c.jobId,
-    jobTitle: c.job.title,
+    jobTitle: c.job?.title ?? "—",
     title: c.title,
     amount: c.amount,
     status: c.status,

@@ -7,7 +7,6 @@ import {
   CardTitle,
   CardSubtitle,
 } from "@/components/ui/Card";
-import { PreviewTag, PreviewNote } from "./PreviewTag";
 
 function ToggleRow({
   label,
@@ -26,7 +25,7 @@ function ToggleRow({
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-4 py-3 text-left focus-ring"
+      className="flex w-full items-center justify-between gap-4 py-3.5 text-left focus-ring"
     >
       <span className="min-w-0 flex-1">
         <span className="block text-[13.5px] font-medium text-[color:var(--ink)]">
@@ -70,9 +69,7 @@ export function OptionsBlock() {
     <Card>
       <CardHeader>
         <div>
-          <CardTitle className="inline-flex items-center gap-2">
-            Proposal options <PreviewTag />
-          </CardTitle>
+          <CardTitle>Proposal options</CardTitle>
           <CardSubtitle>
             Tweaks that change what the client sees on the final PDF.
           </CardSubtitle>
@@ -104,11 +101,6 @@ export function OptionsBlock() {
           onChange={setShowScope}
         />
       </div>
-      <PreviewNote>
-        Persisting these needs four boolean columns on the Proposal model
-        (`hideBreakdown`, `laborOnly`, `showSignature`, `showScope`). For now
-        they hold their state inside the builder only.
-      </PreviewNote>
     </Card>
   );
 }

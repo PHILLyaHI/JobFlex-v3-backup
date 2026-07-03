@@ -49,6 +49,14 @@ export default async function WorkersPage() {
     },
   });
 
+  // Membership carries the role (INSTALLER/SALES/ESTIMATOR/MANAGER/…); map it in
+  // by user so the unified roster shows each member's role.
+  const memberships = await db.membership.findMany({
+    where: { organizationId: organizationId! },
+    select: { userId: true, role: true },
+  });
+  const roleByUser = new Map(memberships.map((m) => [m.userId, m.role]));
+
   const entries: LedgerEntry[] = workers.map((w, i) => ({
     id: w.id,
     folio: i + 1,
@@ -58,6 +66,8 @@ export default async function WorkersPage() {
     specialties: parseSpec(w.specialties),
     hourlyRate: w.hourlyRate,
     token: w.token,
+    inviteStatus: w.inviteStatus,
+    role: roleByUser.get(w.userId) ?? "INSTALLER",
     joinedISO: w.createdAt.toISOString(),
     activeJobs: w.assignments.map((a) => ({
       id: a.id,

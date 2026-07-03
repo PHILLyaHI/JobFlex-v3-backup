@@ -1,0 +1,79 @@
+<h2>Follow-up queue — three redesign directions</h2>
+<p class="subtitle">All three stay within the editorial system (Pressed Sage accent, hairlines, tabular numerals, restrained rose for "late"). Click the one that feels right. My recommendation: <strong>B — Triage stack</strong>.</p>
+
+<style>
+  .fu-wrap{background:#fff;border:1px solid rgba(17,17,19,.09);border-radius:10px;padding:12px;font-size:11px;color:#1a1a1c}
+  .fu-hd{display:flex;justify-content:space-between;align-items:center;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#9a9a9f;margin-bottom:10px}
+  .fu-due{color:#E11D48;font-variant-numeric:tabular-nums;font-weight:600}
+  .fu-name{font-weight:600;color:#1a1a1c}
+  .fu-sub{color:#8a8a90;font-size:10px}
+  .fu-btn{display:inline-block;background:#1f7a52;color:#fff;border-radius:7px;padding:3px 9px;font-size:10px;font-weight:600}
+  .fu-btn.ghost{background:#fff;color:#5a5a60;border:1px solid rgba(17,17,19,.12)}
+  .fu-chip{display:inline-block;background:#fdeef1;color:#E11D48;border-radius:999px;padding:1px 7px;font-size:9.5px;font-weight:600}
+  .fu-rail{position:relative;padding-left:16px}
+  .fu-rail:before{content:"";position:absolute;left:4px;top:4px;bottom:4px;width:1px;background:rgba(17,17,19,.12)}
+  .fu-dot{position:absolute;left:0;width:9px;height:9px;border-radius:999px;background:#E11D48}
+  .fu-row{position:relative;margin-bottom:12px}
+  table.fu-t{width:100%;border-collapse:collapse}
+  table.fu-t th{text-align:left;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#9a9a9f;padding:4px 6px;border-bottom:1px solid rgba(17,17,19,.1)}
+  table.fu-t td{padding:6px;border-bottom:1px solid rgba(17,17,19,.06);font-size:10px}
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="fu-wrap">
+        <div class="fu-hd"><span>● Overdue</span><span>3 · oldest 5d</span></div>
+        <div class="fu-rail">
+          <div class="fu-row"><span class="fu-dot"></span><div class="fu-name">Acme Co</div><div class="fu-sub">Roof replacement quote</div><div class="fu-due">5 days overdue</div></div>
+          <div class="fu-row"><span class="fu-dot"></span><div class="fu-name">M. Ortiz</div><div class="fu-sub">Deck rebuild</div><div class="fu-due">1 day overdue</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Refined timeline ledger</h3>
+      <p>Keeps today's vertical rail, but tightens type and makes "days overdue" a bold tabular numeral. Calmest; smallest change from what exists.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="fu-wrap">
+        <div class="fu-hd"><span>● Overdue · act on these</span><span>3</span></div>
+        <div style="display:flex;border:1px solid rgba(17,17,19,.09);border-left:3px solid #E11D48;border-radius:8px;padding:8px;margin-bottom:8px;align-items:center;gap:8px">
+          <div style="flex:1"><div class="fu-name">Acme Co <span class="fu-chip">5d late</span></div><div class="fu-sub">Roof replacement quote · $12,400</div></div>
+          <span class="fu-btn">Send</span><span class="fu-btn ghost">···</span>
+        </div>
+        <div style="display:flex;border:1px solid rgba(17,17,19,.09);border-left:3px solid #f0a3b4;border-radius:8px;padding:8px;align-items:center;gap:8px">
+          <div style="flex:1"><div class="fu-name">M. Ortiz <span class="fu-chip">1d late</span></div><div class="fu-sub">Deck rebuild · $6,800</div></div>
+          <span class="fu-btn">Send</span><span class="fu-btn ghost">···</span>
+        </div>
+        <div class="fu-sub" style="margin-top:9px;color:#9a9a9f">▸ 4 scheduled (quiet, collapsed)</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Triage stack  ★ rec</h3>
+      <p>Overdue items become bold action cards: left bar reddens with age, clear "Send" + overflow (Done / Snooze). Scheduled collapses below. Best for "deal with what's late."</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="fu-wrap">
+        <div class="fu-hd"><span>● Overdue</span><span>3</span></div>
+        <table class="fu-t">
+          <tr><th>Due</th><th>Customer</th><th>Age</th><th></th></tr>
+          <tr><td class="fu-due">Jun 1</td><td>Acme Co</td><td class="fu-due">5d</td><td><span class="fu-btn">Send</span></td></tr>
+          <tr><td class="fu-due">Jun 4</td><td>M. Ortiz</td><td class="fu-due">1d</td><td><span class="fu-btn">Send</span></td></tr>
+          <tr><td>Jun 7</td><td>Vela Homes</td><td>—</td><td><span class="fu-btn ghost">Send</span></td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Compact ledger table</h3>
+      <p>Dense, sortable-feeling table (Due · Customer · Age · action). Most scannable when there are many follow-ups; least "designed," most utilitarian.</p>
+    </div>
+  </div>
+
+</div>

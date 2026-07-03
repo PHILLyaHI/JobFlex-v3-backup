@@ -52,7 +52,9 @@ function ensureScript(): Promise<void> {
   return scriptPromise;
 }
 
-export async function loadMapsLibrary<T = unknown>(lib: "maps" | "marker" | "places" | "core"): Promise<T> {
+export async function loadMapsLibrary<T = unknown>(
+  lib: "maps" | "marker" | "places" | "core" | "geocoding",
+): Promise<T> {
   await ensureScript();
   const g = (window as unknown as { google: { maps: { importLibrary: (l: string) => Promise<T> } } }).google;
   return g.maps.importLibrary(lib);

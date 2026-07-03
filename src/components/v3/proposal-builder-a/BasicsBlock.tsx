@@ -2,7 +2,6 @@
 import * as React from "react";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
-import { Select } from "@/components/ui/Select";
 import {
   Card,
   CardHeader,
@@ -11,9 +10,9 @@ import {
 } from "@/components/ui/Card";
 import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
 import { ClientField, type ClientLite } from "./ClientField";
-import { PreviewTag, PreviewNote } from "./PreviewTag";
+import { ProjectField } from "./ProjectField";
 
-export type ProjectLite = { id: string; name: string };
+export type ProjectLite = { id: string; name: string; description?: string | null };
 
 export function BasicsBlock({
   clients,
@@ -26,8 +25,7 @@ export function BasicsBlock({
   const description = useProposalDraftStore((s) => s.draft.description);
   const set = useProposalDraftStore((s) => s.set);
 
-  // Bucket C — inert. The Proposal model has no projectId column, so the
-  // chosen project is held locally and not persisted.
+  // Project selection is local-only — the Proposal model has no projectId column yet.
   const [projectId, setProjectId] = React.useState("");
 
   return (
@@ -45,26 +43,11 @@ export function BasicsBlock({
           onChange={(e) => set({ title: e.target.value })}
           placeholder="Patel Residence — Roof Replacement"
         />
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="quiet-caps">Project</span>
-            <PreviewTag />
-          </div>
-          <div className="mt-1.5">
-            <Select
-              aria-label="Project"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-            >
-              <option value="">— No project —</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
+        <ProjectField
+          projects={projects}
+          value={projectId}
+          onChange={setProjectId}
+        />
       </div>
       <div className="mt-4">
         <ClientField clients={clients} />
@@ -78,11 +61,6 @@ export function BasicsBlock({
           placeholder="One-paragraph overview your client will see first."
         />
       </div>
-      <PreviewNote>
-        Associating a proposal with a project needs a `projectId` column on the
-        Proposal model — not added yet, so the project picker above does not
-        persist.
-      </PreviewNote>
     </Card>
   );
 }

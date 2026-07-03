@@ -75,10 +75,18 @@ export function GanttChart({ jobs, windowStart, windowEnd }: Props) {
         {/* Rows */}
         <div className="space-y-1.5">
           {valid.map((j, i) => {
-            const left =
-              ((j.startsAt.getTime() - start.getTime()) / span) * 100;
-            const width =
-              ((j.endsAt.getTime() - j.startsAt.getTime()) / span) * 100;
+            // Width = duration, with a visible floor. Left = start date,
+            // clamped so the bar always sits fully inside the track (a job
+            // starting near the window end must not overflow the right edge).
+            const width = Math.max(
+              4,
+              ((j.endsAt.getTime() - j.startsAt.getTime()) / span) * 100,
+            );
+            const left = Math.min(
+              ((j.startsAt.getTime() - start.getTime()) / span) * 100,
+              100 - width,
+            );
+            const showLabel = width >= 12;
             const accent = statusAccent(j.status);
             const colorVar =
               accent === "var(--accent)" ? "rgba(31,122,82,1)" : accent;
@@ -105,7 +113,7 @@ export function GanttChart({ jobs, windowStart, windowEnd }: Props) {
                     }}
                     style={{
                       left: `${left}%`,
-                      width: `${Math.max(2, width)}%`,
+                      width: `${width}%`,
                       transformOrigin: "left center",
                       borderLeftColor: colorVar,
                     }}
@@ -116,9 +124,11 @@ export function GanttChart({ jobs, windowStart, windowEnd }: Props) {
                     )}
                     title={`${j.title} · ${shortDate(j.startsAt)} → ${shortDate(j.endsAt)}`}
                   >
-                    <span className="truncate text-[color:var(--ink-soft)] tabular">
-                      {shortDate(j.startsAt)} → {shortDate(j.endsAt)}
-                    </span>
+                    {showLabel && (
+                      <span className="truncate text-[color:var(--ink-soft)] tabular">
+                        {shortDate(j.startsAt)} → {shortDate(j.endsAt)}
+                      </span>
+                    )}
                   </motion.div>
                 </div>
               </div>

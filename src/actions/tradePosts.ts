@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const postInput = z.object({
@@ -11,7 +11,7 @@ const postInput = z.object({
 });
 
 export async function createTradePost(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const data = postInput.parse(raw);
   const post = await db.tradePost.create({
     data: {
@@ -27,7 +27,7 @@ export async function createTradePost(raw: unknown) {
 }
 
 export async function closeTradePost(id: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const post = await db.tradePost.findUnique({ where: { id } });
   if (!post || post.organizationId !== organizationId) throw new Error("Not found");
   if (post.authorId !== user.id) throw new Error("Only the author can close this post.");
@@ -37,7 +37,7 @@ export async function closeTradePost(id: string) {
 }
 
 export async function deleteTradePost(id: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const post = await db.tradePost.findUnique({ where: { id } });
   if (!post || post.organizationId !== organizationId) throw new Error("Not found");
   if (post.authorId !== user.id) throw new Error("Only the author can delete this post.");
@@ -46,7 +46,7 @@ export async function deleteTradePost(id: string) {
 }
 
 export async function replyToTradePost(postId: string, body: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const post = await db.tradePost.findUnique({ where: { id: postId } });
   if (!post || post.organizationId !== organizationId) throw new Error("Not found");
   if (post.status === "CLOSED") throw new Error("This thread is closed.");

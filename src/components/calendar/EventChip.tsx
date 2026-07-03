@@ -16,17 +16,31 @@ export interface CalendarEvent {
   jobId?: string | null;
   notes?: string | null;
   kind?: CalendarEventKind;
+  // Optional context shown in the detail sheet (job events carry these).
+  clientName?: string | null;
+  clientPhone?: string | null;
+  clientAddress?: string | null;
+  scopeOfWork?: string | null;
+  // Display names of the staff assigned to this event (jobs + appointments).
+  assigneeNames?: string[];
 }
 
 interface EventChipProps {
   event: CalendarEvent;
   onClick?: (e: React.MouseEvent) => void;
   onDragEnd?: (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void;
+  onDrag?: (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void;
   draggable?: boolean;
   compact?: boolean;
   style?: React.CSSProperties;
   className?: string;
 }
+
+// Appointments read as a distinct, non-work event type — a blue tint (the one
+// blue in the calendar, mirroring how blocked time owns rose). Shared so the
+// week/month/team chips stay in sync.
+export const APPOINTMENT_BORDER = "#2563eb";
+export const APPOINTMENT_TINT = "rgba(37,99,235,0.08)";
 
 const KIND_ICONS: Record<CalendarEventKind, React.ReactNode> = {
   job: <Hammer className="h-2.5 w-2.5 shrink-0" />,
@@ -38,44 +52,67 @@ export function EventChip({
   event,
   onClick,
   onDragEnd,
+  onDrag,
   draggable,
   compact = true,
   style,
   className,
 }: EventChipProps) {
+  // Suppress the trailing click after a drag so a move doesn't open the sheet.
+  const movedRef = React.useRef(false);
   const time = new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(event.startsAt));
 
   const kind: CalendarEventKind = event.kind ?? "job";
-  const accent = kind === "blocked" ? "#6B6A64" : statusAccent(event.status);
+  const accent = kind === "blocked" ? "var(--rose)" : statusAccent(event.status);
+  const assignees = event.assigneeNames?.length ? event.assigneeNames.join(", ") : null;
 
-  // Per-kind visual treatment for the left accent + chip background.
+  // Per-kind visual treatment for the left accent + chip background. Blocked
+  // time reads as "unavailable" at a glance: rose diagonal stripes (the one
+  // non-sage hue, reserved for danger/unavailable states).
   const kindStyle: React.CSSProperties =
     kind === "appointment"
-      ? { borderLeftColor: accent, borderLeftStyle: "dashed" }
+      ? {
+          borderLeftColor: APPOINTMENT_BORDER,
+          borderLeftStyle: "dashed",
+          backgroundColor: APPOINTMENT_TINT,
+        }
       : kind === "blocked"
         ? {
             borderLeftColor: accent,
             backgroundImage:
-              "repeating-linear-gradient(135deg, rgba(107,106,100,0.05) 0 4px, transparent 4px 8px)",
+              "repeating-linear-gradient(135deg, rgba(225,29,72,0.08) 0 5px, transparent 5px 10px)",
           }
         : { borderLeftColor: accent };
 
   return (
     <motion.button
       type="button"
-      onClick={onClick}
+      onClick={(e) => {
+        if (movedRef.current) {
+          movedRef.current = false;
+          return;
+        }
+        onClick?.(e);
+      }}
       drag={draggable}
       dragSnapToOrigin
       dragElastic={0.15}
+      onPointerDown={() => {
+        movedRef.current = false;
+      }}
+      onDragStart={() => {
+        movedRef.current = true;
+      }}
       whileDrag={{
         scale: 0.98,
         rotate: 0.3,
         boxShadow: "0 20px 48px -24px rgba(17,17,19,0.35)",
         zIndex: 30,
       }}
+      onDrag={onDrag}
       onDragEnd={onDragEnd}
       initial={{ opacity: 0, y: 2 }}
       animate={{ opacity: 1, y: 0 }}
@@ -91,7 +128,7 @@ export function EventChip({
         kind === "blocked" && "text-[color:var(--ink-muted)]",
         className,
       )}
-      title={`${event.title} · ${time}`}
+      title={`${event.title} · ${time}${assignees ? ` · ${assignees}` : ""}`}
     >
       <span
         className={cn(
@@ -106,6 +143,11 @@ export function EventChip({
       </span>
       <span className="text-[color:var(--ink-muted)] tabular shrink-0 text-[10px]">{time}</span>
       <span className="text-[color:var(--ink)] font-medium truncate">{event.title}</span>
+      {assignees && (
+        <span className="ml-auto max-w-[45%] shrink-0 truncate text-[10px] text-[color:var(--ink-muted)]">
+          {assignees}
+        </span>
+      )}
     </motion.button>
   );
 }

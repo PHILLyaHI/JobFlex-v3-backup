@@ -1,15 +1,19 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Save, Trash2, Workflow } from "lucide-react";
+import { Plus, Save, Trash2, Workflow, Sparkles } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
+import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Toggle } from "@/components/settings/Toggle";
 import { toast } from "@/components/ui/Toast";
+import { renderTemplate } from "@/lib/email/render";
+import { PRESET_PREVIEW_VARS } from "@/lib/email/presets";
 import {
   upsertFollowUpRule,
   setFollowUpRuleEnabled,
@@ -25,6 +29,13 @@ export interface RuleRow {
   template: string | null;
 }
 
+export interface TemplateOption {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+}
+
 const TRIGGER_OPTIONS = [
   { value: "SENT", label: "Proposal sent" },
   { value: "VIEWED", label: "Proposal viewed" },
@@ -33,11 +44,13 @@ const TRIGGER_OPTIONS = [
   { value: "DECLINED", label: "Proposal declined" },
 ];
 
-export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
+export function FollowUpRulesEditor({ rules, templates = [] }: { rules: RuleRow[]; templates?: TemplateOption[] }) {
   const router = useRouter();
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = React.useState<RuleRow | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
 
   async function toggle(id: string, next: boolean) {
     setBusy(id);
@@ -51,16 +64,19 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
     }
   }
 
-  async function remove(id: string) {
-    if (!confirm("Delete this rule? Existing scheduled follow-ups will keep running.")) return;
-    setBusy(id);
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setBusy(pendingDelete.id);
     try {
-      await deleteFollowUpRule(id);
+      await deleteFollowUpRule(pendingDelete.id);
       toast.success("Rule deleted");
+      setPendingDelete(null);
       router.refresh();
     } catch (err: any) {
       toast.error("Couldn't delete", err?.message);
     } finally {
+      setDeleting(false);
       setBusy(null);
     }
   }
@@ -106,6 +122,7 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
           <RuleForm
             key="new"
             rule={null}
+            templates={templates}
             onCancel={() => setCreating(false)}
             onSaved={() => {
               setCreating(false);
@@ -129,6 +146,7 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
               {editingId === r.id ? (
                 <RuleForm
                   rule={r}
+                  templates={templates}
                   onCancel={() => setEditingId(null)}
                   onSaved={() => {
                     setEditingId(null);
@@ -140,7 +158,7 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-[color:var(--ink)]">{r.name}</span>
-                      <Badge tone={r.enabled ? "success" : "neutral"} dot>
+                      <Badge tone={r.enabled ? "success" : "neutral"}>
                         {r.enabled ? "active" : "off"}
                       </Badge>
                     </div>
@@ -169,7 +187,7 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
                     <button
                       type="button"
                       disabled={busy === r.id}
-                      onClick={() => remove(r.id)}
+                      onClick={() => setPendingDelete(r)}
                       aria-label="Delete rule"
                       className="h-7 w-7 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
                     >
@@ -182,6 +200,27 @@ export function FollowUpRulesEditor({ rules }: { rules: RuleRow[] }) {
           ))}
         </AnimatePresence>
       </ul>
+
+      <Dialog
+        open={!!pendingDelete}
+        onClose={() => { if (!deleting) setPendingDelete(null); }}
+        title="Delete rule?"
+        description={
+          pendingDelete
+            ? `"${pendingDelete.name}" will be removed. Existing scheduled follow-ups will keep running.`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="danger" loading={deleting} onClick={confirmDelete}>
+              Delete rule
+            </Button>
+          </>
+        }
+      />
     </Card>
   );
 }
@@ -194,10 +233,12 @@ function humanDelay(minutes: number): string {
 
 function RuleForm({
   rule,
+  templates,
   onCancel,
   onSaved,
 }: {
   rule: RuleRow | null;
+  templates: TemplateOption[];
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -209,6 +250,7 @@ function RuleForm({
   const [enabled, setEnabled] = React.useState(rule?.enabled ?? true);
   const [template, setTemplate] = React.useState(rule?.template ?? "");
   const [busy, setBusy] = React.useState(false);
+  const selected = templates.find((t) => t.id === template);
 
   async function save() {
     if (!name.trim()) {
@@ -236,11 +278,10 @@ function RuleForm({
 
   return (
     <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
-      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-      className="overflow-hidden"
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
     >
       <div className="paper-card !shadow-none p-4 my-2 border-l-[3px] border-l-[color:var(--accent)]">
         <div className="grid md:grid-cols-12 gap-3">
@@ -271,14 +312,42 @@ function RuleForm({
               hint="From the trigger event"
             />
           </div>
-          <div className="md:col-span-12">
-            <Input
-              label="Template ID"
+          <div className="md:col-span-12 space-y-2">
+            <Select
+              label="Email template"
               value={template}
               onChange={(e) => setTemplate(e.target.value)}
-              placeholder="(optional) link to a saved EmailTemplate"
-              hint="Leave blank to use the default reminder template."
-            />
+            >
+              <option value="">— None (sends default reminder copy) —</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10.5px] text-[color:var(--ink-muted)]">
+                {selected ? "Preview below — uses demo data at send time." : templates.length === 0 ? "No templates saved yet." : "No template — sends default copy."}
+              </span>
+              <Link
+                href={"/dashboard/settings/email" as never}
+                className="inline-flex items-center gap-1 text-[10.5px] font-medium text-[color:var(--accent-ink)] hover:underline"
+              >
+                <Sparkles className="h-3 w-3" />
+                {templates.length === 0 ? "Create from a preset" : "Manage templates"}
+              </Link>
+            </div>
+            {selected && (
+              <div className="rounded-[var(--r-lg)] hairline bg-white overflow-hidden">
+                <div className="quiet-caps px-4 pt-3 text-[color:var(--ink-muted)]">Preview · demo data</div>
+                <div className="px-4 pb-2 font-display text-[15px] tracking-[-0.01em] text-[color:var(--ink)]">
+                  {renderTemplate(selected.subject, PRESET_PREVIEW_VARS)}
+                </div>
+                <div className="max-h-36 overflow-y-auto border-t border-[color:var(--ink-line)] px-4 py-3 whitespace-pre-wrap text-[12px] leading-relaxed text-[color:var(--ink-soft)]">
+                  {renderTemplate(selected.body, PRESET_PREVIEW_VARS)}
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div className="mt-4 flex items-center justify-between gap-3">

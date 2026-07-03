@@ -240,7 +240,7 @@ export function BrandingFormV3({ org }: { org: Org }) {
               />
             </div>
             <p className="mt-4 text-[11px] text-[color:var(--ink-muted)] leading-relaxed">
-              Keep it to one strong accent. Pressroom Indigo (<code className="font-mono">#1F7A52</code>) is
+              Keep it to one strong accent. Pressed Sage (<code className="font-mono">#1F7A52</code>) is
               the system default — your color overrides it across every customer-facing surface.
             </p>
           </Card>

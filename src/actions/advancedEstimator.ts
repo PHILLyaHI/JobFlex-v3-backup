@@ -2,28 +2,18 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { requireOrg } from "@/lib/orgContext";
+import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 import { ProposalStatus } from "@/lib/prismaEnums";
-
-const lineSchema = z.object({
-  name: z.string(),
-  quantity: z.number(),
-  unitPrice: z.number(),
-  unit: z.string().optional(),
-});
-
-export const estimateSchema = z.object({
-  title: z.string(),
-  scope: z.string(),
-  assumptions: z.array(z.string()).default([]),
-  materials: z.array(lineSchema).default([]),
-  labor: z.array(lineSchema).default([]),
-  estimatedTimelineDays: z.number().optional(),
-});
-
-export type GeneratedEstimate = z.infer<typeof estimateSchema>;
+import { enforcePlanLimit } from "@/lib/limitsEngine";
+import {
+  estimateSchema,
+  lineSchema,
+  promptAnalysisSchema,
+  type GeneratedEstimate,
+  type PromptAnalysis,
+} from "@/lib/estimatorSchema";
 
 const STUB: GeneratedEstimate = {
   title: "Sample Roof Replacement Estimate · AI Disabled",
@@ -55,15 +45,291 @@ interface GenerateInput {
   description: string;
   location?: string;
   sqft?: number;
+  qualityTier?: "budget" | "standard" | "luxury";
+  /** User-edited assumptions fed back in via "Regenerate with AI" — treated as constraints. */
+  assumptions?: string[];
 }
 
+// ── Live retail product search (SerpAPI · Google Shopping) ──────────────────
+interface ProductSearchResult {
+  title: string;
+  price: number;
+  link: string;
+  thumbnail: string;
+  source: string;
+  // Google product id for this listing, when present. Used after the matcher to
+  // resolve a DIRECT merchant link (google_product → online_sellers → direct_link)
+  // so the buyer lands on e.g. Home Depot's product page, not Google's.
+  productId: string | null;
+}
+
+// Deterministic, realistic-looking products for dev/offline mode so the
+// estimator never crashes when SERPAPI_API_KEY is absent or the request fails.
+// Price is derived from the query so the same search is stable across calls.
+function mockProductResults(query: string): ProductSearchResult[] {
+  const stores = ["Home Depot", "Lowe's", "Amazon"];
+  const grades = ["Value", "Pro", "Premium"];
+  const seed = Array.from(query).reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  const slug = encodeURIComponent(query.trim().replace(/\s+/g, "-").toLowerCase());
+  return stores.map((store, i) => {
+    const dollars = 6 + ((seed * (i + 3)) % 240); // ~$6–$246
+    const cents = ((seed + i * 17) % 100) / 100;
+    const price = Math.round((dollars + cents) * 100) / 100;
+    return {
+      title: `${query} (${grades[i]} grade)`,
+      price,
+      link: `https://www.${store.toLowerCase().replace(/[^a-z]/g, "")}.com/s/${slug}`,
+      thumbnail: `https://placehold.co/120x120?text=${slug}`,
+      source: store,
+      // Mock links already point at the store's own search (not Google), so
+      // there is nothing to resolve offline.
+      productId: null,
+    };
+  });
+}
+
+/**
+ * Search live retail prices for a single material via SerpAPI's Google Shopping
+ * engine. Returns the top 3 results mapped to {title, price, link, thumbnail,
+ * source}. Falls back to deterministic mock products when the key is missing or
+ * the request fails (incl. 429 rate limits) so the flow never crashes in dev.
+ */
+async function searchProductPrices(query: string): Promise<ProductSearchResult[]> {
+  const apiKey = process.env.SERPAPI_API_KEY;
+  if (!apiKey) {
+    console.info(`[advancedEstimator] SERPAPI_API_KEY missing — mock results for "${query}"`);
+    return mockProductResults(query);
+  }
+  try {
+    const url = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(
+      query
+    )}&api_key=${apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      // 429 = SerpAPI rate / plan limit. Degrade gracefully rather than throw.
+      console.warn(
+        `[advancedEstimator] SerpAPI ${res.status} for "${query}" — falling back to mock results`
+      );
+      return mockProductResults(query);
+    }
+    const json: any = await res.json();
+    const shopping: any[] = Array.isArray(json?.shopping_results) ? json.shopping_results : [];
+    const mapped: ProductSearchResult[] = shopping.slice(0, 3).map((r) => ({
+      title: String(r?.title ?? query),
+      // SerpAPI exposes `extracted_price` (number) plus a formatted `price`
+      // string (e.g. "$24.99"). Always normalize to a number so a string can
+      // never flow into the matcher's numeric `unitPrice` and break the parse.
+      price:
+        typeof r?.extracted_price === "number"
+          ? r.extracted_price
+          : Number(String(r?.price ?? "").replace(/[^0-9.]/g, "")) || 0,
+      link: String(r?.product_link ?? r?.link ?? ""),
+      thumbnail: String(r?.thumbnail ?? ""),
+      source: String(r?.source ?? "Google Shopping"),
+      productId: extractProductId(r),
+    }));
+    if (mapped.length === 0) {
+      console.warn(`[advancedEstimator] SerpAPI returned 0 products for "${query}" — using mock`);
+      return mockProductResults(query);
+    }
+    console.info(`[advancedEstimator] SerpAPI returned ${mapped.length} products for "${query}"`);
+    return mapped;
+  } catch (err: any) {
+    console.warn(
+      `[advancedEstimator] SerpAPI request failed for "${query}": ${err?.message ?? err} — using mock`
+    );
+    return mockProductResults(query);
+  }
+}
+
+// ── Direct-merchant-link resolution (SerpAPI · Google Product) ───────────────
+// Google Shopping returns a Google *product page* (product_link), not the
+// store's own page. To send buyers straight to e.g. Home Depot, we take the
+// chosen listing's product_id, ask the Google Product engine for that product's
+// online sellers, and use the matching seller's `direct_link`.
+
+// Pull the numeric Google product id from a shopping result — it may be a
+// top-level field or only embedded in a URL (.../shopping/product/{id}).
+function extractProductId(r: any): string | null {
+  const direct = r?.product_id ?? r?.productId;
+  if (direct != null && String(direct).trim()) return String(direct).trim();
+  const haystack = `${r?.product_link ?? ""} ${r?.serpapi_product_api ?? ""} ${r?.link ?? ""}`;
+  const m = haystack.match(/\/shopping\/product\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+// SerpAPI seller links are often Google redirects (google.com/url?q=<merchant>).
+// Unwrap to the embedded merchant URL when present.
+function unwrapGoogleRedirect(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.endsWith("google.com") && u.pathname === "/url") {
+      const q = u.searchParams.get("q") || u.searchParams.get("url");
+      if (q) return q;
+    }
+  } catch {
+    /* not a URL — fall through */
+  }
+  return url;
+}
+
+// Only ever return http(s) — never let a javascript:/data: scheme from the
+// SerpAPI payload reach the stored productUrl (mirrors the read-side guard in
+// MaterialPurchasingList).
+function safeHttp(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const p = new URL(url);
+    return p.protocol === "http:" || p.protocol === "https:" ? p.href : null;
+  } catch {
+    return null;
+  }
+}
+
+// Loose store-name key so "The Home Depot" ~ "Home Depot" ~ "homedepot".
+function normStore(s: string): string {
+  return s.toLowerCase().replace(/^the\s+/, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+interface OnlineSeller {
+  name?: string;
+  link?: string;
+  direct_link?: string;
+}
+
+// Fetch the online sellers for a product id. Returns [] on any failure so
+// resolution degrades to the existing link rather than throwing.
+async function fetchOnlineSellers(productId: string, apiKey: string): Promise<OnlineSeller[]> {
+  const url = `https://serpapi.com/search.json?engine=google_product&product_id=${encodeURIComponent(
+    productId
+  )}&gl=us&hl=en&api_key=${apiKey}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    console.warn(`[advancedEstimator] google_product ${res.status} for product ${productId}`);
+    return [];
+  }
+  const json: any = await res.json();
+  const sellers = json?.sellers_results?.online_sellers;
+  return Array.isArray(sellers) ? sellers : [];
+}
+
+// Return the chosen store's DIRECT product URL from the sellers list. Only
+// upgrades when the SAME store is found, so we never relabel "Buy at Home Depot"
+// with a different merchant's link — a non-match leaves the existing URL intact.
+function pickSellerDirectLink(sellers: OnlineSeller[], store: string | null | undefined): string | null {
+  if (!store) return null;
+  const want = normStore(store);
+  if (!want) return null;
+  const match = sellers.find((s) => {
+    const have = normStore(String(s?.name ?? ""));
+    return have !== "" && (have === want || have.includes(want) || want.includes(have));
+  });
+  if (!match) return null;
+  return safeHttp(match.direct_link) ?? safeHttp(unwrapGoogleRedirect(String(match.link ?? "")));
+}
+
+// Step 1 output — the material planner's bill of materials.
+const plannerItemSchema = z.object({
+  category: z.string(),
+  materialName: z.string(),
+  estimatedQuantity: z.number(),
+  unit: z.string(),
+  searchQuery: z.string(),
+});
+const plannerSchema = z.object({
+  materials: z.array(plannerItemSchema).default([]),
+});
+
+/**
+ * Intake gate — runs BEFORE generation. Corrects the location and judges whether
+ * the brief is descriptive enough for an accurate proposal. When it's thin, it
+ * returns 3-8 targeted clarifying questions (scaled to how under-specified the
+ * brief is). Never blocks: on any failure it returns enoughDetail=true.
+ */
+export async function analyzeEstimatePrompt(input: {
+  projectType: string;
+  description: string;
+  location?: string;
+  sqft?: number;
+}): Promise<{ ok: true; data: PromptAnalysis } | { ok: false; error: string }> {
+  try {
+    const { organizationId } = await requireEstimatorOrManager();
+    const { requireFeatureOrThrow } = await import("@/lib/entitlements");
+    const { getOrgPlanById } = await import("@/lib/orgPlan");
+    const plan = await getOrgPlanById(organizationId);
+    requireFeatureOrThrow(plan, "advanced_estimator");
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? "Upgrade required" };
+  }
+
+  const passthrough: PromptAnalysis = {
+    correctedLocation: input.location?.trim() || null,
+    enoughDetail: true,
+    questions: [],
+  };
+  if (!isOpenAIEnabled()) return { ok: true, data: passthrough };
+
+  try {
+    const client = getOpenAI();
+    const completion = await client.chat.completions.create({
+      model: OPENAI_MODEL,
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content:
+            'You are a senior estimator\'s intake assistant. Return JSON ONLY matching: {"correctedLocation": string|null, "enoughDetail": boolean, "questions": [{"id": string, "question": string, "kind": "select"|"number"|"text", "options"?: string[], "unit"?: string, "placeholder"?: string}]}. ' +
+            "(1) correctedLocation: if a location is given, fix typos and normalize to \"City, ST\" (2-letter US state). If none or clearly not a place, null. " +
+            "(2) Decide if the description carries enough specifics (materials, dimensions/quantities, finish/quality level, site conditions) to produce an ACCURATE, line-itemed proposal for this project type. If yes: enoughDetail=true, questions=[]. If not: enoughDetail=false and write between 3 and 8 clarifying questions that close the BIGGEST gaps first — the thinner the brief, the more questions (hard max 8). " +
+            "Each question: use kind 'select' for a finite choice (give 2-5 concrete realistic options), 'number' for a measurement (set a `unit` like sqft, ft, count), or 'text' for open detail (set a short `placeholder`). Keep them concrete, contractor-answerable in seconds, non-redundant. `id` is a short kebab slug. Return JSON only.",
+        },
+        {
+          role: "user",
+          content: `Project type: ${input.projectType}
+${input.location ? `Location: ${input.location}` : "Location: (none given)"}
+${input.sqft ? `Approx size: ${input.sqft} sqft` : ""}
+Description: ${input.description}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+    const text = completion.choices[0]?.message?.content ?? "{}";
+    const parsed = promptAnalysisSchema.parse(JSON.parse(text));
+    // Clamp to 8, and downgrade an option-less "select" to "text" so the UI never
+    // renders an unanswerable question. If "not enough" but zero questions came
+    // back, treat the brief as enough rather than showing an empty modal.
+    const questions = parsed.questions
+      .slice(0, 8)
+      .map((q) =>
+        q.kind === "select" && (!q.options || q.options.length === 0)
+          ? { ...q, kind: "text" as const }
+          : q,
+      );
+    return {
+      ok: true,
+      data: { ...parsed, questions, enoughDetail: parsed.enoughDetail || questions.length === 0 },
+    };
+  } catch (err: any) {
+    console.warn(`[analyzeEstimatePrompt] failed, proceeding without clarify: ${err?.message ?? err}`);
+    return { ok: true, data: passthrough };
+  }
+}
+
+/**
+ * Two-step AI estimating system with a live pricing loop in the middle:
+ *   1. Material Planner — OpenAI reads the description and lists required
+ *      materials, each with an optimized retail searchQuery.
+ *   2. Search Loop — searchProductPrices() runs in parallel for every query.
+ *   3. Matcher & Estimator — OpenAI picks the best product per qualityTier,
+ *      applies waste factors + package rounding, and prices trade labor.
+ */
 export async function generateAdvancedEstimate(input: GenerateInput): Promise<
   | { ok: true; data: GeneratedEstimate; disabled?: false }
   | { ok: true; data: GeneratedEstimate; disabled: true }
   | { ok: false; error: string }
 > {
   try {
-    const { organizationId } = await requireOrg();
+    const { organizationId } = await requireEstimatorOrManager();
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     const plan = await getOrgPlanById(organizationId);
@@ -75,32 +341,382 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
   if (!isOpenAIEnabled()) {
     return { ok: true, data: { ...STUB, title: `${input.projectType} estimate · AI disabled` }, disabled: true };
   }
+
+  const qualityTier = input.qualityTier ?? "standard";
+  // "Regenerate with AI" feeds the user's edited assumptions in as constraints.
+  const cleanAssumptions = (input.assumptions ?? []).map((a) => a.trim()).filter(Boolean);
+  const assumptionsBlock =
+    cleanAssumptions.length > 0
+      ? `\n\nHonor these user assumptions/constraints as ground truth (adjust materials, quantities, and pricing to fit them):\n${cleanAssumptions
+          .map((a) => `- ${a}`)
+          .join("\n")}`
+      : "";
+
   try {
     const client = getOpenAI();
-    const completion = await client.chat.completions.create({
+
+    // ── Step 1 · Material Planner ───────────────────────────────────────────
+    console.info(
+      `[advancedEstimator] Step 1 (planner) · type="${input.projectType}" tier=${qualityTier}`
+    );
+    const plannerCompletion = await client.chat.completions.create({
       model: OPENAI_MODEL,
-      temperature: 0.5,
+      temperature: 0.2,
       messages: [
         {
           role: "system",
           content:
-            'You are a senior contractor AI estimator. Produce a detailed project estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays: number}. Apply realistic US pricing adjusted for the stated location. Keep 4-7 materials and 2-4 labor items. Return JSON only.',
+            'You are a senior construction material planner. From a project description, output the full bill of materials needed to complete the job. Return JSON only matching: {"materials": [{"category": string, "materialName": string, "estimatedQuantity": number, "unit": string, "searchQuery": string}]}. ' +
+            "Rules: `category` is the trade grouping (e.g. 'Drywall', 'Framing', 'Tile', 'Fixtures'); `estimatedQuantity` is the raw measured quantity needed BEFORE waste or packaging; `unit` is the natural measurement unit (sqft, ln ft, sheet, each, box, roll); `searchQuery` is a highly optimized retail search term a buyer would type into Home Depot, Lowe's, or Amazon to find the exact product, including dimensions and spec (e.g. '1/2 in. moisture resistant greenboard drywall 4x8'). Include 5-12 line items covering both materials and key fixtures. Return JSON only.",
         },
         {
           role: "user",
           content: `Project type: ${input.projectType}
 ${input.location ? `Location: ${input.location}` : ""}
 ${input.sqft ? `Approximate size: ${input.sqft} sqft` : ""}
-Description: ${input.description}`,
+Quality tier: ${qualityTier}
+Description: ${input.description}${assumptionsBlock}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+    const plannerText = plannerCompletion.choices[0]?.message?.content ?? "{}";
+    const planned = plannerSchema.parse(JSON.parse(plannerText));
+    console.info(`[advancedEstimator] Step 1 produced ${planned.materials.length} planned materials`);
+
+    // ── Step 2 · Search Loop (parallel live pricing) ────────────────────────
+    console.info(
+      `[advancedEstimator] Step 2 (search) · ${planned.materials.length} queries in parallel`
+    );
+    const searchResults = await Promise.all(
+      planned.materials.map((m) => searchProductPrices(m.searchQuery))
+    );
+    const research = planned.materials.map((m, i) => ({
+      category: m.category,
+      materialName: m.materialName,
+      estimatedQuantity: m.estimatedQuantity,
+      unit: m.unit,
+      searchQuery: m.searchQuery,
+      options: searchResults[i],
+    }));
+
+    // ── Step 3 · Matcher & Estimator ────────────────────────────────────────
+    console.info(`[advancedEstimator] Step 3 (matcher) · pricing final purchase quantities`);
+    const matcherCompletion = await client.chat.completions.create({
+      model: OPENAI_MODEL,
+      temperature: 0.4,
+      messages: [
+        {
+          role: "system",
+          content:
+            'You are a senior contractor AI estimator and purchasing agent. You receive a planned bill of materials where each item carries up to 3 live retail product "options" from web search. Produce a final, purchase-ready estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit, store, productUrl, imageUrl, dimensions, notes}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays: number}. ' +
+            `For every planned material: (1) choose the single best product option fitting the "${qualityTier}" quality tier — budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end — and use its price as \`unitPrice\`, its source as \`store\`, its link as \`productUrl\`, its thumbnail as \`imageUrl\`, and the product's physical size/spec as \`dimensions\` (e.g. '4x8 sheet', '5 gal', '12x12 in', or omit if not applicable); ` +
+            "(2) apply standard construction waste factors to the estimatedQuantity: 10% for tile and drywall, 15% for lumber and trim, 0% for fixtures and fittings; " +
+            "(3) infer the purchase package from the chosen product (sold by box, roll, sheet, or each) and round the final purchase quantity UP to the nearest whole package so the crew never runs short — set `quantity` to that final purchase count and `unit` to the package unit; " +
+            "(4) ALWAYS set `dimensions` to the chosen product's real size/pack spec (never omit it) — e.g. '4x8 sheet', '12x12 in tile', '5 gal', '16 oz', '50 lb bag', '8 ft board'; if a precise size is unknown, give the sell-unit (e.g. 'per sheet', 'per box'). " +
+            "(5) in `notes`, briefly explain the waste factor and any package rounding (e.g. 'Added 10% waste: 20 -> 22 sqft, rounded to 1 box of 30 sqft'). " +
+            "For labor: estimate 2-4 trade labor line items as DOLLAR amounts based on the final scope; each labor line's quantity x unitPrice must equal its labor dollars (e.g. quantity 1 with unitPrice = crew cost, or hours x hourly rate). Apply realistic US pricing adjusted for the stated location. Return JSON only.",
+        },
+        {
+          role: "user",
+          content: `Project type: ${input.projectType}
+${input.location ? `Location: ${input.location}` : ""}
+${input.sqft ? `Approximate size: ${input.sqft} sqft` : ""}
+Quality tier: ${qualityTier}
+Description: ${input.description}${assumptionsBlock}
+
+Planned materials with live product options (JSON):
+${JSON.stringify(research)}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+    const matcherText = matcherCompletion.choices[0]?.message?.content ?? "{}";
+    const parsed = estimateSchema.parse(JSON.parse(matcherText));
+    console.info(
+      `[advancedEstimator] Step 3 complete · ${parsed.materials.length} materials, ${parsed.labor.length} labor lines`
+    );
+
+    // ── Step 4 · Resolve direct merchant links ──────────────────────────────
+    // The matcher set each productUrl to the chosen listing's GOOGLE product
+    // page. Trade it for the store's OWN product page (e.g. Home Depot) by
+    // looking the listing up via the Google Product engine and taking the
+    // matching seller's direct_link. One extra call per material — parallelized,
+    // de-duped by product id, key-gated, and fully best-effort: any miss leaves
+    // the existing link untouched so the estimate never regresses or throws.
+    const serpKey = process.env.SERPAPI_API_KEY;
+    if (serpKey) {
+      // Index the live options so we can recover a chosen material's product id.
+      // The matcher echoes the option's link as productUrl and its thumbnail as
+      // imageUrl, so either one maps a material back to its source listing.
+      const optByLink = new Map<string, ProductSearchResult>();
+      const optByThumb = new Map<string, ProductSearchResult>();
+      for (const o of searchResults.flat()) {
+        if (o.link) optByLink.set(o.link, o);
+        if (o.thumbnail) optByThumb.set(o.thumbnail, o);
+      }
+      const sellerCache = new Map<string, Promise<OnlineSeller[]>>();
+      let upgraded = 0;
+      await Promise.all(
+        parsed.materials.map(async (mat) => {
+          const opt =
+            (mat.productUrl && optByLink.get(mat.productUrl)) ||
+            (mat.imageUrl && optByThumb.get(mat.imageUrl)) ||
+            null;
+          if (!opt?.productId) return;
+          try {
+            let pending = sellerCache.get(opt.productId);
+            if (!pending) {
+              pending = fetchOnlineSellers(opt.productId, serpKey);
+              sellerCache.set(opt.productId, pending);
+            }
+            const direct = pickSellerDirectLink(await pending, mat.store);
+            if (direct) {
+              mat.productUrl = direct;
+              upgraded += 1;
+            }
+          } catch (err: any) {
+            console.warn(
+              `[advancedEstimator] direct-link resolve failed for "${mat.name}": ${err?.message ?? err}`
+            );
+          }
+        })
+      );
+      console.info(
+        `[advancedEstimator] Step 4 (direct links) · upgraded ${upgraded}/${parsed.materials.length} to merchant URLs`
+      );
+    }
+
+    return { ok: true, data: parsed };
+  } catch (err: any) {
+    console.error(`[advancedEstimator] generation failed: ${err?.message ?? err}`);
+    return { ok: false, error: err?.message ?? "AI generation failed" };
+  }
+}
+
+// ── Incremental refine ──────────────────────────────────────────────────────
+// The "Apply changes" path. Unlike generateAdvancedEstimate, this does NOT
+// re-plan or re-fetch live prices — it makes a single surgical pass that edits
+// the EXISTING estimate per the contractor's request, preserving every
+// untouched line, price, and product link. Same costing rules, applied only
+// where asked.
+const refineInputSchema = z.object({
+  projectType: z.string(),
+  description: z.string().default(""),
+  location: z.string().optional(),
+  qualityTier: z.enum(["budget", "standard", "luxury"]).optional(),
+  instructions: z.string().default(""),
+  assumptions: z.array(z.string()).default([]),
+  current: estimateSchema,
+});
+
+export async function refineAdvancedEstimate(raw: unknown): Promise<
+  | { ok: true; data: GeneratedEstimate; disabled?: boolean }
+  | { ok: false; error: string }
+> {
+  let input: z.infer<typeof refineInputSchema>;
+  try {
+    input = refineInputSchema.parse(raw);
+  } catch {
+    return { ok: false, error: "Invalid estimate payload" };
+  }
+
+  try {
+    const { organizationId } = await requireEstimatorOrManager();
+    const { requireFeatureOrThrow } = await import("@/lib/entitlements");
+    const { getOrgPlanById } = await import("@/lib/orgPlan");
+    const plan = await getOrgPlanById(organizationId);
+    requireFeatureOrThrow(plan, "advanced_estimator");
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? "Upgrade required" };
+  }
+
+  const cleanAssumptions = input.assumptions.map((a) => a.trim()).filter(Boolean);
+  const instructions = input.instructions.trim();
+
+  // No AI configured — echo the current estimate back (folding in any edited
+  // assumptions) so the UI stays consistent in demo mode.
+  if (!isOpenAIEnabled()) {
+    return {
+      ok: true,
+      data: {
+        ...input.current,
+        assumptions: cleanAssumptions.length ? cleanAssumptions : input.current.assumptions,
+      },
+      disabled: true,
+    };
+  }
+
+  const qualityTier = input.qualityTier ?? "standard";
+  try {
+    const client = getOpenAI();
+    console.info(
+      `[advancedEstimator] refine · "${instructions.slice(0, 80)}" · ${input.current.materials.length} materials`
+    );
+    const completion = await client.chat.completions.create({
+      model: OPENAI_MODEL,
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content:
+            'You are a senior contractor AI estimator EDITING an existing estimate. You receive the current estimate as JSON plus a plain-English change request from the contractor. Apply ONLY the requested changes and return the COMPLETE updated estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit, store, productUrl, imageUrl, dimensions, notes}], labor: [{name, quantity, unitPrice, unit, notes}], estimatedTimelineDays: number}. ' +
+            "Rules: (1) Preserve every line, price, store, productUrl, imageUrl, and dimensions that the request does NOT touch — copy them through unchanged; do not re-price or re-shop untouched items. " +
+            `(2) Keep the same costing formula as the original: quality tier "${qualityTier}", waste factors (10% tile/drywall, 15% lumber/trim, 0% fixtures), and round purchase quantities UP to whole packages. EXCEPT if the instructions or assumptions explicitly ask for a different quality/grade for specific items, adjust those items. ` +
+            "(3) Keep `dimensions` set to each product's real size/pack spec. " +
+            "(4) If you add a new material, OR if you upgrade/change a material's specification based on the instructions or assumptions, you MUST leave its store, productUrl, and imageUrl empty (or null) so it will be re-shopped live. Do not reuse the old link for a changed material. " +
+            "(5) Treat the contractor's assumptions as ground truth. If an assumption conflicts with the current estimate (e.g. requires a different material, quantity, or scope), you MUST update the estimate to match. Return JSON only.",
+        },
+        {
+          role: "user",
+          content: `Project type: ${input.projectType}
+${input.location ? `Location: ${input.location}` : ""}
+Quality tier: ${qualityTier}
+
+Change request from the contractor:
+${instructions || "(no free-text request — apply the updated assumptions below)"}
+
+${
+  cleanAssumptions.length
+    ? `Assumptions to honor:\n${cleanAssumptions.map((a) => `- ${a}`).join("\n")}\n\n`
+    : ""
+}Current estimate (JSON) — edit this and return the full updated version:
+${JSON.stringify(input.current)}`,
         },
       ],
       response_format: { type: "json_object" },
     });
     const text = completion.choices[0]?.message?.content ?? "{}";
     const parsed = estimateSchema.parse(JSON.parse(text));
+
+    // ── Re-shop changed lines ────────────────────────────────────────────────
+    // The edit can introduce or alter a material the model has no live product
+    // for: it returns that line WITHOUT a productUrl (or keeps a stale link from
+    // the old product). Such lines carry only an AI-guessed price and drop out of
+    // the shoppable Materials request (which requires a productUrl). Detect them
+    // (no link, OR a name the original estimate didn't have) and run live pricing
+    // for JUST those, then let the AI match each to a real product so the edited
+    // line becomes genuinely priced, linked, and shoppable.
+    const originalNames = new Set(
+      input.current.materials.map((m) => m.name.trim().toLowerCase())
+    );
+    const toPrice = parsed.materials
+      .map((m, idx) => ({ m, idx }))
+      .filter(({ m }) => !m.productUrl || !originalNames.has(m.name.trim().toLowerCase()));
+
+    if (toPrice.length > 0) {
+      try {
+        console.info(`[advancedEstimator] refine · re-shopping ${toPrice.length} changed line(s)`);
+        // One retail query per changed line, from its name + size.
+        const queries = toPrice.map(({ m }) =>
+          [m.name, m.dimensions].filter(Boolean).join(" ").trim()
+        );
+        const searchResults = await Promise.all(queries.map((q) => searchProductPrices(q)));
+        const research = toPrice.map(({ m }, i) => ({
+          name: m.name,
+          quantity: m.quantity,
+          unit: m.unit ?? null,
+          dimensions: m.dimensions ?? null,
+          options: searchResults[i],
+        }));
+
+        // Scoped matcher — picks a real product per line. Keeps the edit's quantity
+        // (we don't have the raw measurement to re-derive packaging here); only the
+        // price, store, link, image, dimensions, and unit come from the product.
+        const reMatchSchema = z.object({ materials: z.array(lineSchema).default([]) });
+        const matchCompletion = await client.chat.completions.create({
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          messages: [
+            {
+              role: "system",
+              content:
+                'You are a senior contractor purchasing agent. You receive specific material lines, each with up to 3 live retail product "options" from web search. Return JSON only: {"materials": [{name, quantity, unitPrice, unit, store, productUrl, imageUrl, dimensions, notes}]}. ' +
+                `For EACH line: (1) keep \`name\` and \`quantity\` EXACTLY as given — do NOT recompute the quantity; (2) choose the single best option fitting the contractor's request. Consider any change requests or assumptions provided. If no specific grade is requested for the item, default to the "${qualityTier}" quality tier (budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end). Set unitPrice to its price, store to its source, productUrl to its link, imageUrl to its thumbnail, dimensions to its real size/pack spec, and unit to its sell-unit (e.g. bundle, roll, sheet, each); ` +
+                "(3) in `notes`, one short line noting it was priced to the chosen product. Return ONE line per input, in the SAME order. Return JSON only.",
+            },
+            {
+              role: "user",
+              content: `Quality tier: ${qualityTier}
+${instructions ? `Change request: ${instructions}` : ""}
+${cleanAssumptions.length ? `Assumptions: ${cleanAssumptions.join("; ")}` : ""}
+
+Lines to price, each with live product options (JSON):
+${JSON.stringify(research)}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+        });
+        const matched = reMatchSchema.parse(
+          JSON.parse(matchCompletion.choices[0]?.message?.content ?? "{}")
+        );
+
+        // Merge re-priced lines back. Prefer index alignment (one line per input,
+        // same order); fall back to matching by name.
+        if (matched.materials.length === toPrice.length) {
+          toPrice.forEach(({ idx }, i) => {
+            parsed.materials[idx] = matched.materials[i];
+          });
+        } else {
+          const byName = new Map(
+            matched.materials.map((pm) => [pm.name.trim().toLowerCase(), pm])
+          );
+          toPrice.forEach(({ m, idx }) => {
+            const pm = byName.get(m.name.trim().toLowerCase());
+            if (pm) parsed.materials[idx] = pm;
+          });
+        }
+
+        // Trade the Google product page for the store's own page (parity with
+        // generate's Step 4). Best-effort; a miss leaves the SerpAPI link intact.
+        const serpKey = process.env.SERPAPI_API_KEY;
+        if (serpKey) {
+          const optByLink = new Map<string, ProductSearchResult>();
+          const optByThumb = new Map<string, ProductSearchResult>();
+          for (const o of searchResults.flat()) {
+            if (o.link) optByLink.set(o.link, o);
+            if (o.thumbnail) optByThumb.set(o.thumbnail, o);
+          }
+          const sellerCache = new Map<string, Promise<OnlineSeller[]>>();
+          await Promise.all(
+            toPrice.map(async ({ idx }) => {
+              const mat = parsed.materials[idx];
+              const opt =
+                (mat.productUrl && optByLink.get(mat.productUrl)) ||
+                (mat.imageUrl && optByThumb.get(mat.imageUrl)) ||
+                null;
+              if (!opt?.productId) return;
+              try {
+                let pending = sellerCache.get(opt.productId);
+                if (!pending) {
+                  pending = fetchOnlineSellers(opt.productId, serpKey);
+                  sellerCache.set(opt.productId, pending);
+                }
+                const direct = pickSellerDirectLink(await pending, mat.store);
+                if (direct) mat.productUrl = direct;
+              } catch {
+                /* leave the existing link */
+              }
+            })
+          );
+        }
+        console.info(
+          `[advancedEstimator] refine · re-priced ${matched.materials.length} line(s) with live products`
+        );
+      } catch (err: any) {
+        // Best-effort — a re-shop failure leaves the AI-estimated lines in place
+        // rather than failing the whole refine.
+        console.warn(`[advancedEstimator] refine re-shop failed: ${err?.message ?? err}`);
+      }
+    }
+
+    console.info(
+      `[advancedEstimator] refine complete · ${parsed.materials.length} materials, ${parsed.labor.length} labor`
+    );
     return { ok: true, data: parsed };
   } catch (err: any) {
-    return { ok: false, error: err?.message ?? "AI generation failed" };
+    console.error(`[advancedEstimator] refine failed: ${err?.message ?? err}`);
+    return { ok: false, error: err?.message ?? "Couldn't apply changes" };
   }
 }
 
@@ -110,7 +726,8 @@ export async function saveEstimate(raw: {
   location?: string | null;
   data: GeneratedEstimate;
 }) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireEstimatorOrManager();
+  await enforcePlanLimit(organizationId, "estimatorUses");
   const total =
     raw.data.materials.reduce((a, l) => a + l.quantity * l.unitPrice, 0) +
     raw.data.labor.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
@@ -142,23 +759,51 @@ const convertInput = z.object({
   materials: z.array(lineSchema).default([]),
   labor: z.array(lineSchema).default([]),
   assumptions: z.array(z.string()).default([]),
+  // Pre-links the proposal to a client when converted from a client's page.
+  clientId: z.string().optional().nullable(),
 });
 
 export async function convertEstimateToProposal(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const data = convertInput.parse(raw);
 
+  // Never trust a client id from the browser — it must belong to this org.
+  const clientId = data.clientId
+    ? (
+        await db.client.findFirst({
+          where: { id: data.clientId, organizationId },
+          select: { id: true },
+        })
+      )?.id ?? null
+    : null;
+
   const lines = [
-    ...data.materials.map((l) => ({
-      name: l.name,
-      description: l.unit ? `Measured in ${l.unit}` : null,
-      measurementType: l.unit === "sqft" ? "SQFT" : l.unit === "ln ft" ? "LINEAR_FT" : l.unit === "hour" ? "HOUR" : "UNIT",
-      quantity: l.quantity,
-      unitPrice: l.unitPrice,
-      materialCost: l.unitPrice,
-      laborCost: 0,
-      total: l.quantity * l.unitPrice,
-    })),
+    ...data.materials.map((l) => {
+      // Fold the product size into the line name so the proposal reads e.g.
+      // "Asphalt shingles (4x8 sheet)" — the buyer sees how big each unit is,
+      // not just the material name. Skip if the name already states the size.
+      const size = l.dimensions?.trim() || (l.unit?.trim() ? `per ${l.unit.trim()}` : "");
+      const name =
+        size && !l.name.toLowerCase().includes(size.toLowerCase())
+          ? `${l.name} (${size})`
+          : l.name;
+      return {
+        name,
+        description: l.unit ? `Measured in ${l.unit}` : null,
+        measurementType: l.unit === "sqft" ? "SQFT" : l.unit === "ln ft" ? "LINEAR_FT" : l.unit === "hour" ? "HOUR" : "UNIT",
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        materialCost: l.unitPrice,
+        laborCost: 0,
+        total: l.quantity * l.unitPrice,
+        // Carry the live-pricing product data so the Materials Request view can
+        // render a shoppable line. Empty strings normalize to null.
+        store: l.store?.trim() || null,
+        productUrl: l.productUrl?.trim() || null,
+        imageUrl: l.imageUrl?.trim() || null,
+        dimensions: l.dimensions?.trim() || null,
+      };
+    }),
     ...data.labor.map((l) => ({
       name: l.name,
       description: l.unit ? `Measured in ${l.unit}` : null,
@@ -168,25 +813,27 @@ export async function convertEstimateToProposal(raw: unknown) {
       materialCost: 0,
       laborCost: l.unitPrice,
       total: l.quantity * l.unitPrice,
+      store: null,
+      productUrl: null,
+      imageUrl: null,
+      dimensions: null,
     })),
   ];
 
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
 
-  const scopeWithAssumptions = [
-    data.scope ?? "",
-    data.assumptions.length > 0 ? "\n\nAssumptions:\n" + data.assumptions.map((a) => `• ${a}`).join("\n") : "",
-  ]
-    .join("")
-    .trim();
+  // Scope only — assumptions stay on the estimate (AiEstimate), never baked into
+  // the proposal's scope, so the preview / calendar / job detail stay clean.
+  const scope = (data.scope ?? "").trim();
 
   const proposal = await db.proposal.create({
     data: {
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,
+      clientId,
       title: data.title,
-      scopeOfWork: scopeWithAssumptions || null,
+      scopeOfWork: scope || null,
       status: ProposalStatus.DRAFT,
       subtotal,
       taxRate: 0,

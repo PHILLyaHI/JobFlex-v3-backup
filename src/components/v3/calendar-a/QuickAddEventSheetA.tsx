@@ -1,39 +1,40 @@
 "use client";
-// V3 calendar-a — quick-add sheet redesign (v2).
+// V3 calendar-a — quick-add sheet redesign (v3).
 //
-// Major changes vs. the previous iteration:
-//  - Starts + Ends instead of starts + duration. Events can now span multiple
-//    days. A simple click on an empty slot pre-fills ends = start + 30 min;
-//    a click-and-drag in the week grid pre-fills the dragged span.
-//  - Both date fields use a custom DateTimePicker so the trigger icon stays
-//    anchored inside the field, the entire field opens the picker, and the
-//    calendar popover matches our design language instead of the native
-//    browser surface.
+// Major changes vs. v2:
+//  - Linked-record picking moved to LinkedEntityPicker: one search field that
+//    crosses sections, with quiet tabs. Job events link a Job OR a Proposal
+//    (scheduling a proposal get-or-creates its Job server-side, so it shows up
+//    in Jobs and under that client). Appointments link a Lead, Client, or
+//    Proposal — at most one.
+//  - Worker toggle badges replaced by WorkerMultiPicker (searchable roster
+//    popover). Appointments can staff sales/workers the same way.
+//  - Availability dots: while the sheet is open we ask the server who is busy
+//    in the chosen window and thread the conflicts into the picker.
 //
-// Other behaviour kept from v1:
-//  - Title above the linked-job / linked-lead picker.
-//  - Latest-2 + search-reveal pickers.
-//  - Client email + location encoded into notes.
+// Behaviour kept from v2: starts + ends (multi-day spans), custom
+// DateTimePicker, client email + location encoded into notes.
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, X } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
 import { toast } from "@/components/ui/Toast";
-import { cn } from "@/lib/cn";
 import { longDate } from "@/lib/format";
 import { createJobEvent } from "@/actions/jobs";
 import { assignWorker } from "@/actions/workers";
 import { createAppointment } from "@/actions/appointments";
 import { createBlockedTime } from "@/actions/blockedTime";
+import { getWorkerConflicts } from "@/actions/availability";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { EventTypeTabs, type CalendarEventKind } from "@/components/calendar/EventTypeTabs";
+import { Toggle } from "@/components/settings/Toggle";
 import { DateTimePicker } from "./DateTimePicker";
+import { LinkedEntityPicker, type EntityOption } from "./LinkedEntityPicker";
+import { WorkerMultiPicker, type WorkerConflict } from "./WorkerMultiPicker";
 
 export interface QuickAddJobOption {
   id: string;
@@ -51,6 +52,20 @@ export interface QuickAddLeadOption {
   status: string;
 }
 
+export interface QuickAddProposalOption {
+  id: string;
+  title: string;
+  status: string;
+  clientName: string | null;
+  hasJob: boolean;
+}
+
+export interface QuickAddClientOption {
+  id: string;
+  name: string;
+  email: string | null;
+}
+
 export interface QuickAddWorkerOption {
   id: string;
   name: string;
@@ -62,17 +77,21 @@ interface Props {
   onClose: () => void;
   jobs: QuickAddJobOption[];
   leads: QuickAddLeadOption[];
+  proposals: QuickAddProposalOption[];
+  clients: QuickAddClientOption[];
   workers: QuickAddWorkerOption[];
   defaultStart: Date | null;
   defaultEnd: Date | null;
   defaultKind?: CalendarEventKind;
+  // Which event types this user may create. Managers get job + appointment;
+  // sales/estimator get appointment only; installers get job only. "Blocked"
+  // is never offered here (its workflow is paused).
+  createKinds?: CalendarEventKind[];
 }
 
 const BLOCKED_REASONS = ["Vacation", "Sick day", "Holiday", "Office hours", "Other"];
-
-const LATEST_VISIBLE = 2;
-const SEARCH_LIMIT = 8;
 const DEFAULT_DURATION_MIN = 30;
+const ALL_KINDS: CalendarEventKind[] = ["job", "appointment", "blocked"];
 
 function buildNotes(parts: Array<{ label: string; value: string }>, userNotes: string) {
   const structured = parts
@@ -89,12 +108,27 @@ export function QuickAddEventSheetA({
   onClose,
   jobs,
   leads,
+  proposals,
+  clients,
   workers,
   defaultStart,
   defaultEnd,
   defaultKind = "job",
+  createKinds = ["job", "appointment"],
 }: Props) {
   const router = useRouter();
+
+  // Tabs to hide = everything not creatable by this user. Coerce a default/
+  // active kind that isn't allowed to the first allowed one.
+  const hiddenKinds = React.useMemo(
+    () => ALL_KINDS.filter((k) => !createKinds.includes(k)),
+    [createKinds],
+  );
+  const coerceKind = React.useCallback(
+    (k: CalendarEventKind): CalendarEventKind =>
+      createKinds.includes(k) ? k : createKinds[0] ?? "appointment",
+    [createKinds],
+  );
 
   const initialStart = React.useMemo<Date>(() => {
     if (defaultStart) return new Date(defaultStart);
@@ -108,48 +142,72 @@ export function QuickAddEventSheetA({
     return new Date(initialStart.getTime() + DEFAULT_DURATION_MIN * 60_000);
   }, [defaultEnd, initialStart]);
 
-  const [kind, setKind] = React.useState<CalendarEventKind>(defaultKind);
+  const [kind, setKind] = React.useState<CalendarEventKind>(coerceKind(defaultKind));
   const [startsAt, setStartsAt] = React.useState<Date>(initialStart);
   const [endsAt, setEndsAt] = React.useState<Date>(initialEnd);
   const [title, setTitle] = React.useState("");
   const [notes, setNotes] = React.useState("");
 
-  const [jobId, setJobId] = React.useState<string>("");
-  const [jobQuery, setJobQuery] = React.useState("");
-  const [jobSearchOpen, setJobSearchOpen] = React.useState(false);
+  // Job event: linked Job or Proposal (one), plus crew.
+  const [jobLink, setJobLink] = React.useState<EntityOption | null>(null);
   const [selectedWorkerIds, setSelectedWorkerIds] = React.useState<string[]>([]);
   const [jobClientEmail, setJobClientEmail] = React.useState("");
   const [jobLocation, setJobLocation] = React.useState("");
 
-  const [leadId, setLeadId] = React.useState<string>("");
-  const [leadQuery, setLeadQuery] = React.useState("");
-  const [leadSearchOpen, setLeadSearchOpen] = React.useState(false);
+  // Appointment: linked Lead, Client, or Proposal (one), plus staff.
+  const [aptLink, setAptLink] = React.useState<EntityOption | null>(null);
+  const [aptWorkerIds, setAptWorkerIds] = React.useState<string[]>([]);
   const [aptClientName, setAptClientName] = React.useState("");
   const [aptLocation, setAptLocation] = React.useState("");
 
   const [blockReason, setBlockReason] = React.useState("Vacation");
+  // Whole-day: normalizes the span to cover the full day(s) on submit. For
+  // blocked time the month view then shows a full-cell rose wash; for job
+  // events / appointments it marks the day rather than a timed slot.
+  const [allDay, setAllDay] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+
+  // Who's busy in the chosen window — feeds the picker availability dots.
+  const [conflicts, setConflicts] = React.useState<Record<string, WorkerConflict>>({});
 
   React.useEffect(() => {
     if (!open) return;
-    setKind(defaultKind);
+    setKind(coerceKind(defaultKind));
     setStartsAt(initialStart);
     setEndsAt(initialEnd);
-    setJobId("");
-    setJobQuery("");
-    setJobSearchOpen(false);
-    setLeadId("");
-    setLeadQuery("");
-    setLeadSearchOpen(false);
+    setJobLink(null);
+    setAptLink(null);
     setSelectedWorkerIds([]);
+    setAptWorkerIds([]);
     setTitle("");
     setNotes("");
     setBlockReason("Vacation");
+    setAllDay(false);
     setJobClientEmail("");
     setJobLocation("");
     setAptClientName("");
     setAptLocation("");
+    // coerceKind depends on createKinds (a fresh array each render); including
+    // it would re-run this reset every render. defaultKind is the real trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialStart, initialEnd, defaultKind]);
+
+  React.useEffect(() => {
+    if (!open || workers.length === 0) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const map = await getWorkerConflicts(startsAt.toISOString(), endsAt.toISOString());
+        if (!cancelled) setConflicts(map);
+      } catch {
+        if (!cancelled) setConflicts({});
+      }
+    }, 250); // debounce time-field scrubbing
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [open, startsAt, endsAt, workers.length]);
 
   // When user moves Starts past Ends, push Ends forward by the previous span
   // (or default to 30 min). When user pulls Ends before Starts, clamp to
@@ -172,46 +230,100 @@ export function QuickAddEventSheetA({
     setEndsAt(next);
   }
 
-  const filteredJobs = React.useMemo(() => {
-    const q = jobQuery.trim().toLowerCase();
-    if (!q) return jobs.slice(0, SEARCH_LIMIT);
-    return jobs
-      .filter(
-        (j) =>
-          j.title.toLowerCase().includes(q) ||
-          (j.clientName ?? "").toLowerCase().includes(q),
-      )
-      .slice(0, SEARCH_LIMIT);
-  }, [jobs, jobQuery]);
+  const jobOptions = React.useMemo<EntityOption[]>(
+    () => [
+      ...jobs.map((j) => ({
+        id: j.id,
+        kind: "job",
+        primary: j.title,
+        secondary: j.clientName,
+        badge: { label: j.status.toLowerCase(), tone: "neutral" as const },
+      })),
+      // Proposals that already have a job schedule through the job itself.
+      ...proposals
+        .filter((p) => !p.hasJob)
+        .map((p) => ({
+          id: p.id,
+          kind: "proposal",
+          primary: p.title,
+          secondary: p.clientName,
+          badge: { label: p.status.toLowerCase(), tone: "accent" as const },
+        })),
+    ],
+    [jobs, proposals],
+  );
 
-  const latestJobs = React.useMemo(() => jobs.slice(0, LATEST_VISIBLE), [jobs]);
+  const aptOptions = React.useMemo<EntityOption[]>(
+    () => [
+      ...leads.map((l) => ({
+        id: l.id,
+        kind: "lead",
+        primary: l.name,
+        secondary: l.projectType ?? l.email,
+        badge: l.aiCategory ? { label: l.aiCategory, tone: "accent" as const } : null,
+      })),
+      ...clients.map((c) => ({
+        id: c.id,
+        kind: "client",
+        primary: c.name,
+        secondary: c.email,
+      })),
+      ...proposals.map((p) => ({
+        id: p.id,
+        kind: "proposal",
+        primary: p.title,
+        secondary: p.clientName,
+        badge: { label: p.status.toLowerCase(), tone: "neutral" as const },
+      })),
+    ],
+    [leads, clients, proposals],
+  );
 
-  const filteredLeads = React.useMemo(() => {
-    const q = leadQuery.trim().toLowerCase();
-    if (!q) return leads.slice(0, SEARCH_LIMIT);
-    return leads
-      .filter(
-        (l) =>
-          l.name.toLowerCase().includes(q) ||
-          (l.email ?? "").toLowerCase().includes(q) ||
-          (l.projectType ?? "").toLowerCase().includes(q),
-      )
-      .slice(0, SEARCH_LIMIT);
-  }, [leads, leadQuery]);
+  function pickJobLink(o: EntityOption | null) {
+    setJobLink(o);
+    if (o && !title) setTitle(o.primary);
+  }
 
-  const latestLeads = React.useMemo(() => leads.slice(0, LATEST_VISIBLE), [leads]);
-
-  const selectedJob = jobs.find((j) => j.id === jobId);
-  const selectedLead = leads.find((l) => l.id === leadId);
+  function pickAptLink(o: EntityOption | null) {
+    setAptLink(o);
+    if (!o) return;
+    if (!title) {
+      if (o.kind === "lead") {
+        const lead = leads.find((l) => l.id === o.id);
+        setTitle(
+          lead?.projectType ? `${lead.projectType} · ${lead.name}` : `Appointment · ${o.primary}`,
+        );
+      } else {
+        setTitle(`Appointment · ${o.primary}`);
+      }
+    }
+    if (!aptClientName) setAptClientName(o.kind === "proposal" ? o.secondary ?? "" : o.primary);
+  }
 
   async function submit() {
     setBusy(true);
+    // Pre-flight the matching plan limit (job event → calendarEvents,
+    // appointment → calendarCards; blocked time is not metered).
+    const limitKey = kind === "job" ? "calendarEvents" : kind === "appointment" ? "calendarCards" : null;
+    if (limitKey && !(await ensureWithinLimit(limitKey))) {
+      setBusy(false);
+      return;
+    }
     try {
-      const start = new Date(startsAt);
-      const end = new Date(endsAt);
+      let start = new Date(startsAt);
+      let end = new Date(endsAt);
+      // All day → cover the full day(s): the picked times only choose the span.
+      // End at 23:59:59.999 (not next-midnight) so a single all-day item stays
+      // one day and the month/team full-day detectors still recognize it.
+      if (allDay) {
+        start = new Date(start);
+        start.setHours(0, 0, 0, 0);
+        end = new Date(end < start ? start : end);
+        end.setHours(23, 59, 59, 999);
+      }
 
       if (kind === "job") {
-        const finalTitle = title.trim() || selectedJob?.title || "Event";
+        const finalTitle = title.trim() || jobLink?.primary || "Event";
         const finalNotes = buildNotes(
           [
             { label: "Client email", value: jobClientEmail },
@@ -219,29 +331,30 @@ export function QuickAddEventSheetA({
           ],
           notes,
         );
-        await createJobEvent({
+        const res = await createJobEvent({
           title: finalTitle,
-          jobId: jobId || null,
+          jobId: jobLink?.kind === "job" ? jobLink.id : null,
+          proposalId: jobLink?.kind === "proposal" ? jobLink.id : null,
           startsAt: start,
           endsAt: end,
           notes: finalNotes,
         });
-        if (jobId && selectedWorkerIds.length > 0) {
+        // The action returns the job it linked or created (proposal path), so
+        // crew assignment works for both.
+        if (res.jobId && selectedWorkerIds.length > 0) {
           for (const wId of selectedWorkerIds) {
             try {
-              await assignWorker(jobId, wId);
+              await assignWorker(res.jobId, wId);
             } catch (err) {
               console.warn("[QuickAddA] assign failed:", err);
             }
           }
         }
-        toast.success("Event created");
+        toast.success(
+          jobLink?.kind === "proposal" ? "Event created — job added to Jobs" : "Event created",
+        );
       } else if (kind === "appointment") {
-        const finalTitle = title.trim()
-          ? title.trim()
-          : selectedLead?.name
-            ? `${selectedLead?.projectType ?? "Appointment"} · ${selectedLead?.name ?? ""}`.trim()
-            : "Appointment";
+        const finalTitle = title.trim() || (aptLink ? `Appointment · ${aptLink.primary}` : "Appointment");
         const finalNotes = buildNotes(
           [
             { label: "Client name", value: aptClientName },
@@ -251,10 +364,13 @@ export function QuickAddEventSheetA({
         );
         await createAppointment({
           title: finalTitle,
-          leadId: leadId || null,
+          leadId: aptLink?.kind === "lead" ? aptLink.id : null,
+          clientId: aptLink?.kind === "client" ? aptLink.id : null,
+          proposalId: aptLink?.kind === "proposal" ? aptLink.id : null,
           startsAt: start,
           endsAt: end,
           notes: finalNotes,
+          workerIds: aptWorkerIds,
         });
         toast.success("Appointment booked");
       } else {
@@ -268,6 +384,7 @@ export function QuickAddEventSheetA({
       router.refresh();
       onClose();
     } catch (err: any) {
+      if (reportPlanLimit(err)) return;
       toast.error("Couldn't save", err?.message);
     } finally {
       setBusy(false);
@@ -275,6 +392,11 @@ export function QuickAddEventSheetA({
   }
 
   const subtitle = formatSpan(startsAt, endsAt);
+
+  // Gate creation on a title. Blocked time is named by its reason, so it's always
+  // ready; a job or appointment needs a typed title — or one transferred in from
+  // a linked job / proposal / lead (see pickJobLink / pickAptLink).
+  const canSubmit = kind === "blocked" ? true : title.trim().length > 0;
 
   return (
     <Sheet
@@ -284,22 +406,30 @@ export function QuickAddEventSheetA({
       description={subtitle}
       width="min(480px, 100vw)"
       footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button loading={busy} onClick={submit}>
-            {kind === "blocked"
-              ? "Block time"
-              : kind === "appointment"
-                ? "Book appointment"
-                : "Create event"}
-          </Button>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[11px] leading-snug text-[color:var(--ink-muted)]">
+            {!canSubmit &&
+              (kind === "appointment"
+                ? "Add a title, or link a lead, client, or proposal to name it."
+                : "Add a title, or link a job or proposal to name it.")}
+          </span>
+          <div className="flex shrink-0 gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button loading={busy} disabled={busy || !canSubmit} onClick={submit}>
+              {kind === "blocked"
+                ? "Block time"
+                : kind === "appointment"
+                  ? "Book appointment"
+                  : "Create event"}
+            </Button>
+          </div>
         </div>
       }
     >
       <div className="space-y-4">
-        <EventTypeTabs value={kind} onChange={setKind} />
+        <EventTypeTabs value={kind} onChange={setKind} hiddenKinds={hiddenKinds} />
 
         <div className="grid grid-cols-2 gap-3">
           <DateTimePicker
@@ -313,6 +443,22 @@ export function QuickAddEventSheetA({
             value={endsAt}
             onChange={updateEnds}
             fallbackDate={initialEnd}
+            align="right"
+          />
+        </div>
+
+        {/* Whole-day toggle — the times above then only pick which day(s) it
+            spans. Blocked all-day renders as a full-cell wash on the month view. */}
+        <div className="rounded-[var(--r-md)] hairline px-3">
+          <Toggle
+            checked={allDay}
+            onChange={setAllDay}
+            label="All day"
+            description={
+              kind === "blocked"
+                ? "Blocks the entire day — a full-day striped card on the month view."
+                : "Marks the whole day rather than a timed slot."
+            }
           />
         </div>
 
@@ -322,110 +468,26 @@ export function QuickAddEventSheetA({
               label="Title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={selectedJob ? selectedJob.title : "Material delivery"}
+              placeholder={jobLink ? jobLink.primary : "Material delivery"}
             />
 
-            <PickerSection
-              label="Linked job (optional)"
-              searchOpen={jobSearchOpen}
-              onSearchToggle={() => setJobSearchOpen((v) => !v)}
-              searchLabel={jobSearchOpen ? "Hide search" : "Search jobs"}
-            >
-              {selectedJob ? (
-                <div className="flex items-center gap-2 paper-card px-3 py-2">
-                  <Avatar name={selectedJob.clientName ?? selectedJob.title} size={26} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium text-[color:var(--ink)] truncate">
-                      {selectedJob.title}
-                    </div>
-                    {selectedJob.clientName && (
-                      <div className="text-[11px] text-[color:var(--ink-muted)]">
-                        {selectedJob.clientName}
-                      </div>
-                    )}
-                  </div>
-                  <Badge tone="neutral">{selectedJob.status.toLowerCase()}</Badge>
-                  <button
-                    onClick={() => setJobId("")}
-                    className="h-6 w-6 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-                    aria-label="Clear job"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ) : jobSearchOpen ? (
-                <>
-                  <Input
-                    value={jobQuery}
-                    onChange={(e) => setJobQuery(e.target.value)}
-                    placeholder="Search jobs by title or client…"
-                    prefix={<Search className="h-3 w-3" />}
-                    autoFocus
-                  />
-                  {filteredJobs.length > 0 && (
-                    <ul className="mt-2 paper-card overflow-hidden">
-                      {filteredJobs.map((j) => (
-                        <li key={j.id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setJobId(j.id);
-                              setJobSearchOpen(false);
-                              if (!title) setTitle(j.title);
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.02] transition-colors"
-                          >
-                            <Avatar name={j.clientName ?? j.title} size={22} />
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[12.5px] font-medium text-[color:var(--ink)] truncate">
-                                {j.title}
-                              </div>
-                              {j.clientName && (
-                                <div className="text-[10px] text-[color:var(--ink-muted)] truncate">
-                                  {j.clientName}
-                                </div>
-                              )}
-                            </div>
-                            <Badge tone="neutral">{j.status.toLowerCase()}</Badge>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              ) : (
-                <LatestList>
-                  {latestJobs.length === 0 && (
-                    <EmptyHint>No jobs yet. Click search to look further.</EmptyHint>
-                  )}
-                  {latestJobs.map((j) => (
-                    <li key={j.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setJobId(j.id);
-                          if (!title) setTitle(j.title);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.02] transition-colors"
-                      >
-                        <Avatar name={j.clientName ?? j.title} size={22} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[12.5px] font-medium text-[color:var(--ink)] truncate">
-                            {j.title}
-                          </div>
-                          {j.clientName && (
-                            <div className="text-[10px] text-[color:var(--ink-muted)] truncate">
-                              {j.clientName}
-                            </div>
-                          )}
-                        </div>
-                        <Badge tone="neutral">{j.status.toLowerCase()}</Badge>
-                      </button>
-                    </li>
-                  ))}
-                </LatestList>
-              )}
-            </PickerSection>
+            <LinkedEntityPicker
+              label="Link"
+              tabs={[
+                { key: "job", label: "Job" },
+                { key: "proposal", label: "Proposal" },
+              ]}
+              options={jobOptions}
+              value={jobLink?.id ?? ""}
+              onChange={pickJobLink}
+              placeholder="Search or choose a job / proposal…"
+            />
+            {jobLink?.kind === "proposal" && (
+              <p className="text-[10px] text-[color:var(--ink-muted)] -mt-2">
+                No job exists for this proposal yet — scheduling it creates one in Jobs
+                automatically.
+              </p>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <Input
@@ -443,51 +505,20 @@ export function QuickAddEventSheetA({
               />
             </div>
 
-            <div>
-              <div className="quiet-caps mb-1.5">Assign workers (optional)</div>
-              <div className="flex flex-wrap gap-1.5">
-                {workers.length === 0 && (
-                  <span className="text-[11px] text-[color:var(--ink-muted)]">
-                    No workers in your roster yet.
-                  </span>
-                )}
-                {workers.map((w) => {
-                  const on = selectedWorkerIds.includes(w.id);
-                  return (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedWorkerIds(
-                          on
-                            ? selectedWorkerIds.filter((x) => x !== w.id)
-                            : [...selectedWorkerIds, w.id],
-                        )
-                      }
-                      className={cn(
-                        "inline-flex items-center gap-1.5 h-7 px-2 rounded-full text-[11px] transition-colors hairline",
-                        on
-                          ? "bg-[color:var(--accent)] text-[color:var(--paper)] border-transparent"
-                          : "text-[color:var(--ink-muted)] hover:bg-black/[0.04]",
-                      )}
-                    >
-                      <Avatar name={w.name} size={16} />
-                      <span>{w.name.split(" ")[0]}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {!jobId && selectedWorkerIds.length > 0 && (
-                <p className="text-[10px] text-[color:var(--ink-muted)] mt-2">
-                  Worker assignments require a linked job.
-                </p>
-              )}
-              {jobId && selectedWorkerIds.length > 0 && (
-                <p className="text-[10px] text-[color:var(--ink-muted)] mt-2">
-                  Workers will receive an invite — they confirm via the worker portal.
-                </p>
-              )}
-            </div>
+            <WorkerMultiPicker
+              label="Assign workers (optional)"
+              workers={workers}
+              selectedIds={selectedWorkerIds}
+              onChange={setSelectedWorkerIds}
+              conflicts={conflicts}
+              hint={
+                selectedWorkerIds.length > 0
+                  ? !jobLink
+                    ? "Worker assignments require a linked job or proposal."
+                    : "Workers will receive an invite — they confirm via the worker portal."
+                  : null
+              }
+            />
           </>
         )}
 
@@ -500,117 +531,18 @@ export function QuickAddEventSheetA({
               placeholder="On-site estimate · Patel residence"
             />
 
-            <PickerSection
-              label="Linked lead (optional)"
-              searchOpen={leadSearchOpen}
-              onSearchToggle={() => setLeadSearchOpen((v) => !v)}
-              searchLabel={leadSearchOpen ? "Hide search" : "Search leads"}
-            >
-              {selectedLead ? (
-                <div className="flex items-center gap-2 paper-card px-3 py-2">
-                  <Avatar name={selectedLead.name} size={26} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium text-[color:var(--ink)] truncate">
-                      {selectedLead.name}
-                    </div>
-                    <div className="text-[11px] text-[color:var(--ink-muted)] truncate">
-                      {selectedLead.projectType ?? selectedLead.email ?? "—"}
-                    </div>
-                  </div>
-                  {selectedLead.aiCategory && (
-                    <Badge tone="accent">{selectedLead.aiCategory}</Badge>
-                  )}
-                  <button
-                    onClick={() => setLeadId("")}
-                    className="h-6 w-6 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-                    aria-label="Clear lead"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ) : leadSearchOpen ? (
-                <>
-                  <Input
-                    value={leadQuery}
-                    onChange={(e) => setLeadQuery(e.target.value)}
-                    placeholder="Search leads by name or project…"
-                    prefix={<Search className="h-3 w-3" />}
-                    autoFocus
-                  />
-                  {filteredLeads.length > 0 && (
-                    <ul className="mt-2 paper-card overflow-hidden">
-                      {filteredLeads.map((l) => (
-                        <li key={l.id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLeadId(l.id);
-                              setLeadSearchOpen(false);
-                              if (!title) {
-                                setTitle(
-                                  l.projectType
-                                    ? `${l.projectType} · ${l.name}`
-                                    : `Appointment · ${l.name}`,
-                                );
-                              }
-                              if (!aptClientName) setAptClientName(l.name);
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.02] transition-colors"
-                          >
-                            <Avatar name={l.name} size={22} />
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[12.5px] font-medium text-[color:var(--ink)] truncate">
-                                {l.name}
-                              </div>
-                              <div className="text-[10px] text-[color:var(--ink-muted)] truncate">
-                                {l.projectType ?? l.email ?? "—"}
-                              </div>
-                            </div>
-                            {l.aiCategory && <Badge tone="accent">{l.aiCategory}</Badge>}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              ) : (
-                <LatestList>
-                  {latestLeads.length === 0 && (
-                    <EmptyHint>No leads yet. Click search to look further.</EmptyHint>
-                  )}
-                  {latestLeads.map((l) => (
-                    <li key={l.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLeadId(l.id);
-                          if (!title) {
-                            setTitle(
-                              l.projectType
-                                ? `${l.projectType} · ${l.name}`
-                                : `Appointment · ${l.name}`,
-                            );
-                          }
-                          if (!aptClientName) setAptClientName(l.name);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.02] transition-colors"
-                      >
-                        <Avatar name={l.name} size={22} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[12.5px] font-medium text-[color:var(--ink)] truncate">
-                            {l.name}
-                          </div>
-                          <div className="text-[10px] text-[color:var(--ink-muted)] truncate">
-                            {l.projectType ?? l.email ?? "—"}
-                          </div>
-                        </div>
-                        {l.aiCategory && <Badge tone="accent">{l.aiCategory}</Badge>}
-                      </button>
-                    </li>
-                  ))}
-                </LatestList>
-              )}
-            </PickerSection>
+            <LinkedEntityPicker
+              label="Link"
+              tabs={[
+                { key: "lead", label: "Lead" },
+                { key: "client", label: "Client" },
+                { key: "proposal", label: "Proposal" },
+              ]}
+              options={aptOptions}
+              value={aptLink?.id ?? ""}
+              onChange={pickAptLink}
+              placeholder="Search or choose a lead / client / proposal…"
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <Input
@@ -626,25 +558,28 @@ export function QuickAddEventSheetA({
                 placeholder="412 Walnut St"
               />
             </div>
+
+            <WorkerMultiPicker
+              label="Sales staff / workers (optional)"
+              workers={workers}
+              selectedIds={aptWorkerIds}
+              onChange={setAptWorkerIds}
+              conflicts={conflicts}
+              placeholder="Add staff…"
+            />
           </>
         )}
 
         {kind === "blocked" && (
-          <>
-            <Select
-              label="Reason"
-              value={blockReason}
-              onChange={(e) => setBlockReason(e.target.value)}
-            >
-              {BLOCKED_REASONS.map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </Select>
-            <p className="text-[11px] text-[color:var(--ink-muted)] leading-relaxed">
-              Blocked time hides this slot from worker dispatch and shows a hatched chip on the
-              calendar. Use it for vacation, holidays, or unavailable office hours.
-            </p>
-          </>
+          <Select
+            label="Reason"
+            value={blockReason}
+            onChange={(e) => setBlockReason(e.target.value)}
+          >
+            {BLOCKED_REASONS.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </Select>
         )}
 
         <Textarea
@@ -682,54 +617,4 @@ function formatTime(d: Date) {
     hour: "numeric",
     minute: "2-digit",
   }).format(d);
-}
-
-interface PickerSectionProps {
-  label: string;
-  searchOpen: boolean;
-  onSearchToggle: () => void;
-  searchLabel: string;
-  children: React.ReactNode;
-}
-
-function PickerSection({
-  label,
-  searchOpen,
-  onSearchToggle,
-  searchLabel,
-  children,
-}: PickerSectionProps) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="quiet-caps !mb-0">{label}</div>
-        <button
-          type="button"
-          onClick={onSearchToggle}
-          className={cn(
-            "inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] transition-colors",
-            searchOpen
-              ? "text-[color:var(--ink)]"
-              : "text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]",
-          )}
-        >
-          <Search className="h-3 w-3" />
-          {searchLabel}
-        </button>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function LatestList({ children }: { children: React.ReactNode }) {
-  return (
-    <ul className="paper-card overflow-hidden divide-y divide-[color:var(--ink-line)]">
-      {children}
-    </ul>
-  );
-}
-
-function EmptyHint({ children }: { children: React.ReactNode }) {
-  return <li className="px-3 py-3 text-[11px] text-[color:var(--ink-muted)]">{children}</li>;
 }

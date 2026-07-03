@@ -4,10 +4,14 @@ import { FollowUpRulesEditor, type RuleRow } from "@/components/crm/FollowUpRule
 
 export default async function WorkflowsPage() {
   const { organizationId } = await requireOrg();
-  const rules = await db.followUpRule.findMany({
-    where: { organizationId },
-    orderBy: { name: "asc" },
-  });
+  const [rules, templates] = await Promise.all([
+    db.followUpRule.findMany({ where: { organizationId }, orderBy: { name: "asc" } }),
+    db.emailTemplate.findMany({
+      where: { organizationId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, subject: true, body: true },
+    }),
+  ]);
 
   const rows: RuleRow[] = rules.map((r) => ({
     id: r.id,
@@ -18,5 +22,5 @@ export default async function WorkflowsPage() {
     template: r.template,
   }));
 
-  return <FollowUpRulesEditor rules={rows} />;
+  return <FollowUpRulesEditor rules={rows} templates={templates} />;
 }

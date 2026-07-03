@@ -37,7 +37,7 @@ interface InviteRow {
   createdAt: Date;
 }
 
-const ROLES = ["OWNER", "ADMIN", "SALES", "ESTIMATOR", "INSTALLER", "ACCOUNTANT", "USER"];
+const ROLES = ["OWNER", "ADMIN", "MANAGER", "SALES", "ESTIMATOR", "INSTALLER", "ACCOUNTANT", "USER"];
 
 export function TeamClient({
   members,

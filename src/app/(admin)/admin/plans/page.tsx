@@ -1,19 +1,9 @@
-import { requireUser } from "@/lib/orgContext";
+import { requirePlatformAdmin } from "@/lib/orgContext";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { db } from "@/lib/db";
-import { PlansClient } from "./plans-client";
-
-interface HydratedPlan {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  priceCents: number;
-  interval: string;
-  order: number;
-  features: string[];
-}
+import { isStripeEnabled } from "@/lib/sdk/stripe";
+import { parsePlanLimits } from "@/lib/planLimits";
+import { PlansClient, type HydratedPlan, type SyncedInfo } from "./plans-client";
 
 function parseFeatures(raw: string | null | undefined): string[] {
   if (!raw) return [];
@@ -26,27 +16,42 @@ function parseFeatures(raw: string | null | undefined): string[] {
 }
 
 export default async function AdminPlansPage() {
-  await requireUser();
-  const plans = await db.pricingPlan.findMany({ orderBy: { order: "asc" } });
+  await requirePlatformAdmin();
+  const [plans, planPrices] = await Promise.all([
+    db.pricingPlan.findMany({ orderBy: { order: "asc" } }),
+    db.planPrice.findMany({ where: { active: true } }),
+  ]);
+
   const hydrated: HydratedPlan[] = plans.map((p) => ({
     id: p.id,
     slug: p.slug,
     name: p.name,
     description: p.description,
     priceCents: p.priceCents,
+    yearlyPriceCents: p.yearlyPriceCents,
+    trialDays: p.trialDays,
     interval: p.interval,
     order: p.order,
     features: parseFeatures(p.features),
+    limits: parsePlanLimits(p.limitsJson),
   }));
+
+  // Per-slug Stripe sync status for the synced/not-synced badge.
+  const synced: Record<string, SyncedInfo> = {};
+  for (const pp of planPrices) {
+    const s = (synced[pp.planSlug] ??= { monthly: false, yearly: false });
+    if (pp.interval === "MONTH") s.monthly = true;
+    if (pp.interval === "YEAR") s.yearly = true;
+  }
 
   return (
     <>
       <PageHeader
         eyebrow="Platform"
         title="Pricing plans"
-        description="Public-facing price tiers shown on the /pricing page. Enforcement is driven separately by the Subscription.plan code table."
+        description="Edit price, trial, and yearly options. Sync to Stripe to make a plan checkout-ready."
       />
-      <PlansClient plans={hydrated} />
+      <PlansClient plans={hydrated} synced={synced} stripeEnabled={isStripeEnabled()} />
     </>
   );
 }

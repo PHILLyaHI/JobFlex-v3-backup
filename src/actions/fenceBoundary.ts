@@ -2,8 +2,8 @@
 // Property parcel boundary for the fence studio. Replaces the SAM 2 / aerial-trace
 // approach with exact surveyed parcel polygons from Regrid (regrid.com/api): far
 // more reliable than visual segmentation for thin/tree-covered fence lines.
-// Stateless — requireManager for auth only, no DB writes.
-import { requireManager } from "@/lib/orgContext";
+// Stateless — requireEstimatorOrManager for auth only, no DB writes.
+import { requireEstimatorOrManager } from "@/lib/orgContext";
 
 // Private (not exported): a "use server" file may only export async functions.
 function isRegridEnabled(): boolean {
@@ -90,7 +90,7 @@ export async function fetchPropertyBoundary(
   lat: number,
   lng: number,
 ): Promise<{ ok: true; ring: LatLngPoint[] } | { ok: false; error: string }> {
-  await requireManager();
+  await requireEstimatorOrManager();
   if (!isRegridEnabled()) {
     return {
       ok: false,

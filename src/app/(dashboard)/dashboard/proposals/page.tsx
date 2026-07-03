@@ -5,7 +5,7 @@
 // src/components/v3/proposals-c/proposals-c-view.tsx — both routes render
 // the identical layout.
 
-import { requireOrg } from "@/lib/orgContext";
+import { requireOrg, isSalesRole, isEstimatorRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ProposalsCView } from "@/components/v3/proposals-c/proposals-c-view";
 import {
@@ -17,14 +17,17 @@ import type {
   ProposalCRow,
   ProposalCStatus,
 } from "@/components/v3/proposals-c/types";
+import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProposalsListPage() {
-  const { organizationId } = await requireOrg();
+  const { organizationId, role, user } = await requireOrg();
+  // Sales reps and estimators see only the proposals they own; managers see all.
+  const ownOnly = isSalesRole(role) || isEstimatorRole(role);
 
   const proposals = await db.proposal.findMany({
-    where: { organizationId },
+    where: { organizationId, ...(ownOnly ? { ownerId: user.id } : {}) },
     orderBy: { updatedAt: "desc" },
     include: {
       client: {
@@ -51,6 +54,10 @@ export default async function ProposalsListPage() {
           measurementType: true,
           quantity: true,
           materialCost: true,
+          store: true,
+          productUrl: true,
+          imageUrl: true,
+          dimensions: true,
         },
         orderBy: { position: "asc" },
       },
@@ -94,7 +101,13 @@ export default async function ProposalsListPage() {
       measurementType: l.measurementType,
       quantity: l.quantity,
       materialCost: l.materialCost,
+      store: l.store,
+      productUrl: l.productUrl,
+      imageUrl: l.imageUrl,
+      dimensions: l.dimensions,
     })),
+    beforePhotos: parseProposalPhotos(p.beforePhotos),
+    afterPhotos: parseProposalPhotos(p.afterPhotos),
   }));
 
   const accepted = rows.filter((r) => r.status === "ACCEPTED");

@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MobileDrawer } from "@/components/ui/MobileDrawer";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagedList } from "@/lib/usePagedList";
 import { cn } from "@/lib/cn";
 
 type BadgeTone = "neutral" | "accent" | "success" | "warn" | "danger";
@@ -54,6 +56,8 @@ export function MobileJobsList({ rows }: { rows: MobileJobRow[] }) {
     if (active.size === 0) return rows;
     return rows.filter((r) => active.has(r.status as StatusKey));
   }, [rows, active]);
+
+  const { page, pageCount, setPage, pageItems } = usePagedList(filtered, 20);
 
   const toggle = (s: StatusKey) => {
     setActive((prev) => {
@@ -115,7 +119,7 @@ export function MobileJobsList({ rows }: { rows: MobileJobRow[] }) {
         </div>
       ) : (
         <ul className="px-5 space-y-3">
-          {filtered.map((j) => (
+          {pageItems.map((j) => (
             <li key={j.id}>
               <Link
                 href={`/dashboard/jobs/${j.id}` as never}
@@ -144,6 +148,15 @@ export function MobileJobsList({ rows }: { rows: MobileJobRow[] }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {filtered.length > 0 && (
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPage={setPage}
+          className="px-5 pb-2"
+        />
       )}
 
       <MobileDrawer

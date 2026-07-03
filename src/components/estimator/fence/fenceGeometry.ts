@@ -128,6 +128,14 @@ export function computeFenceLayout(points: PathPoint[], gates: GateSpec[] = []):
     segments.push(mx, my, yaw, len);
   }
 
+  // Detached openings (dropped away from any run): emit standalone units with a
+  // default east-west heading. They carry no picket-skipping (not on a segment).
+  for (const g of gates) {
+    if (g.segmentIndex >= 0) continue;
+    if (typeof g.x !== "number" || typeof g.y !== "number") continue;
+    gateUnits.push({ x: g.x, y: g.y, yaw: 0, widthFt: g.widthFt, kind: g.kind, variant: g.variant });
+  }
+
   // Final end post: open runs need the trailing corner; closed loops already have
   // it (the last segment returns to points[0], emitted by segment 0).
   if (!closed) {
@@ -143,6 +151,14 @@ export function computeFenceLayout(points: PathPoint[], gates: GateSpec[] = []):
     if (p.y < minY) minY = p.y;
     if (p.x > maxX) maxX = p.x;
     if (p.y > maxY) maxY = p.y;
+  }
+  // Fold detached openings into the bounds so the 3D view frames them too.
+  for (const g of gates) {
+    if (g.segmentIndex >= 0 || typeof g.x !== "number" || typeof g.y !== "number") continue;
+    if (g.x < minX) minX = g.x;
+    if (g.y < minY) minY = g.y;
+    if (g.x > maxX) maxX = g.x;
+    if (g.y > maxY) maxY = g.y;
   }
 
   return {

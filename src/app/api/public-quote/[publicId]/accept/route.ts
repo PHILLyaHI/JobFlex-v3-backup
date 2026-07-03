@@ -40,5 +40,13 @@ export async function POST(
     console.warn("[accept] Couldn't auto-create job:", err);
   }
 
+  // Thank-you to the client + acceptance heads-up to the owner (best-effort).
+  try {
+    const { notifyProposalAccepted } = await import("@/actions/notify");
+    await notifyProposalAccepted({ proposalId: proposal.id });
+  } catch (err) {
+    console.warn("[accept] notify failed:", err);
+  }
+
   return NextResponse.json({ ok: true, jobId });
 }

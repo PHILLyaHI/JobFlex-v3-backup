@@ -1,24 +1,30 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   Search,
   Plus,
   ArrowUpRight,
-  Copy,
-  Check,
   AlertCircle,
   ChevronRight,
   X,
   RotateCcw,
+  Pencil,
+  Copy,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Dialog } from "@/components/ui/Dialog";
 import { toast } from "@/components/ui/Toast";
-import { createWorkerInvite, revokeWorker } from "@/actions/workers";
+import { createWorkerInvite, updateWorker, removeWorker } from "@/actions/workers";
+import { WORKER_ROLES, roleLabel } from "@/lib/prismaEnums";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 
 export interface LedgerEntry {
   id: string;
@@ -29,6 +35,10 @@ export interface LedgerEntry {
   specialties: string[];
   hourlyRate: number | null;
   token: string;
+  // Invite lifecycle: "PENDING" (awaiting response) | "ACCEPTED" | "DECLINED".
+  inviteStatus: string;
+  // Org membership role: INSTALLER | SALES | ESTIMATOR | MANAGER (+ OWNER/ADMIN…).
+  role: string;
   joinedISO: string;
   activeJobs: {
     id: string;
@@ -39,7 +49,7 @@ export interface LedgerEntry {
   }[];
 }
 
-type FilterKey = "all" | "on-job" | "available" | "unrated";
+type FilterKey = "all" | "on-job" | "available";
 
 export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry[] }) {
   const router = useRouter();
@@ -48,13 +58,18 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
   const [filter, setFilter] = React.useState<FilterKey>("all");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = React.useState(false);
+  // When set, the invite sheet opens in "edit" mode prefilled with this worker.
+  const [editEntry, setEditEntry] = React.useState<LedgerEntry | null>(null);
 
   const counts = React.useMemo(() => {
     const all = serverEntries.length;
     const onJob = serverEntries.filter((e) => e.activeJobs.length > 0).length;
-    const available = serverEntries.filter((e) => e.activeJobs.length === 0).length;
-    const unrated = serverEntries.filter((e) => e.specialties.length === 0).length;
-    return { all, onJob, available, unrated };
+    // "Available" = ready to take work: invite ACCEPTED and no live job. A worker
+    // whose invite is still pending (or declined) hasn't joined, so isn't available.
+    const available = serverEntries.filter(
+      (e) => e.inviteStatus === "ACCEPTED" && e.activeJobs.length === 0,
+    ).length;
+    return { all, onJob, available };
   }, [serverEntries]);
 
   const totalActive = React.useMemo(
@@ -66,14 +81,10 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
     const q = query.trim().toLowerCase();
     return serverEntries.filter((e) => {
       if (filter === "on-job" && e.activeJobs.length === 0) return false;
-      if (filter === "available" && e.activeJobs.length > 0) return false;
-      if (filter === "unrated" && e.specialties.length > 0) return false;
+      if (filter === "available" && (e.inviteStatus !== "ACCEPTED" || e.activeJobs.length > 0))
+        return false;
       if (!q) return true;
-      return (
-        e.name.toLowerCase().includes(q) ||
-        (e.email ?? "").toLowerCase().includes(q) ||
-        e.specialties.some((s) => s.toLowerCase().includes(q))
-      );
+      return e.name.toLowerCase().includes(q) || (e.email ?? "").toLowerCase().includes(q);
     });
   }, [serverEntries, query, filter]);
 
@@ -112,7 +123,13 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
           <div className="flex shrink-0 items-center gap-2">
             <div className="w-[280px]">
               <Input
-                placeholder="Search name, email, specialty…"
+                // type=search + a distinct name + autoComplete off stop the
+                // browser from autofilling the just-entered invite email into
+                // this roster search box.
+                type="search"
+                name="worker-roster-search"
+                autoComplete="off"
+                placeholder="Search name or email…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 prefix={<Search className="h-3.5 w-3.5" />}
@@ -120,125 +137,145 @@ export function WorkersLedger({ entries: serverEntries }: { entries: LedgerEntry
             </div>
             <Button
               icon={<Plus className="h-3.5 w-3.5" />}
-              onClick={() => setInviteOpen(true)}
+              onClick={() => {
+                setEditEntry(null);
+                setInviteOpen(true);
+              }}
             >
               Invite worker
             </Button>
           </div>
         </header>
 
-        {/* ─── Stat filter tiles ───────────────────────────────────────── */}
+        {/* ─── Stat filter tiles (one contained card, hairline-divided cells) ─ */}
         <motion.section
-          className="mt-8 grid grid-cols-4 gap-3"
+          className="mt-8"
           initial={reduceMotion ? false : "hidden"}
           animate="visible"
           variants={{ visible: { transition: { staggerChildren: reduceMotion ? 0 : 0.05 } } }}
         >
-          <StatFilterTile
-            label="All crew"
-            value={counts.all}
-            hint="on the books"
-            active={filter === "all"}
-            onClick={() => setFilter("all")}
-          />
-          <StatFilterTile
-            label="On a job"
-            value={counts.onJob}
-            hint={`${totalActive} active assignment${totalActive === 1 ? "" : "s"}`}
-            active={filter === "on-job"}
-            onClick={() => setFilter("on-job")}
-          />
-          <StatFilterTile
-            label="Available"
-            value={counts.available}
-            hint="no live work"
-            active={filter === "available"}
-            onClick={() => setFilter("available")}
-          />
-          <StatFilterTile
-            label="Needs specialties"
-            value={counts.unrated}
-            hint="empty profile"
-            active={filter === "unrated"}
-            onClick={() => setFilter("unrated")}
-          />
+          <div className="paper-card overflow-hidden !p-0">
+            <div className="grid grid-cols-3 divide-x divide-[color:var(--ink-line)]">
+              <StatFilterTile
+                label="All crew"
+                value={counts.all}
+                hint="on the books"
+                active={filter === "all"}
+                onClick={() => setFilter("all")}
+              />
+              <StatFilterTile
+                label="On a job"
+                value={counts.onJob}
+                hint={`${totalActive} active assignment${totalActive === 1 ? "" : "s"}`}
+                active={filter === "on-job"}
+                onClick={() => setFilter("on-job")}
+              />
+              <StatFilterTile
+                label="Available"
+                value={counts.available}
+                hint="no live work"
+                active={filter === "available"}
+                onClick={() => setFilter("available")}
+              />
+            </div>
+          </div>
         </motion.section>
 
-        {/* ─── Sub-toolbar (only when filtered) ────────────────────────── */}
-        {filter !== "all" ? (
-          <div className="mt-8 flex items-baseline justify-between border-b border-[color:var(--ink-line)] pb-3">
-            <div className="quiet-caps">
-              Showing <span className="tabular">{filtered.length}</span> of{" "}
-              <span className="tabular">{serverEntries.length}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setFilter("all")}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-[color:var(--ink-muted)] transition-colors hover:text-[color:var(--ink)]"
-            >
-              <RotateCcw className="h-3 w-3" />
-              clear filter
-            </button>
-          </div>
-        ) : (
-          <div className="mt-8" />
-        )}
-
-        {/* ─── Workspace: ledger + inspector ───────────────────────────── */}
-        <div className="mt-6 grid grid-cols-[minmax(0,1fr)_380px] gap-8">
-          <main className="min-w-0">
-            {filtered.length === 0 ? (
-              <LedgerEmpty
-                hasEntries={serverEntries.length > 0}
-                onInvite={() => setInviteOpen(true)}
-              />
-            ) : (
-              <motion.ul
-                className="border-t border-[color:var(--ink-line)]"
-                initial={reduceMotion ? false : "hidden"}
-                animate="visible"
-                variants={{ visible: { transition: { staggerChildren: reduceMotion ? 0 : 0.02 } } }}
-              >
-                {filtered.map((entry) => (
-                  <LedgerRow
-                    key={entry.id}
-                    entry={entry}
-                    selected={entry.id === selectedId}
-                    onSelect={() => setSelectedId(entry.id)}
-                  />
-                ))}
-              </motion.ul>
-            )}
-          </main>
-
-          <aside className="sticky top-8 self-start">
-            <AnimatePresence mode="wait" initial={false}>
-              {selected ? (
-                <InspectorWorker
-                  key={selected.id}
-                  entry={selected}
-                  onClose={() => setSelectedId(null)}
-                  onRevoke={async () => {
-                    try {
-                      await revokeWorker(selected.id);
-                      router.refresh();
-                      toast.success("Access revoked", "Magic link rotated. The old one is dead.");
-                    } catch (err) {
-                      toast.error("Revoke failed", (err as Error)?.message);
-                    }
+        {/* ─── Workspace: the ledger runs full-width until a worker is picked,
+             then the inspector animates in beside it ───────────────────── */}
+        <div className="mt-8 flex items-start gap-8">
+          <main className="min-w-0 flex-1">
+            <div className="paper-card overflow-hidden !p-0">
+              <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ink-line)] bg-[color:var(--paper-deep)]/40 px-5 py-3">
+                <span className="quiet-caps">Roster</span>
+                {filter === "all" ? (
+                  <span className="quiet-caps text-[color:var(--ink-faint)]">
+                    <span className="tabular">{serverEntries.length}</span> on the books
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setFilter("all")}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[color:var(--ink-muted)] transition-colors hover:text-[color:var(--ink)]"
+                  >
+                    <span className="tabular">{filtered.length}</span> of{" "}
+                    <span className="tabular">{serverEntries.length}</span>
+                    <RotateCcw className="h-3 w-3" />
+                    clear
+                  </button>
+                )}
+              </div>
+              {filtered.length === 0 ? (
+                <LedgerEmpty
+                  hasEntries={serverEntries.length > 0}
+                  onInvite={() => {
+                    setEditEntry(null);
+                    setInviteOpen(true);
                   }}
                 />
               ) : (
-                <InspectorEmpty key="empty" totalActive={totalActive} counts={counts} />
+                <motion.ul
+                  initial={reduceMotion ? false : "hidden"}
+                  animate="visible"
+                  variants={{ visible: { transition: { staggerChildren: reduceMotion ? 0 : 0.02 } } }}
+                >
+                  {filtered.map((entry) => (
+                    <LedgerRow
+                      key={entry.id}
+                      entry={entry}
+                      selected={entry.id === selectedId}
+                      onSelect={() => setSelectedId(entry.id)}
+                      maxSpecialties={selectedId ? 2 : 3}
+                    />
+                  ))}
+                </motion.ul>
               )}
-            </AnimatePresence>
-          </aside>
+            </div>
+          </main>
+
+          <AnimatePresence initial={false}>
+            {selected && (
+              <motion.aside
+                key="inspector"
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: 380 }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+                className="sticky top-8 shrink-0 self-start overflow-hidden"
+              >
+                {/* Fixed-width inner shell so content reveals cleanly as the
+                    column animates open, instead of reflowing each frame. */}
+                <div className="w-[380px]">
+                  <InspectorWorker
+                    key={selected.id}
+                    entry={selected}
+                    onClose={() => setSelectedId(null)}
+                    onEdit={() => {
+                      setEditEntry(selected);
+                      setInviteOpen(true);
+                    }}
+                    onRemove={async () => {
+                      const name = selected.name;
+                      await removeWorker(selected.id);
+                      setSelectedId(null);
+                      router.refresh();
+                      toast.success("Worker removed", `${name} no longer has access.`);
+                    }}
+                  />
+                </div>
+              </motion.aside>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
       <InviteSheet
         open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
+        editEntry={editEntry}
+        onClose={() => {
+          setInviteOpen(false);
+          setEditEntry(null);
+        }}
         onInvited={() => router.refresh()}
       />
     </div>
@@ -267,10 +304,10 @@ function StatFilterTile({
       variants={{ hidden: { opacity: 0, y: 6 }, visible: { opacity: 1, y: 0 } }}
       onClick={onClick}
       className={cn(
-        "focus-ring group relative flex flex-col items-start gap-2 rounded-[var(--r-md)] px-4 py-3.5 text-left transition-colors",
+        "focus-ring group relative flex flex-col items-start gap-2 px-5 py-4 text-left transition-colors",
         active
-          ? "bg-[color:var(--accent-soft)] shadow-[inset_0_0_0_1px_var(--accent)]"
-          : "bg-transparent shadow-[inset_0_0_0_0.5px_var(--ink-line)] hover:bg-black/[0.02]",
+          ? "bg-[color:var(--accent-soft)] shadow-[inset_0_2px_0_var(--accent)]"
+          : "hover:bg-[color:var(--paper-deep)]",
       )}
       aria-pressed={active}
     >
@@ -292,23 +329,27 @@ function LedgerRow({
   entry,
   selected,
   onSelect,
+  maxSpecialties,
 }: {
   entry: LedgerEntry;
   selected: boolean;
   onSelect: () => void;
+  // Full-width roster shows 3 chips; once a worker is picked the list narrows
+  // and shows 2 (the inspector lists the full set).
+  maxSpecialties: number;
 }) {
   const initials = monogram(entry.name);
   return (
     <motion.li
       variants={{ hidden: { opacity: 0, y: 4 }, visible: { opacity: 1, y: 0 } }}
-      className="border-b border-[color:var(--ink-line)]"
+      className="border-b border-[color:var(--ink-line)] last:border-b-0"
     >
       <button
         type="button"
         onClick={onSelect}
         className={cn(
-          "focus-ring group flex w-full items-center gap-5 rounded-[var(--r-sm)] px-2 py-4 text-left transition-colors",
-          selected ? "bg-[color:var(--accent-soft)]" : "hover:bg-black/[0.025]",
+          "focus-ring group flex w-full items-center gap-5 px-5 py-4 text-left transition-colors",
+          selected ? "bg-[color:var(--accent-soft)]" : "hover:bg-[color:var(--paper-deep)]",
         )}
         aria-pressed={selected}
       >
@@ -331,8 +372,11 @@ function LedgerRow({
           {initials}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-display text-[15px] tracking-[-0.005em]">
-            {entry.name}
+          <div className="flex items-center gap-2">
+            <span className="truncate font-display text-[15px] tracking-[-0.005em]">
+              {entry.name}
+            </span>
+            <InviteStatusPill status={entry.inviteStatus} />
           </div>
           <div className="mt-0.5 truncate text-[12px] text-[color:var(--ink-muted)]">
             {entry.email ?? <span className="italic">no email</span>}
@@ -344,26 +388,10 @@ function LedgerRow({
             )}
           </div>
         </div>
-        <div className="flex max-w-[260px] flex-wrap items-center justify-end gap-1.5">
-          {entry.specialties.length > 0 ? (
-            <>
-              {entry.specialties.slice(0, 3).map((s) => (
-                <span
-                  key={s}
-                  className="rounded-full bg-black/[0.05] px-2 py-[2px] text-[10px] font-medium uppercase tracking-[0.08em] text-[color:var(--ink-soft)]"
-                >
-                  {s}
-                </span>
-              ))}
-              {entry.specialties.length > 3 && (
-                <span className="tabular text-[10px] text-[color:var(--ink-faint)]">
-                  +{entry.specialties.length - 3}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-[11px] italic text-[color:var(--ink-faint)]">unrated</span>
-          )}
+        <div className="flex items-center justify-end">
+          <span className="rounded-full bg-[color:var(--accent-soft)] px-2.5 py-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--accent-ink)]">
+            {entry.role.toLowerCase()}
+          </span>
         </div>
         <div className="w-24 text-right">
           {entry.activeJobs.length > 0 ? (
@@ -375,12 +403,11 @@ function LedgerRow({
                 job{entry.activeJobs.length === 1 ? "" : "s"}
               </span>
             </div>
-          ) : (
+          ) : entry.inviteStatus === "ACCEPTED" ? (
             <div className="quiet-caps text-[color:var(--ink-faint)]">available</div>
-          )}
-          {entry.hourlyRate != null && (
-            <div className="tabular mt-0.5 text-[11px] text-[color:var(--ink-muted)]">
-              ${entry.hourlyRate.toFixed(0)}/hr
+          ) : (
+            <div className="quiet-caps text-[color:var(--ink-faint)]">
+              {entry.inviteStatus === "DECLINED" ? "declined" : "invited"}
             </div>
           )}
         </div>
@@ -406,7 +433,7 @@ function LedgerEmpty({
 }) {
   if (!hasEntries) {
     return (
-      <div className="border-t border-[color:var(--ink-line)] py-20 text-center">
+      <div className="px-6 py-20 text-center">
         <div className="quiet-caps mb-3">Empty roster</div>
         <h2 className="font-display text-[26px] tracking-[-0.015em]">
           No workers on the books yet.
@@ -424,7 +451,7 @@ function LedgerEmpty({
     );
   }
   return (
-    <div className="border-t border-[color:var(--ink-line)] py-16 text-center">
+    <div className="px-6 py-16 text-center">
       <AlertCircle className="mx-auto mb-3 h-4 w-4 text-[color:var(--ink-faint)]" />
       <div className="text-[13px] text-[color:var(--ink-muted)]">
         No workers match this filter.
@@ -436,66 +463,50 @@ function LedgerEmpty({
 // ───────────────────────────────────────────────────────────────────────────
 // Inspector — right column
 // ───────────────────────────────────────────────────────────────────────────
-function InspectorEmpty({
-  totalActive,
-  counts,
-}: {
-  totalActive: number;
-  counts: { all: number; onJob: number; available: number; unrated: number };
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18 }}
-      className="paper-card p-6"
-    >
-      <div className="quiet-caps">
-        {totalActive === 0
-          ? "Quiet on the boards"
-          : `${totalActive} active assignment${totalActive === 1 ? "" : "s"} across the crew`}
-      </div>
-      <div className="mt-5 grid grid-cols-2 gap-4">
-        <Mini label="On a job" value={counts.onJob} />
-        <Mini label="Available" value={counts.available} />
-        <Mini label="Unrated" value={counts.unrated} />
-        <Mini label="Total" value={counts.all} />
-      </div>
-      <p className="mt-6 border-t border-[color:var(--ink-line)] pt-4 text-[12px] leading-[1.6] text-[color:var(--ink-muted)]">
-        Pick a name from the ledger to see specialties, contact, magic link, and active jobs.
-      </p>
-    </motion.div>
-  );
-}
-
-function Mini({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <div className="quiet-caps">{label}</div>
-      <div className="tabular mt-1 text-[22px] leading-none text-[color:var(--ink)]">
-        {value}
-      </div>
-    </div>
-  );
-}
-
 function InspectorWorker({
   entry,
   onClose,
-  onRevoke,
+  onEdit,
+  onRemove,
 }: {
   entry: LedgerEntry;
   onClose: () => void;
-  onRevoke: () => Promise<void>;
+  onEdit: () => void;
+  onRemove: () => Promise<void>;
 }) {
   const [origin, setOrigin] = React.useState("");
   React.useEffect(() => setOrigin(window.location.origin), []);
   const magicLink = `${origin}/w/${entry.token}`;
-
   const [copied, setCopied] = React.useState(false);
-  const [revoking, setRevoking] = React.useState(false);
-  const [confirmRevoke, setConfirmRevoke] = React.useState(false);
+  async function copyLink() {
+    const link = magicLink || `/w/${entry.token}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      toast.success("Link copied", "Send it to the worker.");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy", "Select the link and copy it manually.");
+    }
+  }
+
+  const [removing, setRemoving] = React.useState(false);
+  const [confirmRemove, setConfirmRemove] = React.useState(false);
+
+  const firstName = entry.name.split(" ")[0] || entry.name;
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await onRemove();
+      // The worker is gone — the parent closes the inspector, so no need to
+      // reset confirmRemove here (this component unmounts).
+    } catch (err) {
+      toast.error("Couldn't remove worker", (err as Error)?.message);
+      setRemoving(false);
+      setConfirmRemove(false);
+    }
+  }
 
   return (
     <motion.div
@@ -518,17 +529,30 @@ function InspectorWorker({
               <h3 className="truncate font-display text-[20px] leading-tight tracking-[-0.015em]">
                 {entry.name}
               </h3>
+              <div className="mt-1">
+                <InviteStatusPill status={entry.inviteStatus} />
+              </div>
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close inspector"
-          className="-mr-1 rounded-[var(--r-sm)] p-1.5 text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="-mr-1 flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded-[var(--r-sm)] px-2 py-1.5 text-[11px] font-medium text-[color:var(--ink-muted)] transition-colors hover:bg-black/[0.05] hover:text-[color:var(--ink)]"
+          >
+            <Pencil className="h-3 w-3" />
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close inspector"
+            className="rounded-[var(--r-sm)] p-1.5 text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-5 px-6 py-5">
@@ -546,32 +570,10 @@ function InspectorWorker({
             <Empty />
           )}
         </Field>
-        <Field label="Hourly rate">
-          {entry.hourlyRate != null ? (
-            <span className="tabular text-[13px] text-[color:var(--ink)]">
-              ${entry.hourlyRate.toFixed(2)}
-              <span className="text-[color:var(--ink-muted)]"> / hr</span>
-            </span>
-          ) : (
-            <Empty label="not set" />
-          )}
-        </Field>
-
-        <Field label={`Specialties (${entry.specialties.length})`}>
-          {entry.specialties.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {entry.specialties.map((s) => (
-                <span
-                  key={s}
-                  className="rounded-full bg-black/[0.05] px-2.5 py-[3px] text-[10px] font-medium uppercase tracking-[0.08em] text-[color:var(--ink-soft)]"
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <Empty label="none recorded" />
-          )}
+        <Field label="Role">
+          <span className="rounded-full bg-[color:var(--accent-soft)] px-2.5 py-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--accent-ink)]">
+            {entry.role.toLowerCase()}
+          </span>
         </Field>
 
         <Field label={`Active jobs (${entry.activeJobs.length})`}>
@@ -598,76 +600,90 @@ function InspectorWorker({
       </div>
 
       <div className="border-t border-[color:var(--ink-line)] bg-[color:var(--paper-deep)]/40 px-6 py-5">
-        <div className="quiet-caps mb-2">Magic link</div>
-        <div className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-[color:var(--paper)] px-3 py-2">
-          <code className="flex-1 truncate font-mono text-[11px] text-[color:var(--ink-soft)]">
+        <div className="quiet-caps mb-2">Worker dashboard link</div>
+        <div className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-[color:var(--paper)] pl-3 pr-1 py-1">
+          <span className="flex-1 truncate font-mono text-[11px] text-[color:var(--ink-soft)]">
             {magicLink || `…/w/${entry.token.slice(0, 12)}…`}
-          </code>
+          </span>
+          {/* Copy for sending to the worker; open in a new tab as a secondary action. */}
           <button
             type="button"
-            aria-label="Copy magic link"
-            onClick={() => {
-              if (!magicLink) return;
-              navigator.clipboard.writeText(magicLink);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }}
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
+            onClick={copyLink}
+            className={cn(
+              "inline-flex items-center gap-1 h-7 px-2 rounded-[var(--r-sm)] text-[11px] font-medium transition-colors",
+              copied
+                ? "text-[color:var(--accent-ink)] bg-[color:var(--accent-soft)]"
+                : "text-[color:var(--ink)] hover:bg-black/[0.05]",
+            )}
+            aria-label="Copy worker link"
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? "Copied" : "Copy"}
           </button>
+          <a
+            href={magicLink || `/w/${entry.token}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-7 w-7 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
+            aria-label="Open worker dashboard in a new tab"
+            title="Open in new tab"
+          >
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </a>
         </div>
         <p className="mt-2 text-[11px] leading-[1.6] text-[color:var(--ink-muted)]">
-          Anyone with this link can view and accept jobs assigned to {entry.name.split(" ")[0]}.
-          Revoke to rotate it. The previous link dies immediately.
+          Copy this and send it to {firstName}. It opens their dashboard — they see and accept only
+          the jobs assigned to them. Removing the worker disables the link immediately.
         </p>
 
         <div className="mt-4 flex items-center justify-between">
-          <a
-            href={`/dashboard/workers/${entry.id}`}
+          <Link
+            href={`/dashboard/workers/${entry.id}` as Route}
+            prefetch
             className="inline-flex items-center gap-1 text-[12px] font-medium text-[color:var(--ink)] transition-colors hover:text-[color:var(--accent)]"
           >
             Open full profile
             <ArrowUpRight className="h-3 w-3" />
-          </a>
-          {!confirmRevoke ? (
-            <button
-              type="button"
-              onClick={() => setConfirmRevoke(true)}
-              className="text-[12px] font-medium text-[color:var(--rose)] underline-offset-[3px] hover:underline"
-            >
-              Revoke access
-            </button>
-          ) : (
-            <div className="flex items-center gap-3">
-              <span className="quiet-caps">Rotate link?</span>
-              <button
-                type="button"
-                onClick={() => setConfirmRevoke(false)}
-                className="text-[12px] font-medium text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={revoking}
-                onClick={async () => {
-                  setRevoking(true);
-                  try {
-                    await onRevoke();
-                    setConfirmRevoke(false);
-                  } finally {
-                    setRevoking(false);
-                  }
-                }}
-                className="text-[12px] font-medium text-[color:var(--rose)] underline underline-offset-[3px] disabled:opacity-50"
-              >
-                {revoking ? "Rotating…" : "Rotate"}
-              </button>
-            </div>
-          )}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setConfirmRemove(true)}
+            className="text-[12px] font-medium text-[color:var(--rose)] underline-offset-[3px] hover:underline"
+          >
+            Revoke access
+          </button>
         </div>
       </div>
+
+      {/* Removal confirmation — a real popup, not an inline toggle. */}
+      <Dialog
+        open={confirmRemove}
+        onClose={() => {
+          if (!removing) setConfirmRemove(false);
+        }}
+        title={`Remove ${entry.name}?`}
+        description="This revokes their access and removes them from the company."
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmRemove(false)}
+              disabled={removing}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" loading={removing} onClick={handleRemove}>
+              Remove worker
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px] leading-[1.7] text-[color:var(--ink-soft)]">
+          {firstName}&apos;s dashboard link stops working and they&apos;re taken off the roster. Their
+          job assignments are cleared. Past job history and activity are kept. This can&apos;t be
+          undone.
+        </p>
+      </Dialog>
     </motion.div>
   );
 }
@@ -704,41 +720,44 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+// Invite lifecycle pill for the roster + inspector. ACCEPTED renders nothing
+// (an active worker needs no badge — "Status-Is-Not-Decoration"); only the
+// in-progress and declined states are surfaced.
+function InviteStatusPill({ status }: { status: string }) {
+  if (status === "ACCEPTED") return null;
+  const isPending = status === "PENDING";
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-full px-2 py-[2px] text-[10px] font-medium uppercase tracking-[0.08em]",
+        isPending ? "bg-amber-50 text-amber-900" : "bg-rose-50 text-rose-700",
+      )}
+    >
+      {isPending ? "in progress" : "declined"}
+    </span>
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Invite sheet — fresh, not the existing WorkerInviteDrawer
 // ───────────────────────────────────────────────────────────────────────────
-const SPECIALTY_OPTIONS = [
-  "Roofing",
-  "Framing",
-  "Electrical",
-  "Plumbing",
-  "Drywall",
-  "Painting",
-  "Flooring",
-  "Tile",
-  "Cabinetry",
-  "Fencing",
-  "Decking",
-  "Landscaping",
-];
-
 function InviteSheet({
   open,
   onClose,
   onInvited,
+  editEntry,
 }: {
   open: boolean;
   onClose: () => void;
   onInvited: () => void;
+  editEntry?: LedgerEntry | null;
 }) {
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [phone, setPhone] = React.useState("");
-  const [rate, setRate] = React.useState("");
-  const [selected, setSelected] = React.useState<string[]>([]);
+  const [role, setRole] = React.useState<string>("INSTALLER");
   const [busy, setBusy] = React.useState(false);
   const [created, setCreated] = React.useState<{ token: string; name: string } | null>(null);
-  const [copied, setCopied] = React.useState(false);
   const [origin, setOrigin] = React.useState("");
   React.useEffect(() => setOrigin(window.location.origin), []);
 
@@ -746,10 +765,8 @@ function InviteSheet({
     setName("");
     setEmail("");
     setPhone("");
-    setRate("");
-    setSelected([]);
+    setRole("INSTALLER");
     setCreated(null);
-    setCopied(false);
   }
 
   const close = React.useCallback(() => {
@@ -766,25 +783,48 @@ function InviteSheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
 
+  // Prefill the form when the sheet opens to edit an existing worker.
+  React.useEffect(() => {
+    if (!open || !editEntry) return;
+    setName(editEntry.name);
+    setEmail(editEntry.email ?? "");
+    setPhone(editEntry.phone ?? "");
+    setRole(editEntry.role || "INSTALLER");
+    setCreated(null);
+  }, [open, editEntry]);
+
   async function submit() {
-    if (!name.trim() || !email.trim()) {
-      toast.error("Missing info", "Name and email are required.");
+    if (!name.trim() || (!editEntry && !email.trim())) {
+      toast.error("Missing info", editEntry ? "Name is required." : "Name and email are required.");
       return;
     }
     setBusy(true);
     try {
+      if (editEntry) {
+        await updateWorker({
+          id: editEntry.id,
+          name: name.trim(),
+          role,
+          phone: phone.trim() || undefined,
+        });
+        onInvited();
+        toast.success("Worker updated", "Changes saved.");
+        close();
+        return;
+      }
+      if (!(await ensureWithinLimit("workers"))) return;
       const res = await createWorkerInvite({
         name: name.trim(),
         email: email.trim(),
+        role,
         phone: phone.trim() || undefined,
-        specialties: selected,
-        hourlyRate: rate ? Number(rate) : undefined,
       });
       setCreated({ token: res.token, name: name.trim() });
       onInvited();
-      toast.success("Worker invited", "Magic link ready to share.");
+      toast.success("Worker invited", "Dashboard link ready to share.");
     } catch (err) {
-      toast.error("Invite failed", (err as Error)?.message);
+      if (reportPlanLimit(err)) return;
+      toast.error(editEntry ? "Update failed" : "Invite failed", (err as Error)?.message);
     } finally {
       setBusy(false);
     }
@@ -797,7 +837,7 @@ function InviteSheet({
       {open && (
         <>
           <motion.div
-            className="fixed inset-0 z-40 bg-[color:var(--ink)]/30 backdrop-blur-[1px]"
+            className="fixed inset-0 z-40 bg-[color-mix(in_srgb,var(--ink)_50%,transparent)] backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -811,13 +851,15 @@ function InviteSheet({
             style={{ width: "min(460px, 100vw)" }}
             className="fixed bottom-0 right-0 top-0 z-50 flex flex-col border-l border-[color:var(--ink-line)] bg-[color:var(--paper)]"
             role="dialog"
-            aria-label={created ? "Invite ready" : "Invite worker"}
+            aria-label={created ? "Invite ready" : editEntry ? "Edit worker" : "Invite worker"}
           >
             <div className="flex items-start justify-between gap-3 border-b border-[color:var(--ink-line)] px-7 pb-5 pt-7">
               <div>
-                <div className="quiet-caps mb-2">{created ? "Invite ready" : "New entry"}</div>
+                <div className="quiet-caps mb-2">
+                  {created ? "Invite ready" : editEntry ? "Editing" : "New entry"}
+                </div>
                 <h2 className="font-display text-[22px] leading-tight tracking-[-0.015em]">
-                  {created ? `${created.name} added.` : "Invite a worker"}
+                  {created ? `${created.name} added.` : editEntry ? "Edit worker" : "Invite a worker"}
                 </h2>
               </div>
               <button
@@ -845,9 +887,17 @@ function InviteSheet({
                       <Input
                         label="Email"
                         type="email"
+                        name="workerEmail"
+                        autoComplete="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="casey@example.com"
+                        disabled={!!editEntry}
+                        hint={
+                          editEntry
+                            ? "Email is the worker's login — it can't be changed here."
+                            : undefined
+                        }
                       />
                       <Input
                         label="Phone (optional)"
@@ -859,72 +909,53 @@ function InviteSheet({
                   </section>
 
                   <section>
-                    <div className="quiet-caps mb-3">Rate</div>
-                    <Input
-                      label="Hourly rate (optional)"
-                      type="number"
-                      value={rate}
-                      onChange={(e) => setRate(e.target.value)}
-                      prefix={<span className="text-[11px]">$</span>}
-                      suffix={
-                        <span className="text-[11px] text-[color:var(--ink-faint)]">/hr</span>
-                      }
-                    />
-                  </section>
-
-                  <section>
-                    <div className="quiet-caps mb-3">Specialties</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SPECIALTY_OPTIONS.map((s) => {
-                        const active = selected.includes(s);
+                    <div className="quiet-caps mb-3">Role</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {WORKER_ROLES.map((r) => {
+                        const active = role === r;
                         return (
                           <button
-                            key={s}
+                            key={r}
                             type="button"
-                            onClick={() =>
-                              setSelected((prev) =>
-                                active ? prev.filter((x) => x !== s) : [...prev, s],
-                              )
-                            }
+                            onClick={() => setRole(r)}
+                            aria-pressed={active}
                             className={cn(
-                              "hairline rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.08em] transition-colors",
+                              "hairline rounded-[var(--r-md)] px-3.5 py-2.5 text-left text-[13px] font-medium transition-colors",
                               active
-                                ? "bg-[color:var(--ink)] text-[color:var(--paper)] shadow-none"
-                                : "bg-transparent text-[color:var(--ink-muted)] hover:bg-black/[0.04]",
+                                ? "bg-[color:var(--accent)] text-white shadow-[var(--shadow-sm)]"
+                                : "bg-transparent text-[color:var(--ink-soft)] hover:bg-black/[0.03]",
                             )}
                           >
-                            {s}
+                            {roleLabel(r)}
                           </button>
                         );
                       })}
                     </div>
+                    <p className="mt-2 text-[11px] leading-[1.6] text-[color:var(--ink-muted)]">
+                      Installers see only their own jobs and schedule. Sales, Estimator, and
+                      Manager get full office access.
+                    </p>
                   </section>
                 </div>
               ) : (
                 <div className="space-y-5">
                   <div className="paper-card p-4">
-                    <div className="quiet-caps mb-2">Magic link</div>
-                    <div className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-black/[0.03] px-3 py-2">
-                      <code className="flex-1 break-all font-mono text-[11px] text-[color:var(--ink-soft)]">
+                    <div className="quiet-caps mb-2">Worker dashboard</div>
+                    <a
+                      href={magicLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-black/[0.03] px-3 py-2 transition-colors hover:bg-black/[0.05]"
+                    >
+                      <span className="flex-1 break-all font-mono text-[11px] text-[color:var(--ink-soft)]">
                         {magicLink}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(magicLink);
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 1500);
-                        }}
-                        aria-label="Copy"
-                        className="grid h-7 w-7 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-                      >
-                        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
+                      </span>
+                      <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)]" />
+                    </a>
                   </div>
                   <p className="text-[12px] leading-[1.7] text-[color:var(--ink-muted)]">
-                    Share the link directly. Rotate it any time from the inspector. Anyone with the
-                    old link loses access immediately.
+                    Send this link to the worker — it opens their dashboard. Rotate it any time from
+                    the inspector; anyone with the old link loses access immediately.
                   </p>
                 </div>
               )}
@@ -937,7 +968,7 @@ function InviteSheet({
                     Cancel
                   </Button>
                   <Button onClick={submit} loading={busy}>
-                    Create invite
+                    {editEntry ? "Save changes" : "Create invite"}
                   </Button>
                 </>
               ) : (

@@ -162,7 +162,7 @@ export const buildingBlocks = {
     {
       label: "Automation",
       modules: [
-        { icon: "ai", label: "AI Estimator" },
+        { icon: "ai", label: "Smart Proposal" },
         { icon: "meta", label: "Meta Ads" },
         { icon: "sms", label: "SMS & Email" },
         { icon: "webhooks", label: "Webhooks" },

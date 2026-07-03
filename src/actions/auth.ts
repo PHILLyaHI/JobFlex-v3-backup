@@ -199,10 +199,30 @@ export async function resetPassword(raw: unknown): Promise<{ ok: true }> {
     });
     if (!user) throw new Error(INVALID_LINK);
 
-    await tx.user.update({ where: { id: user.id }, data: { hashedPassword } });
+    // Resolve activeOrgId so the next sign-in builds a valid session. Workers
+    // created via invite may have activeOrgId = null if they never completed the
+    // accept flow — look up their membership as a fallback so the JWT callback
+    // always has an org to attach to.
+    let resolvedOrgId = user.activeOrgId;
+    if (!resolvedOrgId) {
+      const m = await tx.membership.findFirst({
+        where: { userId: user.id },
+        orderBy: { createdAt: "asc" },
+        select: { organizationId: true },
+      });
+      resolvedOrgId = m?.organizationId ?? null;
+    }
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        hashedPassword,
+        ...(resolvedOrgId ? { activeOrgId: resolvedOrgId } : {}),
+      },
+    });
     // Single-use: burn this token and any other live links for the same email.
     await tx.verificationToken.deleteMany({ where: { identifier: record.identifier } });
-    return { userId: user.id, activeOrgId: user.activeOrgId };
+    return { userId: user.id, activeOrgId: resolvedOrgId };
   });
 
   // Best-effort audit trail so a password reset is never silent (org-scoped).

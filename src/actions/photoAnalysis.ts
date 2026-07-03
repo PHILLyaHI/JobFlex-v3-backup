@@ -1,6 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
-import { requireOrg } from "@/lib/orgContext";
+import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
@@ -17,7 +17,7 @@ export async function analyzeJobPhoto(photoId: string): Promise<
   | { ok: true; analysis: PhotoAnalysis; disabled: true }
   | { ok: false; error: string }
 > {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireEstimatorOrManager();
   const photo = await db.jobPhoto.findUnique({
     where: { id: photoId },
     include: { job: { select: { organizationId: true } } },

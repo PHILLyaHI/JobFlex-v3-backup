@@ -2,9 +2,9 @@ import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Button } from "@/components/ui/Button";
-import { Plus, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { ClientsTable, type ClientRow } from "./clients-table";
+import { NewClientButton } from "./new-client-button";
 
 export default async function ClientsListPage() {
   const { organizationId } = await requireOrg();
@@ -26,7 +26,11 @@ export default async function ClientsListPage() {
     pipelineValue: c.proposals
       .filter((p) => !["DECLINED", "EXPIRED", "ARCHIVED"].includes(p.status))
       .reduce((a, p) => a + p.total, 0),
-    tags: c.tags.map((t) => ({ label: t.tag.label, color: t.tag.color })),
+    vip: c.tags.some((t) => t.tag.label === "VIP"),
+    // VIP renders next to the name instead, so keep it out of the Tags column.
+    tags: c.tags
+      .filter((t) => t.tag.label !== "VIP")
+      .map((t) => ({ label: t.tag.label, color: t.tag.color })),
     updated: c.updatedAt,
   }));
 
@@ -36,7 +40,7 @@ export default async function ClientsListPage() {
         eyebrow="CRM"
         title="Clients"
         description="Every homeowner you've worked with — proposals, payments, and the relationship in one place."
-        actions={<Button icon={<Plus className="h-3.5 w-3.5" />}>New client</Button>}
+        actions={<NewClientButton />}
       />
       {rows.length === 0 ? (
         <EmptyState

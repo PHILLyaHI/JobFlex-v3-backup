@@ -18,9 +18,14 @@ export default async function ChangeOrderPublicPage({
           proposal: { select: { total: true } },
         },
       },
+      proposal: { select: { title: true, total: true } },
     },
   });
   if (!co) return notFound();
+
+  // A change order hangs off a Proposal (the contract) or a Job (legacy).
+  const contextTitle = co.proposal?.title ?? co.job?.title ?? "Your contract";
+  const originalTotal = co.proposal?.total ?? co.job?.proposal?.total ?? null;
 
   return (
     <main className="min-h-dvh flex items-center justify-center p-6 relative">
@@ -40,8 +45,8 @@ export default async function ChangeOrderPublicPage({
           description={co.description}
           amount={co.amount}
           status={co.status}
-          jobTitle={co.job.title}
-          proposalTotal={co.job.proposal?.total ?? null}
+          jobTitle={contextTitle}
+          proposalTotal={originalTotal}
           approvedAt={co.approvedAt}
           declinedAt={co.declinedAt}
         />

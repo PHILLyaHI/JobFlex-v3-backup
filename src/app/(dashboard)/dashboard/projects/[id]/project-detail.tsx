@@ -4,7 +4,6 @@ import Link from "next/link";
 import { Plus, List, Calendar, BarChart3, Briefcase } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
 import { money, shortDate } from "@/lib/format";
 import { GanttChart, type GanttJob } from "@/components/projects/GanttChart";
@@ -162,7 +161,7 @@ function ListView({ jobs }: { jobs: JobItem[] }) {
           <Briefcase className="h-6 w-6 text-[color:var(--ink-faint)] mx-auto mb-3" />
           <div className="font-medium text-[color:var(--ink)]">No jobs attached yet</div>
           <div className="text-[12px] text-[color:var(--ink-muted)] mt-1.5 leading-relaxed max-w-sm mx-auto">
-            Click "Attach job" to bring existing jobs under this project.
+            Attach a job to bring it under this project.
           </div>
         </div>
       </Card>
@@ -178,20 +177,20 @@ function ListView({ jobs }: { jobs: JobItem[] }) {
       </CardHeader>
       <ul className="divide-y divide-[color:var(--ink-line)]">
         {jobs.map((j) => (
-          <li key={j.id} className="py-3.5">
-            <Link
-              href={`/dashboard/jobs/${j.id}` as any}
-              className="flex items-center justify-between gap-3 hover:bg-black/[0.012] -mx-3 px-3 py-1 rounded-[var(--r-sm)] transition-colors"
-            >
+          <li key={j.id}>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            <Link href={`/dashboard/jobs/${j.id}` as any} className="flex items-center justify-between gap-3 -mx-6 px-6 py-3 transition-colors hover:bg-[color:var(--paper-deep)]">
               <div className="min-w-0">
                 <div className="font-medium text-[color:var(--ink)] truncate">{j.title}</div>
-                <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5">
+                <div className="text-[11px] text-[color:var(--ink-muted)] mt-0.5 tabular">
                   {j.clientName ?? "Unassigned"}
                   {j.startsAt && ` · ${shortDate(j.startsAt)}`}
-                  {j.endsAt && ` → ${shortDate(j.endsAt)}`}
+                  {j.startsAt && j.endsAt && ` → ${shortDate(j.endsAt)}`}
                 </div>
               </div>
-              <JobStatusBadge status={j.status} />
+              <span className="shrink-0">
+                <JobStatusBadge status={j.status} />
+              </span>
             </Link>
           </li>
         ))}
@@ -223,6 +222,7 @@ function CalendarView({ jobs }: { jobs: JobItem[] }) {
               {c.jobs.slice(0, 2).map((j) => (
                 <Link
                   key={j.id}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   href={`/dashboard/jobs/${j.id}` as any}
                   className="block truncate text-[10px] text-[color:var(--ink)] hover:text-[color:var(--accent)]"
                 >
@@ -252,9 +252,20 @@ function buildMonthCells(jobs: JobItem[]) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const inMonth = d.getMonth() === today.getMonth();
+    // Date-aware day overlap: a job belongs on this cell if its [start, end]
+    // range touches this calendar day at all. Comparing against the day's full
+    // 00:00–23:59 window (not the bare midnight `d`) is what lets a same-day
+    // timed job — e.g. a proposal scheduled 9am–2pm — actually show, and it
+    // tolerates jobs that have a start but no explicit end.
+    const dayStart = new Date(d);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(d);
+    dayEnd.setHours(23, 59, 59, 999);
     const dayJobs = jobs.filter((j) => {
-      if (!j.startsAt || !j.endsAt) return false;
-      return j.startsAt <= d && j.endsAt >= d;
+      if (!j.startsAt) return false;
+      const s = j.startsAt;
+      const e = j.endsAt ?? j.startsAt;
+      return s <= dayEnd && e >= dayStart;
     });
     cells.push({ day: d.getDate(), inMonth, jobs: dayJobs });
   }

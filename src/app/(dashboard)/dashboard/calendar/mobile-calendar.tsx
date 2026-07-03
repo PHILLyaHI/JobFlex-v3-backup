@@ -8,6 +8,7 @@ import {
   type MobileCalendarEvent,
 } from "@/components/calendar/MobileEventDetailSheet";
 import { cn } from "@/lib/cn";
+import { APPOINTMENT_BORDER, APPOINTMENT_TINT } from "@/components/calendar/EventChip";
 
 interface WorkerLite {
   id: string;
@@ -159,14 +160,21 @@ export function MobileCalendar({ events, workers, pendingAssignments }: MobileCa
           <ul className="divide-y divide-[color:var(--ink-line)]">
             {todayEvents.map((e) => {
               const isBlocked = e.kind === "blocked";
+              const isAppointment = e.kind === "appointment";
               return (
                 <li key={e.id}>
                   <button
                     type="button"
                     onClick={() => setOpenEvent(e)}
+                    style={
+                      isAppointment
+                        ? { borderLeft: `3px solid ${APPOINTMENT_BORDER}`, backgroundColor: APPOINTMENT_TINT }
+                        : undefined
+                    }
                     className={cn(
                       "w-full flex items-start gap-3 py-3 -mx-1 px-1 rounded-[var(--r-sm)] text-left",
                       "hover:bg-black/[0.02] focus-ring transition-colors",
+                      isAppointment && "pl-2",
                       isBlocked && "opacity-70",
                     )}
                   >

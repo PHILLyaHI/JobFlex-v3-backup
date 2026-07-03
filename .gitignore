@@ -30,3 +30,11 @@ next-env.d.ts
 /.playwright-cli/
 /.claude/settings.local.json
 /.claude/scheduled_tasks.lock
+tsconfig.tsbuildinfo
+
+.vercel
+.env*.local
+
+# Credential dumps & pulled env files — never commit
+.firecrawl/
+.env.vercel*

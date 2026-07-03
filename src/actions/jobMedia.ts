@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 
@@ -12,7 +12,7 @@ const expenseInput = z.object({
 });
 
 export async function addJobExpense(jobId: string, raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = expenseInput.parse(raw);
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
@@ -28,7 +28,7 @@ export async function addJobExpense(jobId: string, raw: unknown) {
 }
 
 export async function deleteJobExpense(expenseId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const ex = await db.jobExpense.findUnique({
     where: { id: expenseId },
     include: { job: true },
@@ -38,18 +38,36 @@ export async function deleteJobExpense(expenseId: string) {
   revalidatePath(`/dashboard/jobs/${ex.jobId}`);
 }
 
+/**
+ * Find (or lazily create) the single Conversation that backs a job's message
+ * thread. Job threads are real Conversations with `jobId` set, so they appear on
+ * /dashboard/messages alongside every other thread, with resolved author names.
+ */
+async function getOrCreateJobConversation(job: {
+  id: string;
+  organizationId: string;
+  title: string;
+}) {
+  const existing = await db.conversation.findUnique({ where: { jobId: job.id } });
+  if (existing) return existing;
+  return db.conversation.create({
+    data: { organizationId: job.organizationId, jobId: job.id, title: job.title },
+  });
+}
+
 export async function postJobMessage(jobId: string, body: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
+  const trimmed = body.trim();
+  if (!trimmed) return;
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
-  await db.jobMessage.create({
-    data: {
-      jobId,
-      authorId: user.id,
-      body,
-    },
+
+  const conversation = await getOrCreateJobConversation(job);
+  await db.message.create({
+    data: { conversationId: conversation.id, authorId: user.id, body: trimmed },
   });
   revalidatePath(`/dashboard/jobs/${jobId}`);
+  revalidatePath("/dashboard/messages");
 }
 
 const photoInput = z.object({
@@ -59,7 +77,7 @@ const photoInput = z.object({
 });
 
 export async function createJobPhoto(jobId: string, raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = photoInput.parse(raw);
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
@@ -75,7 +93,7 @@ export async function createJobPhoto(jobId: string, raw: unknown) {
 }
 
 export async function deleteJobPhoto(photoId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const p = await db.jobPhoto.findUnique({
     where: { id: photoId },
     include: { job: true },
@@ -96,7 +114,7 @@ export async function uploadJobPhoto(
   filename: string,
   kind: "BEFORE" | "PROGRESS" | "AFTER" = "BEFORE",
 ) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
 

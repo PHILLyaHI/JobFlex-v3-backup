@@ -3,17 +3,23 @@
 // changes. The original page remains untouched and continues serving traffic
 // at /dashboard/calendar.
 
-import { requireOrg } from "@/lib/orgContext";
+import { redirect } from "next/navigation";
+import { requireOrg, isWorkerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { CalendarViewA } from "./calendar-view-a";
 import { MobileCalendar } from "@/app/(dashboard)/dashboard/calendar/mobile-calendar";
 
 export default async function CalendarAPage() {
-  const { organizationId } = await requireOrg();
+  const { organizationId, role } = await requireOrg();
+  // Field workers get the self-scoped read-only calendar — this v3 route
+  // renders the full manager dataset and must not leak it to them.
+  if (isWorkerRole(role)) redirect("/dashboard/calendar");
+  // Match the live calendar: the month cursor is client-side, so the fetch has
+  // to cover everywhere the user can navigate (45d back hid older events).
   const from = new Date();
-  from.setDate(from.getDate() - 45);
+  from.setDate(from.getDate() - 400);
   const to = new Date();
-  to.setDate(to.getDate() + 180);
+  to.setDate(to.getDate() + 400);
 
   const [
     events,
@@ -23,6 +29,8 @@ export default async function CalendarAPage() {
     workers,
     allJobs,
     leads,
+    proposalsList,
+    clientsList,
     pendingAssignments,
   ] = await Promise.all([
     db.jobEvent.findMany({
@@ -43,6 +51,7 @@ export default async function CalendarAPage() {
       orderBy: { startsAt: "asc" },
       include: {
         lead: { select: { name: true, projectType: true } },
+        assignments: { select: { workerId: true } },
       },
     }),
     db.blockedTime.findMany({
@@ -63,7 +72,7 @@ export default async function CalendarAPage() {
       take: 30,
     }),
     db.workerProfile.findMany({
-      where: { organizationId },
+      where: { organizationId, inviteStatus: { not: "DECLINED" } },
       include: {
         assignments: {
           where: { job: { status: { in: ["SCHEDULED", "IN_PROGRESS"] } } },
@@ -85,6 +94,21 @@ export default async function CalendarAPage() {
       },
       orderBy: { createdAt: "desc" },
       take: 60,
+    }),
+    db.proposal.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        client: { select: { name: true } },
+        jobs: { select: { id: true }, take: 1 },
+      },
+      take: 60,
+    }),
+    db.client.findMany({
+      where: { organizationId, deletedAt: null },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, name: true, email: true },
+      take: 100,
     }),
     db.jobAssignment.findMany({
       where: {
@@ -124,7 +148,7 @@ export default async function CalendarAPage() {
     endsAt: a.endsAt.toISOString(),
     status: a.status,
     notes: a.notes,
-    workerIds: [],
+    workerIds: a.assignments.map((x) => x.workerId),
     clientName: a.lead?.name ?? null,
   }));
 
@@ -189,6 +213,18 @@ export default async function CalendarAPage() {
             projectType: l.projectType,
             aiCategory: l.aiCategory,
             status: l.status,
+          }))}
+          pickerProposals={proposalsList.map((p) => ({
+            id: p.id,
+            title: p.title,
+            status: p.status,
+            clientName: p.client?.name ?? null,
+            hasJob: p.jobs.length > 0,
+          }))}
+          pickerClients={clientsList.map((c) => ({
+            id: c.id,
+            name: c.name,
+            email: c.email,
           }))}
           pickerWorkers={workers.map((w) => ({
             id: w.id,

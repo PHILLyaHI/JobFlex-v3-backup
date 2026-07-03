@@ -7,7 +7,6 @@ import {
   CardTitle,
   CardSubtitle,
 } from "@/components/ui/Card";
-import { PreviewTag, PreviewNote } from "./PreviewTag";
 
 interface StagedFile {
   id: string;
@@ -63,9 +62,7 @@ export function FilesBlock() {
     <Card>
       <CardHeader>
         <div>
-          <CardTitle className="inline-flex items-center gap-2">
-            Files &amp; Documents <PreviewTag />
-          </CardTitle>
+          <CardTitle>Files &amp; Documents</CardTitle>
           <CardSubtitle>
             Drop site photos, permits, spec sheets — anything alongside the
             quote.
@@ -144,12 +141,6 @@ export function FilesBlock() {
           </div>
         </>
       )}
-
-      <PreviewNote>
-        Persisting attachments needs an `Attachment` model and an upload
-        endpoint (Vercel Blob is already wired for the rest of JobFlex). Until
-        then files only live in this builder session.
-      </PreviewNote>
     </Card>
   );
 }

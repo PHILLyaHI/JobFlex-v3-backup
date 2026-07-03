@@ -2,6 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { motion } from "framer-motion";
 import { LayoutDashboard, Users, Workflow, Clock } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -22,15 +23,25 @@ export function CrmTabs() {
           <Link
             key={t.href}
             href={t.href as any}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "shrink-0 inline-flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-medium transition-all",
+              "relative shrink-0 inline-flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-medium transition-colors",
               active
-                ? "bg-[color:var(--ink)] text-[color:var(--paper)]"
+                ? "text-[color:var(--paper)]"
                 : "text-[color:var(--ink-muted)] hover:bg-black/[0.04] hairline",
             )}
           >
-            {t.icon}
-            {t.label}
+            {active && (
+              <motion.span
+                layoutId="crm-tab-pill"
+                className="absolute inset-0 rounded-full bg-[color:var(--ink)]"
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+              />
+            )}
+            <span className="relative z-10 inline-flex items-center gap-1.5">
+              {t.icon}
+              {t.label}
+            </span>
           </Link>
         );
       })}

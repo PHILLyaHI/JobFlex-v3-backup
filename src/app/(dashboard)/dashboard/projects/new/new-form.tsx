@@ -9,6 +9,8 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { createProject } from "@/actions/projects";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
+import { UsageMeter } from "@/components/billing/UsageMeter";
 
 export function NewProjectForm() {
   const router = useRouter();
@@ -26,6 +28,10 @@ export function NewProjectForm() {
       return;
     }
     setBusy(true);
+    if (!(await ensureWithinLimit("projects"))) {
+      setBusy(false);
+      return;
+    }
     try {
       const res = await createProject({
         name,
@@ -38,6 +44,7 @@ export function NewProjectForm() {
       toast.success("Project created");
       router.push(`/dashboard/projects/${res.id}` as any);
     } catch (err: any) {
+      if (reportPlanLimit(err)) return;
       toast.error("Couldn't create", err?.message);
     } finally {
       setBusy(false);
@@ -101,7 +108,8 @@ export function NewProjectForm() {
           />
         </div>
       </div>
-      <div className="mt-5 flex gap-2">
+      <UsageMeter resource="projects" className="mt-5 max-w-full" />
+      <div className="mt-3 flex gap-2">
         <Button loading={busy} onClick={save} icon={<Save className="h-3.5 w-3.5" />}>
           Create project
         </Button>

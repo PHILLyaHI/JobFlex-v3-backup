@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ApplicantStatus } from "@/lib/prismaEnums";
 
@@ -22,7 +22,7 @@ const applicantInput = z.object({
 });
 
 export async function createApplicant(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = applicantInput.parse(raw);
   const a = await db.applicant.create({
     data: {
@@ -49,7 +49,7 @@ const statusSchema = z.enum([
 ]);
 
 export async function updateApplicantStatus(id: string, next: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const status = statusSchema.parse(next);
   const a = await db.applicant.findUnique({ where: { id } });
   if (!a || a.organizationId !== organizationId) throw new Error("Not found");
@@ -61,7 +61,7 @@ export async function updateApplicantStatus(id: string, next: string) {
 }
 
 export async function appendApplicantNote(id: string, text: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const a = await db.applicant.findUnique({ where: { id } });
   if (!a || a.organizationId !== organizationId) throw new Error("Not found");
   const stamped = `${new Date().toISOString().slice(0, 16).replace("T", " ")} — ${text}`;
@@ -71,7 +71,7 @@ export async function appendApplicantNote(id: string, text: string) {
 }
 
 export async function convertApplicantToWorker(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const a = await db.applicant.findUnique({ where: { id } });
   if (!a || a.organizationId !== organizationId) throw new Error("Not found");
   const { createWorkerInvite } = await import("./workers");
@@ -88,7 +88,7 @@ export async function convertApplicantToWorker(id: string) {
 }
 
 export async function deleteApplicant(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const a = await db.applicant.findUnique({ where: { id } });
   if (!a || a.organizationId !== organizationId) throw new Error("Not found");
   await db.applicant.delete({ where: { id } });

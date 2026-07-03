@@ -41,6 +41,7 @@ interface JobCore {
   id: string;
   title: string;
   status: string;
+  scopeOfWork: string | null;
   notes: string | null;
   startsAt: Date | null;
   endsAt: Date | null;
@@ -78,6 +79,7 @@ interface ExpenseDTO {
 interface MessageDTO {
   id: string;
   authorId: string | null;
+  authorName: string | null;
   body: string;
   createdAt: Date;
 }
@@ -136,7 +138,6 @@ export function JobDetail(props: JobDetailProps) {
           { key: "changes", label: "Changes", count: changeOrders.length },
           { key: "photos", label: "Photos", count: photos.length },
           { key: "expenses", label: "Expenses", count: expenses.length },
-          { key: "messages", label: "Messages", count: messages.length },
         ]}
       />
 
@@ -173,6 +174,14 @@ export function JobDetail(props: JobDetailProps) {
                 value={`${money(expenseTotal)} across ${expenses.length}`}
               />
             </div>
+            {job.scopeOfWork && (
+              <div className="mt-5 pt-4 border-t border-[color:var(--ink-line)]">
+                <div className="quiet-caps mb-2">Scope of work</div>
+                <p className="text-[13px] leading-relaxed text-[color:var(--ink-soft)] whitespace-pre-wrap">
+                  {job.scopeOfWork}
+                </p>
+              </div>
+            )}
             {job.notes && (
               <div className="mt-5 pt-4 border-t border-[color:var(--ink-line)]">
                 <div className="quiet-caps mb-2">Notes</div>
@@ -367,13 +376,6 @@ export function JobDetail(props: JobDetailProps) {
         <ChangeOrderList jobId={job.id} orders={changeOrders} />
       )}
 
-      {tab === "messages" && (
-        <MessagesTab
-          jobId={job.id}
-          messages={messages}
-          onChange={() => router.refresh()}
-        />
-      )}
     </>
   );
 }
@@ -714,19 +716,25 @@ function MessagesTab({
             No messages yet. Start the thread below.
           </p>
         )}
-        {messages.map((m) => (
-          <div key={m.id} className="flex gap-3">
-            <Avatar name={m.authorId ? "Team" : "Client"} size={28} />
-            <div className="flex-1 min-w-0">
-              <div className="text-[11px] text-[color:var(--ink-muted)] tabular">
-                {relative(m.createdAt)}
-              </div>
-              <div className="text-[13px] text-[color:var(--ink-soft)] whitespace-pre-wrap leading-relaxed mt-0.5">
-                {m.body}
+        {messages.map((m) => {
+          const who = m.authorName ?? (m.authorId ? "Team" : "Client");
+          return (
+            <div key={m.id} className="flex gap-3">
+              <Avatar name={who} size={28} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-medium text-[color:var(--ink)]">{who}</span>
+                  <span className="text-[11px] text-[color:var(--ink-muted)] tabular">
+                    {relative(m.createdAt)}
+                  </span>
+                </div>
+                <div className="text-[13px] text-[color:var(--ink-soft)] whitespace-pre-wrap leading-relaxed mt-0.5">
+                  {m.body}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="mt-5 pt-5 border-t border-[color:var(--ink-line)]">
         <Textarea

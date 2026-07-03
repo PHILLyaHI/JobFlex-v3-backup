@@ -1,10 +1,14 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
+import { renderTemplate } from "@/lib/email/render";
+import { PRESET_PREVIEW_VARS } from "@/lib/email/presets";
 
 interface Props {
   open: boolean;
@@ -17,7 +21,7 @@ interface Props {
     enabled: boolean;
     templateId: string | null;
   }) => Promise<void>;
-  templates: { id: string; name: string }[];
+  templates: { id: string; name: string; subject: string; body: string }[];
   existing?: {
     id: string;
     name: string;
@@ -48,6 +52,7 @@ export function NewFollowUpRuleSheet({
   const [enabled, setEnabled] = React.useState(existing?.enabled ?? true);
   const [templateId, setTemplateId] = React.useState(existing?.templateId ?? "");
   const [busy, setBusy] = React.useState(false);
+  const selected = templates.find((t) => t.id === templateId);
 
   React.useEffect(() => {
     if (!open) return;
@@ -136,18 +141,45 @@ export function NewFollowUpRuleSheet({
             <option value="days">Days</option>
           </Select>
         </div>
-        <Select
-          label="Email template"
-          value={templateId}
-          onChange={(e) => setTemplateId(e.target.value)}
-        >
-          <option value="">— None (activity only) —</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </Select>
+        <div>
+          <Select
+            label="Email template"
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+          >
+            <option value="">— None (activity only) —</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <span className="text-[10.5px] text-[color:var(--ink-muted)]">
+              {selected ? "Here's how it'll read." : "No template — nothing is emailed, just logged."}
+            </span>
+            <Link
+              href={"/dashboard/settings/email" as never}
+              className="inline-flex items-center gap-1 text-[10.5px] font-medium text-[color:var(--accent-ink)] hover:underline"
+            >
+              <Sparkles className="h-3 w-3" />
+              {templates.length === 0 ? "Create from a preset" : "Design templates"}
+            </Link>
+          </div>
+        </div>
+
+        {selected && (
+          <div className="rounded-[var(--r-lg)] hairline bg-white overflow-hidden">
+            <div className="quiet-caps px-4 pt-3">Preview · demo data</div>
+            <div className="px-4 pb-2 font-display text-[15px] tracking-[-0.01em] text-[color:var(--ink)]">
+              {renderTemplate(selected.subject, PRESET_PREVIEW_VARS)}
+            </div>
+            <div className="max-h-40 overflow-y-auto border-t border-[color:var(--ink-line)] px-4 py-3 whitespace-pre-wrap text-[12px] leading-relaxed text-[color:var(--ink-soft)]">
+              {renderTemplate(selected.body, PRESET_PREVIEW_VARS)}
+            </div>
+          </div>
+        )}
+
         <label className="flex items-center gap-2 text-[13px]">
           <input
             type="checkbox"

@@ -106,7 +106,7 @@ export function NewAnnouncementSheet({ open, onClose, onSubmit }: Props) {
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
           >
-            <option value="0">Normal · indigo</option>
+            <option value="0">Normal · sage</option>
             <option value="1">Warn · rose</option>
             <option value="2">High · amber</option>
           </Select>

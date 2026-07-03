@@ -3,18 +3,15 @@ import * as React from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
-interface AttentionProposal {
-  status: string;
-  viewCount: number;
-}
-
-interface AttentionLead {
-  status: string;
+/** Real org-wide counts computed server-side (not derived from a capped list). */
+export interface AttentionCounts {
+  unviewed: number;
+  viewed: number;
+  newLeads: number;
 }
 
 interface AttentionListProps {
-  proposals: AttentionProposal[];
-  leads: AttentionLead[];
+  counts: AttentionCounts;
 }
 
 interface AttentionItem {
@@ -25,38 +22,35 @@ interface AttentionItem {
   href: string;
 }
 
-function buildItems(proposals: AttentionProposal[], leads: AttentionLead[]): AttentionItem[] {
+function buildItems(counts: AttentionCounts): AttentionItem[] {
   const items: AttentionItem[] = [];
 
-  const unviewed = proposals.filter((p) => p.status === "SENT" && (p.viewCount ?? 0) === 0).length;
-  if (unviewed > 0) {
+  if (counts.unviewed > 0) {
     items.push({
       key: "unviewed",
       verb: "Nudge",
-      count: unviewed,
-      tail: unviewed === 1 ? "unviewed proposal" : "unviewed proposals",
+      count: counts.unviewed,
+      tail: counts.unviewed === 1 ? "unviewed proposal" : "unviewed proposals",
       href: "/dashboard/proposals",
     });
   }
 
-  const viewedAwaiting = proposals.filter((p) => p.status === "VIEWED").length;
-  if (viewedAwaiting > 0) {
+  if (counts.viewed > 0) {
     items.push({
       key: "viewed",
       verb: "Follow up on",
-      count: viewedAwaiting,
-      tail: viewedAwaiting === 1 ? "viewed proposal" : "viewed proposals",
+      count: counts.viewed,
+      tail: counts.viewed === 1 ? "viewed proposal" : "viewed proposals",
       href: "/dashboard/proposals",
     });
   }
 
-  const newLeads = leads.filter((l) => l.status === "NEW").length;
-  if (newLeads > 0) {
+  if (counts.newLeads > 0) {
     items.push({
       key: "new-leads",
       verb: "Triage",
-      count: newLeads,
-      tail: newLeads === 1 ? "new lead" : "new leads",
+      count: counts.newLeads,
+      tail: counts.newLeads === 1 ? "new lead" : "new leads",
       href: "/dashboard/leads",
     });
   }
@@ -64,8 +58,8 @@ function buildItems(proposals: AttentionProposal[], leads: AttentionLead[]): Att
   return items;
 }
 
-export function AttentionList({ proposals, leads }: AttentionListProps) {
-  const items = React.useMemo(() => buildItems(proposals, leads), [proposals, leads]);
+export function AttentionList({ counts }: AttentionListProps) {
+  const items = React.useMemo(() => buildItems(counts), [counts]);
 
   if (items.length === 0) return null;
 

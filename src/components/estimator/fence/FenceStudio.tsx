@@ -12,9 +12,9 @@ import { toast } from "@/components/ui/Toast";
 import { Button } from "@/components/ui/Button";
 import { PlacesAutocomplete } from "@/components/estimator/roof/PlacesAutocomplete";
 import { useFenceStudioStore } from "@/stores/useFenceStudioStore";
-import { MATERIAL_LABEL } from "./fenceTypes";
+import { materialLabel, materialColor, variantLabel } from "./fenceTypes";
 import { computeFenceLayout } from "./fenceGeometry";
-import { buildFenceLineItems } from "./fencePricing";
+import { buildFenceLineItems, type FenceLabels } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
 import { latLngToLocalFeet, simplifyPath } from "./mapProjection";
@@ -22,6 +22,8 @@ import { FenceModel3D, type FenceModel3DHandle } from "./FenceModel3D";
 import { FenceDrawMap } from "./FenceDrawMap";
 import { FenceToolbelt } from "./FenceToolbelt";
 import { FencePriceBar } from "./FencePriceBar";
+import { FenceLedger } from "./FenceLedger";
+import { FencePriceSheet } from "./FencePriceSheet";
 
 type View = "draw" | "3d";
 
@@ -37,11 +39,31 @@ export function FenceStudio() {
   const selectedSegment = useFenceStudioStore((s) => s.spec.selectedSegment);
   const lat = useFenceStudioStore((s) => s.spec.lat);
   const lng = useFenceStudioStore((s) => s.spec.lng);
+  const pricing = useFenceStudioStore((s) => s.pricing);
+  const armed = useFenceStudioStore((s) => s.armed);
+  const customMaterials = useFenceStudioStore((s) => s.customMaterials);
+  const customOpenings = useFenceStudioStore((s) => s.customOpenings);
   const setAddress = useFenceStudioStore((s) => s.setAddress);
   const setPoints = useFenceStudioStore((s) => s.setPoints);
+  const addOpeningAt = useFenceStudioStore((s) => s.addOpeningAt);
+  const updateGate = useFenceStudioStore((s) => s.updateGate);
+  const arm = useFenceStudioStore((s) => s.arm);
+  const disarm = useFenceStudioStore((s) => s.disarm);
   const reset = useFenceStudioStore((s) => s.reset);
 
-  const [view, setView] = React.useState<View>("3d");
+  // Resolve custom material/opening display names + colour for pricing labels + 3D.
+  const matName = materialLabel(material, customMaterials);
+  const matColor = materialColor(material, customMaterials);
+  const labels: FenceLabels = {
+    material: matName,
+    opening: (_k, v) => variantLabel(v, customOpenings),
+  };
+
+  // Draw is the working default — you land on the trace surface, not the 3D preview.
+  // Arming an Add gate/door tool forces Draw (you're placing on the map), derived so
+  // there's no state-sync effect.
+  const [viewState, setView] = React.useState<View>("draw");
+  const view: View = armed ? "draw" : viewState;
   const [converting, setConverting] = React.useState(false);
   const [loadingBoundary, setLoadingBoundary] = React.useState(false);
   const [drawRev, setDrawRev] = React.useState(0); // bump to re-seed the draw map after external point changes
@@ -82,13 +104,17 @@ export function FenceStudio() {
     try {
       const layout = computeFenceLayout(points, gates);
       const lengthFt = layout.totalLengthFt;
-      const { materials, labor } = buildFenceLineItems({
-        lengthFt,
-        height,
-        material,
-        openings: gates,
-        demolition,
-      });
+      const { materials, labor } = buildFenceLineItems(
+        {
+          lengthFt,
+          height,
+          material,
+          openings: gates,
+          demolition,
+        },
+        pricing,
+        labels,
+      );
       // Both hero panels stay mounted (opacity toggle keeps the 3D sized + live),
       // so the snapshot is available regardless of which view is active.
       const previewDataUrl = modelRef.current?.capture() ?? undefined;
@@ -98,16 +124,14 @@ export function FenceStudio() {
       if (gateCount > 0) openingNotes.push(`${gateCount} gate${gateCount === 1 ? "" : "s"}`);
       if (doorCount > 0) openingNotes.push(`${doorCount} door${doorCount === 1 ? "" : "s"}`);
       const assumptions = [
-        `${MATERIAL_LABEL[material]} fence, ${height} ft tall`,
+        `${matName} fence, ${height} ft tall`,
         `${Math.round(lengthFt)} linear ft across ${layout.segCount} run${layout.segCount === 1 ? "" : "s"}`,
         openingNotes.length ? openingNotes.join(", ") : "No gates or doors",
         demolition ? "Includes removal & haul-away of the existing fence" : "No demolition included",
       ];
       const res = await convertFenceEstimateToProposal({
-        title: `${MATERIAL_LABEL[material]} fence · ${Math.round(lengthFt)} lf`,
-        scope: `Supply and install ${Math.round(lengthFt)} linear ft of ${MATERIAL_LABEL[
-          material
-        ].toLowerCase()} fence at ${height} ft tall.`,
+        title: `${matName} fence · ${Math.round(lengthFt)} lf`,
+        scope: `Supply and install ${Math.round(lengthFt)} linear ft of ${matName.toLowerCase()} fence at ${height} ft tall.`,
         materials,
         labor,
         assumptions,
@@ -128,6 +152,7 @@ export function FenceStudio() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[220px]">
           <PlacesAutocomplete
+            enableFind
             onPick={(a) => {
               setAddress(a);
               setView("draw");
@@ -144,7 +169,13 @@ export function FenceStudio() {
         >
           Load Property Lines
         </Button>
-        <ViewToggle value={view} onChange={setView} />
+        <ViewToggle
+          value={view}
+          onChange={(v) => {
+            if (armed && v !== "draw") disarm();
+            setView(v);
+          }}
+        />
         <button
           type="button"
           onClick={() => {
@@ -171,6 +202,7 @@ export function FenceStudio() {
               points={points}
               height={height}
               material={material}
+              materialColor={matColor}
               gates={gates}
               selectedSegment={selectedSegment}
               active={view === "3d"}
@@ -189,6 +221,12 @@ export function FenceStudio() {
               points={points}
               onChange={setPoints}
               revision={drawRev}
+              gates={gates}
+              armed={armed}
+              onArm={arm}
+              onDropOpening={addOpeningAt}
+              onUpdateGate={updateGate}
+              onDisarm={disarm}
               className="h-full w-full"
             />
           </div>
@@ -204,9 +242,11 @@ export function FenceStudio() {
 
         <aside className="space-y-5">
           <FencePriceBar onConvert={handleConvert} converting={converting} />
+          <FenceLedger />
           <div className="rounded-[var(--r-lg)] bg-[color:var(--paper)] hairline shadow-[var(--shadow-sm)] p-4">
             <FenceToolbelt />
           </div>
+          <FencePriceSheet />
         </aside>
       </div>
     </div>

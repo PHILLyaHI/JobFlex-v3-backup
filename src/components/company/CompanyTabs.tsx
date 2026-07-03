@@ -2,14 +2,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Palette, Globe, Users, CreditCard } from "lucide-react";
+import { Palette, Globe, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-const TABS = [
+const TABS: { href: string; label: string; icon: React.ReactNode; soon?: boolean }[] = [
   { href: "/dashboard/company", label: "Branding", icon: <Palette className="h-3.5 w-3.5" /> },
-  { href: "/dashboard/company/landing", label: "Landing builder", icon: <Globe className="h-3.5 w-3.5" /> },
-  { href: "/dashboard/company/team", label: "Team", icon: <Users className="h-3.5 w-3.5" /> },
-  { href: "/dashboard/company/subscription", label: "Subscription", icon: <CreditCard className="h-3.5 w-3.5" /> },
+  // Team is the unified roster now — it lives at /dashboard/workers.
+  { href: "/dashboard/workers", label: "Team", icon: <Users className="h-3.5 w-3.5" /> },
+  { href: "/dashboard/company/landing", label: "Landing builder", icon: <Globe className="h-3.5 w-3.5" />, soon: true },
 ];
 
 export function CompanyTabs() {
@@ -31,6 +31,18 @@ export function CompanyTabs() {
           >
             {t.icon}
             {t.label}
+            {t.soon && (
+              <span
+                className={cn(
+                  "ml-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em]",
+                  active
+                    ? "bg-[color:var(--paper)]/20 text-[color:var(--paper)]"
+                    : "bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)]",
+                )}
+              >
+                Soon
+              </span>
+            )}
           </Link>
         );
       })}

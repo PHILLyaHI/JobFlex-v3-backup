@@ -1,9 +1,9 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager, requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { sendEmail } from "@/lib/sdk/resend";
+import { sendOrgEmail } from "@/lib/email/orgSend";
 import { renderTemplate, wrapEmail } from "@/lib/email/render";
 
 const ruleInput = z.object({
@@ -16,7 +16,7 @@ const ruleInput = z.object({
 });
 
 export async function upsertFollowUpRule(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = ruleInput.parse(raw);
 
   if (data.id) {
@@ -51,7 +51,7 @@ export async function upsertFollowUpRule(raw: unknown) {
 }
 
 export async function setFollowUpRuleEnabled(id: string, enabled: boolean) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const rule = await db.followUpRule.findUnique({ where: { id } });
   if (!rule || rule.organizationId !== organizationId) throw new Error("Not found");
   await db.followUpRule.update({ where: { id }, data: { enabled } });
@@ -59,7 +59,7 @@ export async function setFollowUpRuleEnabled(id: string, enabled: boolean) {
 }
 
 export async function deleteFollowUpRule(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const rule = await db.followUpRule.findUnique({ where: { id } });
   if (!rule || rule.organizationId !== organizationId) throw new Error("Not found");
   await db.followUpRule.delete({ where: { id } });
@@ -88,6 +88,7 @@ export async function scheduleFollowUpsFor(proposalId: string, newStatus: string
         proposalId: proposal.id,
         runAt,
         note: `${r.name} · ${r.triggerStatus} + ${r.delayMinutes}m`,
+        templateId: r.template,
       },
     });
     scheduled++;
@@ -112,7 +113,8 @@ export async function runDueFollowUps(): Promise<{ processed: number; delivered:
 }
 
 export async function runFollowUpNow(id: string) {
-  const { organizationId } = await requireOrg();
+  // Working the CRM queue is a sales activity; rule CRUD above stays manager-only.
+  const { organizationId } = await requireSalesOrManager();
   const fu = await db.followUp.findUnique({ where: { id } });
   if (!fu || fu.organizationId !== organizationId) throw new Error("Not found");
   await dispatchOne(fu.id);
@@ -121,7 +123,7 @@ export async function runFollowUpNow(id: string) {
 }
 
 export async function markFollowUpDone(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireSalesOrManager();
   const fu = await db.followUp.findUnique({ where: { id } });
   if (!fu || fu.organizationId !== organizationId) throw new Error("Not found");
   if (fu.completedAt) return;
@@ -143,15 +145,30 @@ async function dispatchOne(id: string): Promise<boolean> {
   const proposal = fu.proposalId
     ? await db.proposal.findUnique({
         where: { id: fu.proposalId },
-        include: { client: true, organization: { select: { name: true } } },
+        include: {
+          client: true,
+          organization: {
+            select: {
+              name: true,
+              gmailSettingsJson: true,
+              gmailTokensJson: true,
+              billingEmail: true,
+            },
+          },
+        },
       })
     : null;
 
   if (proposal?.client?.email) {
-    // If the rule has a template, use it. Otherwise, default "reminder".
-    const tpl = await db.emailTemplate.findFirst({
-      where: { organizationId: fu.organizationId, category: "reminder" },
-    });
+    // Prefer the exact template the rule chose; else any "reminder" template the
+    // org has; else the built-in default copy below.
+    const tpl = fu.templateId
+      ? await db.emailTemplate.findFirst({
+          where: { id: fu.templateId, organizationId: fu.organizationId },
+        })
+      : await db.emailTemplate.findFirst({
+          where: { organizationId: fu.organizationId, category: "reminder" },
+        });
     const subject = tpl?.subject ?? "A quick nudge — {{title}}";
     const body =
       tpl?.body ??
@@ -169,7 +186,9 @@ async function dispatchOne(id: string): Promise<boolean> {
       body: renderTemplate(body, vars),
       orgName: proposal.organization.name,
     });
-    await sendEmail({
+    // Sends via the org's connected Gmail when opted in, else Resend/SMTP with
+    // the contractor as reply-to.
+    await sendOrgEmail(proposal.organization, {
       to: proposal.client.email,
       subject: wrapped.subject,
       html: wrapped.html,

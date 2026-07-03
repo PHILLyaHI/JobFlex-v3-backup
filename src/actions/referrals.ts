@@ -1,6 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 function generateCode(seed: string) {
@@ -19,7 +19,7 @@ function generateCode(seed: string) {
 }
 
 export async function getOrCreateMyReferralCode() {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireManager();
   const existing = await db.referralCode.findFirst({
     where: { organizationId, userId: user.id },
   });
@@ -61,7 +61,7 @@ export async function recordReferralConversion(code: string, signupEmail: string
 }
 
 export async function markConversionConverted(conversionId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const conv = await db.referralConversion.findUnique({
     where: { id: conversionId },
     include: { code: true },

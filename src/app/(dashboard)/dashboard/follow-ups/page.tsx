@@ -16,7 +16,7 @@ export default async function FollowUpsPage() {
     db.emailTemplate.findMany({
       where: { organizationId },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, subject: true, body: true },
     }),
     db.followUp.findMany({
       where: { organizationId, completedAt: null },

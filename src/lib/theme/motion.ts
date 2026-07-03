@@ -30,6 +30,20 @@ export const popover: Variants = {
   exit: { opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.12, ease: editorialEase } },
 };
 
+// Centered modal "pop": a calm scale + rise on entrance, a quicker settle on exit.
+export const modal: Variants = {
+  initial: { opacity: 0, scale: 0.96, y: 8 },
+  animate: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.26, ease: editorialEase } },
+  exit: { opacity: 0, scale: 0.97, y: 6, transition: { duration: 0.16, ease: editorialEase } },
+};
+
+// Dimming scrim behind a modal — fades in/out in step with the card above it.
+export const scrimFade: Variants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: 0.26, ease: editorialEase } },
+  exit: { opacity: 0, transition: { duration: 0.16, ease: editorialEase } },
+};
+
 export const fadeUp: Variants = {
   initial: { opacity: 0, y: 10 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.44, ease: editorialEase } },

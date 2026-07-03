@@ -18,7 +18,7 @@ import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { cn } from "@/lib/cn";
 import { computeFenceLayout, type FenceLayout, type GateUnit } from "./fenceGeometry";
 import { makeFenceTextures, makeChainLinkAlpha, type FenceMaterialTextures } from "./fenceTexture";
-import type { PathPoint, FenceMaterial, GateSpec } from "./fenceTypes";
+import { isBuiltinMaterial, type PathPoint, type GateSpec } from "./fenceTypes";
 
 // Member authoring dimensions (feet). Horizontal axis is local +X so a single
 // rotation.y = yaw aligns every member with its run.
@@ -44,7 +44,8 @@ export interface FenceModel3DHandle {
 interface ViewSpec {
   points: PathPoint[];
   height: number;
-  material: FenceMaterial;
+  material: string; // MaterialId — built-in key or custom id
+  materialColor: string; // resolved swatch/colour (used for custom materials)
   gates: GateSpec[];
   selectedSegment: number | null;
 }
@@ -64,13 +65,17 @@ export const FenceModel3D = React.forwardRef<
   {
     points: PathPoint[];
     height: number;
-    material: FenceMaterial;
+    material: string;
+    materialColor: string;
     gates: GateSpec[];
     selectedSegment: number | null;
     active?: boolean;
     className?: string;
   }
->(function FenceModel3D({ points, height, material, gates, selectedSegment, active = true, className }, ref) {
+>(function FenceModel3D(
+  { points, height, material, materialColor, gates, selectedSegment, active = true, className },
+  ref,
+) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   const [supported] = React.useState(webglSupported);
   const rendererRef = React.useRef<THREE.WebGLRenderer | null>(null);
@@ -94,8 +99,8 @@ export const FenceModel3D = React.forwardRef<
 
   const applyRef = React.useRef<(s: ViewSpec) => void>(() => {});
   React.useEffect(() => {
-    applyRef.current({ points, height, material, gates, selectedSegment });
-  }, [points, height, material, gates, selectedSegment]);
+    applyRef.current({ points, height, material, materialColor, gates, selectedSegment });
+  }, [points, height, material, materialColor, gates, selectedSegment]);
 
   // When the studio hides this panel (Draw view), release pointer-lock/keys so a
   // fly session can't keep driving an invisible scene; on re-show, re-frame if the
@@ -203,26 +208,42 @@ export const FenceModel3D = React.forwardRef<
     const picketGeo = new THREE.BoxGeometry(PICKET_WIDTH, 1, PICKET_DEPTH);
     const railGeo = new THREE.BoxGeometry(1, RAIL_H, RAIL_D);
 
-    const matCache = new Map<FenceMaterial, { mat: THREE.MeshStandardMaterial; tex: FenceMaterialTextures }>();
-    const getMaterial = (m: FenceMaterial): THREE.MeshStandardMaterial => {
-      let entry = matCache.get(m);
+    // Cache keyed by material id. Built-in materials get authored textures; custom
+    // materials render as a solid MeshStandardMaterial tinted to their swatch colour.
+    const matCache = new Map<string, { mat: THREE.MeshStandardMaterial; tex: FenceMaterialTextures | null }>();
+    const getMaterial = (id: string, color: string): THREE.MeshStandardMaterial => {
+      let entry = matCache.get(id);
       if (!entry) {
-        const tex = makeFenceTextures(m);
-        const mat = new THREE.MeshStandardMaterial({
-          map: tex.map ?? undefined,
-          bumpMap: tex.bump ?? undefined,
-          bumpScale: 0.4,
-          color: tex.color,
-          roughness: tex.roughness,
-          metalness: tex.metalness,
-          envMapIntensity: 0.55,
-        });
-        entry = { mat, tex };
-        matCache.set(m, entry);
+        if (isBuiltinMaterial(id)) {
+          const tex = makeFenceTextures(id);
+          const mat = new THREE.MeshStandardMaterial({
+            map: tex.map ?? undefined,
+            bumpMap: tex.bump ?? undefined,
+            bumpScale: 0.4,
+            color: tex.color,
+            roughness: tex.roughness,
+            metalness: tex.metalness,
+            envMapIntensity: 0.55,
+          });
+          entry = { mat, tex };
+        } else {
+          const mat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(color || "#8a8f97"),
+            roughness: 0.82,
+            metalness: 0.05,
+            envMapIntensity: 0.5,
+          });
+          entry = { mat, tex: null };
+        }
+        matCache.set(id, entry);
       }
       return entry.mat;
     };
     const gatePostMat = new THREE.MeshStandardMaterial({ color: 0x3a3f45, roughness: 0.5, metalness: 0.4 });
+    // Gates and doors read in their OWN colours so they stand apart from the fence
+    // and from each other: gates a warm bronze, doors a cool slate blue.
+    const gateLeafMat = new THREE.MeshStandardMaterial({ color: 0x9a5a2b, roughness: 0.55, metalness: 0.25 });
+    const doorLeafMat = new THREE.MeshStandardMaterial({ color: 0x42607f, roughness: 0.5, metalness: 0.2 });
     const chainAlphaBase = makeChainLinkAlpha();
 
     const fenceGroup = new THREE.Group();
@@ -242,14 +263,14 @@ export const FenceModel3D = React.forwardRef<
     let picketMesh: THREE.InstancedMesh | null = null;
     let railMesh: THREE.InstancedMesh | null = null;
     let built: FenceLayout | null = null;
-    let curMaterial: FenceMaterial | null = null;
+    let curMaterial: string | null = null;
     let framed = false;
     // Last geometry-affecting inputs (by reference). selectedSegment is NOT here:
     // a selection change only moves the highlight, never rebuilds geometry.
     let prevPts: PathPoint[] | null = null;
     let prevGates: GateSpec[] | null = null;
     let prevH = -1;
-    let prevMat: FenceMaterial | null = null;
+    let prevMat: string | null = null;
 
     const center = (l: FenceLayout) => ({
       cx: (l.bounds.minX + l.bounds.maxX) / 2,
@@ -266,8 +287,8 @@ export const FenceModel3D = React.forwardRef<
       postMesh = picketMesh = railMesh = null;
     };
 
-    const buildInstances = (l: FenceLayout, m: FenceMaterial) => {
-      const mat = getMaterial(m);
+    const buildInstances = (l: FenceLayout, m: string, color: string) => {
+      const mat = getMaterial(m, color);
       postMesh = new THREE.InstancedMesh(postGeo, mat, Math.max(1, l.postCount));
       picketMesh = new THREE.InstancedMesh(picketGeo, mat, Math.max(1, l.picketCount));
       railMesh = new THREE.InstancedMesh(railGeo, mat, Math.max(1, l.railCount));
@@ -338,6 +359,110 @@ export const FenceModel3D = React.forwardRef<
       while (g.children.length) g.remove(g.children[0]);
     };
 
+    // ── Contextual scenery: an approximate home in the parcel + trees + neighbours.
+    // Deliberately rough (the user asked for "something to show", not accuracy) and
+    // cheap: a handful of meshes with shared materials, rebuilt only on big size
+    // changes and placed deterministically so it never jitters.
+    const sceneryGroup = new THREE.Group();
+    scene.add(sceneryGroup);
+    const houseWallMat = new THREE.MeshStandardMaterial({ color: 0xd8cdba, roughness: 0.85 });
+    const houseRoofMat = new THREE.MeshStandardMaterial({ color: 0x5b4636, roughness: 0.8 });
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.95 });
+    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x4d7a46, roughness: 1, flatShading: true });
+    const neighborWallMat = new THREE.MeshStandardMaterial({ color: 0xc7c0b4, roughness: 0.9 });
+    const sceneryMats = [houseWallMat, houseRoofMat, trunkMat, foliageMat, neighborWallMat];
+
+    const mulberry32 = (seed: number) => () => {
+      seed |= 0;
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const clampN = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+    const addRoofedBox = (
+      w: number,
+      d: number,
+      wallH: number,
+      roofH: number,
+      wallMat: THREE.Material,
+      roofMat: THREE.Material,
+      x: number,
+      z: number,
+      rotY: number,
+    ) => {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), wallMat);
+      body.position.set(x, wallH / 2, z);
+      body.rotation.y = rotY;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) / 2, roofH, 4), roofMat);
+      roof.position.set(x, wallH + roofH / 2, z);
+      roof.rotation.y = Math.PI / 4 + rotY;
+      roof.castShadow = true;
+      sceneryGroup.add(body, roof);
+    };
+    const addTree = (x: number, z: number, s: number) => {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28 * s, 0.4 * s, 3.2 * s, 6), trunkMat);
+      trunk.position.set(x, 1.6 * s, z);
+      trunk.castShadow = true;
+      const canopy = new THREE.Mesh(new THREE.IcosahedronGeometry(1.8 * s, 0), foliageMat);
+      canopy.position.set(x, 4.0 * s, z);
+      canopy.castShadow = true;
+      sceneryGroup.add(trunk, canopy);
+    };
+
+    let scenerySpan = -1;
+    const buildScenery = (l: FenceLayout) => {
+      clearGroup(sceneryGroup, false); // dispose geometries, keep shared materials
+      const w = Math.max(6, l.bounds.maxX - l.bounds.minX);
+      const d = Math.max(6, l.bounds.maxY - l.bounds.minY);
+      const span = Math.max(w, d);
+      const minDim = Math.min(w, d);
+      const rnd = mulberry32(1337);
+      // Main house, centred in the parcel (the fence is centred at scene origin).
+      addRoofedBox(
+        clampN(minDim * 0.5, 8, 60),
+        clampN(minDim * 0.42, 8, 50),
+        clampN(minDim * 0.35, 9, 16),
+        clampN(minDim * 0.2, 5, 10),
+        houseWallMat,
+        houseRoofMat,
+        0,
+        0,
+        0,
+      );
+      const trees = 6;
+      for (let i = 0; i < trees; i++) {
+        const ang = (i / trees) * Math.PI * 2 + rnd() * 0.7;
+        const r = span * (0.62 + rnd() * 0.2);
+        addTree(Math.cos(ang) * r, Math.sin(ang) * r, 0.8 + rnd() * 0.7);
+      }
+      const neighbors = 3;
+      for (let i = 0; i < neighbors; i++) {
+        const ang = (i / neighbors) * Math.PI * 2 + 0.8 + rnd() * 0.5;
+        const r = span * (1.25 + rnd() * 0.5);
+        const nw = clampN(minDim * (0.4 + rnd() * 0.3), 8, 40);
+        addRoofedBox(
+          nw,
+          nw * 0.8,
+          clampN(minDim * 0.3, 8, 14),
+          6,
+          neighborWallMat,
+          houseRoofMat,
+          Math.cos(ang) * r,
+          Math.sin(ang) * r,
+          rnd() * Math.PI,
+        );
+      }
+      scenerySpan = span;
+    };
+    const buildSceneryIfNeeded = (l: FenceLayout) => {
+      const span = Math.max(6, l.bounds.maxX - l.bounds.minX, l.bounds.maxY - l.bounds.minY);
+      if (scenerySpan < 0 || Math.abs(span - scenerySpan) > scenerySpan * 0.15) buildScenery(l);
+    };
+
     const addBox = (
       parent: THREE.Object3D,
       geo: THREE.BufferGeometry,
@@ -354,13 +479,12 @@ export const FenceModel3D = React.forwardRef<
       return mesh;
     };
 
-    const rebuildGates = (l: FenceLayout, fenceH: number, m: FenceMaterial, cx: number, cy: number) => {
-      // Geometries are unique per build (dispose them); materials are shared/cached.
+    const rebuildGates = (l: FenceLayout, fenceH: number, cx: number, cy: number) => {
+      // Geometries are unique per build (dispose them); materials are shared.
       clearGroup(gateGroup, false);
-      const leafMat = getMaterial(m);
       const postH = fenceH + POST_CAP;
       for (const gu of l.gateUnits) {
-        buildOpening(gu, fenceH, postH, leafMat, cx, cy);
+        buildOpening(gu, fenceH, postH, cx, cy);
       }
     };
 
@@ -426,14 +550,8 @@ export const FenceModel3D = React.forwardRef<
       return g;
     };
 
-    const buildOpening = (
-      gu: GateUnit,
-      fenceH: number,
-      postH: number,
-      leafMat: THREE.Material,
-      cx: number,
-      cy: number,
-    ) => {
+    const buildOpening = (gu: GateUnit, fenceH: number, postH: number, cx: number, cy: number) => {
+      const leafMat = gu.kind === "door" ? doorLeafMat : gateLeafMat;
       const cos = Math.cos(gu.yaw);
       const sin = Math.sin(gu.yaw);
       const half = gu.widthFt / 2;
@@ -458,7 +576,7 @@ export const FenceModel3D = React.forwardRef<
       gateGroup.add(leaf);
     };
 
-    const rebuildChain = (l: FenceLayout, fenceH: number, m: FenceMaterial, cx: number, cy: number) => {
+    const rebuildChain = (l: FenceLayout, fenceH: number, m: string, cx: number, cy: number) => {
       clearGroup(chainGroup, true);
       if (m !== "chain-link") return;
       const tx = (x: number) => x - cx;
@@ -491,7 +609,7 @@ export const FenceModel3D = React.forwardRef<
       }
     };
 
-    const applyVisibility = (m: FenceMaterial) => {
+    const applyVisibility = (m: string) => {
       const isChain = m === "chain-link";
       if (picketMesh) picketMesh.visible = !isChain;
       chainGroup.visible = isChain;
@@ -643,9 +761,9 @@ export const FenceModel3D = React.forwardRef<
           built.railCount !== l.railCount;
         if (countsChanged) {
           disposeInstances();
-          buildInstances(l, next.material);
+          buildInstances(l, next.material, next.materialColor);
         } else if (next.material !== curMaterial) {
-          const mat = getMaterial(next.material);
+          const mat = getMaterial(next.material, next.materialColor);
           if (postMesh) postMesh.material = mat;
           if (picketMesh) picketMesh.material = mat;
           if (railMesh) railMesh.material = mat;
@@ -653,8 +771,9 @@ export const FenceModel3D = React.forwardRef<
         }
         writeMatrices(l, next.height, cx, cy);
         applyVisibility(next.material);
-        rebuildGates(l, next.height, next.material, cx, cy);
+        rebuildGates(l, next.height, cx, cy);
         rebuildChain(l, next.height, next.material, cx, cy);
+        buildSceneryIfNeeded(l);
         built = l;
         prevPts = next.points;
         prevGates = next.gates;
@@ -677,7 +796,7 @@ export const FenceModel3D = React.forwardRef<
       }
     };
 
-    applySpec({ points, height, material, gates, selectedSegment });
+    applySpec({ points, height, material, materialColor, gates, selectedSegment });
     applyRef.current = applySpec;
 
     activateRef.current = () => {
@@ -741,16 +860,20 @@ export const FenceModel3D = React.forwardRef<
       disposeInstances();
       clearGroup(gateGroup, false);
       clearGroup(chainGroup, true);
+      clearGroup(sceneryGroup, false);
+      for (const m of sceneryMats) m.dispose();
       postGeo.dispose();
       picketGeo.dispose();
       railGeo.dispose();
       highlightGeo.dispose();
       highlightMat.dispose();
       gatePostMat.dispose();
+      gateLeafMat.dispose();
+      doorLeafMat.dispose();
       chainAlphaBase.dispose();
       for (const { mat, tex } of matCache.values()) {
         mat.dispose();
-        tex.dispose();
+        tex?.dispose();
       }
       matCache.clear();
       groundGeo.dispose();

@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const input = z.object({
@@ -13,7 +13,7 @@ const input = z.object({
 });
 
 export async function upsertEmailTemplate(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = input.parse(raw);
 
   if (data.id) {
@@ -46,7 +46,7 @@ export async function upsertEmailTemplate(raw: unknown) {
 }
 
 export async function deleteEmailTemplate(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const t = await db.emailTemplate.findUnique({ where: { id } });
   if (!t || t.organizationId !== organizationId) throw new Error("Not found");
   await db.emailTemplate.delete({ where: { id } });

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KeyRound, ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { resetPassword } from "@/actions/auth";
@@ -85,17 +86,15 @@ function ResetInner() {
               Make it at least 8 characters. You&apos;ll use it to sign in from now on.
             </p>
             <form onSubmit={onSubmit} className="mt-8 space-y-4">
-              <Input
+              <PasswordInput
                 label="New password"
-                type="password"
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
-              <Input
+              <PasswordInput
                 label="Confirm password"
-                type="password"
                 autoComplete="new-password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}

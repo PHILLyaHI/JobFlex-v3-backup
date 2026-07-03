@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/cn";
 import type { TabKey } from "./types";
 
-// Medium-sized segmented tab strip with a sliding 2px Pressroom Indigo
+// Medium-sized segmented tab strip with a sliding 2px Pressed Sage
 // underline. The strip itself sits on a hairline baseline so the indicator
 // reads as a printer's rule, not a chunky button block. Width is content-led:
 // each tab is sized to its label, no stretching.
@@ -14,10 +14,10 @@ interface SegmentedTabsProps {
   onChange: (next: TabKey) => void;
 }
 
-const TABS: { key: TabKey; label: string; eyebrow: string }[] = [
-  { key: "all", label: "All", eyebrow: "Pipeline" },
-  { key: "accepted", label: "Accepted", eyebrow: "In motion" },
-  { key: "completed", label: "Completed", eyebrow: "Banked" },
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "accepted", label: "Accepted" },
+  { key: "completed", label: "Completed" },
 ];
 
 export function SegmentedTabs({ active, counts, onChange }: SegmentedTabsProps) {
@@ -44,31 +44,19 @@ export function SegmentedTabs({ active, counts, onChange }: SegmentedTabsProps) 
                 : "text-[color:var(--ink-muted)] hover:text-[color:var(--ink-soft)]",
             )}
           >
-            <span className="flex flex-col items-start gap-[2px]">
+            <span className="flex items-baseline gap-2">
+              <span className="font-display text-[18px] font-semibold tracking-[-0.015em]">
+                {t.label}
+              </span>
               <span
                 className={cn(
-                  "quiet-caps !mb-0 transition-colors",
+                  "tabular text-[12px] transition-colors",
                   isActive
-                    ? "text-[color:var(--accent-ink)]"
-                    : "text-[color:var(--ink-faint)] group-hover:text-[color:var(--ink-muted)]",
+                    ? "text-[color:var(--ink-soft)]"
+                    : "text-[color:var(--ink-faint)]",
                 )}
               >
-                {t.eyebrow}
-              </span>
-              <span className="flex items-baseline gap-2">
-                <span className="font-display text-[18px] font-semibold tracking-[-0.015em]">
-                  {t.label}
-                </span>
-                <span
-                  className={cn(
-                    "tabular text-[12px] transition-colors",
-                    isActive
-                      ? "text-[color:var(--ink-soft)]"
-                      : "text-[color:var(--ink-faint)]",
-                  )}
-                >
-                  {counts[t.key].toString().padStart(2, "0")}
-                </span>
+                {counts[t.key].toString().padStart(2, "0")}
               </span>
             </span>
 

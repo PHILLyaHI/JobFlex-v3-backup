@@ -34,10 +34,14 @@ export function RevenueMasthead({
       <div className="flex items-start justify-between gap-12 flex-wrap">
         <div className="min-w-0">
           <div className="flex items-center gap-3 mb-3">
-            <span className="quiet-caps !mb-0 text-[color:var(--accent-ink)]">
-              {primaryLabel}
-            </span>
-            <span aria-hidden className="h-px w-10 bg-[color:var(--ink-line)]" />
+            {primaryLabel && (
+              <>
+                <span className="quiet-caps !mb-0 text-[color:var(--accent-ink)]">
+                  {primaryLabel}
+                </span>
+                <span aria-hidden className="h-px w-10 bg-[color:var(--ink-line)]" />
+              </>
+            )}
             <span className="quiet-caps !mb-0 text-[color:var(--ink-faint)]">
               {countLabel}
               <span className="tabular ml-2 text-[color:var(--ink-soft)]">{count}</span>

@@ -4,7 +4,7 @@
 // Slot behaviour:
 //  - Single click on empty space → fires onSelectSlot(start, start+30min).
 //  - Click-and-drag downward → fires onSelectSlot(start, end) using the dragged
-//    span. While dragging, an indigo outline previews the slot in real time.
+//    span. While dragging, a sage outline previews the slot in real time.
 //  - After release, the WeekGrid's own preview is cleared. The parent passes
 //    `slotPreview` back so the outline stays pinned to the calendar while
 //    the QuickAdd sheet is open. The parent clears it on sheet dismiss.
@@ -15,9 +15,14 @@
 
 import * as React from "react";
 import { motion, type PanInfo } from "framer-motion";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { statusAccent } from "@/components/jobs/JobStatusBadge";
-import type { CalendarEvent } from "@/components/calendar/EventChip";
+import {
+  type CalendarEvent,
+  APPOINTMENT_BORDER,
+  APPOINTMENT_TINT,
+} from "@/components/calendar/EventChip";
 
 export interface SlotPreview {
   iso: string;
@@ -33,7 +38,7 @@ interface WeekGridProps {
   onResizeEvent?: (eventId: string, newStartISO: string, newEndISO: string) => void;
   onSelectSlot?: (start: Date, end: Date) => void;
   slotPreview?: SlotPreview | null;
-  hoveredDayIso?: string | null;
+  hoveredSlot?: { iso: string; totalMin: number } | null;
   startHour?: number;
   endHour?: number;
 }
@@ -42,6 +47,15 @@ const HOUR_PX = 56;
 const SNAP_MIN = 15;
 const CLICK_THRESHOLD_PX = 5;
 const CLICK_DEFAULT_DURATION_MIN = 30;
+
+// The full day is rendered, but the time grid scrolls inside a fixed viewport.
+// It opens scrolled to business hours so the default view matches the old
+// 7am–7pm window; the user can scroll (wheel or the chevron buttons) to reach
+// any hour.
+const VISIBLE_HOURS = 12;
+const INITIAL_HOUR = 7;
+const SCROLL_STEP_HOURS = 4;
+const HEADER_PX = 56;
 
 function startOfWeek(d: Date) {
   const x = new Date(d);
@@ -91,17 +105,32 @@ export function WeekGridA({
   onResizeEvent,
   onSelectSlot,
   slotPreview,
-  hoveredDayIso,
-  startHour = 7,
-  endHour = 19,
+  hoveredSlot,
+  startHour = 0,
+  endHour = 24,
 }: WeekGridProps) {
   const cellRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
+  const scrollRef = React.useRef<HTMLDivElement>(null);
   const weekStart = startOfWeek(cursor);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
   const today = new Date();
 
   const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null);
+  // Slot under an in-flight scheduled-chip drag (drives the crosshair + move).
+  const [chipHover, setChipHover] = React.useState<{ iso: string; totalMin: number } | null>(null);
+
+  // Open scrolled to business hours rather than midnight.
+  React.useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = Math.max(0, (INITIAL_HOUR - startHour) * HOUR_PX);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function scrollByHours(hoursDelta: number) {
+    scrollRef.current?.scrollBy({ top: hoursDelta * HOUR_PX, behavior: "smooth" });
+  }
 
   function positionFor(e: CalendarEvent, day: Date) {
     const start = new Date(e.startsAt);
@@ -119,26 +148,64 @@ export function WeekGridA({
       ? (today.getHours() - startHour) * HOUR_PX + (today.getMinutes() / 60) * HOUR_PX
       : null;
 
+  // A drop crosshair can come from a hovering tray card (prop) or from dragging
+  // an already-scheduled chip to a new slot (local state).
+  const cross = chipHover ?? hoveredSlot ?? null;
+  const hoverTopPx =
+    cross != null ? ((cross.totalMin - startHour * 60) / 60) * HOUR_PX : null;
+
   function handleMoveEnd(event: CalendarEvent, info: PanInfo) {
+    setChipHover(null);
     if (!onMoveEvent) return;
-    // Use elementsFromPoint so the dragged chip itself doesn't mask the cell.
-    const newDate = findDayAt(info.point);
-    if (newDate && !sameDay(newDate, new Date(event.startsAt))) {
-      onMoveEvent(event.id, newDate);
-    }
+    const slot = findSlotAt(info.point);
+    if (!slot) return;
+    const newStart = new Date(slot.date);
+    newStart.setHours(0, slot.totalMin, 0, 0);
+    // Move only if the target slot actually differs from the current start.
+    if (newStart.getTime() === new Date(event.startsAt).getTime()) return;
+    onMoveEvent(event.id, newStart);
   }
 
-  function findDayAt(point: { x: number; y: number }): Date | null {
+  // Resolve the calendar cell + time row under a pointer. Uses elementsFromPoint
+  // so the dragged chip (high z) doesn't mask the cell beneath it.
+  function findSlotAt(
+    point: { x: number; y: number },
+  ): { date: Date; iso: string; totalMin: number } | null {
     if (typeof document === "undefined") return null;
     const els = document.elementsFromPoint(point.x, point.y);
     for (const el of els) {
-      const cell = (el as HTMLElement).closest?.("[data-cal-day]") as HTMLElement | null;
-      if (cell) {
-        const iso = cell.getAttribute("data-cal-day");
-        if (iso) return parseIso(iso);
+      const node = el as HTMLElement;
+      // Skip the chip being dragged. It sits on top at the pointer but is a DOM
+      // descendant of its SOURCE day cell, so closest() would resolve back to
+      // the origin column and the drop day would never change. Skipping its
+      // subtree lets the loop fall through to the cell actually under the pointer.
+      if (node.closest?.("[data-week-chip]")) continue;
+      const cell = node.closest?.("[data-cal-day]") as HTMLElement | null;
+      if (!cell) continue;
+      const iso = cell.getAttribute("data-cal-day");
+      if (!iso) continue;
+      const sh = Number(cell.getAttribute("data-cal-start-hour"));
+      const eh = Number(cell.getAttribute("data-cal-end-hour"));
+      let totalMin = startHour * 60;
+      if (Number.isFinite(sh) && Number.isFinite(eh) && eh > sh) {
+        const rect = cell.getBoundingClientRect();
+        if (rect.height > 0) {
+          const frac = clamp((point.y - rect.top) / rect.height, 0, 1);
+          totalMin = clamp(snapMinutes(sh * 60 + frac * (eh - sh) * 60), sh * 60, eh * 60);
+        }
       }
+      return { date: parseIso(iso), iso, totalMin };
     }
     return null;
+  }
+
+  function handleChipDrag(info: PanInfo) {
+    const s = findSlotAt(info.point);
+    setChipHover((prev) => {
+      if (!s) return prev === null ? prev : null;
+      if (prev && prev.iso === s.iso && prev.totalMin === s.totalMin) return prev;
+      return { iso: s.iso, totalMin: s.totalMin };
+    });
   }
 
   function yToTotalMin(y: number) {
@@ -210,9 +277,17 @@ export function WeekGridA({
 
   return (
     <div className="paper-card p-0 overflow-hidden">
-      {/* Header row */}
-      <div className="grid grid-cols-[56px_repeat(7,1fr)] border-b border-[color:var(--ink-line)]">
-        <div className="quiet-caps px-2 py-2.5 text-right">GMT</div>
+      <div className="relative">
+        <div
+          ref={scrollRef}
+          className="overflow-y-auto overscroll-contain"
+          style={{ maxHeight: VISIBLE_HOURS * HOUR_PX + HEADER_PX }}
+        >
+          {/* Header row — sticky so day labels stay put while hours scroll.
+              Lives inside the same scroll container as the grid so the seven
+              day columns stay aligned with the scrollbar gutter. */}
+          <div className="sticky top-0 z-30 grid grid-cols-[56px_repeat(7,1fr)] border-b border-[color:var(--ink-line)] bg-white">
+            <div className="quiet-caps px-2 py-2.5 text-right">GMT</div>
         {days.map((d) => {
           const isToday = sameDay(d, today);
           const weekend = d.getDay() === 0 || d.getDay() === 6;
@@ -249,7 +324,7 @@ export function WeekGridA({
               style={{ height: HOUR_PX }}
               className="text-[10px] text-[color:var(--ink-muted)] text-right pr-2 pt-1 tabular border-t border-[color:var(--ink-line)]"
             >
-              {h === 12 ? "Noon" : h > 12 ? `${h - 12} pm` : `${h} am`}
+              {h === 0 ? "12 am" : h === 12 ? "Noon" : h > 12 ? `${h - 12} pm` : `${h} am`}
             </div>
           ))}
         </div>
@@ -259,13 +334,15 @@ export function WeekGridA({
           const isToday = sameDay(d, today);
           const iso = isoKey(d);
           const dragActiveHere = activeDrag?.iso === iso;
-          const isHovered = hoveredDayIso === iso;
+          const isHovered = cross?.iso === iso;
           const pinnedHere = !activeDrag && slotPreview?.iso === iso ? slotPreview : null;
 
           return (
             <div
               key={d.toISOString()}
               data-cal-day={iso}
+              data-cal-start-hour={startHour}
+              data-cal-end-hour={endHour}
               ref={(el) => {
                 if (el) cellRefs.current.set(iso, el);
                 else cellRefs.current.delete(iso);
@@ -277,8 +354,9 @@ export function WeekGridA({
               className={cn(
                 "relative border-l border-[color:var(--ink-line)] select-none transition-colors",
                 weekend && "bg-black/[0.008]",
-                isToday && "bg-[color:var(--accent-soft)]/30",
-                isHovered && "bg-[color:var(--accent-soft)]/70 ring-1 ring-inset ring-[color:var(--accent)]/40",
+                isToday && "bg-[color-mix(in_srgb,var(--accent-soft)_30%,transparent)]",
+                isHovered &&
+                  "bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--accent)_45%,transparent)]",
                 onSelectSlot && "cursor-pointer",
               )}
               style={{ height: hours.length * HOUR_PX }}
@@ -319,7 +397,13 @@ export function WeekGridA({
               )}
 
               {events
-                .filter((e) => sameDay(new Date(e.startsAt), d))
+                .filter((e) => {
+                  const s = new Date(e.startsAt);
+                  // Multi-day events are hidden from the time grid — a days-long
+                  // block would overflow the day column. They show as spanning
+                  // bars on the month view instead.
+                  return sameDay(s, d) && sameDay(s, new Date(e.endsAt));
+                })
                 .map((e) => {
                   const pos = positionFor(e, d);
                   if (!pos) return null;
@@ -331,7 +415,10 @@ export function WeekGridA({
                       height={pos.height}
                       hourPx={HOUR_PX}
                       onClick={() => onSelectEvent(e)}
+                      canMove={Boolean(onMoveEvent)}
+                      canResize={Boolean(onResizeEvent)}
                       onMoveEnd={(info) => handleMoveEnd(e, info)}
+                      onDragMove={handleChipDrag}
                       onResize={(deltaPx) => {
                         if (!onResizeEvent) return;
                         const deltaMin = Math.round((deltaPx / HOUR_PX) * 60 / 15) * 15;
@@ -347,6 +434,46 @@ export function WeekGridA({
             </div>
           );
         })}
+
+        {/* Crosshair while dragging a tray card: row line across the day
+            columns + the dropped time in the gutter. The day column itself is
+            washed by the `isHovered` cell tint above. */}
+        {hoverTopPx != null && cross != null && (
+          <>
+            <div
+              className="pointer-events-none absolute left-[56px] right-0 z-20 h-px bg-[color:var(--accent)]"
+              style={{ top: hoverTopPx }}
+            />
+            <div
+              className="pointer-events-none absolute left-0 z-20 w-[56px] -translate-y-1/2 pr-1.5 text-right"
+              style={{ top: hoverTopPx }}
+            >
+              <span className="inline-block rounded-[var(--r-sm)] bg-[color:var(--accent)] px-1 py-0.5 text-[9px] font-medium tabular leading-none text-white">
+                {fmtTimeFromTotalMin(cross.totalMin)}
+              </span>
+            </div>
+          </>
+        )}
+          </div>
+        </div>
+
+        {/* Scroll controls — wheel works too; these jump a few hours at a time. */}
+        <button
+          type="button"
+          onClick={() => scrollByHours(-SCROLL_STEP_HOURS)}
+          aria-label="Scroll to earlier hours"
+          className="absolute right-3 top-[64px] z-40 grid h-8 w-8 place-items-center rounded-full bg-white hairline shadow-[0_8px_20px_-12px_rgba(17,17,19,0.45)] text-[color:var(--ink-soft)] transition-colors hover:bg-black/[0.05] focus-ring"
+        >
+          <ChevronUp className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => scrollByHours(SCROLL_STEP_HOURS)}
+          aria-label="Scroll to later hours"
+          className="absolute right-3 bottom-3 z-40 grid h-8 w-8 place-items-center rounded-full bg-white hairline shadow-[0_8px_20px_-12px_rgba(17,17,19,0.45)] text-[color:var(--ink-soft)] transition-colors hover:bg-black/[0.05] focus-ring"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );
@@ -372,8 +499,8 @@ function SlotOutline({ startTotalMin, endTotalMin, startHour, live }: SlotOutlin
       className={cn(
         "absolute left-1 right-1 rounded-[var(--r-sm)] pointer-events-none flex items-start justify-between px-1.5 py-1 text-[10px] tabular text-[color:var(--accent)] transition-all",
         live
-          ? "border-2 border-[color:var(--accent)] bg-[color:var(--accent-soft)]/60"
-          : "border-2 border-dashed border-[color:var(--accent)]/70 bg-[color:var(--accent-soft)]/35",
+          ? "border-2 border-[color:var(--accent)] bg-[color-mix(in_srgb,var(--accent-soft)_60%,transparent)]"
+          : "border-2 border-dashed border-[color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color-mix(in_srgb,var(--accent-soft)_35%,transparent)]",
       )}
       style={{ top, height }}
     >
@@ -404,7 +531,12 @@ interface WeekEventChipProps {
   height: number;
   hourPx: number;
   onClick: () => void;
+  /** Read-only surfaces (field-worker view) drop the drag/resize affordances
+   * entirely instead of letting gestures no-op. */
+  canMove?: boolean;
+  canResize?: boolean;
   onMoveEnd: (info: PanInfo) => void;
+  onDragMove?: (info: PanInfo) => void;
   onResize: (deltaPx: number) => void;
 }
 
@@ -414,11 +546,17 @@ function WeekEventChip({
   height,
   hourPx,
   onClick,
+  canMove = true,
+  canResize = true,
   onMoveEnd,
+  onDragMove,
   onResize,
 }: WeekEventChipProps) {
   const [resizing, setResizing] = React.useState(false);
   const [resizeDelta, setResizeDelta] = React.useState(0);
+  // True once a drag actually starts, so the trailing click (which fires on
+  // pointer-up) doesn't open the detail sheet after a move.
+  const movedRef = React.useRef(false);
   const startTime = new Date(event.startsAt);
   const endTime = new Date(event.endsAt);
 
@@ -431,9 +569,15 @@ function WeekEventChip({
   );
   const liveHeight = Math.max(28, (previewDurationMin / 60) * hourPx);
 
+  // Blocked time gets the shared "unavailable" treatment: rose left rail +
+  // diagonal stripes, matching EventChip / the month view's full-day wash.
+  const isBlocked = event.kind === "blocked";
+  const isAppointment = event.kind === "appointment";
+
   return (
     <motion.div
-      drag={!resizing}
+      data-week-chip
+      drag={canMove && !resizing}
       dragSnapToOrigin
       dragElastic={0.12}
       whileDrag={{
@@ -442,8 +586,15 @@ function WeekEventChip({
         boxShadow: "0 18px 40px -16px rgba(17,17,19,0.32)",
         zIndex: 30,
       }}
+      onDragStart={() => {
+        movedRef.current = true;
+      }}
+      onDrag={(_, info) => onDragMove?.(info)}
       onDragEnd={(_, info) => onMoveEnd(info)}
-      onPointerDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        movedRef.current = false;
+        e.stopPropagation();
+      }}
       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       style={{
         position: "absolute",
@@ -451,19 +602,45 @@ function WeekEventChip({
         height: resizing ? liveHeight : height,
         left: 4,
         right: 4,
-        borderLeftColor: statusAccent(event.status),
+        borderLeftColor: isBlocked
+          ? "var(--rose)"
+          : isAppointment
+            ? APPOINTMENT_BORDER
+            : statusAccent(event.status),
+        ...(isBlocked
+          ? {
+              backgroundImage:
+                "repeating-linear-gradient(135deg, rgba(225,29,72,0.08) 0 6px, transparent 6px 12px)",
+            }
+          : isAppointment
+            ? { backgroundColor: APPOINTMENT_TINT }
+            : {}),
         touchAction: "none",
         zIndex: resizing ? 20 : 10,
       }}
-      className="group flex flex-col justify-start rounded-[var(--r-sm)] bg-white dark:bg-white/[0.08] border border-[color:var(--ink-line)] border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight overflow-hidden shadow-[0_1px_0_rgba(17,17,19,0.04)] hover:shadow-[0_4px_14px_-6px_rgba(17,17,19,0.18)] transition-shadow cursor-grab active:cursor-grabbing"
+      className={cn(
+        "group flex flex-col justify-start rounded-[var(--r-sm)] bg-white dark:bg-white/[0.08] border border-[color:var(--ink-line)] border-l-[3px] px-2 py-1 text-left text-[11px] leading-tight overflow-hidden shadow-[0_1px_0_rgba(17,17,19,0.04)] hover:shadow-[0_4px_14px_-6px_rgba(17,17,19,0.18)] transition-shadow",
+        canMove ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+      )}
     >
-      <button type="button" onClick={onClick} className="text-left flex-1 min-w-0">
+      <button
+        type="button"
+        onClick={() => {
+          if (movedRef.current) {
+            movedRef.current = false;
+            return;
+          }
+          onClick();
+        }}
+        className="text-left flex-1 min-w-0"
+      >
         <div className="font-medium text-[color:var(--ink)] truncate">{event.title}</div>
         <div className="text-[10px] text-[color:var(--ink-muted)] tabular">
           {formatTime(startTime)}
         </div>
       </button>
 
+      {canResize && (
       <motion.div
         drag="y"
         dragMomentum={false}
@@ -492,6 +669,7 @@ function WeekEventChip({
         </span>
         <span className="absolute left-1.5 right-1.5 bottom-0 h-[3px] bg-[color:var(--accent)] opacity-0 group-hover/handle:opacity-100 transition-opacity rounded-full" />
       </motion.div>
+      )}
 
       {resizing && (
         <div className="absolute -right-1 translate-x-full top-1/2 -translate-y-1/2 ml-2 paper-card px-2 py-1 text-[10px] tabular shadow-pop pointer-events-none whitespace-nowrap">

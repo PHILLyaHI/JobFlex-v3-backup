@@ -2,6 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Button } from "@/components/ui/Button";
 import { GoogleIcon } from "@/components/auth/GoogleIcon";
 
@@ -54,9 +55,8 @@ export function MobileLogin({
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-          <Input
+          <PasswordInput
             label="Password"
-            type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

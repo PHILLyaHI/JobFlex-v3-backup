@@ -8,7 +8,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/Input";
-import { MapPin } from "lucide-react";
+import { MapPin, Search } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { loadMapsLibrary, isMapsBrowserEnabled } from "@/lib/googleMaps";
 
@@ -49,9 +49,13 @@ interface Suggestion {
 export function PlacesAutocomplete({
   onPick,
   className,
+  enableFind = false,
 }: {
   onPick: (a: PickedAddress) => void;
   className?: string;
+  // Adds a "Find" button that geocodes the typed text directly, so a full address
+  // resolves even without picking a dropdown suggestion.
+  enableFind?: boolean;
 }) {
   const enabled = isMapsBrowserEnabled();
   const [text, setText] = React.useState("");
@@ -59,6 +63,7 @@ export function PlacesAutocomplete({
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(-1);
   const [loading, setLoading] = React.useState(false);
+  const [finding, setFinding] = React.useState(false);
   const [rect, setRect] = React.useState<{ top: number; left: number; width: number } | null>(null);
 
   const onPickRef = React.useRef(onPick);
@@ -66,6 +71,7 @@ export function PlacesAutocomplete({
     onPickRef.current = onPick;
   });
   const placesRef = React.useRef<GPlaces>(null);
+  const geocoderRef = React.useRef<GPlaces>(null);
   const tokenRef = React.useRef<GPlaces>(null);
   const reqIdRef = React.useRef(0);
   const anchorRef = React.useRef<HTMLDivElement>(null);
@@ -76,6 +82,35 @@ export function PlacesAutocomplete({
     if (!tokenRef.current) tokenRef.current = new placesRef.current.AutocompleteSessionToken();
     return placesRef.current;
   }, []);
+
+  // Geocode the typed text directly (the "Find" button / Enter with no selection).
+  const runFind = React.useCallback(async () => {
+    const q = text.trim();
+    if (!q || finding) return;
+    setOpen(false);
+    setFinding(true);
+    try {
+      if (!geocoderRef.current) {
+        const g = await loadMapsLibrary<GPlaces>("geocoding");
+        geocoderRef.current = new g.Geocoder();
+      }
+      const { results } = await geocoderRef.current.geocode({ address: q, region: "us" });
+      const r = results?.[0];
+      if (!r) return;
+      const loc = r.geometry?.location;
+      const lat = loc ? (typeof loc.lat === "function" ? loc.lat() : loc.lat) : undefined;
+      const lng = loc ? (typeof loc.lng === "function" ? loc.lng() : loc.lng) : undefined;
+      const { city, state, zip } = readComponents(r.address_components ?? []);
+      const formatted: string = r.formatted_address ?? q;
+      const street = formatted.split(",")[0] || formatted;
+      onPickRef.current({ address: street, city, state, zip, lat, lng });
+      setText(formatted);
+    } catch (err) {
+      console.error("[PlacesAutocomplete] geocode failed:", err);
+    } finally {
+      setFinding(false);
+    }
+  }, [text, finding]);
 
   // Debounced prediction fetch. All setState lives inside the timer callback
   // (async) so nothing runs synchronously in the effect body; reqId guards against
@@ -183,6 +218,12 @@ export function PlacesAutocomplete({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Enter with no open suggestion list → geocode the typed text directly.
+    if (e.key === "Enter" && enableFind && (!open || list.length === 0)) {
+      e.preventDefault();
+      runFind();
+      return;
+    }
     if (!open || list.length === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -227,7 +268,21 @@ export function PlacesAutocomplete({
         onKeyDown={onKeyDown}
         prefix={<MapPin className="h-3.5 w-3.5" />}
         suffix={
-          loading ? (
+          enableFind ? (
+            <button
+              type="button"
+              onClick={runFind}
+              disabled={finding || !text.trim()}
+              className="inline-flex h-7 items-center gap-1 rounded-[var(--r-sm)] bg-[color:var(--accent)] px-2.5 text-[11px] font-medium text-white transition-colors hover:bg-[color:var(--accent-ink)] disabled:opacity-40"
+            >
+              {finding ? (
+                <span className="h-3 w-3 rounded-full border-[1.5px] border-current border-t-transparent animate-spin" />
+              ) : (
+                <Search className="h-3 w-3" />
+              )}
+              Find
+            </button>
+          ) : loading ? (
             <span className="h-3.5 w-3.5 rounded-full border-[1.5px] border-current border-t-transparent animate-spin" />
           ) : undefined
         }

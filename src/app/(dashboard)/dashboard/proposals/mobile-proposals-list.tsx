@@ -1,10 +1,12 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { SlidersHorizontal, ChevronRight } from "lucide-react";
+import { SlidersHorizontal, ChevronRight, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MobileDrawer } from "@/components/ui/MobileDrawer";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagedList } from "@/lib/usePagedList";
 import { money, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -37,6 +39,8 @@ export function MobileProposalsList({ rows }: { rows: MobileProposalRow[] }) {
     if (active.size === 0) return rows;
     return rows.filter((r) => active.has(r.status as StatusKey));
   }, [rows, active]);
+
+  const { page, pageCount, setPage, pageItems } = usePagedList(filtered, 20);
 
   const toggle = (s: StatusKey) => {
     setActive((prev) => {
@@ -80,6 +84,15 @@ export function MobileProposalsList({ rows }: { rows: MobileProposalRow[] }) {
           <EmptyState
             title="No proposals yet"
             description="Draft your first proposal with AI or start from scratch. Both end up in the same place &mdash; looking sharp."
+            action={
+              <Link
+                href={"/dashboard/proposals/create" as never}
+                className="inline-flex h-11 items-center gap-2 rounded-[var(--r-md)] bg-[color:var(--ink)] px-5 text-[13px] font-medium text-[color:var(--paper)] hover:bg-[color:var(--ink-soft)] focus-ring"
+              >
+                <Sparkles className="h-4 w-4" />
+                Create proposal
+              </Link>
+            }
           />
         </div>
       ) : filtered.length === 0 ? (
@@ -97,7 +110,7 @@ export function MobileProposalsList({ rows }: { rows: MobileProposalRow[] }) {
         </div>
       ) : (
         <ul className="px-5 space-y-3">
-          {filtered.map((p) => (
+          {pageItems.map((p) => (
             <li key={p.id}>
               <Link
                 href={`/dashboard/proposals/${p.id}` as never}
@@ -131,6 +144,15 @@ export function MobileProposalsList({ rows }: { rows: MobileProposalRow[] }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {filtered.length > 0 && (
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          onPage={setPage}
+          className="px-5 pb-2"
+        />
       )}
 
       <MobileDrawer

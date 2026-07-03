@@ -12,10 +12,13 @@ import { createChangeOrder } from "@/actions/changeOrders";
 
 export function NewChangeOrderSheet({
   jobId,
+  proposalId,
   open,
   onClose,
 }: {
-  jobId: string;
+  // Exactly one of jobId / proposalId — the change order amends that contract.
+  jobId?: string;
+  proposalId?: string;
   open: boolean;
   onClose: () => void;
 }) {
@@ -44,7 +47,8 @@ export function NewChangeOrderSheet({
     try {
       const signed = (sign === "+" ? 1 : -1) * Math.abs(Number(amount));
       await createChangeOrder({
-        jobId,
+        ...(jobId ? { jobId } : {}),
+        ...(proposalId ? { proposalId } : {}),
         title: title.trim(),
         description: description.trim() || null,
         amount: signed,

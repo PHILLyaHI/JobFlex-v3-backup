@@ -1,4 +1,5 @@
 "use client";
+import * as React from "react";
 import { ChevronLeft, ChevronRight, Plus, PanelRight, PanelRightClose, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
@@ -17,6 +18,10 @@ interface CalendarToolbarProps {
   unscheduledCount?: number;
   onOpenInbox?: () => void;
   inboxCount?: number;
+  /** Hide the "team" view (the field-worker calendar has no roster to compare). */
+  hideTeam?: boolean;
+  /** Extra controls rendered before the view switcher (team peek, unavailability…). */
+  extraActions?: React.ReactNode;
 }
 
 const VIEWS: CalendarView[] = ["month", "week", "team"];
@@ -34,7 +39,10 @@ export function CalendarToolbar({
   unscheduledCount = 0,
   onOpenInbox,
   inboxCount = 0,
+  hideTeam = false,
+  extraActions,
 }: CalendarToolbarProps) {
+  const views = hideTeam ? VIEWS.filter((v) => v !== "team") : VIEWS;
   const title =
     view === "month"
       ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(cursor)
@@ -77,8 +85,9 @@ export function CalendarToolbar({
       </div>
 
       <div className="flex items-center gap-2">
+        {extraActions}
         <div className="inline-flex rounded-[var(--r-md)] hairline p-0.5 bg-white/60 dark:bg-white/[0.03]">
-          {VIEWS.map((v) => (
+          {views.map((v) => (
             <button
               key={v}
               onClick={() => onView(v)}

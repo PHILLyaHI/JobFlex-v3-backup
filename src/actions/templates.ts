@@ -2,7 +2,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { requireOrg } from "@/lib/orgContext";
+// Template CRUD (create/delete) is org configuration and stays manager-only.
+// The two proposal-workflow actions (save-as-template, create-from-template)
+// are open to proposal staff — sales/estimators — with ownership scoping.
+import { requireManager, requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ProposalStatus } from "@/lib/prismaEnums";
 
@@ -32,15 +35,15 @@ export async function saveProposalAsTemplate(
   name: string,
   description?: string | null,
 ) {
-  const { organizationId } = await requireOrg();
-  const proposal = await db.proposal.findUnique({
-    where: { id: proposalId },
+  const { organizationId, proposalScope } = await requireProposalStaff();
+  const proposal = await db.proposal.findFirst({
+    where: { id: proposalId, organizationId, ...proposalScope },
     include: {
       lineItems: { orderBy: { position: "asc" } },
       installments: { orderBy: { position: "asc" } },
     },
   });
-  if (!proposal || proposal.organizationId !== organizationId) throw new Error("Not found");
+  if (!proposal) throw new Error("Not found");
 
   const body: TemplateBody = {
     description: proposal.description,
@@ -108,7 +111,7 @@ const directTemplateSchema = z.object({
 });
 
 export async function createTemplate(raw: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const data = directTemplateSchema.parse(raw);
   const template = await db.proposalTemplate.create({
     data: {
@@ -123,7 +126,7 @@ export async function createTemplate(raw: unknown) {
 }
 
 export async function deleteTemplate(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const t = await db.proposalTemplate.findUnique({ where: { id } });
   if (!t || t.organizationId !== organizationId) throw new Error("Not found");
   await db.proposalTemplate.delete({ where: { id } });
@@ -131,7 +134,7 @@ export async function deleteTemplate(id: string) {
 }
 
 export async function createProposalFromTemplate(templateId: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireProposalStaff();
   const t = await db.proposalTemplate.findUnique({ where: { id: templateId } });
   if (!t || t.organizationId !== organizationId) throw new Error("Not found");
 

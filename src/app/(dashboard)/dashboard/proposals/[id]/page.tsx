@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireOrg } from "@/lib/orgContext";
+import { requireOrg, isSalesRole, isEstimatorRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
@@ -9,12 +9,13 @@ import { ProposalEditor } from "@/components/v3/proposal-builder-a/ProposalEdito
 import { HydrateDraft } from "./hydrate-draft";
 import { ProposalActions } from "./proposal-actions";
 import { SnapshotHistory } from "@/components/proposal/SnapshotHistory";
+import { MaterialPurchasingList } from "@/components/materials/MaterialPurchasingList";
 import { money, longDate } from "@/lib/format";
 import { ExternalLink } from "lucide-react";
 
 export default async function ProposalEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { organizationId } = await requireOrg();
+  const { organizationId, role, user } = await requireOrg();
   const proposal = await db.proposal.findUnique({
     where: { id },
     include: {
@@ -25,6 +26,10 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
     },
   });
   if (!proposal || proposal.organizationId !== organizationId) return notFound();
+  // Sales reps and estimators can only open proposals they own.
+  if ((isSalesRole(role) || isEstimatorRole(role)) && proposal.ownerId !== user.id) {
+    return notFound();
+  }
 
   const [clients, projects, org] = await Promise.all([
     db.client.findMany({
@@ -95,6 +100,10 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
             unitPrice: l.unitPrice,
             materialCost: l.materialCost,
             laborCost: l.laborCost,
+            store: l.store,
+            productUrl: l.productUrl,
+            imageUrl: l.imageUrl,
+            dimensions: l.dimensions,
           })),
           installments: proposal.installments.map((i) => ({
             id: i.id,
@@ -113,7 +122,11 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
         projects={projects}
         existingId={proposal.id}
         orgName={org?.name ?? undefined}
+        initialStatus={proposal.status}
       />
+      <div className="mt-6">
+        <MaterialPurchasingList proposalId={proposal.id} />
+      </div>
       <div className="mt-6">
         <SnapshotHistory
           proposalId={proposal.id}

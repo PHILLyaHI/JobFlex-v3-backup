@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireSalesOrManager, isSalesRole, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 
 const input = z.object({
@@ -16,7 +16,9 @@ function toDate(v: string | Date): Date {
 }
 
 export async function createBlockedTime(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  // Blocks are always created self-owned, so sales reps creating their own
+  // blocked time is safe by construction.
+  const { organizationId, user } = await requireSalesOrManager();
   const data = input.parse(raw);
   const block = await db.blockedTime.create({
     data: {
@@ -32,17 +34,24 @@ export async function createBlockedTime(raw: unknown) {
 }
 
 export async function deleteBlockedTime(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId, user, role } = await requireSalesOrManager();
   const b = await db.blockedTime.findUnique({ where: { id } });
   if (!b || b.organizationId !== organizationId) throw new Error("Not found");
+  // Sales reps can only remove their own blocks (org-wide blocks are manager turf).
+  if (isSalesRole(role) && b.ownerId !== user.id) {
+    throw new UnauthorizedError("You can only remove your own blocked time");
+  }
   await db.blockedTime.delete({ where: { id } });
   revalidatePath("/dashboard/calendar");
 }
 
 export async function rescheduleBlockedTime(id: string, newStartISO: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId, user, role } = await requireSalesOrManager();
   const b = await db.blockedTime.findUnique({ where: { id } });
   if (!b || b.organizationId !== organizationId) throw new Error("Not found");
+  if (isSalesRole(role) && b.ownerId !== user.id) {
+    throw new UnauthorizedError("You can only move your own blocked time");
+  }
   const newStart = new Date(newStartISO);
   const duration = b.endsAt.getTime() - b.startsAt.getTime();
   newStart.setHours(b.startsAt.getHours(), b.startsAt.getMinutes(), 0, 0);

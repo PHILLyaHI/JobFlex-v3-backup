@@ -28,15 +28,19 @@ const TABS: {
 export function EventTypeTabs({
   value,
   onChange,
+  hiddenKinds,
 }: {
   value: CalendarEventKind;
   onChange: (v: CalendarEventKind) => void;
+  /** Event kinds to hide from the picker (feature-gated, not removed). */
+  hiddenKinds?: CalendarEventKind[];
 }) {
-  const active = TABS.find((t) => t.key === value);
+  const tabs = TABS.filter((t) => !hiddenKinds?.includes(t.key));
+  const active = tabs.find((t) => t.key === value);
   return (
     <div>
       <div className="inline-flex w-full rounded-[var(--r-md)] hairline p-0.5 bg-white/60 dark:bg-white/[0.03]">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             type="button"

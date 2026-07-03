@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { RowActions } from "@/components/proposal/RowActions";
 import { money, relative } from "@/lib/format";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagedList } from "@/lib/usePagedList";
 import type { ProposalCRow, StatusSubFilter } from "./types";
 
 interface AllLedgerProps {
@@ -19,7 +21,6 @@ const STATUS_CHIPS: { key: StatusSubFilter; label: string }[] = [
   { key: "ALL", label: "All" },
   { key: "DRAFT", label: "Draft" },
   { key: "SENT", label: "Sent" },
-  { key: "VIEWED", label: "Viewed" },
   { key: "DECLINED", label: "Declined" },
   { key: "EXPIRED", label: "Expired" },
 ];
@@ -48,6 +49,8 @@ export function AllLedger({ rows, statusFilter, onStatusFilterChange }: AllLedge
     if (statusFilter === "ALL") return rows;
     return rows.filter((r) => r.status === statusFilter);
   }, [rows, statusFilter]);
+
+  const { page, pageCount, setPage, pageItems, offset } = usePagedList(filtered, 20);
 
   return (
     <div className="pt-8">
@@ -104,7 +107,7 @@ export function AllLedger({ rows, statusFilter, onStatusFilterChange }: AllLedge
                 </tr>
               </thead>
               <motion.tbody initial="initial" animate="animate">
-                {filtered.map((r, i) => (
+                {pageItems.map((r, i) => (
                   <motion.tr
                     key={r.id}
                     initial={{ opacity: 0, y: 4 }}
@@ -117,7 +120,7 @@ export function AllLedger({ rows, statusFilter, onStatusFilterChange }: AllLedge
                   >
                     <td className="px-5 py-3.5 align-middle">
                       <span className="font-mono tabular text-[11px] text-[color:var(--ink-faint)]">
-                        {String(filtered.length - i).padStart(3, "0")}
+                        {String(filtered.length - offset - i).padStart(3, "0")}
                       </span>
                     </td>
                     <td className="px-5 py-3.5">
@@ -146,7 +149,7 @@ export function AllLedger({ rows, statusFilter, onStatusFilterChange }: AllLedge
                       )}
                     </td>
                     <td className="px-5 py-3.5 align-middle">
-                      <Badge tone={toneFor(r.status)} dot>
+                      <Badge tone={toneFor(r.status)}>
                         {r.status.toLowerCase()}
                       </Badge>
                     </td>
@@ -185,6 +188,9 @@ export function AllLedger({ rows, statusFilter, onStatusFilterChange }: AllLedge
             </table>
           </div>
         </div>
+      )}
+      {filtered.length > 0 && (
+        <Pagination page={page} pageCount={pageCount} onPage={setPage} />
       )}
     </div>
   );

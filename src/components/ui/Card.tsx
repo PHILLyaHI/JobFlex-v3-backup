@@ -1,8 +1,25 @@
 import * as React from "react";
 import { cn } from "@/lib/cn";
 
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("paper-card p-6", className)} {...props} />;
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Opt-in resting elevation + a small, smooth lift on hover. Off by default
+   *  so non-dashboard surfaces keep the quiet hairline look. */
+  hover?: boolean;
+}
+
+export function Card({ className, hover, ...props }: CardProps) {
+  return (
+    <div
+      className={cn(
+        "paper-card p-6",
+        hover &&
+          // `!` overrides .paper-card's unlayered resting box-shadow; tokens are reused, not new.
+          "transition duration-200 ease-[var(--ease)] !shadow-[var(--shadow-sm)] hover:-translate-y-0.5 hover:!shadow-[var(--shadow-md)]",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 
 export interface ChangeOrderRow {
   id: string;
-  jobId: string;
+  jobId: string | null;
   jobTitle: string;
   title: string;
   amount: number;
@@ -119,12 +119,16 @@ export function ChangeOrdersTable({ rows }: { rows: ChangeOrderRow[] }) {
               >
                 <td className="px-5 py-3.5 font-medium text-[color:var(--ink)]">{r.title}</td>
                 <td className="px-5 py-3.5">
-                  <Link
-                    href={`/dashboard/jobs/${r.jobId}` as any}
-                    className="text-[12px] text-[color:var(--ink-soft)] hover:text-[color:var(--accent)]"
-                  >
-                    {r.jobTitle}
-                  </Link>
+                  {r.jobId ? (
+                    <Link
+                      href={`/dashboard/jobs/${r.jobId}` as any}
+                      className="text-[12px] text-[color:var(--ink-soft)] hover:text-[color:var(--accent)]"
+                    >
+                      {r.jobTitle}
+                    </Link>
+                  ) : (
+                    <span className="text-[12px] text-[color:var(--ink-muted)]">{r.jobTitle}</span>
+                  )}
                 </td>
                 <td className="px-5 py-3.5">
                   <Badge tone={TONE[r.status] ?? "neutral"}>{r.status.toLowerCase()}</Badge>

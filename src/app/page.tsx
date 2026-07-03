@@ -1,8 +1,14 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowUpRight, Sparkles, FileText, Users, Calendar, LineChart } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { auth } from "@/lib/auth";
 
-export default function HomePage() {
+export default async function HomePage() {
+  // Signed-in users have no use for the marketing landing — send them to work.
+  const session = await auth();
+  if (session?.user?.id) redirect("/dashboard");
+
   return (
     <main className="relative mx-auto max-w-[1200px] px-6 lg:px-10 pt-8 pb-24">
       <nav className="flex items-center justify-between h-14">

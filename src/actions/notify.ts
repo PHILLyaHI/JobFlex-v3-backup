@@ -1,8 +1,20 @@
 "use server";
 import { db } from "@/lib/db";
-import { sendEmail, isResendEnabled } from "@/lib/sdk/resend";
+import { requireManager } from "@/lib/orgContext";
+import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
 import { renderTemplate, wrapEmail, type TemplateVars } from "@/lib/email/render";
+import { parseGmailSettings } from "@/lib/settings";
+
+// Customer-facing mail sends from the platform address but routes replies to the
+// contractor: their Gmail reply-to if set, else the org billing email.
+function replyToFor(org: {
+  gmailSettingsJson: string | null;
+  billingEmail: string | null;
+}): string | undefined {
+  const rt = parseGmailSettings(org.gmailSettingsJson).replyTo?.trim();
+  return rt || org.billingEmail || undefined;
+}
 
 interface NotifyProposalSentInput {
   proposalId: string;
@@ -59,7 +71,12 @@ Any questions, just reply to this email.
 export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput) {
   const proposal = await db.proposal.findUnique({
     where: { id: proposalId },
-    include: { client: true, organization: { select: { name: true } } },
+    include: {
+      client: true,
+      organization: {
+        select: { name: true, billingEmail: true, gmailSettingsJson: true },
+      },
+    },
   });
   if (!proposal) return { skipped: true as const, reason: "not-found" };
   if (!proposal.client?.email) return { skipped: true as const, reason: "no-client-email" };
@@ -88,13 +105,76 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
     to: proposal.client.email,
     subject: wrapped.subject,
     html: wrapped.html,
+    replyTo: replyToFor(proposal.organization),
   });
 
   return {
     skipped: false as const,
     delivery: res.skipped ? "disabled" : "sent",
-    enabled: isResendEnabled(),
+    enabled: isEmailEnabled(),
   };
+}
+
+// Sent when a proposal is accepted (portal acceptance). Thanks the client from
+// the platform address with the contractor as reply-to, and pings the owner so
+// they know to schedule the work.
+export async function notifyProposalAccepted({ proposalId }: { proposalId: string }) {
+  const proposal = await db.proposal.findUnique({
+    where: { id: proposalId },
+    include: {
+      client: true,
+      organization: {
+        select: { name: true, billingEmail: true, gmailSettingsJson: true },
+      },
+    },
+  });
+  if (!proposal) return { skipped: true as const, reason: "not-found" };
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const replyTo = replyToFor(proposal.organization);
+
+  // 1) Thank-you to the client (customer-facing → reply-to the contractor).
+  if (proposal.client?.email) {
+    const tpl = await pickTemplate(proposal.organizationId, "thank-you");
+    const fallback = defaultBodyFor("thank-you");
+    const vars: TemplateVars = {
+      client_name: proposal.client.name,
+      total: formatUSD(proposal.total),
+      link: `${appUrl}/portal/q/${proposal.publicId}`,
+      org: proposal.organization.name,
+      title: proposal.title,
+    };
+    const wrapped = wrapEmail({
+      subject: renderTemplate(tpl?.subject ?? fallback.subject, vars),
+      body: renderTemplate(tpl?.body ?? fallback.body, vars),
+      orgName: proposal.organization.name,
+    });
+    await sendEmail({
+      to: proposal.client.email,
+      subject: wrapped.subject,
+      html: wrapped.html,
+      replyTo,
+    });
+  }
+
+  // 2) Internal heads-up to the owner (system → no contractor reply-to).
+  if (proposal.organization.billingEmail) {
+    const wrapped = wrapEmail({
+      subject: `Accepted — ${proposal.title}`,
+      body: `${proposal.client?.name ?? "A client"} just accepted "${proposal.title}" (${formatUSD(proposal.total)}).
+
+Time to schedule the work — open it in JobFlex:
+${appUrl}/dashboard/proposals/${proposal.id}`,
+      orgName: proposal.organization.name,
+    });
+    await sendEmail({
+      to: proposal.organization.billingEmail,
+      subject: wrapped.subject,
+      html: wrapped.html,
+    });
+  }
+
+  return { skipped: false as const, enabled: isEmailEnabled() };
 }
 
 export async function notifyLeadCreated(leadId: string) {
@@ -108,7 +188,6 @@ export async function notifyLeadCreated(leadId: string) {
 
   const ownerEmail = lead.organization.billingEmail;
   if (ownerEmail) {
-    const { subject, body } = defaultBodyFor("custom");
     const bodyFilled = `A new lead came in: ${lead.name} (${lead.email ?? lead.phone ?? "no contact"}).
 
 Project: ${lead.projectType ?? "—"}
@@ -175,6 +254,65 @@ ${appUrl}/w/${a.worker.token}
   }
 
   return { skipped: false as const };
+}
+
+export async function notifyPaymentReminder({
+  proposalId,
+  installmentId,
+}: {
+  proposalId: string;
+  installmentId: string;
+}) {
+  const { organizationId } = await requireManager();
+  const proposal = await db.proposal.findUnique({
+    where: { id: proposalId },
+    include: {
+      client: true,
+      organization: {
+        select: { name: true, billingEmail: true, gmailSettingsJson: true },
+      },
+      installments: { where: { id: installmentId } },
+    },
+  });
+  if (!proposal) return { skipped: true as const, reason: "not-found" };
+  if (proposal.organizationId !== organizationId) {
+    return { skipped: true as const, reason: "unauthorized" };
+  }
+  if (!proposal.client?.email) return { skipped: true as const, reason: "no-client-email" };
+
+  const installment = proposal.installments[0];
+  const dollars = installment
+    ? installment.isPercent
+      ? proposal.total * (installment.amount / 100)
+      : installment.amount
+    : proposal.total;
+  const label = installment?.label ?? "payment";
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const wrapped = wrapEmail({
+    subject: `Payment reminder — ${label} for ${proposal.title}`,
+    body: `Hi ${proposal.client.name},
+
+This is a reminder that your ${label} of ${formatUSD(dollars)} is due for ${proposal.title}.
+
+You can view your proposal and payment details here:
+${appUrl}/portal/q/${proposal.publicId}
+
+— ${proposal.organization.name}`,
+    orgName: proposal.organization.name,
+  });
+
+  const res = await sendEmail({
+    to: proposal.client.email,
+    subject: wrapped.subject,
+    html: wrapped.html,
+    replyTo: replyToFor(proposal.organization),
+  });
+
+  return {
+    skipped: false as const,
+    delivery: res.skipped ? "disabled" : "sent",
+  };
 }
 
 function formatUSD(n: number) {

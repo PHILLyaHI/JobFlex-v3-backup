@@ -7,6 +7,7 @@ import * as React from "react";
 import { FileText } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useFenceStudioStore } from "@/stores/useFenceStudioStore";
+import { materialLabel, variantLabel } from "./fenceTypes";
 import { computeFenceLayout } from "./fenceGeometry";
 import { priceFence } from "./fencePricing";
 
@@ -19,14 +20,25 @@ export function FencePriceBar({ onConvert, converting }: { onConvert: () => void
   const material = useFenceStudioStore((s) => s.spec.material);
   const gates = useFenceStudioStore((s) => s.spec.gates);
   const demolition = useFenceStudioStore((s) => s.spec.demolition);
+  const pricing = useFenceStudioStore((s) => s.pricing);
+  const customMaterials = useFenceStudioStore((s) => s.customMaterials);
+  const customOpenings = useFenceStudioStore((s) => s.customOpenings);
 
   const { lengthFt, price } = React.useMemo(() => {
     const layout = computeFenceLayout(points, gates);
+    const labels = {
+      material: materialLabel(material, customMaterials),
+      opening: (_k: "gate" | "door", v: string) => variantLabel(v, customOpenings),
+    };
     return {
       lengthFt: layout.totalLengthFt,
-      price: priceFence({ lengthFt: layout.totalLengthFt, height, material, openings: gates, demolition }),
+      price: priceFence(
+        { lengthFt: layout.totalLengthFt, height, material, openings: gates, demolition },
+        pricing,
+        labels,
+      ),
     };
-  }, [points, height, material, gates, demolition]);
+  }, [points, height, material, gates, demolition, pricing, customMaterials, customOpenings]);
 
   const empty = lengthFt <= 0;
 

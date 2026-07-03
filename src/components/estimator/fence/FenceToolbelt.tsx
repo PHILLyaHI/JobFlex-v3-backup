@@ -1,32 +1,20 @@
 "use client";
-// Sandbox control rail — material / height / runs / openings / demolition.
-// Presentational: reads and writes the studio store, no business logic. Material
-// is shown as real colour swatches (the studio's memorable anchor); selecting a
-// Run highlights it in 3D and targets where new openings land.
+// Sandbox control rail — material / height / site. Presentational: reads and writes
+// the studio store, no business logic. Material is shown as real colour swatches
+// (built-ins + any custom materials the user created in the pricing card). Runs and
+// openings live in the FenceLedger; this rail is just the fence's build spec.
 import * as React from "react";
-import { Check, X } from "lucide-react";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useFenceStudioStore } from "@/stores/useFenceStudioStore";
 import {
   FENCE_MATERIALS,
   FENCE_HEIGHTS,
-  MATERIAL_LABEL,
-  OPENING_PRESETS,
-  VARIANT_LABEL,
-  type FenceMaterial,
-  type OpeningKind,
+  MIN_HEIGHT_FT,
+  MAX_HEIGHT_FT,
+  materialLabel,
+  materialColor,
 } from "./fenceTypes";
-
-// Swatch ≈ the rendered material, so the chip previews the 3D result.
-const MATERIAL_SWATCH: Record<FenceMaterial, string> = {
-  cedar: "#b07a47",
-  vinyl: "#eef0ee",
-  "chain-link": "#9aa0a6",
-  aluminum: "#2c3036",
-  composite: "#6f6a60",
-};
-
-const OPENING_KINDS: OpeningKind[] = ["gate", "door"];
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -40,39 +28,19 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 export function FenceToolbelt() {
   const material = useFenceStudioStore((s) => s.spec.material);
   const height = useFenceStudioStore((s) => s.spec.height);
-  const gates = useFenceStudioStore((s) => s.spec.gates);
   const demolition = useFenceStudioStore((s) => s.spec.demolition);
-  const points = useFenceStudioStore((s) => s.spec.points);
-  const selectedSegment = useFenceStudioStore((s) => s.spec.selectedSegment);
+  const customMaterials = useFenceStudioStore((s) => s.customMaterials);
   const setMaterial = useFenceStudioStore((s) => s.setMaterial);
   const setHeight = useFenceStudioStore((s) => s.setHeight);
   const setDemolition = useFenceStudioStore((s) => s.setDemolition);
-  const addOpening = useFenceStudioStore((s) => s.addOpening);
-  const removeGate = useFenceStudioStore((s) => s.removeGate);
-  const selectSegment = useFenceStudioStore((s) => s.selectSegment);
 
-  const runs = React.useMemo(() => {
-    const out: { i: number; len: number }[] = [];
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i];
-      const b = points[i + 1];
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      if (len > 1e-4) out.push({ i, len });
-    }
-    return out;
-  }, [points]);
-
-  const runNumber = (segIdx: number) => {
-    const k = runs.findIndex((r) => r.i === segIdx);
-    return k >= 0 ? k + 1 : null;
-  };
-  const targetRun = selectedSegment ?? runs[0]?.i ?? 0;
+  const materials: string[] = [...FENCE_MATERIALS, ...customMaterials.map((m) => m.id)];
 
   return (
     <div className="space-y-6">
       <Section label="Material">
         <div className="grid grid-cols-1 gap-1.5">
-          {FENCE_MATERIALS.map((m) => {
+          {materials.map((m) => {
             const active = material === m;
             return (
               <button
@@ -89,7 +57,7 @@ export function FenceToolbelt() {
               >
                 <span
                   className="h-8 w-8 shrink-0 rounded-[var(--r-sm)] hairline"
-                  style={{ background: MATERIAL_SWATCH[m] }}
+                  style={{ background: materialColor(m, customMaterials) }}
                 />
                 <span
                   className={cn(
@@ -97,24 +65,25 @@ export function FenceToolbelt() {
                     active ? "text-[color:var(--accent-ink)]" : "text-[color:var(--ink-soft)]",
                   )}
                 >
-                  {MATERIAL_LABEL[m]}
+                  {materialLabel(m, customMaterials)}
                 </span>
                 {active && <Check className="h-4 w-4 text-[color:var(--accent)]" />}
               </button>
             );
           })}
         </div>
+        <p className="text-[11px] text-[color:var(--ink-faint)]">Create your own materials in “Your pricing” below.</p>
       </Section>
 
       <Section label="Height">
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {FENCE_HEIGHTS.map((h) => (
             <button
               key={h}
               type="button"
               onClick={() => setHeight(h)}
               className={cn(
-                "h-9 px-4 rounded-full text-[12px] font-medium hairline transition-colors",
+                "h-9 px-3.5 rounded-full text-[12px] font-medium hairline transition-colors",
                 height === h
                   ? "bg-[color:var(--ink)] text-[color:var(--paper)] border-transparent"
                   : "text-[color:var(--ink-muted)] hover:bg-black/[0.04]",
@@ -123,91 +92,9 @@ export function FenceToolbelt() {
               {h} ft
             </button>
           ))}
+          <HeightInput value={height} onCommit={setHeight} />
         </div>
-      </Section>
-
-      <Section label="Runs">
-        {runs.length === 0 ? (
-          <div className="text-[12px] text-[color:var(--ink-muted)]">Draw a fence to see its runs.</div>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {runs.map((r, idx) => {
-              const active = selectedSegment === r.i;
-              return (
-                <button
-                  key={r.i}
-                  type="button"
-                  onClick={() => selectSegment(active ? null : r.i)}
-                  className={cn(
-                    "flex items-center justify-between rounded-[var(--r-sm)] px-2.5 py-1.5 text-[12px] hairline transition-colors",
-                    active
-                      ? "bg-[color:var(--accent-soft)] ring-1 ring-[color:var(--accent)] text-[color:var(--accent-ink)]"
-                      : "text-[color:var(--ink-soft)] hover:bg-black/[0.03]",
-                  )}
-                >
-                  <span className="font-medium">Run {idx + 1}</span>
-                  <span className="tabular text-[color:var(--ink-muted)]">{Math.round(r.len)} ft</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </Section>
-
-      <Section label="Openings">
-        {runs.length === 0 ? (
-          <div className="text-[12px] text-[color:var(--ink-muted)]">Draw a fence to add gates or doors.</div>
-        ) : (
-          <div className="space-y-2.5">
-            {OPENING_KINDS.map((kind) => (
-              <div key={kind}>
-                <div className="text-[11px] text-[color:var(--ink-faint)] mb-1 capitalize">{kind}s</div>
-                <div className="flex gap-1.5 flex-wrap">
-                  {OPENING_PRESETS.filter((p) => p.kind === kind).map((p) => (
-                    <button
-                      key={p.variant}
-                      type="button"
-                      onClick={() => addOpening(p.kind, p.variant, targetRun)}
-                      className="h-8 px-3 rounded-full text-[12px] font-medium hairline text-[color:var(--ink-soft)] hover:bg-[color:var(--accent-soft)] hover:text-[color:var(--accent-ink)] transition-colors"
-                    >
-                      + {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            {gates.length > 0 && (
-              <div className="space-y-1 pt-1">
-                {gates.map((g) => {
-                  const rn = runNumber(g.segmentIndex);
-                  return (
-                    <div
-                      key={g.id}
-                      className="flex items-center justify-between gap-2 rounded-[var(--r-sm)] hairline px-2.5 py-1.5 text-[12px]"
-                    >
-                      <span className="text-[color:var(--ink-soft)]">
-                        {VARIANT_LABEL[g.variant]} {g.kind}
-                        {rn ? ` · Run ${rn}` : ""}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeGate(g.id)}
-                        aria-label="Remove opening"
-                        className="grid h-6 w-6 place-items-center rounded-full text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div className="text-[11px] text-[color:var(--ink-faint)]">
-              Adds to {selectedSegment != null ? "the selected run" : "Run 1"}.
-            </div>
-          </div>
-        )}
+        <p className="text-[11px] text-[color:var(--ink-faint)]">Taller fence raises the price per foot.</p>
       </Section>
 
       <Section label="Site">
@@ -236,5 +123,45 @@ export function FenceToolbelt() {
         </button>
       </Section>
     </div>
+  );
+}
+
+// Custom height entry. Uncontrolled so typing doesn't fight the store; commits
+// clamped to a sane range on blur/Enter. `key={value}` reshows the latest committed
+// value without a sync effect. Highlights when the height isn't a quick-pick.
+function HeightInput({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const isCustom = !FENCE_HEIGHTS.includes(value);
+
+  const commit = (raw: string) => {
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n)) return;
+    onCommit(Math.min(MAX_HEIGHT_FT, Math.max(MIN_HEIGHT_FT, n)));
+  };
+
+  return (
+    <span
+      className={cn(
+        "inline-flex h-9 w-[76px] items-center gap-1 rounded-full px-3 hairline transition-colors focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]",
+        isCustom ? "bg-[color:var(--ink)] text-[color:var(--paper)]" : "bg-white/60",
+      )}
+    >
+      <input
+        key={value}
+        defaultValue={String(value)}
+        inputMode="decimal"
+        aria-label="Custom height in feet"
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className={cn(
+          "min-w-0 flex-1 bg-transparent text-[12px] font-medium tabular-nums outline-none",
+          isCustom ? "text-[color:var(--paper)]" : "text-[color:var(--ink)]",
+        )}
+      />
+      <span className={cn("text-[11px]", isCustom ? "text-[color:var(--paper)]/70" : "text-[color:var(--ink-faint)]")}>
+        ft
+      </span>
+    </span>
   );
 }

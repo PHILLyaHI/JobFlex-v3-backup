@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireOrg } from "@/lib/orgContext";
+import { requireOrg, isSalesRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -9,9 +9,18 @@ import { longDate } from "@/lib/format";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { organizationId } = await requireOrg();
+  const { organizationId, role, user } = await requireOrg();
   const lead = await db.lead.findUnique({ where: { id }, include: { assignedTo: true } });
   if (!lead || lead.organizationId !== organizationId) return notFound();
+  // Sales reps can only open leads that are theirs (assigned/claimed) or NEW.
+  if (
+    isSalesRole(role) &&
+    lead.assignedToId !== user.id &&
+    lead.claimedById !== user.id &&
+    lead.status !== "NEW"
+  ) {
+    return notFound();
+  }
 
   return (
     <>

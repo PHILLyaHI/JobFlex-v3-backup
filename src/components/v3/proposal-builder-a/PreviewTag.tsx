@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
 // Marks a section / field that is wired in the UI but does not yet persist —
 // schema columns for these features are not in place yet. The treatment is
 // deliberately quiet: a small amber chip so contractors don't mistake it
-// for shipped behaviour, no accent indigo (which is reserved).
+// for shipped behaviour, no accent sage (which is reserved).
 export function PreviewTag({ className }: { className?: string }) {
   return (
     <span

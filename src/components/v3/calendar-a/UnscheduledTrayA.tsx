@@ -11,7 +11,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence, type PanInfo } from "framer-motion";
-import { ChevronRight, ChevronLeft, Inbox, CheckCircle2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Inbox, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { JobDispatchCardA, type DispatchableJob } from "./JobDispatchCardA";
 
@@ -19,17 +19,23 @@ interface Props {
   jobs: DispatchableJob[];
   open: boolean;
   onToggle: () => void;
+  onClosed?: () => void; // fired once the collapse animation finishes (parent unmounts then)
   onJobDragEnd: (jobId: string, info: PanInfo) => void;
   onJobDragMove?: (jobId: string, point: { x: number; y: number }) => void;
 }
 
-export function UnscheduledTrayA({ jobs, open, onToggle, onJobDragEnd, onJobDragMove }: Props) {
+const INITIAL_VISIBLE = 5;
+
+export function UnscheduledTrayA({ jobs, open, onToggle, onClosed, onJobDragEnd, onJobDragMove }: Props) {
   const count = jobs.length;
   const [anyDragging, setAnyDragging] = React.useState(false);
+  const [showAll, setShowAll] = React.useState(false);
+  const visibleJobs = showAll ? jobs : jobs.slice(0, INITIAL_VISIBLE);
+  const hidden = jobs.length - INITIAL_VISIBLE;
 
   return (
     <div className="relative">
-      <AnimatePresence initial={false} mode="wait">
+      <AnimatePresence initial={false} mode="wait" onExitComplete={onClosed}>
         {open ? (
           <motion.aside
             key="open"
@@ -88,7 +94,7 @@ export function UnscheduledTrayA({ jobs, open, onToggle, onJobDragEnd, onJobDrag
                 </div>
               ) : (
                 <AnimatePresence initial={false}>
-                  {jobs.map((j) => (
+                  {visibleJobs.map((j) => (
                     <motion.div
                       key={j.id}
                       layout
@@ -107,33 +113,24 @@ export function UnscheduledTrayA({ jobs, open, onToggle, onJobDragEnd, onJobDrag
                   ))}
                 </AnimatePresence>
               )}
-            </div>
-          </motion.aside>
-        ) : (
-          <motion.button
-            key="closed"
-            onClick={onToggle}
-            initial={{ opacity: 0, x: 4 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 4 }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className="sticky top-4 paper-card hover:bg-[color:var(--accent-soft)]/40 transition-colors px-2 py-3"
-            aria-label="Open unscheduled tray"
-          >
-            <div
-              className="flex flex-col items-center gap-2 text-[10px] tracking-[0.16em] uppercase text-[color:var(--ink-muted)]"
-              style={{ writingMode: "vertical-rl" }}
-            >
-              <ChevronLeft className="h-3 w-3 -rotate-90 mb-1" />
-              <span>Unscheduled</span>
-              {count > 0 && (
-                <span className="rounded-full bg-[color:var(--ink)] text-[color:var(--paper)] px-1.5 py-0.5 text-[10px] tabular tracking-normal">
-                  {count}
-                </span>
+              {jobs.length > INITIAL_VISIBLE && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-[var(--r-md)] py-2 text-[12px] text-[color:var(--ink-muted)] transition-colors hover:bg-black/[0.04] hover:text-[color:var(--ink)] motion-reduce:transition-none"
+                >
+                  {showAll ? "Show less" : `Show ${hidden} more`}
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 transition-transform motion-reduce:transition-none",
+                      showAll && "rotate-180",
+                    )}
+                  />
+                </button>
               )}
             </div>
-          </motion.button>
-        )}
+          </motion.aside>
+        ) : null}
       </AnimatePresence>
     </div>
   );

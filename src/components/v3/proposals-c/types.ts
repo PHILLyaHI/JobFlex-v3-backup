@@ -23,6 +23,28 @@ export interface InstallmentLine {
   position: number;
 }
 
+export interface ProposalPhoto {
+  id: string;
+  url: string;
+}
+
+// Proposal.beforePhotos / afterPhotos are stored as a JSON-encoded string
+// array (mirroring the `photos String? @default("[]")` convention elsewhere
+// in the schema). Parse defensively — bad/legacy data degrades to [].
+export function parseProposalPhotos(raw: string | null | undefined): ProposalPhoto[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (p): p is ProposalPhoto =>
+        Boolean(p) && typeof p.id === "string" && typeof p.url === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
 export interface ProposalCRow {
   id: string;
   publicId: string;
@@ -47,6 +69,8 @@ export interface ProposalCRow {
   creatorName: string | null;
   installments: InstallmentLine[];
   materials: MaterialLine[];
+  beforePhotos: ProposalPhoto[];
+  afterPhotos: ProposalPhoto[];
 }
 
 export type TabKey = "all" | "accepted" | "completed";

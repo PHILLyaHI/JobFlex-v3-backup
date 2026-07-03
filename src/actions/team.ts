@@ -2,18 +2,33 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { requireOrg, requireUser } from "@/lib/orgContext";
+import { requireManager, requireUser, isOwnerRole, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { Role } from "@/lib/prismaEnums";
 
+const TEAM_ROLES = [
+  "OWNER",
+  "ADMIN",
+  "MANAGER",
+  "SALES",
+  "ESTIMATOR",
+  "INSTALLER",
+  "ACCOUNTANT",
+  "USER",
+] as const;
+
 const inviteInput = z.object({
   email: z.string().email(),
-  role: z.enum(["OWNER", "ADMIN", "SALES", "ESTIMATOR", "INSTALLER", "ACCOUNTANT", "USER"]),
+  role: z.enum(TEAM_ROLES),
 });
 
 export async function createInvite(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user, role: actorRole } = await requireManager();
   const data = inviteInput.parse(raw);
+  // Only an owner can mint another owner.
+  if (data.role === "OWNER" && !isOwnerRole(actorRole)) {
+    throw new UnauthorizedError("Only the owner can invite another owner");
+  }
 
   const email = data.email.toLowerCase().trim();
 
@@ -67,7 +82,7 @@ ${appUrl}/auth/invite/${token}`,
 }
 
 export async function revokeInvite(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requireManager();
   const invite = await db.invite.findUnique({ where: { id } });
   if (!invite || invite.organizationId !== organizationId) throw new Error("Not found");
   await db.invite.delete({ where: { id } });
@@ -140,19 +155,26 @@ export async function declineInvite(token: string) {
 }
 
 export async function updateMembershipRole(membershipId: string, role: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId, role: actorRole } = await requireManager();
   const m = await db.membership.findUnique({ where: { id: membershipId } });
   if (!m || m.organizationId !== organizationId) throw new Error("Not found");
-  if (!["OWNER", "ADMIN", "SALES", "ESTIMATOR", "INSTALLER", "ACCOUNTANT", "USER"].includes(role))
-    throw new Error("Invalid role");
+  if (!(TEAM_ROLES as readonly string[]).includes(role)) throw new Error("Invalid role");
+  // Owner seats are owner-managed: a manager can neither demote an owner nor
+  // promote anyone into the owner role.
+  if ((m.role === Role.OWNER || role === "OWNER") && !isOwnerRole(actorRole)) {
+    throw new UnauthorizedError("Only the owner can change owner roles");
+  }
   await db.membership.update({ where: { id: membershipId }, data: { role } });
   revalidatePath("/dashboard/settings/team");
 }
 
 export async function removeMember(membershipId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId, role: actorRole } = await requireManager();
   const m = await db.membership.findUnique({ where: { id: membershipId } });
   if (!m || m.organizationId !== organizationId) throw new Error("Not found");
+  if (m.role === Role.OWNER && !isOwnerRole(actorRole)) {
+    throw new UnauthorizedError("Only the owner can remove an owner");
+  }
   // Prevent removing the last OWNER
   if (m.role === Role.OWNER) {
     const owners = await db.membership.count({

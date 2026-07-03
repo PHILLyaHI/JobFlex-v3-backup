@@ -16,12 +16,14 @@ import {
   Inbox,
   BarChart3,
   HardHat,
+  MessagesSquare,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/cn";
 import { MobileDrawer } from "@/components/ui/MobileDrawer";
+import { NavBadge } from "./NavBadge";
 
-type TabKey = "dashboard" | "proposals" | "schedule" | "jobs" | "more";
+type TabKey = "dashboard" | "proposals" | "schedule" | "jobs" | "leads" | "clients" | "smart" | "more";
 
 interface Tab {
   key: TabKey;
@@ -52,11 +54,54 @@ const MORE_NAV: MoreNavItem[] = [
   { label: "Settings", href: "/dashboard/settings", icon: <Settings className="h-4 w-4" /> },
 ];
 
+// Workers get Messages in their "More" drawer; their primary tabs stay Schedule
+// + Jobs, and sign-out renders below this list unconditionally.
+const WORKER_MORE_NAV: MoreNavItem[] = [
+  { label: "Messages", href: "/dashboard/messages", icon: <MessagesSquare className="h-4 w-4" /> },
+];
+
+// Field workers (INSTALLER) get only their two surfaces; "More" holds Messages
+// plus sign-out (rendered unconditionally below the drawer list).
+const WORKER_TABS: Tab[] = [
+  { key: "schedule", label: "Schedule", href: "/dashboard/calendar", icon: <Calendar className="h-5 w-5" /> },
+  { key: "jobs", label: "Jobs", href: "/dashboard/jobs", icon: <Hammer className="h-5 w-5" /> },
+  { key: "more", label: "More", href: "#more", icon: <MoreHorizontal className="h-5 w-5" /> },
+];
+
+// Sales reps: the pipeline slice. "More" holds CRM, phone, and messages.
+const SALES_TABS: Tab[] = [
+  { key: "leads", label: "Leads", href: "/dashboard/leads", icon: <Inbox className="h-5 w-5" /> },
+  { key: "clients", label: "Clients", href: "/dashboard/clients", icon: <Users className="h-5 w-5" /> },
+  { key: "proposals", label: "Proposals", href: "/dashboard/proposals", icon: <FileText className="h-5 w-5" /> },
+  { key: "schedule", label: "Schedule", href: "/dashboard/calendar", icon: <Calendar className="h-5 w-5" /> },
+  { key: "more", label: "More", href: "#more", icon: <MoreHorizontal className="h-5 w-5" /> },
+];
+
+const SALES_MORE_NAV: MoreNavItem[] = [
+  { label: "CRM", href: "/dashboard/crm", icon: <BarChart3 className="h-4 w-4" /> },
+  { label: "Messages", href: "/dashboard/messages", icon: <MessagesSquare className="h-4 w-4" /> },
+];
+
+// Estimators: proposals plus the AI estimators. "More" holds messages.
+const ESTIMATOR_TABS: Tab[] = [
+  { key: "proposals", label: "Proposals", href: "/dashboard/proposals", icon: <FileText className="h-5 w-5" /> },
+  { key: "smart", label: "Smart AI", href: "/dashboard/advanced-ai", icon: <Sparkles className="h-5 w-5" /> },
+  { key: "clients", label: "Clients", href: "/dashboard/clients", icon: <Users className="h-5 w-5" /> },
+  { key: "more", label: "More", href: "#more", icon: <MoreHorizontal className="h-5 w-5" /> },
+];
+
+const ESTIMATOR_MORE_NAV: MoreNavItem[] = [
+  { label: "Messages", href: "/dashboard/messages", icon: <MessagesSquare className="h-4 w-4" /> },
+];
+
 function getActiveKey(pathname: string): TabKey {
   if (pathname === "/dashboard") return "dashboard";
   if (pathname.startsWith("/dashboard/proposals")) return "proposals";
   if (pathname.startsWith("/dashboard/calendar")) return "schedule";
   if (pathname.startsWith("/dashboard/jobs")) return "jobs";
+  if (pathname.startsWith("/dashboard/leads")) return "leads";
+  if (pathname.startsWith("/dashboard/clients")) return "clients";
+  if (pathname.startsWith("/dashboard/advanced-ai")) return "smart";
   return "more";
 }
 
@@ -66,19 +111,45 @@ interface FabConfig {
   label: string;
 }
 
-function fabFor(active: TabKey): FabConfig | null {
+function fabFor(active: TabKey, role?: string | null): FabConfig | null {
   if (active === "more") return null;
+  // Sales / estimators can't create jobs — their FAB always drafts a proposal.
+  if (role === "SALES" || role === "ESTIMATOR") {
+    return { href: "/dashboard/proposals/create", icon: <Sparkles className="h-5 w-5" />, label: "Create proposal" };
+  }
   if (active === "dashboard" || active === "proposals") {
-    return { href: "/dashboard/proposals/ai", icon: <Sparkles className="h-5 w-5" />, label: "Draft proposal" };
+    return { href: "/dashboard/proposals/create", icon: <Sparkles className="h-5 w-5" />, label: "Create proposal" };
   }
   return { href: "/dashboard/jobs/new", icon: <Plus className="h-5 w-5" />, label: "New job" };
 }
 
-export function MobileTabBar() {
+export function MobileTabBar({
+  role,
+  badges,
+}: {
+  role?: string | null;
+  /** Unread / pending counts keyed by nav href. Populated by the layout. */
+  badges?: Record<string, number>;
+}) {
   const pathname = usePathname();
+  const isWorker = role === "INSTALLER";
+  const isSales = role === "SALES";
+  const isEstimator = role === "ESTIMATOR";
   const active = getActiveKey(pathname ?? "");
-  const fab = fabFor(active);
+  const tabs = isWorker ? WORKER_TABS : isSales ? SALES_TABS : isEstimator ? ESTIMATOR_TABS : TABS;
+  const moreNav: MoreNavItem[] = isWorker
+    ? WORKER_MORE_NAV
+    : isSales
+      ? SALES_MORE_NAV
+      : isEstimator
+        ? ESTIMATOR_MORE_NAV
+        : MORE_NAV;
+  const fab = isWorker ? null : fabFor(active, role);
   const [moreOpen, setMoreOpen] = React.useState(false);
+
+  // The "More" tab hides several surfaces behind a drawer — surface their
+  // combined count on the tab itself so nothing goes unnoticed at a glance.
+  const moreCount = moreNav.reduce((sum, item) => sum + (badges?.[item.href] ?? 0), 0);
 
   return (
     <>
@@ -110,7 +181,7 @@ export function MobileTabBar() {
         )}
       >
         <ul className="flex items-stretch h-14">
-          {TABS.map((tab) => {
+          {tabs.map((tab) => {
             const isActive = tab.key === active;
             const isMoreTab = tab.key === "more";
             const itemClass = cn(
@@ -125,10 +196,18 @@ export function MobileTabBar() {
                 className="absolute top-0 left-1/2 -translate-x-1/2 h-[2px] w-6 rounded-full bg-[color:var(--accent)]"
               />
             ) : null;
+            const count = isMoreTab ? moreCount : badges?.[tab.href] ?? 0;
             const body = (
               <>
                 {indicator}
-                <span className={cn("opacity-90", isActive && "opacity-100")}>{tab.icon}</span>
+                <span className={cn("relative opacity-90", isActive && "opacity-100")}>
+                  {tab.icon}
+                  <NavBadge
+                    count={count}
+                    size="sm"
+                    className="absolute -top-2 -right-2.5 ring-2 ring-[color:var(--paper)]"
+                  />
+                </span>
                 <span className="text-[10px] font-medium tracking-[0.01em] leading-none">{tab.label}</span>
               </>
             );
@@ -166,7 +245,7 @@ export function MobileTabBar() {
         title="More"
       >
         <nav className="space-y-1">
-          {MORE_NAV.map((item) => (
+          {moreNav.map((item) => (
             <Link
               key={item.href}
               href={item.href as never}
@@ -174,7 +253,8 @@ export function MobileTabBar() {
               className="flex items-center gap-3 px-3 py-2.5 rounded-[var(--r-sm)] text-[13px] text-[color:var(--ink-soft)] hover:bg-black/[0.04] focus-ring"
             >
               <span className="text-[color:var(--ink-muted)]">{item.icon}</span>
-              <span>{item.label}</span>
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              <NavBadge count={badges?.[item.href] ?? 0} className="shrink-0" />
             </Link>
           ))}
           <div className="pt-3 mt-3 border-t border-[color:var(--ink-line)]">

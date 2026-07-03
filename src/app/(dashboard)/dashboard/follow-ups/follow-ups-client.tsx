@@ -10,7 +10,7 @@ import { upsertFollowUpRule } from "@/actions/followUps";
 interface Props {
   rules: (FollowUpRuleRow & { templateId: string | null })[];
   pending: PendingFollowUp[];
-  templates: { id: string; name: string }[];
+  templates: { id: string; name: string; subject: string; body: string }[];
 }
 
 export function FollowUpsClient({ rules, pending, templates }: Props) {

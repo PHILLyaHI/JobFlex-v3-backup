@@ -38,7 +38,7 @@ export function EstimateBreakdown() {
   const margin = grandTotal > 0 ? ((grandTotal - baseTotal) / grandTotal) * 100 : 0;
 
   return (
-    <Card className="mt-5 relative overflow-hidden">
+    <Card className="mt-6 relative overflow-hidden">
       <div
         aria-hidden
         className="absolute -top-24 -right-24 h-56 w-56 rounded-full bg-[color:var(--accent)]/[0.06] blur-3xl pointer-events-none"
@@ -58,7 +58,7 @@ export function EstimateBreakdown() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8 items-start">
           {/* Sliders */}
-          <div className="space-y-5">
+          <div className="space-y-6">
             <MarkupSlider
               category="materials"
               value={matMarkupPct}

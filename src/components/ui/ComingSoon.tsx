@@ -7,11 +7,13 @@ export function ComingSoon({
   title,
   description,
   body,
+  items,
 }: {
   eyebrow?: React.ReactNode;
   title: string;
   description?: React.ReactNode;
   body?: string;
+  items?: string[];
 }) {
   return (
     <>
@@ -22,6 +24,20 @@ export function ComingSoon({
         description={
           body ??
           "The schema, API, and nav for this page are scaffolded. The interactive view lands next — the rest of the app already works."
+        }
+        action={
+          items && items.length > 0 ? (
+            <ul className="flex flex-wrap items-center justify-center gap-2">
+              {items.map((it) => (
+                <li
+                  key={it}
+                  className="inline-flex items-center rounded-full bg-black/[0.05] px-2.5 py-0.5 text-[11px] font-medium text-[color:var(--ink-soft)]"
+                >
+                  {it}
+                </li>
+              ))}
+            </ul>
+          ) : undefined
         }
       />
     </>

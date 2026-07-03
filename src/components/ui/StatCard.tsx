@@ -11,12 +11,23 @@ interface StatCardProps {
   delta?: { value: string; direction: "up" | "down" };
   hint?: string;
   accent?: boolean;
+  hover?: boolean;
   className?: string;
 }
 
-export function StatCard({ label, value, delta, hint, accent, className }: StatCardProps) {
+export function StatCard({ label, value, delta, hint, accent, hover, className }: StatCardProps) {
   return (
-    <motion.div variants={listItem} className={cn("paper-card p-5 flex flex-col gap-3", className)}>
+    <motion.div
+      variants={listItem}
+      whileHover={hover ? { y: -3 } : undefined}
+      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+      className={cn(
+        "paper-card p-5 flex flex-col gap-3",
+        hover &&
+          "transition-shadow duration-200 ease-[var(--ease)] !shadow-[var(--shadow-sm)] hover:!shadow-[var(--shadow-md)]",
+        className,
+      )}
+    >
 
       <div className="flex items-start justify-between">
         <span className="quiet-caps">{label}</span>

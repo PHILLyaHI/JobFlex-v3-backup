@@ -2,10 +2,10 @@
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { requireOrg } from "@/lib/orgContext";
+import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
-import { estimateSchema, type GeneratedEstimate } from "./advancedEstimator";
+import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
 
 const STUB: GeneratedEstimate = {
@@ -38,12 +38,16 @@ export async function estimateRoof(input: {
   pitch: string;
   squares: number;
   wastePct: number;
+  // Optional EagleView-measured facet/edge detail, fed verbatim to the AI so it
+  // can price ridge vent, valley/flashing metal, and steep-slope labor off real
+  // geometry rather than a single average pitch.
+  measurementNotes?: string;
 }): Promise<
   | { ok: true; data: GeneratedEstimate; disabled?: false }
   | { ok: true; data: GeneratedEstimate; disabled: true }
   | { ok: false; error: string }
 > {
-  await requireOrg();
+  await requireEstimatorOrManager();
   if (!isOpenAIEnabled()) {
     return { ok: true, data: STUB, disabled: true };
   }
@@ -64,7 +68,7 @@ export async function estimateRoof(input: {
           content: `Address: ${input.address ?? "unknown"}
 Pitch: ${input.pitch}
 Roof size: ${input.squares} squares (${input.squares * 100} sqft)
-Waste factor: ${input.wastePct}%`,
+Waste factor: ${input.wastePct}%${input.measurementNotes ? `\n${input.measurementNotes}` : ""}`,
         },
       ],
     });
@@ -96,11 +100,23 @@ const convertSchema = z.object({
     }),
   ),
   assumptions: z.array(z.string()),
+  // Pre-links the proposal to a client when converted from a client's page.
+  clientId: z.string().optional().nullable(),
 });
 
 export async function convertRoofEstimateToProposal(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await requireEstimatorOrManager();
   const data = convertSchema.parse(raw);
+
+  // Never trust a client id from the browser — it must belong to this org.
+  const clientId = data.clientId
+    ? (
+        await db.client.findFirst({
+          where: { id: data.clientId, organizationId },
+          select: { id: true },
+        })
+      )?.id ?? null
+    : null;
 
   const lines = [
     ...data.materials.map((l) => ({
@@ -130,12 +146,11 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       publicId: randomUUID(),
       organizationId,
       ownerId: user.id,
+      clientId,
       title: data.title,
-      scopeOfWork:
-        (data.scope ?? "") +
-        (data.assumptions.length
-          ? "\n\nAssumptions:\n" + data.assumptions.map((a) => `• ${a}`).join("\n")
-          : ""),
+      // Scope only — assumptions stay on the estimate, never baked into the
+      // proposal's scope (keeps the preview / calendar / job detail clean).
+      scopeOfWork: data.scope ?? "",
       status: ProposalStatus.DRAFT,
       subtotal,
       total: subtotal,
