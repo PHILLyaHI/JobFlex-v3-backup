@@ -9,6 +9,7 @@ import {
   type Feature,
   type Plan,
 } from "@/lib/entitlements";
+import { labelForTier } from "@/lib/planCatalog";
 
 interface GateProps {
   feature: Feature;
@@ -58,7 +59,7 @@ function GateUpgradeCard({
         <Lock className="h-4 w-4" />
       </div>
       <div className="space-y-1.5">
-        <div className="quiet-caps">{labelForPlan(required)} feature</div>
+        <div className="quiet-caps">{labelForTier(required)} feature</div>
         <h3 className="font-display text-[22px] tracking-[-0.015em]">{label}</h3>
         {description && (
           <p className="text-[13px] text-[color:var(--ink-muted)] leading-relaxed max-w-md">
@@ -67,12 +68,12 @@ function GateUpgradeCard({
         )}
       </div>
       <div className="text-[11px] text-[color:var(--ink-faint)] tabular">
-        Currently on <span className="text-[color:var(--ink-soft)]">{labelForPlan(currentPlan)}</span>
+        Currently on <span className="text-[color:var(--ink-soft)]">{labelForTier(currentPlan)}</span>
       </div>
       <div className="flex items-center gap-2 pt-2">
         <Link href={"/dashboard/settings/billing" as any}>
           <Button size="sm" icon={<ArrowUpRight className="h-3.5 w-3.5" />}>
-            Upgrade to {labelForPlan(required)}
+            Upgrade to {labelForTier(required)}
           </Button>
         </Link>
         <Link href={"/pricing" as any}>
@@ -105,22 +106,7 @@ export function GateInline({
       )}
     >
       <Lock className="h-3 w-3" />
-      {labelForPlan(required)} · upgrade
+      {labelForTier(required)} · upgrade
     </Link>
   );
-}
-
-function labelForPlan(p: Plan) {
-  switch (p) {
-    case "FREE":
-      return "Free";
-    case "STARTER":
-      return "Starter";
-    case "PROFESSIONAL":
-      return "Professional";
-    case "ENTERPRISE":
-      return "Enterprise";
-    default:
-      return p;
-  }
 }

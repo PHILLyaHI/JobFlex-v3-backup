@@ -315,7 +315,9 @@ export const faq = {
     },
     {
       q: "What does JobFlex cost?",
-      a: "Plans start at $79/month for solo operators. Crew and multi-shop pricing live on the Pricing page. Every plan includes the full AI estimator and unlimited clients.",
+      // Static marketing copy — if /v3 ships, feed this from the plan catalog
+      // (getPlanCatalog / cheapest paid plan) instead of a literal.
+      a: "Paid plans start at $29/month for solo operators, and there's a free plan to try it out. Crew and multi-shop pricing live on the Pricing page. Every plan includes unlimited clients.",
     },
     {
       q: "Is my data really portable?",

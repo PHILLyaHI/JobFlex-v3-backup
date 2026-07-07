@@ -1,12 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/cn";
-
-const LABELS: Record<string, string> = {
-  FREE: "Free",
-  STARTER: "Starter",
-  PROFESSIONAL: "Professional",
-  ENTERPRISE: "Enterprise",
-};
+import { labelForTier } from "@/lib/planCatalog";
 
 export function PlanBadge({ plan = "FREE" }: { plan?: string | null }) {
   const p = plan ?? "FREE";
@@ -23,7 +17,7 @@ export function PlanBadge({ plan = "FREE" }: { plan?: string | null }) {
         )}
       />
       <span className="text-[10px] tracking-[0.14em] uppercase font-medium text-[color:var(--ink-soft)]">
-        {LABELS[p] ?? p}
+        {labelForTier(p)}
       </span>
     </Link>
   );
