@@ -1,48 +1,16 @@
 import Link from "next/link";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { formatPlanPrice, priceCadence } from "@/lib/planCatalog";
+import { getPlanCatalog } from "@/lib/planCatalogServer";
 
-const PLANS = [
-  {
-    name: "Starter",
-    price: "$29",
-    per: "per month",
-    description: "For solo operators who just need to send polished proposals.",
-    features: ["10 proposals / month", "Manual builder", "Client portal", "Stripe payments", "Email support"],
-  },
-  {
-    name: "Professional",
-    price: "$89",
-    per: "per month",
-    featured: true,
-    description: "For growing crews who want AI and automation.",
-    features: [
-      "Unlimited proposals",
-      "AI proposal drafts",
-      "AI estimator",
-      "Team seats (up to 5)",
-      "Gmail + Stripe + Square",
-      "Follow-up automation",
-      "Priority support",
-    ],
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    per: "annual",
-    description: "Multi-crew operators with white-label and API needs.",
-    features: [
-      "Everything in Pro",
-      "Unlimited seats",
-      "White-label portal",
-      "Custom domain",
-      "API + webhooks",
-      "Dedicated CSM",
-    ],
-  },
-];
+// ISR backstop — instant propagation comes from revalidatePlanSurfaces() firing
+// on every admin plan write; this window only covers out-of-band DB edits.
+export const revalidate = 3600;
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const plans = await getPlanCatalog();
+
   return (
     <main className="mx-auto max-w-[1200px] px-6 lg:px-10 py-20">
       <div className="text-center max-w-2xl mx-auto">
@@ -56,24 +24,29 @@ export default function PricingPage() {
       </div>
 
       <div className="mt-14 grid md:grid-cols-3 gap-5">
-        {PLANS.map((p) => (
+        {plans.map((p) => (
           <div
-            key={p.name}
+            key={p.slug}
             className={
               "paper-card p-8 flex flex-col " +
-              (p.featured ? "shadow-pop bg-[color:var(--paper-deep)]/50" : "")
+              (p.highlight ? "shadow-pop bg-[color:var(--paper-deep)]/50" : "")
             }
           >
-            {p.featured && (
+            {p.highlight && (
               <span className="quiet-caps self-start mb-4 bg-[color:var(--accent)] text-[color:var(--paper)] px-2 py-0.5 rounded-full">
                 Most popular
               </span>
             )}
             <div className="font-display text-[24px] tracking-[-0.015em]">{p.name}</div>
             <div className="mt-4 flex items-baseline gap-1.5">
-              <span className="stat-numeric text-[48px]">{p.price}</span>
-              <span className="text-[12px] text-[color:var(--ink-muted)]">{p.per}</span>
+              <span className="stat-numeric text-[48px]">{formatPlanPrice(p.priceCents)}</span>
+              <span className="text-[12px] text-[color:var(--ink-muted)]">{priceCadence(p.isFree)}</span>
             </div>
+            {p.trialDays > 0 && (
+              <div className="mt-1 text-[12px] text-[color:var(--ink-muted)]">
+                {p.trialDays}-day free trial
+              </div>
+            )}
             <p className="mt-3 text-[13px] text-[color:var(--ink-muted)] min-h-[48px]">{p.description}</p>
             <ul className="mt-6 space-y-2.5 text-[13px] flex-1">
               {p.features.map((f) => (
@@ -84,7 +57,7 @@ export default function PricingPage() {
               ))}
             </ul>
             <Link href={"/auth/register" as any} className="mt-7">
-              <Button className="w-full" variant={p.featured ? "primary" : "outline"}>
+              <Button className="w-full" variant={p.highlight ? "primary" : "outline"}>
                 Start {p.name}
               </Button>
             </Link>
