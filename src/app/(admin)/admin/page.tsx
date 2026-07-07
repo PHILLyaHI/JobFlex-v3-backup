@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { relative } from "@/lib/format";
 import { PlatformStatsHero, type PlatformStats } from "@/components/admin/PlatformStatsHero";
 import { planMrr } from "@/lib/planPricing";
+import { getMonthlyCentsBySlugUpper } from "@/lib/planCatalogServer";
 
 export default async function AdminHome() {
   await requirePlatformAdmin();
@@ -52,7 +53,12 @@ export default async function AdminHome() {
     { href: "/admin/support", label: "Support", icon: LifeBuoy, count: openTickets, hint: "open tickets" },
   ];
 
-  const estimatedMrr = paidSubs.reduce((a, s) => a + planMrr(s.plan), 0);
+  // Live catalog prices first; static planMrr only for slugs missing from it.
+  const monthlyCents = await getMonthlyCentsBySlugUpper();
+  const estimatedMrr = paidSubs.reduce((a, s) => {
+    const cents = monthlyCents[s.plan.toUpperCase()];
+    return a + (cents !== undefined ? cents / 100 : planMrr(s.plan));
+  }, 0);
 
   // 12-week signup sparkline
   const now = new Date();

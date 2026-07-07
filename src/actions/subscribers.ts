@@ -3,14 +3,15 @@ import type Stripe from "stripe";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { getMonthlyCentsBySlugUpper } from "@/lib/planCatalogServer";
 
-// Server-safe monthly price fallback (cents), used for MRR/plan inference when
-// Stripe is unavailable (the fallback mirror path only).
+// Static last-resort monthly prices (cents) for the fallback mirror path —
+// only consulted when a slug is missing from the PricingPlan catalog too.
 const FALLBACK_MONTHLY_CENTS: Record<string, number> = {
   FREE: 0,
   STARTER: 2900,
-  PROFESSIONAL: 9900,
-  ENTERPRISE: 29900,
+  PROFESSIONAL: 7900,
+  ENTERPRISE: 19900,
 };
 
 export interface SubscriberRow {
@@ -228,7 +229,7 @@ export async function getSubscribersData(): Promise<SubscribersData> {
   }
 
   // ── Fallback path: local mirror (dev without Stripe, or Stripe error) ──────
-  const [localSubs, attributions] = await Promise.all([
+  const [localSubs, attributions, catalogCents] = await Promise.all([
     db.subscription.findMany({
       include: {
         organization: {
@@ -251,8 +252,11 @@ export async function getSubscribersData(): Promise<SubscribersData> {
         influencer: { select: { displayName: true } },
       },
     }),
+    getMonthlyCentsBySlugUpper(),
   ]);
   const attrBySub = new Map(attributions.map((a) => [a.stripeSubscriptionId, a]));
+  // Live catalog prices first, static table as last resort.
+  const monthlyCents: Record<string, number> = { ...FALLBACK_MONTHLY_CENTS, ...catalogCents };
 
   const rows: SubscriberRow[] = localSubs.map((s) => {
     const attr = s.externalSubId ? attrBySub.get(s.externalSubId) : undefined;
@@ -271,7 +275,7 @@ export async function getSubscribersData(): Promise<SubscribersData> {
       stripeBacked: Boolean(s.externalSubId),
       externalSubId: s.externalSubId,
       stripeCustomerId: s.externalCustomerId,
-      amountCents: FALLBACK_MONTHLY_CENTS[s.plan.toUpperCase()] ?? 0,
+      amountCents: monthlyCents[s.plan.toUpperCase()] ?? 0,
       promoCode: attr?.promoCode.code ?? null,
       influencerName: attr?.influencer.displayName ?? null,
       currentPeriodEnd: s.currentPeriodEnd,
