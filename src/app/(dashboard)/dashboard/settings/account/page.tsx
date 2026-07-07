@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { PlanFeatureMatrix } from "@/components/billing/PlanFeatureMatrix";
 import { PlanActions } from "./plan-actions";
 import { money, longDate } from "@/lib/format";
-import { getOrgPlan, type Plan } from "@/lib/entitlements";
+import { titleCaseSlug } from "@/lib/planCatalog";
+import { getPlanCatalog, getOrgPlanContext } from "@/lib/planCatalogServer";
 
 const STATUS_TONES: Record<
   string,
@@ -23,16 +24,20 @@ const STATUS_TONES: Record<
 
 export default async function AccountSettingsPage() {
   const { organizationId, user } = await requireOrg();
-  const [sub, payments] = await Promise.all([
+  const [sub, payments, planContext, plans] = await Promise.all([
     db.subscription.findUnique({ where: { organizationId } }),
     db.payment.findMany({
       where: { organizationId, status: "PAID" },
       orderBy: { paidAt: "desc" },
       take: 12,
     }),
+    getOrgPlanContext(organizationId),
+    getPlanCatalog(),
   ]);
 
-  const plan: Plan = getOrgPlan(sub);
+  const { plan: planDto, rawPlan } = planContext;
+  const planName = planDto?.name ?? titleCaseSlug(rawPlan);
+  const currentSlug = planDto?.slug ?? rawPlan.toLowerCase();
   const status = sub?.status ?? "FREE";
 
   return (
@@ -71,7 +76,7 @@ export default async function AccountSettingsPage() {
             <div>
               <div className="quiet-caps mb-2">Plan</div>
               <div className="font-display text-[42px] tracking-[-0.02em] leading-none">
-                {labelFor(plan)}
+                {planName}
               </div>
               {sub?.currentPeriodEnd && (
                 <div className="text-[12px] text-[color:var(--ink-muted)] mt-3 tabular">
@@ -84,7 +89,7 @@ export default async function AccountSettingsPage() {
                 </div>
               )}
             </div>
-            <PlanActions currentPlan={plan} />
+            <PlanActions plans={plans} currentSlug={currentSlug} />
           </div>
         </Card>
 
@@ -122,7 +127,7 @@ export default async function AccountSettingsPage() {
           <div className="quiet-caps mb-1">Plans</div>
           <h2 className="font-display text-[24px] tracking-[-0.015em]">Feature matrix</h2>
         </div>
-        <PlanFeatureMatrix currentPlan={plan} />
+        <PlanFeatureMatrix plans={plans} currentSlug={currentSlug} />
       </div>
 
       <Card className="mt-8">
@@ -156,15 +161,4 @@ export default async function AccountSettingsPage() {
       </Card>
     </>
   );
-}
-
-function labelFor(p: Plan) {
-  return (
-    {
-      FREE: "Free",
-      STARTER: "Starter",
-      PROFESSIONAL: "Professional",
-      ENTERPRISE: "Enterprise",
-    } as const
-  )[p];
 }

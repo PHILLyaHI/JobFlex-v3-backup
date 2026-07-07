@@ -24,39 +24,34 @@ import { PlanActions } from "@/app/(dashboard)/dashboard/settings/account/plan-a
 import { ReferralHeroCard } from "@/components/referrals/ReferralHeroCard";
 import { PlanFeatureMatrix } from "@/components/billing/PlanFeatureMatrix";
 import { money, longDate } from "@/lib/format";
-import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
+import { formatPlanPrice, priceCadence, type PlanDTO } from "@/lib/planCatalog";
 import type { SubscriptionInvoice } from "@/actions/billing";
 
 type Tone = "success" | "warn" | "danger" | "accent" | "neutral";
 
 interface TierStyle {
-  label: string;
-  price: string;
-  cadence: string;
   /** Bright tone for the spectrum + glows. */
   bar: string;
   /** Deep, derived-from-token shade used as the readable hero base. */
   deep: string;
 }
 
-const TIER: Record<Plan, TierStyle> = {
-  FREE: { label: "Free", price: "$0", cadence: "forever", bar: "var(--ink-muted)", deep: "var(--ink)" },
-  STARTER: { label: "Starter", price: "$29", cadence: "/mo", bar: "var(--accent)", deep: "var(--accent-ink)" },
-  PROFESSIONAL: {
-    label: "Professional",
-    price: "$89",
-    cadence: "/mo",
-    bar: "var(--emerald)",
-    deep: "color-mix(in srgb, var(--emerald), var(--ink) 58%)",
-  },
-  ENTERPRISE: {
-    label: "Enterprise",
-    price: "Custom",
-    cadence: "annual",
-    bar: "var(--amber)",
-    deep: "color-mix(in srgb, var(--amber), var(--ink) 55%)",
-  },
-};
+// Tones are positional now that plans come from the DB catalog: free plans get
+// graphite, paid plans cycle sage → emerald → amber by catalog order — the
+// original four-tier look is preserved and new plans slot in sensibly.
+const FREE_TONE: TierStyle = { bar: "var(--ink-muted)", deep: "var(--ink)" };
+const PAID_TONES: TierStyle[] = [
+  { bar: "var(--accent)", deep: "var(--accent-ink)" },
+  { bar: "var(--emerald)", deep: "color-mix(in srgb, var(--emerald), var(--ink) 58%)" },
+  { bar: "var(--amber)", deep: "color-mix(in srgb, var(--amber), var(--ink) 55%)" },
+];
+
+function toneForPlan(plans: PlanDTO[], slug: string): TierStyle {
+  const paid = plans.filter((p) => !p.isFree);
+  const idx = paid.findIndex((p) => p.slug === slug);
+  if (idx >= 0) return PAID_TONES[idx % PAID_TONES.length];
+  return FREE_TONE; // free plan, or a slug no longer in the catalog
+}
 
 const PROBLEM_STATUSES = ["PAST_DUE", "CANCELED", "EXPIRED"];
 
@@ -74,15 +69,29 @@ function invoiceTone(s: string | null): Tone {
   }
 }
 
+/** One enforced-limit row from the limits engine (finite caps only). */
+export interface UsageRow {
+  resource: string;
+  label: string;
+  used: number;
+  limit: number;
+}
+
 export interface SubscriptionViewProps {
-  plan: Plan;
+  /** Display name of the current plan (catalog name, or title-cased orphan slug). */
+  planName: string;
+  /** Monthly price of the current plan; null when the slug left the catalog. */
+  priceCents: number | null;
+  isFree: boolean;
+  /** Lowercase slug used to mark "current" in the spectrum + matrix. */
+  currentSlug: string;
+  /** Active catalog plans, display-ordered. */
+  plans: PlanDTO[];
   status: string;
   nextBill: string | null;
   trialEndsAt: string | null;
-  usage: {
-    proposals: { used: number; limit: number };
-    aiDrafts: { used: number; limit: number };
-  };
+  /** The limits engine's enforced caps for this org (unlimited keys omitted). */
+  usage: UsageRow[];
   invoices: { available: boolean; invoices: SubscriptionInvoice[] };
   referral: {
     code: string;
@@ -95,7 +104,11 @@ export interface SubscriptionViewProps {
 }
 
 export function SubscriptionView({
-  plan,
+  planName,
+  priceCents,
+  isFree,
+  currentSlug,
+  plans,
   status,
   nextBill,
   trialEndsAt,
@@ -115,7 +128,7 @@ export function SubscriptionView({
     show: { opacity: 1, y: 0, transition: { duration: reduce ? 0 : 0.5, ease } },
   };
 
-  const tier = TIER[plan];
+  const tier = toneForPlan(plans, currentSlug);
   const isTrial = status === "TRIALING";
   const isProblem = PROBLEM_STATUSES.includes(status);
 
@@ -175,15 +188,19 @@ export function SubscriptionView({
 
           <div className="mt-4 flex items-end gap-3">
             <h1 className="font-display text-[clamp(44px,6vw,60px)] leading-[0.92] tracking-[-0.025em] text-white">
-              {tier.label}
+              {planName}
             </h1>
             <Sparkles className="mb-3 h-5 w-5 text-white/70" aria-hidden />
           </div>
 
           <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
             <span className="flex items-baseline gap-1.5">
-              <span className="stat-numeric text-[22px] text-white">{tier.price}</span>
-              <span className="text-white/65">{tier.cadence}</span>
+              <span className="stat-numeric text-[22px] text-white">
+                {priceCents !== null ? formatPlanPrice(priceCents) : "—"}
+              </span>
+              {priceCents !== null && (
+                <span className="text-white/65">{priceCadence(isFree, true)}</span>
+              )}
             </span>
             <span aria-hidden className="h-3.5 w-px bg-white/20" />
             <span className="tabular text-white/80">{billLine}</span>
@@ -196,12 +213,12 @@ export function SubscriptionView({
         <div className="quiet-caps mb-3">Where you are</div>
         <div className="paper-card overflow-hidden p-0">
           <div className="grid grid-cols-2 gap-px bg-[color:var(--ink-line)] sm:grid-cols-4">
-            {PLAN_TIERS.map((p) => {
-              const t = TIER[p];
-              const current = p === plan;
+            {plans.map((p) => {
+              const t = toneForPlan(plans, p.slug);
+              const current = p.slug === currentSlug;
               return (
                 <div
-                  key={p}
+                  key={p.slug}
                   className="relative bg-white p-4 sm:p-5"
                   style={current ? { background: `color-mix(in srgb, ${t.bar} 8%, white)` } : undefined}
                 >
@@ -210,11 +227,13 @@ export function SubscriptionView({
                     className="font-display text-[15px] tracking-[-0.01em]"
                     style={{ color: current ? t.deep : "var(--ink)" }}
                   >
-                    {t.label}
+                    {p.name}
                   </div>
                   <div className="mt-1 flex items-baseline gap-1">
-                    <span className="stat-numeric text-[18px]">{t.price}</span>
-                    <span className="text-[10px] text-[color:var(--ink-muted)]">{t.cadence}</span>
+                    <span className="stat-numeric text-[18px]">{formatPlanPrice(p.priceCents)}</span>
+                    <span className="text-[10px] text-[color:var(--ink-muted)]">
+                      {priceCadence(p.isFree, true)}
+                    </span>
                   </div>
                   {current ? (
                     <div
@@ -239,16 +258,23 @@ export function SubscriptionView({
           <CardHeader>
             <div>
               <CardTitle>Usage</CardTitle>
-              <CardSubtitle>This month · resets on the 1st</CardSubtitle>
+              <CardSubtitle>Your plan&apos;s enforced limits · reset each billing cycle</CardSubtitle>
             </div>
-            <PlanActions currentPlan={plan} />
+            <PlanActions plans={plans} currentSlug={currentSlug} />
           </CardHeader>
-          <div className="space-y-4">
-            <UsageBar label="Proposals created" used={usage.proposals.used} limit={usage.proposals.limit} />
-            <UsageBar label="AI drafts generated" used={usage.aiDrafts.used} limit={usage.aiDrafts.limit} />
-          </div>
+          {usage.length === 0 ? (
+            <p className="text-[12.5px] text-[color:var(--ink-soft)]">
+              Everything on your plan is unlimited.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {usage.map((u) => (
+                <UsageBar key={u.resource} label={u.label} used={u.used} limit={u.limit} />
+              ))}
+            </div>
+          )}
           <p className="mt-4 text-[11.5px] text-[color:var(--ink-muted)]">
-            Hitting a limit prompts an upgrade; it never blocks your work.
+            Hitting a limit prompts an upgrade; it never blocks your existing work.
           </p>
         </Card>
       </motion.section>
@@ -288,7 +314,7 @@ export function SubscriptionView({
       <motion.section variants={item}>
         <div className="quiet-caps mb-1">Plans</div>
         <h2 className="mb-5 font-display text-[22px] tracking-[-0.015em]">Compare all plans</h2>
-        <PlanFeatureMatrix currentPlan={plan} />
+        <PlanFeatureMatrix plans={plans} currentSlug={currentSlug} />
       </motion.section>
     </motion.div>
   );

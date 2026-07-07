@@ -5,7 +5,10 @@ import { Badge } from "@/components/ui/Badge";
 import { PlanFeatureMatrix } from "@/components/billing/PlanFeatureMatrix";
 import { PlanActions } from "../../../../(dashboard)/dashboard/settings/account/plan-actions";
 import { money, longDate } from "@/lib/format";
-import { getOrgPlan, type Plan } from "@/lib/entitlements";
+import { titleCaseSlug } from "@/lib/planCatalog";
+import { getPlanCatalog, getOrgPlanContext } from "@/lib/planCatalogServer";
+import { getOrgLimitUsage } from "@/lib/limitsEngine";
+import { LIMIT_DEFS } from "@/lib/planLimits";
 import { CreditCard, Sparkles, ScrollText } from "lucide-react";
 
 const STATUS_TONES: Record<
@@ -20,45 +23,35 @@ const STATUS_TONES: Record<
   FREE: "neutral",
 };
 
-const PLAN_QUOTAS: Record<Plan, { proposalsPerMonth: number; aiDraftsPerMonth: number }> = {
-  FREE: { proposalsPerMonth: 5, aiDraftsPerMonth: 3 },
-  STARTER: { proposalsPerMonth: 25, aiDraftsPerMonth: 25 },
-  PROFESSIONAL: { proposalsPerMonth: 200, aiDraftsPerMonth: 200 },
-  ENTERPRISE: { proposalsPerMonth: 9999, aiDraftsPerMonth: 9999 },
-};
-
-const PLAN_LABEL: Record<Plan, string> = {
-  FREE: "Free",
-  STARTER: "Starter",
-  PROFESSIONAL: "Professional",
-  ENTERPRISE: "Enterprise",
-};
-
 export default async function CompanyV3SubscriptionPage() {
   const { organizationId } = await requireOrg();
 
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
-
-  const [sub, payments, proposalsThisMonth, aiDraftsThisMonth] = await Promise.all([
+  const [sub, payments, planContext, plans, limitUsage] = await Promise.all([
     db.subscription.findUnique({ where: { organizationId } }),
     db.payment.findMany({
       where: { organizationId, status: "PAID" },
       orderBy: { paidAt: "desc" },
       take: 8,
     }),
-    db.proposal.count({
-      where: { organizationId, createdAt: { gte: monthStart } },
-    }),
-    db.aiDraft.count({
-      where: { organizationId, createdAt: { gte: monthStart } },
-    }),
+    getOrgPlanContext(organizationId),
+    getPlanCatalog(),
+    getOrgLimitUsage(organizationId),
   ]);
 
-  const plan: Plan = getOrgPlan(sub);
+  const { plan: planDto, rawPlan } = planContext;
+  const planName = planDto?.name ?? titleCaseSlug(rawPlan);
+  const currentSlug = planDto?.slug ?? rawPlan.toLowerCase();
   const status = sub?.status ?? "FREE";
-  const quotas = PLAN_QUOTAS[plan];
+
+  // The limits engine's enforced caps — only finite ones render as bars.
+  const usageRows = limitUsage
+    .filter((u) => u.limit !== null)
+    .map((u) => ({
+      resource: u.resource,
+      label: LIMIT_DEFS.find((d) => d.key === u.resource)?.label ?? u.resource,
+      used: u.used,
+      limit: u.limit as number,
+    }));
 
   return (
     <div className="space-y-6">
@@ -82,7 +75,7 @@ export default async function CompanyV3SubscriptionPage() {
             </div>
             <div className="mt-4 flex items-end gap-4">
               <div className="font-display text-[56px] leading-[0.95] tracking-[-0.025em] text-[color:var(--ink)]">
-                {PLAN_LABEL[plan]}
+                {planName}
               </div>
               <Sparkles className="h-5 w-5 text-[color:var(--accent)] mb-2.5" />
             </div>
@@ -92,23 +85,22 @@ export default async function CompanyV3SubscriptionPage() {
               </div>
             )}
             <div className="mt-6">
-              <PlanActions currentPlan={plan} />
+              <PlanActions plans={plans} currentSlug={currentSlug} />
             </div>
           </div>
 
           <div className="space-y-4">
-            <UsageBar
-              label="Proposals this month"
-              used={proposalsThisMonth}
-              limit={quotas.proposalsPerMonth}
-            />
-            <UsageBar
-              label="AI drafts this month"
-              used={aiDraftsThisMonth}
-              limit={quotas.aiDraftsPerMonth}
-            />
+            {usageRows.length === 0 ? (
+              <p className="text-[12px] text-[color:var(--ink-soft)]">
+                Everything on your plan is unlimited.
+              </p>
+            ) : (
+              usageRows.map((u) => (
+                <UsageBar key={u.resource} label={u.label} used={u.used} limit={u.limit} />
+              ))
+            )}
             <p className="text-[10.5px] text-[color:var(--ink-muted)] leading-relaxed pt-2 border-t border-[color:var(--ink-line)]">
-              Limits reset on the 1st. Hitting one triggers a soft upgrade prompt — work isn't blocked.
+              Limits reset each billing cycle. Hitting one triggers a soft upgrade prompt — work isn&apos;t blocked.
             </p>
           </div>
         </div>
@@ -166,7 +158,7 @@ export default async function CompanyV3SubscriptionPage() {
       <div>
         <div className="quiet-caps mb-1">Compare</div>
         <h2 className="font-display text-[22px] tracking-[-0.015em] mb-5">Feature matrix</h2>
-        <PlanFeatureMatrix currentPlan={plan} />
+        <PlanFeatureMatrix plans={plans} currentSlug={currentSlug} />
       </div>
     </div>
   );

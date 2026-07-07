@@ -7,22 +7,43 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Select } from "@/components/ui/Select";
 import { toast } from "@/components/ui/Toast";
 import { setOrgPlan } from "@/actions/billing";
-import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
+import { formatPlanPrice } from "@/lib/planCatalog";
 
-export function PlanActions({ currentPlan }: { currentPlan: Plan }) {
+/** Serializable subset of PlanDTO the dialog needs (passed from server pages). */
+export interface PlanOption {
+  slug: string;
+  name: string;
+  priceCents: number;
+  yearlyPriceCents: number | null;
+  isFree: boolean;
+}
+
+export function PlanActions({
+  plans,
+  currentSlug,
+}: {
+  plans: PlanOption[];
+  currentSlug: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const [target, setTarget] = React.useState<Plan>(currentPlan);
+  const [target, setTarget] = React.useState<string>(
+    plans.some((p) => p.slug === currentSlug) ? currentSlug : (plans[0]?.slug ?? ""),
+  );
   const [interval, setInterval] = React.useState<"MONTH" | "YEAR">("MONTH");
   const [busy, setBusy] = React.useState(false);
 
+  const selected = plans.find((p) => p.slug === target) ?? null;
+  const yearlyAvailable = !!selected?.yearlyPriceCents;
+
   async function apply() {
+    if (!selected) return;
     setBusy(true);
     try {
-      // Downgrade to FREE stays a direct DB change (no Stripe checkout needed).
-      if (target === "FREE") {
-        await setOrgPlan("FREE");
-        toast.success("Switched to free");
+      // Free plan stays a direct DB change (no Stripe checkout needed).
+      if (selected.isFree) {
+        await setOrgPlan(selected.slug);
+        toast.success(`Switched to ${selected.name}`);
         setOpen(false);
         router.refresh();
         return;
@@ -32,7 +53,10 @@ export function PlanActions({ currentPlan }: { currentPlan: Plan }) {
       const res = await fetch("/api/checkout/subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planSlug: target.toLowerCase(), interval }),
+        body: JSON.stringify({
+          planSlug: selected.slug,
+          interval: yearlyAvailable ? interval : "MONTH",
+        }),
       });
 
       if (res.ok) {
@@ -45,8 +69,8 @@ export function PlanActions({ currentPlan }: { currentPlan: Plan }) {
 
       if (res.status === 503) {
         // Stripe not configured — fall back to the demo direct-set so dev works.
-        await setOrgPlan(target);
-        toast.success(`Switched to ${target.toLowerCase()}`, "Demo mode — Stripe isn't configured.");
+        await setOrgPlan(selected.slug);
+        toast.success(`Switched to ${selected.name}`, "Demo mode — Stripe isn't configured.");
         setOpen(false);
         router.refresh();
         return;
@@ -81,24 +105,31 @@ export function PlanActions({ currentPlan }: { currentPlan: Plan }) {
             <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
               Cancel
             </Button>
-            <Button loading={busy} onClick={apply}>
-              {target === "FREE" ? "Apply" : "Continue to checkout"}
+            <Button loading={busy} onClick={apply} disabled={!selected}>
+              {selected?.isFree ? "Apply" : "Continue to checkout"}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Select label="Target plan" value={target} onChange={(e) => setTarget(e.target.value as Plan)}>
-            {PLAN_TIERS.map((p) => (
-              <option key={p} value={p}>
-                {p.toLowerCase()}
+          <Select label="Target plan" value={target} onChange={(e) => setTarget(e.target.value)}>
+            {plans.map((p) => (
+              <option key={p.slug} value={p.slug}>
+                {p.name} — {formatPlanPrice(p.priceCents)}
+                {p.isFree ? "" : "/mo"}
               </option>
             ))}
           </Select>
-          {target !== "FREE" && (
-            <Select label="Billing period" value={interval} onChange={(e) => setInterval(e.target.value as "MONTH" | "YEAR")}>
-              <option value="MONTH">Monthly</option>
-              <option value="YEAR">Yearly</option>
+          {selected && !selected.isFree && yearlyAvailable && (
+            <Select
+              label="Billing period"
+              value={interval}
+              onChange={(e) => setInterval(e.target.value as "MONTH" | "YEAR")}
+            >
+              <option value="MONTH">Monthly — {formatPlanPrice(selected.priceCents)}/mo</option>
+              <option value="YEAR">
+                Yearly — {formatPlanPrice(selected.yearlyPriceCents ?? 0)}/yr
+              </option>
             </Select>
           )}
         </div>

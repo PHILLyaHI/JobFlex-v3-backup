@@ -1,22 +1,23 @@
 import { Check, Minus } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { ALL_FEATURES, FEATURE_LABELS, hasFeature, type Feature } from "@/lib/entitlements";
 import {
-  ALL_FEATURES,
-  FEATURE_LABELS,
-  PLAN_TIERS,
-  hasFeature,
-  type Feature,
-  type Plan,
-} from "@/lib/entitlements";
+  featureTierForSlug,
+  formatPlanPrice,
+  priceCadence,
+  type PlanDTO,
+} from "@/lib/planCatalog";
 
-const PLAN_DISPLAY: Record<Plan, { label: string; price: string; cadence: string }> = {
-  FREE: { label: "Free", price: "$0", cadence: "forever" },
-  STARTER: { label: "Starter", price: "$29", cadence: "per month" },
-  PROFESSIONAL: { label: "Professional", price: "$89", cadence: "per month" },
-  ENTERPRISE: { label: "Enterprise", price: "Custom", cadence: "annual" },
-};
-
-export function PlanFeatureMatrix({ currentPlan }: { currentPlan: Plan }) {
+// Columns come from the live plan catalog (admin-managed PricingPlan rows);
+// per-feature availability stays code-driven via MINIMUM_PLAN_FOR — custom
+// plans render the ENTERPRISE column pattern, matching their runtime gating.
+export function PlanFeatureMatrix({
+  plans,
+  currentSlug,
+}: {
+  plans: PlanDTO[];
+  currentSlug: string | null;
+}) {
   return (
     <div className="paper-card overflow-hidden p-0">
       <div className="overflow-x-auto">
@@ -24,12 +25,11 @@ export function PlanFeatureMatrix({ currentPlan }: { currentPlan: Plan }) {
           <thead>
             <tr className="border-b border-[color:var(--ink-line)]">
               <th className="text-left px-5 py-4 quiet-caps">Feature</th>
-              {PLAN_TIERS.map((p) => {
-                const d = PLAN_DISPLAY[p];
-                const active = p === currentPlan;
+              {plans.map((p) => {
+                const active = p.slug === currentSlug;
                 return (
                   <th
-                    key={p}
+                    key={p.slug}
                     className={cn(
                       "text-left px-5 py-4 border-l border-[color:var(--ink-line)]",
                       active && "bg-[color:var(--accent-soft)]/50",
@@ -41,11 +41,13 @@ export function PlanFeatureMatrix({ currentPlan }: { currentPlan: Plan }) {
                         active ? "text-[color:var(--accent-ink)]" : "text-[color:var(--ink)]",
                       )}
                     >
-                      {d.label}
+                      {p.name}
                     </div>
                     <div className="mt-1 flex items-baseline gap-1.5">
-                      <span className="stat-numeric text-[20px]">{d.price}</span>
-                      <span className="text-[10px] text-[color:var(--ink-muted)]">{d.cadence}</span>
+                      <span className="stat-numeric text-[20px]">{formatPlanPrice(p.priceCents)}</span>
+                      <span className="text-[10px] text-[color:var(--ink-muted)]">
+                        {priceCadence(p.isFree)}
+                      </span>
                     </div>
                     {active && (
                       <div className="mt-1.5 quiet-caps !tracking-[0.18em] text-[color:var(--accent)]">
@@ -69,12 +71,12 @@ export function PlanFeatureMatrix({ currentPlan }: { currentPlan: Plan }) {
                 <td className="px-5 py-3 text-[13px] text-[color:var(--ink-soft)]">
                   {FEATURE_LABELS[f]}
                 </td>
-                {PLAN_TIERS.map((p) => {
-                  const on = hasFeature(p, f);
-                  const active = p === currentPlan;
+                {plans.map((p) => {
+                  const on = hasFeature(featureTierForSlug(p.slug), f);
+                  const active = p.slug === currentSlug;
                   return (
                     <td
-                      key={p}
+                      key={p.slug}
                       className={cn(
                         "px-5 py-3 border-l border-[color:var(--ink-line)]",
                         active && "bg-[color:var(--accent-soft)]/40",
