@@ -72,7 +72,6 @@ export function requireFeatureOrThrow(plan: Plan | string | null | undefined, fe
   }
 }
 
-export function getOrgPlan(subscription: { plan?: string | null } | null | undefined): Plan {
-  const p = (subscription?.plan as Plan) ?? "FREE";
-  return PLAN_TIERS.includes(p) ? p : "FREE";
-}
+// NOTE: the old sync `getOrgPlan(sub)` helper was removed — it couldn't resolve
+// custom admin-created plan slugs (that needs a DB lookup) and was case-sensitive.
+// Use getOrgPlanContext (planCatalogServer) or getOrgPlanById (orgPlan) instead.

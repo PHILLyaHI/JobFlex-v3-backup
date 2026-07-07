@@ -5,7 +5,6 @@
 
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
-import { PLAN_TIERS } from "@/lib/entitlements";
 import {
   AttributionStatus,
   LedgerEntryType,
@@ -43,12 +42,14 @@ function mapStripeStatus(s: Stripe.Subscription.Status): string {
   }
 }
 
-async function planTierForPrice(stripePriceId: string | null): Promise<string | null> {
+async function planSlugForPrice(stripePriceId: string | null): Promise<string | null> {
   if (!stripePriceId) return null;
   const pp = await db.planPrice.findUnique({ where: { stripePriceId } });
-  if (!pp) return null;
-  const tier = pp.planSlug.toUpperCase();
-  return (PLAN_TIERS as readonly string[]).includes(tier) ? tier : null;
+  // Store whatever slug was purchased (uppercased to match existing rows like
+  // "STARTER") — custom admin-created plans must not collapse to FREE. Feature
+  // gating resolves custom slugs to ENTERPRISE (orgPlan.ts) and their quotas
+  // come from the plan's own limitsJson; readers match case-insensitively.
+  return pp ? pp.planSlug.toUpperCase() : null;
 }
 
 // Resolve a Stripe discount (promotion_code preferred, else coupon) to our PromoCode.
@@ -83,7 +84,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
   if (!organizationId) return; // can't map — leave for reconciliation once metadata is present
 
   const stripePriceId = sub.items.data[0]?.price?.id ?? null;
-  const planTier = await planTierForPrice(stripePriceId);
+  const planSlug = await planSlugForPrice(stripePriceId);
   const promo = await resolvePromoCode(sub.discount);
   const status = mapStripeStatus(sub.status);
 
@@ -95,7 +96,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
       externalCustomerId: customerId,
       externalSubId,
       stripePriceId,
-      ...(planTier && { plan: planTier }),
+      ...(planSlug && { plan: planSlug }),
       currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
       canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
       appliedPromotionCodeId: idOf(sub.discount?.promotion_code),
@@ -103,7 +104,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription) {
     },
     create: {
       organizationId,
-      plan: planTier ?? "FREE",
+      plan: planSlug ?? "FREE",
       status,
       provider: "STRIPE",
       externalCustomerId: customerId,

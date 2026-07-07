@@ -24,6 +24,8 @@ export async function getOrgPlanById(organizationId: string): Promise<Plan> {
 
   // Custom assigned plan: confirm it maps to a real PricingPlan (case-insensitive),
   // then grant full feature access. Quotas come from that plan's limits, not here.
+  // Deliberately does NOT filter on PricingPlan.active — subscribers on a
+  // deactivated plan are grandfathered and keep their entitlements.
   const matched = await db.pricingPlan.findFirst({
     where: { slug: { in: [sub.plan, upper, sub.plan.toLowerCase()] } },
     select: { id: true },
