@@ -3,17 +3,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { db } from "@/lib/db";
 import { isStripeEnabled } from "@/lib/sdk/stripe";
 import { parsePlanLimits } from "@/lib/planLimits";
+import { parseFeatures } from "@/lib/planCatalogServer";
 import { PlansClient, type HydratedPlan, type SyncedInfo } from "./plans-client";
-
-function parseFeatures(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? v : [];
-  } catch {
-    return [];
-  }
-}
 
 export default async function AdminPlansPage() {
   await requirePlatformAdmin();
@@ -34,6 +25,8 @@ export default async function AdminPlansPage() {
     order: p.order,
     features: parseFeatures(p.features),
     limits: parsePlanLimits(p.limitsJson),
+    active: p.active,
+    highlight: p.highlight,
   }));
 
   // Per-slug Stripe sync status for the synced/not-synced badge.
@@ -49,7 +42,7 @@ export default async function AdminPlansPage() {
       <PageHeader
         eyebrow="Platform"
         title="Pricing plans"
-        description="Edit price, trial, and yearly options. Sync to Stripe to make a plan checkout-ready."
+        description="The source of truth for every plan surface — pricing page, subscription page, checkout, and limits. Price changes sync to Stripe automatically."
       />
       <PlansClient plans={hydrated} synced={synced} stripeEnabled={isStripeEnabled()} />
     </>

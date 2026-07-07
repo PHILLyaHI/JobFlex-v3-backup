@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Pencil, RefreshCw, BadgeCheck } from "lucide-react";
+import { Plus, Trash2, Pencil, RefreshCw, BadgeCheck, Star } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -27,6 +27,8 @@ export interface HydratedPlan {
   features: string[];
   /** Numeric caps keyed by LimitKey; a missing key means unlimited. */
   limits: PlanLimits;
+  active: boolean;
+  highlight: boolean;
 }
 export interface SyncedInfo {
   monthly: boolean;
@@ -45,6 +47,8 @@ const BLANK: HydratedPlan = {
   order: 0,
   features: [],
   limits: {},
+  active: true,
+  highlight: false,
 };
 
 /** Dollars (number) → integer cents, rounded to avoid float drift (29.99 → 2999). */
@@ -75,7 +79,7 @@ export function PlansClient({
 
   async function save(p: HydratedPlan) {
     try {
-      await upsertPricingPlan({
+      const res = await upsertPricingPlan({
         id: p.id || undefined,
         slug: p.slug,
         name: p.name,
@@ -87,8 +91,14 @@ export function PlansClient({
         order: p.order,
         features: p.features,
         limits: p.limits,
+        active: p.active,
+        highlight: p.highlight,
       });
-      toast.success("Saved");
+      if (res?.syncWarning) {
+        toast.error("Saved — Stripe not synced", res.syncWarning);
+      } else {
+        toast.success("Saved", "Live on every plan surface.");
+      }
       setEditing(null);
       router.refresh();
     } catch (err: unknown) {
@@ -141,10 +151,18 @@ export function PlansClient({
               const isSynced = !!sx && sx.monthly;
               return (
                 <li key={p.id} className="flex items-center gap-3 py-3">
-                  <div className="flex-1 min-w-0">
+                  <div className={"flex-1 min-w-0" + (p.active ? "" : " opacity-60")}>
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-medium text-[color:var(--ink)]">{p.name}</span>
                       <span className="text-[11px] text-[color:var(--ink-faint)] font-mono">{p.slug}</span>
+                      {p.highlight && (
+                        <Star
+                          className="h-3 w-3 text-[color:var(--accent)]"
+                          fill="currentColor"
+                          aria-label="Most popular"
+                        />
+                      )}
+                      {!p.active && <Badge tone="neutral">inactive</Badge>}
                       {isSynced ? (
                         <Badge tone="success" dot>synced</Badge>
                       ) : (
@@ -276,7 +294,7 @@ function PlanSheet({
       open={!!editing}
       onClose={onClose}
       title={editing?.id ? "Edit plan" : "New plan"}
-      description="Set pricing, trial, and the yearly option. Sync to Stripe afterward to enable checkout."
+      description="Set pricing, trial, limits, and visibility. Price changes sync to Stripe and every plan surface automatically."
       width="min(520px, 100vw)"
       footer={
         <div className="flex justify-end gap-2">
@@ -289,7 +307,13 @@ function PlanSheet({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <Input label="Name" value={local.name} onChange={(e) => setLocal({ ...local, name: e.target.value })} />
-            <Input label="Slug" value={local.slug} onChange={(e) => setLocal({ ...local, slug: e.target.value })} />
+            <Input
+              label="Slug"
+              value={local.slug}
+              disabled={!!local.id}
+              onChange={(e) => setLocal({ ...local, slug: e.target.value })}
+              hint={local.id ? "Permanent — Stripe & subscriptions key off it" : "Lowercase, e.g. starter"}
+            />
           </div>
           <Textarea
             label="Description"
@@ -339,6 +363,37 @@ function PlanSheet({
             onChange={(e) => setLocal({ ...local, order: Number(e.target.value) })}
             hint="Sort position on the pricing page (low = first)"
           />
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <label className="flex items-start gap-2 text-[13px] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={local.active}
+                onChange={(e) => setLocal({ ...local, active: e.target.checked })}
+                className="accent-[color:var(--accent)] mt-0.5"
+              />
+              <span>
+                Active
+                <span className="block text-[11px] text-[color:var(--ink-muted)]">
+                  Shown on pricing &amp; subscription pages, purchasable
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-[13px] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={local.highlight}
+                onChange={(e) => setLocal({ ...local, highlight: e.target.checked })}
+                className="accent-[color:var(--accent)] mt-0.5"
+              />
+              <span>
+                Most popular
+                <span className="block text-[11px] text-[color:var(--ink-muted)]">
+                  Shows the highlight badge on plan cards
+                </span>
+              </span>
+            </label>
+          </div>
 
           <div className="pt-1.5 border-t border-[color:var(--ink-line)]">
             <div className="quiet-caps mt-3 mb-1">Plan limits</div>

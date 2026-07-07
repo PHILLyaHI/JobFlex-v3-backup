@@ -4,6 +4,10 @@ import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { LIMIT_KEYS, serializePlanLimits } from "@/lib/planLimits";
+import { revalidatePlanSurfaces } from "@/lib/planCatalogServer";
+import { syncPlanPricesToStripe } from "@/lib/planStripeSync";
+import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { isStripeWriteAllowed } from "@/lib/stripeSafety";
 
 // ── Pricing plans ─────────────────────────────────────
 
@@ -15,7 +19,9 @@ const limitsInput = z
 
 const planInput = z.object({
   id: z.string().optional(),
-  slug: z.string().min(1),
+  // Slugs are normalized lowercase at the source — mixed case previously caused
+  // a fail-open limits bug (Subscription.plan joins on this string).
+  slug: z.string().min(1).transform((s) => s.trim().toLowerCase()),
   name: z.string().min(1),
   description: z.string().nullable().optional(),
   priceCents: z.number().int().min(0),
@@ -25,11 +31,25 @@ const planInput = z.object({
   order: z.number().default(0),
   features: z.array(z.string()).default([]),
   limits: limitsInput,
+  active: z.boolean().default(true),
+  highlight: z.boolean().default(false),
 });
 
-export async function upsertPricingPlan(raw: unknown) {
+export async function upsertPricingPlan(
+  raw: unknown,
+): Promise<{ ok: true; id: string; syncWarning?: string }> {
   await requirePlatformAdmin();
   const data = planInput.parse(raw);
+
+  const existing = data.id
+    ? await db.pricingPlan.findUnique({ where: { id: data.id } })
+    : null;
+  if (data.id && !existing) throw new Error("Plan not found");
+  // Slug is the join key to PlanPrice + Subscription — immutable once set.
+  if (existing && existing.slug !== data.slug) {
+    throw new Error("Slug can't be changed — create a new plan and deactivate this one.");
+  }
+
   const fields = {
     slug: data.slug,
     name: data.name,
@@ -41,19 +61,75 @@ export async function upsertPricingPlan(raw: unknown) {
     order: data.order,
     features: JSON.stringify(data.features),
     limitsJson: serializePlanLimits(data.limits ?? {}),
+    active: data.active,
+    highlight: data.highlight,
   };
-  if (data.id) {
-    await db.pricingPlan.update({ where: { id: data.id }, data: fields });
-  } else {
-    await db.pricingPlan.create({ data: fields });
+  const row = existing
+    ? await db.pricingPlan.update({ where: { id: existing.id }, data: fields })
+    : await db.pricingPlan.create({ data: fields });
+
+  // Auto-sync: a new paid plan, or a changed price/name, pushes to Stripe now so
+  // checkout charges what the admin sees. The DB save always wins — sync failure
+  // comes back as a warning (the manual Sync button retries), never an error.
+  const hasPaidPrice = row.priceCents > 0 || (row.yearlyPriceCents ?? 0) > 0;
+  const priceChanged =
+    !!existing &&
+    (existing.priceCents !== row.priceCents ||
+      (existing.yearlyPriceCents ?? 0) !== (row.yearlyPriceCents ?? 0) ||
+      existing.name !== row.name); // name → Stripe Product rename
+  let syncWarning: string | undefined;
+  if (hasPaidPrice && (!existing || priceChanged)) {
+    if (isStripeEnabled() && isStripeWriteAllowed()) {
+      try {
+        await syncPlanPricesToStripe(row.id);
+      } catch (e) {
+        syncWarning = `Saved, but Stripe sync failed: ${
+          e instanceof Error ? e.message : "unknown error"
+        }. Use "Sync to Stripe" to retry.`;
+      }
+    } else {
+      syncWarning =
+        "Saved, but Stripe isn't configured for writes — the plan isn't checkout-ready until synced.";
+    }
   }
-  revalidatePath("/admin/plans");
+
+  revalidatePlanSurfaces();
+  return { ok: true, id: row.id, syncWarning };
 }
 
 export async function deletePricingPlan(id: string) {
   await requirePlatformAdmin();
+  const plan = await db.pricingPlan.findUnique({ where: { id } });
+  if (!plan) return;
+
+  // Refuse to delete a plan someone is subscribed to — deactivating keeps
+  // grandfathered subscribers' entitlements intact; deleting would strand them.
+  const slugLower = plan.slug.toLowerCase();
+  const subPlans = await db.subscription.findMany({
+    select: { plan: true },
+    distinct: ["plan"],
+  });
+  if (subPlans.some((s) => (s.plan ?? "").toLowerCase() === slugLower)) {
+    throw new Error("Subscribers are on this plan — deactivate it instead of deleting.");
+  }
+
+  // Retire the Stripe mirror: deactivate PlanPrice rows and best-effort archive
+  // the Stripe prices/product so the slug can't be checked out again.
+  const prices = await db.planPrice.findMany({ where: { planSlug: plan.slug } });
+  if (prices.length && isStripeEnabled() && isStripeWriteAllowed()) {
+    const stripe = getStripe();
+    await Promise.all(
+      prices
+        .filter((p) => p.active)
+        .map((p) => stripe.prices.update(p.stripePriceId, { active: false }).catch(() => {})),
+    );
+    const productId = prices[0]?.stripeProductId;
+    if (productId) await stripe.products.update(productId, { active: false }).catch(() => {});
+  }
+  await db.planPrice.updateMany({ where: { planSlug: plan.slug }, data: { active: false } });
+
   await db.pricingPlan.delete({ where: { id } });
-  revalidatePath("/admin/plans");
+  revalidatePlanSurfaces();
 }
 
 // ── Specialties ───────────────────────────────────────
