@@ -2,32 +2,44 @@
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import { isStripeEnabled, getStripe } from "@/lib/sdk/stripe";
+import { getPlanBySlug } from "@/lib/planCatalogServer";
 
-export async function setOrgPlan(plan: Plan) {
+/**
+ * Directly assign the org a plan from the catalog. Two legitimate uses:
+ * downgrading to the free plan, and the Stripe-disabled dev/demo fallback.
+ * Paid plans with Stripe configured MUST go through checkout — without this
+ * guard any owner could self-grant a paid tier without paying.
+ */
+export async function setOrgPlan(planSlug: string) {
   const { organizationId } = await requireOwner();
-  if (!PLAN_TIERS.includes(plan)) throw new Error("Invalid plan");
+  const plan = await getPlanBySlug(planSlug); // active plans only
+  if (!plan) throw new Error("Invalid plan");
+  if (!plan.isFree && isStripeEnabled()) {
+    throw new Error("Paid plans go through checkout.");
+  }
 
   const now = new Date();
   const periodEnd = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30);
+  const stored = plan.slug.toUpperCase();
 
   await db.subscription.upsert({
     where: { organizationId },
     update: {
-      plan,
-      status: plan === "FREE" ? "FREE" : "ACTIVE",
-      currentPeriodEnd: plan === "FREE" ? null : periodEnd,
+      plan: stored,
+      status: plan.isFree ? "FREE" : "ACTIVE",
+      currentPeriodEnd: plan.isFree ? null : periodEnd,
     },
     create: {
       organizationId,
-      plan,
-      status: plan === "FREE" ? "FREE" : "ACTIVE",
+      plan: stored,
+      status: plan.isFree ? "FREE" : "ACTIVE",
       provider: "STRIPE",
-      currentPeriodEnd: plan === "FREE" ? null : periodEnd,
+      currentPeriodEnd: plan.isFree ? null : periodEnd,
     },
   });
-  revalidatePath("/dashboard/settings/billing");
+  revalidatePath("/dashboard/settings/account");
+  revalidatePath("/dashboard/subscription");
   revalidatePath("/dashboard");
   return { ok: true };
 }
