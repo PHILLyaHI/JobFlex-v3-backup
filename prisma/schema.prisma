@@ -39,6 +39,12 @@ model Organization {
   gmailTokensJson      String? // OAuth secrets      {accessToken,refreshToken,expiryDate,email} — set by the Gmail connect callback
   metaSettingsJson     String? // settings/meta      {connected,autoCreate,autoText,defaultPage,formCategory}
   proposalSettingsJson String? // settings/proposals {validityDays,markups{...},schedule[],terms,requireSig,autoFollowUp}
+  // Pre-signup attribution stamp (first-write-wins: set once at account creation,
+  // never overwritten). The money record stays Stripe-truth (Attribution model);
+  // this is captured intent used for the signup pill + checkout auto-apply.
+  signupPromoCode       String?
+  signupPromoCodeId     String?
+  attributionCapturedAt DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -80,8 +86,10 @@ model Organization {
   influencerPayouts    InfluencerPayout[]
   influencerStatements InfluencerStatement[]
   eagleViewReports     EagleViewReport[]
+  signupPromo          PromoCode? @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
+  @@index([signupPromoCodeId])
 }
 
 // Cached EagleView roof-measurement reports. A report is a billable order, so we
@@ -130,6 +138,11 @@ model User {
   // org-level Membership.role — only flagged users may reach platform-wide
   // money/influencer pages. Tightens the old "any OWNER/ADMIN of any org" gate.
   isPlatformAdmin Boolean       @default(false)
+  // Credential epoch for stateless-JWT session revocation. Stamped into the JWT
+  // at sign-in and re-checked on every guarded request (requireUser); bumped on
+  // password reset so all previously-issued tokens are invalidated at once —
+  // the "log out everywhere" that a bare JWT strategy otherwise can't do.
+  credentialVersion Int         @default(0)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   activeOrgId     String?
@@ -153,6 +166,7 @@ model User {
   blockedTimes    BlockedTime[]
   unavailabilityRules UnavailabilityRule[]
   appointmentsCreated Appointment[]     @relation("AppointmentCreator")
+  jobEventsCreated    JobEvent[]        @relation("JobEventCreator")
 
   // Trade & Services (contractor-to-contractor job network)
   tradeNetworkProfile  TradeNetworkProfile?
@@ -561,6 +575,9 @@ model JobEvent {
   id             String   @id @default(cuid())
   organizationId String
   jobId          String?
+  // Who created it — lets a jobless event (installer's optional-job path) still
+  // render on its creator's own calendar. Nullable: legacy events have none.
+  createdById    String?
   title          String
   startsAt       DateTime
   endsAt         DateTime
@@ -568,6 +585,7 @@ model JobEvent {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   job          Job?         @relation(fields: [jobId], references: [id])
+  createdBy    User?        @relation("JobEventCreator", fields: [createdById], references: [id])
 
   @@index([organizationId, startsAt])
 }
@@ -666,16 +684,34 @@ model Conversation {
 }
 
 model ConversationParticipant {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   conversationId String
   userId         String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
+  lastReadAt     DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
   @@index([userId])
+}
+
+// Per-user "last looked at this nav surface" timestamps. Drives view-based
+// clearing of the sidebar/tab-bar badges: a badge counts only items newer than
+// the user's seenAt for that surface, so visiting the page clears it until
+// something new arrives. `key` is a short surface id ("leads" | "proposals" |
+// "hire" | "referrals" | "reviews"). Scalar userId/organizationId (no
+// relations) keeps the blast radius to this one model; orphaned rows after a
+// delete are harmless. The unique index doubles as the lookup index.
+model NavSeen {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  key            String
+  seenAt         DateTime @default(now())
+
+  @@unique([userId, organizationId, key])
 }
 
 model Message {
@@ -854,7 +890,10 @@ model PricingPlan {
   order           Int     @default(0)
   features        String
   limitsJson      String?  // numeric per-plan limits (see src/lib/planLimits.ts); null/absent key = unlimited
+  active          Boolean @default(true)  // hidden from user surfaces + rejected at checkout when false
+  highlight       Boolean @default(false) // "Most popular" badge on plan surfaces
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 }
 
 model SupportTicket {
@@ -965,10 +1004,17 @@ model ReferralConversion {
   note        String?
   createdAt   DateTime  @default(now())
   convertedAt DateTime?
+  // Reward credit tracking — PAID means a 50%-of-one-month Stripe customer-balance
+  // credit landed on the referrer org (rewardStripeTxnId). CONVERTED with no
+  // rewardAppliedAt = credit pending (referrer has no Stripe customer yet).
+  rewardCents       Int?
+  rewardAppliedAt   DateTime?
+  rewardStripeTxnId String?
 
   code ReferralCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
 
   @@index([codeId, status])
+  @@index([signupOrgId, status])
 }
 
 model TradePost {
@@ -1351,11 +1397,14 @@ model PromoCode {
   commissionBasis       String   @default("NET")         // CommissionBasis
   durationType          String   @default("REPEATING")   // PromoDurationType
   durationMonths        Int?                             // required when REPEATING
+  customerPercentOff    Int?                             // display mirror of the Stripe coupon percent_off
+  clicks                Int      @default(0)             // promo-link landing visits (lightweight, no PII)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   influencer   Influencer    @relation(fields: [influencerId], references: [id], onDelete: Cascade)
   attributions Attribution[]
+  signupOrganizations Organization[] @relation("OrgSignupPromo")
 
   @@index([influencerId])
   @@index([stripeCouponId])

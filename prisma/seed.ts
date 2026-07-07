@@ -661,6 +661,107 @@ async function main() {
     },
   });
 
+  // ── Pricing plans (create-only: never clobbers admin edits on re-seed) ──
+  // Lowercase slugs on purpose — the limits engine matches Subscription.plan to
+  // PricingPlan.slug case-insensitively in JS, but everything else assumes
+  // lowercase (mixed case previously caused a fail-open limits bug).
+  // Checkout still requires an admin to run "Sync to Stripe" on /admin/plans.
+  const plans = [
+    {
+      slug: "free",
+      name: "Free",
+      description: "Try JobFlex — 5 proposals a month, no card required.",
+      priceCents: 0,
+      yearlyPriceCents: null as number | null,
+      trialDays: 0,
+      order: 0,
+      highlight: false,
+      features: [
+        "5 proposals / month",
+        "3 AI estimates / month",
+        "Client portal",
+        "Online payments",
+      ],
+      // FREE's real enforced caps — these were previously display-only fiction.
+      limits: { proposalsCreated: 5, estimatorUses: 3 } as Record<string, number> | null,
+    },
+    {
+      slug: "starter",
+      name: "Starter",
+      description: "Solo contractors — client management, manual proposals, and payments.",
+      priceCents: 2900,
+      yearlyPriceCents: 29000,
+      trialDays: 14,
+      order: 1,
+      highlight: false,
+      features: [
+        "Client & lead management",
+        "Manual proposals & invoices",
+        "Online payments (Stripe, PayPal, Square)",
+        "Branded PDF export",
+        "1 user",
+      ],
+      limits: { workers: 1 },
+    },
+    {
+      slug: "professional",
+      name: "Professional",
+      description: "Growing teams — AI proposals, AI estimating, scheduling, and leads.",
+      priceCents: 7900,
+      yearlyPriceCents: 79000,
+      trialDays: 14,
+      order: 2,
+      highlight: true,
+      features: [
+        "Everything in Starter",
+        "AI proposal generation",
+        "AI estimating",
+        "Job scheduling & calendar",
+        "Lead management & follow-up automation",
+        "Up to 3 users",
+      ],
+      limits: { workers: 3 },
+    },
+    {
+      slug: "enterprise",
+      name: "Enterprise",
+      description: "Large businesses — auto-assignment, workflow automations, custom branding.",
+      priceCents: 19900,
+      yearlyPriceCents: 199000,
+      trialDays: 14,
+      order: 3,
+      highlight: false,
+      features: [
+        "Everything in Professional",
+        "Lead auto-assignment",
+        "Custom workflow automations",
+        "Custom branding & domain",
+        "Unlimited users",
+      ],
+      limits: null, // absent limits = unlimited
+    },
+  ];
+  for (const p of plans) {
+    await prisma.pricingPlan.upsert({
+      where: { slug: p.slug },
+      update: {},
+      create: {
+        slug: p.slug,
+        name: p.name,
+        description: p.description,
+        priceCents: p.priceCents,
+        yearlyPriceCents: p.yearlyPriceCents,
+        interval: "month",
+        trialDays: p.trialDays,
+        order: p.order,
+        highlight: p.highlight,
+        features: JSON.stringify(p.features),
+        limitsJson: p.limits ? JSON.stringify(p.limits) : null,
+      },
+    });
+  }
+  console.log("   seeded pricing plans: free $0 / starter $29 / professional $79 / enterprise $199 (14-day trial on paid)");
+
   console.log("   seeded follow-up rules:", rule1.id, rule2.id);
   console.log("✓ Seed complete");
   console.log("   owner@acme.test / password123");
