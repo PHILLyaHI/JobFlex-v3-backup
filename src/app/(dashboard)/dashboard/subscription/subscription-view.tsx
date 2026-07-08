@@ -23,8 +23,10 @@ import { StatCard } from "@/components/ui/StatCard";
 import { PlanActions } from "@/app/(dashboard)/dashboard/settings/account/plan-actions";
 import { ReferralHeroCard } from "@/components/referrals/ReferralHeroCard";
 import { PlanFeatureMatrix } from "@/components/billing/PlanFeatureMatrix";
+import { Button } from "@/components/ui/Button";
+import { usePlanCheckout } from "@/components/billing/usePlanCheckout";
 import { money, longDate } from "@/lib/format";
-import { formatPlanPrice, priceCadence, type PlanDTO } from "@/lib/planCatalog";
+import { formatPlanPrice, priceCadence, planCtaLabel, type PlanDTO } from "@/lib/planCatalog";
 import type { SubscriptionInvoice } from "@/actions/billing";
 
 type Tone = "success" | "warn" | "danger" | "accent" | "neutral";
@@ -117,6 +119,7 @@ export function SubscriptionView({
   referral,
 }: SubscriptionViewProps) {
   const reduce = useReducedMotion();
+  const { start, pendingSlug } = usePlanCheckout();
 
   const ease = [0.22, 1, 0.36, 1] as [number, number, number, number];
   const container: Variants = {
@@ -237,13 +240,22 @@ export function SubscriptionView({
                   </div>
                   {current ? (
                     <div
-                      className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em]"
+                      className="mt-3 text-[10px] font-semibold uppercase tracking-[0.16em]"
                       style={{ color: t.deep }}
                     >
                       Current plan
                     </div>
                   ) : (
-                    <div className="mt-2 h-[14px]" aria-hidden />
+                    <Button
+                      variant={p.highlight ? "primary" : "outline"}
+                      size="sm"
+                      className="mt-3 w-full"
+                      loading={pendingSlug === p.slug}
+                      disabled={pendingSlug !== null}
+                      onClick={() => start(p)}
+                    >
+                      {planCtaLabel(p.isFree, p.trialDays)}
+                    </Button>
                   )}
                 </div>
               );

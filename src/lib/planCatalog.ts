@@ -41,6 +41,16 @@ export function priceCadence(isFree: boolean, short = false): string {
 }
 
 /**
+ * CTA label for a plan's buy button: "Switch to free" for the free plan,
+ * "Start N-day trial" when the plan has a trial, else "Subscribe".
+ */
+export function planCtaLabel(isFree: boolean, trialDays: number): string {
+  if (isFree) return "Switch to free";
+  if (trialDays > 0) return `Start ${trialDays}-day trial`;
+  return "Subscribe";
+}
+
+/**
  * Client-safe mirror of getOrgPlanById's rule: a built-in tier slug maps to its
  * own tier; any custom admin-created slug gets ENTERPRISE-level boolean features
  * (its numeric quotas come from the plan's own limits via the Limits engine).

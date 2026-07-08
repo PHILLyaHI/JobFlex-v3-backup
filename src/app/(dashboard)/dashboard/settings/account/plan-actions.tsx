@@ -1,13 +1,11 @@
 "use client";
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Select } from "@/components/ui/Select";
-import { toast } from "@/components/ui/Toast";
-import { setOrgPlan } from "@/actions/billing";
-import { formatPlanPrice } from "@/lib/planCatalog";
+import { formatPlanPrice, planCtaLabel } from "@/lib/planCatalog";
+import { usePlanCheckout } from "@/components/billing/usePlanCheckout";
 
 /** Serializable subset of PlanDTO the dialog needs (passed from server pages). */
 export interface PlanOption {
@@ -15,6 +13,7 @@ export interface PlanOption {
   name: string;
   priceCents: number;
   yearlyPriceCents: number | null;
+  trialDays: number;
   isFree: boolean;
 }
 
@@ -25,64 +24,21 @@ export function PlanActions({
   plans: PlanOption[];
   currentSlug: string;
 }) {
-  const router = useRouter();
+  const { start, pendingSlug } = usePlanCheckout();
   const [open, setOpen] = React.useState(false);
   const [target, setTarget] = React.useState<string>(
     plans.some((p) => p.slug === currentSlug) ? currentSlug : (plans[0]?.slug ?? ""),
   );
   const [interval, setInterval] = React.useState<"MONTH" | "YEAR">("MONTH");
-  const [busy, setBusy] = React.useState(false);
 
   const selected = plans.find((p) => p.slug === target) ?? null;
   const yearlyAvailable = !!selected?.yearlyPriceCents;
+  const busy = pendingSlug !== null;
 
   async function apply() {
     if (!selected) return;
-    setBusy(true);
-    try {
-      // Free plan stays a direct DB change (no Stripe checkout needed).
-      if (selected.isFree) {
-        await setOrgPlan(selected.slug);
-        toast.success(`Switched to ${selected.name}`);
-        setOpen(false);
-        router.refresh();
-        return;
-      }
-
-      // Paid plan → real Stripe subscription checkout.
-      const res = await fetch("/api/checkout/subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          planSlug: selected.slug,
-          interval: yearlyAvailable ? interval : "MONTH",
-        }),
-      });
-
-      if (res.ok) {
-        const { url } = await res.json();
-        if (url) {
-          window.location.href = url;
-          return;
-        }
-      }
-
-      if (res.status === 503) {
-        // Stripe not configured — fall back to the demo direct-set so dev works.
-        await setOrgPlan(selected.slug);
-        toast.success(`Switched to ${selected.name}`, "Demo mode — Stripe isn't configured.");
-        setOpen(false);
-        router.refresh();
-        return;
-      }
-
-      const { error } = await res.json().catch(() => ({ error: "Checkout failed." }));
-      toast.error("Couldn't start checkout", error ?? "This plan isn't checkout-ready yet.");
-    } catch (err: unknown) {
-      toast.error("Couldn't switch", err instanceof Error ? err.message : undefined);
-    } finally {
-      setBusy(false);
-    }
+    await start(selected, yearlyAvailable ? interval : "MONTH");
+    if (selected.isFree) setOpen(false); // paid path redirects to Stripe; free just refreshes
   }
 
   return (
@@ -106,7 +62,7 @@ export function PlanActions({
               Cancel
             </Button>
             <Button loading={busy} onClick={apply} disabled={!selected}>
-              {selected?.isFree ? "Apply" : "Continue to checkout"}
+              {selected ? planCtaLabel(selected.isFree, selected.trialDays) : "Continue"}
             </Button>
           </>
         }
@@ -131,6 +87,11 @@ export function PlanActions({
                 Yearly — {formatPlanPrice(selected.yearlyPriceCents ?? 0)}/yr
               </option>
             </Select>
+          )}
+          {selected && !selected.isFree && selected.trialDays > 0 && (
+            <p className="text-[12px] text-[color:var(--ink-muted)]">
+              Starts with a {selected.trialDays}-day free trial — you won&apos;t be charged until it ends.
+            </p>
           )}
         </div>
       </Dialog>
