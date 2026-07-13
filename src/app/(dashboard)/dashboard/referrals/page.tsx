@@ -9,51 +9,66 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ReferralHeroCard } from "@/components/referrals/ReferralHeroCard";
 import { getOrCreateMyReferralCode } from "@/actions/referrals";
 import { relative, money } from "@/lib/format";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { Gift } from "lucide-react";
 
 export default async function ReferralsPage() {
-  const { organizationId, user } = await requireOrg();
+  await requireOrg();
   const code = await getOrCreateMyReferralCode();
 
-  const [conversions, converted, pending] = await Promise.all([
+  const [conversions, converted, paid, pending, credited] = await Promise.all([
     db.referralConversion.findMany({
       where: { codeId: code.id },
       orderBy: { createdAt: "desc" },
       take: 40,
     }),
     db.referralConversion.count({ where: { codeId: code.id, status: "CONVERTED" } }),
+    db.referralConversion.count({ where: { codeId: code.id, status: "PAID" } }),
     db.referralConversion.count({ where: { codeId: code.id, status: "PENDING" } }),
+    db.referralConversion.aggregate({
+      where: { codeId: code.id, status: "PAID" },
+      _sum: { rewardCents: true },
+    }),
   ]);
 
   const uses = conversions.length;
-  const rewardsEarned = converted * code.rewardAmount;
+  // CONVERTED = the referred org has paid; the 50%-off-a-month credit is owed.
+  // PAID = that credit already landed on this org's Stripe balance.
+  const creditedUsd = (credited._sum.rewardCents ?? 0) / 100;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const shareUrl = `${appUrl}/homeowners?ref=${code.code}`;
+  const shareUrl = `${appUrl}/auth/register?ref=${code.code}`;
+  const homeownerUrl = `${appUrl}/homeowners?ref=${code.code}`;
 
   return (
     <>
+      <MarkNavSeen surface="referrals" />
       <PageHeader
         eyebrow="Growth"
         title="Referrals"
-        description={`Share your code. We track every signup that uses it — you earn ${money(code.rewardAmount)} per converted account.`}
+        description="Share your code. Every contractor who signs up with it and goes paid takes 50% off one month of your subscription."
       />
       <ReferralHeroCard
         code={code.code}
         shareUrl={shareUrl}
-        rewardSummary={`Earn ${money(code.rewardAmount)} ${code.rewardType === "CREDIT" ? "in credit" : code.rewardType.toLowerCase()} for every contractor who signs up`}
+        homeownerUrl={homeownerUrl}
+        rewardSummary="Each one who upgrades to a paid plan knocks 50% off a month of your own subscription — two referrals, two half-price months"
       />
 
       <StaggerGrid className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 mb-6">
         <StatCard label="Code uses" value={String(uses)} />
-        <StatCard label="Converted signups" value={String(converted)} hint={`${pending} pending`} />
-        <StatCard label="Rewards earned" value={money(rewardsEarned)} />
+        <StatCard label="Converted signups" value={String(converted + paid)} hint={`${pending} pending`} />
+        <StatCard
+          label="Credit earned"
+          value={money(creditedUsd)}
+          hint={converted > 0 ? `${converted} credit${converted === 1 ? "" : "s"} on the way` : undefined}
+        />
       </StaggerGrid>
 
       <Card>
         <CardHeader>
           <div>
             <CardTitle>Conversions</CardTitle>
-            <CardSubtitle>People who've used your code</CardSubtitle>
+            <CardSubtitle>People who&apos;ve used your code</CardSubtitle>
           </div>
         </CardHeader>
         {conversions.length === 0 ? (
@@ -83,7 +98,7 @@ export default async function ReferralsPage() {
                         : "neutral"
                   }
                 >
-                  {c.status.toLowerCase()}
+                  {c.status === "PAID" ? "credited" : c.status.toLowerCase()}
                 </Badge>
               </li>
             ))}

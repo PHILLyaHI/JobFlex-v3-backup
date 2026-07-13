@@ -76,12 +76,12 @@ export default async function JobsPage() {
             : "Every accepted proposal becomes a job. Track schedule, crew, photos, and expenses in one place."
         }
         actions={
-          isWorker ? undefined : (
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            <Link href={"/dashboard/jobs/new" as any}>
-              <Button icon={<Plus className="h-3.5 w-3.5" />}>New job</Button>
-            </Link>
-          )
+          // Installers can create their own jobs now, so the button shows for
+          // them too (they'll be auto-assigned; the form hides the crew picker).
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          <Link href={"/dashboard/jobs/new" as any}>
+            <Button icon={<Plus className="h-3.5 w-3.5" />}>New job</Button>
+          </Link>
         }
       />
       {rows.length === 0 ? (

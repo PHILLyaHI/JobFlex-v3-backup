@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 export async function createReviewRequest(jobId: string) {
   const { organizationId } = await requireManager();
@@ -12,6 +13,10 @@ export async function createReviewRequest(jobId: string) {
   // Idempotent per job
   const existing = await db.reviewRequest.findFirst({ where: { jobId } });
   if (existing) return { id: existing.id, publicToken: existing.publicToken };
+
+  // Manual send — gated. The automatic job-completion ask
+  // (src/lib/reviewRequestInternal.ts) stays allow-but-count.
+  await enforcePlanLimit(organizationId, "reviewRequests");
 
   const req = await db.reviewRequest.create({
     data: {
@@ -58,23 +63,9 @@ ${appUrl}/review/${req.publicToken}
   return { id: req.id, publicToken: req.publicToken };
 }
 
-// Internal variant (no auth) — used when auto-triggered from inside another server action
-export async function createReviewRequestInternal(jobId: string, organizationId: string) {
-  const existing = await db.reviewRequest.findFirst({ where: { jobId } });
-  if (existing) return { id: existing.id };
-  const job = await db.job.findUnique({ where: { id: jobId }, include: { client: true } });
-  if (!job || job.organizationId !== organizationId) return null;
-  const req = await db.reviewRequest.create({
-    data: {
-      organizationId,
-      jobId,
-      clientId: job.clientId,
-      status: "SENT",
-      sentAt: new Date(),
-    },
-  });
-  return { id: req.id };
-}
+// (moved) createReviewRequestInternal now lives in src/lib/reviewRequestInternal.ts
+// — a plain server module (not a "use server" export) that derives the org from
+// the job rather than a caller parameter.
 
 const submitInput = z.object({
   rating: z.number().int().min(1).max(5),

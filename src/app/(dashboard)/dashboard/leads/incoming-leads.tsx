@@ -2,30 +2,44 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, MapPin, Inbox, Send, ArrowUpRight } from "lucide-react";
+import { Check, X, MapPin, Inbox, Send, ArrowUpRight, Timer } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { toast } from "@/components/ui/Toast";
 import { relative } from "@/lib/format";
-import { type LeadRow, sourceLabel } from "./leads-shared";
+import { type LeadRow, type OfferRow, sourceLabel } from "./leads-shared";
 
 interface Props {
   leads: LeadRow[];
+  /** Pending Lead Center offers (24h window) — rendered above the org's own leads. */
+  offers?: OfferRow[];
   /** Persists the lead as CLAIMED via the claimLead server action (optimistic in the parent). */
   onAccept: (id: string) => void;
   /** Persists the lead as LOST via updateLeadStatus (optimistic in the parent). */
   onDecline: (id: string) => void;
+  /** Accepts a Lead Center offer (materializes the org Lead server-side). */
+  onAcceptOffer?: (id: string) => void;
+  /** Declines a Lead Center offer (it cascades to the next shop). */
+  onDeclineOffer?: (id: string) => void;
 }
 
 /**
- * The receive side of lead routing: leads the lead center has sent (status ROUTED) and
- * brand-new leads (NEW) land here as job tickets to accept or decline. Accept/decline
- * persist through server actions in the parent workspace, then router.refresh() reconciles.
+ * The receive side of lead routing: pending Lead Center offers (reserved for this org
+ * for 24h), leads the lead center has sent (status ROUTED), and brand-new leads (NEW)
+ * land here as job tickets to accept or decline. Accept/decline persist through server
+ * actions in the parent workspace, then router.refresh() reconciles.
  */
-export function IncomingLeads({ leads, onAccept, onDecline }: Props) {
-  if (leads.length === 0) {
+export function IncomingLeads({
+  leads,
+  offers = [],
+  onAccept,
+  onDecline,
+  onAcceptOffer,
+  onDeclineOffer,
+}: Props) {
+  if (leads.length === 0 && offers.length === 0) {
     return (
       <EmptyState
         icon={<Inbox className="h-5 w-5" />}
@@ -38,6 +52,14 @@ export function IncomingLeads({ leads, onAccept, onDecline }: Props) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <AnimatePresence initial={false}>
+        {offers.map((offer) => (
+          <OfferCard
+            key={`offer-${offer.id}`}
+            offer={offer}
+            onAccept={onAcceptOffer ?? (() => {})}
+            onDecline={onDeclineOffer ?? (() => {})}
+          />
+        ))}
         {leads.map((lead) => (
           <IncomingCard
             key={lead.id}
@@ -48,6 +70,194 @@ export function IncomingLeads({ leads, onAccept, onDecline }: Props) {
         ))}
       </AnimatePresence>
     </div>
+  );
+}
+
+// "Expires in 22h 14m" — live-ticking tabular chip; warms to amber inside 4h.
+function OfferCountdown({ expiresAt }: { expiresAt: Date }) {
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const msLeft = new Date(expiresAt).getTime() - now;
+  const totalMin = Math.max(0, Math.floor(msLeft / 60_000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const urgent = msLeft < 4 * 60 * 60 * 1000;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium tabular ${
+        urgent
+          ? "bg-amber-100 text-amber-800"
+          : "bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)]"
+      }`}
+    >
+      <Timer className="h-3 w-3" />
+      {msLeft <= 0 ? "Expiring…" : h > 0 ? `${h}h ${m}m left` : `${m}m left`}
+    </span>
+  );
+}
+
+function OfferCard({
+  offer,
+  onAccept,
+  onDecline,
+}: {
+  offer: OfferRow;
+  onAccept: (id: string) => void;
+  onDecline: (id: string) => void;
+}) {
+  const [resolving, setResolving] = React.useState<"accept" | "decline" | null>(null);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  const location =
+    [offer.city, offer.state].filter(Boolean).join(", ") || offer.address || offer.zip;
+
+  function accept() {
+    if (resolving) return;
+    setResolving("accept");
+    timer.current = setTimeout(() => {
+      onAccept(offer.id);
+      toast.success("Lead accepted", `${offer.name} is now in your pipeline as claimed.`);
+    }, 460);
+  }
+
+  function decline() {
+    if (resolving) return;
+    setResolving("decline");
+    timer.current = setTimeout(() => {
+      onDecline(offer.id);
+      toast.info("Lead passed", "It's on its way to the next shop.");
+    }, 320);
+  }
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={
+        resolving === "accept"
+          ? { opacity: 0, scale: 0.96, transition: { duration: 0.2 } }
+          : { opacity: 0, x: 24, transition: { duration: 0.2 } }
+      }
+      transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+      className="relative paper-card !p-0 overflow-hidden flex flex-col"
+    >
+      {/* Platform banner — reserved-for-you signal + the live countdown */}
+      <div className="flex items-center gap-1.5 px-5 py-2 bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)] text-[11px] font-medium tracking-[0.01em]">
+        <Send className="h-3 w-3" />
+        Platform lead — reserved for your shop
+        <span className="ml-auto">
+          <OfferCountdown expiresAt={offer.expiresAt} />
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-3.5 p-5 flex-1">
+        <div className="flex items-start gap-3">
+          <Avatar name={offer.name} size={40} />
+          <div className="min-w-0 flex-1">
+            <h3 className="font-display text-[17px] leading-tight tracking-[-0.015em] truncate">
+              {offer.name}
+            </h3>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[color:var(--ink-muted)]">
+              <span>{relative(offer.createdAt)}</span>
+              <span className="text-[color:var(--ink-faint)]">·</span>
+              <span>Lead center</span>
+              {location && (
+                <>
+                  <span className="text-[color:var(--ink-faint)]">·</span>
+                  <span className="inline-flex items-center gap-0.5">
+                    <MapPin className="h-3 w-3" />
+                    {location}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <Badge tone="accent">Offer</Badge>
+        </div>
+
+        {/* Job detail */}
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[13px] font-medium text-[color:var(--ink)]">
+              {offer.projectType ?? "General inquiry"}
+            </span>
+            {offer.detectedTrade && (
+              <Badge tone="accent">
+                {offer.detectedTrade}
+                {offer.aiConfidence != null && offer.aiConfidence > 0 && (
+                  <span className="ml-1 tabular opacity-60">
+                    {Math.round(offer.aiConfidence * 100)}%
+                  </span>
+                )}
+              </Badge>
+            )}
+          </div>
+          {offer.description && (
+            <p className="text-[13px] leading-relaxed text-[color:var(--ink-soft)] line-clamp-3">
+              {offer.description}
+            </p>
+          )}
+          {(offer.email || offer.phone) && (
+            <p className="text-[11.5px] text-[color:var(--ink-muted)] truncate">
+              {[offer.email, offer.phone].filter(Boolean).join(" · ")}
+            </p>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="mt-auto flex items-center gap-2 pt-1">
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<Check className="h-3.5 w-3.5" />}
+            loading={resolving === "accept"}
+            disabled={resolving === "decline"}
+            onClick={accept}
+          >
+            Accept lead
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<X className="h-3.5 w-3.5" />}
+            disabled={resolving !== null}
+            onClick={decline}
+          >
+            Pass
+          </Button>
+        </div>
+      </div>
+
+      {/* Accept confirmation sweep — same beat as IncomingCard */}
+      <AnimatePresence>
+        {resolving === "accept" && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 grid place-items-center bg-[color:var(--accent-soft)]/85 backdrop-blur-[1px]"
+          >
+            <motion.span
+              initial={{ scale: 0.4, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 360, damping: 18 }}
+              className="grid h-11 w-11 place-items-center rounded-full bg-[color:var(--accent)] text-white shadow-pop"
+            >
+              <Check className="h-5 w-5" />
+            </motion.span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 

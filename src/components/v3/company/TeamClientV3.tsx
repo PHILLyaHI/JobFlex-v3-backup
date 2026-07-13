@@ -17,6 +17,7 @@ import {
   updateMembershipRole,
   removeMember,
 } from "@/actions/team";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 
 interface MemberRow {
   id: string;
@@ -215,12 +216,14 @@ export function TeamClientV3({
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         onSubmit={async (values) => {
+          // Installer invites draw from the worker seat cap; office roles from teamSeats.
+          if (!(await ensureWithinLimit(values.role === "INSTALLER" ? "workers" : "teamSeats"))) return;
           try {
             await createInvite(values);
             toast.success("Invite sent", "Share the magic link if email is disabled.");
             router.refresh();
           } catch (err: any) {
-            toast.error("Invite failed", err?.message);
+            if (!reportPlanLimit(err)) toast.error("Invite failed", err?.message);
           }
         }}
       />

@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { GoogleIcon } from "@/components/auth/GoogleIcon";
 import { registerAccount } from "@/actions/auth";
+import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
+import { ReferredBy, type RegisterAttribution } from "./referred-by";
 
 function Brand() {
   return (
@@ -27,15 +29,32 @@ export default function RegisterPage() {
   const [businessName, setBusinessName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [attribution, setAttribution] = React.useState<RegisterAttribution | null>(null);
+  const [companyAddress, setCompanyAddress] = React.useState("");
+  const [companyPhone, setCompanyPhone] = React.useState("");
+  const [tradeTypes, setTradeTypes] = React.useState<TradeType[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  function toggleTrade(t: TradeType) {
+    setTradeTypes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await registerAccount({ name, businessName, email, password });
+      await registerAccount({
+        name,
+        businessName,
+        email,
+        password,
+        companyAddress: companyAddress.trim() || undefined,
+        companyPhone: companyPhone.trim() || undefined,
+        tradeTypes: tradeTypes.length ? tradeTypes : undefined,
+        attribution: attribution ?? undefined,
+      });
       // Account exists — establish the session client-side, then land on the app.
       const res = await signIn("credentials", { email, password, redirect: false });
       if (res?.error) {
@@ -58,6 +77,7 @@ export default function RegisterPage() {
 
   const form = (
     <form onSubmit={onSubmit} className="space-y-4">
+      <ReferredBy onChange={setAttribution} />
       <Input
         label="Your name"
         autoComplete="name"
@@ -89,6 +109,57 @@ export default function RegisterPage() {
         required
       />
       <p className="text-[11px] text-[color:var(--ink-faint)]">At least 8 characters.</p>
+
+      {/* Lead matching profile — optional; incomplete shops are nudged from the dashboard. */}
+      <div className="pt-4 border-t border-[color:var(--ink-line)] space-y-4">
+        <div>
+          <div className="quiet-caps">About your company</div>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-[color:var(--ink-faint)]">
+            Optional — your address and trades let us send you nearby homeowner leads.
+          </p>
+        </div>
+        <Input
+          label="Company address"
+          autoComplete="street-address"
+          placeholder="214 Alder St, Portland, OR 97204"
+          value={companyAddress}
+          onChange={(e) => setCompanyAddress(e.target.value)}
+        />
+        <Input
+          label="Company phone"
+          type="tel"
+          autoComplete="tel"
+          inputMode="tel"
+          value={companyPhone}
+          onChange={(e) => setCompanyPhone(e.target.value)}
+        />
+        <div>
+          <div className="text-[12px] font-medium text-[color:var(--ink-muted)] mb-2">
+            What work do you do?
+          </div>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Your trades">
+            {TRADE_TYPES.map((t) => {
+              const on = tradeTypes.includes(t);
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleTrade(t)}
+                  className={`min-h-[36px] rounded-full px-3.5 text-[12.5px] leading-none transition-colors border ${
+                    on
+                      ? "border-[color:var(--accent)] bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)] font-medium"
+                      : "border-[color:var(--ink-line)] bg-transparent text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
+                  }`}
+                >
+                  {t}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       <Button type="submit" size="lg" loading={loading} className="w-full">
         Create account
       </Button>

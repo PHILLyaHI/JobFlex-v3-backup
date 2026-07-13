@@ -9,6 +9,7 @@ import {
 } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { LeadStatus } from "@/lib/prismaEnums";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 // Sales reps may only act on leads inside their visibility slice: assigned to
 // them, claimed by them, or still NEW in the shared pool. Managers see it all.
@@ -119,6 +120,9 @@ export async function importLeads(raw: unknown) {
   const { organizationId, user } = await requireSalesOrManager();
   const rows = importLeadsInput.parse(raw);
 
+  // Bulk headroom: the whole batch must fit within the remaining lead quota.
+  await enforcePlanLimit(organizationId, "leads", rows.length);
+
   const created = await Promise.all(
     rows.map((r) =>
       db.lead.create({
@@ -139,7 +143,7 @@ export async function importLeads(raw: unknown) {
 
   // Best-effort owner notification per imported lead (never block the import).
   try {
-    const { notifyLeadCreated } = await import("./notify");
+    const { notifyLeadCreated } = await import("@/lib/notify");
     await Promise.all(created.map((l) => notifyLeadCreated(l.id)));
   } catch (err) {
     console.warn("[importLeads] notify failed:", err);

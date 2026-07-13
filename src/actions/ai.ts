@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
+import { checkPlanLimit } from "@/lib/limitsEngine";
+import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 
 const aiDraftSchema = z.object({
   title: z.string(),
@@ -53,7 +55,7 @@ const STUB_DRAFT: AiProposalDraft = {
 export async function generateAiProposal(prompt: string): Promise<
   | { ok: true; draft: AiProposalDraft; disabled?: false }
   | { ok: true; draft: AiProposalDraft; disabled: true }
-  | { ok: false; error: string }
+  | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
   const { organizationId } = await requireEstimatorOrManager();
 
@@ -65,6 +67,19 @@ export async function generateAiProposal(prompt: string): Promise<
     requireFeatureOrThrow(plan, "ai_proposals");
   } catch (err: any) {
     return { ok: false, error: err?.message ?? "Upgrade required" };
+  }
+
+  // Quota gate — AI generation draws from the same budget as estimator runs.
+  // Returned (not thrown): thrown messages are redacted in prod and callers
+  // already branch on { ok }.
+  const quota = await checkPlanLimit(organizationId, "estimatorUses");
+  if (!quota.allowed) {
+    return {
+      ok: false,
+      error: PLAN_LIMIT_MESSAGE,
+      code: "PLAN_LIMIT_REACHED",
+      resource: quota.cappedBy ?? "estimatorUses",
+    };
   }
 
   if (!isOpenAIEnabled()) {

@@ -1,7 +1,9 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import { motion, useReducedMotion } from "framer-motion";
-import { Activity, Check, ChevronDown } from "lucide-react";
+import { Activity, Check, ChevronDown, Search } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -14,8 +16,12 @@ export type TeamActivityRow = {
   createdAt: string; // ISO string
   actorId: string | null;
   actorName: string | null;
+  proposalId: string | null;
   proposalTitle: string | null;
+  clientId: string | null;
   clientName: string | null;
+  leadId: string | null;
+  leadName: string | null;
 };
 
 // Each event reads as a sentence; the verb carries the only colour. Routine
@@ -64,6 +70,27 @@ const BEAD_CLASS: Record<string, string> = {
 
 const PAGE = 12;
 
+// ── Category lens ───────────────────────────────────────────────────────────
+// ActivityEvent has no jobId relation, so category is derived: the object it
+// points at wins first, then job-shaped verbs, then everything else is team /
+// system chatter (invites, workspace, password resets).
+type Category = "all" | "proposals" | "leads" | "jobs" | "team";
+
+const CATEGORIES: { key: Category; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "proposals", label: "Proposals" },
+  { key: "leads", label: "Leads & clients" },
+  { key: "jobs", label: "Jobs" },
+  { key: "team", label: "Team" },
+];
+
+function categoryOf(row: TeamActivityRow): Exclude<Category, "all"> {
+  if (row.proposalId) return "proposals";
+  if (row.leadId || row.clientId) return "leads";
+  if (row.kind === "SCHEDULED" || row.kind === "COMPLETED") return "jobs";
+  return "team";
+}
+
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
@@ -87,12 +114,57 @@ function timeOfDay(iso: string) {
   );
 }
 
-function objectLine(row: TeamActivityRow) {
-  if (row.proposalTitle) {
-    return [row.proposalTitle, row.clientName].filter(Boolean).join("  ·  ");
+// The secondary line names the object the action touched, and — where we hold
+// an id — links straight to it so the feed doubles as a triage queue. Confident
+// -Accent on hover; muted ink at rest so the sentence still leads.
+const LINK =
+  "underline decoration-transparent underline-offset-[3px] transition-colors hover:text-[color:var(--accent)] hover:decoration-[color:var(--accent)]";
+
+function ObjectLine({ row }: { row: TeamActivityRow }) {
+  if (row.proposalId && row.proposalTitle) {
+    return (
+      <>
+        <Link
+          href={`/dashboard/proposals/${row.proposalId}` as Route}
+          className={cn("text-[color:var(--ink-soft)]", LINK)}
+        >
+          {row.proposalTitle}
+        </Link>
+        {row.clientName && (
+          <>
+            <span className="text-[color:var(--ink-faint)]">{"  ·  "}</span>
+            {row.clientId ? (
+              <Link
+                href={`/dashboard/clients/${row.clientId}` as Route}
+                className={cn("text-[color:var(--ink-muted)]", LINK)}
+              >
+                {row.clientName}
+              </Link>
+            ) : (
+              <span className="text-[color:var(--ink-muted)]">{row.clientName}</span>
+            )}
+          </>
+        )}
+      </>
+    );
   }
-  if (row.clientName) return row.clientName;
-  return row.summary;
+  if (row.leadId && row.leadName) {
+    return (
+      <Link href={`/dashboard/leads/${row.leadId}` as Route} className={cn("text-[color:var(--ink-soft)]", LINK)}>
+        {row.leadName}
+      </Link>
+    );
+  }
+  if (row.clientId && row.clientName) {
+    return (
+      <Link href={`/dashboard/clients/${row.clientId}` as Route} className={cn("text-[color:var(--ink-soft)]", LINK)}>
+        {row.clientName}
+      </Link>
+    );
+  }
+  // Nothing linkable — fall back to whatever names the event best.
+  const text = row.clientName ?? row.leadName ?? row.summary;
+  return <span className="text-[color:var(--ink-muted)]">{text}</span>;
 }
 
 export type TeamMember = { id: string; name: string };
@@ -105,13 +177,48 @@ export function TeamActivity({
   members: TeamMember[];
 }) {
   const reduce = useReducedMotion();
-  const [filter, setFilter] = React.useState<string | null>(null);
+  const [person, setPerson] = React.useState<string | null>(null);
+  const [category, setCategory] = React.useState<Category>("all");
+  const [query, setQuery] = React.useState("");
   const [visible, setVisible] = React.useState(PAGE);
 
-  const filtered = React.useMemo(
-    () => (filter ? activities.filter((a) => a.actorId === filter) : activities),
-    [activities, filter],
-  );
+  // Any change to the lens resets the reveal window to the first page — done
+  // in the handlers (not an effect) so it happens in the same render pass.
+  const pickPerson = (id: string | null) => {
+    setPerson(id);
+    setVisible(PAGE);
+  };
+  const pickCategory = (c: Category) => {
+    setCategory(c);
+    setVisible(PAGE);
+  };
+  const changeQuery = (q: string) => {
+    setQuery(q);
+    setVisible(PAGE);
+  };
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return activities.filter((a) => {
+      if (person && a.actorId !== person) return false;
+      if (category !== "all" && categoryOf(a) !== category) return false;
+      if (q) {
+        const hay = [a.actorName, a.proposalTitle, a.clientName, a.leadName, a.summary]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [activities, person, category, query]);
+
+  const clearAll = () => {
+    setPerson(null);
+    setCategory("all");
+    setQuery("");
+    setVisible(PAGE);
+  };
 
   const shown = filtered.slice(0, visible);
 
@@ -126,47 +233,102 @@ export function TeamActivity({
   return (
     <section className="mt-10">
       {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <div>
-          <div className="quiet-caps mb-1.5">Team activity</div>
-          <h2 className="font-display text-[22px] tracking-[-0.018em] leading-none">Who did what</h2>
-          <p className="mt-2 text-[12.5px] text-[color:var(--ink-muted)]">
-            Every move across proposals and jobs, newest first.
-          </p>
-        </div>
-
-        {members.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => { setFilter(null); setVisible(PAGE); }}
-              aria-pressed={filter === null}
-              className={cn(
-                "inline-flex h-8 items-center justify-center rounded-full px-4 text-[12px] font-medium transition-colors",
-                filter === null
-                  ? "bg-[color:var(--ink)] text-[color:var(--paper)]"
-                  : "text-[color:var(--ink-muted)] hover:bg-black/[0.04] hairline",
-              )}
-            >
-              Everyone
-            </button>
-            <PersonFilter
-              members={members}
-              selected={filter}
-              onSelect={(id) => { setFilter(id); setVisible(PAGE); }}
-            />
-          </div>
-        )}
+      <div className="mb-6">
+        <div className="quiet-caps mb-1.5">Team activity</div>
+        <h2 className="font-display text-[22px] tracking-[-0.018em] leading-none">Who did what</h2>
+        <p className="mt-2 text-[12.5px] text-[color:var(--ink-muted)]">
+          Every move across proposals, leads, and jobs, newest first.
+        </p>
       </div>
 
+      {/* Controls: category lens on the left, refinements on the right */}
+      {activities.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {CATEGORIES.map((c) => {
+              const active = category === c.key;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => pickCategory(c.key)}
+                  aria-pressed={active}
+                  className={cn(
+                    "inline-flex h-8 items-center justify-center rounded-full px-4 text-[12px] font-medium transition-colors",
+                    active
+                      ? "bg-[color:var(--ink)] text-[color:var(--paper)]"
+                      : "text-[color:var(--ink-muted)] hover:bg-black/[0.04] hairline",
+                  )}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <div className="relative">
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[color:var(--ink-faint)]"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => changeQuery(e.target.value)}
+                placeholder="Search activity"
+                aria-label="Search activity"
+                className="h-8 w-[188px] rounded-full bg-white/60 pl-8 pr-3 text-[12px] text-[color:var(--ink)] outline-none hairline transition-shadow placeholder:text-[color:var(--ink-faint)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_18%,transparent)]"
+              />
+            </div>
+
+            {members.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => pickPerson(null)}
+                  aria-pressed={person === null}
+                  className={cn(
+                    "inline-flex h-8 items-center justify-center rounded-full px-4 text-[12px] font-medium transition-colors",
+                    person === null
+                      ? "bg-[color:var(--ink)] text-[color:var(--paper)]"
+                      : "text-[color:var(--ink-muted)] hover:bg-black/[0.04] hairline",
+                  )}
+                >
+                  Everyone
+                </button>
+                <PersonFilter members={members} selected={person} onSelect={pickPerson} />
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Feed */}
-      {filtered.length === 0 ? (
+      {activities.length === 0 ? (
         <div className="mt-6">
           <EmptyState
             icon={<Activity className="h-5 w-5" />}
             title="No team activity yet"
             description="As your team creates, sends, schedules, and completes work, it threads here in order."
           />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="mt-8">
+          <EmptyState
+            icon={<Search className="h-5 w-5" />}
+            title="Nothing matches this view"
+            description="Try a different category, person, or search term."
+          />
+          <div className="mt-3 text-center">
+            <button
+              type="button"
+              onClick={clearAll}
+              className="text-[12px] font-medium text-[color:var(--accent)] transition-opacity hover:opacity-70"
+            >
+              Clear filters
+            </button>
+          </div>
         </div>
       ) : (
         <div className="mt-6 paper-card px-4 py-2 sm:px-6">
@@ -223,8 +385,8 @@ export function TeamActivity({
                             {verb}
                           </span>
                         </p>
-                        <p className="mt-0.5 text-[12px] leading-snug text-[color:var(--ink-muted)] truncate">
-                          {objectLine(row)}
+                        <p className="mt-0.5 text-[12px] leading-snug truncate">
+                          <ObjectLine row={row} />
                         </p>
                       </div>
 

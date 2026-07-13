@@ -7,6 +7,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { StaggerGrid } from "@/components/ui/StaggerGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StarRating } from "@/components/reviews/StarRating";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { relative } from "@/lib/format";
 import { Star } from "lucide-react";
 
@@ -34,6 +35,8 @@ export default async function ReviewsPage() {
 
   return (
     <>
+      {/* Viewing this page clears the reviews badge (per-user, via NavSeen). */}
+      <MarkNavSeen surface="reviews" />
       <PageHeader
         eyebrow="Reputation"
         title="Reviews"

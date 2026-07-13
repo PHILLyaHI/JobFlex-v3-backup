@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import { ToastHost } from "@/components/ui/Toast";
+import { AttributionCapture } from "@/components/attribution-capture";
 
 const geist = Geist({
   subsets: ["latin"],
@@ -28,6 +30,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           data-gr-* attributes on <body> before React hydrates — benign mismatch. */}
       <body className="min-h-dvh antialiased" suppressHydrationWarning>
         <div className="relative z-10">{children}</div>
+        {/* Root layout is the one shell every public entry page shares — the
+            ?promo/?ref capture must live here to cover them all. Renders null. */}
+        <Suspense fallback={null}>
+          <AttributionCapture />
+        </Suspense>
         <ToastHost />
       </body>
     </html>

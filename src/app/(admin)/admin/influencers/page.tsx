@@ -27,6 +27,8 @@ export default async function AdminInfluencersPage() {
     payoutsEnabled: inf.payoutsEnabled,
     minPayoutCents: inf.minPayoutCents,
     holdDays: inf.holdDays,
+    notes: inf.notes,
+    hasPassword: Boolean(inf.hashedPassword),
     createdAt: inf.createdAt.toISOString(),
     promoCodes: inf.promoCodes.map((p) => ({
       id: p.id,
@@ -38,6 +40,8 @@ export default async function AdminInfluencersPage() {
       commissionBasis: p.commissionBasis,
       durationType: p.durationType,
       durationMonths: p.durationMonths,
+      customerPercentOff: p.customerPercentOff,
+      clicks: p.clicks,
     })),
     confirmedSubscribers: inf.attributions.filter((a) => a.status === AttributionStatus.ACTIVE).length,
     balances: ledgerBalances(inf.ledgerEntries),

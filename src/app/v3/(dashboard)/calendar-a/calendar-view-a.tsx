@@ -60,6 +60,7 @@ import { rescheduleAppointment, deleteAppointment } from "@/actions/appointments
 import { rescheduleBlockedTime, deleteBlockedTime } from "@/actions/blockedTime";
 import { setRuleInstanceFreed } from "@/actions/availability";
 import { assignWorker } from "@/actions/workers";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { Repeat } from "lucide-react";
 import type { CalendarEvent, CalendarEventKind } from "@/components/calendar/EventChip";
 import type { DispatchableJob } from "@/components/v3/calendar-a/JobDispatchCardA";
@@ -118,6 +119,8 @@ interface Props {
   // Whether job events may be edited/rescheduled/deleted here. Sales and
   // installers can SEE job events but not manage them (manager-only actions).
   canManageJobs?: boolean;
+  // Installers: surface a "create as a new job" toggle in the quick-add sheet.
+  allowJobCreate?: boolean;
 }
 
 interface HoverTarget {
@@ -206,6 +209,7 @@ export function CalendarViewA({
   createKinds = ["job", "appointment"],
   allowCreate = false,
   canManageJobs = true,
+  allowJobCreate = false,
 }: Props) {
   // Create affordances are on for managers/sales (writable) and for the
   // installer's explicit create-only mode.
@@ -419,6 +423,14 @@ export function CalendarViewA({
         delete next[eventId];
         return next;
       });
+      // Post-flight limit check: keeps drags free of preflight latency while a
+      // redacted prod error still resolves to the upgrade dialog at the cap.
+      if (reportPlanLimit(err)) return;
+      if (
+        kind !== "blocked" &&
+        !(await ensureWithinLimit(kind === "appointment" ? "calendarCards" : "calendarEvents"))
+      )
+        return;
       toast.error("Couldn't reschedule", err?.message);
     }
   }
@@ -454,6 +466,8 @@ export function CalendarViewA({
       router.refresh();
       setSelected(null);
     } catch (err: any) {
+      if (reportPlanLimit(err)) return;
+      if (!(await ensureWithinLimit("calendarEvents"))) return;
       toast.error("Couldn't save", err?.message);
     }
   }
@@ -504,6 +518,12 @@ export function CalendarViewA({
         delete next[eventId];
         return next;
       });
+      if (reportPlanLimit(err)) return;
+      if (
+        kind !== "blocked" &&
+        !(await ensureWithinLimit(kind === "appointment" ? "calendarCards" : "calendarEvents"))
+      )
+        return;
       toast.error("Couldn't reschedule", err?.message);
     }
   }
@@ -524,6 +544,8 @@ export function CalendarViewA({
       router.refresh();
       toast.success("Duration updated");
     } catch (err: any) {
+      if (reportPlanLimit(err)) return;
+      if (!(await ensureWithinLimit("calendarEvents"))) return;
       toast.error("Couldn't resize", err?.message);
     }
   }
@@ -601,6 +623,8 @@ export function CalendarViewA({
       // Undo the optimistic placement — the card returns to the tray.
       setOptimisticScheduled((prev) => prev.filter((e) => e.id !== `temp:${jobId}`));
       setHiddenTrayJobIds((prev) => prev.filter((id) => id !== jobId));
+      if (reportPlanLimit(err)) return;
+      if (!(await ensureWithinLimit("calendarEvents"))) return;
       toast.error("Couldn't schedule", err?.message);
     }
   }
@@ -652,6 +676,8 @@ export function CalendarViewA({
       router.refresh();
       toast.success(workerId ? "Assigned" : "Unassigned");
     } catch (err: any) {
+      if (reportPlanLimit(err)) return;
+      if (!(await ensureWithinLimit("calendarEvents"))) return;
       toast.error("Couldn't assign", err?.message);
     }
   }
@@ -924,6 +950,7 @@ export function CalendarViewA({
           defaultEnd={quickAddEnd}
           defaultKind={quickAddKind}
           createKinds={createKinds}
+          allowJobCreate={allowJobCreate}
         />
       )}
 

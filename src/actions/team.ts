@@ -5,6 +5,39 @@ import { randomUUID } from "node:crypto";
 import { requireManager, requireUser, isOwnerRole, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { Role } from "@/lib/prismaEnums";
+import { hashToken } from "@/lib/tokens";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
+
+// Emails an invite magic link. The RAW token goes in the URL; only its hash is
+// stored (see createInvite / resendInvite), so a DB leak yields no usable links.
+async function sendInviteEmail(
+  organizationId: string,
+  email: string,
+  role: string,
+  rawToken: string,
+  inviterLabel: string,
+) {
+  try {
+    const { sendEmail } = await import("@/lib/sdk/resend");
+    const { wrapEmail } = await import("@/lib/email/render");
+    const org = await db.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true },
+    });
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const wrapped = wrapEmail({
+      subject: `Invitation to ${org?.name ?? "JobFlex"}`,
+      body: `${inviterLabel} has invited you to join ${org?.name ?? "their team"} on JobFlex as ${role.toLowerCase()}.
+
+Accept here (link expires in 7 days):
+${appUrl}/auth/invite/${rawToken}`,
+      orgName: org?.name ?? "JobFlex",
+    });
+    await sendEmail({ to: email, subject: wrapped.subject, html: wrapped.html });
+  } catch (err) {
+    console.warn("[invite] email failed:", err);
+  }
+}
 
 const TEAM_ROLES = [
   "OWNER",
@@ -30,6 +63,12 @@ export async function createInvite(raw: unknown) {
     throw new UnauthorizedError("Only the owner can invite another owner");
   }
 
+  // Seat quota. Office roles consume "teamSeats" (members + pending invites, so
+  // this is the single enforcement point — acceptInvite never re-checks).
+  // INSTALLER invites sent through here are checked against the "workers" cap
+  // instead, so this path can't be an end-run around the worker seat limit.
+  await enforcePlanLimit(organizationId, data.role === "INSTALLER" ? "workers" : "teamSeats");
+
   const email = data.email.toLowerCase().trim();
 
   // If the user already has a membership here, error
@@ -41,7 +80,9 @@ export async function createInvite(raw: unknown) {
     if (m) throw new Error("That person is already on your team.");
   }
 
-  const token = randomUUID();
+  // The raw token lives only in the email/URL and the one-time return below; the
+  // DB stores its sha256 hash (mirrors the password-reset flow).
+  const rawToken = randomUUID();
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days
 
   const invite = await db.invite.create({
@@ -49,36 +90,40 @@ export async function createInvite(raw: unknown) {
       organizationId,
       email,
       role: data.role,
-      token,
+      token: hashToken(rawToken),
       invitedById: user.id,
       expiresAt,
     },
   });
 
-  // Best-effort email
-  try {
-    const { sendEmail } = await import("@/lib/sdk/resend");
-    const { wrapEmail } = await import("@/lib/email/render");
-    const org = await db.organization.findUnique({
-      where: { id: organizationId },
-      select: { name: true },
-    });
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-    const wrapped = wrapEmail({
-      subject: `Invitation to ${org?.name ?? "JobFlex"}`,
-      body: `${user.name ?? user.email} has invited you to join ${org?.name ?? "their team"} on JobFlex as ${data.role.toLowerCase()}.
-
-Accept here (link expires in 7 days):
-${appUrl}/auth/invite/${token}`,
-      orgName: org?.name ?? "JobFlex",
-    });
-    await sendEmail({ to: email, subject: wrapped.subject, html: wrapped.html });
-  } catch (err) {
-    console.warn("[createInvite] email failed:", err);
-  }
+  await sendInviteEmail(organizationId, email, data.role, rawToken, user.name ?? user.email ?? "A teammate");
 
   revalidatePath("/dashboard/settings/team");
-  return { id: invite.id, token };
+  // rawToken is returned once so the UI can show/copy the link right after
+  // creation — it can never be recovered from the DB afterward (use resendInvite).
+  return { id: invite.id, token: rawToken };
+}
+
+// Rotate + re-email an existing pending invite, returning a fresh raw link. This
+// is how the team UI re-copies a link: the stored hash can't be turned back into
+// a URL, so "copy" mints a new token (invalidating the previous one).
+export async function resendInvite(inviteId: string) {
+  const { organizationId, user } = await requireManager();
+  const invite = await db.invite.findUnique({ where: { id: inviteId } });
+  if (!invite || invite.organizationId !== organizationId) throw new Error("Not found");
+  if (invite.acceptedAt) throw new Error("This invite was already accepted.");
+
+  const rawToken = randomUUID();
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
+  await db.invite.update({
+    where: { id: invite.id },
+    data: { token: hashToken(rawToken), expiresAt },
+  });
+
+  await sendInviteEmail(organizationId, invite.email, invite.role, rawToken, user.name ?? user.email ?? "A teammate");
+
+  revalidatePath("/dashboard/settings/team");
+  return { token: rawToken };
 }
 
 export async function revokeInvite(id: string) {
@@ -90,7 +135,7 @@ export async function revokeInvite(id: string) {
 }
 
 export async function acceptInvite(token: string) {
-  const invite = await db.invite.findUnique({ where: { token } });
+  const invite = await db.invite.findUnique({ where: { token: hashToken(token) } });
   if (!invite) throw new Error("This invite doesn't exist or was revoked.");
   if (invite.acceptedAt) throw new Error("This invite was already accepted.");
   if (invite.expiresAt < new Date()) throw new Error("This invite has expired.");
@@ -148,7 +193,7 @@ export async function acceptInvite(token: string) {
 }
 
 export async function declineInvite(token: string) {
-  const invite = await db.invite.findUnique({ where: { token } });
+  const invite = await db.invite.findUnique({ where: { token: hashToken(token) } });
   if (!invite) return { ok: true };
   await db.invite.delete({ where: { id: invite.id } });
   return { ok: true };

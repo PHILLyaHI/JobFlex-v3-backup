@@ -1,6 +1,24 @@
 "use server";
 import { db } from "@/lib/db";
-import { requireManager } from "@/lib/orgContext";
+import { requireManager, requireOrg } from "@/lib/orgContext";
+import { SEEN_SURFACES, type SeenKey } from "@/lib/badgeCounts";
+
+/**
+ * Stamp a nav surface as seen for the current user — clears its badge until
+ * newer items arrive. Called from <MarkNavSeen /> on each surface's page.
+ * This is the only badge mutation that's a real action (the counting lives in
+ * src/lib/badgeCounts.ts, deliberately outside "use server"). The key arrives
+ * over the action wire, so it's validated at runtime, not just by the type.
+ */
+export async function markNavSeen(key: SeenKey) {
+  if (!(key in SEEN_SURFACES)) return;
+  const { organizationId, user } = await requireOrg();
+  await db.navSeen.upsert({
+    where: { userId_organizationId_key: { userId: user.id, organizationId, key } },
+    create: { userId: user.id, organizationId, key },
+    update: { seenAt: new Date() },
+  });
+}
 
 export interface NotificationItem {
   id: string;

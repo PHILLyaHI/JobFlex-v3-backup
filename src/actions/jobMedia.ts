@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 const expenseInput = z.object({
   category: z.string().min(1),
@@ -50,8 +51,11 @@ async function getOrCreateJobConversation(job: {
 }) {
   const existing = await db.conversation.findUnique({ where: { jobId: job.id } });
   if (existing) return existing;
+  // JOB kind (like ensureJobConversation): auto job threads are a side effect
+  // of the job, not a user-started conversation, so they don't consume the
+  // conversationsStarted quota.
   return db.conversation.create({
-    data: { organizationId: job.organizationId, jobId: job.id, title: job.title },
+    data: { organizationId: job.organizationId, jobId: job.id, kind: "JOB", title: job.title },
   });
 }
 
@@ -61,6 +65,7 @@ export async function postJobMessage(jobId: string, body: string) {
   if (!trimmed) return;
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
+  await enforcePlanLimit(organizationId, "messagesSent");
 
   const conversation = await getOrCreateJobConversation(job);
   await db.message.create({

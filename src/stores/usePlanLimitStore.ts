@@ -1,6 +1,6 @@
 "use client";
 import { create } from "zustand";
-import { isPlanLimitError, type LimitKey } from "@/lib/planLimits";
+import { isPlanLimitError, isPlanLimitFailure, type LimitKey } from "@/lib/planLimits";
 import { getLimitUsage } from "@/actions/limits";
 
 interface PlanLimitState {
@@ -26,7 +26,24 @@ export const usePlanLimitStore = create<PlanLimitState>((set) => ({
  */
 export function reportPlanLimit(err: unknown): boolean {
   if (!isPlanLimitError(err)) return false;
-  usePlanLimitStore.getState().openLimit();
+  // enforcePlanLimit attaches the resource in dev; prod redacts thrown errors
+  // so this falls back to the dialog's generic copy.
+  const resource = (err as { resource?: LimitKey }).resource ?? null;
+  usePlanLimitStore.getState().openLimit(resource);
+  return true;
+}
+
+/**
+ * Companion to reportPlanLimit for actions that RETURN a failure union instead
+ * of throwing (estimator/AI runs). If `res` is a plan-limit failure, raises the
+ * upgrade dialog and returns true (handled).
+ *
+ *   const res = await estimateRoof(input);
+ *   if (!res.ok) { if (reportPlanLimitResult(res)) return; toast.error(res.error); }
+ */
+export function reportPlanLimitResult(res: unknown): boolean {
+  if (!isPlanLimitFailure(res)) return false;
+  usePlanLimitStore.getState().openLimit(res.resource ?? null);
   return true;
 }
 

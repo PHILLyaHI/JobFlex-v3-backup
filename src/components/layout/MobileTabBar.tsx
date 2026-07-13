@@ -17,6 +17,7 @@ import {
   BarChart3,
   HardHat,
   MessagesSquare,
+  Folder,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/cn";
@@ -86,11 +87,11 @@ const SALES_MORE_NAV: MoreNavItem[] = [
 const ESTIMATOR_TABS: Tab[] = [
   { key: "proposals", label: "Proposals", href: "/dashboard/proposals", icon: <FileText className="h-5 w-5" /> },
   { key: "smart", label: "Smart AI", href: "/dashboard/advanced-ai", icon: <Sparkles className="h-5 w-5" /> },
-  { key: "clients", label: "Clients", href: "/dashboard/clients", icon: <Users className="h-5 w-5" /> },
   { key: "more", label: "More", href: "#more", icon: <MoreHorizontal className="h-5 w-5" /> },
 ];
 
 const ESTIMATOR_MORE_NAV: MoreNavItem[] = [
+  { label: "Projects", href: "/dashboard/projects", icon: <Folder className="h-4 w-4" /> },
   { label: "Messages", href: "/dashboard/messages", icon: <MessagesSquare className="h-4 w-4" /> },
 ];
 

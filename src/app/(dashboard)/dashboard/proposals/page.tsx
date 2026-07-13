@@ -18,6 +18,7 @@ import type {
   ProposalCStatus,
 } from "@/components/v3/proposals-c/types";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,7 @@ export default async function ProposalsListPage() {
 
   return (
     <>
+      <MarkNavSeen surface="proposals" />
       <div className="md:hidden">
         <MobileProposalsList rows={mobileRows} />
       </div>

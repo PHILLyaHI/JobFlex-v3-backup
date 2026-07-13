@@ -14,6 +14,8 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { WeekScheduleCard } from "@/components/dashboard/WeekScheduleCard";
 import { ArrowUpRight, Sparkles, FileText } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { CompleteLeadProfileBanner } from "@/components/dashboard/CompleteLeadProfileBanner";
+import { parseTradeTypes } from "@/lib/tradeTypes";
 import { MobileDashboard } from "./mobile-dashboard";
 
 // Grounded resting elevation for the dashboard's content cards. Lifts them off
@@ -25,7 +27,20 @@ const liftedCard =
   "!shadow-[var(--shadow-md)] transition duration-200 ease-[var(--ease)] hover:-translate-y-0.5 hover:!shadow-[var(--shadow-md)]";
 
 export default async function DashboardOverview() {
-  const { organizationId } = await requireOrg();
+  const { organizationId, role } = await requireOrg();
+
+  // Lead Center profile gate — owners/admins see a nudge until the org is
+  // matchable (geocoded address + at least one trade).
+  const leadProfileOrg =
+    role === "OWNER" || role === "ADMIN"
+      ? await db.organization.findUnique({
+          where: { id: organizationId },
+          select: { lat: true, lng: true, tradeTypesJson: true },
+        })
+      : null;
+  const needsAddress = leadProfileOrg != null && (leadProfileOrg.lat == null || leadProfileOrg.lng == null);
+  const needsTrades = leadProfileOrg != null && parseTradeTypes(leadProfileOrg.tradeTypesJson).length === 0;
+  const showLeadProfileBanner = needsAddress || needsTrades;
 
   const now = new Date();
   const thirtyDaysAgo = new Date(now);
@@ -145,6 +160,9 @@ export default async function DashboardOverview() {
 
   return (
     <>
+      {showLeadProfileBanner && (
+        <CompleteLeadProfileBanner needsAddress={needsAddress} needsTrades={needsTrades} />
+      )}
       <div className="md:hidden">
         <MobileDashboard
           now={now}

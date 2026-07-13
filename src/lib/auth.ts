@@ -17,6 +17,10 @@ declare module "next-auth" {
       // re-read the DB to authorize WHAT (defends against the 7-day stale JWT).
       principal?: string | null;
       influencerId?: string | null;
+      // Credential epoch stamped at sign-in; requireUser rejects the session when
+      // it drifts from the DB (password reset bumps it). Absent on pre-existing
+      // JWTs → treated as 0, which matches a never-reset user.
+      credentialVersion?: number | null;
     };
   }
 }
@@ -103,7 +107,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const orgName = firstName ? `${firstName}'s workspace` : "My workspace";
         const slug = await uniqueOrgSlug(slugify(user.name ?? email.split("@")[0] ?? "workspace"));
         try {
-          await db.$transaction(async (tx) => {
+          const orgId = await db.$transaction(async (tx) => {
             const org = await tx.organization.create({
               data: { name: orgName, slug, billingEmail: email },
               select: { id: true },
@@ -115,7 +119,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             await tx.membership.create({
               data: { userId: created.id, organizationId: org.id, role: "OWNER" },
             });
+            return org.id;
           });
+          // Best-effort attribution bind — Google signups never pass through
+          // registerAccount, so the ?promo/?ref capture cookie is read here
+          // (this callback runs in the auth route handler, where cookies() works).
+          try {
+            const { bindAttributionToOrg, readAttributionCookie } = await import("@/lib/attribution");
+            const captured = await readAttributionCookie();
+            if (captured) await bindAttributionToOrg(orgId, email, captured.k, captured.c);
+          } catch {
+            /* non-fatal — provisioning already succeeded */
+          }
         } catch (e) {
           console.error("[auth] Google account provisioning failed:", e);
           return false;
@@ -149,6 +164,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.id = dbUser.id;
           token.principal = "USER";
           token.influencerId = null;
+          token.cv = dbUser.credentialVersion ?? 0;
           const m = dbUser.memberships[0];
           token.activeOrgId = dbUser.activeOrgId ?? m?.organizationId ?? null;
           token.role = m?.role ?? null;
@@ -166,6 +182,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Default to USER so pre-existing JWTs (issued before this field) behave.
         session.user.principal = (token.principal as string | null) ?? "USER";
         session.user.influencerId = (token.influencerId as string | null) ?? null;
+        session.user.credentialVersion = (token.cv as number | null) ?? 0;
       }
       return session;
     },

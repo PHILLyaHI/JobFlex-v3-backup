@@ -7,8 +7,13 @@ const PROTECTED_PREFIXES = ["/dashboard", "/admin", "/influencer", "/v3"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  // The influencer login page must stay reachable without a session.
-  if (pathname.startsWith("/influencer/login")) return NextResponse.next();
+  // Influencer login + invite set-password must stay reachable without a session.
+  if (
+    pathname.startsWith("/influencer/login") ||
+    pathname.startsWith("/influencer/set-password")
+  ) {
+    return NextResponse.next();
+  }
 
   const needsAuth = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
   if (!needsAuth) return NextResponse.next();

@@ -4,6 +4,7 @@ import { randomBytes, createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { slugify, uniqueOrgSlug } from "@/lib/orgSlug";
+import { TRADE_TYPES } from "@/lib/tradeTypes";
 
 // Public, unauthenticated auth actions: self-serve registration and the
 // forgot/reset-password flow. These run BEFORE the caller has a session, so they
@@ -33,6 +34,16 @@ const registerSchema = z.object({
   businessName: z.string().trim().min(1, "Enter your business name").max(120),
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters").max(200),
+  // Lead Center matching profile — optional at signup (the dashboard banner
+  // nags incomplete orgs); validated against the canonical trade taxonomy.
+  companyAddress: z.string().trim().max(240).optional(),
+  companyPhone: z.string().trim().max(40).optional(),
+  tradeTypes: z.array(z.enum(TRADE_TYPES)).max(TRADE_TYPES.length).optional(),
+  // Captured promo/referral code from the signup pill. A claim, not proof —
+  // bindAttributionToOrg re-validates it against the DB before linking anything.
+  attribution: z
+    .object({ kind: z.enum(["promo", "ref"]), code: z.string().trim().min(3).max(40) })
+    .nullish(),
 });
 
 /**
@@ -58,7 +69,14 @@ export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
   try {
     const created = await db.$transaction(async (tx) => {
       const org = await tx.organization.create({
-        data: { name: data.businessName, slug, billingEmail: data.email },
+        data: {
+          name: data.businessName,
+          slug,
+          billingEmail: data.email,
+          address: data.companyAddress || null,
+          phone: data.companyPhone || null,
+          tradeTypesJson: JSON.stringify(data.tradeTypes ?? []),
+        },
         select: { id: true },
       });
       const user = await tx.user.create({
@@ -91,6 +109,19 @@ export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
     throw e;
   }
 
+  // Best-effort attribution bind — permanently links the new org to a captured
+  // ?promo/?ref code (explicit pill value first, 30-day capture cookie as
+  // fallback). A bad or missing code binds nothing; never blocks registration.
+  try {
+    const { bindAttributionToOrg, readAttributionCookie } = await import("@/lib/attribution");
+    const attr =
+      data.attribution ??
+      (await readAttributionCookie().then((c) => (c ? { kind: c.k, code: c.c } : null)));
+    if (attr) await bindAttributionToOrg(orgId, data.email, attr.kind, attr.code);
+  } catch {
+    /* non-fatal */
+  }
+
   // Best-effort activity stamp — never block account creation on the feed.
   try {
     await db.activityEvent.create({
@@ -103,6 +134,24 @@ export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
     });
   } catch {
     /* non-fatal */
+  }
+
+  // Best-effort geocode so the org is eligible for Lead Center offers from day
+  // one. Failure (or no GOOGLE_MAPS_SERVER_KEY) just leaves lat/lng null — the
+  // company profile save re-geocodes later.
+  if (data.companyAddress) {
+    try {
+      const { geocodeAddress } = await import("@/lib/maps");
+      const geo = await geocodeAddress({ address: data.companyAddress });
+      if (geo) {
+        await db.organization.update({
+          where: { id: orgId },
+          data: { lat: geo.lat, lng: geo.lng, geocodedAt: new Date() },
+        });
+      }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   return { ok: true };
@@ -217,6 +266,9 @@ export async function resetPassword(raw: unknown): Promise<{ ok: true }> {
       where: { id: user.id },
       data: {
         hashedPassword,
+        // Bump the credential epoch so any session issued before this reset is
+        // rejected on its next guarded request — evicts a stolen/stale session.
+        credentialVersion: { increment: 1 },
         ...(resolvedOrgId ? { activeOrgId: resolvedOrgId } : {}),
       },
     });

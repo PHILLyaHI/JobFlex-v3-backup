@@ -69,26 +69,8 @@ export const STATUS: Record<
   CANCELLED: { label: "Cancelled", tone: "danger" },
 };
 
-/** Trade taxonomy mirrored from the reference create form. */
-export const TRADE_TYPES = [
-  "Flooring",
-  "Tile",
-  "Countertops",
-  "Plumbing",
-  "Electrical",
-  "Carpentry",
-  "Painting",
-  "Roofing",
-  "HVAC",
-  "Landscaping",
-  "Concrete",
-  "Demolition",
-  "Drywall",
-  "Insulation",
-  "Windows",
-  "General Contractor",
-  "Other",
-] as const;
+/** Trade taxonomy — canonical list lives in src/lib/tradeTypes.ts (shared with Lead Center matching). */
+export { TRADE_TYPES } from "@/lib/tradeTypes";
 
 // ─── Helpers (pure, no Date — keeps SSR/CSR output identical) ──────────────
 export const HIDDEN_TTL_DAYS = 7;

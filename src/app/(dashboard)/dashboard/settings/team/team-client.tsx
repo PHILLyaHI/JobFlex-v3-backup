@@ -14,9 +14,11 @@ import { relative, longDate } from "@/lib/format";
 import {
   createInvite,
   revokeInvite,
+  resendInvite,
   updateMembershipRole,
   removeMember,
 } from "@/actions/team";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 
 interface MemberRow {
   id: string;
@@ -148,12 +150,14 @@ export function TeamClient({
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         onSubmit={async (values) => {
+          // Installer invites draw from the worker seat cap; office roles from teamSeats.
+          if (!(await ensureWithinLimit(values.role === "INSTALLER" ? "workers" : "teamSeats"))) return;
           try {
             await createInvite(values);
             toast.success("Invite sent", "Share the magic link if email is disabled.");
             router.refresh();
           } catch (err: any) {
-            toast.error("Invite failed", err?.message);
+            if (!reportPlanLimit(err)) toast.error("Invite failed", err?.message);
           }
         }}
       />
@@ -163,10 +167,25 @@ export function TeamClient({
 
 function InviteRow({ invite, onRevoke }: { invite: InviteRow; onRevoke: () => void }) {
   const [copied, setCopied] = React.useState(false);
-  const link =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/auth/invite/${invite.token}`
-      : `/auth/invite/${invite.token}`;
+  const [busy, setBusy] = React.useState(false);
+  // The stored invite token is hashed, so a working link can't be rebuilt from
+  // it — "copy" mints a fresh link (invalidating the old one) and copies that.
+  async function refreshAndCopy() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { token } = await resendInvite(invite.id);
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      await navigator.clipboard.writeText(`${origin}/auth/invite/${token}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+      toast.success("New link copied", "The previous link is now invalid.");
+    } catch (err) {
+      toast.error("Couldn't refresh link", err instanceof Error ? err.message : undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <li className="flex items-center gap-3 py-3">
       <div className="flex-1 min-w-0">
@@ -178,13 +197,11 @@ function InviteRow({ invite, onRevoke }: { invite: InviteRow; onRevoke: () => vo
       </div>
       <Badge tone="accent">{invite.role.toLowerCase()}</Badge>
       <button
-        onClick={() => {
-          navigator.clipboard.writeText(link);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-        className="h-7 w-7 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-        aria-label="Copy invite link"
+        onClick={refreshAndCopy}
+        disabled={busy}
+        className="h-7 w-7 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05] disabled:opacity-50"
+        aria-label="Refresh & copy invite link"
+        title="Copy a fresh invite link (invalidates the old one)"
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </button>

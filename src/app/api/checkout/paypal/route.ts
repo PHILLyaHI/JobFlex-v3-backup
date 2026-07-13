@@ -6,11 +6,18 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   if (!isPayPalEnabled()) return NextResponse.json({ disabled: true });
-  const { publicId, amount } = await req.json();
+  // Amount is derived server-side from the proposal, never from the body.
+  const { publicId } = await req.json();
   if (!publicId) return NextResponse.json({ error: "Missing publicId" }, { status: 400 });
 
   const proposal = await db.proposal.findUnique({ where: { publicId } });
   if (!proposal) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (proposal.status === "PAID") {
+    return NextResponse.json({ error: "This proposal is already paid" }, { status: 409 });
+  }
+  if (proposal.total <= 0) {
+    return NextResponse.json({ error: "Nothing to pay on this proposal" }, { status: 400 });
+  }
 
   const origin = req.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const token = await getPayPalAccessToken();
@@ -30,7 +37,7 @@ export async function POST(req: Request) {
           description: proposal.title.slice(0, 127),
           amount: {
             currency_code: proposal.currency ?? "USD",
-            value: (amount / 100).toFixed(2),
+            value: proposal.total.toFixed(2),
           },
         },
       ],

@@ -13,6 +13,7 @@ import {
   duplicateProposal,
 } from "@/actions/proposals";
 import { saveProposalAsTemplate } from "@/actions/templates";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 
 export function ProposalActions({
   id,
@@ -102,13 +103,14 @@ export function ProposalActions({
         variant="ghost"
         loading={busy === "dup"}
         onClick={async () => {
+          if (!(await ensureWithinLimit("proposalsCreated"))) return;
           setBusy("dup");
           try {
             const res = await duplicateProposal(id);
             toast.success("Duplicated");
             router.push(`/dashboard/proposals/${res.id}` as any);
           } catch (err: any) {
-            toast.error("Duplicate failed", err?.message);
+            if (!reportPlanLimit(err)) toast.error("Duplicate failed", err?.message);
           } finally {
             setBusy(null);
           }

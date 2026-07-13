@@ -24,11 +24,35 @@ function toDate(v: string | Date | null | undefined): Date | null {
 }
 
 export async function createJob(raw: unknown) {
-  const { organizationId, user } = await requireManager();
+  // Installers may create jobs too (manager + installer role); the guard blocks
+  // sales/estimator. An installer-created job is auto-assigned to them and can't
+  // staff anyone else.
+  const { organizationId, user, role } = await requireJobEventCreator();
   await enforcePlanLimit(organizationId, "jobs");
   const data = jobInput.parse(raw);
   const starts = toDate(data.startsAt);
   const ends = toDate(data.endsAt);
+  // A dated job auto-creates its calendar event below — that seat must exist too.
+  if (starts) await enforcePlanLimit(organizationId, "calendarEvents");
+
+  // Effective crew: installers are forced to self (any passed ids ignored);
+  // managers use whatever was picked. An installer with no WorkerProfile can't
+  // be assigned, which would leave the new job invisible to them — refuse
+  // up front rather than create an orphan.
+  const installer = isWorkerRole(role);
+  let effectiveWorkerIds = data.workerIds ?? [];
+  if (installer) {
+    const self = await db.workerProfile.findUnique({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+    if (!self) {
+      throw new Error(
+        "Your account isn't set up as a worker yet — ask a manager to add you to the team roster.",
+      );
+    }
+    effectiveWorkerIds = [self.id];
+  }
 
   const job = await db.job.create({
     data: {
@@ -49,6 +73,7 @@ export async function createJob(raw: unknown) {
       data: {
         organizationId,
         jobId: job.id,
+        createdById: user.id,
         title: job.title,
         startsAt: starts,
         endsAt: ends ?? new Date(starts.getTime() + 1000 * 60 * 60 * 4),
@@ -69,25 +94,37 @@ export async function createJob(raw: unknown) {
 
   // Crew picked at creation. Only workers that belong to this org are attached
   // (guards a tampered payload); ids are de-duped before insert.
-  if (data.workerIds && data.workerIds.length) {
-    const ids = Array.from(new Set(data.workerIds));
+  if (effectiveWorkerIds.length) {
+    const ids = Array.from(new Set(effectiveWorkerIds));
     const valid = await db.workerProfile.findMany({
       where: { organizationId, id: { in: ids } },
       select: { id: true, userId: true },
     });
     if (valid.length) {
+      // Manager-invited crew starts PENDING (they accept via the worker portal);
+      // an installer's own job needs no self-invite — it's ACCEPTED outright,
+      // so it doesn't ping their own Jobs badge.
       await db.jobAssignment.createMany({
-        data: valid.map((w) => ({ jobId: job.id, workerId: w.id })),
+        data: valid.map((w) => ({
+          jobId: job.id,
+          workerId: w.id,
+          ...(installer ? { status: "ACCEPTED" } : {}),
+        })),
       });
       // Auto-create the job's group chat with the invited crew + the manager who
-      // built it, so it shows up on the Messages page ready to use.
-      const { ensureJobConversation } = await import("@/lib/jobConversation");
-      await ensureJobConversation({
-        jobId: job.id,
-        organizationId,
-        title: job.title,
-        userIds: [user.id, ...valid.map((w) => w.userId)],
-      });
+      // built it, so it shows up on the Messages page ready to use. Skipped when
+      // the creator would be the only member (installer self-created job) — a
+      // solo thread is just noise.
+      const chatUserIds = Array.from(new Set([user.id, ...valid.map((w) => w.userId)]));
+      if (chatUserIds.length > 1) {
+        const { ensureJobConversation } = await import("@/lib/jobConversation");
+        await ensureJobConversation({
+          jobId: job.id,
+          organizationId,
+          title: job.title,
+          userIds: chatUserIds,
+        });
+      }
     }
   }
 
@@ -117,8 +154,8 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
   // Auto-create review request when the job transitions to COMPLETED
   if (raw.status === "COMPLETED" && existing.status !== "COMPLETED") {
     try {
-      const { createReviewRequestInternal } = await import("./reviewRequests");
-      await createReviewRequestInternal(id, organizationId);
+      const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
+      await createReviewRequestInternal(id);
     } catch (err) {
       console.warn("[updateJob] review request failed:", err);
     }
@@ -150,6 +187,10 @@ export async function createJobFromProposal(proposalId: string) {
     where: { organizationId, proposalId: proposal.id },
   });
   if (existing) return { id: existing.id, created: false as const };
+
+  // Creates a Job AND its auto-scheduled JobEvent — both quotas must clear.
+  await enforcePlanLimit(organizationId, "jobs");
+  await enforcePlanLimit(organizationId, "calendarEvents");
 
   const startsAt = new Date();
   startsAt.setDate(startsAt.getDate() + 7);
@@ -197,48 +238,10 @@ export async function createJobFromProposal(proposalId: string) {
   return { id: job.id, created: true as const };
 }
 
-export async function createJobFromProposalInternal(proposalId: string, organizationId: string) {
-  // Same as createJobFromProposal but called from contexts without a user session (e.g., public portal)
-  const existing = await db.job.findFirst({
-    where: { organizationId, proposalId },
-  });
-  if (existing) return { id: existing.id, created: false as const };
-
-  const proposal = await db.proposal.findUnique({ where: { id: proposalId } });
-  if (!proposal || proposal.organizationId !== organizationId) throw new Error("Not found");
-
-  const startsAt = new Date();
-  startsAt.setDate(startsAt.getDate() + 7);
-  startsAt.setHours(9, 0, 0, 0);
-  const endsAt = new Date(startsAt);
-  endsAt.setHours(14, 0, 0, 0);
-
-  const job = await db.job.create({
-    data: {
-      organizationId,
-      title: proposal.title,
-      clientId: proposal.clientId,
-      proposalId: proposal.id,
-      status: JobStatus.SCHEDULED,
-      scopeOfWork: proposal.scopeOfWork ?? null,
-      startsAt,
-      endsAt,
-    },
-  });
-
-  await db.jobEvent.create({
-    data: {
-      organizationId,
-      jobId: job.id,
-      title: proposal.title,
-      startsAt,
-      endsAt,
-      notes: "Auto-scheduled from accepted proposal.",
-    },
-  });
-
-  return { id: job.id, created: true as const };
-}
+// (moved) createJobFromProposalInternal now lives in src/lib/jobFromProposal.ts
+// — a plain server module, not a "use server" export — so it's no longer a
+// POST-invokable action, and it derives the org from the proposal rather than a
+// caller parameter.
 
 // ── JobEvent (calendar-level) ────────────────────
 
@@ -261,11 +264,11 @@ export async function createJobEvent(raw: unknown) {
   const startsAt = toDate(data.startsAt)!;
   const endsAt = toDate(data.endsAt)!;
 
-  // Installers may only add an event to a job they're assigned to — never a
-  // bare event or a proposal-to-job creation (those stay manager-only).
+  // Installers: the job is now OPTIONAL (a jobless event is allowed — it renders
+  // on their calendar via createdById below). If they DO link a job it must be
+  // one they're assigned to. Proposal-to-job creation stays manager-only.
   const installer = isWorkerRole(role);
-  if (installer) {
-    if (!data.jobId) throw new Error("Pick one of your jobs for this event");
+  if (installer && data.jobId) {
     const assigned = await db.jobAssignment.findFirst({
       where: { jobId: data.jobId, worker: { userId: user.id } },
       select: { id: true },
@@ -287,6 +290,8 @@ export async function createJobEvent(raw: unknown) {
     if (existing) {
       jobId = existing.id;
     } else {
+      // This branch creates a NEW Job (not just the event) — check its quota too.
+      await enforcePlanLimit(organizationId, "jobs");
       // Unlike createJobFromProposal (7-days-out default), the job schedule
       // mirrors the event the user is creating right now.
       const job = await db.job.create({
@@ -308,6 +313,7 @@ export async function createJobEvent(raw: unknown) {
   const ev = await db.jobEvent.create({
     data: {
       organizationId,
+      createdById: user.id,
       title: data.title,
       jobId,
       startsAt,
@@ -325,6 +331,9 @@ export async function rescheduleJobEvent(id: string, newStartISO: string) {
   const { organizationId } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
+  // Product rule: at the calendar cap, drag/drop moves are blocked too, even
+  // though a move creates no new row.
+  await enforcePlanLimit(organizationId, "calendarEvents");
   const newStart = new Date(newStartISO);
   // preserve event duration
   const duration = ev.endsAt.getTime() - ev.startsAt.getTime();
@@ -378,6 +387,9 @@ export async function rescheduleJobEventTime(
   const { organizationId } = await requireManager();
   const ev = await db.jobEvent.findUnique({ where: { id } });
   if (!ev || ev.organizationId !== organizationId) throw new Error("Not found");
+  // Product rule: at the calendar cap, time moves are blocked too (see
+  // rescheduleJobEvent).
+  await enforcePlanLimit(organizationId, "calendarEvents");
   const start = roundTo15(new Date(newStartISO));
   let end = roundTo15(new Date(newEndISO));
   // Enforce minimum 15-minute duration
@@ -406,6 +418,7 @@ export async function scheduleJobFromTray(jobId: string, dateISO: string) {
   const { organizationId, user } = await requireManager();
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
+  await enforcePlanLimit(organizationId, "calendarEvents");
 
   const day = new Date(dateISO);
   const startsAt = new Date(day);
@@ -463,6 +476,8 @@ export async function assignEventWorker(
 
   // Optional date move (mirror of rescheduleJobEvent — preserves duration + time of day)
   if (newDateISO) {
+    // Same product rule as rescheduleJobEvent: moves are blocked at the cap.
+    await enforcePlanLimit(organizationId, "calendarEvents");
     const newStart = new Date(newDateISO);
     newStart.setHours(ev.startsAt.getHours(), ev.startsAt.getMinutes(), 0, 0);
     const duration = ev.endsAt.getTime() - ev.startsAt.getTime();
@@ -479,6 +494,15 @@ export async function assignEventWorker(
       // unassign all (Team view "Unassigned" row)
       await db.jobAssignment.deleteMany({ where: { jobId: ev.jobId } });
     } else {
+      // The workerId is client-supplied — verify it belongs to THIS org before
+      // attaching (mirrors createJob's tamper guard), or a manager could pin a
+      // foreign org's worker to their job and leak the job to that worker's
+      // portal.
+      const validWorker = await db.workerProfile.findFirst({
+        where: { id: workerId, organizationId },
+        select: { id: true },
+      });
+      if (!validWorker) throw new Error("Not found");
       // ensure target worker is assigned (don't strip others)
       const exists = ev.job?.assignments.find((a) => a.workerId === workerId);
       if (!exists) {

@@ -1,7 +1,9 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireManager } from "@/lib/orgContext";
+// Projects are open to estimators as well as managers (full access — projects
+// aren't per-user scoped, so estimators manage all org projects).
+import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 
@@ -15,7 +17,7 @@ const projectInput = z.object({
 });
 
 export async function createProject(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "projects");
   const data = projectInput.parse(raw);
   const p = await db.project.create({
@@ -36,7 +38,7 @@ export async function createProject(raw: unknown) {
 const updateInput = projectInput.partial().extend({ id: z.string() });
 
 export async function updateProject(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId } = await requireEstimatorOrManager();
   const data = updateInput.parse(raw);
   const existing = await db.project.findUnique({ where: { id: data.id } });
   if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
@@ -57,7 +59,7 @@ export async function updateProject(raw: unknown) {
 }
 
 export async function archiveProject(id: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId } = await requireEstimatorOrManager();
   const p = await db.project.findUnique({ where: { id } });
   if (!p || p.organizationId !== organizationId) throw new Error("Not found");
   await db.project.update({ where: { id }, data: { status: "ARCHIVED" } });
@@ -65,7 +67,7 @@ export async function archiveProject(id: string) {
 }
 
 export async function attachJob(projectId: string, jobId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId } = await requireEstimatorOrManager();
   const [p, j] = await Promise.all([
     db.project.findUnique({ where: { id: projectId } }),
     db.job.findUnique({ where: { id: jobId } }),
@@ -78,7 +80,7 @@ export async function attachJob(projectId: string, jobId: string) {
 }
 
 export async function detachJob(jobId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId } = await requireEstimatorOrManager();
   const j = await db.job.findUnique({ where: { id: jobId } });
   if (!j || j.organizationId !== organizationId) throw new Error("Not found");
   const previousProjectId = j.projectId;

@@ -29,10 +29,10 @@ import {
   Building2,
   CreditCard,
   Workflow,
-  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { NavBadge } from "./NavBadge";
+import { NavLimitCounter } from "./NavLimitCounter";
 
 interface NavItem {
   href: string;
@@ -148,7 +148,7 @@ const ESTIMATOR_GROUPS: NavGroup[] = [
     title: "Estimating",
     items: [
       { href: "/dashboard/proposals", label: "Proposals", icon: <FileText className="h-4 w-4" /> },
-      { href: "/dashboard/clients", label: "Clients", icon: <Users className="h-4 w-4" /> },
+      { href: "/dashboard/projects", label: "Projects", icon: <Folder className="h-4 w-4" /> },
     ],
   },
   {
@@ -181,32 +181,21 @@ function navGroupsFor(role: string | null | undefined): NavGroup[] {
   );
 }
 
-interface CompanyInfo {
-  name: string | null;
-  logoUrl: string | null;
-  setUp: boolean;
-}
-
-// First letters of up to two words — a tidy fallback when there's no logo yet.
-function monogram(name: string | null): string {
-  const n = (name ?? "").trim();
-  if (!n) return "?";
-  const parts = n.split(/\s+/).filter(Boolean);
-  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
-}
-
 export function Sidebar({
   role,
-  company,
   badges,
+  limits,
+  plan,
 }: {
   role?: string | null;
-  company?: CompanyInfo | null;
   /** Unread / pending counts keyed by nav href. Populated by the layout. */
   badges?: Record<string, number>;
+  /** Remaining-quota counters keyed by nav href (limited resources only). */
+  limits?: Record<string, { remaining: number; limit: number; cappedBy?: string }>;
+  /** Active plan slug ("PROFESSIONAL") for the counter's upsell copy. */
+  plan?: string;
 }) {
   const pathname = usePathname();
-  const isLimited = role === "INSTALLER" || role === "SALES" || role === "ESTIMATOR";
   const navGroups = navGroupsFor(role);
 
   // Single source of truth for the active item: the nav target that is the
@@ -273,62 +262,22 @@ export function Sidebar({
                   </span>
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   <NavBadge count={badges?.[item.href] ?? 0} className="shrink-0" />
+                  {limits?.[item.href] && (
+                    <span className="shrink-0">
+                      <NavLimitCounter
+                        remaining={limits[item.href].remaining}
+                        limit={limits[item.href].limit}
+                        plan={plan ?? ""}
+                        cappedBy={limits[item.href].cappedBy}
+                      />
+                    </span>
+                  )}
                 </Link>
               );
             })}
           </div>
         ))}
       </nav>
-
-      {!isLimited && (
-        <div className="p-3 border-t border-[color:var(--ink-line)]">
-          {company?.setUp ? (
-            // Your company — identity card, links into the Company settings.
-            <Link
-              href="/dashboard/company"
-              className="group flex items-center gap-2.5 rounded-[var(--r-md)] border border-[color:var(--ink-line)] bg-[color:var(--paper-deep)] p-2.5 transition-colors hover:border-[color:var(--ink-faint)]"
-            >
-              {company.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={company.logoUrl}
-                  alt=""
-                  className="h-9 w-9 shrink-0 rounded-[var(--r-sm)] object-cover"
-                />
-              ) : (
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--r-sm)] bg-[color:var(--accent-soft)] font-display text-[13px] font-semibold text-[color:var(--accent-ink)]">
-                  {monogram(company.name)}
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="quiet-caps !mb-0 text-[color:var(--ink-faint)]">Company</div>
-                <div className="truncate text-[13px] font-medium text-[color:var(--ink)]">
-                  {company.name ?? "Your company"}
-                </div>
-              </div>
-            </Link>
-          ) : (
-            // Not configured yet — a gentle, accented nudge to finish setup.
-            <Link
-              href="/dashboard/company"
-              className="group flex items-center gap-2.5 rounded-[var(--r-md)] border border-dashed border-[color-mix(in_srgb,var(--accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--accent-soft)_45%,transparent)] p-2.5 transition-colors hover:bg-[color-mix(in_srgb,var(--accent-soft)_75%,transparent)]"
-            >
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[var(--r-sm)] bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)]">
-                <Building2 className="h-4 w-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-semibold text-[color:var(--accent-ink)]">
-                  Set up your company
-                </div>
-                <div className="truncate text-[11px] text-[color:var(--ink-muted)]">
-                  Add your logo, name &amp; details
-                </div>
-              </div>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--accent-ink)] opacity-70 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          )}
-        </div>
-      )}
     </aside>
   );
 }

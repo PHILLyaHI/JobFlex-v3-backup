@@ -12,6 +12,11 @@ import { toast } from "@/components/ui/Toast";
 import { nanoid } from "nanoid";
 import { cn } from "@/lib/cn";
 import { estimateFence, convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
+import {
+  reportPlanLimit,
+  reportPlanLimitResult,
+  ensureWithinLimit,
+} from "@/stores/usePlanLimitStore";
 
 const HEIGHTS = ["4 ft", "6 ft", "7 ft", "8 ft"];
 const MATERIALS = ["Cedar", "Vinyl", "Chain-link", "Aluminum", "Composite"];
@@ -42,7 +47,10 @@ export function FenceEstimatorForm() {
         slope,
         notes,
       });
-      if (!res.ok) throw new Error(res.error);
+      if (!res.ok) {
+        if (reportPlanLimitResult(res)) return;
+        throw new Error(res.error);
+      }
       if (res.disabled) toast.info("AI disabled · sample result loaded");
       setTitle(res.data.title);
       setAssumptions(res.data.assumptions);
@@ -73,6 +81,7 @@ export function FenceEstimatorForm() {
   }
 
   async function convert() {
+    if (!(await ensureWithinLimit("proposalsCreated"))) return;
     setConvertBusy(true);
     try {
       const res = await convertFenceEstimateToProposal({
@@ -85,8 +94,9 @@ export function FenceEstimatorForm() {
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as any);
     } catch (err: any) {
-      toast.error("Couldn't convert", err?.message);
       setConvertBusy(false);
+      if (reportPlanLimit(err)) return;
+      toast.error("Couldn't convert", err?.message);
     }
   }
 

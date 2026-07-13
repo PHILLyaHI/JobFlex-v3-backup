@@ -18,6 +18,22 @@ export class NoOrgError extends Error {
 export async function requireUser() {
   const session = await auth();
   if (!session?.user?.id) throw new UnauthorizedError();
+  // Session revocation: a stateless JWT is otherwise valid for its full 7-day
+  // maxAge even after a password reset. Every USER-principal request re-checks
+  // the credential epoch against the DB — a reset bumps User.credentialVersion,
+  // instantly invalidating every previously-issued token (the "log out
+  // everywhere" a bare JWT can't do). Influencers use a separate table with
+  // their own status re-check in requireInfluencer, so they're exempt here.
+  if (session.user.principal !== "INFLUENCER") {
+    const fresh = await db.user.findUnique({
+      where: { id: session.user.id },
+      select: { credentialVersion: true },
+    });
+    if (!fresh) throw new UnauthorizedError();
+    if (fresh.credentialVersion !== (session.user.credentialVersion ?? 0)) {
+      throw new UnauthorizedError("Session expired — please sign in again");
+    }
+  }
   return session.user;
 }
 

@@ -29,6 +29,16 @@ export function hangupTwiml(): string {
 <Response><Hangup/></Response>`;
 }
 
+// Played when the org is over its AI-phone-call quota: a polite decline, no
+// recording started, so no AiPhoneCall row is created.
+export function unavailableTwiml(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Thanks for calling. We can't take your call right now — please try again later or reach us through our website.</Say>
+  <Hangup/>
+</Response>`;
+}
+
 function escapeXml(s: string) {
   return s
     .replace(/&/g, "&amp;")
@@ -47,7 +57,10 @@ export async function verifyTwilioSignature(
   signature: string | null,
 ): Promise<boolean> {
   const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!token) return true; // graceful-disabled: allow when no token set
+  // Fail-closed in production: a missing auth token must not turn these webhooks
+  // into unauthenticated write endpoints. Outside prod, allow (local dev without
+  // Twilio configured).
+  if (!token) return process.env.NODE_ENV !== "production";
   if (!signature) return false;
   const keys = Object.keys(params).sort();
   const data = url + keys.map((k) => k + params[k]).join("");

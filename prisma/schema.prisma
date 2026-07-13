@@ -39,6 +39,15 @@ model Organization {
   gmailTokensJson      String? // OAuth secrets      {accessToken,refreshToken,expiryDate,email} — set by the Gmail connect callback
   metaSettingsJson     String? // settings/meta      {connected,autoCreate,autoText,defaultPage,formCategory}
   proposalSettingsJson String? // settings/proposals {validityDays,markups{...},schedule[],terms,requireSig,autoFollowUp}
+  // Lead Center matching profile — canonical TRADE_TYPES multi-select (JSON string[],
+  // closed vocabulary from src/lib/tradeTypes.ts; distinct from the free-text Specialty
+  // model which steers AI estimator prompts). lat/lng geocoded from `address` at
+  // register/profile-save; orgs without coords are ineligible for platform lead offers.
+  tradeTypesJson    String?  @default("[]")
+  lat               Float?
+  lng               Float?
+  geocodedAt        DateTime?
+  leadOffersEnabled Boolean  @default(true)
   // Pre-signup attribution stamp (first-write-wins: set once at account creation,
   // never overwritten). The money record stays Stripe-truth (Attribution model);
   // this is captured intent used for the signup pill + checkout auto-apply.
@@ -73,6 +82,7 @@ model Organization {
   supportTickets  SupportTicket[]
   specialties     Specialty[]
   homeownerReqs   HomeownerRequest[]
+  leadOffers      LeadOffer[]
   changeOrders    ChangeOrder[]
   reviewRequests  ReviewRequest[]
   referralCodes   ReferralCode[]
@@ -349,6 +359,71 @@ model HomeownerRequest {
   organization    Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// Lead Center — platform-owned homeowner leads auto-routed to the best org.
+// A PlatformLead is the routing state machine (HomeownerRequest stays the raw
+// immutable submission log); the org-scoped Lead row is created only when an
+// offer is accepted or an admin manually assigns. SQLite-safe string statuses
+// live in src/lib/prismaEnums.ts (PlatformLeadStatus / LeadOfferStatus).
+// ─────────────────────────────────────────────
+
+model PlatformLead {
+  id                 String    @id @default(cuid())
+  homeownerRequestId String?   @unique
+  name               String
+  email              String
+  phone              String?
+  address            String?
+  city               String?
+  state              String?
+  zip                String?
+  lat                Float?
+  lng                Float?
+  projectType        String?
+  description        String?
+  photos             String?   @default("[]")
+  detectedTrade      String? // canonical TRADE_TYPES value (src/lib/tradeTypes.ts)
+  aiConfidence       Float?
+  status             String    @default("MATCHING") // MATCHING | OFFERED | MATCHED | MANUAL_QUEUE
+  attemptCount       Int       @default(0)
+  rankingJson        String? // snapshot: ordered [{orgId,orgName,score,distanceMi,distanceScore,ratingScore,respScore,fallback}]
+  queueReason        String? // NO_CANDIDATES | EXHAUSTED
+  matchedOrgId       String?
+  matchedLeadId      String?
+  matchedAt          DateTime?
+  assignedByAdminId  String? // set when a platform admin manually assigns
+  priceCents         Int? // schema-ready for pay-to-unlock; unused in v1
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  offers LeadOffer[]
+
+  @@index([status, createdAt])
+}
+
+model LeadOffer {
+  id                 String    @id @default(cuid())
+  platformLeadId     String
+  organizationId     String
+  attempt            Int // 1..3
+  status             String    @default("OFFERED") // OFFERED | ACCEPTED | DECLINED | EXPIRED | CANCELLED
+  score              Float
+  scoreBreakdownJson String? // {distanceMi,distanceScore,ratingScore,respScore,total,fallback}
+  expiresAt          DateTime
+  respondedAt        DateTime?
+  respondedById      String?
+  priceCents         Int? // schema-ready for pay-to-unlock; unused in v1
+  unlockedAt         DateTime? // schema-ready masking gate; unused in v1
+  createdAt          DateTime  @default(now())
+
+  platformLead PlatformLead @relation(fields: [platformLeadId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([platformLeadId, organizationId]) // an org is never offered the same lead twice
+  @@index([organizationId, status])
+  @@index([status, expiresAt]) // cron expiry sweep
 }
 
 // ─────────────────────────────────────────────

@@ -1,7 +1,8 @@
 "use server";
 import { revalidatePath } from "next/cache";
-import { requireManager } from "@/lib/orgContext";
+import { requireManager, requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { applyReferralReward } from "@/lib/referralRewards";
 
 function generateCode(seed: string) {
   // Short, shareable, not cryptographically unique — uniqueness guaranteed by DB constraint + retry loop.
@@ -72,4 +73,35 @@ export async function markConversionConverted(conversionId: string) {
     data: { status: "CONVERTED", convertedAt: new Date() },
   });
   revalidatePath("/dashboard/referrals");
+}
+
+// ── platform admin: /admin/referrals queue ────────────────────────────────────
+
+/** Retry the automated 50%-of-a-month Stripe credit for a CONVERTED conversion. */
+export async function adminRetryReferralCredit(conversionId: string) {
+  await requirePlatformAdmin();
+  const result = await applyReferralReward(conversionId);
+  revalidatePath("/admin/referrals");
+  return result;
+}
+
+/**
+ * Manual override: mark a conversion PAID without a Stripe credit (reward was
+ * settled out of band). Records nothing on Stripe — audit lives in the note.
+ */
+export async function adminMarkReferralPaid(conversionId: string, note?: string) {
+  await requirePlatformAdmin();
+  const conv = await db.referralConversion.findUnique({ where: { id: conversionId } });
+  if (!conv) throw new Error("Conversion not found");
+  if (conv.status === "PENDING") throw new Error("Not converted yet — the referred org hasn't paid.");
+  if (conv.rewardAppliedAt) throw new Error("Reward was already applied.");
+  await db.referralConversion.update({
+    where: { id: conversionId },
+    data: {
+      status: "PAID",
+      rewardAppliedAt: new Date(),
+      note: note?.trim() ? `${conv.note ? `${conv.note} · ` : ""}${note.trim()}` : conv.note,
+    },
+  });
+  revalidatePath("/admin/referrals");
 }

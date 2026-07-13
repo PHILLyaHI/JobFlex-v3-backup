@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { money, longDate } from "@/lib/format";
 import { ledgerBalances, describeCommission } from "@/lib/commission";
-import { AttributionStatus, PayoutRequestStatus } from "@/lib/prismaEnums";
+import { AttributionStatus, LedgerEntryType, PayoutRequestStatus } from "@/lib/prismaEnums";
 import { RequestPayoutButton } from "./request-payout-button";
 import { ConnectCard } from "./connect-card";
+import { CopyShareLink } from "./copy-link";
 
 export default async function InfluencerHome() {
   const session = await requireInfluencer().catch(() => null);
@@ -26,13 +27,35 @@ export default async function InfluencerHome() {
     }),
     db.commissionLedger.findMany({
       where: { influencerId: influencer.id },
-      select: { entryType: true, amountCents: true, state: true },
+      select: { entryType: true, amountCents: true, state: true, createdAt: true },
     }),
     db.payoutRequest.findMany({ where: { influencerId: influencer.id }, orderBy: { createdAt: "desc" } }),
   ]);
 
   const balances = ledgerBalances(ledger);
   const activeCount = attributions.filter((a) => a.status === AttributionStatus.ACTIVE).length;
+  const totalClicks = promoCodes.reduce((sum, p) => sum + p.clicks, 0);
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+  // Net earnings by month (accruals minus reversals; payout debits excluded).
+  const byMonth = new Map<string, number>();
+  for (const entry of ledger) {
+    if (entry.entryType === LedgerEntryType.PAID) continue;
+    const d = entry.createdAt;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    byMonth.set(key, (byMonth.get(key) ?? 0) + entry.amountCents);
+  }
+  const monthlyEarnings = [...byMonth.entries()]
+    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .slice(0, 6)
+    .map(([key, cents]) => ({
+      key,
+      label: new Date(Number(key.slice(0, 4)), Number(key.slice(5)) - 1, 1).toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      }),
+      cents,
+    }));
 
   // Join referred subscribers to org name + plan/status (no PII like email).
   const orgIds = attributions.map((a) => a.organizationId).filter(Boolean) as string[];
@@ -71,8 +94,9 @@ export default async function InfluencerHome() {
 
       {!influencer.payoutsEnabled && <ConnectCard status={influencer.connectStatus} />}
 
-      <StaggerGrid className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <StaggerGrid className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="Active codes" value={String(promoCodes.filter((p) => p.active).length)} />
+        <StatCard label="Link clicks" value={String(totalClicks)} />
         <StatCard label="Subscribers referred" value={String(activeCount)} />
         <StatCard label="Lifetime earned" value={money(balances.lifetimeEarnedCents / 100)} />
         <StatCard label="Available to withdraw" value={money(balances.clearedCents / 100)} accent hint={money(balances.pendingCents / 100) + " still clearing"} />
@@ -90,19 +114,45 @@ export default async function InfluencerHome() {
         ) : (
           <ul className="divide-y divide-[color:var(--ink-line)]">
             {promoCodes.map((p) => (
-              <li key={p.id} className="flex items-center justify-between py-3">
-                <div>
-                  <span className="font-mono text-[14px] text-[color:var(--ink)]">{p.code}</span>
-                  <div className="text-[11px] text-[color:var(--ink-muted)]">{describeCommission(p)}</div>
+              <li key={p.id} className="py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-mono text-[14px] text-[color:var(--ink)]">{p.code}</span>
+                    <div className="text-[11px] text-[color:var(--ink-muted)]">
+                      {describeCommission(p)}
+                      {p.customerPercentOff ? ` · buyer saves ${p.customerPercentOff}%` : ""}
+                      {` · ${p.clicks} click${p.clicks === 1 ? "" : "s"}`}
+                    </div>
+                  </div>
+                  <Badge tone={p.active ? "success" : "neutral"} dot>
+                    {p.active ? "active" : "off"}
+                  </Badge>
                 </div>
-                <Badge tone={p.active ? "success" : "neutral"} dot>
-                  {p.active ? "active" : "off"}
-                </Badge>
+                {p.active && <CopyShareLink url={`${appUrl}/?promo=${p.code}`} />}
               </li>
             ))}
           </ul>
         )}
       </Card>
+
+      {monthlyEarnings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Earnings by month</CardTitle>
+              <CardSubtitle>Net accrued commission (refund reversals included)</CardSubtitle>
+            </div>
+          </CardHeader>
+          <ul className="divide-y divide-[color:var(--ink-line)]">
+            {monthlyEarnings.map((m) => (
+              <li key={m.key} className="flex items-center justify-between py-3">
+                <span className="text-[13px] text-[color:var(--ink)]">{m.label}</span>
+                <span className="tabular text-[13px] text-[color:var(--ink)]">{money(m.cents / 100)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

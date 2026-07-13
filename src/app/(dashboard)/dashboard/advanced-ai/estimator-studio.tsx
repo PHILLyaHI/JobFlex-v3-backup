@@ -23,7 +23,11 @@ import {
   convertEstimateToProposal,
 } from "@/actions/advancedEstimator";
 import type { ClarifyQuestion } from "@/lib/estimatorSchema";
-import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
+import {
+  reportPlanLimit,
+  reportPlanLimitResult,
+  ensureWithinLimit,
+} from "@/stores/usePlanLimitStore";
 
 export function EstimatorStudio({
   aiEnabled,
@@ -104,6 +108,7 @@ export function EstimatorStudio({
       });
       if (!res.ok) {
         setGenerating(false);
+        if (reportPlanLimitResult(res)) return;
         toast.error("Generation failed", res.error);
         return;
       }
@@ -170,6 +175,7 @@ export function EstimatorStudio({
     });
     setAnalyzing(false);
     if (!res.ok) {
+      if (reportPlanLimitResult(res)) return;
       toast.error("Couldn't start", res.error);
       return;
     }
@@ -210,6 +216,7 @@ export function EstimatorStudio({
         },
       });
       if (!res.ok) {
+        if (reportPlanLimitResult(res)) return;
         toast.error("Couldn't apply", res.error);
         return;
       }
@@ -254,6 +261,7 @@ export function EstimatorStudio({
 
   async function onConvert() {
     if (!projectType) return;
+    if (!(await ensureWithinLimit("proposalsCreated"))) return;
     setConvertBusy(true);
     try {
       const res = await convertEstimateToProposal({
@@ -268,7 +276,7 @@ export function EstimatorStudio({
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as any);
     } catch (err: any) {
-      toast.error("Couldn't convert", err?.message);
+      if (!reportPlanLimit(err)) toast.error("Couldn't convert", err?.message);
     } finally {
       setConvertBusy(false);
     }

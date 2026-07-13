@@ -6,24 +6,47 @@ import { toast } from "@/components/ui/Toast";
 
 interface Props {
   code: string;
+  /** Primary share link — contractor signup with ?ref= (30-day capture). */
   shareUrl: string;
+  /** Optional secondary link — the homeowner lead funnel. */
+  homeownerUrl?: string;
   rewardSummary: string;
 }
 
-export function ReferralHeroCard({ code, shareUrl, rewardSummary }: Props) {
-  const [copiedCode, setCopiedCode] = React.useState(false);
-  const [copiedLink, setCopiedLink] = React.useState(false);
+function LinkChip({
+  label,
+  url,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  url: string;
+  copied: boolean;
+  onCopy: (value: string, label: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.04] hairline max-w-full min-w-0">
+      <span className="quiet-caps !mb-0 shrink-0">{label}</span>
+      <code className="text-[11px] font-mono text-[color:var(--ink-soft)] truncate max-w-[320px]">{url}</code>
+      <button
+        onClick={() => onCopy(url, `${label} link`)}
+        aria-label={`Copy ${label} link`}
+        className="h-6 w-6 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05] shrink-0"
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </div>
+  );
+}
 
-  function copy(value: string, which: "code" | "link") {
+export function ReferralHeroCard({ code, shareUrl, homeownerUrl, rewardSummary }: Props) {
+  const [copied, setCopied] = React.useState<string | null>(null);
+
+  function copy(value: string, label: string) {
     navigator.clipboard.writeText(value);
-    if (which === "code") {
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 1500);
-    } else {
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 1500);
-    }
-    toast.success(which === "code" ? "Code copied" : "Share link copied");
+    setCopied(value);
+    setTimeout(() => setCopied(null), 1500);
+    toast.success(`${label} copied`);
   }
 
   async function webShare() {
@@ -38,7 +61,7 @@ export function ReferralHeroCard({ code, shareUrl, rewardSummary }: Props) {
         // cancelled
       }
     } else {
-      copy(shareUrl, "link");
+      copy(shareUrl, "Share link");
     }
   }
 
@@ -58,16 +81,16 @@ export function ReferralHeroCard({ code, shareUrl, rewardSummary }: Props) {
           <div className="flex items-center gap-3">
             <div
               className="font-mono text-[38px] tracking-[0.08em] font-semibold text-[color:var(--ink)] select-all cursor-pointer hover:bg-[color:var(--accent-soft)]/60 rounded-[var(--r-sm)] px-2 py-1 -mx-2 -my-1 transition-colors"
-              onClick={() => copy(code, "code")}
+              onClick={() => copy(code, "Code")}
             >
               {code}
             </div>
             <button
-              onClick={() => copy(code, "code")}
+              onClick={() => copy(code, "Code")}
               aria-label="Copy code"
               className="h-8 w-8 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.04]"
             >
-              {copiedCode ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied === code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </button>
           </div>
           <p className="mt-4 text-[13px] text-[color:var(--ink-muted)] leading-relaxed max-w-lg">
@@ -75,18 +98,10 @@ export function ReferralHeroCard({ code, shareUrl, rewardSummary }: Props) {
           </p>
 
           <div className="mt-6 flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.04] hairline max-w-full min-w-0">
-              <code className="text-[11px] font-mono text-[color:var(--ink-soft)] truncate max-w-[360px]">
-                {shareUrl}
-              </code>
-              <button
-                onClick={() => copy(shareUrl, "link")}
-                aria-label="Copy link"
-                className="h-6 w-6 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05] shrink-0"
-              >
-                {copiedLink ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-              </button>
-            </div>
+            <LinkChip label="Signup" url={shareUrl} copied={copied === shareUrl} onCopy={copy} />
+            {homeownerUrl ? (
+              <LinkChip label="Homeowners" url={homeownerUrl} copied={copied === homeownerUrl} onCopy={copy} />
+            ) : null}
             <Button size="sm" variant="outline" icon={<Share2 className="h-3.5 w-3.5" />} onClick={webShare}>
               Share
             </Button>

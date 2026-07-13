@@ -1,10 +1,10 @@
-import { requireOrg } from "@/lib/orgContext";
+import { requireOrg, isWorkerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { NewJobForm } from "./new-job-form";
 
 export default async function NewJobPage() {
-  const { organizationId } = await requireOrg();
+  const { organizationId, role } = await requireOrg();
   const [clients, proposals, workers] = await Promise.all([
     db.client.findMany({
       where: { organizationId, deletedAt: null },
@@ -31,7 +31,12 @@ export default async function NewJobPage() {
         title="Create a job"
         description="Link it to a client and (optionally) a proposal — we'll also drop an event on the calendar."
       />
-      <NewJobForm clients={clients} proposals={proposals} workers={workers} />
+      <NewJobForm
+        clients={clients}
+        proposals={proposals}
+        workers={workers}
+        hideCrew={isWorkerRole(role)}
+      />
     </>
   );
 }

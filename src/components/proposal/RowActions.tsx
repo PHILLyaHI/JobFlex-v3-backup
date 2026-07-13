@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/cn";
 import { toast } from "@/components/ui/Toast";
 import { duplicateProposal } from "@/actions/proposals";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { zillowSearchUrl } from "@/lib/zillow";
 import { MaterialsSheet, type MaterialLine } from "./MaterialsSheet";
 import { SendProposalDialog } from "./SendProposalDialog";
@@ -110,6 +111,7 @@ export function RowActions({
 
   async function onDuplicate() {
     setOpen(false);
+    if (!(await ensureWithinLimit("proposalsCreated"))) return;
     try {
       const res = await duplicateProposal(proposalId);
       toast.success("Duplicated", "Find the copy at the top of the list.");
@@ -117,6 +119,7 @@ export function RowActions({
       // Optimistic: navigate into the new copy so the user can edit immediately.
       router.push(`/dashboard/proposals/${res.id}` as any);
     } catch (err: any) {
+      if (reportPlanLimit(err)) return;
       toast.error("Couldn't duplicate", err?.message);
     }
   }

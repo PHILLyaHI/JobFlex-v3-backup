@@ -8,8 +8,11 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { CommandK } from "@/components/layout/CommandK";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
+import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
 import { SessionProvider } from "@/components/providers/SessionProvider";
+import { getBadgeCounts } from "@/lib/badgeCounts";
+import { getNavLimitCounters } from "@/lib/navLimits";
 import { DashboardAnnouncementDismiss } from "./announcement-dismiss";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -18,7 +21,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const activeOrgId = session.user.activeOrgId ?? null;
 
-  const [memberships, subscription, announcements, activeOrg] = await Promise.all([
+  const [memberships, subscription, announcements] = await Promise.all([
     db.membership.findMany({
       where: { userId: session.user.id },
       include: { organization: { select: { id: true, name: true } } },
@@ -54,36 +57,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           orderBy: { createdAt: "desc" },
           take: 6,
         }),
-    activeOrgId
-      ? db.organization.findUnique({
-          where: { id: activeOrgId },
-          select: {
-            name: true,
-            logoUrl: true,
-            phone: true,
-            website: true,
-            address: true,
-            billingEmail: true,
-          },
-        })
-      : Promise.resolve(null),
   ]);
-
-  // The company is "set up" once its branding profile has been touched (a logo or
-  // any contact detail). A fresh org with only an auto-created name shows the
-  // "set up your company" nudge in the sidebar instead.
-  const companyInfo = {
-    name: activeOrg?.name ?? null,
-    logoUrl: activeOrg?.logoUrl ?? null,
-    setUp: Boolean(
-      activeOrg &&
-        (activeOrg.logoUrl ||
-          activeOrg.phone ||
-          activeOrg.website ||
-          activeOrg.address ||
-          activeOrg.billingEmail),
-    ),
-  };
 
   const membershipItems = memberships.map((m) => ({
     organizationId: m.organizationId,
@@ -100,6 +74,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const isWorker = activeRole === "INSTALLER";
   const routeGate = activeRole ? ROLE_ROUTE_GATES[activeRole] : undefined;
   const isLimited = Boolean(routeGate);
+  // Lead-offer pop-up is only for people who can act on a lead (matches the
+  // requireSalesOrManager gate on accept/decline): sales + manager roles, never
+  // installers or estimators.
+  const canHandleLeads = Boolean(activeOrgId) && !isWorker && activeRole !== "ESTIMATOR";
 
   // Server-side limited-role route-gate (defense-in-depth behind the middleware).
   // Role comes from the DB above, and the path from the middleware-set header,
@@ -110,10 +88,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
     if (pathname && !isPathAllowed(routeGate, pathname)) redirect(routeGate.home as Route);
   }
 
+  // Workers see a read-only slice — no create surfaces, so no quota counters.
+  const [badgeCounts, navLimits] = activeOrgId
+    ? await Promise.all([
+        getBadgeCounts(activeOrgId, session.user.id, activeRole),
+        isWorker ? Promise.resolve({}) : getNavLimitCounters(activeOrgId),
+      ])
+    : [{}, {}];
+
   return (
     <SessionProvider>
       <div className="flex">
-        <Sidebar role={activeRole} company={companyInfo} />
+        <Sidebar
+          role={activeRole}
+          badges={badgeCounts}
+          limits={navLimits}
+          plan={subscription?.plan ?? "FREE"}
+        />
         <main className="flex-1 min-w-0 min-h-dvh">
           <Topbar
             user={{ name: session.user.name, email: session.user.email ?? "" }}
@@ -137,9 +128,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </main>
         {!isLimited && <CommandK />}
+        {canHandleLeads && <LeadOfferPopup />}
         <PlanLimitDialog />
         <div className="md:hidden">
-          <MobileTabBar role={activeRole} />
+          <MobileTabBar role={activeRole} badges={badgeCounts} />
         </div>
       </div>
     </SessionProvider>

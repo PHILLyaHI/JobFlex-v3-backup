@@ -1,31 +1,41 @@
 import { requireOrg, isSalesRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { LeadsWorkspace } from "./leads-workspace";
 
 export default async function LeadsPage() {
   const { organizationId, role, user } = await requireOrg();
   // Sales reps see leads assigned to them, claimed by them, or still NEW (so
   // they can claim from the shared pool). Managers see the whole pipeline.
-  const leads = await db.lead.findMany({
-    where: {
-      organizationId,
-      ...(isSalesRole(role)
-        ? {
-            OR: [
-              { assignedToId: user.id },
-              { claimedById: user.id },
-              { status: "NEW" },
-            ],
-          }
-        : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    include: { assignedTo: { select: { id: true, name: true, email: true } } },
-  });
+  // Live Lead Center offers (24h window) surface alongside them in Incoming.
+  const [leads, offers] = await Promise.all([
+    db.lead.findMany({
+      where: {
+        organizationId,
+        ...(isSalesRole(role)
+          ? {
+              OR: [
+                { assignedToId: user.id },
+                { claimedById: user.id },
+                { status: "NEW" },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      include: { assignedTo: { select: { id: true, name: true, email: true } } },
+    }),
+    db.leadOffer.findMany({
+      where: { organizationId, status: "OFFERED", expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: "asc" },
+      include: { platformLead: true },
+    }),
+  ]);
 
   return (
     <>
+      <MarkNavSeen surface="leads" />
       <PageHeader
         eyebrow="Pipeline"
         title="Leads"
@@ -48,6 +58,23 @@ export default async function LeadsPage() {
           aiConfidence: l.aiConfidence,
           createdAt: l.createdAt,
           assignee: l.assignedTo?.name ?? l.assignedTo?.email ?? null,
+        }))}
+        initialOffers={offers.map((o) => ({
+          id: o.id,
+          name: o.platformLead.name,
+          email: o.platformLead.email,
+          phone: o.platformLead.phone,
+          address: o.platformLead.address,
+          city: o.platformLead.city,
+          state: o.platformLead.state,
+          zip: o.platformLead.zip,
+          projectType: o.platformLead.projectType,
+          description: o.platformLead.description,
+          detectedTrade: o.platformLead.detectedTrade,
+          aiConfidence: o.platformLead.aiConfidence,
+          attempt: o.attempt,
+          expiresAt: o.expiresAt,
+          createdAt: o.createdAt,
         }))}
       />
     </>

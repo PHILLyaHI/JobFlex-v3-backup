@@ -19,6 +19,26 @@ export interface LeadRow {
   assignee: string | null;
 }
 
+// A pending Lead Center offer shown in the Incoming tab. Not a Lead row —
+// the org-scoped Lead is created only when the offer is accepted.
+export interface OfferRow {
+  id: string; // LeadOffer id
+  name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  projectType: string | null;
+  description: string | null;
+  detectedTrade: string | null;
+  aiConfidence: number | null;
+  attempt: number;
+  expiresAt: Date;
+  createdAt: Date;
+}
+
 // Payload shape for transferring staged leads into the pipeline (importLeads action input).
 export interface ImportLeadPayload {
   name: string;

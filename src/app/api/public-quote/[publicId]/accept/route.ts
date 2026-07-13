@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { createJobFromProposalInternal } from "@/actions/jobs";
+import { createJobFromProposalInternal } from "@/lib/jobFromProposal";
 
 export async function POST(
   req: Request,
@@ -9,6 +9,19 @@ export async function POST(
   const { publicId } = await ctx.params;
   const proposal = await db.proposal.findUnique({ where: { publicId }, include: { client: true } });
   if (!proposal) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Don't let a settled deal be re-flipped. Already-accepted is idempotent (no
+  // duplicate side effects); a PAID or DECLINED proposal can't regress to
+  // ACCEPTED. Mirrors the guard in ../decline.
+  if (proposal.status === "ACCEPTED") {
+    return NextResponse.json({ ok: true, alreadyAccepted: true });
+  }
+  if (proposal.status === "PAID" || proposal.status === "DECLINED") {
+    return NextResponse.json(
+      { error: "This proposal has already been settled." },
+      { status: 409 },
+    );
+  }
 
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -34,7 +47,7 @@ export async function POST(
   // Auto-create a Job + JobEvent so the new work shows up on calendar + jobs list immediately.
   let jobId: string | null = null;
   try {
-    const { id } = await createJobFromProposalInternal(proposal.id, proposal.organizationId);
+    const { id } = await createJobFromProposalInternal(proposal.id);
     jobId = id;
   } catch (err) {
     console.warn("[accept] Couldn't auto-create job:", err);
@@ -42,7 +55,7 @@ export async function POST(
 
   // Thank-you to the client + acceptance heads-up to the owner (best-effort).
   try {
-    const { notifyProposalAccepted } = await import("@/actions/notify");
+    const { notifyProposalAccepted } = await import("@/lib/notify");
     await notifyProposalAccepted({ proposalId: proposal.id });
   } catch (err) {
     console.warn("[accept] notify failed:", err);

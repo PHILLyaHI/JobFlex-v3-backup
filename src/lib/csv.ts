@@ -13,6 +13,13 @@ function encodeCell(v: unknown): string {
   else if (typeof v === "object") s = JSON.stringify(v);
   else s = String(v);
 
+  // CSV formula-injection defense: a cell that a spreadsheet would parse as a
+  // formula (leading = + - @, or a leading tab/CR that some parsers strip) is
+  // prefixed with a single quote so Excel/Sheets treat it as literal text. These
+  // cells contain attacker-influenceable free text (lead/client names submitted
+  // via the public homeowner form), so neutralize before the quoting below.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+
   if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
     return `"${s.replace(/"/g, '""')}"`;
   }

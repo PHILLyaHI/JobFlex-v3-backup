@@ -6,7 +6,8 @@ import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 import { ProposalStatus } from "@/lib/prismaEnums";
-import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
+import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import {
   estimateSchema,
   lineSchema,
@@ -14,6 +15,27 @@ import {
   type GeneratedEstimate,
   type PromptAnalysis,
 } from "@/lib/estimatorSchema";
+
+/**
+ * Quota gate for the AI *run* functions. Returned (not thrown) because these
+ * actions signal errors via { ok: false } unions and thrown messages are
+ * redacted in prod. Runs are capped by the same "estimatorUses" budget that
+ * saveEstimate consumes (usage = saved AiEstimate rows).
+ */
+async function estimatorRunBlocked(
+  organizationId: string,
+): Promise<{ ok: false; error: string; code: "PLAN_LIMIT_REACHED"; resource: LimitKey } | null> {
+  const quota = await checkPlanLimit(organizationId, "estimatorUses");
+  if (quota.allowed) return null;
+  return {
+    ok: false,
+    error: PLAN_LIMIT_MESSAGE,
+    code: "PLAN_LIMIT_REACHED",
+    // estimatorUses is capped by proposalsCreated (every estimate → a proposal),
+    // so report whichever actually ran out.
+    resource: quota.cappedBy ?? "estimatorUses",
+  };
+}
 
 const STUB: GeneratedEstimate = {
   title: "Sample Roof Replacement Estimate · AI Disabled",
@@ -91,20 +113,37 @@ function mockProductResults(query: string): ProductSearchResult[] {
 /**
  * Search live retail prices for a single material via SerpAPI's Google Shopping
  * engine. Returns the top 3 results mapped to {title, price, link, thumbnail,
- * source}. Falls back to deterministic mock products when the key is missing or
- * the request fails (incl. 429 rate limits) so the flow never crashes in dev.
+ * source}. When `location` is given (normalized "City, ST" from the intake
+ * gate) prices are localized to that market; a location SerpAPI can't resolve
+ * gets one retry without it (national prices) before the mock fallback.
+ * Falls back to deterministic mock products when the key is missing or the
+ * request fails (incl. 429 rate limits) so the flow never crashes in dev.
  */
-async function searchProductPrices(query: string): Promise<ProductSearchResult[]> {
+async function searchProductPrices(
+  query: string,
+  location?: string | null
+): Promise<ProductSearchResult[]> {
   const apiKey = process.env.SERPAPI_API_KEY;
   if (!apiKey) {
     console.info(`[advancedEstimator] SERPAPI_API_KEY missing — mock results for "${query}"`);
     return mockProductResults(query);
   }
+  const loc = location?.trim() || null;
   try {
-    const url = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(
+    const base = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(
       query
-    )}&api_key=${apiKey}`;
-    const res = await fetch(url);
+    )}&gl=us&hl=en&api_key=${apiKey}`;
+    let localized = Boolean(loc);
+    let res = await fetch(loc ? `${base}&location=${encodeURIComponent(loc)}` : base);
+    if (!res.ok && localized) {
+      // Unresolvable location (SerpAPI 400s on strings outside its locations
+      // DB) — retry national rather than lose live prices entirely.
+      console.warn(
+        `[advancedEstimator] SerpAPI ${res.status} for "${query}" localized to "${loc}" — retrying national`
+      );
+      localized = false;
+      res = await fetch(base);
+    }
     if (!res.ok) {
       // 429 = SerpAPI rate / plan limit. Degrade gracefully rather than throw.
       console.warn(
@@ -132,7 +171,9 @@ async function searchProductPrices(query: string): Promise<ProductSearchResult[]
       console.warn(`[advancedEstimator] SerpAPI returned 0 products for "${query}" — using mock`);
       return mockProductResults(query);
     }
-    console.info(`[advancedEstimator] SerpAPI returned ${mapped.length} products for "${query}"`);
+    console.info(
+      `[advancedEstimator] SerpAPI returned ${mapped.length} products for "${query}" (${localized ? `localized to "${loc}"` : "national"})`
+    );
     return mapped;
   } catch (err: any) {
     console.warn(
@@ -251,9 +292,13 @@ export async function analyzeEstimatePrompt(input: {
   description: string;
   location?: string;
   sqft?: number;
-}): Promise<{ ok: true; data: PromptAnalysis } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; data: PromptAnalysis }
+  | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
+> {
+  let organizationId: string;
   try {
-    const { organizationId } = await requireEstimatorOrManager();
+    ({ organizationId } = await requireEstimatorOrManager());
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     const plan = await getOrgPlanById(organizationId);
@@ -261,6 +306,8 @@ export async function analyzeEstimatePrompt(input: {
   } catch (err: any) {
     return { ok: false, error: err?.message ?? "Upgrade required" };
   }
+  const blocked = await estimatorRunBlocked(organizationId);
+  if (blocked) return blocked;
 
   const passthrough: PromptAnalysis = {
     correctedLocation: input.location?.trim() || null,
@@ -326,10 +373,11 @@ Description: ${input.description}`,
 export async function generateAdvancedEstimate(input: GenerateInput): Promise<
   | { ok: true; data: GeneratedEstimate; disabled?: false }
   | { ok: true; data: GeneratedEstimate; disabled: true }
-  | { ok: false; error: string }
+  | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
+  let organizationId: string;
   try {
-    const { organizationId } = await requireEstimatorOrManager();
+    ({ organizationId } = await requireEstimatorOrManager());
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     const plan = await getOrgPlanById(organizationId);
@@ -337,6 +385,8 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
   } catch (err: any) {
     return { ok: false, error: err?.message ?? "Upgrade required" };
   }
+  const blocked = await estimatorRunBlocked(organizationId);
+  if (blocked) return blocked;
 
   if (!isOpenAIEnabled()) {
     return { ok: true, data: { ...STUB, title: `${input.projectType} estimate · AI disabled` }, disabled: true };
@@ -389,7 +439,7 @@ Description: ${input.description}${assumptionsBlock}`,
       `[advancedEstimator] Step 2 (search) · ${planned.materials.length} queries in parallel`
     );
     const searchResults = await Promise.all(
-      planned.materials.map((m) => searchProductPrices(m.searchQuery))
+      planned.materials.map((m) => searchProductPrices(m.searchQuery, input.location))
     );
     const research = planned.materials.map((m, i) => ({
       category: m.category,
@@ -512,7 +562,7 @@ const refineInputSchema = z.object({
 
 export async function refineAdvancedEstimate(raw: unknown): Promise<
   | { ok: true; data: GeneratedEstimate; disabled?: boolean }
-  | { ok: false; error: string }
+  | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
   let input: z.infer<typeof refineInputSchema>;
   try {
@@ -521,8 +571,9 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
     return { ok: false, error: "Invalid estimate payload" };
   }
 
+  let organizationId: string;
   try {
-    const { organizationId } = await requireEstimatorOrManager();
+    ({ organizationId } = await requireEstimatorOrManager());
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     const plan = await getOrgPlanById(organizationId);
@@ -530,6 +581,8 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
   } catch (err: any) {
     return { ok: false, error: err?.message ?? "Upgrade required" };
   }
+  const blocked = await estimatorRunBlocked(organizationId);
+  if (blocked) return blocked;
 
   const cleanAssumptions = input.assumptions.map((a) => a.trim()).filter(Boolean);
   const instructions = input.instructions.trim();
@@ -611,7 +664,9 @@ ${JSON.stringify(input.current)}`,
         const queries = toPrice.map(({ m }) =>
           [m.name, m.dimensions].filter(Boolean).join(" ").trim()
         );
-        const searchResults = await Promise.all(queries.map((q) => searchProductPrices(q)));
+        const searchResults = await Promise.all(
+          queries.map((q) => searchProductPrices(q, input.location))
+        );
         const research = toPrice.map(({ m }, i) => ({
           name: m.name,
           quantity: m.quantity,
@@ -765,6 +820,7 @@ const convertInput = z.object({
 
 export async function convertEstimateToProposal(raw: unknown) {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertInput.parse(raw);
 
   // Never trust a client id from the browser — it must belong to this org.

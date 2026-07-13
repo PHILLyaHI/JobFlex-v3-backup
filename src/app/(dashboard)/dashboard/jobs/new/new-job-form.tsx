@@ -19,11 +19,14 @@ interface NewJobFormProps {
   clients: { id: string; name: string; email: string | null }[];
   proposals: { id: string; title: string; clientId: string | null; scopeOfWork: string | null }[];
   workers: { id: string; displayName: string }[];
+  // Installers create jobs for themselves — they can't staff others, so the
+  // crew picker is hidden and they're auto-assigned server-side.
+  hideCrew?: boolean;
 }
 
 const HOUR = 60 * 60 * 1000;
 
-export function NewJobForm({ clients, proposals, workers }: NewJobFormProps) {
+export function NewJobForm({ clients, proposals, workers, hideCrew = false }: NewJobFormProps) {
   const router = useRouter();
   const defaults = React.useMemo(() => {
     const start = new Date();
@@ -135,6 +138,7 @@ export function NewJobForm({ clients, proposals, workers }: NewJobFormProps) {
             placeholder="What the crew will do on site. Auto-filled from the linked proposal."
           />
 
+          {!hideCrew && (
           <div>
             <div className="quiet-caps mb-1.5 text-[color:var(--ink-faint)]">Crew</div>
             {workers.length === 0 ? (
@@ -185,6 +189,7 @@ export function NewJobForm({ clients, proposals, workers }: NewJobFormProps) {
               </>
             )}
           </div>
+          )}
         </div>
       </Card>
 

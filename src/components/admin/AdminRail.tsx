@@ -13,6 +13,9 @@ import {
   Plug,
   Receipt,
   Star,
+  Banknote,
+  Gift,
+  Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -34,8 +37,11 @@ const GROUPS: NavGroup[] = [
   {
     title: "Manage",
     items: [
+      { href: "/admin/lead-center", label: "Lead Center", icon: <Inbox className="h-3.5 w-3.5" /> },
       { href: "/admin/subscribers", label: "Subscribers", icon: <Receipt className="h-3.5 w-3.5" /> },
       { href: "/admin/influencers", label: "Influencers", icon: <Star className="h-3.5 w-3.5" /> },
+      { href: "/admin/payouts", label: "Payouts", icon: <Banknote className="h-3.5 w-3.5" /> },
+      { href: "/admin/referrals", label: "Referrals", icon: <Gift className="h-3.5 w-3.5" /> },
       { href: "/admin/users", label: "Users", icon: <Users className="h-3.5 w-3.5" /> },
       { href: "/admin/plans", label: "Pricing plans", icon: <CreditCard className="h-3.5 w-3.5" /> },
       { href: "/admin/specialties", label: "Specialties", icon: <Tag className="h-3.5 w-3.5" /> },
@@ -47,10 +53,16 @@ const GROUPS: NavGroup[] = [
 export function AdminLayout({
   children,
   unreadSupport = 0,
+  pendingPayouts = 0,
+  manualQueueLeads = 0,
 }: {
   children: React.ReactNode;
   /** Unread support tickets — badges the "Support tickets" nav item. */
   unreadSupport?: number;
+  /** Pending payout requests — badges the "Payouts" nav item. */
+  pendingPayouts?: number;
+  /** Platform leads awaiting manual assignment — badges "Lead Center". */
+  manualQueueLeads?: number;
 }) {
   const pathname = usePathname();
   return (
@@ -65,7 +77,14 @@ export function AdminLayout({
                   item.href === "/admin"
                     ? pathname === "/admin"
                     : pathname === item.href || pathname.startsWith(item.href + "/");
-                const badge = item.href === "/admin/support" ? unreadSupport : 0;
+                const badge =
+                  item.href === "/admin/support"
+                    ? unreadSupport
+                    : item.href === "/admin/payouts"
+                      ? pendingPayouts
+                      : item.href === "/admin/lead-center"
+                        ? manualQueueLeads
+                        : 0;
                 return (
                   <Link
                     key={item.href}

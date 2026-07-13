@@ -1,5 +1,6 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { getUnreadByConversation } from "@/lib/badgeCounts";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { MessagesInbox, type ConversationSummary, type MessageItem } from "@/components/comms/MessagesInbox";
 import { StartConversationButton, type MemberOption } from "./start-conversation-button";
@@ -81,14 +82,27 @@ export default async function MessagesPage({
     return "Conversation";
   }
 
-  const summaries: ConversationSummary[] = conversations.map((c) => ({
-    id: c.id,
-    title: displayName(c),
-    jobId: c.jobId,
-    lastMessagePreview: c.messages[0]?.body ?? null,
-    lastMessageAt: c.messages[0]?.createdAt ?? null,
-    unreadCount: 0,
-  }));
+  // Per-conversation unread for THIS viewer — the same helper the nav badge
+  // sums, so the list and the badge always agree (and it's one query, not one
+  // count per thread).
+  const unread = await getUnreadByConversation(organizationId, user.id);
+
+  const summaries: ConversationSummary[] = conversations
+    .map((c) => ({
+      id: c.id,
+      title: displayName(c),
+      jobId: c.jobId,
+      lastMessagePreview: c.messages[0]?.body ?? null,
+      lastMessageAt: c.messages[0]?.createdAt ?? null,
+      unreadCount: unread.get(c.id) ?? 0,
+    }))
+    // Unread threads float to the top; within each group, newest activity first —
+    // so whoever just messaged you lands at the top of the list.
+    .sort((a, b) => {
+      const unread = (b.unreadCount > 0 ? 1 : 0) - (a.unreadCount > 0 ? 1 : 0);
+      if (unread !== 0) return unread;
+      return (b.lastMessageAt?.getTime() ?? 0) - (a.lastMessageAt?.getTime() ?? 0);
+    });
 
   async function loadMessages(conversationId: string): Promise<MessageItem[]> {
     const msgs = await db.message.findMany({

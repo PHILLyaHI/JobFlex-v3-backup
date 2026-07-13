@@ -3,6 +3,7 @@ import { Search, UserPlus, Users, Briefcase, ScrollText, Send, ArrowRight, Arrow
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 
 // The Hire & Work marketplace data layer (contracts / job posts / applications)
 // isn't in the Prisma schema yet, so these stay zeroed — the same graceful-empty
@@ -64,6 +65,7 @@ const links = [
 export default function HireHubPage() {
   return (
     <>
+      <MarkNavSeen surface="hire" />
       <PageHeader
         eyebrow="Marketplace"
         title="Hire & Work"

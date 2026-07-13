@@ -12,6 +12,7 @@ import {
   handleConnectAccountUpdate,
   handleTransferEvent,
 } from "@/lib/stripeSync";
+import { processReferralEffectsForInvoice } from "@/lib/referralRewards";
 
 export const runtime = "nodejs";
 
@@ -85,7 +86,11 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       break;
     }
     case "invoice.paid": {
-      await accrueForInvoice(event.data.object as Stripe.Invoice, event.id);
+      const invoice = event.data.object as Stripe.Invoice;
+      await accrueForInvoice(invoice, event.id);
+      // Member-referral side: convert PENDING referrals on the referred org's
+      // first real payment + apply owed 50%-of-a-month referrer credits.
+      await processReferralEffectsForInvoice(invoice);
       break;
     }
     case "invoice.payment_failed": {
@@ -113,28 +118,46 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
   }
 }
 
-// Unchanged: one-time proposal payments mark the proposal PAID + record a Payment.
+// One-time proposal payments. The Payment row always records the true amount
+// that arrived, but the proposal only flips to PAID when the full expected
+// total was actually paid — defense-in-depth against a checkout session created
+// for a tampered amount (the checkout routes already derive the amount
+// server-side, so a shortfall should only ever come from an out-of-band session).
 async function handleProposalPayment(session: Stripe.Checkout.Session) {
   const publicId = session.metadata?.publicId;
   if (!publicId) return;
   const proposal = await db.proposal.findUnique({ where: { publicId } });
   if (!proposal) return;
-  await db.proposal.update({
-    where: { id: proposal.id },
-    data: { status: "PAID", paidAt: new Date() },
-  });
+
+  const expected = Math.round(proposal.total * 100);
+  const paid = session.amount_total ?? 0;
+  const fullyPaid = paid >= expected;
+
   await db.payment.create({
     data: {
       organizationId: proposal.organizationId,
       proposalId: proposal.id,
       clientId: proposal.clientId,
-      amount: (session.amount_total ?? 0) / 100,
+      amount: paid / 100,
       currency: (session.currency ?? "usd").toUpperCase(),
       provider: "STRIPE",
-      status: "PAID",
+      status: fullyPaid ? "PAID" : "PARTIAL",
       externalId: session.id,
       method: "card",
       paidAt: new Date(),
     },
   });
+
+  if (fullyPaid) {
+    await db.proposal.update({
+      where: { id: proposal.id },
+      data: { status: "PAID", paidAt: new Date() },
+    });
+  } else {
+    // Underpaid — leave the proposal unpaid and surface it for manual review
+    // rather than silently marking a $12k quote PAID for a few cents.
+    console.warn(
+      `[stripe] proposal ${proposal.id} underpaid: got ${paid} of ${expected} (${session.id}) — not marking PAID`,
+    );
+  }
 }

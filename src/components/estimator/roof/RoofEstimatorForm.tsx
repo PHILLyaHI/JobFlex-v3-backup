@@ -35,6 +35,11 @@ import { pitchLabel, LABEL_MODES, EV_SAMPLES, type LabelMode } from "./roofViz";
 import { evRoofModel, evPriceRoof, evOrderRoof, evReportStatus } from "@/actions/eagleview";
 import type { RoofModel } from "@/lib/eagleview";
 import { estimateRoof, convertRoofEstimateToProposal } from "@/actions/roofEstimator";
+import {
+  reportPlanLimit,
+  reportPlanLimitResult,
+  ensureWithinLimit,
+} from "@/stores/usePlanLimitStore";
 import { listStagger, listItem } from "@/lib/theme/motion";
 
 interface Props {
@@ -180,7 +185,10 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
         wastePct: Number(waste.replace("%", "")),
         measurementNotes: `EagleView measured: ${model.totals.squares.toFixed(1)} squares (${model.totals.areaSqft.toFixed(0)} sqft) across ${model.totals.facetCount} facets. Ridge ${model.totals.footageByType.RIDGE.toFixed(0)}ft, Hip ${model.totals.footageByType.HIP.toFixed(0)}ft, Valley ${model.totals.footageByType.VALLEY.toFixed(0)}ft, Eave ${model.totals.footageByType.EAVE.toFixed(0)}ft, Rake ${model.totals.footageByType.RAKE.toFixed(0)}ft. Facets — ${facetSummary}.`,
       });
-      if (!res.ok) throw new Error(res.error);
+      if (!res.ok) {
+        if (reportPlanLimitResult(res)) return;
+        throw new Error(res.error);
+      }
       if (res.disabled) toast.info("AI disabled · sample estimate loaded");
       setTitle(res.data.title);
       setAssumptions(res.data.assumptions);
@@ -195,6 +203,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
   }
 
   async function convert() {
+    if (!(await ensureWithinLimit("proposalsCreated"))) return;
     setConvertBusy(true);
     try {
       const res = await convertRoofEstimateToProposal({
@@ -207,8 +216,9 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as any);
     } catch (err: any) {
-      toast.error("Couldn't convert", err?.message);
       setConvertBusy(false);
+      if (reportPlanLimit(err)) return;
+      toast.error("Couldn't convert", err?.message);
     }
   }
 

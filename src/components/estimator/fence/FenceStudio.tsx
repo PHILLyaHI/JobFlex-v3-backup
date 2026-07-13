@@ -16,6 +16,7 @@ import { materialLabel, materialColor, variantLabel } from "./fenceTypes";
 import { computeFenceLayout } from "./fenceGeometry";
 import { buildFenceLineItems, type FenceLabels } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
 import { latLngToLocalFeet, simplifyPath } from "./mapProjection";
 import { FenceModel3D, type FenceModel3DHandle } from "./FenceModel3D";
@@ -100,6 +101,7 @@ export function FenceStudio() {
   }
 
   async function handleConvert() {
+    if (!(await ensureWithinLimit("proposalsCreated"))) return;
     setConverting(true);
     try {
       const layout = computeFenceLayout(points, gates);
@@ -140,8 +142,9 @@ export function FenceStudio() {
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as Route);
     } catch (err) {
-      toast.error("Couldn't create proposal", err instanceof Error ? err.message : undefined);
       setConverting(false);
+      if (reportPlanLimit(err)) return;
+      toast.error("Couldn't create proposal", err instanceof Error ? err.message : undefined);
     }
   }
 

@@ -6,6 +6,10 @@ import { db } from "@/lib/db";
  * assigned later. Best-effort — it never throws, so messaging can't block the
  * scheduling/assignment flow. Conversation.jobId is @unique, so the upsert keeps
  * exactly one chat per job.
+ *
+ * Quota: intentionally NOT gated. This is an automatic side effect of job
+ * scheduling, and JOB-kind threads are excluded from the conversationsStarted
+ * counter (see limitsEngine countUsage).
  */
 export async function ensureJobConversation(input: {
   jobId: string;

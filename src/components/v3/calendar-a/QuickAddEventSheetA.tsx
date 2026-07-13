@@ -24,7 +24,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
 import { longDate } from "@/lib/format";
-import { createJobEvent } from "@/actions/jobs";
+import { createJobEvent, createJob } from "@/actions/jobs";
 import { assignWorker } from "@/actions/workers";
 import { createAppointment } from "@/actions/appointments";
 import { createBlockedTime } from "@/actions/blockedTime";
@@ -87,6 +87,9 @@ interface Props {
   // sales/estimator get appointment only; installers get job only. "Blocked"
   // is never offered here (its workflow is paused).
   createKinds?: CalendarEventKind[];
+  // Installers: offer a "create as a new job" toggle so a job event can spin up
+  // a brand-new job (assigned to them) instead of only linking an existing one.
+  allowJobCreate?: boolean;
 }
 
 const BLOCKED_REASONS = ["Vacation", "Sick day", "Holiday", "Office hours", "Other"];
@@ -115,6 +118,7 @@ export function QuickAddEventSheetA({
   defaultEnd,
   defaultKind = "job",
   createKinds = ["job", "appointment"],
+  allowJobCreate = false,
 }: Props) {
   const router = useRouter();
 
@@ -150,6 +154,8 @@ export function QuickAddEventSheetA({
 
   // Job event: linked Job or Proposal (one), plus crew.
   const [jobLink, setJobLink] = React.useState<EntityOption | null>(null);
+  // Installer path: create a fresh job (assigned to them) rather than link one.
+  const [createAsJob, setCreateAsJob] = React.useState(false);
   const [selectedWorkerIds, setSelectedWorkerIds] = React.useState<string[]>([]);
   const [jobClientEmail, setJobClientEmail] = React.useState("");
   const [jobLocation, setJobLocation] = React.useState("");
@@ -176,6 +182,7 @@ export function QuickAddEventSheetA({
     setStartsAt(initialStart);
     setEndsAt(initialEnd);
     setJobLink(null);
+    setCreateAsJob(false);
     setAptLink(null);
     setSelectedWorkerIds([]);
     setAptWorkerIds([]);
@@ -331,28 +338,41 @@ export function QuickAddEventSheetA({
           ],
           notes,
         );
-        const res = await createJobEvent({
-          title: finalTitle,
-          jobId: jobLink?.kind === "job" ? jobLink.id : null,
-          proposalId: jobLink?.kind === "proposal" ? jobLink.id : null,
-          startsAt: start,
-          endsAt: end,
-          notes: finalNotes,
-        });
-        // The action returns the job it linked or created (proposal path), so
-        // crew assignment works for both.
-        if (res.jobId && selectedWorkerIds.length > 0) {
-          for (const wId of selectedWorkerIds) {
-            try {
-              await assignWorker(res.jobId, wId);
-            } catch (err) {
-              console.warn("[QuickAddA] assign failed:", err);
+        if (allowJobCreate && createAsJob && !jobLink) {
+          // Installer "new job" path: createJob makes the job, its calendar
+          // event, and auto-assigns the installer to it — one call, no separate
+          // createJobEvent (which would double the event).
+          await createJob({
+            title: finalTitle,
+            startsAt: start,
+            endsAt: end,
+            notes: finalNotes,
+          });
+          toast.success("Job created & scheduled");
+        } else {
+          const res = await createJobEvent({
+            title: finalTitle,
+            jobId: jobLink?.kind === "job" ? jobLink.id : null,
+            proposalId: jobLink?.kind === "proposal" ? jobLink.id : null,
+            startsAt: start,
+            endsAt: end,
+            notes: finalNotes,
+          });
+          // The action returns the job it linked or created (proposal path), so
+          // crew assignment works for both.
+          if (res.jobId && selectedWorkerIds.length > 0) {
+            for (const wId of selectedWorkerIds) {
+              try {
+                await assignWorker(res.jobId, wId);
+              } catch (err) {
+                console.warn("[QuickAddA] assign failed:", err);
+              }
             }
           }
+          toast.success(
+            jobLink?.kind === "proposal" ? "Event created — job added to Jobs" : "Event created",
+          );
         }
-        toast.success(
-          jobLink?.kind === "proposal" ? "Event created — job added to Jobs" : "Event created",
-        );
       } else if (kind === "appointment") {
         const finalTitle = title.trim() || (aptLink ? `Appointment · ${aptLink.primary}` : "Appointment");
         const finalNotes = buildNotes(
@@ -472,7 +492,7 @@ export function QuickAddEventSheetA({
             />
 
             <LinkedEntityPicker
-              label="Link"
+              label={allowJobCreate ? "Link an existing job (optional)" : "Link"}
               tabs={[
                 { key: "job", label: "Job" },
                 { key: "proposal", label: "Proposal" },
@@ -487,6 +507,17 @@ export function QuickAddEventSheetA({
                 No job exists for this proposal yet — scheduling it creates one in Jobs
                 automatically.
               </p>
+            )}
+
+            {allowJobCreate && !jobLink && (
+              <div className="rounded-[var(--r-md)] hairline px-3">
+                <Toggle
+                  checked={createAsJob}
+                  onChange={setCreateAsJob}
+                  label="Create as a new job"
+                  description="Adds a new job to Jobs (assigned to you) and schedules this event on it. Leave off for a plain calendar event."
+                />
+              </div>
             )}
 
             <div className="grid grid-cols-2 gap-3">
@@ -505,20 +536,22 @@ export function QuickAddEventSheetA({
               />
             </div>
 
-            <WorkerMultiPicker
-              label="Assign workers (optional)"
-              workers={workers}
-              selectedIds={selectedWorkerIds}
-              onChange={setSelectedWorkerIds}
-              conflicts={conflicts}
-              hint={
-                selectedWorkerIds.length > 0
-                  ? !jobLink
-                    ? "Worker assignments require a linked job or proposal."
-                    : "Workers will receive an invite — they confirm via the worker portal."
-                  : null
-              }
-            />
+            {workers.length > 0 && (
+              <WorkerMultiPicker
+                label="Assign workers (optional)"
+                workers={workers}
+                selectedIds={selectedWorkerIds}
+                onChange={setSelectedWorkerIds}
+                conflicts={conflicts}
+                hint={
+                  selectedWorkerIds.length > 0
+                    ? !jobLink
+                      ? "Worker assignments require a linked job or proposal."
+                      : "Workers will receive an invite — they confirm via the worker portal."
+                    : null
+                }
+              />
+            )}
           </>
         )}
 
@@ -559,14 +592,16 @@ export function QuickAddEventSheetA({
               />
             </div>
 
-            <WorkerMultiPicker
-              label="Sales staff / workers (optional)"
-              workers={workers}
-              selectedIds={aptWorkerIds}
-              onChange={setAptWorkerIds}
-              conflicts={conflicts}
-              placeholder="Add staff…"
-            />
+            {workers.length > 0 && (
+              <WorkerMultiPicker
+                label="Sales staff / workers (optional)"
+                workers={workers}
+                selectedIds={aptWorkerIds}
+                onChange={setAptWorkerIds}
+                conflicts={conflicts}
+                placeholder="Add staff…"
+              />
+            )}
           </>
         )}
 

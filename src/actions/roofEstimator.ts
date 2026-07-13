@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
+import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
+import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 
 const STUB: GeneratedEstimate = {
   title: "Roof replacement estimate · AI disabled",
@@ -45,9 +47,20 @@ export async function estimateRoof(input: {
 }): Promise<
   | { ok: true; data: GeneratedEstimate; disabled?: false }
   | { ok: true; data: GeneratedEstimate; disabled: true }
-  | { ok: false; error: string }
+  | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
-  await requireEstimatorOrManager();
+  const { organizationId } = await requireEstimatorOrManager();
+  // Union failure (not a throw): thrown messages are redacted in prod, and
+  // this action's callers already branch on { ok }.
+  const quota = await checkPlanLimit(organizationId, "estimatorUses");
+  if (!quota.allowed) {
+    return {
+      ok: false,
+      error: PLAN_LIMIT_MESSAGE,
+      code: "PLAN_LIMIT_REACHED",
+      resource: quota.cappedBy ?? "estimatorUses",
+    };
+  }
   if (!isOpenAIEnabled()) {
     return { ok: true, data: STUB, disabled: true };
   }
@@ -106,6 +119,7 @@ const convertSchema = z.object({
 
 export async function convertRoofEstimateToProposal(raw: unknown) {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertSchema.parse(raw);
 
   // Never trust a client id from the browser — it must belong to this org.

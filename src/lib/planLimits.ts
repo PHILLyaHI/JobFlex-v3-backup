@@ -19,6 +19,29 @@ export function isPlanLimitError(err: unknown): boolean {
   return err instanceof Error && err.message === PLAN_LIMIT_MESSAGE;
 }
 
+/**
+ * Limit failure shape for actions that return result unions ({ ok: false })
+ * instead of throwing (estimators / AI flows). Thrown Error messages are
+ * redacted by Next.js in production, but a returned payload survives — so
+ * union-returning actions signal a limit via `code` and the client detects it
+ * with isPlanLimitFailure.
+ */
+export interface PlanLimitFailure {
+  ok: false;
+  error: string;
+  code: "PLAN_LIMIT_REACHED";
+  resource?: LimitKey;
+}
+
+export function isPlanLimitFailure(v: unknown): v is PlanLimitFailure {
+  return (
+    !!v &&
+    typeof v === "object" &&
+    (v as { ok?: unknown }).ok === false &&
+    (v as { code?: unknown }).code === "PLAN_LIMIT_REACHED"
+  );
+}
+
 /** How a limit's usage window is computed. */
 export type LimitScope =
   | "monthly" // counted within the current billing cycle
@@ -33,7 +56,13 @@ export type LimitKey =
   | "projects"
   | "jobs"
   | "workers"
-  | "estimatorUses";
+  | "estimatorUses"
+  | "conversationsStarted"
+  | "messagesSent"
+  | "leads"
+  | "aiPhoneCalls"
+  | "reviewRequests"
+  | "teamSeats";
 
 export interface LimitDef {
   key: LimitKey;
@@ -56,11 +85,40 @@ export const LIMIT_DEFS: readonly LimitDef[] = [
   { key: "jobs", label: "Total jobs", scope: "monthly", hint: "New jobs per billing cycle" },
   { key: "workers", label: "Total workers", scope: "absolute", hint: "Worker seats in the org (lifetime)" },
   { key: "estimatorUses", label: "Estimator uses", scope: "monthly", hint: "AI estimator runs per cycle" },
+  { key: "conversationsStarted", label: "Conversations started", scope: "monthly", hint: "New message threads per cycle" },
+  { key: "messagesSent", label: "Messages sent", scope: "monthly", hint: "Messages sent per cycle" },
+  { key: "leads", label: "Leads captured", scope: "monthly", hint: "New leads per cycle (all sources)" },
+  { key: "aiPhoneCalls", label: "AI phone calls", scope: "monthly", hint: "AI receptionist calls per cycle" },
+  { key: "reviewRequests", label: "Review requests", scope: "monthly", hint: "Review asks per cycle (incl. auto)" },
+  { key: "teamSeats", label: "Office team seats", scope: "absolute", hint: "Non-worker members + pending invites" },
 ] as const;
 
 export const LIMIT_KEYS = LIMIT_DEFS.map((d) => d.key) as LimitKey[];
 
 export type PlanLimits = Partial<Record<LimitKey, number>>;
+
+/**
+ * Safety-net caps applied ONLY when a lapsed subscription must fall back to
+ * FREE limits but no "free" PricingPlan row exists in the catalog. Without
+ * this, parsePlanLimits(null) = {} = unlimited, and a canceled org would keep
+ * unlimited usage — the exact hole the lapsed rule closes. A real "free" plan
+ * row in /admin/plans always wins over these values.
+ */
+export const DEFAULT_FREE_LIMITS: PlanLimits = {
+  proposalsCreated: 3,
+  calendarCards: 10,
+  calendarEvents: 10,
+  projects: 2,
+  jobs: 3,
+  workers: 1,
+  estimatorUses: 3,
+  conversationsStarted: 5,
+  messagesSent: 50,
+  leads: 10,
+  aiPhoneCalls: 5,
+  reviewRequests: 3,
+  teamSeats: 1,
+};
 
 /** A limit is "unlimited" when missing, null, or negative (e.g. the -1 sentinel). */
 export function isUnlimited(v: number | null | undefined): boolean {

@@ -4,8 +4,11 @@ import { useRouter } from "next/navigation";
 import { Inbox, LayoutList, Download, Columns3 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { toast } from "@/components/ui/Toast";
-import { type LeadRow, type ImportLeadPayload, INCOMING_STATUSES } from "./leads-shared";
+import { type LeadRow, type OfferRow, type ImportLeadPayload, INCOMING_STATUSES } from "./leads-shared";
 import { claimLead, updateLeadStatus, importLeads, deleteLead } from "@/actions/leads";
+import { acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
+import { getLimitUsage } from "@/actions/limits";
+import { reportPlanLimit, usePlanLimitStore } from "@/stores/usePlanLimitStore";
 import { LeadsBoard } from "./leads-board";
 import { LeadKanbanBoard } from "@/components/leads/LeadKanbanBoard";
 import { IncomingLeads } from "./incoming-leads";
@@ -19,13 +22,20 @@ type Tab = "all" | "incoming" | "import";
  * from manual entry, pasted email, or a file). Mutations persist via server actions;
  * local state updates optimistically, then router.refresh() reconciles against the DB.
  */
-export function LeadsWorkspace({ initialLeads }: { initialLeads: LeadRow[] }) {
+export function LeadsWorkspace({
+  initialLeads,
+  initialOffers = [],
+}: {
+  initialLeads: LeadRow[];
+  initialOffers?: OfferRow[];
+}) {
   const router = useRouter();
   const [tab, setTab] = React.useState<Tab>("all");
   // "All Leads" can be read two ways: the editorial table or the pipeline board.
   // Table / Board only applies to the All tab; Incoming and Import have one shape.
   const [view, setView] = React.useState<"table" | "board">("table");
   const [leads, setLeads] = React.useState<LeadRow[]>(initialLeads);
+  const [offers, setOffers] = React.useState<OfferRow[]>(initialOffers);
 
   // Re-sync local state when the server component supplies fresh data after a
   // refresh (the React-recommended adjust-state-during-render pattern).
@@ -33,6 +43,11 @@ export function LeadsWorkspace({ initialLeads }: { initialLeads: LeadRow[] }) {
   if (initialLeads !== prevInitial) {
     setPrevInitial(initialLeads);
     setLeads(initialLeads);
+  }
+  const [prevInitialOffers, setPrevInitialOffers] = React.useState(initialOffers);
+  if (initialOffers !== prevInitialOffers) {
+    setPrevInitialOffers(initialOffers);
+    setOffers(initialOffers);
   }
 
   const incoming = React.useMemo(
@@ -69,9 +84,58 @@ export function LeadsWorkspace({ initialLeads }: { initialLeads: LeadRow[] }) {
     },
     [leads, router],
   );
+  // Lead Center offers — accepting materializes the org Lead server-side; the
+  // offer card leaves the list optimistically either way.
+  const acceptOffer = React.useCallback(
+    async (id: string) => {
+      const prev = offers;
+      setOffers((os) => os.filter((o) => o.id !== id));
+      try {
+        await acceptLeadOffer(id);
+        router.refresh();
+      } catch (err: unknown) {
+        setOffers(prev);
+        toast.error(
+          "Couldn't accept this lead",
+          err instanceof Error ? err.message : "Please try again.",
+        );
+      }
+    },
+    [offers, router],
+  );
+  const declineOffer = React.useCallback(
+    async (id: string) => {
+      const prev = offers;
+      setOffers((os) => os.filter((o) => o.id !== id));
+      try {
+        await declineLeadOffer(id);
+        router.refresh();
+      } catch (err: unknown) {
+        setOffers(prev);
+        toast.error(
+          "Couldn't decline this lead",
+          err instanceof Error ? err.message : "Please try again.",
+        );
+      }
+    },
+    [offers, router],
+  );
+
   const transfer = React.useCallback(
     async (payload: ImportLeadPayload[]) => {
-      await importLeads(payload); // throws on failure — caller surfaces the error
+      try {
+        await importLeads(payload); // throws on failure — caller surfaces the error
+      } catch (err: unknown) {
+        if (reportPlanLimit(err)) return;
+        // Prod redacts thrown messages — recheck headroom to tell a limit
+        // failure (upgrade dialog) apart from a real error (rethrow to caller).
+        const s = await getLimitUsage("leads").catch(() => null);
+        if (s && s.remaining !== null && s.remaining < payload.length) {
+          usePlanLimitStore.getState().openLimit("leads");
+          return;
+        }
+        throw err;
+      }
       router.refresh();
     },
     [router],
@@ -93,7 +157,7 @@ export function LeadsWorkspace({ initialLeads }: { initialLeads: LeadRow[] }) {
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode; count?: number; attention?: boolean }[] = [
     { key: "all", label: "All Leads", icon: <LayoutList className="h-3.5 w-3.5" />, count: leads.length },
-    { key: "incoming", label: "Incoming Leads", icon: <Inbox className="h-3.5 w-3.5" />, count: incoming.length, attention: true },
+    { key: "incoming", label: "Incoming Leads", icon: <Inbox className="h-3.5 w-3.5" />, count: incoming.length + offers.length, attention: true },
     { key: "import", label: "Import Leads", icon: <Download className="h-3.5 w-3.5" /> },
   ];
 
@@ -145,7 +209,16 @@ export function LeadsWorkspace({ initialLeads }: { initialLeads: LeadRow[] }) {
 
       {tab === "all" && view === "table" && <LeadsBoard leads={leads} onDelete={remove} />}
       {tab === "all" && view === "board" && <LeadKanbanBoard leads={leads} />}
-      {tab === "incoming" && <IncomingLeads leads={incoming} onAccept={accept} onDecline={decline} />}
+      {tab === "incoming" && (
+        <IncomingLeads
+          leads={incoming}
+          offers={offers}
+          onAccept={accept}
+          onDecline={decline}
+          onAcceptOffer={acceptOffer}
+          onDeclineOffer={declineOffer}
+        />
+      )}
       {tab === "import" && <ImportLeads onTransfer={transfer} />}
     </>
   );

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Dialog } from "@/components/ui/Dialog";
 import { toast } from "@/components/ui/Toast";
 import { deleteTemplate, createProposalFromTemplate } from "@/actions/templates";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { money } from "@/lib/format";
 
 export interface TemplateCardData {
@@ -26,14 +27,16 @@ export function TemplateCard({ t }: { t: TemplateCardData }) {
   const [busy, setBusy] = React.useState(false);
 
   async function onUse() {
+    if (!(await ensureWithinLimit("proposalsCreated"))) return;
     setBusy(true);
     try {
       const res = await createProposalFromTemplate(t.id);
       toast.success("Proposal created from template");
       router.push(`/dashboard/proposals/${res.id}` as any);
     } catch (err: any) {
-      toast.error("Couldn't create", err?.message);
       setBusy(false);
+      if (reportPlanLimit(err)) return;
+      toast.error("Couldn't create", err?.message);
     }
   }
 

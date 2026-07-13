@@ -831,6 +831,22 @@ function InviteSheet({
   }
 
   const magicLink = created ? `${origin}/w/${created.token}` : "";
+  const [linkCopied, setLinkCopied] = React.useState(false);
+
+  // Copy-only: the success card must not navigate to the worker portal (that
+  // would drop the manager onto the worker's accept/decline page). Same pattern
+  // as the inspector's copyLink.
+  async function copyMagicLink() {
+    if (!magicLink) return;
+    try {
+      await navigator.clipboard.writeText(magicLink);
+      setLinkCopied(true);
+      toast.success("Link copied", "Send it to the worker.");
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy", "Select the link and copy it manually.");
+    }
+  }
 
   return (
     <AnimatePresence>
@@ -941,21 +957,25 @@ function InviteSheet({
                 <div className="space-y-5">
                   <div className="paper-card p-4">
                     <div className="quiet-caps mb-2">Worker dashboard</div>
-                    <a
-                      href={magicLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hairline flex items-center gap-2 rounded-[var(--r-sm)] bg-black/[0.03] px-3 py-2 transition-colors hover:bg-black/[0.05]"
+                    <button
+                      type="button"
+                      onClick={copyMagicLink}
+                      aria-label="Copy worker dashboard link"
+                      className="hairline flex w-full items-center gap-2 rounded-[var(--r-sm)] bg-black/[0.03] px-3 py-2 text-left transition-colors hover:bg-black/[0.05]"
                     >
                       <span className="flex-1 break-all font-mono text-[11px] text-[color:var(--ink-soft)]">
                         {magicLink}
                       </span>
-                      <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)]" />
-                    </a>
+                      {linkCopied ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-[color:var(--accent)]" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-muted)]" />
+                      )}
+                    </button>
                   </div>
                   <p className="text-[12px] leading-[1.7] text-[color:var(--ink-muted)]">
-                    Send this link to the worker — it opens their dashboard. Rotate it any time from
-                    the inspector; anyone with the old link loses access immediately.
+                    Copy this link and send it to the worker — it opens their dashboard. Rotate it any
+                    time from the inspector; anyone with the old link loses access immediately.
                   </p>
                 </div>
               )}

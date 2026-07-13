@@ -2,13 +2,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Palette, Globe, Users } from "lucide-react";
+import { Palette, Globe, Users, Activity } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const TABS: { href: string; label: string; icon: React.ReactNode; soon?: boolean }[] = [
   { href: "/dashboard/company", label: "Branding", icon: <Palette className="h-3.5 w-3.5" /> },
   // Team is the unified roster now — it lives at /dashboard/workers.
   { href: "/dashboard/workers", label: "Team", icon: <Users className="h-3.5 w-3.5" /> },
+  { href: "/dashboard/company/activity", label: "Team activity", icon: <Activity className="h-3.5 w-3.5" /> },
   { href: "/dashboard/company/landing", label: "Landing builder", icon: <Globe className="h-3.5 w-3.5" />, soon: true },
 ];
 

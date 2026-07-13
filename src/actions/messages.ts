@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 const createInput = z.object({
   title: z.string().optional(),
@@ -18,6 +19,7 @@ const createInput = z.object({
 // role is limited to people already on the same team.
 export async function createConversation(raw: unknown) {
   const { organizationId, user } = await requireOrg();
+  await enforcePlanLimit(organizationId, "conversationsStarted");
   const data = createInput.parse(raw ?? {});
 
   // Only let real members of THIS org be added (never a raw id from the client).
@@ -76,11 +78,23 @@ export async function postMessage(conversationId: string, body: string) {
 
   const trimmed = body.trim();
   if (!trimmed) return;
+  await enforcePlanLimit(organizationId, "messagesSent");
   await db.message.create({
     data: { conversationId: conv.id, authorId: user.id, body: trimmed },
   });
   revalidatePath("/dashboard/messages");
   return { ok: true };
+}
+
+// Stamps this thread as read for the caller — drives the unread-messages
+// badge in the sidebar/tab bar. No revalidatePath: the badge recomputes on
+// the layout's next render, same as every other self-clearing surface.
+export async function markConversationRead(conversationId: string) {
+  const { user } = await requireOrg();
+  await db.conversationParticipant.updateMany({
+    where: { conversationId, userId: user.id },
+    data: { lastReadAt: new Date() },
+  });
 }
 
 // Clear a single thread — wipes its messages but keeps the thread + members.

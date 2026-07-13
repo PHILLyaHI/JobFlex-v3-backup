@@ -71,10 +71,6 @@ async function provisionStripePromo(opts: {
   };
 }
 
-function genTempPassword() {
-  return randomUUID().replace(/-/g, "").slice(0, 12);
-}
-
 // ── admin: create influencer + first promo code ───────
 const createInfluencerInput = z
   .object({
@@ -95,8 +91,10 @@ export async function createInfluencer(raw: unknown) {
   const existingEmail = await db.influencer.findUnique({ where: { email: data.email.toLowerCase() } });
   if (existingEmail) throw new Error("An influencer with that email already exists.");
 
-  const tempPassword = data.password ?? genTempPassword();
-  const hashedPassword = await bcrypt.hash(tempPassword, 10);
+  // Admin-set password → account is immediately usable. No password → the
+  // influencer gets an invite email with a set-password link instead (the
+  // login provider rejects null-password accounts until they complete it).
+  const hashedPassword = data.password ? await bcrypt.hash(data.password, 10) : null;
   const stripeIds = await provisionStripePromo({
     code,
     customerPercentOff: data.customerPercentOff,
@@ -114,16 +112,31 @@ export async function createInfluencer(raw: unknown) {
           code,
           stripeCouponId: stripeIds.stripeCouponId,
           stripePromotionCodeId: stripeIds.stripePromotionCodeId,
+          // Local mirror of the (immutable) Stripe coupon percent — drives the
+          // "· 20% off" phrase on the signup pill without a Stripe call.
+          customerPercentOff: data.customerPercentOff,
           ...commissionColumns(data),
         },
       },
     },
   });
 
+  // Invite email (set-password link) whenever the admin didn't hand over a
+  // password themselves. The link is also returned for the admin sheet's copy
+  // row so the flow works even when email is stubbed in dev.
+  let inviteUrl: string | null = null;
+  if (!data.password) {
+    const { sendInfluencerInviteEmail } = await import("@/lib/influencerInvite");
+    const sent = await sendInfluencerInviteEmail({
+      email: data.email.toLowerCase(),
+      displayName: data.displayName,
+      code,
+    });
+    inviteUrl = sent.inviteUrl;
+  }
+
   revalidatePath("/admin/influencers");
-  // Return the one-time temp password so the admin can hand it off. Only
-  // surfaced when auto-generated (the admin didn't set one explicitly).
-  return { id: influencer.id, code, tempPassword: data.password ? null : tempPassword };
+  return { id: influencer.id, code, inviteUrl };
 }
 
 export async function setInfluencerStatus(id: string, status: string) {
@@ -188,6 +201,7 @@ export async function createPromoCode(raw: unknown) {
       code,
       stripeCouponId: stripeIds.stripeCouponId,
       stripePromotionCodeId: stripeIds.stripePromotionCodeId,
+      customerPercentOff: data.customerPercentOff,
       ...commissionColumns(data),
     },
   });

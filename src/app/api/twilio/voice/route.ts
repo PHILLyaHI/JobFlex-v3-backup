@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { recordingTwiml, verifyTwilioSignature } from "@/lib/sdk/twilioVoice";
-import { startInboundCall } from "@/actions/aiPhoneCalls";
+import { recordingTwiml, unavailableTwiml, verifyTwilioSignature } from "@/lib/sdk/twilioVoice";
+import { startInboundCall } from "@/lib/aiPhoneCalls";
+import { checkPlanLimit } from "@/lib/limitsEngine";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,15 @@ export async function POST(req: Request) {
   // Map inbound To number → Organization. Simplest: default to first org.
   const org = await db.organization.findFirst({ orderBy: { createdAt: "asc" } });
   if (!org) return NextResponse.json({ error: "No org" }, { status: 500 });
+
+  // The one public path that BLOCKS at the cap (product decision): over-limit
+  // orgs get a polite unavailable message and no AiPhoneCall row is written.
+  const quota = await checkPlanLimit(org.id, "aiPhoneCalls");
+  if (!quota.allowed) {
+    return new NextResponse(unavailableTwiml(), {
+      headers: { "Content-Type": "text/xml" },
+    });
+  }
 
   try {
     await startInboundCall(callSid, from, to, org.id);

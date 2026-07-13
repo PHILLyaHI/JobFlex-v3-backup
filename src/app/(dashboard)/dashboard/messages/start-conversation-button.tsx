@@ -10,6 +10,7 @@ import { toast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 import { roleLabel } from "@/lib/prismaEnums";
 import { createConversation } from "@/actions/messages";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 
 export interface MemberOption {
   userId: string;
@@ -51,6 +52,7 @@ export function StartConversationButton({ members }: { members: MemberOption[] }
 
   async function submit() {
     if (selected.length === 0) return;
+    if (!(await ensureWithinLimit("conversationsStarted"))) return;
     setBusy(true);
     try {
       const chosen = members.filter((m) => selected.includes(m.userId));
@@ -65,7 +67,7 @@ export function StartConversationButton({ members }: { members: MemberOption[] }
       router.push(`/dashboard/messages?c=${res.id}` as any);
       router.refresh();
     } catch (err: any) {
-      toast.error("Couldn't start", err?.message);
+      if (!reportPlanLimit(err)) toast.error("Couldn't start", err?.message);
     } finally {
       setBusy(false);
     }

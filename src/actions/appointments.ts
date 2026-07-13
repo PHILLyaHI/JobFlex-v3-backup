@@ -157,6 +157,11 @@ export async function updateAppointment(id: string, rawInput: Partial<z.infer<ty
   if (!oneLink(merged)) {
     throw new Error("Link a lead, a client, or a proposal — not more than one");
   }
+  // Product rule: date/time moves are blocked at the calendar-cards cap, even
+  // though a move creates no new row (matches rescheduleAppointment).
+  if (raw.startsAt || raw.endsAt) {
+    await enforcePlanLimit(organizationId, "calendarCards");
+  }
   await assertLinksInOrg(organizationId, raw);
   await db.appointment.update({
     where: { id },
@@ -192,6 +197,8 @@ export async function rescheduleAppointment(id: string, newStartISO: string) {
   const apt = await db.appointment.findUnique({ where: { id } });
   if (!apt || apt.organizationId !== organizationId) throw new Error("Not found");
   if (isSalesRole(role)) await assertSalesCanTouchAppointment(id, user.id);
+  // Product rule: drag/drop moves are blocked at the calendar-cards cap.
+  await enforcePlanLimit(organizationId, "calendarCards");
   const newStart = new Date(newStartISO);
   const duration = apt.endsAt.getTime() - apt.startsAt.getTime();
   newStart.setHours(apt.startsAt.getHours(), apt.startsAt.getMinutes(), 0, 0);

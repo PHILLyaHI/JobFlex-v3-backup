@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { hashToken } from "@/lib/tokens";
 import { InviteAcceptCard } from "@/components/billing/InviteAcceptCard";
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const invite = await db.invite.findUnique({
-    where: { token },
+    where: { token: hashToken(token) },
     include: {
       organization: { select: { name: true } },
       invitedBy: { select: { name: true, email: true } },

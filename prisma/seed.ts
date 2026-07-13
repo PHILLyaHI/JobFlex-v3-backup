@@ -683,7 +683,23 @@ async function main() {
         "Online payments",
       ],
       // FREE's real enforced caps — these were previously display-only fiction.
-      limits: { proposalsCreated: 5, estimatorUses: 3 } as Record<string, number> | null,
+      // Lapsed paid subscriptions also drop to THIS row's limits (limitsEngine
+      // isLapsed), so every metered resource needs a cap here.
+      limits: {
+        proposalsCreated: 5,
+        estimatorUses: 3,
+        jobs: 10,
+        calendarEvents: 20,
+        calendarCards: 20,
+        projects: 3,
+        workers: 1,
+        teamSeats: 1,
+        conversationsStarted: 5,
+        messagesSent: 100,
+        leads: 15,
+        aiPhoneCalls: 5,
+        reviewRequests: 5,
+      } as Record<string, number> | null,
     },
     {
       slug: "starter",

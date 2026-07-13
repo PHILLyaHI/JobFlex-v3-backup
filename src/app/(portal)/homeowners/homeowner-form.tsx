@@ -35,6 +35,8 @@ export function HomeownerForm() {
     email: "",
     phone: "",
     address: "",
+    city: "",
+    state: "",
     zip: "",
     projectType: "",
     description: "",
@@ -141,7 +143,11 @@ export function HomeownerForm() {
           {step === 2 && (
             <>
               <Input label="Address (optional)" value={values.address} onChange={(e) => update("address", e.target.value)} placeholder="221 Oak St" />
-              <Input label="ZIP" value={values.zip} onChange={(e) => update("zip", e.target.value)} placeholder="19103" />
+              <div className="grid grid-cols-[1fr_72px_88px] gap-2">
+                <Input label="City" value={values.city} onChange={(e) => update("city", e.target.value)} placeholder="Philadelphia" />
+                <Input label="State" value={values.state} onChange={(e) => update("state", e.target.value)} placeholder="PA" />
+                <Input label="ZIP" value={values.zip} onChange={(e) => update("zip", e.target.value)} placeholder="19103" />
+              </div>
               <p className="text-[11px] text-[color:var(--ink-muted)] pt-2">
                 By submitting you agree to be contacted about your project. No spam, ever.
               </p>

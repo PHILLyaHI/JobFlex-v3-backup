@@ -323,7 +323,7 @@ export async function assignWorker(jobId: string, workerId: string) {
 
   // Best-effort email + SMS notify to the worker
   try {
-    const { notifyAssignmentCreated } = await import("./notify");
+    const { notifyAssignmentCreated } = await import("@/lib/notify");
     await notifyAssignmentCreated(assignment.id);
   } catch (err) {
     console.warn("[assignWorker] notify failed:", err);
@@ -358,19 +358,12 @@ export async function unassignWorker(assignmentId: string) {
   revalidatePath(`/dashboard/jobs/${a.jobId}`);
 }
 
-export async function updateAssignmentStatus(assignmentId: string, status: string) {
-  const a = await db.jobAssignment.findUnique({
-    where: { id: assignmentId },
-    include: { job: true },
-  });
-  if (!a) throw new Error("Not found");
-  // Worker-portal path: no auth, token-gated upstream in the route handler.
-  await db.jobAssignment.update({
-    where: { id: assignmentId },
-    data: { status },
-  });
-  revalidatePath(`/dashboard/jobs/${a.jobId}`);
-}
+// (removed) updateAssignmentStatus — was an unguarded "use server" export with
+// no auth and no org scope, reachable as a POST endpoint to set an arbitrary
+// status on any org's assignment. It had no callers; the worker-portal status
+// change goes through /api/worker/assignment/[assignmentId], which validates the
+// worker token binds to the assignment before writing. Deleted rather than
+// guarded to remove the endpoint entirely.
 
 // ── Inbox actions (owner-side) ──────────────────────────
 
@@ -389,7 +382,7 @@ export async function pingAssignment(assignmentId: string) {
 
   // Best-effort re-notify (email + SMS where configured)
   try {
-    const { notifyAssignmentCreated } = await import("./notify");
+    const { notifyAssignmentCreated } = await import("@/lib/notify");
     await notifyAssignmentCreated(assignmentId);
   } catch (err) {
     console.warn("[pingAssignment] notify failed:", err);

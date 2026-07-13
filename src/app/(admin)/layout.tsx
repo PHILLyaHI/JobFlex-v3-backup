@@ -18,10 +18,12 @@ export default async function AdminShell({ children }: { children: React.ReactNo
   });
   if (!admin?.isPlatformAdmin) redirect("/dashboard" as never);
 
-  // Support notification feed for the header bell + nav badge (platform-wide).
-  const [feed, unreadSupport] = await Promise.all([
+  // Support notification feed for the header bell + nav badges (platform-wide).
+  const [feed, unreadSupport, pendingPayouts, manualQueueLeads] = await Promise.all([
     recentSupportTickets(8),
     unreadSupportCount(),
+    db.payoutRequest.count({ where: { status: "PENDING" } }),
+    db.platformLead.count({ where: { status: "MANUAL_QUEUE" } }),
   ]);
 
   return (
@@ -51,7 +53,13 @@ export default async function AdminShell({ children }: { children: React.ReactNo
           </div>
         </div>
       </header>
-      <AdminLayout unreadSupport={unreadSupport}>{children}</AdminLayout>
+      <AdminLayout
+        unreadSupport={unreadSupport}
+        pendingPayouts={pendingPayouts}
+        manualQueueLeads={manualQueueLeads}
+      >
+        {children}
+      </AdminLayout>
     </div>
   );
 }

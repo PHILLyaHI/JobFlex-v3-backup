@@ -45,7 +45,9 @@ export default async function CalendarPage() {
         where: {
           organizationId,
           startsAt: { gte: from, lte: to },
-          job: { assignments: { some: { workerId } } },
+          // Events on a job they're assigned to, OR jobless/own events they
+          // created themselves (the optional-job path).
+          OR: [{ job: { assignments: { some: { workerId } } } }, { createdById: user.id }],
         },
         orderBy: { startsAt: "asc" },
         include: {
@@ -185,6 +187,9 @@ export default async function CalendarPage() {
             allowCreate
             createKinds={["job"]}
             canManageJobs={false}
+            // Job is optional when scheduling, and they can spin up a new job
+            // (assigned to them) right from the sheet.
+            allowJobCreate
           />
         </div>
       </>
@@ -402,8 +407,9 @@ export default async function CalendarPage() {
             unavailabilityRules={salesRules}
             unavailabilityPeople={[{ userId: user.id, name: "You" }]}
             selfUserId={user.id}
-            // They can staff appointments — but only with themselves.
-            pickerWorkers={wp ? [{ id: wp.id, name: wp.displayName, specialties: [] }] : []}
+            // No staff-assignment field for sales — the create-event sheet drops
+            // the worker picker when the roster is empty (they auto-own the appt).
+            pickerWorkers={[]}
             pendingAssignments={[]}
             hideTeam
             // Appointment-only creation; job events are visible but read-only.

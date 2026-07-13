@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card"
 import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
 import { toast } from "@/components/ui/Toast";
 import { generateAiProposal } from "@/actions/ai";
+import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 
 const SAMPLES = [
   "Replace 2,400 sqft architectural shingle roof, tear-off, ridge vents, ice & water shield. Philadelphia, PA.",
@@ -42,6 +43,7 @@ export function AiStudio({
     const res = await generateAiProposal(prompt);
     if (!res.ok) {
       setLoading(false);
+      if (reportPlanLimitResult(res)) return;
       toast.error("Couldn't generate", res.error);
       return;
     }

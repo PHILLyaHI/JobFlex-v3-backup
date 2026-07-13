@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
 import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 import { Select } from "@/components/ui/Select";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -19,9 +20,12 @@ import {
   setInfluencerStatus,
   createPromoCode,
   setPromoActive,
+  updatePromoCommission,
+  updateInfluencerProfile,
   approvePayoutRequest,
   rejectPayoutRequest,
 } from "@/actions/influencers";
+import { sendInfluencerInvite } from "@/actions/influencer-auth";
 
 export interface PromoDTO {
   id: string;
@@ -33,6 +37,8 @@ export interface PromoDTO {
   commissionBasis: string;
   durationType: string;
   durationMonths: number | null;
+  customerPercentOff: number | null;
+  clicks: number;
 }
 export interface PayoutReqDTO {
   id: string;
@@ -50,6 +56,8 @@ export interface InfluencerDTO {
   payoutsEnabled: boolean;
   minPayoutCents: number;
   holdDays: number;
+  notes: string | null;
+  hasPassword: boolean;
   createdAt: string;
   promoCodes: PromoDTO[];
   confirmedSubscribers: number;
@@ -252,7 +260,7 @@ function CreateInfluencerSheet({ open, onClose }: { open: boolean; onClose: () =
   const [code, setCode] = React.useState("");
   const [commission, setCommission] = React.useState<CommissionState>(BLANK_COMMISSION);
   const [busy, setBusy] = React.useState(false);
-  const [credentials, setCredentials] = React.useState<{ code: string; tempPassword: string | null } | null>(null);
+  const [credentials, setCredentials] = React.useState<{ code: string; inviteUrl: string | null } | null>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect -- reset form fields each time the sheet opens */
   React.useEffect(() => {
@@ -279,8 +287,8 @@ function CreateInfluencerSheet({ open, onClose }: { open: boolean; onClose: () =
         ...commission,
         durationMonths: commission.durationType === "REPEATING" ? commission.durationMonths : undefined,
       });
-      toast.success("Influencer created", `${name} can sign in at /influencer/login.`);
-      setCredentials({ code: res.code, tempPassword: res.tempPassword });
+      toast.success("Influencer created", `Invite emailed to ${email.trim()}.`);
+      setCredentials({ code: res.code, inviteUrl: res.inviteUrl });
       router.refresh();
     } catch (err: unknown) {
       toast.error("Couldn't create", err instanceof Error ? err.message : "Please try again.");
@@ -332,7 +340,7 @@ function CreateInfluencerSheet({ open, onClose }: { open: boolean; onClose: () =
           onClose();
         }}
         title="Influencer created"
-        description="Share these credentials securely. The temporary password is shown only once."
+        description="The invite email is on its way — the link below is the same one, in case you'd rather hand it over yourself."
         footer={
           <Button onClick={() => { setCredentials(null); onClose(); }}>Done</Button>
         }
@@ -340,15 +348,16 @@ function CreateInfluencerSheet({ open, onClose }: { open: boolean; onClose: () =
         {credentials && (
           <div className="space-y-3">
             <CopyRow label="Promo code" value={credentials.code} />
-            {credentials.tempPassword ? (
-              <CopyRow label="Temp password" value={credentials.tempPassword} />
+            {credentials.inviteUrl ? (
+              <CopyRow label="Invite link" value={credentials.inviteUrl} />
             ) : (
               <p className="text-[12px] text-[color:var(--ink-muted)]">
-                You set a password for this influencer.
+                You set a password for this influencer — no invite needed.
               </p>
             )}
             <p className="text-[11px] text-[color:var(--ink-muted)]">
-              They sign in at <span className="font-mono">/influencer/login</span> with their email and this password.
+              The link (valid 7 days) lets them set a password, then they sign in at{" "}
+              <span className="font-mono">/influencer/login</span>.
             </p>
           </div>
         )}
@@ -393,6 +402,28 @@ function InfluencerDetailSheet({
   const [addingPromo, setAddingPromo] = React.useState(false);
   const [newCode, setNewCode] = React.useState("");
   const [commission, setCommission] = React.useState<CommissionState>(BLANK_COMMISSION);
+  const [editingProfile, setEditingProfile] = React.useState(false);
+  const [profileDraft, setProfileDraft] = React.useState({ displayName: "", minPayout: 25, holdDays: 30, notes: "" });
+  const [editingPromoId, setEditingPromoId] = React.useState<string | null>(null);
+  const [editCommission, setEditCommission] = React.useState<CommissionState>(BLANK_COMMISSION);
+  const [inviteUrl, setInviteUrl] = React.useState<string | null>(null);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- reseed drafts when a different influencer opens */
+  React.useEffect(() => {
+    if (influencer) {
+      setProfileDraft({
+        displayName: influencer.displayName,
+        minPayout: influencer.minPayoutCents / 100,
+        holdDays: influencer.holdDays,
+        notes: influencer.notes ?? "",
+      });
+      setEditingProfile(false);
+      setEditingPromoId(null);
+      setInviteUrl(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [influencer?.id]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function run(fn: () => Promise<unknown>, ok: string) {
     setBusy(true);
@@ -424,23 +455,113 @@ function InfluencerDetailSheet({
         </div>
 
         {/* Status + connect */}
-        <div className="flex items-center justify-between rounded-[var(--r-md)] hairline bg-white/60 px-3 py-2.5">
-          <div>
-            <div className="text-[13px] font-medium">Account status</div>
-            <div className="text-[11px] text-[color:var(--ink-muted)]">
-              {inf.confirmedSubscribers} active subscriber{inf.confirmedSubscribers === 1 ? "" : "s"} · payouts {inf.payoutsEnabled ? "enabled" : "not set up"}
+        <div className="rounded-[var(--r-md)] hairline bg-white/60 px-3 py-2.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-medium">Account status</div>
+              <div className="text-[11px] text-[color:var(--ink-muted)]">
+                {inf.confirmedSubscribers} active subscriber{inf.confirmedSubscribers === 1 ? "" : "s"} · payouts {inf.payoutsEnabled ? "enabled" : "not set up"}
+                {!inf.hasPassword && " · hasn't set a password"}
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    const res = await sendInfluencerInvite(inf.id);
+                    setInviteUrl(res.inviteUrl);
+                  }, "Invite sent")
+                }
+              >
+                {inf.hasPassword ? "Resend invite" : "Send invite"}
+              </Button>
+              <Button
+                size="sm"
+                variant={isActive ? "outline" : "primary"}
+                loading={busy}
+                onClick={() =>
+                  run(() => setInfluencerStatus(inf.id, isActive ? "SUSPENDED" : "ACTIVE"), isActive ? "Suspended" : "Reactivated")
+                }
+              >
+                {isActive ? "Suspend" : "Reactivate"}
+              </Button>
             </div>
           </div>
-          <Button
-            size="sm"
-            variant={isActive ? "outline" : "primary"}
-            loading={busy}
-            onClick={() =>
-              run(() => setInfluencerStatus(inf.id, isActive ? "SUSPENDED" : "ACTIVE"), isActive ? "Suspended" : "Reactivated")
-            }
-          >
-            {isActive ? "Suspend" : "Reactivate"}
-          </Button>
+          {inviteUrl && (
+            <div className="mt-2">
+              <CopyRow label="Invite link (7 days)" value={inviteUrl} />
+            </div>
+          )}
+        </div>
+
+        {/* Profile & payout terms */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="quiet-caps !mb-0">Profile & payout terms</span>
+            <button
+              className="text-[11px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
+              onClick={() => setEditingProfile((v) => !v)}
+            >
+              {editingProfile ? "Cancel" : "Edit"}
+            </button>
+          </div>
+          {editingProfile ? (
+            <div className="space-y-3 rounded-[var(--r-md)] hairline bg-white/40 p-3">
+              <Input
+                label="Display name"
+                value={profileDraft.displayName}
+                onChange={(e) => setProfileDraft({ ...profileDraft, displayName: e.target.value })}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="Min payout ($)"
+                  type="number"
+                  value={profileDraft.minPayout}
+                  onChange={(e) => setProfileDraft({ ...profileDraft, minPayout: Number(e.target.value) })}
+                />
+                <Input
+                  label="Hold days"
+                  type="number"
+                  value={profileDraft.holdDays}
+                  onChange={(e) => setProfileDraft({ ...profileDraft, holdDays: Number(e.target.value) })}
+                  hint="Days before commission clears"
+                />
+              </div>
+              <Textarea
+                label="Notes"
+                value={profileDraft.notes}
+                onChange={(e) => setProfileDraft({ ...profileDraft, notes: e.target.value })}
+                rows={2}
+              />
+              <Button
+                size="sm"
+                loading={busy}
+                onClick={() =>
+                  run(
+                    () =>
+                      updateInfluencerProfile({
+                        id: inf.id,
+                        displayName: profileDraft.displayName.trim() || undefined,
+                        minPayoutCents: Math.max(0, Math.round(profileDraft.minPayout * 100)),
+                        holdDays: profileDraft.holdDays,
+                        notes: profileDraft.notes.trim() || null,
+                      }),
+                    "Profile updated",
+                  ).then(() => setEditingProfile(false))
+                }
+              >
+                Save
+              </Button>
+            </div>
+          ) : (
+            <p className="text-[12px] text-[color:var(--ink-muted)]">
+              Min payout {money(inf.minPayoutCents / 100)} · {inf.holdDays}-day hold
+              {inf.notes ? ` · ${inf.notes}` : ""}
+            </p>
+          )}
         </div>
 
         {/* Promo codes */}
@@ -456,21 +577,79 @@ function InfluencerDetailSheet({
           </div>
           <ul className="space-y-1.5">
             {inf.promoCodes.map((p) => (
-              <li key={p.id} className="flex items-center justify-between rounded-[var(--r-md)] hairline bg-white/60 px-3 py-2">
-                <div className="min-w-0">
-                  <span className="font-mono text-[13px] text-[color:var(--ink)]">{p.code}</span>
-                  <div className="text-[11px] text-[color:var(--ink-muted)]">
-                    {describeCommission(p)} · {p.commissionBasis.toLowerCase()}
+              <li key={p.id} className="rounded-[var(--r-md)] hairline bg-white/60 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <span className="font-mono text-[13px] text-[color:var(--ink)]">{p.code}</span>
+                    <div className="text-[11px] text-[color:var(--ink-muted)]">
+                      {describeCommission(p)} · {p.commissionBasis.toLowerCase()}
+                      {p.customerPercentOff ? ` · buyer saves ${p.customerPercentOff}%` : ""}
+                      {` · ${p.clicks} click${p.clicks === 1 ? "" : "s"}`}
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => {
+                        if (editingPromoId === p.id) {
+                          setEditingPromoId(null);
+                          return;
+                        }
+                        setEditingPromoId(p.id);
+                        setEditCommission({
+                          customerPercentOff: p.customerPercentOff ?? 10,
+                          commissionType: p.commissionType,
+                          commissionValue:
+                            p.commissionType === "PERCENT"
+                              ? (p.commissionRateBps ?? 0) / 100
+                              : (p.commissionFlatCents ?? 0) / 100,
+                          commissionBasis: p.commissionBasis,
+                          durationType: p.durationType,
+                          durationMonths: p.durationMonths ?? 12,
+                        });
+                      }}
+                    >
+                      {editingPromoId === p.id ? "Close" : "Edit"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => run(() => setPromoActive(p.id, !p.active), p.active ? "Code disabled" : "Code enabled")}
+                    >
+                      {p.active ? "Disable" : "Enable"}
+                    </Button>
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => run(() => setPromoActive(p.id, !p.active), p.active ? "Code disabled" : "Code enabled")}
-                >
-                  {p.active ? "Disable" : "Enable"}
-                </Button>
+                {editingPromoId === p.id && (
+                  <div className="mt-3 space-y-3 rounded-[var(--r-md)] hairline bg-white/40 p-3">
+                    <p className="text-[11px] text-[color:var(--ink-muted)]">
+                      Commission terms only — the buyer&apos;s {p.customerPercentOff ?? "—"}% discount is fixed on the
+                      Stripe coupon. Issue a new code to change what customers save.
+                    </p>
+                    <CommissionFields value={editCommission} onChange={setEditCommission} />
+                    <Button
+                      size="sm"
+                      loading={busy}
+                      onClick={() =>
+                        run(
+                          () =>
+                            updatePromoCommission({
+                              promoId: p.id,
+                              ...editCommission,
+                              durationMonths:
+                                editCommission.durationType === "REPEATING" ? editCommission.durationMonths : undefined,
+                            }),
+                          "Commission updated",
+                        ).then(() => setEditingPromoId(null))
+                      }
+                    >
+                      Save commission
+                    </Button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

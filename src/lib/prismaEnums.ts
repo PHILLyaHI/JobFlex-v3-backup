@@ -56,6 +56,24 @@ export const LeadStatus = {
 } as const;
 export type LeadStatus = (typeof LeadStatus)[keyof typeof LeadStatus];
 
+// Lead Center — platform-owned lead routing state machine (see PlatformLead model).
+export const PlatformLeadStatus = {
+  MATCHING: "MATCHING", // ranking built / cascade not yet offered (or errored; cron re-drives)
+  OFFERED: "OFFERED", // an active LeadOffer is awaiting a contractor response
+  MATCHED: "MATCHED", // accepted or manually assigned; org Lead row exists
+  MANUAL_QUEUE: "MANUAL_QUEUE", // no candidates or 3 attempts exhausted; admin assigns
+} as const;
+export type PlatformLeadStatus = (typeof PlatformLeadStatus)[keyof typeof PlatformLeadStatus];
+
+export const LeadOfferStatus = {
+  OFFERED: "OFFERED",
+  ACCEPTED: "ACCEPTED",
+  DECLINED: "DECLINED",
+  EXPIRED: "EXPIRED",
+  CANCELLED: "CANCELLED", // superseded by accept elsewhere or admin manual assign
+} as const;
+export type LeadOfferStatus = (typeof LeadOfferStatus)[keyof typeof LeadOfferStatus];
+
 export const ProposalStatus = {
   DRAFT: "DRAFT",
   SENT: "SENT",

@@ -36,6 +36,7 @@ import {
   deleteJobPhoto,
 } from "@/actions/jobMedia";
 import { Plus, Send, Trash2, Upload, Phone, Mail } from "lucide-react";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 
 interface JobCore {
   id: string;
@@ -521,6 +522,7 @@ function ScheduleTab({
             loading={busy}
             onClick={async () => {
               if (!title.trim()) return;
+              if (!(await ensureWithinLimit("calendarEvents"))) return;
               setBusy(true);
               try {
                 await createJobEvent({
@@ -535,7 +537,7 @@ function ScheduleTab({
                 onChange();
                 toast.success("Event added");
               } catch (err: any) {
-                toast.error("Couldn't add", err?.message);
+                if (!reportPlanLimit(err)) toast.error("Couldn't add", err?.message);
               } finally {
                 setBusy(false);
               }
@@ -755,6 +757,10 @@ function MessagesTab({
                 setBody("");
                 onChange();
               } catch (err: any) {
+                // Post-flight limit check (see MessagesInbox): distinguishes a
+                // redacted prod limit error from a real failure.
+                if (reportPlanLimit(err)) return;
+                if (!(await ensureWithinLimit("messagesSent"))) return;
                 toast.error("Couldn't post", err?.message);
               } finally {
                 setBusy(false);

@@ -220,7 +220,7 @@ export async function sendProposal(id: string) {
 
   // Best-effort notifications + follow-up scheduling — never block the save.
   try {
-    const { notifyProposalSent } = await import("./notify");
+    const { notifyProposalSent } = await import("@/lib/notify");
     await notifyProposalSent({ proposalId: id });
   } catch (err) {
     console.warn("[sendProposal] notify failed:", err);
@@ -355,6 +355,7 @@ export async function duplicateProposal(id: string) {
     include: { lineItems: true, installments: true, discounts: true },
   });
   if (!p) throw new Error("Not found");
+  await enforcePlanLimit(organizationId, "proposalsCreated");
   const dup = await db.proposal.create({
     data: {
       publicId: randomUUID(),

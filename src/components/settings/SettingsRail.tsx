@@ -3,10 +3,12 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  User,
   CreditCard,
-  AtSign,
-  Webhook,
-  Banknote,
+  CalendarCog,
+  CalendarDays,
+  SquareTerminal,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -14,70 +16,103 @@ interface SettingsItem {
   href: string;
   label: string;
   icon: React.ReactNode;
+  badge?: string;
 }
 
 const ITEMS: SettingsItem[] = [
-  { href: "/dashboard/settings/account", label: "Account", icon: <CreditCard className="h-3.5 w-3.5" /> },
-  { href: "/dashboard/settings/payment", label: "Billing", icon: <Banknote className="h-3.5 w-3.5" /> },
-  { href: "/dashboard/settings/gmail", label: "Gmail", icon: <AtSign className="h-3.5 w-3.5" /> },
-  { href: "/dashboard/settings/meta", label: "Meta business", icon: <Webhook className="h-3.5 w-3.5" /> },
+  { href: "/dashboard/settings/account", label: "Account", icon: <User /> },
+  { href: "/dashboard/settings/payment", label: "Billing", icon: <CreditCard /> },
+  { href: "/dashboard/settings/preferences", label: "Preferences", icon: <CalendarCog /> },
+  { href: "/dashboard/calendar", label: "Schedules", icon: <CalendarDays />, badge: "NEW" },
+  { href: "/dashboard/settings/integrations", label: "Integrations", icon: <SquareTerminal /> },
 ];
+
+const FOOTER_ITEMS: SettingsItem[] = [
+  { href: "/dashboard/support", label: "Help Center", icon: <BookOpen /> },
+];
+
+function NewBadge() {
+  return (
+    <span
+      className="ml-1 rounded-[var(--r-sm)] px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.06em]"
+      style={{
+        background: "color-mix(in srgb, var(--amber) 16%, white)",
+        color: "color-mix(in srgb, var(--amber), var(--ink) 35%)",
+      }}
+    >
+      NEW
+    </span>
+  );
+}
+
+function RailLink({ item, active }: { item: SettingsItem; active: boolean }) {
+  return (
+    <Link
+      href={item.href as any}
+      className={cn(
+        "flex h-11 items-center gap-3 rounded-[10px] px-3.5 text-[14px] transition-colors",
+        active
+          ? "bg-[color:var(--paper-deep)] font-medium text-[color:var(--ink)]"
+          : "text-[color:var(--ink-soft)] hover:bg-black/[0.03]",
+      )}
+    >
+      <span
+        className={cn(
+          "shrink-0 [&>svg]:h-[18px] [&>svg]:w-[18px]",
+          active ? "text-[color:var(--ink)]" : "text-[color:var(--ink-muted)]",
+        )}
+      >
+        {item.icon}
+      </span>
+      {item.label}
+      {item.badge && <NewBadge />}
+    </Link>
+  );
+}
 
 export function SettingsRail() {
   const pathname = usePathname();
+  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+
   return (
     <aside className="lg:sticky lg:top-24">
       {/* Mobile horizontal scroll */}
-      <div className="lg:hidden flex gap-1.5 overflow-x-auto pb-3 -mx-4 px-4 mb-4">
-        {ITEMS.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(item.href + "/");
+      <div className="lg:hidden -mx-4 mb-4 flex gap-1.5 overflow-x-auto px-4 pb-3">
+        {[...ITEMS, ...FOOTER_ITEMS].map((item) => {
+          const active = isActive(item.href);
           return (
             <Link
               key={item.href}
               href={item.href as any}
               className={cn(
-                "shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-medium hairline transition-colors",
+                "hairline inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors",
                 active
-                  ? "bg-[color:var(--ink)] text-[color:var(--paper)] border-transparent"
+                  ? "border-transparent bg-[color:var(--ink)] text-[color:var(--paper)]"
                   : "text-[color:var(--ink-muted)] hover:bg-black/[0.04]",
               )}
             >
-              {item.icon}
+              <span className="[&>svg]:h-3.5 [&>svg]:w-3.5">{item.icon}</span>
               {item.label}
+              {item.badge && <NewBadge />}
             </Link>
           );
         })}
       </div>
 
       {/* Desktop vertical rail */}
-      <nav className="hidden lg:flex flex-col gap-0.5 w-[220px]">
-        {ITEMS.map((item) => {
-          const active =
-            pathname === item.href || pathname.startsWith(item.href + "/");
-          return (
-            <Link
-              key={item.href}
-              href={item.href as any}
-              className={cn(
-                "relative flex items-center gap-2.5 h-9 px-3 rounded-[var(--r-sm)] text-[13px] transition-all",
-                active
-                  ? "bg-[color:var(--accent-soft)]/60 text-[color:var(--accent-ink)] font-medium"
-                  : "text-[color:var(--ink-soft)] hover:bg-black/[0.03]",
-              )}
-            >
-              {active && (
-                <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r bg-[color:var(--accent)]" />
-              )}
-              <span
-                className={cn(active ? "text-[color:var(--accent)]" : "opacity-70")}
-              >
-                {item.icon}
-              </span>
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+      <div className="hidden w-[240px] lg:block">
+        <nav className="flex flex-col gap-1 pt-5">
+          {ITEMS.map((item) => (
+            <RailLink key={item.href} item={item} active={isActive(item.href)} />
+          ))}
+        </nav>
+        <div className="my-4 border-t border-[color:var(--ink-line)]" />
+        <nav className="flex flex-col gap-1">
+          {FOOTER_ITEMS.map((item) => (
+            <RailLink key={item.href} item={item} active={isActive(item.href)} />
+          ))}
+        </nav>
+      </div>
     </aside>
   );
 }

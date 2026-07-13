@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { requireManager, requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ProposalStatus } from "@/lib/prismaEnums";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 interface TemplateBody {
   description?: string | null;
@@ -135,6 +136,7 @@ export async function deleteTemplate(id: string) {
 
 export async function createProposalFromTemplate(templateId: string) {
   const { organizationId, user } = await requireProposalStaff();
+  await enforcePlanLimit(organizationId, "proposalsCreated");
   const t = await db.proposalTemplate.findUnique({ where: { id: templateId } });
   if (!t || t.organizationId !== organizationId) throw new Error("Not found");
 

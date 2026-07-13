@@ -30,11 +30,11 @@ export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
     ],
     home: "/dashboard/leads",
   },
-  // Estimators: proposals + the AI estimators.
+  // Estimators: proposals + the AI estimators + projects. No client access.
   ESTIMATOR: {
     allowed: [
       "/dashboard/proposals",
-      "/dashboard/clients",
+      "/dashboard/projects",
       "/dashboard/advanced-ai",
       "/dashboard/messages",
     ],

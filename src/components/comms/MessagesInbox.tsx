@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { relative } from "@/lib/format";
 import { toast } from "@/components/ui/Toast";
-import { postMessage, clearConversation, clearAllConversations } from "@/actions/messages";
+import { postMessage, clearConversation, clearAllConversations, markConversationRead } from "@/actions/messages";
+import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 
 export interface ConversationSummary {
   id: string;
@@ -48,6 +49,38 @@ export function MessagesInbox({
 }: MessagesInboxProps) {
   const router = useRouter();
   const [search, setSearch] = React.useState("");
+
+  // Live updates: poll the server every few seconds while the tab is visible so
+  // new incoming messages (and thread previews) appear without a manual reload,
+  // and refresh the moment the tab regains focus. router.refresh() re-runs the
+  // server load; existing bubbles keep their id-key so only new ones animate in.
+  React.useEffect(() => {
+    const refreshIfVisible = () => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        router.refresh();
+      }
+    };
+    const id = window.setInterval(refreshIfVisible, 5000);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [router]);
+
+  // Keep the thread pinned to the newest message on open and as messages arrive.
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [activeConversationId, messages.length]);
+
+  // Stamp this thread read on open AND whenever new messages land while it's
+  // open (the poll renders them here, so they're read) — drives the
+  // unread-messages badge.
+  React.useEffect(() => {
+    if (activeConversationId) markConversationRead(activeConversationId);
+  }, [activeConversationId, messages.length]);
 
   async function handleClear(id: string) {
     if (!window.confirm("Clear every message in this thread? This can't be undone.")) return;
@@ -206,7 +239,7 @@ export function MessagesInbox({
               )}
             </header>
 
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
               <AnimatePresence initial={false}>
                 {messages.map((m, i) => {
                   const prev = messages[i - 1];
@@ -355,6 +388,11 @@ function MessageComposer({
       setBody("");
       onSent();
     } catch (err: any) {
+      // Post-flight limit check: no preflight round-trip on every send, but a
+      // redacted prod error still resolves to the upgrade dialog when the org
+      // is actually at its cap.
+      if (reportPlanLimit(err)) return;
+      if (!(await ensureWithinLimit("messagesSent"))) return;
       toast.error("Couldn't send", err?.message);
     } finally {
       setBusy(false);
