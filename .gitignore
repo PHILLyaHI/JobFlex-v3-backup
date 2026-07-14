@@ -17,6 +17,7 @@ coverage
 .prisma
 prisma/dev.db
 prisma/dev.db-journal
+prisma/schema.production.prisma
 prisma/migrations/**/migration_lock.toml.bak
 next-env.d.ts
 
