@@ -1,5 +1,5 @@
 {
-  "buildCommand": "node scripts/prisma-production-schema.js && prisma generate --schema=prisma/schema.production.prisma && prisma db push --schema=prisma/schema.production.prisma --skip-generate --accept-data-loss && next build",
+  "buildCommand": "node scripts/prisma-production-schema.js && prisma generate --schema=prisma/schema.production.prisma && if [ \"$VERCEL_ENV\" = \"production\" ]; then prisma db push --schema=prisma/schema.production.prisma --skip-generate --accept-data-loss; fi && next build",
   "crons": [
     { "path": "/api/cron/follow-ups", "schedule": "0 * * * *" },
     { "path": "/api/cron/lead-offers", "schedule": "*/15 * * * *" },
