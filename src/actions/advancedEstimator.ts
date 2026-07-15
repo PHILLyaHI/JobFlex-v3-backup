@@ -110,6 +110,21 @@ function mockProductResults(query: string): ProductSearchResult[] {
   });
 }
 
+// Fallback used whenever SerpAPI can't return live prices. In LOCAL DEV we serve
+// the deterministic mock so the estimator is demoable offline; in PRODUCTION we
+// return NO products ([]) — the AI matcher upstream then supplies its own prices
+// as usual (research[i].options = [] is handled gracefully). Demo/mock prices
+// must NEVER reach production, so they are gated to NODE_ENV === "development".
+//
+// TODO(price-cache · next step): before this dev-mock-or-empty fallback, read the
+// persistent cache — normalizeSearchQuery(query) (+ location) → ProductPriceCache
+// — and return the cached products on a hit. Only reach this line on a true cache
+// miss. This single helper is the one insertion point that covers all four
+// SerpAPI-failure branches below (they all call pricesFallback).
+function pricesFallback(query: string): ProductSearchResult[] {
+  return process.env.NODE_ENV === "development" ? mockProductResults(query) : [];
+}
+
 /**
  * Search live retail prices for a single material via SerpAPI's Google Shopping
  * engine. Returns the top 3 results mapped to {title, price, link, thumbnail,
@@ -125,8 +140,9 @@ async function searchProductPrices(
 ): Promise<ProductSearchResult[]> {
   const apiKey = process.env.SERPAPI_API_KEY;
   if (!apiKey) {
-    console.info(`[advancedEstimator] SERPAPI_API_KEY missing — mock results for "${query}"`);
-    return mockProductResults(query);
+    console.info(`[advancedEstimator] SERPAPI_API_KEY missing — price fallback (mock in dev, none in prod) for "${query}"`);
+    // TODO(price-cache · next step): cache-read insertion point — branch "no key".
+    return pricesFallback(query);
   }
   const loc = location?.trim() || null;
   try {
@@ -147,9 +163,10 @@ async function searchProductPrices(
     if (!res.ok) {
       // 429 = SerpAPI rate / plan limit. Degrade gracefully rather than throw.
       console.warn(
-        `[advancedEstimator] SerpAPI ${res.status} for "${query}" — falling back to mock results`
+        `[advancedEstimator] SerpAPI ${res.status} for "${query}" — price fallback (mock in dev, none in prod)`
       );
-      return mockProductResults(query);
+      // TODO(price-cache · next step): cache-read insertion point — branch "429 / non-OK".
+      return pricesFallback(query);
     }
     const json: any = await res.json();
     const shopping: any[] = Array.isArray(json?.shopping_results) ? json.shopping_results : [];
@@ -168,8 +185,9 @@ async function searchProductPrices(
       productId: extractProductId(r),
     }));
     if (mapped.length === 0) {
-      console.warn(`[advancedEstimator] SerpAPI returned 0 products for "${query}" — using mock`);
-      return mockProductResults(query);
+      console.warn(`[advancedEstimator] SerpAPI returned 0 products for "${query}" — price fallback`);
+      // TODO(price-cache · next step): cache-read insertion point — branch "0 products".
+      return pricesFallback(query);
     }
     console.info(
       `[advancedEstimator] SerpAPI returned ${mapped.length} products for "${query}" (${localized ? `localized to "${loc}"` : "national"})`
@@ -177,9 +195,10 @@ async function searchProductPrices(
     return mapped;
   } catch (err: any) {
     console.warn(
-      `[advancedEstimator] SerpAPI request failed for "${query}": ${err?.message ?? err} — using mock`
+      `[advancedEstimator] SerpAPI request failed for "${query}": ${err?.message ?? err} — price fallback`
     );
-    return mockProductResults(query);
+    // TODO(price-cache · next step): cache-read insertion point — branch "request threw (catch)".
+    return pricesFallback(query);
   }
 }
 
