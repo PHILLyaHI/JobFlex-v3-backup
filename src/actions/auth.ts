@@ -206,10 +206,14 @@ This link expires in 1 hour. If you didn't request it, you can safely ignore thi
 — JobFlex`,
         orgName: "JobFlex",
       });
+      // sendEmail retries transient provider failures internally (emailRetry.ts).
       await sendEmail({ to: email, subject: wrapped.subject, html: wrapped.html });
     } catch (err) {
-      // Don't leak send failures to the caller — log and still resolve generic.
-      console.warn("[requestPasswordReset] email failed:", err);
+      // SECURITY: never leak send failures to the caller — the response stays the
+      // same generic { ok: true } whether or not the account exists, so this can't
+      // be used to enumerate registered emails. Log at error level so an operator
+      // can see a reset link that failed to send even after retries.
+      console.error("[requestPasswordReset] reset email failed after retries:", err);
     }
   }
 
