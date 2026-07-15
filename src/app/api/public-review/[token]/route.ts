@@ -8,8 +8,8 @@ export async function POST(
   const { token } = await ctx.params;
   const body = await req.json();
   try {
-    await submitReviewPublic(token, body);
-    return NextResponse.json({ ok: true });
+    const result = await submitReviewPublic(token, body);
+    return NextResponse.json(result);
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Failed" }, { status: 400 });
   }

@@ -76,6 +76,17 @@ export async function submitReviewPublic(token: string, raw: unknown) {
   const data = submitInput.parse(raw);
   const rr = await db.reviewRequest.findUnique({ where: { publicToken: token } });
   if (!rr) throw new Error("Not found");
+  // Idempotency: a review token may be submitted only once. If it's already
+  // completed, acknowledge politely and do NOT overwrite the stored review or
+  // log another activity event. This blocks replay/overwrite via direct API
+  // calls that bypass the one-time UI form.
+  if (rr.status === "COMPLETED") {
+    return {
+      ok: true as const,
+      alreadySubmitted: true as const,
+      message: "This review has already been submitted. Thank you!",
+    };
+  }
   await db.reviewRequest.update({
     where: { id: rr.id },
     data: {
