@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { withEmailRetry, recipientLabel } from "./emailRetry";
 
 // SMTP transport — the local/dev email path (e.g. a Gmail app password) that
 // stands in for Resend when no RESEND_API_KEY is present. Routed through the
@@ -65,12 +66,16 @@ export async function sendViaSmtp(opts: {
     process.env.SMTP_USER ??
     "JobFlex <app@jobflex.app>";
   warnOnFromMismatch(from);
-  const info = await getTransport().sendMail({
-    from,
-    to: opts.to,
-    subject: opts.subject,
-    html: opts.html,
-    replyTo: opts.replyTo,
+  // Retry transient SMTP failures (4xx greylist/timeout, socket drops) up to 3
+  // attempts; a 5xx (bad mailbox) or auth error is re-thrown at once.
+  return withEmailRetry(`smtp → ${recipientLabel(opts.to)}`, async () => {
+    const info = await getTransport().sendMail({
+      from,
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+      replyTo: opts.replyTo,
+    });
+    return { id: info.messageId ?? "", skipped: false as const };
   });
-  return { id: info.messageId ?? "", skipped: false as const };
 }

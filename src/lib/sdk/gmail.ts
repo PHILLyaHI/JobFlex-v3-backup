@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { IntegrationDisabledError } from "./base";
+import { withEmailRetry, recipientLabel } from "./emailRetry";
 
 // Scopes: send mail on the user's behalf + read their email address (to show
 // "connected as x@gmail.com" and set the From).
@@ -76,19 +77,24 @@ export async function sendViaGmail(
   tokens: Pick<GmailTokens, "accessToken" | "refreshToken" | "email">,
   opts: { to: string; subject: string; html: string; fromName?: string; replyTo?: string },
 ): Promise<void> {
-  const gmail = await getGmailClient(tokens.accessToken, tokens.refreshToken);
-  const from = opts.fromName ? `${opts.fromName} <${tokens.email}>` : tokens.email;
-  const headers = [
-    `From: ${from}`,
-    `To: ${opts.to}`,
-    opts.replyTo ? `Reply-To: ${opts.replyTo}` : "",
-    // RFC 2047 encode the subject so non-ASCII survives.
-    `Subject: =?UTF-8?B?${Buffer.from(opts.subject).toString("base64")}?=`,
-    "MIME-Version: 1.0",
-    'Content-Type: text/html; charset="UTF-8"',
-  ].filter(Boolean);
-  const raw = Buffer.from(`${headers.join("\r\n")}\r\n\r\n${opts.html}`).toString("base64url");
-  await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
+  // Retry transient Gmail failures (429, 5xx, network) up to 3 attempts. A
+  // permanent error (401/403 revoked token) is re-thrown at once so orgSend.ts
+  // can fall back to Resend quickly rather than stalling on doomed retries.
+  await withEmailRetry(`gmail → ${recipientLabel(opts.to)}`, async () => {
+    const gmail = await getGmailClient(tokens.accessToken, tokens.refreshToken);
+    const from = opts.fromName ? `${opts.fromName} <${tokens.email}>` : tokens.email;
+    const headers = [
+      `From: ${from}`,
+      `To: ${opts.to}`,
+      opts.replyTo ? `Reply-To: ${opts.replyTo}` : "",
+      // RFC 2047 encode the subject so non-ASCII survives.
+      `Subject: =?UTF-8?B?${Buffer.from(opts.subject).toString("base64")}?=`,
+      "MIME-Version: 1.0",
+      'Content-Type: text/html; charset="UTF-8"',
+    ].filter(Boolean);
+    const raw = Buffer.from(`${headers.join("\r\n")}\r\n\r\n${opts.html}`).toString("base64url");
+    await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
+  });
 }
 
 // ── Signed OAuth state (CSRF + org binding) ──────────────────────────────────

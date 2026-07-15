@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { IntegrationDisabledError } from "./base";
 import { isSmtpEnabled, sendViaSmtp } from "./smtp";
+import { withEmailRetry, recipientLabel } from "./emailRetry";
 
 let client: Resend | null = null;
 
@@ -53,19 +54,27 @@ export async function sendEmail(opts: {
     : opts.subject;
 
   if (isResendEnabled()) {
-    const r = await getResend().emails.send({
-      from: opts.from ?? EMAIL_FROM,
-      to,
-      subject,
-      html: opts.html,
-      replyTo: opts.replyTo,
+    // Retry transient provider failures (network, 429, 5xx) up to 3 attempts with
+    // backoff; a permanent error (bad address / invalid key) is re-thrown at once.
+    return withEmailRetry(`resend → ${recipientLabel(to)}`, async () => {
+      const r = await getResend().emails.send({
+        from: opts.from ?? EMAIL_FROM,
+        to,
+        subject,
+        html: opts.html,
+        replyTo: opts.replyTo,
+      });
+      // Resend returns { data, error } — it does NOT throw. Convert a failure to a
+      // throw so retry can classify + back off (and so callers see it, never a
+      // silent "looks like success"). Carry error.name so the classifier can tell
+      // a transient rate-limit from a permanent validation/auth error.
+      if (r.error) {
+        const err = new Error(r.error.message ?? r.error.name ?? "Email failed to send.");
+        err.name = r.error.name ?? "resend_error";
+        throw err;
+      }
+      return { id: r.data?.id ?? "", skipped: false as const };
     });
-    // Resend returns { data, error } — it does NOT throw. Surface the error so a
-    // failed send is visible instead of silently looking like success.
-    if (r.error) {
-      throw new Error(r.error.message ?? r.error.name ?? "Email failed to send.");
-    }
-    return { id: r.data?.id ?? "", skipped: false as const };
   }
   if (isSmtpEnabled()) {
     return sendViaSmtp({ ...opts, to, subject, from: opts.from ?? EMAIL_FROM });
