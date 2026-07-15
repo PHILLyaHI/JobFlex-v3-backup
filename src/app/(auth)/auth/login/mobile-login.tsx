@@ -27,6 +27,8 @@ export function MobileLogin({
   onSubmit,
   onGoogle,
 }: MobileLoginProps) {
+  // Show the demo-credentials hint only in local development — never in production.
+  const isDev = process.env.NODE_ENV === "development";
   return (
     <div className="min-h-dvh flex flex-col bg-[color:var(--paper)] px-6 pt-safe pb-safe">
       <Link href="/" className="flex items-center gap-2.5 mt-8 mb-10 self-start">
@@ -111,10 +113,12 @@ export function MobileLogin({
         </div>
       </div>
 
-      <p className="mt-8 text-[10px] text-[color:var(--ink-faint)] tracking-[0.01em]">
-        Demo &middot; <code className="font-mono">owner@acme.test</code> /{" "}
-        <code className="font-mono">password123</code>
-      </p>
+      {isDev && (
+        <p className="mt-8 text-[10px] text-[color:var(--ink-faint)] tracking-[0.01em]">
+          Demo &middot; <code className="font-mono">owner@acme.test</code> /{" "}
+          <code className="font-mono">password123</code>
+        </p>
+      )}
     </div>
   );
 }

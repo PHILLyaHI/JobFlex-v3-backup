@@ -18,8 +18,10 @@ function LoginInner() {
   const rawNext = search.get("next");
   const nextPath = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
   const [loading, setLoading] = React.useState(false);
-  const [email, setEmail] = React.useState("owner@acme.test");
-  const [password, setPassword] = React.useState("password123");
+  // Prefill demo credentials only in local development — never in production.
+  const isDev = process.env.NODE_ENV === "development";
+  const [email, setEmail] = React.useState(isDev ? "owner@acme.test" : "");
+  const [password, setPassword] = React.useState(isDev ? "password123" : "");
 
   const [inlineError, setInlineError] = React.useState<string | null>(null);
 
@@ -145,9 +147,11 @@ function LoginInner() {
             Create an account
           </Link>
         </div>
-        <p className="mt-6 text-[11px] text-[color:var(--ink-faint)]">
-          Demo · <code className="font-mono">owner@acme.test</code> / <code className="font-mono">password123</code>
-        </p>
+        {isDev && (
+          <p className="mt-6 text-[11px] text-[color:var(--ink-faint)]">
+            Demo · <code className="font-mono">owner@acme.test</code> / <code className="font-mono">password123</code>
+          </p>
+        )}
       </section>
 
       <section className="hidden lg:block relative bg-[color:var(--paper-deep)] overflow-hidden">
