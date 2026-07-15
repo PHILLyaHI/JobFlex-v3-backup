@@ -202,6 +202,9 @@ export function ProposalEditor({
       toast.error("Save failed", message);
     } finally {
       setSaving(false);
+      // Reset the send spinner too — sendProposal can now throw on email failure,
+      // which would otherwise leave the button stuck loading and (here) block autosave.
+      setSending(false);
     }
   }
 

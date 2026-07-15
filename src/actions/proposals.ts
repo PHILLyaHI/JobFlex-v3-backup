@@ -202,6 +202,24 @@ export async function sendProposal(id: string) {
     include: { client: true },
   });
   if (!p) throw new Error("Not found");
+
+  // Send the client email FIRST — only record the proposal as SENT if it
+  // actually went out (with the transport retry from emailRetry.ts). If the
+  // provider fails after retries, notifyProposalSent throws: we surface a clear
+  // error to the contractor and never write a false "Sent" status/activity.
+  // Note: when email is not configured, or the client has no email on file,
+  // notifyProposalSent returns { skipped } instead of throwing, so dev/no-email
+  // setups still mark the proposal SENT exactly as before.
+  try {
+    const { notifyProposalSent } = await import("@/lib/notify");
+    await notifyProposalSent({ proposalId: id });
+  } catch (err) {
+    console.error("[sendProposal] proposal email failed — not marking SENT:", err);
+    throw new Error(
+      "Couldn't send the proposal email. Please check the client's email address and try again.",
+    );
+  }
+
   await db.proposal.update({
     where: { id },
     data: { status: "SENT", sentAt: new Date() },
@@ -218,13 +236,7 @@ export async function sendProposal(id: string) {
     },
   });
 
-  // Best-effort notifications + follow-up scheduling — never block the save.
-  try {
-    const { notifyProposalSent } = await import("@/lib/notify");
-    await notifyProposalSent({ proposalId: id });
-  } catch (err) {
-    console.warn("[sendProposal] notify failed:", err);
-  }
+  // Follow-up scheduling stays best-effort — it must never undo a confirmed send.
   try {
     const { scheduleFollowUpsFor } = await import("./followUps");
     await scheduleFollowUpsFor(id, "SENT");
