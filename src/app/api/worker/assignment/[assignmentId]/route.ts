@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { touchWorkerActivity } from "@/lib/workerActivity";
 
 export async function POST(
   req: Request,
@@ -29,5 +30,6 @@ export async function POST(
     where: { id: assignment.id },
     data: { status: body.status },
   });
+  await touchWorkerActivity(assignment.worker.id);
   return NextResponse.json({ ok: true });
 }

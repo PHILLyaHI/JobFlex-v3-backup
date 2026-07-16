@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { touchWorkerActivity } from "@/lib/workerActivity";
 
 // Worker-portal job status update. Token-gated like the assignment route:
 // the supplied token must belong to a worker assigned to this job. Workers may
@@ -29,5 +30,6 @@ export async function POST(
   }
 
   await db.job.update({ where: { id: jobId }, data: { status: body.status } });
+  await touchWorkerActivity(worker.id);
   return NextResponse.json({ ok: true });
 }

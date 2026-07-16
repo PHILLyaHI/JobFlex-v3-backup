@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { touchWorkerActivity } from "@/lib/workerActivity";
 
 export async function POST(req: Request) {
   const body = (await req.json()) as {
@@ -47,5 +48,6 @@ export async function POST(req: Request) {
       kind: body.kind ?? "BEFORE",
     },
   });
+  await touchWorkerActivity(worker.id);
   return NextResponse.json({ id: photo.id, url });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { touchWorkerActivity } from "@/lib/workerActivity";
 
 // Worker-scoped receipt attach. Mirrors /api/worker/upload's token-gate: the
 // worker (proven by their portal token) must be assigned to the job. Creates a
@@ -56,5 +57,6 @@ export async function POST(req: Request) {
       receiptUrl,
     },
   });
+  await touchWorkerActivity(worker.id);
   return NextResponse.json({ id: expense.id, url: receiptUrl });
 }
