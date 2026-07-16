@@ -18,6 +18,45 @@ const homeownerSchema = z.object({
   referralCode: z.string().optional(),
 });
 
+// Reuse a prior geocode for the SAME address instead of paying Google again.
+// Public-intake addresses are almost always unique, so this only saves the
+// occasional duplicate submission — but a redundant paid call is cheap to avoid.
+// Best-effort: only reuses when a real street line is present (a zip/city-only
+// match could reuse a coarse/wrong pin) and a prior lead already has coordinates;
+// any miss or error falls through to a live geocode. Exact match on the stored
+// parts — case/whitespace variants won't dedup (that would need a normalized
+// column, i.e. a schema change, which we're not making here).
+async function geocodeOrReuse(parts: {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+}): Promise<{ lat: number; lng: number } | null> {
+  const street = parts.address?.trim();
+  if (street) {
+    try {
+      const prior = await db.platformLead.findFirst({
+        where: {
+          address: parts.address ?? null,
+          city: parts.city ?? null,
+          state: parts.state ?? null,
+          zip: parts.zip ?? null,
+          lat: { not: null },
+          lng: { not: null },
+        },
+        select: { lat: true, lng: true },
+        orderBy: { createdAt: "desc" },
+      });
+      if (prior?.lat != null && prior?.lng != null) {
+        return { lat: prior.lat, lng: prior.lng };
+      }
+    } catch {
+      // Reuse lookup is best-effort — fall through to a live geocode on any error.
+    }
+  }
+  return geocodeAddress(parts);
+}
+
 // Public intake → Lead Center. A submission becomes a platform-owned
 // PlatformLead that the cascade engine routes to the best-matching org (the
 // org-scoped Lead row is created only when a contractor accepts). Everything
@@ -41,7 +80,7 @@ export async function submitHomeownerRequest(raw: unknown) {
 
   const [detected, geo] = await Promise.all([
     detectTrade(`${data.projectType ?? ""}\n${data.description}`).catch(() => null),
-    geocodeAddress({
+    geocodeOrReuse({
       address: data.address,
       city: data.city,
       state: data.state,
