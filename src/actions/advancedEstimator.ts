@@ -8,6 +8,7 @@ import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
+import { readPriceCache, writePriceCache } from "@/lib/priceCache";
 import {
   estimateSchema,
   lineSchema,
@@ -116,12 +117,16 @@ function mockProductResults(query: string): ProductSearchResult[] {
 // as usual (research[i].options = [] is handled gracefully). Demo/mock prices
 // must NEVER reach production, so they are gated to NODE_ENV === "development".
 //
-// TODO(price-cache · next step): before this dev-mock-or-empty fallback, read the
-// persistent cache — normalizeSearchQuery(query) (+ location) → ProductPriceCache
-// — and return the cached products on a hit. Only reach this line on a true cache
-// miss. This single helper is the one insertion point that covers all four
-// SerpAPI-failure branches below (they all call pricesFallback).
-function pricesFallback(query: string): ProductSearchResult[] {
+// Fallback order (per spec): try the persistent cache first — it survives a
+// SerpAPI outage and its products are returned SILENTLY, no markers. Only on a
+// true cache miss do we fall to dev-mock / prod-empty. This one helper covers all
+// four SerpAPI-failure branches below (they all call pricesFallback).
+async function pricesFallback(
+  query: string,
+  location: string | null | undefined,
+): Promise<ProductSearchResult[]> {
+  const cached = await readPriceCache(query, location);
+  if (cached && cached.length > 0) return cached;
   return process.env.NODE_ENV === "development" ? mockProductResults(query) : [];
 }
 
@@ -142,7 +147,7 @@ async function searchProductPrices(
   if (!apiKey) {
     console.info(`[advancedEstimator] SERPAPI_API_KEY missing — price fallback (mock in dev, none in prod) for "${query}"`);
     // TODO(price-cache · next step): cache-read insertion point — branch "no key".
-    return pricesFallback(query);
+    return pricesFallback(query, location);
   }
   const loc = location?.trim() || null;
   try {
@@ -166,7 +171,7 @@ async function searchProductPrices(
         `[advancedEstimator] SerpAPI ${res.status} for "${query}" — price fallback (mock in dev, none in prod)`
       );
       // TODO(price-cache · next step): cache-read insertion point — branch "429 / non-OK".
-      return pricesFallback(query);
+      return pricesFallback(query, location);
     }
     const json: any = await res.json();
     const shopping: any[] = Array.isArray(json?.shopping_results) ? json.shopping_results : [];
@@ -187,18 +192,22 @@ async function searchProductPrices(
     if (mapped.length === 0) {
       console.warn(`[advancedEstimator] SerpAPI returned 0 products for "${query}" — price fallback`);
       // TODO(price-cache · next step): cache-read insertion point — branch "0 products".
-      return pricesFallback(query);
+      return pricesFallback(query, location);
     }
     console.info(
       `[advancedEstimator] SerpAPI returned ${mapped.length} products for "${query}" (${localized ? `localized to "${loc}"` : "national"})`
     );
+    // Cache the live prices (keyed by normalized query + requested location) so a
+    // later SerpAPI outage can still serve them. Best-effort — writePriceCache
+    // swallows its own errors, so this never breaks estimate generation.
+    await writePriceCache(query, location, mapped, "serpapi");
     return mapped;
   } catch (err: any) {
     console.warn(
       `[advancedEstimator] SerpAPI request failed for "${query}": ${err?.message ?? err} — price fallback`
     );
     // TODO(price-cache · next step): cache-read insertion point — branch "request threw (catch)".
-    return pricesFallback(query);
+    return pricesFallback(query, location);
   }
 }
 
