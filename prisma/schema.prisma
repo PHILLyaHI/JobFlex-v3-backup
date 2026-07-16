@@ -681,6 +681,11 @@ model WorkerProfile {
   inviteStatus   String   @default("ACCEPTED")
   respondedAt    DateTime?
   createdAt      DateTime @default(now())
+  // Rolling "last time this worker was genuinely active in their portal" (see
+  // touchWorkerActivity). Nullable: existing rows stay null until the one-time
+  // backfill runs. The inactivity cron NEVER revokes a null row — only a real
+  // date older than 6 months — so null is always safe.
+  lastSeenAt     DateTime?
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -688,6 +693,7 @@ model WorkerProfile {
   appointmentAssignments AppointmentAssignment[]
 
   @@index([organizationId])
+  @@index([lastSeenAt])
 }
 
 model JobAssignment {
@@ -1623,4 +1629,23 @@ model SyncState {
   key       String   @id
   cursor    String
   updatedAt DateTime @updatedAt
+}
+
+// Persistent price-lookup cache for the estimator. Keyed on a normalized query
+// (see normalizeSearchQuery) + location so a repeated lookup reuses a prior
+// fetch when the price source (SerpAPI) is down. productsJson is a JSON-encoded
+// product[] string (SQLite-safe / Postgres-portable, matching the schema-wide
+// "JSON stored as String" convention). A daily cron prunes stale rows.
+model ProductPriceCache {
+  id              String   @id @default(cuid())
+  normalizedQuery String
+  location        String?
+  productsJson    String
+  source          String?
+  currency        String   @default("usd")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([normalizedQuery, location])
+  @@index([updatedAt])
 }
