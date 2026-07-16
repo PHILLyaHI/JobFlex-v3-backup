@@ -5,6 +5,7 @@
     { "path": "/api/cron/lead-offers", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/clear-commissions", "schedule": "0 6 * * *" },
     { "path": "/api/cron/reconcile-stripe", "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/process-approved-payouts", "schedule": "30 6 * * *" }
+    { "path": "/api/cron/process-approved-payouts", "schedule": "30 6 * * *" },
+    { "path": "/api/cron/daily-cleanup", "schedule": "0 5 * * *" }
   ]
 }
