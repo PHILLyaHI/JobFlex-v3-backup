@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
@@ -28,7 +29,6 @@ import { toast } from "@/components/ui/Toast";
 import { EstimatorBreakdown, type EstimateLine } from "@/components/estimator/EstimatorBreakdown";
 import { EstimatorSummary } from "@/components/estimator/EstimatorSummary";
 import { RoofWireframe } from "./RoofWireframe";
-import { RoofModel3D } from "./RoofModel3D";
 import { RoofFacetTable } from "./RoofFacetTable";
 import { PlacesAutocomplete, type PickedAddress } from "./PlacesAutocomplete";
 import { pitchLabel, LABEL_MODES, EV_SAMPLES, type LabelMode } from "./roofViz";
@@ -41,6 +41,20 @@ import {
   ensureWithinLimit,
 } from "@/stores/usePlanLimitStore";
 import { listStagger, listItem } from "@/lib/theme/motion";
+
+// Lazy-load the Three.js 3D roof viewer so it stays OUT of the estimator page's
+// initial JS chunk (~150-180KB gzip). ssr:false is safe — it's a client-only
+// WebGL component that never server-renders. It's preloaded in the background
+// after first paint (see the effect in the component), so the first switch to
+// the 3D view is instant rather than "load-on-click".
+const RoofModel3D = dynamic(() => import("./RoofModel3D").then((m) => m.RoofModel3D), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full grid place-items-center text-[11px] text-[color:var(--ink-muted)]">
+      Loading 3D…
+    </div>
+  ),
+});
 
 interface Props {
   evEnabled: boolean;
@@ -63,6 +77,12 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
   const [labelMode, setLabelMode] = React.useState<LabelMode>("shaded");
   const [showHouse, setShowHouse] = React.useState(true);
   const [showIntake, setShowIntake] = React.useState(true);
+
+  // Warm the 3D viewer chunk in the background after first paint, so switching
+  // to the 3D view later is instant (the page still loads light without it).
+  React.useEffect(() => {
+    void import("./RoofModel3D");
+  }, []);
 
   // ── Address / ordering ──
   const [picked, setPicked] = React.useState<PickedAddress | null>(null);
