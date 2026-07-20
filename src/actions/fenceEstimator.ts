@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
@@ -131,24 +132,36 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
       )?.id ?? null
     : null;
 
+  // Hidden profit markup: seed from the org-wide default, then apply so each
+  // line's unitPrice is the SELL price (0% → equals cost).
+  const org = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { materialMarkupPct: true, laborMarkupPct: true },
+  });
+  const markupRates = resolveMarkupRates(null, org);
+
   const lines = [
     ...data.materials.map((l) => ({
       name: l.name,
       measurementType: unitToType(l.unit),
       quantity: l.quantity,
-      unitPrice: l.unitPrice,
+      unitPrice: sellUnitPrice({ unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0 }, markupRates),
       materialCost: l.unitPrice,
       laborCost: 0,
-      total: l.quantity * l.unitPrice,
+      total:
+        l.quantity *
+        sellUnitPrice({ unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0 }, markupRates),
     })),
     ...data.labor.map((l) => ({
       name: l.name,
       measurementType: unitToType(l.unit),
       quantity: l.quantity,
-      unitPrice: l.unitPrice,
+      unitPrice: sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
       materialCost: 0,
       laborCost: l.unitPrice,
-      total: l.quantity * l.unitPrice,
+      total:
+        l.quantity *
+        sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
     })),
   ];
 
@@ -181,6 +194,8 @@ export async function convertFenceEstimateToProposal(raw: unknown) {
       status: ProposalStatus.DRAFT,
       subtotal,
       total: subtotal,
+      materialMarkupPct: markupRates.materialMarkupPct,
+      laborMarkupPct: markupRates.laborMarkupPct,
       validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
       lineItems: {
         create: lines.map((l, i) => ({ ...l, position: i })),

@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { sellUnitPrice } from "@/lib/pricing/markup";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 
 const lineItemSchema = z.object({
@@ -52,8 +53,17 @@ const proposalInput = z.object({
 
 type ProposalInput = z.infer<typeof proposalInput>;
 
-function computeTotals(input: Pick<ProposalInput, "lineItems" | "taxRate">) {
-  const subtotal = input.lineItems.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
+function computeTotals(
+  input: Pick<ProposalInput, "lineItems" | "taxRate" | "materialMarkupPct" | "laborMarkupPct">,
+) {
+  // Subtotal is the client-facing SELL price: each line's cost marked up by the
+  // material/labor markup %s. sellUnitPrice returns the raw unitPrice at 0% (and
+  // for unsplit lines), so this equals the old subtotal exactly when markup is 0.
+  const rates = {
+    materialMarkupPct: input.materialMarkupPct ?? 0,
+    laborMarkupPct: input.laborMarkupPct ?? 0,
+  };
+  const subtotal = input.lineItems.reduce((a, l) => a + l.quantity * sellUnitPrice(l, rates), 0);
   const taxTotal = subtotal * input.taxRate;
   return { subtotal, taxTotal, total: subtotal + taxTotal };
 }
@@ -62,6 +72,12 @@ export async function saveProposal(raw: unknown) {
   const { organizationId, user, proposalScope } = await requireProposalStaff();
   const data = proposalInput.parse(raw);
   const { subtotal, taxTotal, total } = computeTotals(data);
+  // Markup rates used to bake the SELL price into each persisted line, so every
+  // downstream reader (portal, PDF) shows sell prices that sum to the subtotal.
+  const markupRates = {
+    materialMarkupPct: data.materialMarkupPct ?? 0,
+    laborMarkupPct: data.laborMarkupPct ?? 0,
+  };
 
   if (data.id) {
     // Ownership-gated update in a single Prisma call (no TOCTOU window).
@@ -100,10 +116,10 @@ export async function saveProposal(raw: unknown) {
           description: l.description,
           measurementType: l.measurementType,
           quantity: l.quantity,
-          unitPrice: l.unitPrice,
+          unitPrice: sellUnitPrice(l, markupRates),
           materialCost: l.materialCost,
           laborCost: l.laborCost,
-          total: l.quantity * l.unitPrice,
+          total: l.quantity * sellUnitPrice(l, markupRates),
           position: i,
           store: l.store ?? null,
           productUrl: l.productUrl ?? null,
@@ -170,7 +186,8 @@ export async function saveProposal(raw: unknown) {
       lineItems: {
         create: data.lineItems.map((l, i) => ({
           ...l,
-          total: l.quantity * l.unitPrice,
+          unitPrice: sellUnitPrice(l, markupRates),
+          total: l.quantity * sellUnitPrice(l, markupRates),
           position: i,
         })),
       },

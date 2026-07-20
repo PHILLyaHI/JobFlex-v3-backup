@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { nanoid } from "nanoid";
+import { sellUnitPrice } from "@/lib/pricing/markup";
 
 export type MeasurementType = "SQFT" | "LINEAR_FT" | "CUBIC_FT" | "UNIT" | "HOUR" | "LUMP_SUM";
 
@@ -98,10 +99,13 @@ const emptyDraft = (): ProposalDraft => ({
     { id: nanoid(6), label: "Completion", amount: 40, isPercent: true },
   ],
   taxRate: 0,
-  materialMarkupPct: 15,
-  laborMarkupPct: 10,
-  overheadPct: 10,
-  profitPct: 15,
+  // Hidden profit markup. Default 0 so a brand-new draft prices at cost exactly
+  // (current behaviour); the org-wide default is seeded on top at creation
+  // (ResetDraft / estimator convert). overhead/profit stay display-only for now.
+  materialMarkupPct: 0,
+  laborMarkupPct: 0,
+  overheadPct: 0,
+  profitPct: 0,
 });
 
 export const useProposalDraftStore = create<DraftStore>()(
@@ -161,7 +165,10 @@ export const useProposalDraftStore = create<DraftStore>()(
       }),
     computed: () => {
       const d = get().draft;
-      const subtotal = d.lineItems.reduce((acc, l) => acc + l.quantity * l.unitPrice, 0);
+      // Subtotal is the client-facing SELL price: each line's cost marked up by
+      // the draft's material/labor markup %s (0 by default → equals cost).
+      const rates = { materialMarkupPct: d.materialMarkupPct ?? 0, laborMarkupPct: d.laborMarkupPct ?? 0 };
+      const subtotal = d.lineItems.reduce((acc, l) => acc + l.quantity * sellUnitPrice(l, rates), 0);
       const tax = subtotal * (d.taxRate ?? 0);
       const materialCost = d.lineItems.reduce((acc, l) => acc + l.quantity * l.materialCost, 0);
       const laborCost = d.lineItems.reduce((acc, l) => acc + l.quantity * l.laborCost, 0);

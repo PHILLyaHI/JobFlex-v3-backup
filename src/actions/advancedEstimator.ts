@@ -9,6 +9,7 @@ import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { readPriceCache, writePriceCache } from "@/lib/priceCache";
+import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import {
   estimateSchema,
   lineSchema,
@@ -861,6 +862,14 @@ export async function convertEstimateToProposal(raw: unknown) {
       )?.id ?? null
     : null;
 
+  // Hidden profit markup: seed this proposal from the org-wide default, then
+  // apply it so each line's unitPrice is the SELL price (0% → equals cost).
+  const org = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { materialMarkupPct: true, laborMarkupPct: true },
+  });
+  const markupRates = resolveMarkupRates(null, org);
+
   const lines = [
     ...data.materials.map((l) => {
       // Fold the product size into the line name so the proposal reads e.g.
@@ -871,15 +880,16 @@ export async function convertEstimateToProposal(raw: unknown) {
         size && !l.name.toLowerCase().includes(size.toLowerCase())
           ? `${l.name} (${size})`
           : l.name;
+      const sell = sellUnitPrice({ unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0 }, markupRates);
       return {
         name,
         description: l.unit ? `Measured in ${l.unit}` : null,
         measurementType: l.unit === "sqft" ? "SQFT" : l.unit === "ln ft" ? "LINEAR_FT" : l.unit === "hour" ? "HOUR" : "UNIT",
         quantity: l.quantity,
-        unitPrice: l.unitPrice,
+        unitPrice: sell,
         materialCost: l.unitPrice,
         laborCost: 0,
-        total: l.quantity * l.unitPrice,
+        total: l.quantity * sell,
         // Carry the live-pricing product data so the Materials Request view can
         // render a shoppable line. Empty strings normalize to null.
         store: l.store?.trim() || null,
@@ -893,10 +903,12 @@ export async function convertEstimateToProposal(raw: unknown) {
       description: l.unit ? `Measured in ${l.unit}` : null,
       measurementType: l.unit === "hour" ? "HOUR" : l.unit === "sqft" ? "SQFT" : "UNIT",
       quantity: l.quantity,
-      unitPrice: l.unitPrice,
+      unitPrice: sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
       materialCost: 0,
       laborCost: l.unitPrice,
-      total: l.quantity * l.unitPrice,
+      total:
+        l.quantity *
+        sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
       store: null,
       productUrl: null,
       imageUrl: null,
@@ -923,6 +935,8 @@ export async function convertEstimateToProposal(raw: unknown) {
       taxRate: 0,
       taxTotal: 0,
       total: subtotal,
+      materialMarkupPct: markupRates.materialMarkupPct,
+      laborMarkupPct: markupRates.laborMarkupPct,
       validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
       lineItems: {
         create: lines.map((l, i) => ({ ...l, position: i })),

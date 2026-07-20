@@ -9,6 +9,7 @@ import {
   type DraftLineItem,
 } from "@/stores/useProposalDraftStore";
 import { money } from "@/lib/format";
+import { sellUnitPrice } from "@/lib/pricing/markup";
 import { cn } from "@/lib/cn";
 import { RatioSlider } from "@/components/proposal/RatioSlider";
 import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
@@ -40,12 +41,18 @@ export function LineItemRow({
 }) {
   const update = useProposalDraftStore((s) => s.updateLine);
   const remove = useProposalDraftStore((s) => s.removeLine);
+  const draft = useProposalDraftStore((s) => s.draft);
   const [expanded, setExpanded] = React.useState(false);
   const [materialsOpen, setMaterialsOpen] = React.useState(false);
   const reduceMotion = useReducedMotion();
 
+  // perUnit = raw cost (drives the material/labor ratio %). `unit` is the
+  // client-facing SELL price (cost + hidden markup; equals cost at 0%).
   const perUnit = (item.materialCost ?? 0) + (item.laborCost ?? 0);
-  const unit = item.unitPrice || perUnit;
+  const unit = sellUnitPrice(item, {
+    materialMarkupPct: draft.materialMarkupPct ?? 0,
+    laborMarkupPct: draft.laborMarkupPct ?? 0,
+  });
   const total = item.quantity * unit;
 
   const handleMaterial = (v: number) => {

@@ -26,6 +26,12 @@ model Organization {
   website         String?
   timezone        String   @default("America/New_York")
   defaultTaxRate  Float    @default(0)
+  // Org-wide default profit markup (hidden from the client). Seeded into a new
+  // proposal's per-proposal materialMarkupPct/laborMarkupPct at creation; the
+  // contractor can override per proposal. @default(0) = existing orgs keep 0%
+  // (current behaviour — no price change), so no backfill is needed.
+  materialMarkupPct Float  @default(0)
+  laborMarkupPct    Float  @default(0)
   aiPromptCustom  String?
   publicProfileEnabled Boolean @default(false)
   landingHeroTitle    String?

@@ -2,6 +2,7 @@
 import * as React from "react";
 import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
 import { money } from "@/lib/format";
+import { sellUnitPrice } from "@/lib/pricing/markup";
 import { OverflowTooltip } from "./OverflowTooltip";
 
 const UNIT_LABEL: Record<string, string> = {
@@ -26,6 +27,13 @@ export function ProposalPreview({
   const draft = useProposalDraftStore((s) => s.draft);
   const { subtotal, tax, total } = useProposalDraftStore((s) => s.computed)();
   const namedItems = draft.lineItems.filter((l) => l.name.trim());
+  // The client sees SELL prices (cost + hidden markup). Per-line prices use the
+  // same sellUnitPrice as the subtotal so the column sums match — markup is never
+  // shown as its own line. At 0% markup this equals the raw unit price.
+  const rates = {
+    materialMarkupPct: draft.materialMarkupPct ?? 0,
+    laborMarkupPct: draft.laborMarkupPct ?? 0,
+  };
 
   return (
     <div className="paper-card p-7">
@@ -84,9 +92,9 @@ export function ProposalPreview({
                 </div>
               </td>
               <td className="py-3 text-right tabular">{l.quantity}</td>
-              <td className="py-3 text-right tabular">{money(l.unitPrice)}</td>
+              <td className="py-3 text-right tabular">{money(sellUnitPrice(l, rates))}</td>
               <td className="py-3 text-right font-display tabular">
-                {money(l.quantity * l.unitPrice)}
+                {money(l.quantity * sellUnitPrice(l, rates))}
               </td>
             </tr>
           ))}
