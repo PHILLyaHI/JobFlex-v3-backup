@@ -147,6 +147,9 @@ export async function disconnectGmail() {
 const proposalDefaultsSchema = z.object({
   materialMarkupPct: z.number().finite().min(0).max(1000),
   laborMarkupPct: z.number().finite().min(0).max(1000),
+  // Default sales tax, stored as a FRACTION 0-1 (0.08 = 8%) to match
+  // Proposal.taxRate. The settings UI collects a percent and divides by 100.
+  defaultTaxRate: z.number().finite().min(0).max(1),
 });
 
 export async function updateProposalDefaults(raw: unknown) {
@@ -157,6 +160,7 @@ export async function updateProposalDefaults(raw: unknown) {
     data: {
       materialMarkupPct: data.materialMarkupPct,
       laborMarkupPct: data.laborMarkupPct,
+      defaultTaxRate: data.defaultTaxRate,
     },
   });
   revalidatePath("/dashboard/settings/proposals");

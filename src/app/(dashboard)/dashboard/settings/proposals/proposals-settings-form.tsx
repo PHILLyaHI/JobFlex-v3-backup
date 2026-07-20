@@ -5,7 +5,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
-import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Toggle } from "@/components/settings/Toggle";
@@ -27,9 +26,11 @@ const DEFAULT_STEPS: ScheduleStep[] = [
 export function ProposalsSettingsForm({
   initialMaterialMarkup,
   initialLaborMarkup,
+  initialTaxRate,
 }: {
   initialMaterialMarkup: number;
   initialLaborMarkup: number;
+  initialTaxRate: number;
 }) {
   const [validity, setValidity] = React.useState(14);
   const [autoFollow, setAutoFollow] = React.useState(true);
@@ -41,16 +42,21 @@ export function ProposalsSettingsForm({
   // into every new proposal; overridable per proposal in the Estimate breakdown.
   const [matMk, setMatMk] = React.useState(initialMaterialMarkup);
   const [labMk, setLabMk] = React.useState(initialLaborMarkup);
+  // Markup is a whole percent (20 = 20%). Tax is stored as a FRACTION (0.08),
+  // so the field shows a percent (seed from fraction*100) and we divide by 100
+  // on save. Do NOT treat these two the same way.
+  const [taxPct, setTaxPct] = React.useState(initialTaxRate * 100);
   const [savingMarkup, setSavingMarkup] = React.useState(false);
 
-  async function saveMarkup() {
+  async function savePricing() {
     setSavingMarkup(true);
     try {
       await updateProposalDefaults({
         materialMarkupPct: Number.isFinite(matMk) ? matMk : 0,
         laborMarkupPct: Number.isFinite(labMk) ? labMk : 0,
+        defaultTaxRate: Number.isFinite(taxPct) ? taxPct / 100 : 0,
       });
-      toast.success("Saved", "Default markup updated for new proposals.");
+      toast.success("Saved", "Default pricing updated for new proposals.");
     } catch {
       toast.error("Couldn't save", "Please try again.");
     } finally {
@@ -93,12 +99,6 @@ export function ProposalsSettingsForm({
               onChange={(e) => setValidity(Number(e.target.value))}
               hint="Auto-expires after"
             />
-            <Select label="Default tax rate" defaultValue="0.06">
-              <option value="0">No tax</option>
-              <option value="0.06">6%</option>
-              <option value="0.0725">7.25%</option>
-              <option value="0.10">10%</option>
-            </Select>
           </div>
           <div className="mt-4 divide-y divide-[color:var(--ink-line)]">
             <Toggle
@@ -125,8 +125,8 @@ export function ProposalsSettingsForm({
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Default markup</CardTitle>
-              <CardSubtitle>Hidden profit added to every new proposal.</CardSubtitle>
+              <CardTitle>Default pricing</CardTitle>
+              <CardSubtitle>Hidden markup + sales tax for every new proposal.</CardSubtitle>
             </div>
             <Badge tone="accent">applies forward</Badge>
           </CardHeader>
@@ -148,14 +148,26 @@ export function ProposalsSettingsForm({
               onChange={(e) => setLabMk(Number(e.target.value))}
             />
           </div>
+          <div className="mt-3">
+            <Input
+              label="Default tax rate %"
+              type="number"
+              step="0.1"
+              min={0}
+              value={taxPct}
+              onChange={(e) => setTaxPct(Number(e.target.value))}
+              hint="Applied on top of the subtotal, after markup. Enter 0 for no tax."
+            />
+          </div>
           <p className="mt-4 text-[11px] text-[color:var(--ink-muted)] leading-relaxed">
-            New proposals start with this markup. Clients never see it as a separate line —
-            it&apos;s folded into each item&apos;s price. You can still override it in the
-            Estimate breakdown of any individual proposal. At 0% nothing changes.
+            New proposals start with this markup and tax. Markup is hidden — clients never
+            see it as a separate line; it&apos;s folded into each item&apos;s price. Tax shows
+            as its own line. You can still override both in any individual proposal. At 0%
+            nothing changes.
           </p>
           <div className="mt-4 flex gap-2">
-            <Button onClick={saveMarkup} disabled={savingMarkup}>
-              {savingMarkup ? "Saving…" : "Save markup"}
+            <Button onClick={savePricing} disabled={savingMarkup}>
+              {savingMarkup ? "Saving…" : "Save pricing"}
             </Button>
           </div>
         </Card>

@@ -73,7 +73,6 @@ export default async function PublicProposalPortal({
   const hasLineItems = proposal.lineItems.length > 0;
   const hasInstallments = proposal.installments.length > 0;
   const hasScope = Boolean(proposal.scopeOfWork && proposal.scopeOfWork.trim());
-  const hasTax = proposal.taxTotal > 0;
   const telHref = org.phone ? `tel:${org.phone.replace(/\s+/g, "")}` : null;
 
   return (
@@ -218,16 +217,15 @@ export default async function PublicProposalPortal({
                         {money(proposal.subtotal)}
                       </dd>
                     </div>
-                    {hasTax ? (
-                      <div className="flex items-center justify-between">
-                        <dt className="text-[color:var(--ink-muted)]">
-                          Tax · {(proposal.taxRate * 100).toFixed(1)}%
-                        </dt>
-                        <dd className="font-medium text-[color:var(--ink-soft)] tabular">
-                          {money(proposal.taxTotal)}
-                        </dd>
-                      </div>
-                    ) : null}
+                    {/* Always show the tax line — at 0% it reads "Tax · 0.0%" / $0. */}
+                    <div className="flex items-center justify-between">
+                      <dt className="text-[color:var(--ink-muted)]">
+                        Tax · {(proposal.taxRate * 100).toFixed(1)}%
+                      </dt>
+                      <dd className="font-medium text-[color:var(--ink-soft)] tabular">
+                        {money(proposal.taxTotal)}
+                      </dd>
+                    </div>
                     <div className="flex items-center justify-between border-t border-[color:var(--ink-line)] pt-3">
                       <dt className="text-[14px] font-semibold text-[color:var(--ink)]">
                         Total due

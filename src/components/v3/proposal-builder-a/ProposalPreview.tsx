@@ -116,14 +116,14 @@ export function ProposalPreview({
           <span className="text-[color:var(--ink-muted)]">Subtotal</span>
           <span className="tabular">{money(subtotal)}</span>
         </div>
-        {draft.taxRate > 0 && (
-          <div className="flex items-center justify-between">
-            <span className="text-[color:var(--ink-muted)]">
-              Tax · {(draft.taxRate * 100).toFixed(1)}%
-            </span>
-            <span className="tabular">{money(tax)}</span>
-          </div>
-        )}
+        {/* Always show the tax line — at 0% it reads "Tax · 0.0%" / $0 so the
+            client always sees the with/without-tax breakdown. */}
+        <div className="flex items-center justify-between">
+          <span className="text-[color:var(--ink-muted)]">
+            Tax · {(draft.taxRate * 100).toFixed(1)}%
+          </span>
+          <span className="tabular">{money(tax)}</span>
+        </div>
         <div className="my-2 h-px bg-[color:var(--ink-line)]" />
         <div className="flex items-baseline justify-between">
           <span className="quiet-caps">Total</span>

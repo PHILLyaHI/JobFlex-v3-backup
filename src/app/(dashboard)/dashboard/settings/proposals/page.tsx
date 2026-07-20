@@ -6,12 +6,13 @@ export default async function ProposalsSettingsPage() {
   const { organizationId } = await requireOrg();
   const org = await db.organization.findUnique({
     where: { id: organizationId },
-    select: { materialMarkupPct: true, laborMarkupPct: true },
+    select: { materialMarkupPct: true, laborMarkupPct: true, defaultTaxRate: true },
   });
   return (
     <ProposalsSettingsForm
       initialMaterialMarkup={org?.materialMarkupPct ?? 0}
       initialLaborMarkup={org?.laborMarkupPct ?? 0}
+      initialTaxRate={org?.defaultTaxRate ?? 0}
     />
   );
 }

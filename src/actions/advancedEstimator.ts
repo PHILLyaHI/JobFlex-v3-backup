@@ -866,7 +866,7 @@ export async function convertEstimateToProposal(raw: unknown) {
   // apply it so each line's unitPrice is the SELL price (0% → equals cost).
   const org = await db.organization.findUnique({
     where: { id: organizationId },
-    select: { materialMarkupPct: true, laborMarkupPct: true },
+    select: { materialMarkupPct: true, laborMarkupPct: true, defaultTaxRate: true },
   });
   const markupRates = resolveMarkupRates(null, org);
 
@@ -917,6 +917,10 @@ export async function convertEstimateToProposal(raw: unknown) {
   ];
 
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
+  // Tax sits on top of the marked-up subtotal (sell price), applied once. Seeded
+  // from the org default. taxRate is a FRACTION (0.08 = 8%), not a percent.
+  const taxRate = org?.defaultTaxRate ?? 0;
+  const taxTotal = subtotal * taxRate;
 
   // Scope only — assumptions stay on the estimate (AiEstimate), never baked into
   // the proposal's scope, so the preview / calendar / job detail stay clean.
@@ -932,9 +936,9 @@ export async function convertEstimateToProposal(raw: unknown) {
       scopeOfWork: scope || null,
       status: ProposalStatus.DRAFT,
       subtotal,
-      taxRate: 0,
-      taxTotal: 0,
-      total: subtotal,
+      taxRate,
+      taxTotal,
+      total: subtotal + taxTotal,
       materialMarkupPct: markupRates.materialMarkupPct,
       laborMarkupPct: markupRates.laborMarkupPct,
       validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),

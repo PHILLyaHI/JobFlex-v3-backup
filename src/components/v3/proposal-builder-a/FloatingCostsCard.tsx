@@ -48,7 +48,7 @@ export function FloatingCostsCard({ hidden }: { hidden: boolean }) {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[color:var(--ink-muted)]">
-                      Tax{taxRate > 0 ? ` · ${(taxRate * 100).toFixed(1)}%` : ""}
+                      Tax · {(taxRate * 100).toFixed(1)}%
                     </span>
                     <span className="tabular text-[color:var(--ink)]">
                       {money(tax)}

@@ -343,14 +343,13 @@ export function ProposalPdfDocument({ data }: { data: ProposalPdfData }) {
                 <Text style={s.totalsValue}>−{money(data.discountTotal, data.currency)}</Text>
               </View>
             )}
-            {data.taxTotal > 0 && (
-              <View style={s.totalsRow}>
-                <Text style={s.totalsLabel}>
-                  Tax · {(data.taxRate * 100).toFixed(2)}%
-                </Text>
-                <Text style={s.totalsValue}>{money(data.taxTotal, data.currency)}</Text>
-              </View>
-            )}
+            {/* Always print the tax line — at 0% it reads "Tax · 0.00%" / $0. */}
+            <View style={s.totalsRow}>
+              <Text style={s.totalsLabel}>
+                Tax · {(data.taxRate * 100).toFixed(2)}%
+              </Text>
+              <Text style={s.totalsValue}>{money(data.taxTotal, data.currency)}</Text>
+            </View>
             <View style={s.grandTotalRow}>
               <Text style={s.grandTotalLabel}>Total</Text>
               <Text style={s.grandTotalValue}>{money(data.total, data.currency)}</Text>
