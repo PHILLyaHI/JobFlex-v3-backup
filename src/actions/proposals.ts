@@ -399,6 +399,11 @@ export async function duplicateProposal(id: string) {
       subtotal: p.subtotal,
       taxTotal: p.taxTotal,
       total: p.total,
+      // Carry the hidden markup so the copy stays consistent: its stored
+      // unitPrices are already sell prices, and the editor re-derives sell from
+      // these rates. Dropping them would silently revert the copy to raw cost.
+      materialMarkupPct: p.materialMarkupPct,
+      laborMarkupPct: p.laborMarkupPct,
       status: "DRAFT",
       lineItems: {
         create: p.lineItems.map((l) => ({

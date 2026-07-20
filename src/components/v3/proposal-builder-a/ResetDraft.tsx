@@ -5,7 +5,15 @@ import { useProposalDraftStore } from "@/stores/useProposalDraftStore";
 // Initialise the draft store with the org default tax rate. Runs once per
 // mount — guarded by a ref so navigations between v1 and v3 builders don't
 // clobber an in-progress draft on re-render.
-export function ResetDraft({ defaultTaxRate }: { defaultTaxRate: number }) {
+export function ResetDraft({
+  defaultTaxRate,
+  materialMarkupPct = 0,
+  laborMarkupPct = 0,
+}: {
+  defaultTaxRate: number;
+  materialMarkupPct?: number;
+  laborMarkupPct?: number;
+}) {
   const reset = useProposalDraftStore((s) => s.reset);
   const set = useProposalDraftStore((s) => s.set);
   const didRun = React.useRef(false);
@@ -14,8 +22,10 @@ export function ResetDraft({ defaultTaxRate }: { defaultTaxRate: number }) {
     if (didRun.current) return;
     didRun.current = true;
     reset();
-    set({ taxRate: defaultTaxRate });
-  }, [reset, set, defaultTaxRate]);
+    // Seed the org defaults on top of a fresh draft. Markup defaults to 0, so an
+    // org that hasn't set one keeps pricing at cost (current behaviour).
+    set({ taxRate: defaultTaxRate, materialMarkupPct, laborMarkupPct });
+  }, [reset, set, defaultTaxRate, materialMarkupPct, laborMarkupPct]);
 
   return null;
 }

@@ -45,7 +45,7 @@ export default async function ManualBuilderAPage() {
     }),
     db.organization.findUnique({
       where: { id: organizationId },
-      select: { name: true, defaultTaxRate: true },
+      select: { name: true, defaultTaxRate: true, materialMarkupPct: true, laborMarkupPct: true },
     }),
   ]);
 
@@ -56,7 +56,11 @@ export default async function ManualBuilderAPage() {
         title="Manual builder"
         description="Hand-craft every line. Live preview mirrors what the client will see."
       />
-      <ResetDraft defaultTaxRate={org?.defaultTaxRate ?? 0} />
+      <ResetDraft
+        defaultTaxRate={org?.defaultTaxRate ?? 0}
+        materialMarkupPct={org?.materialMarkupPct ?? 0}
+        laborMarkupPct={org?.laborMarkupPct ?? 0}
+      />
       <ProposalEditor
         clients={clients}
         projects={projects}

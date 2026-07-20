@@ -140,6 +140,29 @@ export async function disconnectGmail() {
   return { ok: true };
 }
 
+// Org-wide default profit markup (hidden from the client). These are real
+// Organization columns (not JSON) — seeded into every new proposal and applied
+// by the estimators. 0% keeps current behaviour. min(0) blocks negative markup
+// (which would sell below cost); the ceiling is a sanity guard, not a rule.
+const proposalDefaultsSchema = z.object({
+  materialMarkupPct: z.number().finite().min(0).max(1000),
+  laborMarkupPct: z.number().finite().min(0).max(1000),
+});
+
+export async function updateProposalDefaults(raw: unknown) {
+  const { organizationId } = await requireManager();
+  const data = proposalDefaultsSchema.parse(raw);
+  await db.organization.update({
+    where: { id: organizationId },
+    data: {
+      materialMarkupPct: data.materialMarkupPct,
+      laborMarkupPct: data.laborMarkupPct,
+    },
+  });
+  revalidatePath("/dashboard/settings/proposals");
+  return { ok: true };
+}
+
 const metaSchema = z.object({
   connected: z.boolean(),
   autoCreate: z.boolean(),
