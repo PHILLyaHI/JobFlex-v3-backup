@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { DoorOpen, DoorClosed, X, ChevronDown, Check } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useFenceStudioStore } from "@/stores/useFenceStudioStore";
+import { OPENING_PRICE } from "./fencePricing";
 import {
   GATE_VARIANTS,
   DOOR_VARIANTS,
@@ -42,6 +43,7 @@ export function FenceLedger() {
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i];
       const b = points[i + 1];
+      if (b.gap) continue; // run break — no fence between these points
       const len = Math.hypot(b.x - a.x, b.y - a.y);
       if (len > 1e-4) out.push({ i, len });
     }
@@ -54,7 +56,8 @@ export function FenceLedger() {
     const k = runs.findIndex((r) => r.i === seg);
     return k >= 0 ? k + 1 : null;
   };
-  const priceOf = (kind: OpeningKind, variant: OpeningVariant) => pricing.openingPrice[kind]?.[variant] ?? 0;
+  const priceOf = (kind: OpeningKind, variant: OpeningVariant) =>
+    pricing.openingPrice[kind]?.[variant] ?? OPENING_PRICE[kind]?.[variant] ?? 0;
 
   const ordered = React.useMemo(
     () => [...gates].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "gate" ? -1 : 1)),

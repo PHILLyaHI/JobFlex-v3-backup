@@ -37,6 +37,31 @@ export function pathToLatLng(origin: LatLng, pts: PathPoint[]): LatLng[] {
   return pts.map((p) => localFeetToLatLng(origin, p));
 }
 
+// Ray-casting point-in-polygon in local feet (ring open or closed).
+export function pointInRingFt(p: PathPoint, ring: PathPoint[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i].x;
+    const yi = ring[i].y;
+    const xj = ring[j].x;
+    const yj = ring[j].y;
+    const intersect = yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function ringCentroidFt(ring: PathPoint[]): PathPoint {
+  let x = 0;
+  let y = 0;
+  for (const p of ring) {
+    x += p.x;
+    y += p.y;
+  }
+  const n = Math.max(1, ring.length);
+  return { x: x / n, y: y / n };
+}
+
 function perpDistance(p: PathPoint, a: PathPoint, b: PathPoint): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;

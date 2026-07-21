@@ -18,7 +18,7 @@ import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { cn } from "@/lib/cn";
 import { computeFenceLayout, type FenceLayout, type GateUnit } from "./fenceGeometry";
 import { makeFenceTextures, makeChainLinkAlpha, type FenceMaterialTextures } from "./fenceTexture";
-import { isBuiltinMaterial, type PathPoint, type GateSpec } from "./fenceTypes";
+import { isBuiltinMaterial, type PathPoint, type GateSpec, type BuildingFootprint } from "./fenceTypes";
 
 // Member authoring dimensions (feet). Horizontal axis is local +X so a single
 // rotation.y = yaw aligns every member with its run.
@@ -48,6 +48,7 @@ interface ViewSpec {
   materialColor: string; // resolved swatch/colour (used for custom materials)
   gates: GateSpec[];
   selectedSegment: number | null;
+  buildings: BuildingFootprint[]; // real nearby footprints (local feet)
 }
 
 function webglSupported(): boolean {
@@ -69,11 +70,12 @@ export const FenceModel3D = React.forwardRef<
     materialColor: string;
     gates: GateSpec[];
     selectedSegment: number | null;
+    buildings: BuildingFootprint[];
     active?: boolean;
     className?: string;
   }
 >(function FenceModel3D(
-  { points, height, material, materialColor, gates, selectedSegment, active = true, className },
+  { points, height, material, materialColor, gates, selectedSegment, buildings, active = true, className },
   ref,
 ) {
   const mountRef = React.useRef<HTMLDivElement>(null);
@@ -99,8 +101,8 @@ export const FenceModel3D = React.forwardRef<
 
   const applyRef = React.useRef<(s: ViewSpec) => void>(() => {});
   React.useEffect(() => {
-    applyRef.current({ points, height, material, materialColor, gates, selectedSegment });
-  }, [points, height, material, materialColor, gates, selectedSegment]);
+    applyRef.current({ points, height, material, materialColor, gates, selectedSegment, buildings });
+  }, [points, height, material, materialColor, gates, selectedSegment, buildings]);
 
   // When the studio hides this panel (Draw view), release pointer-lock/keys so a
   // fly session can't keep driving an invisible scene; on re-show, re-frame if the
@@ -414,53 +416,104 @@ export const FenceModel3D = React.forwardRef<
     };
 
     let scenerySpan = -1;
-    const buildScenery = (l: FenceLayout) => {
+    let sceneryHadReal = false;
+    // `hasReal`: real building footprints are loaded, so the invented house +
+    // neighbour boxes are suppressed (trees stay — they're soft dressing, not
+    // spatial claims).
+    const buildScenery = (l: FenceLayout, hasReal: boolean) => {
       clearGroup(sceneryGroup, false); // dispose geometries, keep shared materials
       const w = Math.max(6, l.bounds.maxX - l.bounds.minX);
       const d = Math.max(6, l.bounds.maxY - l.bounds.minY);
       const span = Math.max(w, d);
       const minDim = Math.min(w, d);
       const rnd = mulberry32(1337);
-      // Main house, centred in the parcel (the fence is centred at scene origin).
-      addRoofedBox(
-        clampN(minDim * 0.5, 8, 60),
-        clampN(minDim * 0.42, 8, 50),
-        clampN(minDim * 0.35, 9, 16),
-        clampN(minDim * 0.2, 5, 10),
-        houseWallMat,
-        houseRoofMat,
-        0,
-        0,
-        0,
-      );
+      if (!hasReal) {
+        // Main house, centred in the parcel (the fence is centred at scene origin).
+        addRoofedBox(
+          clampN(minDim * 0.5, 8, 60),
+          clampN(minDim * 0.42, 8, 50),
+          clampN(minDim * 0.35, 9, 16),
+          clampN(minDim * 0.2, 5, 10),
+          houseWallMat,
+          houseRoofMat,
+          0,
+          0,
+          0,
+        );
+      }
       const trees = 6;
       for (let i = 0; i < trees; i++) {
         const ang = (i / trees) * Math.PI * 2 + rnd() * 0.7;
         const r = span * (0.62 + rnd() * 0.2);
         addTree(Math.cos(ang) * r, Math.sin(ang) * r, 0.8 + rnd() * 0.7);
       }
-      const neighbors = 3;
-      for (let i = 0; i < neighbors; i++) {
-        const ang = (i / neighbors) * Math.PI * 2 + 0.8 + rnd() * 0.5;
-        const r = span * (1.25 + rnd() * 0.5);
-        const nw = clampN(minDim * (0.4 + rnd() * 0.3), 8, 40);
-        addRoofedBox(
-          nw,
-          nw * 0.8,
-          clampN(minDim * 0.3, 8, 14),
-          6,
-          neighborWallMat,
-          houseRoofMat,
-          Math.cos(ang) * r,
-          Math.sin(ang) * r,
-          rnd() * Math.PI,
-        );
+      if (!hasReal) {
+        const neighbors = 3;
+        for (let i = 0; i < neighbors; i++) {
+          const ang = (i / neighbors) * Math.PI * 2 + 0.8 + rnd() * 0.5;
+          const r = span * (1.25 + rnd() * 0.5);
+          const nw = clampN(minDim * (0.4 + rnd() * 0.3), 8, 40);
+          addRoofedBox(
+            nw,
+            nw * 0.8,
+            clampN(minDim * 0.3, 8, 14),
+            6,
+            neighborWallMat,
+            houseRoofMat,
+            Math.cos(ang) * r,
+            Math.sin(ang) * r,
+            rnd() * Math.PI,
+          );
+        }
       }
       scenerySpan = span;
+      sceneryHadReal = hasReal;
     };
-    const buildSceneryIfNeeded = (l: FenceLayout) => {
+    const buildSceneryIfNeeded = (l: FenceLayout, hasReal: boolean) => {
       const span = Math.max(6, l.bounds.maxX - l.bounds.minX, l.bounds.maxY - l.bounds.minY);
-      if (scenerySpan < 0 || Math.abs(span - scenerySpan) > scenerySpan * 0.15) buildScenery(l);
+      if (scenerySpan < 0 || Math.abs(span - scenerySpan) > scenerySpan * 0.15 || hasReal !== sceneryHadReal) {
+        buildScenery(l, hasReal);
+      }
+    };
+
+    // ── Real building footprints: honest extruded prisms in the same local-feet
+    // frame as the fence (same cx/cy recentre), so drawn-fence-to-wall distances
+    // read true. Flat top + thin darker cap — accurate footprint/height, no
+    // invented styling. Rebuilt when the footprint set or the scene centre moves.
+    const buildingsGroup = new THREE.Group();
+    scene.add(buildingsGroup);
+    const ROOF_CAP_FT = 0.6;
+    let builtBuildings: BuildingFootprint[] | null = null;
+    let builtBCx = 0;
+    let builtBCy = 0;
+    const rebuildBuildings = (bs: BuildingFootprint[], cx: number, cy: number) => {
+      clearGroup(buildingsGroup, false);
+      for (const b of bs) {
+        if (b.ring.length < 3) continue;
+        const shape = new THREE.Shape();
+        b.ring.forEach((p, i) => {
+          // rotateX(-π/2) maps shape (x, y) → scene (x, −z), so shape-y = y − cy
+          // yields scene z = −(y − cy), matching the fence transform exactly.
+          if (i === 0) shape.moveTo(p.x - cx, p.y - cy);
+          else shape.lineTo(p.x - cx, p.y - cy);
+        });
+        shape.closePath();
+        const wallH = Math.max(6, b.heightFt - ROOF_CAP_FT);
+        const wallGeo = new THREE.ExtrudeGeometry(shape, { depth: wallH, bevelEnabled: false });
+        wallGeo.rotateX(-Math.PI / 2);
+        const wall = new THREE.Mesh(wallGeo, b.role === "subject" ? houseWallMat : neighborWallMat);
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        const capGeo = new THREE.ExtrudeGeometry(shape, { depth: ROOF_CAP_FT, bevelEnabled: false });
+        capGeo.rotateX(-Math.PI / 2);
+        const cap = new THREE.Mesh(capGeo, houseRoofMat);
+        cap.position.y = wallH;
+        cap.castShadow = true;
+        buildingsGroup.add(wall, cap);
+      }
+      builtBuildings = bs;
+      builtBCx = cx;
+      builtBCy = cy;
     };
 
     const addBox = (
@@ -512,6 +565,18 @@ export const FenceModel3D = React.forwardRef<
         const b = framedLeaf(lw, lh, leafMat);
         b.position.x = W * 0.22;
         g.add(a, b);
+        return g;
+      }
+      if (variant === "triple") {
+        // Three equal leaves across the span (wide drive-through gates).
+        const g = new THREE.Group();
+        const lw = W * 0.29;
+        const lh = H * 0.84;
+        for (const off of [-W * 0.31, 0, W * 0.31]) {
+          const leaf = framedLeaf(lw, lh, leafMat);
+          leaf.position.x = off;
+          g.add(leaf);
+        }
         return g;
       }
       if (variant === "arched") {
@@ -616,7 +681,7 @@ export const FenceModel3D = React.forwardRef<
     };
 
     const updateHighlight = (pts: PathPoint[], sel: number | null, fenceH: number, cx: number, cy: number) => {
-      if (sel == null || sel < 0 || sel >= pts.length - 1) {
+      if (sel == null || sel < 0 || sel >= pts.length - 1 || pts[sel + 1].gap) {
         highlight.visible = false;
         return;
       }
@@ -773,7 +838,7 @@ export const FenceModel3D = React.forwardRef<
         applyVisibility(next.material);
         rebuildGates(l, next.height, cx, cy);
         rebuildChain(l, next.height, next.material, cx, cy);
-        buildSceneryIfNeeded(l);
+        buildSceneryIfNeeded(l, next.buildings.length > 0);
         built = l;
         prevPts = next.points;
         prevGates = next.gates;
@@ -792,11 +857,19 @@ export const FenceModel3D = React.forwardRef<
       // Highlight is cheap and depends on selection — always refresh it.
       if (built) {
         const { cx, cy } = center(built);
+        // Real buildings follow the same recentre as the fence: rebuild when the
+        // footprint set changes OR the scene centre moved (fence redrawn).
+        if (next.buildings !== builtBuildings || cx !== builtBCx || cy !== builtBCy) {
+          rebuildBuildings(next.buildings, cx, cy);
+          // Scenery decides fake-vs-real by footprint presence even when fence
+          // geometry didn't change (e.g. buildings arrive after Load Property Lines).
+          buildSceneryIfNeeded(built, next.buildings.length > 0);
+        }
         updateHighlight(next.points, next.selectedSegment, next.height, cx, cy);
       }
     };
 
-    applySpec({ points, height, material, materialColor, gates, selectedSegment });
+    applySpec({ points, height, material, materialColor, gates, selectedSegment, buildings });
     applyRef.current = applySpec;
 
     activateRef.current = () => {
@@ -861,6 +934,7 @@ export const FenceModel3D = React.forwardRef<
       clearGroup(gateGroup, false);
       clearGroup(chainGroup, true);
       clearGroup(sceneryGroup, false);
+      clearGroup(buildingsGroup, false);
       for (const m of sceneryMats) m.dispose();
       postGeo.dispose();
       picketGeo.dispose();

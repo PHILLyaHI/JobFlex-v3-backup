@@ -17,8 +17,9 @@ import { computeFenceLayout } from "./fenceGeometry";
 import { buildFenceLineItems, type FenceLabels } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
-import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
-import { latLngToLocalFeet, simplifyPath } from "./mapProjection";
+import { fetchPropertyBoundary, type BuildingRing } from "@/actions/fenceBoundary";
+import { latLngToLocalFeet, simplifyPath, pointInRingFt, ringCentroidFt } from "./mapProjection";
+import type { BuildingFootprint, PathPoint } from "./fenceTypes";
 import { FenceModel3D, type FenceModel3DHandle } from "./FenceModel3D";
 import { FenceDrawMap } from "./FenceDrawMap";
 import { FenceToolbelt } from "./FenceToolbelt";
@@ -28,7 +29,31 @@ import { FencePriceSheet } from "./FencePriceSheet";
 
 type View = "draw" | "3d";
 
+// Stable empty array so specs persisted before `buildings` existed don't re-render
+// the 3D scene with a fresh [] each pass.
+const NO_BUILDINGS: BuildingFootprint[] = [];
+
 const PARCEL_SIMPLIFY_FT = 1; // Douglas–Peucker tolerance for trimming redundant parcel vertices
+const BUILDING_SIMPLIFY_FT = 0.5; // buildings keep more corner fidelity than the editable parcel
+
+// Convert fetched building rings (lat/lng) into local-feet footprints, tagging the
+// ones on the subject parcel. Without a parcel ring, the building containing the
+// address pin (local origin) is the subject.
+function toFootprints(raw: BuildingRing[], origin: { lat: number; lng: number }, parcelFt: PathPoint[] | null): BuildingFootprint[] {
+  const out: BuildingFootprint[] = [];
+  for (const b of raw) {
+    const ring = simplifyPath(
+      b.ring.map((ll) => latLngToLocalFeet(origin, ll)),
+      BUILDING_SIMPLIFY_FT,
+    );
+    if (ring.length < 3) continue;
+    const subject = parcelFt
+      ? pointInRingFt(ringCentroidFt(ring), parcelFt)
+      : pointInRingFt({ x: 0, y: 0 }, ring);
+    out.push({ ring, heightFt: b.heightFt, role: subject ? "subject" : "neighbor" });
+  }
+  return out;
+}
 
 export function FenceStudio() {
   const router = useRouter();
@@ -40,12 +65,14 @@ export function FenceStudio() {
   const selectedSegment = useFenceStudioStore((s) => s.spec.selectedSegment);
   const lat = useFenceStudioStore((s) => s.spec.lat);
   const lng = useFenceStudioStore((s) => s.spec.lng);
+  const buildings = useFenceStudioStore((s) => s.spec.buildings);
   const pricing = useFenceStudioStore((s) => s.pricing);
   const armed = useFenceStudioStore((s) => s.armed);
   const customMaterials = useFenceStudioStore((s) => s.customMaterials);
   const customOpenings = useFenceStudioStore((s) => s.customOpenings);
   const setAddress = useFenceStudioStore((s) => s.setAddress);
   const setPoints = useFenceStudioStore((s) => s.setPoints);
+  const setBuildings = useFenceStudioStore((s) => s.setBuildings);
   const addOpeningAt = useFenceStudioStore((s) => s.addOpeningAt);
   const updateGate = useFenceStudioStore((s) => s.updateGate);
   const arm = useFenceStudioStore((s) => s.arm);
@@ -79,20 +106,30 @@ export function FenceStudio() {
     setLoadingBoundary(true);
     try {
       const res = await fetchPropertyBoundary(lat, lng);
+      const origin = { lat, lng };
       if (!res.ok) {
+        // Parcel failed, but OSM building context may still have arrived — keep it
+        // so the 3D view shows the real neighbourhood even without property lines.
+        if (res.buildings.length > 0) setBuildings(toFootprints(res.buildings, origin, null));
         toast.error("Couldn't load property lines", res.error);
         return;
       }
-      const origin = { lat, lng };
       const pts = simplifyPath(res.ring.map((ll) => latLngToLocalFeet(origin, ll)), PARCEL_SIMPLIFY_FT);
       if (pts.length < 3) {
         toast.error("Parcel boundary too small", "Draw the fence manually instead.");
         return;
       }
+      const foot = toFootprints(res.buildings, origin, pts);
+      setBuildings(foot);
       setPoints(pts);
       setDrawRev((v) => v + 1);
       setView("draw");
-      toast.success("Property lines loaded", "Drag the dots to match the fence line.");
+      toast.success(
+        "Property lines loaded",
+        foot.length > 0
+          ? `Drag the dots to match the fence line. ${foot.length} nearby building${foot.length === 1 ? "" : "s"} added to the 3D view.`
+          : "Drag the dots to match the fence line.",
+      );
     } catch (err) {
       toast.error("Failed to load", err instanceof Error ? err.message : undefined);
     } finally {
@@ -208,6 +245,7 @@ export function FenceStudio() {
               materialColor={matColor}
               gates={gates}
               selectedSegment={selectedSegment}
+              buildings={buildings ?? NO_BUILDINGS}
               active={view === "3d"}
               className="h-full w-full"
             />
@@ -226,6 +264,7 @@ export function FenceStudio() {
               revision={drawRev}
               gates={gates}
               armed={armed}
+              customOpenings={customOpenings}
               onArm={arm}
               onDropOpening={addOpeningAt}
               onUpdateGate={updateGate}

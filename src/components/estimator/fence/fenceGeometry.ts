@@ -72,13 +72,35 @@ export function computeFenceLayout(points: PathPoint[], gates: GateSpec[] = []):
   const segments: number[] = [];
   const gateUnits: GateUnit[] = [];
   let totalLengthFt = 0;
-  let lastYaw = 0;
+
+  // Multi-run support: a point with `gap` starts a NEW disconnected run — no
+  // segment is emitted between it and the previous point. Each run manages its
+  // own closure (last ≈ first ⇒ closed) and its own trailing end post.
+  let runStart = 0; // index of the current run's first point
+  let runLastYaw = 0;
+  let runHasSegment = false;
+  const endRun = (runEnd: number) => {
+    if (!runHasSegment) return;
+    const rs = points[runStart];
+    const re = points[runEnd];
+    const runClosed = runEnd - runStart > 1 && Math.hypot(re.x - rs.x, re.y - rs.y) < CLOSE_TOL_FT;
+    // Open runs need the trailing corner post; closed runs already have it (the
+    // final segment returns to the run's first point, emitted by its first bay).
+    if (!runClosed) posts.push(re.x, re.y, runLastYaw);
+  };
 
   // Iterate ORIGINAL point indices so gate.segmentIndex maps correctly even when
-  // a degenerate (zero-length) segment is skipped.
+  // a degenerate (zero-length) or gap segment is skipped.
   for (let i = 0; i < points.length - 1; i++) {
     const a = points[i];
     const b = points[i + 1];
+    if (b.gap) {
+      // Run boundary: finish the current run, start the next at b.
+      endRun(i);
+      runStart = i + 1;
+      runHasSegment = false;
+      continue;
+    }
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy);
@@ -87,7 +109,8 @@ export function computeFenceLayout(points: PathPoint[], gates: GateSpec[] = []):
     const ux = dx / len;
     const uy = dy / len;
     const yaw = Math.atan2(dy, dx);
-    lastYaw = yaw;
+    runLastYaw = yaw;
+    runHasSegment = true;
     totalLengthFt += len;
 
     // Posts: one per bay edge, bays ≤ 8 ft, remainder distributed evenly. Emit
@@ -136,11 +159,8 @@ export function computeFenceLayout(points: PathPoint[], gates: GateSpec[] = []):
     gateUnits.push({ x: g.x, y: g.y, yaw: 0, widthFt: g.widthFt, kind: g.kind, variant: g.variant });
   }
 
-  // Final end post: open runs need the trailing corner; closed loops already have
-  // it (the last segment returns to points[0], emitted by segment 0).
-  if (!closed) {
-    posts.push(last.x, last.y, lastYaw);
-  }
+  // Final run's end post (earlier runs got theirs at each gap boundary).
+  endRun(points.length - 1);
 
   let minX = Infinity;
   let minY = Infinity;

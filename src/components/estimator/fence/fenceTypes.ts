@@ -41,15 +41,19 @@ export function isBuiltinMaterial(id: string): id is FenceMaterial {
 
 // A point on the fence path, in LOCAL FEET: +x east, +y north, origin near the
 // property. The map layer converts lat/lng → these.
+// `gap: true` marks a run break: NO fence segment exists between this point and
+// the previous one — this point starts a new, disconnected run. Absent = false,
+// so specs persisted before multi-run support read unchanged.
 export interface PathPoint {
   x: number;
   y: number;
+  gap?: boolean;
 }
 
 export type OpeningKind = "gate" | "door";
 // A variant is either a built-in id below or a custom opening's id.
 export type OpeningVariant = string;
-export const BUILTIN_GATE_VARIANTS = ["single", "double", "arched"] as const;
+export const BUILTIN_GATE_VARIANTS = ["single", "double", "triple", "arched"] as const;
 export const BUILTIN_DOOR_VARIANTS = ["solid", "slatted"] as const;
 
 // A gate or door. When `segmentIndex >= 0` it rides a fence run (`t` = 0..1 along
@@ -81,6 +85,7 @@ export interface OpeningPreset {
 export const OPENING_PRESETS: OpeningPreset[] = [
   { kind: "gate", variant: "single", label: "Single", widthFt: 4 },
   { kind: "gate", variant: "double", label: "Double", widthFt: 10 },
+  { kind: "gate", variant: "triple", label: "Triple", widthFt: 15 },
   { kind: "gate", variant: "arched", label: "Arched", widthFt: 4 },
   { kind: "door", variant: "solid", label: "Solid", widthFt: 3 },
   { kind: "door", variant: "slatted", label: "Slatted", widthFt: 3 },
@@ -89,13 +94,14 @@ export const OPENING_PRESETS: OpeningPreset[] = [
 export const VARIANT_LABEL: Record<string, string> = {
   single: "Single",
   double: "Double",
+  triple: "Triple",
   arched: "Arched",
   solid: "Solid",
   slatted: "Slatted",
 };
 
 // Selectable BUILT-IN variants per kind (custom ones are appended by the UI).
-export const GATE_VARIANTS: OpeningVariant[] = ["single", "double", "arched"];
+export const GATE_VARIANTS: OpeningVariant[] = ["single", "double", "triple", "arched"];
 export const DOOR_VARIANTS: OpeningVariant[] = ["solid", "slatted"];
 
 // Default width (feet) for a built-in kind+variant — the seed width when an opening
@@ -132,6 +138,16 @@ export function materialColor(id: string, custom: CustomMaterial[] = []): string
 
 export function variantLabel(variant: OpeningVariant, custom: CustomOpening[] = []): string {
   return VARIANT_LABEL[variant] ?? custom.find((o) => o.id === variant)?.name ?? variant;
+}
+
+// A real building footprint near the property, for spatial context in the 3D
+// view. Ring is in LOCAL FEET (same frame as PathPoint); heightFt is a wall
+// height ESTIMATE (exact when the data source carries height, else a default).
+// `role` styles the subject house differently from neighbours.
+export interface BuildingFootprint {
+  ring: PathPoint[];
+  heightFt: number;
+  role: "subject" | "neighbor";
 }
 
 // The full, serialisable description of a fence — everything the geometry engine

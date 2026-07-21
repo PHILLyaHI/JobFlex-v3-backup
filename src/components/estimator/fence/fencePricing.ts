@@ -30,7 +30,7 @@ export const DEMOLITION_FEE_PER_FT = 6; // teardown + haul, per linear foot
 
 // Installed price per opening, by kind + variant.
 export const OPENING_PRICE: Record<OpeningKind, Record<string, number>> = {
-  gate: { single: GATE_PREMIUM, double: 850, arched: 600 },
+  gate: { single: GATE_PREMIUM, double: 850, triple: 1150, arched: 600 },
   door: { solid: 280, slatted: 340 },
 };
 
@@ -93,7 +93,9 @@ export function heightMultiplier(hRaw: number): number {
 export type OpeningLite = { kind: OpeningKind; variant: OpeningVariant };
 
 function openingPrice(o: OpeningLite, pricing: FencePricingConfig): number {
-  return pricing.openingPrice[o.kind]?.[o.variant] ?? GATE_PREMIUM;
+  // Rate card first; then the built-in seed (covers carts persisted before a
+  // variant existed, e.g. `triple`); then the generic gate premium.
+  return pricing.openingPrice[o.kind]?.[o.variant] ?? OPENING_PRICE[o.kind]?.[o.variant] ?? GATE_PREMIUM;
 }
 
 function openingLabel(o: OpeningLite, labels?: FenceLabels): string {

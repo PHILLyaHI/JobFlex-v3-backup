@@ -19,6 +19,7 @@ import {
   type OpeningVariant,
   type CustomMaterial,
   type CustomOpening,
+  type BuildingFootprint,
 } from "@/components/estimator/fence/fenceTypes";
 import { computeFenceLayout } from "@/components/estimator/fence/fenceGeometry";
 import {
@@ -41,6 +42,9 @@ export interface FenceStudioSpec {
   gates: GateSpec[];
   demolition: boolean;
   selectedSegment: number | null;
+  // Real nearby building footprints (local feet) for 3D context. Loaded with the
+  // parcel; may be undefined on specs persisted before this field existed.
+  buildings?: BuildingFootprint[];
 }
 
 // The opening a subsequent map click will drop (the "armed" tool). Transient UI
@@ -59,6 +63,7 @@ interface FenceStudioStore {
   armed: ArmedOpening | null;
   setAddress: (a: { address: string; city: string; state: string; zip: string; lat?: number; lng?: number }) => void;
   setPoints: (pts: PathPoint[]) => void;
+  setBuildings: (b: BuildingFootprint[]) => void;
   clearPath: () => void;
   setHeight: (h: number) => void;
   setMaterial: (m: MaterialId) => void;
@@ -101,6 +106,7 @@ const initialSpec = (): FenceStudioSpec => ({
   gates: [{ id: nanoid(6), segmentIndex: 0, t: 0.5, widthFt: 4, kind: "gate", variant: "single" }],
   demolition: false,
   selectedSegment: null,
+  buildings: [],
 });
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), hi);
@@ -122,13 +128,19 @@ export const useFenceStudioStore = create<FenceStudioStore>()(
           s.spec.zip = a.zip;
           s.spec.lat = a.lat;
           s.spec.lng = a.lng;
-          // A genuinely new location invalidates any path drawn for the old one.
+          // A genuinely new location invalidates any path drawn for the old one —
+          // and any building footprints fetched for it.
           if (moved) {
             s.spec.points = [];
             s.spec.gates = [];
             s.spec.selectedSegment = null;
+            s.spec.buildings = [];
             s.armed = null;
           }
+        }),
+      setBuildings: (b) =>
+        set((s) => {
+          s.spec.buildings = b;
         }),
       setPoints: (pts) =>
         set((s) => {

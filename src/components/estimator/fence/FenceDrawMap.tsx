@@ -13,17 +13,21 @@
 //   • renders each opening as draggable markers (centre = move; attached gates also
 //     get two edge handles to set the width).
 import * as React from "react";
-import { Move, Spline, Trash2, Undo2, DoorOpen, DoorClosed } from "lucide-react";
+import { Move, Spline, Trash2, Undo2, DoorOpen, DoorClosed, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { loadMapsLibrary, isMapsBrowserEnabled } from "@/lib/googleMaps";
+import { latLngToLocalFeet, localFeetToLatLng, type LatLng } from "./mapProjection";
 import {
-  pathToFeet,
-  pathToLatLng,
-  latLngToLocalFeet,
-  localFeetToLatLng,
-  type LatLng,
-} from "./mapProjection";
-import type { PathPoint, GateSpec, OpeningKind } from "./fenceTypes";
+  GATE_VARIANTS,
+  DOOR_VARIANTS,
+  VARIANT_LABEL,
+  presetWidthFt,
+  variantLabel,
+  type PathPoint,
+  type GateSpec,
+  type OpeningKind,
+  type CustomOpening,
+} from "./fenceTypes";
 import type { ArmedOpening } from "@/stores/useFenceStudioStore";
 
 const ACCENT = "#1f7a52"; // Pressed Sage (locked accent) for the drawn line
@@ -44,6 +48,7 @@ function nearestSegment(p: PathPoint, pts: PathPoint[]): { i: number; t: number;
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i];
     const b = pts[i + 1];
+    if (b.gap) continue; // run break — openings can't sit on the invisible connector
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len2 = dx * dx + dy * dy;
@@ -79,6 +84,7 @@ export function FenceDrawMap({
   className,
   gates,
   armed,
+  customOpenings,
   onArm,
   onDropOpening,
   onUpdateGate,
@@ -92,6 +98,7 @@ export function FenceDrawMap({
   className?: string;
   gates: GateSpec[];
   armed: ArmedOpening | null;
+  customOpenings: CustomOpening[]; // user-created gate/door types (shown in the pickers)
   onArm: (kind: OpeningKind, variant: string) => void; // Add gate/door tools (on the map)
   onDropOpening: (segmentIndex: number, t: number, x?: number, y?: number) => void;
   onUpdateGate: (id: string, patch: Partial<GateSpec>) => void; // marker drag → move/resize
@@ -115,7 +122,14 @@ export function FenceDrawMap({
   const armedRef = React.useRef(armed);
   React.useEffect(() => {
     armedRef.current = armed;
+    // Esc / placement / tool toggle all land here with armed=null — clear the
+    // ghost immediately instead of waiting for the next mousemove.
+    if (!armed) apiRef.current?.hideGhost();
   }, [armed]);
+  const customOpeningsRef = React.useRef(customOpenings);
+  React.useEffect(() => {
+    customOpeningsRef.current = customOpenings;
+  }, [customOpenings]);
   const onDropRef = React.useRef(onDropOpening);
   const onUpdateGateRef = React.useRef(onUpdateGate);
   const onDisarmRef = React.useRef(onDisarm);
@@ -133,8 +147,11 @@ export function FenceDrawMap({
     setAlign: (on: boolean) => void;
     syncOpenings: () => void;
     refreshCursor: () => void;
+    hideGhost: () => void;
   } | null>(null);
 
+  // Which opening picker menu is open (the pill dropdowns on the map).
+  const [openMenu, setOpenMenu] = React.useState<OpeningKind | null>(null);
   const [aligning, setAligning] = React.useState(false);
   const aligningRef = React.useRef(false);
   const toggleAlign = React.useCallback(() => {
@@ -189,16 +206,13 @@ export function FenceDrawMap({
           keyboardShortcuts: false,
           draggableCursor: "crosshair", // signal "you can draw here"
         });
-        const polyline = new maps.Polyline({
-          map,
-          editable: true,
-          path: pathToLatLng(origin, pointsRef.current),
-          strokeColor: ACCENT,
-          strokeWeight: 3,
-          strokeOpacity: 1,
-        });
-        if (aligningRef.current) polyline.setOptions({ draggable: true, editable: false });
-        const path = polyline.getPath();
+        // The fence is a list of RUNS — each an independent editable polyline, so
+        // disconnected fences coexist (store encoding: `gap` on each run's first
+        // point). Tracing appends to the ACTIVE run; ending a trace and clicking
+        // elsewhere starts a fresh run instead of chaining to the old fence.
+        type Run = { line: GMaps; listeners: GMaps[] };
+        const runs: Run[] = [];
+        let activeIdx = -1;
 
         // Rubber-band preview from the last dot to the cursor (dashed accent).
         const previewLine = new maps.Polyline({
@@ -229,34 +243,162 @@ export function FenceDrawMap({
 
         let raf = 0;
         let syncing = false;
+        // Rubber-band preview only trails the cursor while actively tracing a run.
+        // Clicking an existing point (to connect) or right-clicking ends the trace.
+        let drawing = false;
         const commit = () => {
           if (syncing) return;
           cancelAnimationFrame(raf);
           raf = requestAnimationFrame(() => {
-            const arr: LatLng[] = [];
-            path.forEach((ll: GMaps) => arr.push({ lat: ll.lat(), lng: ll.lng() }));
-            onChangeRef.current(pathToFeet(origin, arr));
+            // Flatten runs in order; each run after the first opens with `gap` so
+            // geometry/pricing know there's no fence across the break.
+            const arr: PathPoint[] = [];
+            runs.forEach((r, ri) => {
+              let vi = 0;
+              r.line.getPath().forEach((ll: GMaps) => {
+                const f = ll2ft(ll);
+                if (ri > 0 && vi === 0) f.gap = true;
+                arr.push(f);
+                vi++;
+              });
+            });
+            onChangeRef.current(arr);
           });
         };
 
-        const SNAP_FT = 3;
+        // Hit radii are SCREEN pixels, not feet: a fixed-feet radius scales with
+        // zoom (8 ft ≈ 40 px at parcel zoom, 160+ px zoomed in), so the rubber
+        // band pinned to dots while the cursor was visibly far away and stopped
+        // following it anywhere inside that circle. Pixel radii feel identical
+        // at every zoom; they're converted to feet on demand for the local
+        // planar math via the map's current meters-per-pixel scale.
+        const MAGNET_PX = 12; // cursor magnet radius around dots while tracing
+        const SNAP_PX = 8; // drag-a-dot-onto-a-dot join threshold
+        const ftPerPx = () => {
+          const z = map.getZoom() ?? 19;
+          const lat = map.getCenter()?.lat() ?? origin.lat;
+          // Web-mercator ground resolution at this latitude/zoom, in ft per px.
+          return ((156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, z)) * 3.28084;
+        };
+        const magnetFt = () => MAGNET_PX * ftPerPx();
+        const snapFt = () => SNAP_PX * ftPerPx();
         let snapping = false;
-        const onSetAt = (index: number) => {
-          if (!snapping && path.getLength() > 2) {
-            const m = ll2ft(path.getAt(index));
-            const n = path.getLength();
+
+        // Nearest vertex across ALL runs within `radiusFt` of a map point.
+        const magnetVertex = (ll: GMaps, radiusFt: number): { run: number; vi: number; ll: GMaps } | null => {
+          const p = ll2ft(ll);
+          let best: { run: number; vi: number; ll: GMaps; d: number } | null = null;
+          runs.forEach((r, ri) => {
+            const pa = r.line.getPath();
+            const n = pa.getLength();
             for (let j = 0; j < n; j++) {
-              if (j === index) continue;
-              const f = ll2ft(path.getAt(j));
-              if (Math.hypot(m.x - f.x, m.y - f.y) <= SNAP_FT) {
-                snapping = true;
-                path.setAt(index, path.getAt(j));
-                snapping = false;
-                break;
+              const v = pa.getAt(j);
+              const f = ll2ft(v);
+              const d = Math.hypot(p.x - f.x, p.y - f.y);
+              if (d <= radiusFt && (!best || d < best.d)) best = { run: ri, vi: j, ll: v, d };
+            }
+          });
+          return best;
+        };
+
+        const isClosedPath = (pa: GMaps) => {
+          const n = pa.getLength();
+          return n > 2 && distFt(pa.getAt(0), pa.getAt(n - 1)) < 0.5;
+        };
+
+        // Dragged vertex magnets onto any nearby vertex (its own run or another —
+        // that's the "drag a dot onto another to join" affordance).
+        const onVertexDragged = (run: Run, index: number) => {
+          if (!snapping) {
+            const pa = run.line.getPath();
+            const m = ll2ft(pa.getAt(index));
+            outer: for (const r of runs) {
+              const p2 = r.line.getPath();
+              const n = p2.getLength();
+              for (let j = 0; j < n; j++) {
+                if (r === run && j === index) continue;
+                const f = ll2ft(p2.getAt(j));
+                if (Math.hypot(m.x - f.x, m.y - f.y) <= snapFt()) {
+                  snapping = true;
+                  pa.setAt(index, p2.getAt(j));
+                  snapping = false;
+                  break outer;
+                }
               }
             }
           }
           commit();
+        };
+
+        const destroyRun = (run: Run) => {
+          const ri = runs.indexOf(run);
+          if (ri < 0) return;
+          for (const l of run.listeners) l?.remove?.();
+          run.line.setMap(null);
+          runs.splice(ri, 1);
+          if (ri === activeIdx) {
+            drawing = false;
+            activeIdx = runs.length - 1;
+          } else if (ri < activeIdx) {
+            activeIdx--;
+          }
+        };
+
+        const newRun = (initial: GMaps[]): Run => {
+          const line = new maps.Polyline({
+            map,
+            editable: !aligningRef.current,
+            draggable: aligningRef.current,
+            path: initial,
+            strokeColor: ACCENT,
+            strokeWeight: 3,
+            strokeOpacity: 1,
+          });
+          const run: Run = { line, listeners: [] };
+          const pa = line.getPath();
+          run.listeners.push(
+            pa.addListener("set_at", (i: number) => onVertexDragged(run, i)),
+            pa.addListener("insert_at", commit),
+            pa.addListener("remove_at", commit),
+            line.addListener("dragend", commit),
+            // Polylines swallow the map's mousemove when hovered — without this the
+            // rubber band froze the moment the cursor neared a dot. (fix: same handler)
+            line.addListener("mousemove", (e: GMaps) => onMove(e)),
+            line.addListener("click", (e: GMaps) => onVertexClick(run, e)),
+            line.addListener("rightclick", (e: GMaps) => onVertexRightclick(run, e)),
+          );
+          runs.push(run);
+          return run;
+        };
+
+        // Begin tracing a brand-new run at a point.
+        const startRun = (ll: GMaps) => {
+          newRun([ll]);
+          activeIdx = runs.length - 1;
+          drawing = true;
+          commit();
+        };
+
+        // Seed runs from the store's points (split on `gap`). Used at mount and by
+        // setFromPoints (parcel load / reset / undo-external).
+        const seedRuns = () => {
+          syncing = true;
+          while (runs.length) destroyRun(runs[runs.length - 1]);
+          let current: GMaps[] = [];
+          const flush = () => {
+            if (current.length > 0) newRun(current);
+            current = [];
+          };
+          for (const p of pointsRef.current) {
+            if (p.gap) flush();
+            const q = localFeetToLatLng(origin, p);
+            current.push(new LatLngCtor(q.lat, q.lng));
+          }
+          flush();
+          activeIdx = runs.length - 1;
+          drawing = false;
+          previewLine.setPath([]);
+          syncing = false;
         };
 
         // ── Opening markers (centre dot + gate edge handles) ──
@@ -332,6 +474,74 @@ export function FenceDrawMap({
           return h;
         };
 
+        // ── Armed-tool ghost: while placing a gate/door, previews the seated
+        // position on the nearest fence line BEFORE the click. Uses the same
+        // nearestSegment + SNAP_ON_FT + fitCenterT math as the click handler, so
+        // the ghost appears exactly (and only) where a click would magnet on;
+        // away from any run it vanishes — that click would drop the opening free.
+        const ghostIcon = (kind: GateSpec["kind"]) => ({
+          path: 0, // google.maps.SymbolPath.CIRCLE
+          scale: 7,
+          fillColor: kind === "gate" ? ACCENT : DOOR_INK,
+          fillOpacity: 0.5,
+          strokeColor: "#ffffff",
+          strokeOpacity: 0.75,
+          strokeWeight: 2,
+        });
+        const ghostCenter = new Marker({ map, clickable: false, visible: false, zIndex: 29 });
+        // Width span along the run — shows the stretch of fence the opening will occupy.
+        const ghostSpan = new maps.Polyline({
+          map,
+          clickable: false,
+          path: [],
+          strokeColor: ACCENT,
+          strokeOpacity: 0.45,
+          strokeWeight: 7,
+          zIndex: 5,
+        });
+        let ghostShown = false;
+        const hideGhost = () => {
+          if (!ghostShown) return;
+          ghostShown = false;
+          ghostCenter.setVisible(false);
+          ghostSpan.setPath([]);
+        };
+        // Returns true when the ghost is snapped onto a run (drives the chip copy).
+        const updateGhost = (ll: GMaps): boolean => {
+          const a = armedRef.current;
+          if (!a) {
+            hideGhost();
+            return false;
+          }
+          const p = ll2ft(ll);
+          const hit = nearestSegment(p, pointsRef.current);
+          if (!hit || hit.dist > SNAP_ON_FT) {
+            hideGhost();
+            return false;
+          }
+          const s0 = pointsRef.current[hit.i];
+          const s1 = pointsRef.current[hit.i + 1];
+          const segLen = Math.hypot(s1.x - s0.x, s1.y - s0.y);
+          if (segLen < 1e-6) {
+            hideGhost();
+            return false;
+          }
+          const ux = (s1.x - s0.x) / segLen;
+          const uy = (s1.y - s0.y) / segLen;
+          const cDist = fitCenterT(hit.i, hit.t, pointsRef.current, a.widthFt) * segLen;
+          const half = Math.min(a.widthFt, segLen) / 2;
+          ghostCenter.setIcon(ghostIcon(a.kind));
+          ghostCenter.setPosition(ft2ll({ x: s0.x + ux * cDist, y: s0.y + uy * cDist }));
+          ghostCenter.setVisible(true);
+          ghostSpan.setOptions({ strokeColor: a.kind === "gate" ? ACCENT : DOOR_INK });
+          ghostSpan.setPath([
+            ft2ll({ x: s0.x + ux * (cDist - half), y: s0.y + uy * (cDist - half) }),
+            ft2ll({ x: s0.x + ux * (cDist + half), y: s0.y + uy * (cDist + half) }),
+          ]);
+          ghostShown = true;
+          return true;
+        };
+
         const renderOpenings = () => {
           const want = gatesRef.current;
           const ids = new Set(want.map((g) => g.id));
@@ -396,14 +606,35 @@ export function FenceDrawMap({
 
         // ── Live measurement chip + preview line ──
         const measureEl = measureRef.current;
+        const totalLenFt = () => {
+          let total = 0;
+          for (const r of runs) {
+            const pa = r.line.getPath();
+            const n = pa.getLength();
+            for (let i = 1; i < n; i++) total += distFt(pa.getAt(i - 1), pa.getAt(i));
+          }
+          return total;
+        };
         const onMove = (e: GMaps) => {
-          const n = path.getLength();
-          if (e.latLng && !armedRef.current && !aligningRef.current && n >= 1) {
-            previewLine.setPath([path.getAt(n - 1), e.latLng]);
+          if (!e.latLng) {
+            previewLine.setPath([]);
+            hideGhost();
+            return;
+          }
+          const busy = !!armedRef.current || aligningRef.current;
+          // Endpoint magnet: within the pixel radius the cursor locks to the
+          // nearest dot (and unlocks the moment it leaves the radius).
+          const mag = busy ? null : magnetVertex(e.latLng, magnetFt());
+          const cursorLL = mag ? mag.ll : e.latLng;
+          const act = drawing && !busy ? runs[activeIdx] : null;
+          const ap = act?.line.getPath();
+          const an = ap ? ap.getLength() : 0;
+          if (ap && an >= 1) {
+            previewLine.setPath([ap.getAt(an - 1), cursorLL]);
           } else {
             previewLine.setPath([]);
           }
-          if (!measureEl || !e.latLng) return;
+          if (!measureEl) return;
           const rect = mountRef.current?.getBoundingClientRect();
           const dom = e.domEvent as MouseEvent | undefined;
           if (rect && dom) {
@@ -411,27 +642,101 @@ export function FenceDrawMap({
           }
           measureEl.style.display = "block";
           if (armedRef.current) {
-            measureEl.textContent = `Click to place a ${armedRef.current.kind}`;
+            // Magnet preview: the ghost seats itself on the fence line whenever
+            // the cursor is close enough that a click would snap there.
+            const snapped = updateGhost(e.latLng);
+            const a = armedRef.current;
+            // "double gate" for built-ins; a custom type reads by its own name.
+            const armedName = VARIANT_LABEL[a.variant]
+              ? `${VARIANT_LABEL[a.variant].toLowerCase()} ${a.kind}`
+              : variantLabel(a.variant, customOpeningsRef.current);
+            measureEl.textContent = snapped
+              ? `Click to place the ${armedName} here`
+              : `Click to place a ${armedName} — hover a fence line to snap it`;
             return;
           }
-          if (n > 0) {
-            let total = 0;
-            for (let i = 1; i < n; i++) total += distFt(path.getAt(i - 1), path.getAt(i));
-            const seg = distFt(path.getAt(n - 1), e.latLng);
-            measureEl.textContent = `+${Math.round(seg)} ft · ${Math.round(total)} ft total`;
-          } else {
-            measureEl.textContent = "Click to start";
+          if (ap && an >= 1) {
+            const seg = distFt(ap.getAt(an - 1), cursorLL);
+            let hint = "";
+            if (mag) {
+              hint =
+                mag.run === activeIdx && mag.vi === 0 && an >= 3
+                  ? " · click to close"
+                  : mag.run === activeIdx && mag.vi === an - 1
+                    ? " · click to stop"
+                    : " · click to connect";
+            }
+            measureEl.textContent = `+${Math.round(seg)} ft · ${Math.round(totalLenFt())} ft total${hint}`;
+            return;
           }
+          if (mag) {
+            const mp = runs[mag.run].line.getPath();
+            const openEnd = !isClosedPath(mp) && (mag.vi === mp.getLength() - 1 || mag.vi === 0);
+            measureEl.textContent = openEnd ? "Click to continue this fence" : "Click to start a new fence";
+            return;
+          }
+          measureEl.textContent = runs.length > 0 ? "Click to start a new fence" : "Click to start";
         };
         const hideMeasure = () => {
           if (measureEl) measureEl.style.display = "none";
           previewLine.setPath([]);
+          hideGhost();
+        };
+
+        const stopTrace = () => {
+          drawing = false;
+          previewLine.setPath([]);
+        };
+
+        // Click on an existing dot (fires on the run's polyline, not the map).
+        const onVertexClick = (run: Run, e: GMaps) => {
+          if (e.vertex == null || aligningRef.current || armedRef.current) return;
+          const ri = runs.indexOf(run);
+          const pa = run.line.getPath();
+          const n = pa.getLength();
+          if (!drawing) {
+            // Idle: clicking an OPEN run's end dot resumes tracing that fence.
+            if (!isClosedPath(pa) && e.vertex === n - 1) {
+              activeIdx = ri;
+              drawing = true;
+            } else if (!isClosedPath(pa) && e.vertex === 0 && n > 1) {
+              // The head end: continue via a new run joined exactly at that dot.
+              startRun(pa.getAt(0));
+            }
+            return;
+          }
+          const act = runs[activeIdx];
+          if (!act) return stopTrace();
+          const ap = act.line.getPath();
+          if (ri === activeIdx) {
+            if (e.vertex === 0 && ap.getLength() >= 3 && !isClosedPath(ap)) {
+              // Own first dot closes the loop.
+              ap.push(pa.getAt(0));
+              commit();
+            } else if (e.vertex !== ap.getLength() - 1) {
+              // Own mid dot: connect into it (T-junction); own last dot just stops.
+              ap.push(pa.getAt(e.vertex));
+              commit();
+            }
+          } else {
+            // A dot on another fence: connect the trace to it exactly.
+            ap.push(pa.getAt(e.vertex));
+            commit();
+          }
+          stopTrace();
+        };
+
+        const onVertexRightclick = (run: Run, e: GMaps) => {
+          if (e.vertex != null) {
+            const pa = run.line.getPath();
+            pa.removeAt(e.vertex);
+            if (pa.getLength() === 0) destroyRun(run);
+            commit();
+          }
+          stopTrace();
         };
 
         const listeners = [
-          path.addListener("set_at", onSetAt),
-          path.addListener("insert_at", commit),
-          path.addListener("remove_at", commit),
           map.addListener("mousemove", onMove),
           map.addListener("mouseout", hideMeasure),
           map.addListener("click", (e: GMaps) => {
@@ -450,27 +755,45 @@ export function FenceDrawMap({
               }
               return;
             }
-            if (e.latLng) {
-              path.push(e.latLng);
-              commit();
-            }
-          }),
-          polyline.addListener("dragend", commit),
-          polyline.addListener("click", (e: GMaps) => {
-            if (e.vertex === 0 && path.getLength() >= 3) {
-              const a = ll2ft(path.getAt(0));
-              const b = ll2ft(path.getAt(path.getLength() - 1));
-              if (Math.hypot(a.x - b.x, a.y - b.y) > SNAP_FT) {
-                path.push(path.getAt(0));
-                commit();
+            if (!e.latLng) return;
+            const mag = magnetVertex(e.latLng, magnetFt());
+            if (drawing) {
+              const act = runs[activeIdx];
+              if (!act) return stopTrace();
+              const ap = act.line.getPath();
+              if (mag) {
+                // Magnetized click = connect/close/stop, mirroring the preview.
+                const tgt = runs[mag.run].line.getPath().getAt(mag.vi);
+                if (mag.run === activeIdx && mag.vi === 0 && ap.getLength() >= 3 && !isClosedPath(ap)) {
+                  ap.push(tgt); // close the loop
+                  commit();
+                } else if (!(mag.run === activeIdx && mag.vi === ap.getLength() - 1)) {
+                  ap.push(tgt); // connect to that dot exactly
+                  commit();
+                }
+                return stopTrace();
               }
-            }
-          }),
-          polyline.addListener("rightclick", (e: GMaps) => {
-            if (e.vertex != null && path.getLength() > 0) {
-              path.removeAt(e.vertex);
+              ap.push(e.latLng);
               commit();
+              return;
             }
+            // Not tracing: near an open end resumes that fence; anywhere else
+            // starts a NEW disconnected fence (no line back to the old one).
+            if (mag) {
+              const mp = runs[mag.run].line.getPath();
+              if (!isClosedPath(mp) && mag.vi === mp.getLength() - 1) {
+                activeIdx = mag.run;
+                drawing = true;
+                return;
+              }
+              startRun(mp.getAt(mag.vi));
+              return;
+            }
+            startRun(e.latLng);
+          }),
+          map.addListener("rightclick", () => {
+            // Right-click away from a vertex: just stop the run from following the cursor.
+            stopTrace();
           }),
         ];
 
@@ -481,54 +804,58 @@ export function FenceDrawMap({
 
         apiRef.current = {
           clear: () => {
-            path.clear();
+            while (runs.length) destroyRun(runs[runs.length - 1]);
+            stopTrace();
             commit();
           },
           closeLoop: () => {
-            const n = path.getLength();
-            if (n < 3) return;
-            const a = ll2ft(path.getAt(0));
-            const b = ll2ft(path.getAt(n - 1));
-            if (Math.hypot(a.x - b.x, a.y - b.y) > SNAP_FT) {
-              path.push(path.getAt(0));
-              commit();
-            }
+            const act = runs[activeIdx] ?? runs[runs.length - 1];
+            if (!act) return;
+            const pa = act.line.getPath();
+            if (pa.getLength() < 3 || isClosedPath(pa)) return;
+            pa.push(pa.getAt(0));
+            commit();
+            stopTrace();
           },
           undo: () => {
-            const n = path.getLength();
+            const act = runs[activeIdx] ?? runs[runs.length - 1];
+            if (!act) return;
+            const pa = act.line.getPath();
+            const n = pa.getLength();
             if (n > 0) {
-              path.removeAt(n - 1);
+              pa.removeAt(n - 1);
+              if (n - 1 === 0) destroyRun(act);
               commit();
             }
           },
           setFromPoints: () => {
-            syncing = true;
-            path.clear();
-            for (const ll of pathToLatLng(origin, pointsRef.current)) {
-              path.push(new LatLngCtor(ll.lat, ll.lng));
-            }
-            syncing = false;
+            seedRuns();
             renderOpenings();
           },
           setAlign: (on: boolean) => {
-            polyline.setOptions({ draggable: on, editable: !on });
+            for (const r of runs) r.line.setOptions({ draggable: on, editable: !on });
+            if (on) stopTrace();
           },
           syncOpenings: renderOpenings,
           refreshCursor: () => {
             map.setOptions({ draggableCursor: aligningRef.current ? "move" : "crosshair" });
           },
+          hideGhost,
         };
 
+        seedRuns();
         renderOpenings();
 
         cleanup = () => {
           cancelAnimationFrame(raf);
           for (const l of listeners) l?.remove?.();
+          while (runs.length) destroyRun(runs[runs.length - 1]);
           window.removeEventListener("keydown", onKey);
           for (const mk of openings.values()) removeMarker(mk);
           openings.clear();
           previewLine.setMap(null);
-          polyline.setMap(null);
+          ghostCenter.setMap(null);
+          ghostSpan.setMap(null);
         };
       } catch (err) {
         console.error("[FenceDrawMap] failed to build the map:", err);
@@ -581,21 +908,38 @@ export function FenceDrawMap({
         <MapBtn onClick={() => apiRef.current?.clear()} icon={<Trash2 className="h-3.5 w-3.5" />} label="Clear" />
       </div>
 
-      {/* Add gate / door tools (right) — live on the map, next to the drawing. */}
+      {/* Add gate / door tools (right) — each opens a minimal type picker; pick a
+          variant to arm it, then click the map to place. */}
       <div className="absolute right-3 top-3 flex gap-1.5">
-        <AddBtn
-          label="Add gate"
+        <OpeningPicker
+          kind="gate"
+          label="Gate"
           icon={<DoorOpen className="h-3.5 w-3.5" />}
-          active={armed?.kind === "gate"}
+          armed={armed}
           disabled={!hasFence}
-          onClick={() => (armed?.kind === "gate" ? onDisarm() : onArm("gate", "single"))}
+          open={openMenu === "gate"}
+          onOpenChange={(o) => setOpenMenu(o ? "gate" : null)}
+          customOpenings={customOpenings}
+          onPick={(v) => {
+            onArm("gate", v);
+            setOpenMenu(null);
+          }}
+          onDisarm={onDisarm}
         />
-        <AddBtn
-          label="Add door"
+        <OpeningPicker
+          kind="door"
+          label="Door"
           icon={<DoorClosed className="h-3.5 w-3.5" />}
-          active={armed?.kind === "door"}
+          armed={armed}
           disabled={!hasFence}
-          onClick={() => (armed?.kind === "door" ? onDisarm() : onArm("door", "solid"))}
+          open={openMenu === "door"}
+          onOpenChange={(o) => setOpenMenu(o ? "door" : null)}
+          customOpenings={customOpenings}
+          onPick={(v) => {
+            onArm("door", v);
+            setOpenMenu(null);
+          }}
+          onDisarm={onDisarm}
         />
       </div>
 
@@ -612,7 +956,7 @@ export function FenceDrawMap({
             ? `Placing a ${armed.kind} — click a fence line (snaps if close, else drops free) · Esc to cancel`
             : aligning
               ? "Drag the whole outline to line it up with the lot — shape & size stay locked"
-              : "Click to add · drag a dot onto another to join · click the first dot to close · right-click to remove"}
+              : "Click to trace — dots magnet when close (close / connect) · right-click to stop · after stopping, click open ground to start a separate fence · right-click a dot to remove"}
         </span>
       </div>
     </div>
@@ -649,37 +993,204 @@ function MapBtn({
 }
 
 // Prominent placement tool (lives on the map). Disabled until a fence exists.
-function AddBtn({
-  onClick,
-  icon,
+// The Gate / Door tool: a pill that opens a minimal dropdown of opening types
+// (line icon + name + width). Picking one arms it for placement; clicking the
+// pill while its kind is armed cancels (same muscle memory as the old toggle).
+function OpeningPicker({
+  kind,
   label,
-  active,
+  icon,
+  armed,
   disabled,
+  open,
+  onOpenChange,
+  customOpenings,
+  onPick,
+  onDisarm,
 }: {
-  onClick: () => void;
-  icon: React.ReactNode;
+  kind: OpeningKind;
   label: string;
-  active?: boolean;
+  icon: React.ReactNode;
+  armed: ArmedOpening | null;
   disabled?: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  customOpenings: CustomOpening[];
+  onPick: (variant: string) => void;
+  onDisarm: () => void;
+}) {
+  const rootRef = React.useRef<HTMLDivElement>(null);
+
+  // Outside click / Esc closes the menu (listeners only while open).
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) onOpenChange(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onOpenChange]);
+
+  const isArmed = armed?.kind === kind;
+  const builtIns = kind === "gate" ? GATE_VARIANTS : DOOR_VARIANTS;
+  const customs = customOpenings.filter((o) => o.kind === kind);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => {
+          if (disabled) return;
+          if (isArmed) {
+            onDisarm();
+            onOpenChange(false);
+          } else {
+            onOpenChange(!open);
+          }
+        }}
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={disabled ? "Draw a fence first" : undefined}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-3 h-8 text-[12px] font-semibold shadow-[var(--shadow-sm)] transition-colors",
+          disabled
+            ? "bg-white/70 text-[color:var(--ink-faint)] cursor-not-allowed"
+            : isArmed
+              ? "bg-[color:var(--accent)] text-white"
+              : "bg-white/95 text-[color:var(--accent-ink)] hover:bg-white",
+        )}
+      >
+        {icon}
+        {isArmed ? "Placing…" : label}
+        {!isArmed && (
+          <ChevronDown className={cn("h-3 w-3 opacity-60 transition-transform", open && "rotate-180")} />
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-20 mt-1.5 min-w-[176px] overflow-hidden rounded-[var(--r-md)] bg-white/95 backdrop-blur hairline shadow-[var(--shadow-md)]"
+        >
+          {builtIns.map((v) => (
+            <PickerRow
+              key={v}
+              name={VARIANT_LABEL[v] ?? v}
+              widthFt={presetWidthFt(kind, v)}
+              active={isArmed && armed?.variant === v}
+              glyph={<VariantGlyph kind={kind} variant={v} />}
+              onClick={() => onPick(v)}
+            />
+          ))}
+          {customs.length > 0 && <div className="h-px bg-[color:var(--ink-line)]" />}
+          {customs.map((o) => (
+            <PickerRow
+              key={o.id}
+              name={o.name}
+              widthFt={o.widthFt}
+              active={isArmed && armed?.variant === o.id}
+              glyph={<VariantGlyph kind={kind} variant="custom" />}
+              onClick={() => onPick(o.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PickerRow({
+  name,
+  widthFt,
+  active,
+  glyph,
+  onClick,
+}: {
+  name: string;
+  widthFt: number;
+  active?: boolean;
+  glyph: React.ReactNode;
+  onClick: () => void;
 }) {
   return (
     <button
       type="button"
+      role="menuitem"
       onClick={onClick}
-      disabled={disabled}
-      aria-pressed={active}
-      title={disabled ? "Draw a fence first" : undefined}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 h-8 text-[12px] font-semibold shadow-[var(--shadow-sm)] transition-colors",
-        disabled
-          ? "bg-white/70 text-[color:var(--ink-faint)] cursor-not-allowed"
-          : active
-            ? "bg-[color:var(--accent)] text-white"
-            : "bg-white/95 text-[color:var(--accent-ink)] hover:bg-white",
+        "flex w-full items-center gap-2.5 px-2.5 h-9 text-left text-[12px] transition-colors",
+        active
+          ? "bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)]"
+          : "text-[color:var(--ink-soft)] hover:bg-black/[0.03]",
       )}
     >
-      {icon}
-      {active ? "Placing…" : label}
+      <span className={cn(active ? "text-[color:var(--accent-ink)]" : "text-[color:var(--ink-muted)]")}>{glyph}</span>
+      <span className="font-medium truncate">{name}</span>
+      <span className="ml-auto tabular-nums text-[11px] text-[color:var(--ink-faint)]">{widthFt} ft</span>
     </button>
+  );
+}
+
+// Tiny line glyphs for the opening types — gates read wide, doors narrow,
+// custom types dashed. Stroke-only so they stay quiet at menu scale.
+function VariantGlyph({ kind, variant }: { kind: OpeningKind; variant: string }) {
+  const common = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.3,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  return (
+    <svg viewBox="0 0 20 15" className="h-[15px] w-5 shrink-0" aria-hidden {...common}>
+      {kind === "gate" && variant === "single" && (
+        <>
+          <rect x="1.2" y="1.2" width="17.6" height="12.6" rx="1.2" />
+          <line x1="1.2" y1="13.8" x2="18.8" y2="1.2" />
+        </>
+      )}
+      {kind === "gate" && variant === "double" && (
+        <>
+          <rect x="1.2" y="1.2" width="8" height="12.6" rx="1" />
+          <rect x="10.8" y="1.2" width="8" height="12.6" rx="1" />
+        </>
+      )}
+      {kind === "gate" && variant === "triple" && (
+        <>
+          <rect x="1.2" y="1.2" width="5.2" height="12.6" rx="0.8" />
+          <rect x="7.4" y="1.2" width="5.2" height="12.6" rx="0.8" />
+          <rect x="13.6" y="1.2" width="5.2" height="12.6" rx="0.8" />
+        </>
+      )}
+      {kind === "gate" && variant === "arched" && <path d="M1.2 13.8 V6.5 Q10 0.6 18.8 6.5 V13.8 Z" />}
+      {kind === "gate" && variant === "custom" && (
+        <rect x="1.2" y="1.2" width="17.6" height="12.6" rx="1.2" strokeDasharray="2.6 2.2" />
+      )}
+      {kind === "door" && variant === "solid" && (
+        <>
+          <rect x="6.2" y="1.2" width="7.6" height="12.6" rx="1" />
+          <rect x="8.4" y="3.8" width="3.2" height="5.2" rx="0.6" />
+        </>
+      )}
+      {kind === "door" && variant === "slatted" && (
+        <>
+          <rect x="6.2" y="1.2" width="7.6" height="12.6" rx="1" />
+          <line x1="7.6" y1="5" x2="12.4" y2="5" />
+          <line x1="7.6" y1="8" x2="12.4" y2="8" />
+          <line x1="7.6" y1="11" x2="12.4" y2="11" />
+        </>
+      )}
+      {kind === "door" && variant === "custom" && (
+        <rect x="6.2" y="1.2" width="7.6" height="12.6" rx="1" strokeDasharray="2.6 2.2" />
+      )}
+    </svg>
   );
 }
