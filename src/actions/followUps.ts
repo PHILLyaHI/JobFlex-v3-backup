@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireManager, requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { renderTemplate, wrapEmail } from "@/lib/email/render";
 
@@ -173,7 +174,7 @@ async function dispatchOne(id: string): Promise<boolean> {
     const body =
       tpl?.body ??
       `Hi {{client_name}},\n\nCircling back on our recent proposal. Review and accept online:\n{{link}}\n\n— {{org}}`;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = await appBaseUrl();
     const vars = {
       client_name: proposal.client.name,
       total: String(proposal.total),

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireInfluencer } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { StatCard } from "@/components/ui/StatCard";
 import { StaggerGrid } from "@/components/ui/StaggerGrid";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
@@ -35,7 +36,7 @@ export default async function InfluencerHome() {
   const balances = ledgerBalances(ledger);
   const activeCount = attributions.filter((a) => a.status === AttributionStatus.ACTIVE).length;
   const totalClicks = promoCodes.reduce((sum, p) => sum + p.clicks, 0);
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
 
   // Net earnings by month (accruals minus reversals; payout debits excluded).
   const byMonth = new Map<string, number>();

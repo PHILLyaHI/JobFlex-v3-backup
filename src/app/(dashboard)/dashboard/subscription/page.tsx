@@ -9,6 +9,7 @@
 import { redirect } from "next/navigation";
 import { requireOrg, isOwnerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { getOrCreateMyReferralCode } from "@/actions/referrals";
 import { listSubscriptionInvoices } from "@/actions/billing";
 import { getPlanCatalog, getOrgPlanContext } from "@/lib/planCatalogServer";
@@ -53,7 +54,7 @@ export default async function SubscriptionPage() {
       limit: u.limit as number,
     }));
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   const shareUrl = `${appUrl}/auth/register?ref=${code.code}`;
   const rewardSummary =
     "Each contractor who signs up with it and goes paid takes 50% off one month of your subscription";

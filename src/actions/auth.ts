@@ -3,6 +3,7 @@ import { z } from "zod";
 import { randomBytes, createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { slugify, uniqueOrgSlug } from "@/lib/orgSlug";
 import { TRADE_TYPES } from "@/lib/tradeTypes";
 
@@ -19,10 +20,6 @@ import { TRADE_TYPES } from "@/lib/tradeTypes";
 //     token can't be probed for its state
 
 const RESET_TTL_MS = 1000 * 60 * 60; // 1 hour
-
-function appUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-}
 
 function sha256(s: string): string {
   return createHash("sha256").update(s).digest("hex");
@@ -189,7 +186,7 @@ export async function requestPasswordReset(raw: unknown): Promise<{ ok: true }> 
     try {
       const { sendEmail } = await import("@/lib/sdk/resend");
       const { wrapEmail } = await import("@/lib/email/render");
-      const link = `${appUrl()}/auth/reset?token=${rawToken}`;
+      const link = `${await appBaseUrl()}/auth/reset?token=${rawToken}`;
       const first = user.name?.split(" ")[0] ?? "there";
       const wrapped = wrapEmail({
         subject: "Reset your JobFlex password",

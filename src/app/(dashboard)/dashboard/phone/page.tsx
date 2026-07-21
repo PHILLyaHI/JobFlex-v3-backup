@@ -1,5 +1,6 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { StaggerGrid } from "@/components/ui/StaggerGrid";
@@ -44,7 +45,7 @@ export default async function PhonePage() {
     startedAt: c.startedAt,
   }));
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   const webhookUrl = `${process.env.TWILIO_APP_URL ?? appUrl}/api/twilio/voice`;
 
   return (

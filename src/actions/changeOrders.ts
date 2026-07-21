@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 
 // A change order amends a contract. It attaches to either a Job (legacy) or a
 // Proposal (the contract itself). Exactly one parent is provided.
@@ -176,7 +177,7 @@ async function emailChangeOrder(id: string) {
   const orgName = co.organization.name;
   const { sendEmail } = await import("@/lib/sdk/resend");
   const { wrapEmail } = await import("@/lib/email/render");
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   const wrapped = wrapEmail({
     subject: `Change order for ${contextTitle}`,
     body: `Hi ${client.name},

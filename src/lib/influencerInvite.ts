@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { hashToken } from "@/lib/tokens";
 
 // Influencer invite links, riding the VerificationToken table. The identifier
@@ -21,7 +22,7 @@ export async function mintInfluencerInvite(email: string): Promise<{ inviteUrl: 
       expires: new Date(Date.now() + INVITE_TTL_MS),
     },
   });
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   return { inviteUrl: `${appUrl}/influencer/set-password?token=${rawToken}` };
 }
 

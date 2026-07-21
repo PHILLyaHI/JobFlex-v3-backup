@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 export async function createReviewRequest(jobId: string) {
@@ -37,7 +38,7 @@ export async function createReviewRequest(jobId: string) {
         where: { id: organizationId },
         select: { name: true },
       });
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+      const appUrl = await appBaseUrl();
       const wrapped = wrapEmail({
         subject: `How did we do? — ${org?.name ?? "JobFlex"}`,
         body: `Hi ${job.client.name},

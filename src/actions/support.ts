@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireManager, requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { wrapEmail } from "@/lib/email/render";
 
@@ -144,7 +145,7 @@ async function notifyAdminsOfTicket(t: {
     const to = await platformAdminEmails();
     if (to.length === 0) return;
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = await appBaseUrl();
     const flag = t.priority === "high" ? "🔴 High priority — " : "";
     const wrapped = wrapEmail({
       subject: `${flag}New support ticket — ${t.subject}`,

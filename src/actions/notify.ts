@@ -1,5 +1,6 @@
 "use server";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { requireManager } from "@/lib/orgContext";
 import { sendEmail } from "@/lib/sdk/resend";
 import { wrapEmail } from "@/lib/email/render";
@@ -45,7 +46,7 @@ export async function notifyPaymentReminder({
     : proposal.total;
   const label = installment?.label ?? "payment";
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   const wrapped = wrapEmail({
     subject: `Payment reminder — ${label} for ${proposal.title}`,
     body: `Hi ${proposal.client.name},

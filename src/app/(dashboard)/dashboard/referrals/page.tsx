@@ -1,5 +1,6 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
@@ -35,7 +36,7 @@ export default async function ReferralsPage() {
   // CONVERTED = the referred org has paid; the 50%-off-a-month credit is owed.
   // PAID = that credit already landed on this org's Stripe balance.
   const creditedUsd = (credited._sum.rewardCents ?? 0) / 100;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   const shareUrl = `${appUrl}/auth/register?ref=${code.code}`;
   const homeownerUrl = `${appUrl}/homeowners?ref=${code.code}`;
 

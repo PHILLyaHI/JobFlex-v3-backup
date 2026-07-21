@@ -1,6 +1,7 @@
 "use server";
 import { requireInfluencer } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { assertStripeWriteAllowed } from "@/lib/stripeSafety";
 import { ConnectStatus } from "@/lib/prismaEnums";
@@ -32,7 +33,7 @@ export async function createConnectOnboardingLink() {
     });
   }
 
-  const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const origin = await appBaseUrl();
   const link = await stripe.accountLinks.create({
     account: accountId,
     type: "account_onboarding",

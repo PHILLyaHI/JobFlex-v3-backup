@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { AssignmentStatus, Role, roleLabel } from "@/lib/prismaEnums";
 import { signIn } from "@/lib/auth";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
@@ -98,7 +99,7 @@ export async function createWorkerInvite(raw: unknown) {
       where: { id: organizationId },
       select: { name: true },
     });
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = await appBaseUrl();
     const orgName = org?.name ?? "JobFlex";
     // Reflect the role the manager actually assigned (not a generic "crew member").
     const roleName = roleLabel(data.role).toLowerCase();

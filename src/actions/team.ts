@@ -4,6 +4,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireManager, requireUser, isOwnerRole, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { Role } from "@/lib/prismaEnums";
 import { hashToken } from "@/lib/tokens";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
@@ -24,7 +25,7 @@ async function sendInviteEmail(
       where: { id: organizationId },
       select: { name: true },
     });
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = await appBaseUrl();
     const wrapped = wrapEmail({
       subject: `Invitation to ${org?.name ?? "JobFlex"}`,
       body: `${inviterLabel} has invited you to join ${org?.name ?? "their team"} on JobFlex as ${role.toLowerCase()}.

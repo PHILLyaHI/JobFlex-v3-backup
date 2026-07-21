@@ -7,6 +7,7 @@
 // user-invoked sender (notifyPaymentReminder) stays a guarded action in
 // src/actions/notify.ts.
 import { db } from "@/lib/db";
+import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
 import { renderTemplate, wrapEmail, type TemplateVars } from "@/lib/email/render";
@@ -92,7 +93,7 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
   const subject = tpl?.subject ?? fallback.subject;
   const body = tpl?.body ?? fallback.body;
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   const vars: TemplateVars = {
     client_name: proposal.client.name,
     total: formatUSD(proposal.total),
@@ -136,7 +137,7 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
   });
   if (!proposal) return { skipped: true as const, reason: "not-found" };
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   const replyTo = replyToFor(proposal.organization);
 
   // 1) Thank-you to the client (customer-facing → reply-to the contractor).
@@ -230,7 +231,7 @@ export async function notifyAssignmentCreated(assignmentId: string) {
 
   const email = a.worker.user?.email;
   if (email) {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = await appBaseUrl();
     const org = await db.organization.findUnique({
       where: { id: a.job.organizationId },
       select: { name: true },
@@ -313,7 +314,7 @@ export async function notifyLeadOfferCreated(offerId: string) {
   if (!offer) return { skipped: true as const };
 
   const pl = offer.platformLead;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = await appBaseUrl();
   const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "your area";
 
   if (offer.organization.billingEmail) {
