@@ -86,6 +86,7 @@ export function ProposalEditor({
       description: draft.description,
       scopeOfWork: draft.scopeOfWork,
       notes: draft.notes,
+      address: draft.address,
       taxRate: draft.taxRate,
       // Drop empty placeholder rows — only line items with a name are persisted
       // (saveProposal requires every line item to have a name).

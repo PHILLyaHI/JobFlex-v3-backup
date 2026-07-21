@@ -19,6 +19,7 @@ import { duplicateProposal } from "@/actions/proposals";
 import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
 import { zillowSearchUrl } from "@/lib/zillow";
 import { MaterialsSheet, type MaterialLine } from "./MaterialsSheet";
+import { MaterialLinkPopover } from "./MaterialLinkPopover";
 import { SendProposalDialog } from "./SendProposalDialog";
 import { DeleteProposalDialog } from "./DeleteProposalDialog";
 
@@ -62,8 +63,16 @@ export function RowActions({
 
   // Sub-modals
   const [sheetOpen, setSheetOpen] = React.useState(false);
+  const [matPopoverOpen, setMatPopoverOpen] = React.useState(false);
   const [sendOpen, setSendOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+
+  // A single shoppable material line doesn't earn the full "Order materials"
+  // sheet — it gets a small anchored popover with just that line's buy link.
+  const shoppableMaterials = React.useMemo(
+    () => materials.filter((m) => (m.materialCost ?? 0) > 0 && m.quantity > 0),
+    [materials],
+  );
 
   // Position menu via measured trigger so the popover floats clean of the
   // table's overflow-x-auto wrapper.
@@ -177,13 +186,17 @@ export function RowActions({
       {
         key: "materials",
         label: "Order materials",
-        hint: `${materials.filter((m) => (m.materialCost ?? 0) > 0).length} items`,
+        hint: `${shoppableMaterials.length} items`,
         icon: <Package className="h-3.5 w-3.5" />,
         iconBg: "rgba(200,148,80,0.18)",
         iconFg: "#92651F",
         onClick: () => {
           setOpen(false);
-          setSheetOpen(true);
+          if (shoppableMaterials.length === 1) {
+            setMatPopoverOpen(true);
+          } else {
+            setSheetOpen(true);
+          }
         },
       },
       {
@@ -284,6 +297,14 @@ export function RowActions({
         clientName={clientName}
         items={materials}
       />
+      {shoppableMaterials.length === 1 && (
+        <MaterialLinkPopover
+          open={matPopoverOpen}
+          onClose={() => setMatPopoverOpen(false)}
+          anchorEl={triggerRef.current}
+          item={shoppableMaterials[0]}
+        />
+      )}
       <SendProposalDialog
         open={sendOpen}
         onClose={() => setSendOpen(false)}

@@ -108,42 +108,68 @@ export async function getBadgeCounts(
     select: { key: true, seenAt: true },
   });
   const seenAt = (key: SeenKey) => seenRows.find((r) => r.key === key)?.seenAt;
-  const after = (date: Date | undefined) => (date ? { gt: date } : undefined);
 
-  const [messagesUnread, leads, leadOffers, proposalsUnscheduled, hireApplied, reviewsUnread, referralsPending] =
+  const [messagesUnread, leads, proposalsUnscheduled, hireApplied, reviewsUnread, referralsPending] =
     await Promise.all([
       getUnreadMessageCount(organizationId, userId),
-      // Un-triaged leads: NEW plus lead-center ROUTED (manual admin assigns).
-      db.lead.count({
-        where: { organizationId, status: { in: ["NEW", "ROUTED"] }, createdAt: after(seenAt("leads")) },
-      }),
-      // Live Lead Center offers awaiting an accept/decline.
-      db.leadOffer.count({
-        where: {
-          organizationId,
-          status: "OFFERED",
-          expiresAt: { gt: new Date() },
-          createdAt: after(seenAt("leads")),
-        },
-      }),
-      db.proposal.count({
-        where: { organizationId, status: "ACCEPTED", jobs: { none: {} }, acceptedAt: after(seenAt("proposals")) },
-      }),
-      db.applicant.count({ where: { organizationId, status: "APPLIED", createdAt: after(seenAt("hire")) } }),
-      db.reviewRequest.count({
-        where: { organizationId, status: "COMPLETED", completedAt: after(seenAt("reviews")) },
-      }),
-      db.referralConversion.count({
-        where: { status: "PENDING", code: { organizationId }, createdAt: after(seenAt("referrals")) },
-      }),
+      countNewForSurface("leads", organizationId, seenAt("leads")),
+      countNewForSurface("proposals", organizationId, seenAt("proposals")),
+      countNewForSurface("hire", organizationId, seenAt("hire")),
+      countNewForSurface("reviews", organizationId, seenAt("reviews")),
+      countNewForSurface("referrals", organizationId, seenAt("referrals")),
     ]);
 
   return {
     "/dashboard/messages": messagesUnread,
-    "/dashboard/leads": leads + leadOffers,
+    "/dashboard/leads": leads,
     "/dashboard/proposals": proposalsUnscheduled,
     "/dashboard/hire/hub": hireApplied,
     "/dashboard/reviews": reviewsUnread,
     "/dashboard/referrals": referralsPending,
   };
+}
+
+/**
+ * Badge count for ONE seen-gated surface: items newer than `since` (no cutoff
+ * when undefined). Shared by getBadgeCounts above and by markNavSeen, which
+ * uses it to decide whether the visit actually cleared anything — so the page
+ * only pays for a router.refresh() when a badge was really showing.
+ */
+export async function countNewForSurface(
+  key: SeenKey,
+  organizationId: string,
+  since: Date | undefined,
+): Promise<number> {
+  const after = since ? { gt: since } : undefined;
+  switch (key) {
+    case "leads": {
+      // Un-triaged leads (NEW plus lead-center ROUTED) + live Lead Center
+      // offers awaiting an accept/decline — the two feeds share one badge.
+      const [leadRows, offers] = await Promise.all([
+        db.lead.count({
+          where: { organizationId, status: { in: ["NEW", "ROUTED"] }, createdAt: after },
+        }),
+        db.leadOffer.count({
+          where: { organizationId, status: "OFFERED", expiresAt: { gt: new Date() }, createdAt: after },
+        }),
+      ]);
+      return leadRows + offers;
+    }
+    case "proposals":
+      return db.proposal.count({
+        where: { organizationId, status: "ACCEPTED", jobs: { none: {} }, acceptedAt: after },
+      });
+    case "hire":
+      return db.applicant.count({
+        where: { organizationId, status: "APPLIED", createdAt: after },
+      });
+    case "reviews":
+      return db.reviewRequest.count({
+        where: { organizationId, status: "COMPLETED", completedAt: after },
+      });
+    case "referrals":
+      return db.referralConversion.count({
+        where: { status: "PENDING", code: { organizationId }, createdAt: after },
+      });
+  }
 }

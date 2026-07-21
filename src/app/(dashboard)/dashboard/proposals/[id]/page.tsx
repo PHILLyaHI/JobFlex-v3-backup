@@ -89,6 +89,7 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
           description: proposal.description ?? "",
           scopeOfWork: proposal.scopeOfWork ?? "",
           notes: proposal.notes ?? "",
+          address: proposal.address ?? "",
           taxRate: proposal.taxRate,
           lineItems: proposal.lineItems.map((l) => ({
             id: l.id,

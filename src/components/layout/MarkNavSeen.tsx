@@ -11,6 +11,11 @@ import type { SeenKey } from "@/lib/badgeCounts";
  * badge visibly stale. Same pattern as the admin inbox's MarkSupportSeen.
  * Runs exactly once per mount (ref guard); router.refresh() re-renders server
  * components without remounting client ones, so it can't loop.
+ *
+ * The refresh — a full server re-render of the layout AND this page — only
+ * fires when the action reports a badge was actually showing. Most visits
+ * have nothing to clear, and skipping the refresh there is a big chunk of
+ * why navigation to these surfaces feels fast.
  */
 export function MarkNavSeen({ surface }: { surface: SeenKey }) {
   const router = useRouter();
@@ -20,7 +25,9 @@ export function MarkNavSeen({ surface }: { surface: SeenKey }) {
     if (ran.current) return;
     ran.current = true;
     markNavSeen(surface)
-      .then(() => router.refresh())
+      .then((res) => {
+        if (res?.hadNew) router.refresh();
+      })
       .catch(() => {});
   }, [surface, router]);
 

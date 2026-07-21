@@ -1,10 +1,20 @@
 "use client";
 import * as React from "react";
-import { MapPin, Sparkles, AlertCircle } from "lucide-react";
+import { Sparkles, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
+import { StyledSelect, type StyledSelectOption } from "@/components/ui/StyledSelect";
 import { ProjectTypePicker, type ProjectType } from "@/components/estimator/ProjectTypePicker";
+import { PlacesAutocomplete } from "@/components/estimator/roof/PlacesAutocomplete";
+import { US_STATES, parseCityState, formatCityState } from "@/lib/usStates";
+
+// State code as the compact primary label (matches the closed field's narrow
+// width) with the full name as the searchable sublabel.
+const STATE_OPTIONS: StyledSelectOption[] = US_STATES.map((s) => ({
+  id: s.code,
+  label: s.code,
+  sublabel: s.name,
+}));
 
 // Clickable example briefs. Content (not chrome) — left verbatim so the AI gets a
 // realistic, specific prompt when one is tapped.
@@ -51,6 +61,34 @@ export function EstimatorIntakeV2({
 }: EstimatorIntakeV2Props) {
   const canGenerate = !!projectType && !!description.trim() && !generating;
 
+  // The location step feeds one free-text string upstream (`location`) that the AI
+  // reads for regional pricing. Two inputs compose it: a free address/city field
+  // and a State picker. When the address field resolves to a full picked address
+  // it already carries the state, so we emit it verbatim; otherwise we stitch
+  // "City, ST" from the two fields.
+  const [locText, setLocText] = React.useState(() => parseCityState(location).city);
+  const [stateCode, setStateCode] = React.useState(() => parseCityState(location).state);
+  const resolvedRef = React.useRef(false); // locText is a complete picked address
+  const lastEmitted = React.useRef(location);
+
+  // Re-sync from outside (e.g. the AI's typo-corrected location) without
+  // clobbering what the user is mid-typing.
+  React.useEffect(() => {
+    if (location !== lastEmitted.current) {
+      const parsed = parseCityState(location);
+      setLocText(parsed.city);
+      setStateCode(parsed.state);
+      resolvedRef.current = false;
+      lastEmitted.current = location;
+    }
+  }, [location]);
+
+  function emit(text: string, state: string, resolved: boolean) {
+    const combined = resolved ? text : formatCityState(text, state);
+    lastEmitted.current = combined;
+    onLocation(combined);
+  }
+
   return (
     <div className="max-w-3xl mx-auto">
       {disabledBanner && (
@@ -91,13 +129,49 @@ export function EstimatorIntakeV2({
             <ProjectTypePicker value={projectType} onChange={onProjectType} />
           </Step>
 
-          <Step n={2} title="Location" hint="Regional pricing. Typos auto-correct before we price.">
-            <Input
-              prefix={<MapPin className="h-3.5 w-3.5" />}
-              placeholder="Philadelphia, PA"
-              value={location}
-              onChange={(e) => onLocation(e.target.value)}
-            />
+          <Step n={2} title="Location" hint="Regional pricing. City typos auto-correct before we price.">
+            <div className="flex gap-3">
+              <div className="min-w-0 flex-1">
+                <PlacesAutocomplete
+                  value={locText}
+                  placeholder="Search address or city…"
+                  // Softer than the default 3px sage ring — this field is the step's
+                  // focal point and the standard ring read too loud on it.
+                  inputWrapperClassName="focus-within:shadow-[0_0_0_2px_rgba(31,122,82,0.10)]"
+                  onTextChange={(v) => {
+                    resolvedRef.current = false;
+                    setLocText(v);
+                    emit(v, stateCode, false);
+                  }}
+                  onPick={(a) => {
+                    // Picking a real address fills the field and auto-applies its
+                    // state to the State picker beside it.
+                    const nextText = a.formatted || a.city || locText;
+                    const nextState = a.state || stateCode;
+                    resolvedRef.current = Boolean(a.formatted);
+                    setLocText(nextText);
+                    setStateCode(nextState);
+                    emit(nextText, nextState, resolvedRef.current);
+                  }}
+                />
+              </div>
+              <div className="w-32 shrink-0">
+                <StyledSelect
+                  align="right"
+                  options={STATE_OPTIONS}
+                  value={stateCode}
+                  onChange={(v) => {
+                    setStateCode(v);
+                    // A resolved full address already carries its own state, so keep
+                    // emitting it verbatim; otherwise recompose "City, ST".
+                    if (!resolvedRef.current) emit(locText, v, false);
+                  }}
+                  placeholder="State"
+                  searchPlaceholder="Find a state…"
+                  noneLabel="Any state"
+                />
+              </div>
+            </div>
           </Step>
 
           <Step n={3} title="The brief" hint="The more specific, the tighter the estimate.">

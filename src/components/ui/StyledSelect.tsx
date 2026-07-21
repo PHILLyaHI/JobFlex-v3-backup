@@ -29,6 +29,13 @@ interface StyledSelectProps {
   noneLabel?: string | null;
   /** Render an avatar from each option's label (people pickers). */
   avatars?: boolean;
+  /**
+   * Which edge the popover anchors to. Default "left" opens rightward — correct
+   * for a wide trigger. Use "right" for a narrow trigger pinned to the right of
+   * its row (e.g. a compact State field): the min-260px panel then opens leftward
+   * and stays inside the container instead of overflowing the page edge.
+   */
+  align?: "left" | "right";
 }
 
 export function StyledSelect({
@@ -41,6 +48,7 @@ export function StyledSelect({
   emptyText = "Nothing here yet.",
   noneLabel = "— None —",
   avatars = false,
+  align = "left",
 }: StyledSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -62,7 +70,10 @@ export function StyledSelect({
     }
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey);
-    const t = setTimeout(() => inputRef.current?.focus(), 0);
+    // preventScroll: a right-pinned popover can sit partly past the viewport edge;
+    // a plain focus() would make the browser scroll the page sideways to reveal
+    // the search box, yanking the whole form. We never want that jump.
+    const t = setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
     return () => {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
@@ -131,7 +142,10 @@ export function StyledSelect({
       {open && (
         <div
           role="listbox"
-          className="paper-card absolute left-0 top-[calc(100%+6px)] z-50 w-full min-w-[260px] overflow-hidden"
+          className={cn(
+            "paper-card absolute top-[calc(100%+6px)] z-50 w-full min-w-[260px] overflow-hidden",
+            align === "right" ? "right-0" : "left-0",
+          )}
           style={{
             boxShadow: "0 28px 56px -12px rgba(17,17,19,0.22), 0 2px 0 rgba(31,122,82,0.06)",
             borderRadius: "var(--r-lg)",

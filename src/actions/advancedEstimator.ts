@@ -10,6 +10,7 @@ import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { readPriceCache, writePriceCache } from "@/lib/priceCache";
 import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
+import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
   estimateSchema,
   lineSchema,
@@ -81,10 +82,14 @@ interface ProductSearchResult {
   link: string;
   thumbnail: string;
   source: string;
-  // Google product id for this listing, when present. Used after the matcher to
-  // resolve a DIRECT merchant link (google_product → online_sellers → direct_link)
-  // so the buyer lands on e.g. Home Depot's product page, not Google's.
+  // Google product id for this listing, when present. Legacy path to a DIRECT
+  // merchant link (google_product → online_sellers → direct_link); Google has
+  // mostly retired the /shopping/product/{id} pages this engine rides on.
   productId: string | null;
+  // Modern path to the same thing: google_immersive_product → stores[].link is
+  // the merchant's real product page. Preferred over productId when present.
+  // Optional-null so pre-token rows in the price cache stay readable.
+  pageToken?: string | null;
 }
 
 // Deterministic, realistic-looking products for dev/offline mode so the
@@ -108,37 +113,74 @@ function mockProductResults(query: string): ProductSearchResult[] {
       // Mock links already point at the store's own search (not Google), so
       // there is nothing to resolve offline.
       productId: null,
+      pageToken: null,
     };
   });
 }
 
-// Fallback used whenever SerpAPI can't return live prices. In LOCAL DEV we serve
-// the deterministic mock so the estimator is demoable offline; in PRODUCTION we
-// return NO products ([]) — the AI matcher upstream then supplies its own prices
-// as usual (research[i].options = [] is handled gracefully). Demo/mock prices
-// must NEVER reach production, so they are gated to NODE_ENV === "development".
-//
-// Fallback order (per spec): try the persistent cache first — it survives a
-// SerpAPI outage and its products are returned SILENTLY, no markers. Only on a
-// true cache miss do we fall to dev-mock / prod-empty. This one helper covers all
-// four SerpAPI-failure branches below (they all call pricesFallback).
+// Fallback used whenever SerpAPI can't return live prices. Order: the
+// persistent cache first — it survives an outage and its products are returned
+// SILENTLY, no markers. On a true cache miss: mock products ONLY when the API
+// key isn't configured at all (dev demo mode, `allowMock`) — a transient
+// failure WITH a key configured returns [] instead, because mock links are
+// store-search URLs and placehold.co thumbnails that would be silently stored
+// on a real estimate as broken "products". [] just means that line prices from
+// the model's knowledge and carries no link — honest degradation. Mock data
+// additionally never leaves NODE_ENV === "development".
 async function pricesFallback(
   query: string,
   location: string | null | undefined,
+  allowMock = false,
 ): Promise<ProductSearchResult[]> {
   const cached = await readPriceCache(query, location);
   if (cached && cached.length > 0) return cached;
-  return process.env.NODE_ENV === "development" ? mockProductResults(query) : [];
+  return allowMock && process.env.NODE_ENV === "development" ? mockProductResults(query) : [];
 }
+
+// SerpAPI burst-throttles (429) when a whole bill of materials fans out at
+// once. Transient statuses (429 / 5xx) get two short backoff retries before
+// the caller degrades; deterministic 4xx (e.g. unresolvable location) returns
+// immediately so the caller's own handling runs.
+async function serpFetch(url: string): Promise<Response> {
+  let res = await fetch(url);
+  for (const delay of [400, 1200]) {
+    if (res.ok || (res.status !== 429 && res.status < 500)) return res;
+    await new Promise((r) => setTimeout(r, delay));
+    res = await fetch(url);
+  }
+  return res;
+}
+
+// Promise.all with a concurrency cap — the whole-bill fan-out (10+ searches,
+// then per-listing direct-link lookups) is what tripped SerpAPI's per-second
+// throttle in the first place. Order-preserving.
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, i: number) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      for (let i = next++; i < items.length; i = next++) {
+        out[i] = await fn(items[i], i);
+      }
+    }),
+  );
+  return out;
+}
+const SERP_CONCURRENCY = 4;
 
 /**
  * Search live retail prices for a single material via SerpAPI's Google Shopping
  * engine. Returns the top 3 results mapped to {title, price, link, thumbnail,
  * source}. When `location` is given (normalized "City, ST" from the intake
  * gate) prices are localized to that market; a location SerpAPI can't resolve
- * gets one retry without it (national prices) before the mock fallback.
- * Falls back to deterministic mock products when the key is missing or the
- * request fails (incl. 429 rate limits) so the flow never crashes in dev.
+ * gets one retry without it (national prices). Transient failures (429/5xx)
+ * are retried with backoff by serpFetch, then degrade to the price cache or
+ * empty — deterministic mock products appear ONLY when no API key is
+ * configured (offline dev demo), never on a failure with a real key.
  */
 async function searchProductPrices(
   query: string,
@@ -146,9 +188,9 @@ async function searchProductPrices(
 ): Promise<ProductSearchResult[]> {
   const apiKey = process.env.SERPAPI_API_KEY;
   if (!apiKey) {
-    console.info(`[advancedEstimator] SERPAPI_API_KEY missing — price fallback (mock in dev, none in prod) for "${query}"`);
-    // TODO(price-cache · next step): cache-read insertion point — branch "no key".
-    return pricesFallback(query, location);
+    console.info(`[advancedEstimator] SERPAPI_API_KEY missing — price fallback (cache, then dev mock) for "${query}"`);
+    // No key configured at all → the only branch where dev-mock products are OK.
+    return pricesFallback(query, location, true);
   }
   const loc = location?.trim() || null;
   try {
@@ -156,7 +198,7 @@ async function searchProductPrices(
       query
     )}&gl=us&hl=en&api_key=${apiKey}`;
     let localized = Boolean(loc);
-    let res = await fetch(loc ? `${base}&location=${encodeURIComponent(loc)}` : base);
+    let res = await serpFetch(loc ? `${base}&location=${encodeURIComponent(loc)}` : base);
     if (!res.ok && localized) {
       // Unresolvable location (SerpAPI 400s on strings outside its locations
       // DB) — retry national rather than lose live prices entirely.
@@ -164,14 +206,14 @@ async function searchProductPrices(
         `[advancedEstimator] SerpAPI ${res.status} for "${query}" localized to "${loc}" — retrying national`
       );
       localized = false;
-      res = await fetch(base);
+      res = await serpFetch(base);
     }
     if (!res.ok) {
-      // 429 = SerpAPI rate / plan limit. Degrade gracefully rather than throw.
+      // Still failing after backoff retries (e.g. hard plan limit). Degrade to
+      // cache-or-empty — NEVER mock, so fake links can't reach a real estimate.
       console.warn(
-        `[advancedEstimator] SerpAPI ${res.status} for "${query}" — price fallback (mock in dev, none in prod)`
+        `[advancedEstimator] SerpAPI ${res.status} for "${query}" — price fallback (cache, else none)`
       );
-      // TODO(price-cache · next step): cache-read insertion point — branch "429 / non-OK".
       return pricesFallback(query, location);
     }
     const json: any = await res.json();
@@ -189,10 +231,10 @@ async function searchProductPrices(
       thumbnail: String(r?.thumbnail ?? ""),
       source: String(r?.source ?? "Google Shopping"),
       productId: extractProductId(r),
+      pageToken: String(r?.immersive_product_page_token ?? "") || null,
     }));
     if (mapped.length === 0) {
-      console.warn(`[advancedEstimator] SerpAPI returned 0 products for "${query}" — price fallback`);
-      // TODO(price-cache · next step): cache-read insertion point — branch "0 products".
+      console.warn(`[advancedEstimator] SerpAPI returned 0 products for "${query}" — price fallback (cache, else none)`);
       return pricesFallback(query, location);
     }
     console.info(
@@ -205,9 +247,8 @@ async function searchProductPrices(
     return mapped;
   } catch (err: any) {
     console.warn(
-      `[advancedEstimator] SerpAPI request failed for "${query}": ${err?.message ?? err} — price fallback`
+      `[advancedEstimator] SerpAPI request failed for "${query}": ${err?.message ?? err} — price fallback (cache, else none)`
     );
-    // TODO(price-cache · next step): cache-read insertion point — branch "request threw (catch)".
     return pricesFallback(query, location);
   }
 }
@@ -219,12 +260,15 @@ async function searchProductPrices(
 // online sellers, and use the matching seller's `direct_link`.
 
 // Pull the numeric Google product id from a shopping result — it may be a
-// top-level field or only embedded in a URL (.../shopping/product/{id}).
+// top-level field, embedded in a legacy URL (.../shopping/product/{id}), or
+// packed into the modern ?ibp=oshop link's prds param (cid:{id} / pid:{id}).
 function extractProductId(r: any): string | null {
   const direct = r?.product_id ?? r?.productId;
   if (direct != null && String(direct).trim()) return String(direct).trim();
   const haystack = `${r?.product_link ?? ""} ${r?.serpapi_product_api ?? ""} ${r?.link ?? ""}`;
-  const m = haystack.match(/\/shopping\/product\/(\d+)/);
+  const m =
+    haystack.match(/\/shopping\/product\/(\d+)/) ??
+    haystack.match(/[?&,=](?:catalogid|gpcid|cid|pid):(\d+)/);
   return m ? m[1] : null;
 }
 
@@ -273,7 +317,7 @@ async function fetchOnlineSellers(productId: string, apiKey: string): Promise<On
   const url = `https://serpapi.com/search.json?engine=google_product&product_id=${encodeURIComponent(
     productId
   )}&gl=us&hl=en&api_key=${apiKey}`;
-  const res = await fetch(url);
+  const res = await serpFetch(url);
   if (!res.ok) {
     console.warn(`[advancedEstimator] google_product ${res.status} for product ${productId}`);
     return [];
@@ -281,6 +325,57 @@ async function fetchOnlineSellers(productId: string, apiKey: string): Promise<On
   const json: any = await res.json();
   const sellers = json?.sellers_results?.online_sellers;
   return Array.isArray(sellers) ? sellers : [];
+}
+
+// Modern replacement for the sellers lookup: the Immersive Product API's
+// stores[] each carry the merchant's REAL product-page link. more_stores lifts
+// the list from 3-5 to up to 13, so the chosen store is usually present.
+// Returns [] on any failure — resolution degrades, never throws.
+async function fetchImmersiveStores(pageToken: string, apiKey: string): Promise<OnlineSeller[]> {
+  const url = `https://serpapi.com/search.json?engine=google_immersive_product&page_token=${encodeURIComponent(
+    pageToken
+  )}&more_stores=true&api_key=${apiKey}`;
+  const res = await serpFetch(url);
+  if (!res.ok) {
+    console.warn(`[advancedEstimator] google_immersive_product ${res.status}`);
+    return [];
+  }
+  const json: any = await res.json();
+  const stores = json?.product_results?.stores;
+  // {name, link} rows — the OnlineSeller shape pickSellerDirectLink matches on.
+  return Array.isArray(stores) ? stores : [];
+}
+
+// Resolve the chosen store's direct product page for a picked option:
+// immersive stores first (modern), google_product sellers as legacy fallback.
+// `cache` de-dupes API calls across materials sharing a listing; null = miss.
+async function directLinkFor(
+  opt: ProductSearchResult,
+  store: string | null | undefined,
+  apiKey: string,
+  cache: Map<string, Promise<OnlineSeller[]>>,
+): Promise<string | null> {
+  if (opt.pageToken) {
+    const key = `imm:${opt.pageToken}`;
+    let pending = cache.get(key);
+    if (!pending) {
+      pending = fetchImmersiveStores(opt.pageToken, apiKey);
+      cache.set(key, pending);
+    }
+    const direct = pickSellerDirectLink(await pending, store);
+    if (direct) return direct;
+  }
+  if (opt.productId) {
+    const key = `pid:${opt.productId}`;
+    let pending = cache.get(key);
+    if (!pending) {
+      pending = fetchOnlineSellers(opt.productId, apiKey);
+      cache.set(key, pending);
+    }
+    const direct = pickSellerDirectLink(await pending, store);
+    if (direct) return direct;
+  }
+  return null;
 }
 
 // Return the chosen store's DIRECT product URL from the sellers list. Only
@@ -463,12 +558,14 @@ Description: ${input.description}${assumptionsBlock}`,
     const planned = plannerSchema.parse(JSON.parse(plannerText));
     console.info(`[advancedEstimator] Step 1 produced ${planned.materials.length} planned materials`);
 
-    // ── Step 2 · Search Loop (parallel live pricing) ────────────────────────
+    // ── Step 2 · Search Loop (throttled live pricing) ───────────────────────
+    // Bounded concurrency: an unbounded fan-out tripped SerpAPI's per-second
+    // throttle mid-batch, and the rate-limited queries silently degraded.
     console.info(
-      `[advancedEstimator] Step 2 (search) · ${planned.materials.length} queries in parallel`
+      `[advancedEstimator] Step 2 (search) · ${planned.materials.length} queries, ${SERP_CONCURRENCY} at a time`
     );
-    const searchResults = await Promise.all(
-      planned.materials.map((m) => searchProductPrices(m.searchQuery, input.location))
+    const searchResults = await mapLimit(planned.materials, SERP_CONCURRENCY, (m) =>
+      searchProductPrices(m.searchQuery, input.location)
     );
     const research = planned.materials.map((m, i) => ({
       category: m.category,
@@ -480,7 +577,35 @@ Description: ${input.description}${assumptionsBlock}`,
     }));
 
     // ── Step 3 · Matcher & Estimator ────────────────────────────────────────
+    // The model CHOOSES a product per line but never transcribes URLs: options
+    // are sent index-only (no link/thumbnail — long high-entropy URLs that an
+    // LLM reliably corrupts into plausible fakes like
+    // homedepot.com/productImage/100000000), and the choice comes back as
+    // {sourceIndex, optionIndex}. Store/link/image are then attached
+    // server-side from the real SerpAPI data, so a hallucinated URL can never
+    // reach the estimate.
     console.info(`[advancedEstimator] Step 3 (matcher) · pricing final purchase quantities`);
+    const promptResearch = research.map((r, index) => ({
+      index,
+      category: r.category,
+      materialName: r.materialName,
+      estimatedQuantity: r.estimatedQuantity,
+      unit: r.unit,
+      searchQuery: r.searchQuery,
+      options: r.options.map((o, oi) => ({
+        option: oi,
+        title: o.title,
+        price: o.price,
+        store: o.source,
+      })),
+    }));
+    const matcherLineSchema = lineSchema.extend({
+      sourceIndex: z.number().int().nullish(),
+      optionIndex: z.number().int().nullish(),
+    });
+    const matcherSchema = estimateSchema.extend({
+      materials: z.array(matcherLineSchema).default([]),
+    });
     const matcherCompletion = await client.chat.completions.create({
       model: OPENAI_MODEL,
       temperature: 0.4,
@@ -488,8 +613,8 @@ Description: ${input.description}${assumptionsBlock}`,
         {
           role: "system",
           content:
-            'You are a senior contractor AI estimator and purchasing agent. You receive a planned bill of materials where each item carries up to 3 live retail product "options" from web search. Produce a final, purchase-ready estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit, store, productUrl, imageUrl, dimensions, notes}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays: number}. ' +
-            `For every planned material: (1) choose the single best product option fitting the "${qualityTier}" quality tier — budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end — and use its price as \`unitPrice\`, its source as \`store\`, its link as \`productUrl\`, its thumbnail as \`imageUrl\`, and the product's physical size/spec as \`dimensions\` (e.g. '4x8 sheet', '5 gal', '12x12 in', or omit if not applicable); ` +
+            'You are a senior contractor AI estimator and purchasing agent. You receive a planned bill of materials (each with an `index`) where each item carries up to 3 live retail product "options" (each with an `option` number) from web search. Produce a final, purchase-ready estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit, sourceIndex, optionIndex, dimensions, notes}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays: number}. ' +
+            `For every planned material: (1) choose the single best product option fitting the "${qualityTier}" quality tier — budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end — set \`sourceIndex\` to the planned material's \`index\`, set \`optionIndex\` to the chosen option's \`option\` number, and use the chosen option's price as \`unitPrice\`. If an item has no options, set optionIndex to null and price it from your own market knowledge. NEVER output store names, product URLs, or image URLs — they are attached automatically from your chosen option; ` +
             "(2) apply standard construction waste factors to the estimatedQuantity: 10% for tile and drywall, 15% for lumber and trim, 0% for fixtures and fittings; " +
             "(3) infer the purchase package from the chosen product (sold by box, roll, sheet, or each) and round the final purchase quantity UP to the nearest whole package so the crew never runs short — set `quantity` to that final purchase count and `unit` to the package unit; " +
             "(4) ALWAYS set `dimensions` to the chosen product's real size/pack spec (never omit it) — e.g. '4x8 sheet', '12x12 in tile', '5 gal', '16 oz', '50 lb bag', '8 ft board'; if a precise size is unknown, give the sell-unit (e.g. 'per sheet', 'per box'). " +
@@ -505,68 +630,67 @@ Quality tier: ${qualityTier}
 Description: ${input.description}${assumptionsBlock}
 
 Planned materials with live product options (JSON):
-${JSON.stringify(research)}`,
+${JSON.stringify(promptResearch)}`,
         },
       ],
       response_format: { type: "json_object" },
     });
     const matcherText = matcherCompletion.choices[0]?.message?.content ?? "{}";
-    const parsed = estimateSchema.parse(JSON.parse(matcherText));
+    const parsed = matcherSchema.parse(JSON.parse(matcherText));
+    // Attach product identity (store/link/image) from the REAL option the model
+    // picked — never from model-authored text. Lines without a valid index pair
+    // carry no product link, exactly like an option-less line today.
+    const chosen: (ProductSearchResult | null)[] = [];
+    const materials = parsed.materials.map(({ sourceIndex, optionIndex, ...line }) => {
+      const opt =
+        sourceIndex != null && optionIndex != null
+          ? research[sourceIndex]?.options[optionIndex] ?? null
+          : null;
+      chosen.push(opt);
+      return {
+        ...line,
+        store: opt?.source ?? undefined,
+        productUrl: (opt && safeHttp(opt.link)) ?? undefined,
+        imageUrl: (opt && safeHttp(opt.thumbnail)) ?? undefined,
+      };
+    });
+    const estimate: GeneratedEstimate = { ...parsed, materials };
     console.info(
-      `[advancedEstimator] Step 3 complete · ${parsed.materials.length} materials, ${parsed.labor.length} labor lines`
+      `[advancedEstimator] Step 3 complete · ${materials.length} materials (${chosen.filter(Boolean).length} matched to live products), ${parsed.labor.length} labor lines`
     );
 
     // ── Step 4 · Resolve direct merchant links ──────────────────────────────
-    // The matcher set each productUrl to the chosen listing's GOOGLE product
-    // page. Trade it for the store's OWN product page (e.g. Home Depot) by
-    // looking the listing up via the Google Product engine and taking the
-    // matching seller's direct_link. One extra call per material — parallelized,
-    // de-duped by product id, key-gated, and fully best-effort: any miss leaves
-    // the existing link untouched so the estimate never regresses or throws.
+    // Each chosen listing's productUrl is its GOOGLE product page. Trade it for
+    // the store's OWN product-detail page (e.g. homedepot.com/p/…) via the
+    // Immersive Product API's stores list (google_product sellers as legacy
+    // fallback). One extra call per listing — parallelized, de-duped, key-gated,
+    // and fully best-effort: any miss leaves the existing link untouched so the
+    // estimate never regresses or throws.
     const serpKey = process.env.SERPAPI_API_KEY;
     if (serpKey) {
-      // Index the live options so we can recover a chosen material's product id.
-      // The matcher echoes the option's link as productUrl and its thumbnail as
-      // imageUrl, so either one maps a material back to its source listing.
-      const optByLink = new Map<string, ProductSearchResult>();
-      const optByThumb = new Map<string, ProductSearchResult>();
-      for (const o of searchResults.flat()) {
-        if (o.link) optByLink.set(o.link, o);
-        if (o.thumbnail) optByThumb.set(o.thumbnail, o);
-      }
-      const sellerCache = new Map<string, Promise<OnlineSeller[]>>();
+      const linkCache = new Map<string, Promise<OnlineSeller[]>>();
       let upgraded = 0;
-      await Promise.all(
-        parsed.materials.map(async (mat) => {
-          const opt =
-            (mat.productUrl && optByLink.get(mat.productUrl)) ||
-            (mat.imageUrl && optByThumb.get(mat.imageUrl)) ||
-            null;
-          if (!opt?.productId) return;
-          try {
-            let pending = sellerCache.get(opt.productId);
-            if (!pending) {
-              pending = fetchOnlineSellers(opt.productId, serpKey);
-              sellerCache.set(opt.productId, pending);
-            }
-            const direct = pickSellerDirectLink(await pending, mat.store);
-            if (direct) {
-              mat.productUrl = direct;
-              upgraded += 1;
-            }
-          } catch (err: any) {
-            console.warn(
-              `[advancedEstimator] direct-link resolve failed for "${mat.name}": ${err?.message ?? err}`
-            );
+      await mapLimit(materials, SERP_CONCURRENCY, async (mat, i) => {
+        const opt = chosen[i];
+        if (!opt) return;
+        try {
+          const direct = await directLinkFor(opt, mat.store, serpKey, linkCache);
+          if (direct) {
+            mat.productUrl = direct;
+            upgraded += 1;
           }
-        })
-      );
+        } catch (err: any) {
+          console.warn(
+            `[advancedEstimator] direct-link resolve failed for "${mat.name}": ${err?.message ?? err}`
+          );
+        }
+      });
       console.info(
-        `[advancedEstimator] Step 4 (direct links) · upgraded ${upgraded}/${parsed.materials.length} to merchant URLs`
+        `[advancedEstimator] Step 4 (direct links) · upgraded ${upgraded}/${materials.length} to merchant URLs`
       );
     }
 
-    return { ok: true, data: parsed };
+    return { ok: true, data: estimate };
   } catch (err: any) {
     console.error(`[advancedEstimator] generation failed: ${err?.message ?? err}`);
     return { ok: false, error: err?.message ?? "AI generation failed" };
@@ -671,6 +795,31 @@ ${JSON.stringify(input.current)}`,
     const text = completion.choices[0]?.message?.content ?? "{}";
     const parsed = estimateSchema.parse(JSON.parse(text));
 
+    // The model transcribes the whole estimate JSON, and long product/image
+    // URLs do NOT survive LLM transcription reliably — they come back subtly
+    // corrupted or outright fabricated (e.g. homedepot.com/productImage/…).
+    // So the model's URL text is only ever treated as a SIGNAL: on a
+    // name-matched line, non-null product fields mean "untouched" and are
+    // replaced with the authoritative stored values, while nulls (rule 4)
+    // mean "re-shop me" and are respected. Lines with no original counterpart
+    // (new/renamed) get their product fields cleared so the re-shop below
+    // links them to real products.
+    const originalByName = new Map(
+      input.current.materials.map((m) => [m.name.trim().toLowerCase(), m])
+    );
+    for (const mat of parsed.materials) {
+      const orig = originalByName.get(mat.name.trim().toLowerCase());
+      if (orig) {
+        if (mat.store != null) mat.store = orig.store;
+        if (mat.productUrl != null) mat.productUrl = orig.productUrl;
+        if (mat.imageUrl != null) mat.imageUrl = orig.imageUrl;
+      } else {
+        mat.store = undefined;
+        mat.productUrl = undefined;
+        mat.imageUrl = undefined;
+      }
+    }
+
     // ── Re-shop changed lines ────────────────────────────────────────────────
     // The edit can introduce or alter a material the model has no live product
     // for: it returns that line WITHOUT a productUrl (or keeps a stale link from
@@ -679,9 +828,7 @@ ${JSON.stringify(input.current)}`,
     // (no link, OR a name the original estimate didn't have) and run live pricing
     // for JUST those, then let the AI match each to a real product so the edited
     // line becomes genuinely priced, linked, and shoppable.
-    const originalNames = new Set(
-      input.current.materials.map((m) => m.name.trim().toLowerCase())
-    );
+    const originalNames = new Set(originalByName.keys());
     const toPrice = parsed.materials
       .map((m, idx) => ({ m, idx }))
       .filter(({ m }) => !m.productUrl || !originalNames.has(m.name.trim().toLowerCase()));
@@ -693,21 +840,35 @@ ${JSON.stringify(input.current)}`,
         const queries = toPrice.map(({ m }) =>
           [m.name, m.dimensions].filter(Boolean).join(" ").trim()
         );
-        const searchResults = await Promise.all(
-          queries.map((q) => searchProductPrices(q, input.location))
+        const searchResults = await mapLimit(queries, SERP_CONCURRENCY, (q) =>
+          searchProductPrices(q, input.location)
         );
         const research = toPrice.map(({ m }, i) => ({
+          index: i,
           name: m.name,
           quantity: m.quantity,
           unit: m.unit ?? null,
           dimensions: m.dimensions ?? null,
-          options: searchResults[i],
+          // Index-only options — the model must never transcribe URLs (it
+          // fabricates them); store/link/image are attached server-side from
+          // the chosen option.
+          options: searchResults[i].map((o, oi) => ({
+            option: oi,
+            title: o.title,
+            price: o.price,
+            store: o.source,
+          })),
         }));
 
         // Scoped matcher — picks a real product per line. Keeps the edit's quantity
         // (we don't have the raw measurement to re-derive packaging here); only the
-        // price, store, link, image, dimensions, and unit come from the product.
-        const reMatchSchema = z.object({ materials: z.array(lineSchema).default([]) });
+        // price, dimensions, and unit come from the product; store/link/image are
+        // attached from the chosen optionIndex after the parse.
+        const reMatchSchema = z.object({
+          materials: z
+            .array(lineSchema.extend({ optionIndex: z.number().int().nullish() }))
+            .default([]),
+        });
         const matchCompletion = await client.chat.completions.create({
           model: OPENAI_MODEL,
           temperature: 0.3,
@@ -715,8 +876,8 @@ ${JSON.stringify(input.current)}`,
             {
               role: "system",
               content:
-                'You are a senior contractor purchasing agent. You receive specific material lines, each with up to 3 live retail product "options" from web search. Return JSON only: {"materials": [{name, quantity, unitPrice, unit, store, productUrl, imageUrl, dimensions, notes}]}. ' +
-                `For EACH line: (1) keep \`name\` and \`quantity\` EXACTLY as given — do NOT recompute the quantity; (2) choose the single best option fitting the contractor's request. Consider any change requests or assumptions provided. If no specific grade is requested for the item, default to the "${qualityTier}" quality tier (budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end). Set unitPrice to its price, store to its source, productUrl to its link, imageUrl to its thumbnail, dimensions to its real size/pack spec, and unit to its sell-unit (e.g. bundle, roll, sheet, each); ` +
+                'You are a senior contractor purchasing agent. You receive specific material lines, each with up to 3 live retail product "options" (each with an `option` number) from web search. Return JSON only: {"materials": [{name, quantity, unitPrice, unit, optionIndex, dimensions, notes}]}. ' +
+                `For EACH line: (1) keep \`name\` and \`quantity\` EXACTLY as given — do NOT recompute the quantity; (2) choose the single best option fitting the contractor's request. Consider any change requests or assumptions provided. If no specific grade is requested for the item, default to the "${qualityTier}" quality tier (budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end). Set \`optionIndex\` to the chosen option's \`option\` number (or null if it has no options), unitPrice to its price, dimensions to its real size/pack spec, and unit to its sell-unit (e.g. bundle, roll, sheet, each). NEVER output store names, product URLs, or image URLs — they are attached automatically from your chosen option; ` +
                 "(3) in `notes`, one short line noting it was priced to the chosen product. Return ONE line per input, in the SAME order. Return JSON only.",
             },
             {
@@ -735,54 +896,57 @@ ${JSON.stringify(research)}`,
           JSON.parse(matchCompletion.choices[0]?.message?.content ?? "{}")
         );
 
-        // Merge re-priced lines back. Prefer index alignment (one line per input,
-        // same order); fall back to matching by name.
+        // Merge re-priced lines back, attaching store/link/image from the REAL
+        // chosen option (never model text). Prefer index alignment (one line
+        // per input, same order); fall back to matching by name. `inputIdx` is
+        // the position in toPrice/searchResults, `slotIdx` the position in
+        // parsed.materials.
+        const chosenBySlot = new Map<number, ProductSearchResult>();
+        const applyLine = (
+          pm: (typeof matched.materials)[number],
+          inputIdx: number,
+          slotIdx: number,
+        ) => {
+          const { optionIndex, ...line } = pm;
+          const opt =
+            optionIndex != null ? searchResults[inputIdx]?.[optionIndex] ?? null : null;
+          if (opt) chosenBySlot.set(slotIdx, opt);
+          parsed.materials[slotIdx] = {
+            ...line,
+            store: opt?.source ?? undefined,
+            productUrl: (opt && safeHttp(opt.link)) ?? undefined,
+            imageUrl: (opt && safeHttp(opt.thumbnail)) ?? undefined,
+          };
+        };
         if (matched.materials.length === toPrice.length) {
-          toPrice.forEach(({ idx }, i) => {
-            parsed.materials[idx] = matched.materials[i];
-          });
+          toPrice.forEach(({ idx }, i) => applyLine(matched.materials[i], i, idx));
         } else {
           const byName = new Map(
             matched.materials.map((pm) => [pm.name.trim().toLowerCase(), pm])
           );
-          toPrice.forEach(({ m, idx }) => {
+          toPrice.forEach(({ m, idx }, i) => {
             const pm = byName.get(m.name.trim().toLowerCase());
-            if (pm) parsed.materials[idx] = pm;
+            if (pm) applyLine(pm, i, idx);
           });
         }
 
-        // Trade the Google product page for the store's own page (parity with
-        // generate's Step 4). Best-effort; a miss leaves the SerpAPI link intact.
+        // Trade the Google product page for the store's own product-detail page
+        // (parity with generate's Step 4: immersive stores → legacy sellers).
+        // Best-effort; a miss leaves the SerpAPI link intact.
         const serpKey = process.env.SERPAPI_API_KEY;
         if (serpKey) {
-          const optByLink = new Map<string, ProductSearchResult>();
-          const optByThumb = new Map<string, ProductSearchResult>();
-          for (const o of searchResults.flat()) {
-            if (o.link) optByLink.set(o.link, o);
-            if (o.thumbnail) optByThumb.set(o.thumbnail, o);
-          }
-          const sellerCache = new Map<string, Promise<OnlineSeller[]>>();
-          await Promise.all(
-            toPrice.map(async ({ idx }) => {
-              const mat = parsed.materials[idx];
-              const opt =
-                (mat.productUrl && optByLink.get(mat.productUrl)) ||
-                (mat.imageUrl && optByThumb.get(mat.imageUrl)) ||
-                null;
-              if (!opt?.productId) return;
-              try {
-                let pending = sellerCache.get(opt.productId);
-                if (!pending) {
-                  pending = fetchOnlineSellers(opt.productId, serpKey);
-                  sellerCache.set(opt.productId, pending);
-                }
-                const direct = pickSellerDirectLink(await pending, mat.store);
-                if (direct) mat.productUrl = direct;
-              } catch {
-                /* leave the existing link */
-              }
-            })
-          );
+          const linkCache = new Map<string, Promise<OnlineSeller[]>>();
+          await mapLimit(toPrice, SERP_CONCURRENCY, async ({ idx }) => {
+            const mat = parsed.materials[idx];
+            const opt = chosenBySlot.get(idx);
+            if (!opt) return;
+            try {
+              const direct = await directLinkFor(opt, mat.store, serpKey, linkCache);
+              if (direct) mat.productUrl = direct;
+            } catch {
+              /* leave the existing link */
+            }
+          });
         }
         console.info(
           `[advancedEstimator] refine · re-priced ${matched.materials.length} line(s) with live products`
@@ -845,6 +1009,9 @@ const convertInput = z.object({
   assumptions: z.array(z.string()).default([]),
   // Pre-links the proposal to a client when converted from a client's page.
   clientId: z.string().optional().nullable(),
+  // The estimate's job location ("City, ST") — becomes the proposal's job
+  // address and, when its state resolves, seeds the tax rate for that market.
+  location: z.string().optional().nullable(),
 });
 
 export async function convertEstimateToProposal(raw: unknown) {
@@ -917,9 +1084,12 @@ export async function convertEstimateToProposal(raw: unknown) {
   ];
 
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
-  // Tax sits on top of the marked-up subtotal (sell price), applied once. Seeded
-  // from the org default. taxRate is a FRACTION (0.08 = 8%), not a percent.
-  const taxRate = org?.defaultTaxRate ?? 0;
+  // Tax sits on top of the marked-up subtotal (sell price), applied once.
+  // The estimate's location wins when its state resolves (the contractor gave
+  // a market, so tax that market); the org default is the fallback. taxRate is
+  // a FRACTION (0.08 = 8%), not a percent.
+  const address = data.location?.trim() || null;
+  const taxRate = stateTaxRate(stateFromAddress(address)) ?? org?.defaultTaxRate ?? 0;
   const taxTotal = subtotal * taxRate;
 
   // Scope only — assumptions stay on the estimate (AiEstimate), never baked into
@@ -934,6 +1104,7 @@ export async function convertEstimateToProposal(raw: unknown) {
       clientId,
       title: data.title,
       scopeOfWork: scope || null,
+      address,
       status: ProposalStatus.DRAFT,
       subtotal,
       taxRate,

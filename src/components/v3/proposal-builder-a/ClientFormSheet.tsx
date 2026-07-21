@@ -4,6 +4,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
+import { PlacesAutocomplete } from "@/components/estimator/roof/PlacesAutocomplete";
 import { cn } from "@/lib/cn";
 import {
   createClient,
@@ -137,12 +138,26 @@ export function ClientFormSheet({
             placeholder="(555) 123-4567"
           />
         </div>
-        <Input
-          label="Address"
-          value={form.address}
-          onChange={(e) => patch("address", e.target.value)}
-          placeholder="Street address"
-        />
+        <div className="flex flex-col gap-1.5">
+          <label className="quiet-caps">Address</label>
+          {/* Styled Places dropdown: picking a suggestion fills street + the
+              city/state/ZIP fields below in one go; all stay hand-editable.
+              Falls back to a plain input when no Maps browser key is set. */}
+          <PlacesAutocomplete
+            value={form.address}
+            onTextChange={(v) => patch("address", v)}
+            onPick={(a) =>
+              setForm((f) => ({
+                ...f,
+                address: a.address || a.formatted || f.address,
+                city: a.city || f.city,
+                state: a.state || f.state,
+                zip: a.zip || f.zip,
+              }))
+            }
+            placeholder="Search the street address…"
+          />
+        </div>
         <div className="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <Input
             label="City"

@@ -31,6 +31,16 @@ function formatLocation(c: ClientLite): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
+// One-line postal-style address ("123 Main St, Austin, TX 78701") for seeding
+// the proposal's job-address field; null when the client has no address parts.
+function clientAddressLine(c: ClientLite): string | null {
+  const stateZip = [c.state, c.zip].filter(Boolean).join(" ");
+  const parts = [c.address, c.city, stateZip].filter(
+    (p): p is string => !!p && p.trim().length > 0,
+  );
+  return parts.length ? parts.join(", ") : null;
+}
+
 /**
  * Client field with three input modes:
  *   1. Pick an existing client — searchable combobox (Bucket A).
@@ -42,6 +52,20 @@ function formatLocation(c: ClientLite): string | null {
 export function ClientField({ clients }: { clients: ClientLite[] }) {
   const clientId = useProposalDraftStore((s) => s.draft.clientId);
   const set = useProposalDraftStore((s) => s.set);
+  const applyAddressTax = useProposalDraftStore((s) => s.applyAddressTax);
+  const setAddress = useProposalDraftStore((s) => s.setAddress);
+
+  // Seed the proposal's job address (and its tax estimate) from a client the
+  // contractor just chose or saved. A client with no address on file leaves the
+  // typed job address alone — but their state can still refresh the estimate.
+  const fillFromClient = React.useCallback(
+    (c: ClientLite) => {
+      const line = clientAddressLine(c);
+      if (line) setAddress(line, c.state);
+      else applyAddressTax(c.state);
+    },
+    [setAddress, applyAddressTax],
+  );
 
   // Local list so an inline-created client appears immediately in the picker
   // without waiting for a router refresh. The sync effect keeps it current when
@@ -94,6 +118,7 @@ export function ClientField({ clients }: { clients: ClientLite[] }) {
 
   function choose(c: ClientLite) {
     set({ clientId: c.id });
+    fillFromClient(c);
     setFreeText(null);
     setOpen(false);
     setQuery("");
@@ -128,6 +153,9 @@ export function ClientField({ clients }: { clients: ClientLite[] }) {
         : [client, ...list];
     });
     set({ clientId: client.id });
+    // Covers both a fresh create and editing the currently-selected client's
+    // address in place — either way, refresh the job address + tax estimate.
+    fillFromClient(client);
     setFreeText(null);
   }
   function onKeyDown(e: React.KeyboardEvent) {

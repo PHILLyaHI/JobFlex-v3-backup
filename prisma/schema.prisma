@@ -446,6 +446,9 @@ model Proposal {
   description     String?
   scopeOfWork     String?
   notes           String?
+  // Job address — optional one-liner, seeded from the client / AI-estimator
+  // location; its state drives the tax-rate estimate in the builder.
+  address         String?
   status          String         @default("DRAFT")
   subtotal        Float          @default(0)
   discountTotal   Float          @default(0)

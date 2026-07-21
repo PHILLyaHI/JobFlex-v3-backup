@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { nanoid } from "nanoid";
 import { sellUnitPrice } from "@/lib/pricing/markup";
+import { stateTaxRate, resolveStateCode, stateFromAddress } from "@/lib/pricing/salesTax";
 
 export type MeasurementType = "SQFT" | "LINEAR_FT" | "CUBIC_FT" | "UNIT" | "HOUR" | "LUMP_SUM";
 
@@ -37,9 +38,22 @@ interface ProposalDraft {
   description: string;
   scopeOfWork: string;
   notes: string;
+  // Job address — optional, one line. Auto-filled from the chosen client (or
+  // the AI estimator's location) but freely editable; its resolved state feeds
+  // the tax-rate estimate. Optional so pre-address drafts hydrate cleanly.
+  address?: string;
   lineItems: DraftLineItem[];
   installments: DraftInstallment[];
   taxRate: number;
+  // Set true when taxRate was last set by the address-based estimate (below),
+  // false once the contractor types a value by hand. A manual entry is never
+  // silently overwritten by a later client/address change. Optional so callers
+  // hydrating an existing proposal (which never had this concept) don't need to
+  // supply it — hydrate() always normalizes it to false regardless of input.
+  taxRateAuto?: boolean;
+  // Resolved USPS state code the current estimate (if auto) was computed from,
+  // for display ("Estimated from Texas ·"). Null/undefined when not address-derived.
+  taxRateState?: string | null;
   // Estimating engine markups (percentages 0-100)
   materialMarkupPct: number;
   laborMarkupPct: number;
@@ -66,6 +80,20 @@ interface DraftStore {
   removeInstallment: (id: string) => void;
   hydrate: (d: ProposalDraft) => void;
   setMarkup: (patch: MarkupPatch) => void;
+  /**
+   * Seed/refresh taxRate from a client's state when it's resolvable, UNLESS the
+   * contractor has already typed a manual rate (taxRateAuto === false) — in
+   * that case this is a no-op so their entry is never clobbered. Call this
+   * whenever the builder learns a client's address (select, inline create/edit).
+   */
+  applyAddressTax: (state: string | null | undefined) => void;
+  /**
+   * Set the job address AND refresh the tax estimate from it. `stateHint`
+   * carries an authoritative state when the caller knows it (a Places pick,
+   * a client record); otherwise the state is parsed from the text. Tax updates
+   * flow through applyAddressTax, so a manually-typed rate is never clobbered.
+   */
+  setAddress: (text: string, stateHint?: string | null) => void;
   computed: () => {
     subtotal: number;
     tax: number;
@@ -82,6 +110,7 @@ const emptyDraft = (): ProposalDraft => ({
   description: "",
   scopeOfWork: "",
   notes: "",
+  address: "",
   lineItems: [
     {
       id: nanoid(6),
@@ -99,6 +128,8 @@ const emptyDraft = (): ProposalDraft => ({
     { id: nanoid(6), label: "Completion", amount: 40, isPercent: true },
   ],
   taxRate: 0,
+  taxRateAuto: false,
+  taxRateState: null,
   // Hidden profit markup. Default 0 so a brand-new draft prices at cost exactly
   // (current behaviour); the org-wide default is seeded on top at creation
   // (ResetDraft / estimator convert). overhead/profit stay display-only for now.
@@ -150,19 +181,43 @@ export const useProposalDraftStore = create<DraftStore>()(
       }),
     hydrate: (d) =>
       set((s) => {
-        // Backwards-compat: hydrate from older proposals without markup fields
+        // Backwards-compat: hydrate from older proposals without markup fields.
+        // taxRateAuto always starts false on hydrate — an existing proposal's
+        // saved taxRate is never known to be address-derived, so a client
+        // change on an already-saved proposal won't silently rewrite it either
+        // (the contractor gets the "estimate for X" snap-back button instead).
         s.draft = {
           ...d,
+          address: d.address ?? "",
           materialMarkupPct: d.materialMarkupPct ?? 0,
           laborMarkupPct: d.laborMarkupPct ?? 0,
           overheadPct: d.overheadPct ?? 0,
           profitPct: d.profitPct ?? 0,
+          taxRateAuto: false,
+          taxRateState: null,
         };
       }),
     setMarkup: (patch) =>
       set((s) => {
         Object.assign(s.draft, patch);
       }),
+    applyAddressTax: (state) =>
+      set((s) => {
+        if (s.draft.taxRateAuto === false) return; // manual entry — never clobber
+        const rate = stateTaxRate(state);
+        if (rate === null) return; // unresolvable state — leave as-is
+        s.draft.taxRate = rate;
+        s.draft.taxRateAuto = true;
+        s.draft.taxRateState = resolveStateCode(state);
+      }),
+    setAddress: (text, stateHint) => {
+      set((s) => {
+        s.draft.address = text;
+      });
+      // Authoritative state from the caller when available (Places pick,
+      // client record); best-effort parse from the text otherwise.
+      get().applyAddressTax(stateHint ?? stateFromAddress(text));
+    },
     computed: () => {
       const d = get().draft;
       // Subtotal is the client-facing SELL price: each line's cost marked up by
@@ -197,6 +252,16 @@ export const useProposalDraftStore = create<DraftStore>()(
       // even before the first server autosave. Only the draft itself is persisted.
       name: "jobflex-proposal-draft",
       partialize: (s) => ({ draft: s.draft }),
+      // Never auto-restore at module init: the client's first render would show
+      // the PREVIOUS draft's text (totals, tax line, title) while the server
+      // rendered an empty draft — a guaranteed hydration text mismatch (React
+      // #418) on every builder page with a draft in localStorage. The builder
+      // pages fully own initial state anyway (ResetDraft seeds /new,
+      // HydrateDraft loads /proposals/[id] from the DB), so eager restore only
+      // ever flashed stale data before being clobbered. Writes still mirror to
+      // localStorage; an explicit restore remains available via
+      // useProposalDraftStore.persist.rehydrate().
+      skipHydration: true,
     },
   ),
 );

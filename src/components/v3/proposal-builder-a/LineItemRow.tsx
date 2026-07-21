@@ -12,7 +12,7 @@ import { money } from "@/lib/format";
 import { sellUnitPrice } from "@/lib/pricing/markup";
 import { cn } from "@/lib/cn";
 import { RatioSlider } from "@/components/proposal/RatioSlider";
-import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
+import { MaterialLinkPopover } from "@/components/proposal/MaterialLinkPopover";
 import { OverflowTooltip } from "./OverflowTooltip";
 
 // Units mirror the live builder one-for-one — only presentation changes.
@@ -30,20 +30,13 @@ const MEASUREMENT_OPTIONS: {
 
 const cents = (n: number) => Math.round(n * 100);
 
-export function LineItemRow({
-  item,
-  proposalTitle,
-  clientName,
-}: {
-  item: DraftLineItem;
-  proposalTitle: string;
-  clientName: string;
-}) {
+export function LineItemRow({ item }: { item: DraftLineItem }) {
   const update = useProposalDraftStore((s) => s.updateLine);
   const remove = useProposalDraftStore((s) => s.removeLine);
   const draft = useProposalDraftStore((s) => s.draft);
   const [expanded, setExpanded] = React.useState(false);
   const [materialsOpen, setMaterialsOpen] = React.useState(false);
+  const materialsBtnRef = React.useRef<HTMLButtonElement>(null);
   const reduceMotion = useReducedMotion();
 
   // perUnit = raw cost (drives the material/labor ratio %). `unit` is the
@@ -150,8 +143,9 @@ export function LineItemRow({
 
         <div className="flex shrink-0 items-center gap-0.5">
           <button
+            ref={materialsBtnRef}
             type="button"
-            onClick={() => setMaterialsOpen(true)}
+            onClick={() => setMaterialsOpen((v) => !v)}
             aria-label="View materials for this line"
             title="Materials for this line"
             className="grid h-8 w-8 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] transition-colors hover:bg-black/[0.04] hover:text-[color:var(--ink)] focus-ring"
@@ -254,21 +248,24 @@ export function LineItemRow({
         )}
       </AnimatePresence>
 
-      <MaterialsSheet
+      {/* A single line doesn't earn the full Order-materials sheet — a small
+          anchored popover with the line + its buy link (when one resolves). */}
+      <MaterialLinkPopover
         open={materialsOpen}
         onClose={() => setMaterialsOpen(false)}
-        proposalTitle={proposalTitle || "Untitled proposal"}
-        clientName={clientName}
-        items={[
-          {
-            id: item.id,
-            name: item.name || "Unnamed line",
-            description: item.description ?? null,
-            measurementType: item.measurementType,
-            quantity: item.quantity,
-            materialCost: item.materialCost ?? 0,
-          },
-        ]}
+        anchorEl={materialsBtnRef.current}
+        item={{
+          id: item.id,
+          name: item.name || "Unnamed line",
+          description: item.description ?? null,
+          measurementType: item.measurementType,
+          quantity: item.quantity,
+          materialCost: item.materialCost ?? 0,
+          store: item.store ?? null,
+          productUrl: item.productUrl ?? null,
+          imageUrl: item.imageUrl ?? null,
+          dimensions: item.dimensions ?? null,
+        }}
       />
     </div>
   );

@@ -272,6 +272,9 @@ export function EstimatorStudio({
         labor: labor.map(({ id: _, ...rest }) => rest),
         assumptions,
         clientId,
+        // Carries the estimate's location into the proposal's job-address
+        // field (and its state into the tax rate) — still editable there.
+        location: location || undefined,
       });
       toast.success("Proposal created");
       router.push(`/dashboard/proposals/${res.id}` as any);

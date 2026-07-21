@@ -8,10 +8,17 @@ interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "
   error?: string;
   prefix?: React.ReactNode;
   suffix?: React.ReactNode;
+  /**
+   * Overrides on the bordered field wrapper (not the inner <input>, which
+   * `className` targets). Because `cn` runs tailwind-merge, a `focus-within:shadow-…`
+   * passed here replaces the default sage focus ring — used to soften it on fields
+   * where the standard ring reads too loud.
+   */
+  wrapperClassName?: string;
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Input(
-  { className, label, hint, error, prefix, suffix, id, ...props },
+  { className, label, hint, error, prefix, suffix, id, wrapperClassName, ...props },
   ref,
 ) {
   const autoId = React.useId();
@@ -27,6 +34,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
         className={cn(
           "flex h-10 items-center gap-2 rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] px-3 transition-all hairline focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]",
           error && "shadow-[0_0_0_3px_rgba(225,29,72,0.22)]",
+          wrapperClassName,
         )}
       >
         {prefix && <span className="text-[color:var(--ink-muted)] shrink-0">{prefix}</span>}
