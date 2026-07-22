@@ -27,6 +27,10 @@ interface BreakdownProps {
   subtitle: string;
   rows: EstimateLine[];
   onChange: (rows: EstimateLine[]) => void;
+  /** Row ids touched by the last applied AI refine — rendered as a tonal "Updated" pill. */
+  changedIds?: Set<string>;
+  /** Locks every field/button (e.g. while a refine is in flight or awaiting review). */
+  disabled?: boolean;
 }
 
 // Borderless register — quiet fields with a sage focus ring, divided by
@@ -45,7 +49,14 @@ const safeNum = (v: string) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-export function EstimatorBreakdown({ title, subtitle, rows, onChange }: BreakdownProps) {
+export function EstimatorBreakdown({
+  title,
+  subtitle,
+  rows,
+  onChange,
+  changedIds,
+  disabled,
+}: BreakdownProps) {
   function update(id: string, patch: Partial<EstimateLine>) {
     onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
@@ -74,7 +85,10 @@ export function EstimatorBreakdown({ title, subtitle, rows, onChange }: Breakdow
         <div className="quiet-caps !mb-0 col-span-2 text-right">Total</div>
       </div>
 
-      <div className="divide-y divide-[color:var(--ink-line)]">
+      <div
+        className={cn("divide-y divide-[color:var(--ink-line)]", disabled && "opacity-60")}
+        aria-disabled={disabled || undefined}
+      >
         {rows.map((r) => {
           // The product's size / sell-unit — the one thing that makes "Unit $"
           // read as "price per this". Kept clear; the waste math is demoted.
@@ -82,12 +96,20 @@ export function EstimatorBreakdown({ title, subtitle, rows, onChange }: Breakdow
           return (
             <div key={r.id} className="grid grid-cols-12 gap-2 items-start py-2">
               <div className="col-span-6 min-w-0">
-                <input
-                  className={FIELD}
-                  value={r.name}
-                  onChange={(e) => update(r.id, { name: e.target.value })}
-                  placeholder="Line item"
-                />
+                <div className="flex items-center gap-1.5">
+                  <input
+                    className={FIELD}
+                    value={r.name}
+                    onChange={(e) => update(r.id, { name: e.target.value })}
+                    placeholder="Line item"
+                    disabled={disabled}
+                  />
+                  {changedIds?.has(r.id) && (
+                    <span className="shrink-0 rounded-full bg-[color:var(--accent-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[color:var(--accent-ink)]">
+                      Updated
+                    </span>
+                  )}
+                </div>
                 {(size || r.notes) && (
                   <div className="px-2.5 mt-0.5">
                     {size && (
@@ -116,6 +138,7 @@ export function EstimatorBreakdown({ title, subtitle, rows, onChange }: Breakdow
                   className={NUM_FIELD}
                   value={r.quantity}
                   onChange={(e) => update(r.id, { quantity: safeNum(e.target.value) })}
+                  disabled={disabled}
                 />
               </div>
               <div className="col-span-2">
@@ -126,6 +149,7 @@ export function EstimatorBreakdown({ title, subtitle, rows, onChange }: Breakdow
                   className={NUM_FIELD}
                   value={r.unitPrice}
                   onChange={(e) => update(r.id, { unitPrice: safeNum(e.target.value) })}
+                  disabled={disabled}
                 />
               </div>
               <div className="col-span-2 flex items-center justify-end gap-1">
@@ -136,7 +160,8 @@ export function EstimatorBreakdown({ title, subtitle, rows, onChange }: Breakdow
                   type="button"
                   onClick={() => remove(r.id)}
                   aria-label="Remove row"
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-rose-50 hover:text-[color:var(--rose)] transition-colors"
+                  disabled={disabled}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-rose-50 hover:text-[color:var(--rose)] transition-colors disabled:pointer-events-none"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -149,7 +174,8 @@ export function EstimatorBreakdown({ title, subtitle, rows, onChange }: Breakdow
       <button
         type="button"
         onClick={add}
-        className="mt-1.5 inline-flex items-center gap-1.5 h-9 px-3 rounded-[var(--r-sm)] text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] hover:bg-black/[0.04] self-start transition-colors"
+        disabled={disabled}
+        className="mt-1.5 inline-flex items-center gap-1.5 h-9 px-3 rounded-[var(--r-sm)] text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] hover:bg-black/[0.04] self-start transition-colors disabled:pointer-events-none disabled:opacity-50"
       >
         <Plus className="h-3.5 w-3.5" />
         Add line

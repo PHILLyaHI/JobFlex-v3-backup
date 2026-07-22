@@ -12,6 +12,7 @@ import { readPriceCache, writePriceCache } from "@/lib/priceCache";
 import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
+  discountSchema,
   estimateSchema,
   lineSchema,
   promptAnalysisSchema,
@@ -1070,6 +1071,7 @@ export async function saveEstimate(raw: {
         title: raw.data.title,
         assumptions: raw.data.assumptions,
         estimatedTimelineDays: raw.data.estimatedTimelineDays,
+        discount: raw.data.discount ?? null,
       }),
       assumptions: raw.data.assumptions.join("\n"),
       total,
@@ -1092,6 +1094,9 @@ const convertInput = z.object({
   // The estimate's job location ("City, ST") — becomes the proposal's job
   // address and, when its state resolves, seeds the tax rate for that market.
   location: z.string().optional().nullable(),
+  // Order-level discount from the estimator ("10% off") — materializes as a
+  // Discount row + discountTotal on the proposal.
+  discount: discountSchema.nullish(),
 });
 
 export async function convertEstimateToProposal(raw: unknown) {
@@ -1164,13 +1169,23 @@ export async function convertEstimateToProposal(raw: unknown) {
   ];
 
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
+  // Order-level discount (estimator "10% off" etc). Percent clamps to 100,
+  // dollars clamp to the subtotal, and tax applies to the DISCOUNTED base.
+  const discountTotal = data.discount
+    ? Math.min(
+        subtotal,
+        data.discount.isPercent
+          ? (subtotal * Math.min(data.discount.amount, 100)) / 100
+          : data.discount.amount,
+      )
+    : 0;
   // Tax sits on top of the marked-up subtotal (sell price), applied once.
   // The estimate's location wins when its state resolves (the contractor gave
   // a market, so tax that market); the org default is the fallback. taxRate is
   // a FRACTION (0.08 = 8%), not a percent.
   const address = data.location?.trim() || null;
   const taxRate = stateTaxRate(stateFromAddress(address)) ?? org?.defaultTaxRate ?? 0;
-  const taxTotal = subtotal * taxRate;
+  const taxTotal = (subtotal - discountTotal) * taxRate;
 
   // Scope only — assumptions stay on the estimate (AiEstimate), never baked into
   // the proposal's scope, so the preview / calendar / job detail stay clean.
@@ -1187,15 +1202,27 @@ export async function convertEstimateToProposal(raw: unknown) {
       address,
       status: ProposalStatus.DRAFT,
       subtotal,
+      discountTotal,
       taxRate,
       taxTotal,
-      total: subtotal + taxTotal,
+      total: subtotal - discountTotal + taxTotal,
       materialMarkupPct: markupRates.materialMarkupPct,
       laborMarkupPct: markupRates.laborMarkupPct,
       validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
       lineItems: {
         create: lines.map((l, i) => ({ ...l, position: i })),
       },
+      discounts: data.discount
+        ? {
+            create: [
+              {
+                label: data.discount.label,
+                amount: data.discount.amount,
+                isPercent: data.discount.isPercent,
+              },
+            ],
+          }
+        : undefined,
       installments: {
         create: [
           { label: "Deposit", amount: 30, isPercent: true, position: 0 },
