@@ -27,6 +27,10 @@ const trimmedOpt = z
   });
 
 export const lineSchema = z.object({
+  // Client row identity, passed through the AI round-trip. Lets the refine
+  // match lines by identity (not name), so a rename never re-shops/re-prices.
+  // The model echoes it; brand-new lines omit it. Optional for back-compat.
+  id: z.string().optional(),
   name: z.string(),
   quantity: z.number(),
   unitPrice: z.number(),
@@ -40,6 +44,16 @@ export const lineSchema = z.object({
   notes: trimmedOpt,
 });
 
+// One order-level discount, mirroring the Prisma Discount row on Proposal
+// ({label, amount, isPercent}) so it converts 1:1. amount is dollars when
+// isPercent=false, a 0-100 percentage when true.
+export const discountSchema = z.object({
+  label: z.string().min(1).max(80),
+  amount: z.number().positive(),
+  isPercent: z.boolean(),
+});
+export type EstimateDiscount = z.infer<typeof discountSchema>;
+
 export const estimateSchema = z.object({
   title: z.string(),
   scope: z.string(),
@@ -47,6 +61,9 @@ export const estimateSchema = z.object({
   materials: z.array(lineSchema).default([]),
   labor: z.array(lineSchema).default([]),
   estimatedTimelineDays: z.number().optional(),
+  // Set by the refine when the contractor asks for a discount ("10% off",
+  // "knock $500 off") — kept order-level instead of mangled into line prices.
+  discount: discountSchema.nullish(),
 });
 
 export type GeneratedEstimate = z.infer<typeof estimateSchema>;

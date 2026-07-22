@@ -705,23 +705,43 @@ ${JSON.stringify(promptResearch)}`,
 // where asked.
 const refineInputSchema = z.object({
   projectType: z.string(),
-  description: z.string().default(""),
   location: z.string().optional(),
+  // NOTE: no intake UI sets a tier yet, so refine effectively always runs at
+  // "standard". If a tier picker ships, the client MUST start sending this or
+  // every refine will silently re-price at standard.
   qualityTier: z.enum(["budget", "standard", "luxury"]).optional(),
-  instructions: z.string().default(""),
+  instructions: z
+    .string()
+    .max(4000, "Change request is too long — keep it under 4,000 characters.")
+    .default(""),
+  // The last few APPLIED change requests (oldest first). The refine itself is
+  // stateless — this is its short-term memory, so "now make it cheaper" knows
+  // what "it" was.
+  history: z.array(z.string().max(4000)).max(10).default([]),
   assumptions: z.array(z.string()).default([]),
   current: estimateSchema,
 });
 
 export async function refineAdvancedEstimate(raw: unknown): Promise<
-  | { ok: true; data: GeneratedEstimate; disabled?: boolean }
+  | {
+      ok: true;
+      data: GeneratedEstimate;
+      /** Human-readable caveats (unit changes, failed live pricing) for the review UI. */
+      warnings: string[];
+      /** True when the live re-shop pass failed — changed lines keep AI-guessed prices. */
+      reshopFailed: boolean;
+      disabled?: boolean;
+    }
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
   let input: z.infer<typeof refineInputSchema>;
   try {
     input = refineInputSchema.parse(raw);
-  } catch {
-    return { ok: false, error: "Invalid estimate payload" };
+  } catch (err) {
+    // Surface the friendly custom message (e.g. the instructions length cap);
+    // fall back to the generic line for structural mismatches.
+    const first = err instanceof z.ZodError ? err.issues[0]?.message : null;
+    return { ok: false, error: first?.includes("—") ? first : "Invalid estimate payload" };
   }
 
   let organizationId: string;
@@ -749,6 +769,8 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
         ...input.current,
         assumptions: cleanAssumptions.length ? cleanAssumptions : input.current.assumptions,
       },
+      warnings: [],
+      reshopFailed: false,
       disabled: true,
     };
   }
@@ -766,12 +788,16 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
         {
           role: "system",
           content:
-            'You are a senior contractor AI estimator EDITING an existing estimate. You receive the current estimate as JSON plus a plain-English change request from the contractor. Apply ONLY the requested changes and return the COMPLETE updated estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit, store, productUrl, imageUrl, dimensions, notes}], labor: [{name, quantity, unitPrice, unit, notes}], estimatedTimelineDays: number}. ' +
+            'You are a senior contractor AI estimator EDITING an existing estimate. You receive the current estimate as JSON plus a plain-English change request from the contractor. Apply ONLY the requested changes and return the COMPLETE updated estimate as JSON matching: {title, scope, assumptions: string[], materials: [{id, name, quantity, unitPrice, unit, store, productUrl, imageUrl, dimensions, notes}], labor: [{id, name, quantity, unitPrice, unit, notes}], estimatedTimelineDays: number, discount: {label, amount, isPercent} | null}. ' +
             "Rules: (1) Preserve every line, price, store, productUrl, imageUrl, and dimensions that the request does NOT touch — copy them through unchanged; do not re-price or re-shop untouched items. " +
             `(2) Keep the same costing formula as the original: quality tier "${qualityTier}", waste factors (10% tile/drywall, 15% lumber/trim, 0% fixtures), and round purchase quantities UP to whole packages. EXCEPT if the instructions or assumptions explicitly ask for a different quality/grade for specific items, adjust those items. ` +
             "(3) Keep `dimensions` set to each product's real size/pack spec. " +
             "(4) If you add a new material, OR if you upgrade/change a material's specification based on the instructions or assumptions, you MUST leave its store, productUrl, and imageUrl empty (or null) so it will be re-shopped live. Do not reuse the old link for a changed material. " +
-            "(5) Treat the contractor's assumptions as ground truth. If an assumption conflicts with the current estimate (e.g. requires a different material, quantity, or scope), you MUST update the estimate to match. Return JSON only.",
+            "(5) Treat the contractor's assumptions as ground truth. If an assumption conflicts with the current estimate (e.g. requires a different material, quantity, or scope), you MUST update the estimate to match. " +
+            "(6) Every existing line carries an `id`. Keep the SAME `id` on every line you keep or edit — including renamed or re-specced lines. Omit `id` only on brand-new lines. " +
+            "(7) Renaming or rewording a line is NOT a spec change: keep its id, price, quantity, and product links unchanged unless the request explicitly changes the product itself. " +
+            "(8) If the request asks for a discount ('10% off', 'knock $500 off'), do NOT alter any line prices — set `discount` to {label, amount, isPercent} (isPercent=true means amount is a 0-100 percentage). If asked to remove the discount, set it to null. Otherwise copy the existing discount through unchanged. " +
+            "(9) Update `scope` and `estimatedTimelineDays` when the changes affect them; otherwise copy them through unchanged. Return JSON only.",
         },
         {
           role: "user",
@@ -779,7 +805,14 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
 ${input.location ? `Location: ${input.location}` : ""}
 Quality tier: ${qualityTier}
 
-Change request from the contractor:
+${
+  input.history.length
+    ? `Changes already applied in earlier passes (oldest first — context, do not re-apply):
+${input.history.map((h) => `- ${h}`).join("\n")}
+
+`
+    : ""
+}Change request from the contractor:
 ${instructions || "(no free-text request — apply the updated assumptions below)"}
 
 ${
@@ -804,11 +837,25 @@ ${JSON.stringify(input.current)}`,
     // mean "re-shop me" and are respected. Lines with no original counterpart
     // (new/renamed) get their product fields cleared so the re-shop below
     // links them to real products.
+    // Caveats surfaced to the review UI (unit changes, failed live pricing).
+    const warnings: string[] = [];
+    let reshopFailed = false;
+
+    // Identity beats name: a line whose `id` survived the round-trip is the
+    // same line even if the contractor asked to reword it — so a rename alone
+    // keeps its price and product link instead of looking "new" and getting
+    // re-shopped. Name matching stays as the fallback for models that drop ids.
+    const originalById = new Map(
+      input.current.materials.filter((m) => m.id).map((m) => [m.id as string, m])
+    );
     const originalByName = new Map(
       input.current.materials.map((m) => [m.name.trim().toLowerCase(), m])
     );
+    const originalFor = (mat: { id?: string; name: string }) =>
+      (mat.id ? originalById.get(mat.id) : undefined) ??
+      originalByName.get(mat.name.trim().toLowerCase());
     for (const mat of parsed.materials) {
-      const orig = originalByName.get(mat.name.trim().toLowerCase());
+      const orig = originalFor(mat);
       if (orig) {
         if (mat.store != null) mat.store = orig.store;
         if (mat.productUrl != null) mat.productUrl = orig.productUrl;
@@ -828,10 +875,9 @@ ${JSON.stringify(input.current)}`,
     // (no link, OR a name the original estimate didn't have) and run live pricing
     // for JUST those, then let the AI match each to a real product so the edited
     // line becomes genuinely priced, linked, and shoppable.
-    const originalNames = new Set(originalByName.keys());
     const toPrice = parsed.materials
       .map((m, idx) => ({ m, idx }))
-      .filter(({ m }) => !m.productUrl || !originalNames.has(m.name.trim().toLowerCase()));
+      .filter(({ m }) => !m.productUrl || !originalFor(m));
 
     if (toPrice.length > 0) {
       try {
@@ -908,11 +954,15 @@ ${JSON.stringify(research)}`,
           slotIdx: number,
         ) => {
           const { optionIndex, ...line } = pm;
+          // The matcher isn't asked to echo ids — keep the slot's identity so
+          // a re-shopped line stays the same row to the client (badges, diffs).
+          const keepId = parsed.materials[slotIdx]?.id ?? line.id;
           const opt =
             optionIndex != null ? searchResults[inputIdx]?.[optionIndex] ?? null : null;
           if (opt) chosenBySlot.set(slotIdx, opt);
           parsed.materials[slotIdx] = {
             ...line,
+            id: keepId,
             store: opt?.source ?? undefined,
             productUrl: (opt && safeHttp(opt.link)) ?? undefined,
             imageUrl: (opt && safeHttp(opt.thumbnail)) ?? undefined,
@@ -948,12 +998,35 @@ ${JSON.stringify(research)}`,
             }
           });
         }
+        // The matcher keeps quantity frozen (no raw measurement to re-derive
+        // packaging) while unit/price come from the chosen product — so a
+        // sell-unit change silently invalidates the quantity. Flag it loudly
+        // instead of letting "24 squares" become 24 × bundle-price.
+        for (const { idx } of toPrice) {
+          const mat = parsed.materials[idx];
+          const orig = originalFor(mat);
+          const oldUnit = orig?.unit?.trim();
+          const newUnit = mat.unit?.trim();
+          if (oldUnit && newUnit && oldUnit.toLowerCase() !== newUnit.toLowerCase()) {
+            warnings.push(
+              `“${mat.name}” now sells per ${newUnit} (was ${oldUnit}) — double-check its quantity.`
+            );
+            const note = `Sell unit changed ${oldUnit} → ${newUnit}; verify quantity.`;
+            mat.notes = mat.notes ? `${mat.notes} ${note}` : note;
+          }
+        }
+
         console.info(
           `[advancedEstimator] refine · re-priced ${matched.materials.length} line(s) with live products`
         );
       } catch (err: any) {
         // Best-effort — a re-shop failure leaves the AI-estimated lines in place
-        // rather than failing the whole refine.
+        // rather than failing the whole refine, but the caller is TOLD so the
+        // review UI never presents guessed prices as live ones.
+        reshopFailed = true;
+        warnings.push(
+          "Live price lookup failed — changed lines keep AI-estimated prices and may be missing store links."
+        );
         console.warn(`[advancedEstimator] refine re-shop failed: ${err?.message ?? err}`);
       }
     }
@@ -961,10 +1034,17 @@ ${JSON.stringify(research)}`,
     console.info(
       `[advancedEstimator] refine complete · ${parsed.materials.length} materials, ${parsed.labor.length} labor`
     );
-    return { ok: true, data: parsed };
+    return { ok: true, data: parsed, warnings, reshopFailed };
   } catch (err: any) {
+    // Log the raw failure, but never leak Zod/OpenAI internals into the toast.
     console.error(`[advancedEstimator] refine failed: ${err?.message ?? err}`);
-    return { ok: false, error: err?.message ?? "Couldn't apply changes" };
+    const friendly =
+      err instanceof z.ZodError || err instanceof SyntaxError
+        ? "The AI returned an edit we couldn't apply. Try rephrasing, or make one change at a time."
+        : typeof err?.status === "number"
+          ? "The AI service had a problem. Try again in a moment."
+          : "Couldn't apply changes. Try again.";
+    return { ok: false, error: friendly };
   }
 }
 

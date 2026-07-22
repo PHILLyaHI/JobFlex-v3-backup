@@ -84,9 +84,26 @@ export function StyledSelect({
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
-    return options.filter(
-      (o) => o.label.toLowerCase().includes(q) || (o.sublabel ?? "").toLowerCase().includes(q),
-    );
+    // Rank by how the match sits in the text, not just whether it's present:
+    // typing "wa" must surface WA/Washington above Delaware, Hawaii and Iowa.
+    // Lower score wins; -1 means no match at all.
+    const score = (o: StyledSelectOption) => {
+      const label = o.label.toLowerCase();
+      const sub = (o.sublabel ?? "").toLowerCase();
+      if (label === q || sub === q) return 0;
+      if (label.startsWith(q)) return 1;
+      if (sub.startsWith(q)) return 2;
+      // Word start inside a multi-word name — "jer" → "New Jersey".
+      if (sub.split(/\s+/).some((w) => w.startsWith(q))) return 3;
+      if (label.includes(q)) return 4;
+      if (sub.includes(q)) return 5;
+      return -1;
+    };
+    return options
+      .map((o, i) => ({ o, i, s: score(o) }))
+      .filter((r) => r.s >= 0)
+      .sort((a, b) => a.s - b.s || a.i - b.i)
+      .map((r) => r.o);
   }, [options, query]);
 
   function pick(nextId: string) {

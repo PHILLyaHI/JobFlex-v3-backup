@@ -39,3 +39,4 @@ tsconfig.tsbuildinfo
 # Credential dumps & pulled env files — never commit
 .firecrawl/
 .env.vercel*
+.env*
