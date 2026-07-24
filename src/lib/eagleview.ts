@@ -249,6 +249,86 @@ export async function getReportFile(reportId: number, fileType: number): Promise
   return evFetch(reportFilePath(reportId, fileType));
 }
 
+// ── Diagnostics ────────────────────────────────────────────────────────────────
+// Connection health for the roof estimator. Returns NON-secret status only —
+// hosts, HTTP codes, error text, product counts — NEVER the token or the
+// client id/secret. Lets a manager see, in production, whether the key works and
+// (critically) whether calls hit the SANDBOX host or the PRODUCTION host.
+export interface EvDiagnosticCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+export interface EvDiagnostics {
+  configured: boolean;
+  apiBase: string;
+  tokenBase: string;
+  isSandboxApi: boolean;
+  checks: EvDiagnosticCheck[];
+}
+
+export async function runEagleViewDiagnostics(): Promise<EvDiagnostics> {
+  const apiBase = API_BASE;
+  const tokenBase = TOKEN_BASE;
+  const isSandboxApi = /sandbox/i.test(apiBase);
+  const checks: EvDiagnosticCheck[] = [];
+  const configured = isEagleViewEnabled();
+
+  if (!configured) {
+    checks.push({
+      name: "Credentials",
+      ok: false,
+      detail: "EAGLEVIEW_CLIENT_ID / EAGLEVIEW_CLIENT_SECRET are not set.",
+    });
+    return { configured, apiBase, tokenBase, isSandboxApi, checks };
+  }
+  checks.push({ name: "Credentials present", ok: true, detail: "CLIENT_ID and CLIENT_SECRET are set." });
+
+  // 1) OAuth token — minted on the token host (always the production apicenter).
+  try {
+    await getToken();
+    checks.push({ name: "OAuth token", ok: true, detail: `Minted OK against ${tokenBase}.` });
+  } catch (e: unknown) {
+    checks.push({
+      name: "OAuth token",
+      ok: false,
+      detail: `Failed against ${tokenBase}: ${e instanceof Error ? e.message : "unknown error"}`,
+    });
+    return { configured, apiBase, tokenBase, isSandboxApi, checks };
+  }
+
+  // 2) A real, NON-billable API call against the API host. Proves the key is
+  //    valid AND that we're pointed at the right host: a production key hitting
+  //    the sandbox host (or vice-versa) fails here with a 401/403.
+  try {
+    const res = await evFetch("/v2/Product/GetAvailableProducts");
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      const count = Array.isArray(data) ? data.length : "?";
+      checks.push({
+        name: "API call · GetAvailableProducts",
+        ok: true,
+        detail: `HTTP ${res.status} · ${count} products · host ${apiBase}`,
+      });
+    } else {
+      const body = await res.text().catch(() => "");
+      checks.push({
+        name: "API call · GetAvailableProducts",
+        ok: false,
+        detail: `HTTP ${res.status} · host ${apiBase}${body ? ` · ${body.slice(0, 160)}` : ""}`,
+      });
+    }
+  } catch (e: unknown) {
+    checks.push({
+      name: "API call · GetAvailableProducts",
+      ok: false,
+      detail: `Request threw: ${e instanceof Error ? e.message : "unknown"} · host ${apiBase}`,
+    });
+  }
+
+  return { configured, apiBase, tokenBase, isSandboxApi, checks };
+}
+
 // ── Measurement-JSON parser ───────────────────────────────────────────────────
 // Shape (XML-as-JSON, "@"-prefixed attributes):
 //   EAGLEVIEW_EXPORT.STRUCTURES.ROOF[].{ POINTS.POINT[], LINES.LINE[], FACES.FACE[] }
