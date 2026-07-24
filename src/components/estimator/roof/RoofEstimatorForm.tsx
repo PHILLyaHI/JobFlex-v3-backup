@@ -311,7 +311,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   only returns the canned samples — measuring a real address needs a <strong>production</strong>{" "}
                   account.
                 </p>
-                <PlacesAutocomplete onPick={onPick} />
+                <PlacesAutocomplete onPick={onPick} enableFind />
                 <div className="grid grid-cols-3 gap-2">
                   <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} />
                   <Input label="State" value={stateCode} onChange={(e) => setStateCode(e.target.value)} />
