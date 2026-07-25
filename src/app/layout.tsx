@@ -1,15 +1,22 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
-import { Geist } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastHost } from "@/components/ui/Toast";
 import { AttributionCapture } from "@/components/attribution-capture";
 
-const geist = Geist({
+/* Variable fonts — blueprint system needs Inter up to 900 (H1 caps, KPI
+   numerals) and JetBrains Mono 500–600 for the drafting-annotation layer. */
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-geist",
+  variable: "--font-inter",
   display: "swap",
-  weight: ["400", "500", "600", "700"],
+});
+
+const jbMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jbmono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -25,7 +32,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={geist.variable}>
+    <html lang="en" className={`${inter.variable} ${jbMono.variable}`}>
       {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) inject
           data-gr-* attributes on <body> before React hydrates — benign mismatch. */}
       <body className="min-h-dvh antialiased" suppressHydrationWarning>

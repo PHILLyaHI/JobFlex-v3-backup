@@ -1,0 +1,1747 @@
+/* ============================================================
+   DASHBOARD V2 — "THE OPERATIONS SHEET"
+   Blueprint / drafting-table brutalism, ported from
+   jobflex-landing-full.html. Fully scoped to this page —
+   the app's locked design tokens are untouched.
+   ============================================================ */
+
+.sheet {
+  --paper: #f2f0eb;
+  --ink: #0a0a0a;
+  --bp: #1854a0;
+  --bp-dark: #0e3d7a;
+  --sky: #4a9eff;
+  --muted: #555;
+  --grid-l: rgba(0, 0, 0, 0.028);
+  --grid-d: rgba(255, 255, 255, 0.08);
+  --grid-dl: rgba(255, 255, 255, 0.14);
+  --b: 2px solid var(--ink);
+  --b-paper: 2px solid var(--paper);
+  --r: 2px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  font-family: "Helvetica Neue", Helvetica, var(--font-inter), Arial, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  min-height: var(--app-h, 100dvh);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+.sheet a {
+  color: inherit;
+  text-decoration: none;
+}
+.sheet a:focus-visible {
+  outline: 3px solid var(--sky);
+  outline-offset: -3px;
+}
+
+/* ============================================================
+   KEYFRAMES
+   ============================================================ */
+@keyframes fade {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes blink {
+  50% { opacity: 0.35; }
+}
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes growBar {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.rv {
+  opacity: 0;
+  animation: fade 0.8s var(--ease-out) forwards;
+}
+.d1 { animation-delay: 0.05s; }
+.d2 { animation-delay: 0.16s; }
+.d3 { animation-delay: 0.27s; }
+.d4 { animation-delay: 0.38s; }
+.d5 { animation-delay: 0.5s; }
+.d6 { animation-delay: 0.62s; }
+
+/* ============================================================
+   NAV — cell grid
+   ============================================================ */
+.nav {
+  display: grid;
+  grid-template-columns: auto 1fr repeat(4, auto) auto auto;
+  align-items: stretch;
+  border-bottom: var(--b);
+  position: relative;
+  z-index: 20;
+  background: var(--paper);
+}
+.navBrand {
+  display: flex;
+  align-items: stretch;
+  background: var(--ink);
+  color: var(--paper);
+  border-right: var(--b);
+}
+.navLogo {
+  width: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 2px solid rgba(242, 240, 235, 0.3);
+}
+.navMark {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--paper);
+  transform: rotate(45deg);
+  position: relative;
+}
+.navMark::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  background: var(--sky);
+}
+.navBrandTxt {
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.navBrandTxt em {
+  font-style: normal;
+  color: var(--sky);
+  margin-left: 8px;
+  font-weight: 900;
+}
+.navSpacer {
+  border-right: var(--b);
+}
+.navCell {
+  padding: 20px 24px;
+  border-right: var(--b);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  background: var(--paper);
+  color: var(--ink);
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.navCell:hover {
+  background: var(--bp);
+  color: var(--paper);
+}
+.navGhost {
+  padding: 20px 22px;
+  border-right: var(--b);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.navGhost:hover {
+  background: #e8e6e1;
+  color: var(--ink);
+}
+.navCta {
+  padding: 20px 26px;
+  background: var(--bp);
+  color: var(--paper);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.navCta:hover {
+  background: var(--bp-dark);
+}
+
+/* ============================================================
+   HERO — greeting + drafting title block
+   ============================================================ */
+.hero {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  border-bottom: var(--b);
+  position: relative;
+}
+.heroLeft {
+  padding: 56px 56px 48px;
+  border-right: var(--b);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 480px;
+}
+.gridLight {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--grid-l) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-l) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+.heroInner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--bp);
+  font-weight: 700;
+  padding: 7px 14px;
+  border: 1.5px solid var(--bp);
+  border-radius: var(--r);
+  align-self: flex-start;
+  margin-bottom: 30px;
+  background: var(--paper);
+}
+.kickerDot {
+  width: 6px;
+  height: 6px;
+  background: var(--bp);
+  border-radius: 50%;
+  animation: blink 1.8s infinite;
+}
+.title {
+  font-size: clamp(46px, 6.2vw, 82px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 0.94;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+}
+.titleInv {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0 14px 3px;
+  display: inline-block;
+  border-radius: var(--r);
+}
+.titleRow2 {
+  font-size: clamp(46px, 6.2vw, 82px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 0.94;
+  text-transform: uppercase;
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  margin-bottom: 32px;
+}
+.titleNum {
+  color: var(--bp);
+  font-size: clamp(64px, 8.4vw, 116px);
+  letter-spacing: -0.05em;
+  line-height: 0.82;
+  font-variant-numeric: tabular-nums;
+}
+.titleNumZero {
+  color: rgba(10, 10, 10, 0.22);
+}
+.tagline {
+  font-size: 16px;
+  color: #2a2a2a;
+  line-height: 1.6;
+  max-width: 520px;
+  font-weight: 500;
+  margin: 0 0 30px;
+}
+.tagline strong {
+  font-weight: 700;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 1px 7px;
+  border-radius: var(--r);
+  white-space: nowrap;
+}
+.ctaRow {
+  display: flex;
+  margin-top: auto;
+  align-self: flex-start;
+}
+.ctaPrimary {
+  padding: 18px 28px;
+  background: var(--ink);
+  color: var(--paper);
+  border: var(--b);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  transition: background 0.2s, border-color 0.2s;
+  border-radius: var(--r) 0 0 var(--r);
+}
+.ctaPrimary:hover {
+  background: var(--bp);
+  border-color: var(--bp);
+}
+.ctaGhost {
+  padding: 18px 28px;
+  background: var(--paper);
+  color: var(--ink);
+  border: var(--b);
+  border-left: none;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.2s;
+  border-radius: 0 var(--r) var(--r) 0;
+}
+.ctaGhost:hover {
+  background: #e8e6e1;
+}
+
+/* Right panel — blueprint field with the drafting title block */
+.heroRight {
+  background: var(--bp);
+  color: var(--paper);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 40px 44px;
+}
+.gridDark {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--grid-d) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-d) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+.gridDarkLg {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--grid-dl) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dl) 1px, transparent 1px);
+  background-size: 200px 200px;
+  pointer-events: none;
+}
+.heroRightInner {
+  position: relative;
+  z-index: 2;
+}
+.panelLabel {
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.panelLabelLine {
+  width: 28px;
+  height: 2px;
+  background: var(--paper);
+}
+.titleBlock {
+  border: var(--b-paper);
+  background: var(--bp);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+}
+.tbHead {
+  padding: 12px 20px;
+  border-bottom: var(--b-paper);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+}
+.tbHead em {
+  color: var(--bp);
+  font-style: normal;
+  font-weight: 800;
+}
+.tbHeadDot {
+  width: 7px;
+  height: 7px;
+  background: var(--bp);
+  border-radius: 50%;
+  animation: blink 1.8s infinite;
+}
+.tbRow {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  border-bottom: 1.5px solid rgba(242, 240, 235, 0.35);
+}
+.tbRow:last-of-type {
+  border-bottom: none;
+}
+.tbLabel {
+  padding: 12px 16px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.65);
+  border-right: 1.5px solid rgba(242, 240, 235, 0.35);
+  display: flex;
+  align-items: center;
+}
+.tbValue {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--paper);
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tbValue em {
+  font-style: normal;
+  color: var(--sky);
+  font-weight: 900;
+}
+.tbLegend {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  border-top: var(--b-paper);
+}
+.tbLegendCell {
+  padding: 12px 16px;
+  border-right: 1.5px solid rgba(242, 240, 235, 0.35);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.65);
+}
+.tbLegendCell:last-child {
+  border-right: none;
+}
+.tbLegendCell strong {
+  display: block;
+  color: var(--paper);
+  font-size: 12px;
+  margin-top: 4px;
+  letter-spacing: 0.08em;
+}
+.tbFoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--ink);
+  color: var(--paper);
+  border-top: var(--b-paper);
+}
+.tbFootLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.7);
+  font-weight: 700;
+}
+.tbCheck {
+  width: 16px;
+  height: 16px;
+  background: var(--sky);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 900;
+}
+.stamp {
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding: 5px 12px;
+  background: var(--paper);
+  border: 1.5px solid var(--paper);
+  font-weight: 900;
+  transform: rotate(-2deg);
+}
+
+/* drafting sheet coordinate marks */
+.coord {
+  position: absolute;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  color: rgba(10, 10, 10, 0.3);
+  text-transform: uppercase;
+  z-index: 3;
+}
+.coordTR {
+  top: 14px;
+  right: 18px;
+}
+.coordBL {
+  bottom: 14px;
+  left: 18px;
+}
+.coordLight {
+  color: rgba(242, 240, 235, 0.4);
+}
+
+/* ============================================================
+   STAT BAND — 4 info cells
+   ============================================================ */
+.statBand {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: var(--b);
+  background: var(--paper);
+}
+.statCell {
+  padding: 26px 32px;
+  border-right: var(--b);
+  background: var(--paper);
+  position: relative;
+}
+.statCell:last-child {
+  border-right: none;
+}
+.statCellInk {
+  background: var(--ink);
+  color: var(--paper);
+}
+.statLabel {
+  font-size: 9px;
+  color: #666;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+.statCellInk .statLabel {
+  color: #999;
+}
+.statValue {
+  font-size: clamp(26px, 2.6vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.statBlue {
+  color: var(--bp);
+}
+.statSky {
+  color: var(--sky);
+}
+.statSub {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.statCellInk .statSub {
+  color: #aaa;
+}
+.statDelta {
+  display: inline-block;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.deltaUp {
+  color: var(--bp);
+}
+.statCellInk .deltaUp {
+  color: var(--sky);
+}
+.deltaDown {
+  color: #b3341f;
+}
+
+/* ============================================================
+   TICKER — live marquee strip
+   ============================================================ */
+.ticker {
+  background: var(--ink);
+  color: var(--paper);
+  overflow: hidden;
+  border-bottom: var(--b);
+  padding: 16px 0;
+}
+.tickerTrack {
+  display: flex;
+  width: max-content;
+  animation: marquee 46s linear infinite;
+}
+.tickerSeq {
+  display: flex;
+  gap: 14px;
+  padding-right: 14px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px;
+  border: 1.5px solid var(--paper);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border-radius: var(--r);
+}
+.pill strong {
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.pillIco {
+  width: 10px;
+  height: 10px;
+  background: var(--sky);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pill:nth-child(3n) .pillIco {
+  background: var(--paper);
+}
+.pill:nth-child(4n) .pillIco {
+  background: var(--bp);
+  border: 1px solid var(--paper);
+}
+
+/* ============================================================
+   WORK ZONE — revenue trace + week schedule
+   ============================================================ */
+.workZone {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  border-bottom: var(--b);
+}
+.zoneCol {
+  border-right: var(--b);
+  position: relative;
+}
+.zoneCol:last-child {
+  border-right: none;
+}
+
+/* Revenue — blueprint field */
+.revField {
+  background: var(--bp);
+  color: var(--paper);
+  padding: 44px 48px;
+  position: relative;
+  overflow: hidden;
+}
+.revInner {
+  position: relative;
+  z-index: 2;
+}
+.revCard {
+  border: var(--b-paper);
+  background: var(--bp);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+}
+.revHead {
+  padding: 12px 20px;
+  border-bottom: var(--b-paper);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+}
+.revHeadRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.revBody {
+  padding: 24px 24px 20px;
+}
+.revAmtLabel {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.7);
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.revTag {
+  padding: 3px 8px;
+  background: var(--sky);
+  color: var(--ink);
+  letter-spacing: 0.22em;
+  font-size: 9px;
+  font-weight: 900;
+}
+.revAmt {
+  font-size: clamp(44px, 4.6vw, 62px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 24px;
+}
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 96px;
+  border: 1.5px solid var(--paper);
+  padding: 6px 6px 0;
+  position: relative;
+  margin-bottom: 10px;
+}
+.bar {
+  flex: 1;
+  background: var(--sky);
+  min-height: 2px;
+  transform-origin: bottom;
+  animation: growBar 0.7s var(--ease-out) backwards;
+}
+.barMax {
+  background: var(--paper);
+}
+.barsEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.55);
+}
+.revMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.8);
+}
+.txs {
+  border-top: var(--b-paper);
+  background: var(--ink);
+}
+.tx {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 20px;
+  font-size: 11px;
+  color: rgba(242, 240, 235, 0.9);
+  border-bottom: 1px solid rgba(242, 240, 235, 0.15);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tx:last-child {
+  border-bottom: none;
+}
+.txDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--sky);
+}
+.tx strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--paper);
+}
+.txDate {
+  font-size: 10px;
+  color: rgba(242, 240, 235, 0.55);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+.txEmpty {
+  padding: 16px 20px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.5);
+}
+
+/* Week schedule — paper field */
+.schedField {
+  background: var(--paper);
+  padding: 44px 44px;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+.schedCard {
+  border: var(--b);
+  background: var(--paper);
+  box-shadow: 8px 8px 0 rgba(10, 10, 10, 0.12);
+  position: relative;
+  z-index: 2;
+}
+.schedHead {
+  padding: 12px 18px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: var(--b);
+}
+.schedLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.schedLive::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky);
+  animation: blink 1.6s infinite;
+}
+.schedBody {
+  padding: 22px;
+}
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 18px;
+}
+.day {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  padding: 7px 0 9px;
+  border: 1.5px solid transparent;
+  position: relative;
+}
+.dayToday {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.dayDot {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--bp);
+}
+.evBars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.evBar {
+  border: 1.5px solid var(--ink);
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  opacity: 0;
+  animation: slideIn 0.5s ease forwards;
+}
+.evBar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.evBar em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  letter-spacing: 0.14em;
+  font-size: 10px;
+}
+.evInk {
+  background: var(--ink);
+  color: var(--paper);
+}
+.evBp {
+  background: var(--bp);
+  color: var(--paper);
+  border-color: var(--bp);
+}
+.evSky {
+  background: var(--sky);
+  color: var(--ink);
+  border-color: var(--sky);
+}
+.evPaper {
+  background: var(--paper);
+  color: var(--ink);
+}
+.evEmpty {
+  border: 1.5px dashed rgba(10, 10, 10, 0.4);
+  padding: 26px 16px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(10, 10, 10, 0.45);
+  margin-bottom: 18px;
+}
+.schedFoot {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1.5px dashed var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.schedFoot a:hover {
+  color: var(--bp);
+}
+
+/* ============================================================
+   PIPELINE — dark board
+   ============================================================ */
+.pipeSec {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 88px 0 96px;
+  position: relative;
+  overflow: hidden;
+  border-bottom: var(--b);
+}
+.ct {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 56px;
+  position: relative;
+  z-index: 2;
+}
+.pipeHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 48px;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+.kickerSky {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--sky);
+  margin-bottom: 20px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border: 1.5px solid var(--sky);
+  background: rgba(74, 158, 255, 0.08);
+  border-radius: var(--r);
+}
+.kickerSkyDot {
+  width: 6px;
+  height: 6px;
+  background: var(--sky);
+  border-radius: 50%;
+  animation: blink 1.8s infinite;
+}
+.pipeH2 {
+  font-size: clamp(40px, 4.6vw, 62px);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 0.96;
+  text-transform: uppercase;
+  margin: 0;
+}
+.pipeH2 em {
+  font-style: normal;
+  color: var(--sky);
+}
+.pipeSub {
+  font-size: 14px;
+  color: rgba(242, 240, 235, 0.65);
+  max-width: 360px;
+  line-height: 1.6;
+  font-weight: 500;
+  padding: 20px;
+  border: 1.5px solid rgba(242, 240, 235, 0.2);
+  border-radius: var(--r);
+  position: relative;
+}
+.pipeSubNum {
+  position: absolute;
+  top: -11px;
+  left: 20px;
+  background: var(--ink);
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  color: var(--sky);
+  text-transform: uppercase;
+}
+.board {
+  border-top: 1.5px solid rgba(242, 240, 235, 0.35);
+  border-left: 1.5px solid rgba(242, 240, 235, 0.35);
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+.boardCell {
+  border-right: 1.5px solid rgba(242, 240, 235, 0.35);
+  border-bottom: 1.5px solid rgba(242, 240, 235, 0.35);
+  padding: 22px 20px 20px;
+  min-height: 190px;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.25s ease;
+}
+.boardCell:hover {
+  background: rgba(74, 158, 255, 0.05);
+}
+.boardCount {
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 10px;
+}
+.boardCountHot {
+  color: var(--sky);
+}
+.boardCountWon {
+  color: var(--paper);
+}
+.boardCountZero {
+  color: rgba(242, 240, 235, 0.25);
+}
+.boardLabel {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.6);
+  margin-bottom: 14px;
+}
+.boardLeads {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+}
+.boardLead {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(242, 240, 235, 0.85);
+  padding: 6px 0;
+  border-top: 1px dashed rgba(242, 240, 235, 0.22);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.boardNone {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: rgba(242, 240, 235, 0.3);
+  padding-top: 6px;
+  border-top: 1px dashed rgba(242, 240, 235, 0.15);
+}
+.punch {
+  margin-top: 44px;
+  padding: 24px 40px;
+  border: 1.5px solid var(--sky);
+  background: rgba(74, 158, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  border-radius: var(--r);
+  transition: background 0.2s;
+}
+.punch:hover {
+  background: rgba(74, 158, 255, 0.12);
+}
+.punchL {
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.55);
+  font-weight: 700;
+}
+.punchArrow {
+  font-size: 22px;
+  color: var(--sky);
+  font-weight: 900;
+}
+.punchR {
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.punchTag {
+  font-size: 13px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--sky);
+  font-weight: 900;
+  padding: 6px 14px;
+  background: var(--ink);
+  border: 1.5px solid var(--sky);
+  border-radius: var(--r);
+}
+
+/* ============================================================
+   LEDGER ZONE — proposals + site log / next on site
+   ============================================================ */
+.ledgerZone {
+  position: relative;
+  border-bottom: var(--b);
+  overflow: hidden;
+}
+.ledgerGrid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 40px;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 80px 56px 88px;
+  position: relative;
+  z-index: 2;
+}
+.zoneKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--bp);
+  margin-bottom: 18px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border: 1.5px solid var(--bp);
+  border-radius: var(--r);
+}
+.ledger {
+  border: var(--b);
+  background: var(--paper);
+  box-shadow: 8px 8px 0 rgba(10, 10, 10, 0.12);
+}
+.ledgerHead {
+  padding: 12px 20px;
+  border-bottom: var(--b);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+}
+.ledgerHead em {
+  color: var(--bp);
+  font-style: normal;
+  font-weight: 800;
+}
+.ledgerDot {
+  width: 7px;
+  height: 7px;
+  background: var(--bp);
+  border-radius: 50%;
+  animation: blink 1.8s infinite;
+  display: inline-block;
+  margin-right: 8px;
+}
+.ledgerRows {
+  padding: 6px 20px;
+}
+.ledgerRow {
+  display: grid;
+  grid-template-columns: 26px 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px dashed rgba(10, 10, 10, 0.3);
+  transition: background 0.15s, transform 0.15s;
+}
+.ledgerRow:last-child {
+  border-bottom: none;
+}
+.ledgerRow:hover {
+  background: rgba(24, 84, 160, 0.05);
+  transform: translateX(3px);
+}
+.ledgerNum {
+  font-size: 10px;
+  color: rgba(10, 10, 10, 0.5);
+  letter-spacing: 0.1em;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.ledgerName {
+  min-width: 0;
+}
+.ledgerName strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ledgerName span {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+.ledgerPrice {
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.chip {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r);
+  white-space: nowrap;
+}
+.chipDraft {
+  border-color: rgba(10, 10, 10, 0.35);
+  color: rgba(10, 10, 10, 0.55);
+}
+.chipSent {
+  border-color: var(--bp);
+  color: var(--bp);
+}
+.chipWon {
+  background: var(--bp);
+  border-color: var(--bp);
+  color: var(--paper);
+}
+.chipDead {
+  border-color: rgba(10, 10, 10, 0.3);
+  color: rgba(10, 10, 10, 0.4);
+  text-decoration: line-through;
+}
+.ledgerEmpty {
+  padding: 36px 20px;
+  text-align: center;
+}
+.ledgerEmptyBox {
+  border: 1.5px dashed rgba(10, 10, 10, 0.4);
+  padding: 30px 20px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(10, 10, 10, 0.5);
+}
+.ledgerEmptyBox a {
+  color: var(--bp);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ledgerTotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 14px 20px;
+  background: var(--ink);
+  color: var(--paper);
+  border-top: var(--b);
+}
+.ledgerTotalLbl {
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.ledgerTotalVal {
+  font-size: clamp(24px, 2.4vw, 30px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--sky);
+  font-variant-numeric: tabular-nums;
+}
+.ledgerFoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--paper);
+  border-top: 1.5px solid var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.ledgerFoot a:hover {
+  color: var(--bp);
+}
+.stampInk {
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--paper);
+  padding: 5px 12px;
+  background: var(--ink);
+  border: 1.5px solid var(--ink);
+  font-weight: 900;
+  transform: rotate(-2deg);
+}
+
+/* Right column stack */
+.sideStack {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+.logCard {
+  border: var(--b);
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 8px 8px 0 rgba(10, 10, 10, 0.12);
+}
+.logHead {
+  padding: 12px 18px;
+  background: var(--sky);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: var(--b);
+}
+.logRows {
+  padding: 8px 18px;
+}
+.logRow {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px dashed rgba(242, 240, 235, 0.22);
+}
+.logRow:last-child {
+  border-bottom: none;
+}
+.logNum {
+  font-size: 9px;
+  color: var(--sky);
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  font-variant-numeric: tabular-nums;
+}
+.logTxt {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(242, 240, 235, 0.9);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logTime {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.5);
+}
+.logEmpty {
+  padding: 24px 18px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.4);
+  text-align: center;
+}
+.jobsCard {
+  border: var(--b);
+  background: var(--paper);
+  box-shadow: 8px 8px 0 rgba(10, 10, 10, 0.12);
+}
+.jobsHead {
+  padding: 12px 18px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: var(--b);
+}
+.jobRows {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.jobRow {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 14px;
+  align-items: center;
+  border: 1.5px solid var(--ink);
+  padding: 10px 12px;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.jobRow:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.jobDate {
+  width: 46px;
+  height: 46px;
+  background: var(--ink);
+  color: var(--paper);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  line-height: 1;
+}
+.jobDate em {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.24em;
+  color: var(--sky);
+  margin-bottom: 3px;
+}
+.jobDate strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.jobInfo {
+  min-width: 0;
+}
+.jobInfo strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jobInfo span {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jobsEmpty {
+  border: 1.5px dashed rgba(10, 10, 10, 0.4);
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(10, 10, 10, 0.45);
+}
+
+/* ============================================================
+   FOOTER STRIP
+   ============================================================ */
+.foot {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 22px 56px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.footLeft {
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(242, 240, 235, 0.65);
+}
+.footLeft em {
+  font-style: normal;
+  color: var(--sky);
+  font-weight: 900;
+}
+.footRight {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.footLink {
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  font-weight: 800;
+  border-bottom: 1.5px solid rgba(242, 240, 235, 0.4);
+  padding-bottom: 2px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.footLink:hover {
+  color: var(--sky);
+  border-color: var(--sky);
+}
+.stampSky {
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--sky);
+  padding: 5px 12px;
+  border: 1.5px solid var(--sky);
+  font-weight: 900;
+  transform: rotate(-2deg);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 1180px) {
+  .nav {
+    grid-template-columns: auto 1fr auto auto;
+  }
+  .navMid {
+    display: none;
+  }
+  .hero {
+    grid-template-columns: 1fr;
+  }
+  .heroLeft {
+    border-right: none;
+    border-bottom: var(--b);
+    min-height: 0;
+    padding: 44px 40px 40px;
+  }
+  .heroRight {
+    padding: 40px;
+  }
+  .statBand {
+    grid-template-columns: 1fr 1fr;
+  }
+  .statCell:nth-child(2) {
+    border-right: none;
+  }
+  .statCell:nth-child(-n + 2) {
+    border-bottom: var(--b);
+  }
+  .workZone {
+    grid-template-columns: 1fr;
+  }
+  .zoneCol {
+    border-right: none;
+  }
+  .zoneCol:first-child {
+    border-bottom: var(--b);
+  }
+  .board {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .ledgerGrid {
+    grid-template-columns: 1fr;
+    padding: 64px 40px 72px;
+  }
+  .ct {
+    padding: 0 40px;
+  }
+}
+
+@media (max-width: 640px) {
+  .navBrandTxt {
+    padding: 0 16px;
+    font-size: 11px;
+  }
+  .navGhost,
+  .navCta {
+    padding: 16px 14px;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+  }
+  .heroLeft {
+    padding: 32px 22px 32px;
+  }
+  .heroRight {
+    padding: 28px 22px;
+  }
+  .tbRow {
+    grid-template-columns: 96px 1fr;
+  }
+  .statBand {
+    grid-template-columns: 1fr;
+  }
+  .statCell {
+    border-right: none;
+    border-bottom: var(--b);
+  }
+  .statCell:last-child {
+    border-bottom: none;
+  }
+  .revField {
+    padding: 28px 20px;
+  }
+  .schedField {
+    padding: 28px 20px;
+  }
+  .pipeSec {
+    padding: 64px 0 72px;
+  }
+  .ct {
+    padding: 0 22px;
+  }
+  .board {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .boardCell {
+    min-height: 150px;
+  }
+  .ledgerGrid {
+    padding: 52px 22px 60px;
+    gap: 32px;
+  }
+  .ledgerRow {
+    grid-template-columns: 20px 1fr auto;
+  }
+  .ledgerRow .chip {
+    display: none;
+  }
+  .foot {
+    padding: 20px 22px;
+    justify-content: center;
+    text-align: center;
+  }
+  .ctaRow {
+    flex-direction: column;
+    align-self: stretch;
+  }
+  .ctaPrimary {
+    justify-content: center;
+    border-radius: var(--r) var(--r) 0 0;
+  }
+  .ctaGhost {
+    justify-content: center;
+    border-left: var(--b);
+    border-top: none;
+    border-radius: 0 0 var(--r) var(--r);
+  }
+}
+
+/* ============================================================
+   REDUCED MOTION
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .rv,
+  .bar,
+  .evBar {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .tickerTrack {
+    animation: none !important;
+  }
+  .kickerDot,
+  .kickerSkyDot,
+  .tbHeadDot,
+  .ledgerDot,
+  .schedLive::before {
+    animation: none !important;
+  }
+}

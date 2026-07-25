@@ -1,0 +1,95 @@
+/* Blueprint dashboard — the GLOBAL layer of the donor port (plain stylesheet,
+   not a CSS module). Two kinds of rules live here, both scoped under the
+   literal `.jf-blueprint` class that the root component adds next to the
+   hashed module class:
+
+   1. Donor keyframes — Turbopack's Lightning CSS rejects
+      `@keyframes :global()` inside modules, and the names must stay literal
+      (the ported behavior JS triggers them via class toggles).
+   2. Donor scrollbar styling — kept OUT of the modules pipeline so the
+      `::-webkit-scrollbar` pseudos ship exactly as authored. The app's
+      globals.css sets `* { scrollbar-width: thin; scrollbar-color: … }`,
+      which makes Chrome ignore ::-webkit-scrollbar styling entirely; the
+      restore rules below reset both to `auto` (the donor's environment)
+      with class specificity so they win over the `*` rule.
+
+   Every visual value is verbatim from the donor file
+   .claude/skills/jobflex-page-styler/assets/jobflex-dashboard-blueprint.html. */
+
+/* ── Donor keyframes ─────────────────────────────────────────────── */
+
+@keyframes leadLand {
+  0%   { opacity: 0; transform: translateY(4px); background: rgba(24, 84, 160, 0.08); }
+  60%  { opacity: 1; transform: none; background: rgba(24, 84, 160, 0.08); }
+  100% { background: var(--paper); }
+}
+
+@keyframes daySel2 { 0% { transform: scale(0.94); } 60% { transform: scale(1.02); } 100% { transform: scale(1); } }
+
+@keyframes press2 { 0% { transform: scale(0.97); } 100% { transform: scale(1); } }
+
+/* ── Token arbitration between the two donors ────────────────────────
+   The shared shell carries BOTH page modules' `.bp` rules, and the two
+   donors disagree on exactly two tokens. They only ever matter inside page
+   content — the shell chrome's own uses (the ⌘K chip border, the sidebar
+   scrollbar thumb) were authored against the dashboard donor's values, so
+   those stay at the root and the proposals page re-declares its pair on
+   `.content`, where inheritance carries them to its tables and chips.
+   The `[data-page]` attribute lifts specificity above both hashed `.bp`
+   classes, so this wins regardless of CSS import order. */
+.jf-blueprint[data-page] {
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+}
+.jf-blueprint[data-page="proposals"] .content {
+  --hair: #0a0a0a;
+  --hair-soft: rgba(10, 10, 10, 0.55);
+}
+
+/* ── Document scroll lock (donor parity) ─────────────────────────────
+   The donor sets `html, body { height: 100% }` + `body { overflow: hidden }`
+   so the ONLY scroll container on the page is `.main`. The port originally
+   scoped those onto the page root instead, which left the app's real <body>
+   free to scroll — producing a SECOND, unstyled scrollbar beside the styled
+   `.main` one, plus dead space below the sheet once both were scrolled.
+   Restoring them here is donor-exact and self-clearing: the selector stops
+   matching the moment a blueprint page unmounts, so classic pages keep
+   normal document scrolling. */
+html:has(.jf-blueprint),
+body:has(.jf-blueprint) {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Scrollbar environment restore ───────────────────────────────── */
+
+.jf-blueprint,
+.jf-blueprint * {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+/* ── Donor scrollbar styling (verbatim) ──────────────────────────── */
+
+/* Sidebar nav.
+   `border: none` is an environment restore, not a donor value change: the
+   app's globals.css puts `border: 2px solid var(--paper)` on every
+   *::-webkit-scrollbar-thumb, which shrinks a 6px thumb to a ~2px sliver.
+   The donor's computed border was none. */
+.jf-blueprint .sb-scroll::-webkit-scrollbar { width: 6px; }
+.jf-blueprint .sb-scroll::-webkit-scrollbar-track { background: transparent; }
+.jf-blueprint .sb-scroll::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 0; border: none; }
+.jf-blueprint .sb-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted-faint); }
+
+/* Main content column */
+.jf-blueprint .main::-webkit-scrollbar { width: 10px; }
+.jf-blueprint .main::-webkit-scrollbar-track { background: var(--paper); border-left: 1px solid var(--hair-soft); }
+.jf-blueprint .main::-webkit-scrollbar-thumb { background: var(--muted-faint); border: 2px solid var(--paper); border-radius: 0; }
+.jf-blueprint .main::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
+
+/* Scrollable card lists (Recent Activity, This Week, Upcoming Jobs).
+   Same `border: none` environment restore as above. */
+.jf-blueprint .list.scrollable::-webkit-scrollbar { width: 6px; }
+.jf-blueprint .list.scrollable::-webkit-scrollbar-track { background: transparent; }
+.jf-blueprint .list.scrollable::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; border: none; }
+.jf-blueprint .list.scrollable::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }

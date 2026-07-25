@@ -10,6 +10,7 @@ marketplaces=(
   "anthropics/claude-plugins-official"
   "mksglu/context-mode"
   "thedotmack/claude-mem"
+  "pbakaus/impeccable"
 )
 
 plugins=(
@@ -18,6 +19,7 @@ plugins=(
   "frontend-design@claude-plugins-official"
   "context-mode@context-mode"
   "claude-mem@thedotmack"
+  "impeccable@impeccable"
 )
 
 for m in "${marketplaces[@]}"; do

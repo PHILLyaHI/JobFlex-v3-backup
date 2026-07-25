@@ -1,0 +1,1113 @@
+/* ============================================================
+   PROPOSALS — "THE PROPOSAL LEDGER" (Sheet 02)
+   Blueprint / drafting-table brutalism, same dialect as
+   dashboard-v2 ("The Operations Sheet"). Fully scoped module;
+   inherits --font-inter / --font-jbmono from the root layout.
+   ============================================================ */
+
+.sheet {
+  --paper: #f2f0eb;
+  --ink: #0a0a0a;
+  --bp: #1854a0;
+  --bp-dark: #0e3d7a;
+  --sky: #4a9eff;
+  --muted: #555;
+  --grid-l: rgba(0, 0, 0, 0.028);
+  --grid-d: rgba(255, 255, 255, 0.08);
+  --grid-dl: rgba(255, 255, 255, 0.14);
+  --b: 2px solid var(--ink);
+  --b-paper: 2px solid var(--paper);
+  --r: 2px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --mono: var(--font-jbmono), "SF Mono", ui-monospace, "Courier New", monospace;
+
+  font-family: var(--font-inter), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  min-height: var(--app-h, 100dvh);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+.sheet a {
+  color: inherit;
+  text-decoration: none;
+}
+.sheet a:focus-visible {
+  outline: 3px solid var(--sky);
+  outline-offset: -3px;
+}
+
+/* ============================================================
+   KEYFRAMES + reveal cascade
+   ============================================================ */
+@keyframes fade {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes blink {
+  50% { opacity: 0.35; }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.rv {
+  opacity: 0;
+  animation: fade 0.8s var(--ease-out) forwards;
+}
+.d1 { animation-delay: 0.05s; }
+.d2 { animation-delay: 0.16s; }
+.d3 { animation-delay: 0.27s; }
+.d4 { animation-delay: 0.38s; }
+.d5 { animation-delay: 0.5s; }
+.d6 { animation-delay: 0.62s; }
+
+/* ============================================================
+   NAV — cell grid (family shell)
+   ============================================================ */
+.nav {
+  display: grid;
+  grid-template-columns: auto 1fr repeat(4, auto) auto auto;
+  align-items: stretch;
+  border-bottom: var(--b);
+  position: relative;
+  z-index: 20;
+  background: var(--paper);
+}
+.navBrand {
+  display: flex;
+  align-items: stretch;
+  background: var(--ink);
+  color: var(--paper);
+  border-right: var(--b);
+}
+.navLogo {
+  width: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 2px solid rgba(242, 240, 235, 0.3);
+}
+.navMark {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--paper);
+  transform: rotate(45deg);
+  position: relative;
+}
+.navMark::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  background: var(--sky);
+}
+.navBrandTxt {
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.navBrandTxt em {
+  font-style: normal;
+  color: var(--sky);
+  margin-left: 8px;
+  font-weight: 900;
+}
+.navSpacer {
+  border-right: var(--b);
+}
+.navCell {
+  padding: 20px 24px;
+  border-right: var(--b);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  background: var(--paper);
+  color: var(--ink);
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.navCell:hover {
+  background: var(--bp);
+  color: var(--paper);
+}
+.navGhost {
+  padding: 20px 22px;
+  border-right: var(--b);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.navGhost:hover {
+  background: #e8e6e1;
+  color: var(--ink);
+}
+.navCta {
+  padding: 20px 26px;
+  background: var(--bp);
+  color: var(--paper);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.navCta:hover {
+  background: var(--bp-dark);
+}
+
+/* ============================================================
+   HERO — page head + drafting title block
+   ============================================================ */
+.hero {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  border-bottom: var(--b);
+  position: relative;
+}
+.heroLeft {
+  padding: 52px 56px 44px;
+  border-right: var(--b);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+.gridLight {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--grid-l) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-l) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+.heroInner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--bp);
+  font-weight: 700;
+  padding: 7px 14px;
+  border: 1.5px solid var(--bp);
+  border-radius: var(--r);
+  align-self: flex-start;
+  margin-bottom: 28px;
+  background: var(--paper);
+}
+.kickerDot {
+  width: 6px;
+  height: 6px;
+  background: var(--bp);
+  border-radius: 50%;
+  animation: blink 1.8s infinite;
+}
+.title {
+  font-size: clamp(46px, 6vw, 78px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 0.94;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+}
+.titleInv {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0 14px 3px;
+  display: inline-block;
+  border-radius: var(--r);
+}
+.titleRow2 {
+  font-size: clamp(40px, 5.4vw, 68px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 0.94;
+  text-transform: uppercase;
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  margin-bottom: 28px;
+}
+.titleNum {
+  color: var(--bp);
+  font-size: clamp(58px, 7.6vw, 104px);
+  letter-spacing: -0.05em;
+  line-height: 0.82;
+  font-variant-numeric: tabular-nums;
+}
+.titleNumZero {
+  color: rgba(10, 10, 10, 0.22);
+}
+.tagline {
+  font-size: 16px;
+  color: #2a2a2a;
+  line-height: 1.6;
+  max-width: 520px;
+  font-weight: 500;
+  margin: 0 0 30px;
+}
+.tagline strong {
+  font-weight: 700;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 1px 7px;
+  border-radius: var(--r);
+  white-space: nowrap;
+}
+.ctaRow {
+  display: flex;
+  margin-top: auto;
+  align-self: flex-start;
+}
+.ctaPrimary {
+  padding: 18px 28px;
+  background: var(--ink);
+  color: var(--paper);
+  border: var(--b);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  transition: background 0.2s, border-color 0.2s;
+  border-radius: var(--r) 0 0 var(--r);
+}
+.ctaPrimary:hover {
+  background: var(--bp);
+  border-color: var(--bp);
+}
+.ctaGhost {
+  padding: 18px 28px;
+  background: var(--paper);
+  color: var(--ink);
+  border: var(--b);
+  border-left: none;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  display: inline-flex;
+  align-items: center;
+  transition: background 0.2s;
+  border-radius: 0 var(--r) var(--r) 0;
+}
+.ctaGhost:hover {
+  background: #e8e6e1;
+}
+
+/* Right panel — blueprint field with the drafting title block */
+.heroRight {
+  background: var(--bp);
+  color: var(--paper);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 40px 44px;
+}
+.gridDark {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--grid-d) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-d) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+.gridDarkLg {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--grid-dl) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dl) 1px, transparent 1px);
+  background-size: 200px 200px;
+  pointer-events: none;
+}
+.heroRightInner {
+  position: relative;
+  z-index: 2;
+}
+.panelLabel {
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.panelLabelLine {
+  width: 28px;
+  height: 2px;
+  background: var(--paper);
+}
+.titleBlock {
+  border: var(--b-paper);
+  background: var(--bp);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.15);
+}
+.tbHead {
+  padding: 12px 20px;
+  border-bottom: var(--b-paper);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+}
+.tbHead em {
+  color: var(--bp);
+  font-style: normal;
+  font-weight: 800;
+}
+.tbHeadDot {
+  width: 7px;
+  height: 7px;
+  background: var(--bp);
+  border-radius: 50%;
+  animation: blink 1.8s infinite;
+}
+.tbRow {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  border-bottom: 1.5px solid rgba(242, 240, 235, 0.35);
+}
+.tbRow:last-of-type {
+  border-bottom: none;
+}
+.tbLabel {
+  padding: 12px 16px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.65);
+  border-right: 1.5px solid rgba(242, 240, 235, 0.35);
+  display: flex;
+  align-items: center;
+}
+.tbValue {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--paper);
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tbValue em {
+  font-style: normal;
+  color: var(--sky);
+  font-weight: 900;
+}
+.tbLegend {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  border-top: var(--b-paper);
+}
+.tbLegendCell {
+  padding: 12px 16px;
+  border-right: 1.5px solid rgba(242, 240, 235, 0.35);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.65);
+}
+.tbLegendCell:last-child {
+  border-right: none;
+}
+.tbLegendCell strong {
+  display: block;
+  color: var(--paper);
+  font-size: 12px;
+  margin-top: 4px;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+.tbFoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--ink);
+  color: var(--paper);
+  border-top: var(--b-paper);
+}
+.tbFootLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.7);
+  font-weight: 700;
+}
+.tbCheck {
+  width: 16px;
+  height: 16px;
+  background: var(--sky);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 900;
+}
+.stamp {
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding: 5px 12px;
+  background: var(--paper);
+  border: 1.5px solid var(--paper);
+  font-weight: 900;
+  transform: rotate(-2deg);
+}
+
+/* drafting sheet coordinate marks */
+.coord {
+  position: absolute;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  color: rgba(10, 10, 10, 0.3);
+  text-transform: uppercase;
+  z-index: 3;
+  font-family: var(--mono);
+}
+.coordTR {
+  top: 14px;
+  right: 18px;
+}
+.coordBL {
+  bottom: 14px;
+  left: 18px;
+}
+.coordLight {
+  color: rgba(242, 240, 235, 0.4);
+}
+
+/* ============================================================
+   STAT BAND — 4 info cells
+   ============================================================ */
+.statBand {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: var(--b);
+  background: var(--paper);
+}
+.statCell {
+  padding: 26px 32px;
+  border-right: var(--b);
+  background: var(--paper);
+  position: relative;
+}
+.statCell:last-child {
+  border-right: none;
+}
+.statCellInk {
+  background: var(--ink);
+  color: var(--paper);
+}
+.statLabel {
+  font-size: 9px;
+  color: #666;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+.statCellInk .statLabel {
+  color: #999;
+}
+.statValue {
+  font-size: clamp(26px, 2.6vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.statBlue {
+  color: var(--bp);
+}
+.statSky {
+  color: var(--sky);
+}
+.statSub {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.statCellInk .statSub {
+  color: #aaa;
+}
+.statDelta {
+  display: inline-block;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.deltaUp {
+  color: var(--bp);
+}
+.statCellInk .deltaUp {
+  color: var(--sky);
+}
+
+/* ============================================================
+   LEDGER ZONE — filter band + sheet rows
+   ============================================================ */
+.ledgerZone {
+  position: relative;
+  border-bottom: var(--b);
+  overflow: hidden;
+}
+.ledgerWrap {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 64px 56px 80px;
+  position: relative;
+  z-index: 2;
+}
+.zoneKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--bp);
+  margin-bottom: 18px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border: 1.5px solid var(--bp);
+  border-radius: var(--r);
+}
+.kickerDotSm {
+  width: 6px;
+  height: 6px;
+  background: var(--bp);
+  border-radius: 50%;
+  animation: blink 1.8s infinite;
+}
+
+/* Filter band — cell strip of status chips (new family pattern) */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  border: var(--b);
+  border-bottom: none;
+  background: var(--paper);
+  position: relative;
+  z-index: 2;
+}
+.filterCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 18px;
+  border-right: var(--b);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+.filterCell:hover {
+  background: rgba(24, 84, 160, 0.07);
+  color: var(--ink);
+}
+.filterOn {
+  background: var(--bp);
+  color: var(--paper);
+}
+.filterOn:hover {
+  background: var(--bp);
+  color: var(--paper);
+}
+.filterCount {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(10, 10, 10, 0.45);
+}
+.filterCell:hover .filterCount {
+  color: rgba(10, 10, 10, 0.6);
+}
+.filterOn .filterCount,
+.filterOn:hover .filterCount {
+  color: rgba(242, 240, 235, 0.75);
+}
+.filterSpacer {
+  flex: 1;
+  border-right: none;
+}
+
+/* Ledger sheet */
+.ledger {
+  border: var(--b);
+  background: var(--paper);
+  box-shadow: 8px 8px 0 rgba(10, 10, 10, 0.12);
+}
+.ledgerHead {
+  padding: 12px 20px;
+  border-bottom: var(--b);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+}
+.ledgerHead em {
+  color: var(--bp);
+  font-style: normal;
+  font-weight: 800;
+}
+.ledgerDot {
+  width: 7px;
+  height: 7px;
+  background: var(--bp);
+  border-radius: 50%;
+  animation: blink 1.8s infinite;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+/* column header — drawing-annotation layer */
+.cols {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.7fr) 130px 96px 64px 100px 112px;
+  gap: 14px;
+  align-items: center;
+  padding: 9px 20px;
+  border-bottom: 1.5px solid var(--ink);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(10, 10, 10, 0.5);
+}
+.colRight {
+  text-align: right;
+}
+
+.ledgerRows {
+  padding: 6px 20px;
+}
+.ledgerRow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.7fr) 130px 96px 64px 100px 112px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px dashed rgba(10, 10, 10, 0.3);
+  transition: background 0.15s, transform 0.15s;
+  opacity: 0;
+  animation: slideIn 0.5s var(--ease-out) forwards;
+}
+.ledgerRow:last-child {
+  border-bottom: none;
+}
+.ledgerRow:hover {
+  background: rgba(24, 84, 160, 0.05);
+  transform: translateX(3px);
+}
+.ledgerNum {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(10, 10, 10, 0.5);
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ledgerName {
+  min-width: 0;
+}
+.ledgerName strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ledgerName span {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ledgerOwner {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ledgerDate {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ledgerViews {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ledgerViewsZero {
+  color: rgba(10, 10, 10, 0.3);
+}
+.ledgerPrice {
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.chip {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r);
+  white-space: nowrap;
+  justify-self: start;
+}
+.chipDraft {
+  border-color: rgba(10, 10, 10, 0.35);
+  color: rgba(10, 10, 10, 0.55);
+}
+.chipSent {
+  border-color: var(--bp);
+  color: var(--bp);
+}
+.chipWon {
+  background: var(--bp);
+  border-color: var(--bp);
+  color: var(--paper);
+}
+.chipPaid {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.chipDead {
+  border-color: rgba(10, 10, 10, 0.3);
+  color: rgba(10, 10, 10, 0.4);
+  text-decoration: line-through;
+}
+.ledgerEmpty {
+  padding: 36px 20px;
+  text-align: center;
+}
+.ledgerEmptyBox {
+  border: 1.5px dashed rgba(10, 10, 10, 0.4);
+  padding: 30px 20px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(10, 10, 10, 0.5);
+}
+.ledgerEmptyBox a {
+  color: var(--bp);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ledgerTotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 14px 20px;
+  background: var(--ink);
+  color: var(--paper);
+  border-top: var(--b);
+}
+.ledgerTotalLbl {
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.ledgerTotalVal {
+  font-size: clamp(24px, 2.4vw, 30px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--sky);
+  font-variant-numeric: tabular-nums;
+}
+.ledgerFoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--paper);
+  border-top: 1.5px solid var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.ledgerFoot a:hover {
+  color: var(--bp);
+}
+.stampInk {
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--paper);
+  padding: 5px 12px;
+  background: var(--ink);
+  border: 1.5px solid var(--ink);
+  font-weight: 900;
+  transform: rotate(-2deg);
+}
+
+/* ============================================================
+   FOOTER STRIP
+   ============================================================ */
+.foot {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 22px 56px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.footLeft {
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(242, 240, 235, 0.65);
+}
+.footLeft em {
+  font-style: normal;
+  color: var(--sky);
+  font-weight: 900;
+}
+.footRight {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.footLink {
+  font-size: 10px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  font-weight: 800;
+  border-bottom: 1.5px solid rgba(242, 240, 235, 0.4);
+  padding-bottom: 2px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.footLink:hover {
+  color: var(--sky);
+  border-color: var(--sky);
+}
+.stampSky {
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--sky);
+  padding: 5px 12px;
+  border: 1.5px solid var(--sky);
+  font-weight: 900;
+  transform: rotate(-2deg);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 1180px) {
+  .nav {
+    grid-template-columns: auto 1fr auto auto;
+  }
+  .navMid {
+    display: none;
+  }
+  .hero {
+    grid-template-columns: 1fr;
+  }
+  .heroLeft {
+    border-right: none;
+    border-bottom: var(--b);
+    min-height: 0;
+    padding: 44px 40px 40px;
+  }
+  .heroRight {
+    padding: 40px;
+  }
+  .statBand {
+    grid-template-columns: 1fr 1fr;
+  }
+  .statCell:nth-child(2) {
+    border-right: none;
+  }
+  .statCell:nth-child(-n + 2) {
+    border-bottom: var(--b);
+  }
+  .ledgerWrap {
+    padding: 52px 40px 64px;
+  }
+  .cols,
+  .ledgerRow {
+    grid-template-columns: 30px minmax(0, 1.7fr) 96px 100px 112px;
+  }
+  .colOwner,
+  .colViews,
+  .ledgerOwner,
+  .ledgerViews {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .navBrandTxt {
+    padding: 0 16px;
+    font-size: 11px;
+  }
+  .navGhost,
+  .navCta {
+    padding: 16px 14px;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+  }
+  .heroLeft {
+    padding: 32px 22px 32px;
+  }
+  .heroRight {
+    padding: 28px 22px;
+  }
+  .tbRow {
+    grid-template-columns: 96px 1fr;
+  }
+  .statBand {
+    grid-template-columns: 1fr;
+  }
+  .statCell {
+    border-right: none;
+    border-bottom: var(--b);
+  }
+  .statCell:last-child {
+    border-bottom: none;
+  }
+  .ledgerWrap {
+    padding: 44px 22px 56px;
+  }
+  .filterCell {
+    padding: 11px 13px;
+  }
+  .cols {
+    display: none;
+  }
+  .ledgerRow {
+    grid-template-columns: 20px minmax(0, 1fr) 96px;
+  }
+  .ledgerRow .chip,
+  .ledgerDate {
+    display: none;
+  }
+  .ctaRow {
+    flex-direction: column;
+    align-self: stretch;
+  }
+  .ctaPrimary {
+    justify-content: center;
+    border-radius: var(--r) var(--r) 0 0;
+  }
+  .ctaGhost {
+    justify-content: center;
+    border-left: var(--b);
+    border-top: none;
+    border-radius: 0 0 var(--r) var(--r);
+  }
+  .foot {
+    padding: 20px 22px;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+/* ============================================================
+   REDUCED MOTION
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .rv,
+  .ledgerRow {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .kickerDot,
+  .kickerDotSm,
+  .tbHeadDot,
+  .ledgerDot {
+    animation: none !important;
+  }
+}

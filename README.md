@@ -8,7 +8,7 @@ This project is developed with [Claude Code](https://claude.com/claude-code). On
 bash scripts/setup-claude-env.sh
 ```
 
-This adds the 3 plugin marketplaces used on this project and installs the 5 plugins from them (skill-creator, superpowers, frontend-design, context-mode, claude-mem), then restart Claude Code. A project-scoped skill (`frontend-design`) is already checked into `.claude/skills/` and needs no setup.
+This adds the 4 plugin marketplaces used on this project and installs the 6 plugins from them (skill-creator, superpowers, frontend-design, context-mode, claude-mem, impeccable), then restart Claude Code. `impeccable` runs the design-quality hooks; `DESIGN.md` is hand-authored (the Blueprint system — product context + visual spec, synced from the `jobflex-page-styler` skill in `.claude/skills/`) — do not regenerate it with `/impeccable document`. Project-scoped skills (`frontend-design`, `jobflex-page-styler`) are checked into `.claude/skills/` and need no setup.
 
 Two things this script deliberately does **not** do, because they can't be reproduced by cloning a repo:
 

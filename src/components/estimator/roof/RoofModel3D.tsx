@@ -424,7 +424,7 @@ export function RoofModel3D({
       const el = document.createElement("div");
       el.textContent = text;
       el.style.cssText =
-        "color:#14181f;font:600 11px Geist,system-ui,sans-serif;text-shadow:0 0 2px #fff,0 0 3px #fff;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none";
+        "color:#0a0a0a;font:600 11px Inter,system-ui,sans-serif;text-shadow:0 0 2px #fff,0 0 3px #fff;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none";
       const obj = new CSS2DObject(el);
       obj.position.copy(pos);
       group.add(obj);

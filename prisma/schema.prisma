@@ -1,4 +1,4 @@
-// JobFlex Prisma schema — SQLite for local dev (easy swap to Postgres later).
+// JobFlex Prisma schema — Postgres (Neon), local dev uses an isolated Neon branch.
 // Enums moved to src/lib/prismaEnums.ts; string[] stored as JSON-encoded strings.
 
 generator client {
@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────

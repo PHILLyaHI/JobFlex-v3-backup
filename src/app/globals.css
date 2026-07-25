@@ -3,40 +3,41 @@
 @tailwind utilities;
 
 :root {
-  /* ─── palette (cool-neutral / Pressed Sage) ─────── */
-  --paper: #f7f8fa;
-  --paper-deep: #eef1f4;
-  --paper-ink: #14181f;
-  --ink: #14181f;
-  --ink-soft: #3a4150;
-  --ink-muted: #5a6473;
-  --ink-faint: #8a93a1;
-  --ink-line: #e4e8ee;
-  --accent: #1f7a52;
-  --accent-soft: #e0f0e8;
-  --accent-ink: #155637;
-  --emerald: #059669;
-  --rose: #e11d48;
-  --amber: #c89450;
+  /* ─── palette (blueprint drafting-paper) ────────── */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --paper-ink: #0a0a0a;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --ink-muted: #555555;
+  --ink-faint: #888888;
+  --ink-line: rgba(10, 10, 10, 0.12);
+  --accent: #1854a0;
+  --accent-soft: rgba(24, 84, 160, 0.08);
+  --accent-ink: #0e3d7a;
+  --emerald: #3a7d44;
+  --rose: #a83232;
+  --amber: #b88420;
 
   /* ─── typography ──────────────────────────────── */
-  --font-display: var(--font-geist);
-  --font-sans: var(--font-geist);
+  --font-display: var(--font-inter);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jbmono), 'SF Mono', ui-monospace, monospace;
 
-  /* ─── radii ───────────────────────────────────── */
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 14px;
-  --r-xl: 24px;
-  --radius: 8px;
+  /* ─── radii (blueprint: sharp) ────────────────── */
+  --r-xs: 2px;
+  --r-sm: 2px;
+  --r-md: 2px;
+  --r-lg: 2px;
+  --r-xl: 2px;
+  --radius: 2px;
 
-  /* ─── elevation ───────────────────────────────── */
-  --shadow-sm: 0 1px 2px rgba(20, 24, 31, 0.05), 0 1px 3px rgba(20, 24, 31, 0.05);
-  --shadow-md: 0 2px 6px rgba(20, 24, 31, 0.05), 0 8px 24px rgba(20, 24, 31, 0.08);
+  /* ─── elevation (hard offset, no blur) ────────── */
+  --shadow-sm: 3px 3px 0 rgba(10, 10, 10, 0.06);
+  --shadow-md: 4px 4px 0 rgba(10, 10, 10, 0.08);
 
   /* ─── motion ──────────────────────────────────── */
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark {
@@ -58,14 +59,17 @@ html, body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+/* Drafting grid — the blueprint signature */
 body {
   background-image:
-    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(31, 122, 82, 0.030), transparent 60%),
-    radial-gradient(ellipse 60% 40% at 110% 10%, rgba(200, 148, 80, 0.020), transparent 60%);
+    linear-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.035) 1px, transparent 1px);
+  background-size: 40px 40px;
   background-attachment: fixed;
 }
 
@@ -93,18 +97,18 @@ body::before {
 .tabular { font-variant-numeric: tabular-nums; }
 .quiet-caps {
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
+  font-weight: 800;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--ink-soft);
+  color: var(--ink-muted);
 }
 
 /* ── Surfaces ───────────────────────────────────── */
 .paper-card {
-  background: #ffffff;
-  border: 0.5px solid rgba(17, 17, 19, 0.10);
+  background: var(--paper);
+  border: 2px solid var(--ink);
   border-radius: var(--r-lg);
-  box-shadow: 0 1px 0 rgba(17, 17, 19, 0.02);
+  box-shadow: var(--shadow-sm);
 }
 .dark .paper-card {
   background: rgba(22, 22, 26, 0.68);
@@ -113,7 +117,7 @@ body::before {
   box-shadow: none;
 }
 
-.hairline { box-shadow: inset 0 0 0 0.5px rgba(17, 17, 19, 0.16); }
+.hairline { box-shadow: inset 0 0 0 0.5px rgba(10, 10, 10, 0.16); }
 .dark .hairline { box-shadow: inset 0 0 0 0.5px rgba(245, 243, 236, 0.14); }
 
 /* ── Focus ring ─────────────────────────────────── */
@@ -121,7 +125,7 @@ body::before {
   outline: none;
   box-shadow:
     0 0 0 1px var(--paper),
-    0 0 0 3px rgba(31, 122, 82, 0.55);
+    0 0 0 3px rgba(24, 84, 160, 0.55);
 }
 
 /* ── Scrollbar refinement ───────────────────────── */
@@ -139,7 +143,7 @@ body::before {
 .prose-editorial h2 {
   font-family: var(--font-display);
   font-size: 1.6rem;
-  font-weight: 600;
+  font-weight: 800;
   letter-spacing: -0.015em;
   margin-top: 2rem;
   margin-bottom: 0.5rem;
@@ -149,7 +153,7 @@ body::before {
 /* ── Shiny moving divider (for hero) ────────────── */
 .divider-ink {
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(17, 17, 19, 0.18), transparent);
+  background: linear-gradient(90deg, transparent, rgba(10, 10, 10, 0.18), transparent);
 }
 
 /* ── Utility: tabular numbers for stats ─────────── */
@@ -157,7 +161,7 @@ body::before {
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums lining-nums;
   letter-spacing: -0.025em;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 /* ── Safe-area (iOS notch / home indicator) ─────── */
@@ -192,4 +196,3 @@ body::before {
   --gmp-mat-color-outline: var(--ink-line);
   --gmp-mat-color-primary: var(--accent);
 }
-

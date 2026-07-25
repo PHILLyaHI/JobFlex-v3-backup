@@ -19,20 +19,23 @@
 - `src/actions/` — 33 server-action modules.
 - `src/app/api/` — 25 route handlers.
 - `prisma/schema.prisma` — schema of record.
-- `src/app/globals.css` — design tokens (locked).
+- `src/app/globals.css` — design tokens (open for theming).
 
-## Design System — LOCKED
-- Tokens in `src/app/globals.css` (palette, typography, radii, motion) are FROZEN.
-- Do not modify CSS custom properties, Tailwind theme extensions, or token values.
-- Do not introduce new color/font/shadow/spacing primitives. Reuse existing ones.
-- If a layout requires a token that doesn't exist, stop and ask.
+## Design System — OPEN FOR THEMING
+Tokens are unlocked. Theme experimentation is explicitly allowed and does not need approval.
+- Tokens in `src/app/globals.css` (palette, typography, radii, motion) may be changed freely.
+- New color/font/shadow/spacing primitives are allowed. Still check for an existing token first — reuse beats adding a near-duplicate.
+- Change values at the token layer, not by hardcoding literals in components. A theme swap should be achievable by editing tokens alone.
+- `DESIGN.md` describes the *current* theme (blueprint). It is hand-authored (synced from the `jobflex-page-styler` skill's `references/design-system.md`) — do NOT regenerate it with `/impeccable document`; that would overwrite the authored spec. The `.impeccable/design.json` sidecar was removed 2026-07-23 (it described the retired sage theme).
+- Still out of bounds without asking: restructuring what a token *means* across the app (e.g. repurposing `--accent` to a different semantic role), or ripping out the token system itself.
+- The anti-slop rules and product context (users, three scenes, accessibility commitments) live in `DESIGN.md` → "Product Context" section. Change the palette freely; don't drift into the four anti-references listed there.
+- Light/dark is a separate decision — see the dark-mode line under Scope Boundaries. Unlocking tokens did not unlock `.dark` variants.
 
 ## Design Context
-Two root files capture the strategic + visual design system. Read both before any frontend work.
+One root file captures the design system — strategy and visuals. Read it before any frontend work.
 
-- **[PRODUCT.md](PRODUCT.md)** — strategic: register (`product`), users, purpose, brand personality (*quiet, unhurried, workaday*), the four AI-slop anti-references (construction-cliché, generic SaaS-cream, AI-startup purple-gradient, consumer-cute), the 5 design principles, accessibility commitments (WCAG 2.2 AA + outdoor-sun-readability + 44px targets + light-only), and reference family (small-shop editorial).
-- **[DESIGN.md](DESIGN.md)** — visual: Stitch-format frontmatter with extracted tokens, plus 6 sections (Overview / Colors / Typography / Elevation / Components / Do's and Don'ts). Creative North Star is *"The Well-Kept Shop"*. Primary accent is *Pressed Sage* (`#1f7a52`), applied confidently to primary CTAs, active nav, Accepted/Paid pills, key numerals, and focus rings. Named rules: One Accent · Tinted-Neutral · Status-Is-Not-Decoration · Tonal-Pill · Single-Typeface · Tabular Numeric · Quiet-Caps · Layered-Depth · Hairline-Beats-Border · No-Decorative-Card · Hairline-Is-The-Boundary · Confident-Accent. Sidecar at `.impeccable/design.json` carries component HTML/CSS snippets, tonal ramps, motion tokens.
-- These are managed by `/impeccable teach` and `/impeccable document`. Re-run `/impeccable document` whenever the design system drifts or tokens change.
+- **[DESIGN.md](DESIGN.md)** — the Blueprint design system (full specification, English). Opens with "Product Context": users (1–10 person contractor shops), the three scenes every surface must survive (jobsite sunlight / desk / in-front-of-homeowner), accessibility commitments (WCAG 2.2 AA + outdoor-sun-readability + ≥44px targets + reduced-motion + light-only), and the four anti-references (construction-cliché, generic SaaS-cream, AI-startup purple-gradient, consumer-cute). Visuals: Brutalist + Blueprint / technical drawing — paper `#f2f0eb`, ink `#0a0a0a`, blueprint blue `#1854a0` accent, sky `#4a9eff`, 3-tone status colors (statuses only, never decoration), Inter 800–900 caps headings + tabular numerals, JetBrains Mono for the drawing-annotation layer, 2px ink borders, 2px radii, hard offset shadows (`3px 3px 0`, no blur), graph-paper grid backgrounds, Motion System "Balanced". Distribution rule ~80% neutral / ~15% blueprint / ~5% sky+status.
+- `DESIGN.md` is synced from `.claude/skills/jobflex-page-styler/references/design-system.md`; `references/decisions.md` (same skill) records WHY each rule exists and the owner's rejected anti-patterns; `assets/jobflex-dashboard-blueprint.html` is the interactive source of truth. Do not regenerate these with `/impeccable document` — they are authored, not extracted. `PRODUCT.md` was removed 2026-07-23 (sage-era; its surviving strategy was folded into DESIGN.md's Product Context; git history has the original).
 
 ## Mobile-First Rule
 - Target viewport: handheld (≤768px). Build layouts mobile-only.

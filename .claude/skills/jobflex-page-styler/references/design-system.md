@@ -281,10 +281,9 @@ CURRENT IMPLEMENTATION STATUS
 - The remaining internal pages — still to be converted to this system,
   including animations.
 The source of truth for visuals and motion is
-`.claude/skills/jobflex-page-styler/assets/jobflex-dashboard-blueprint.html`
-(built in the Claude sandbox). Page-by-page the system is applied via the
-`jobflex-page-styler` skill; the app's global tokens (`src/app/globals.css`
-+ `tailwind.config.ts`) were moved to this palette on 2026-07-23.
+`assets/jobflex-dashboard-blueprint.html` (built in the Claude sandbox).
+It is the only reference file bundled with the skill; no other reference
+files are attached.
 
 
 ---

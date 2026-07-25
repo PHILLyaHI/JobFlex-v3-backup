@@ -1,0 +1,1699 @@
+/* ============================================================
+   MOBILE DASHBOARD (mobile-v2) — Blueprint design system
+   Ported from the scratchpad donor
+   jobflex-dashboard-mobile-blueprint.html. Every token below is
+   the reference dashboard's value; the only additions are the
+   mobile fluid-scale layer and the shell (tab bar / FAB / sheet).
+   Fully scoped to this page — app tokens are untouched.
+   ============================================================ */
+
+.app {
+  /* ---- palette (the reference dashboard's, with one deliberate swap) ----
+     Paper is WHITE on this mobile surface (owner's call, 2026-07-24). The
+     desktop shell is still the #f2f0eb drafting cream — this is an
+     intentional divergence, not drift. paper-deep stays a hair off-white so
+     the zoned strips (masthead annotations, pressed states) still read. */
+  --paper: #ffffff;
+  --paper-deep: #f1f0ee;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft fill */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --chart-minor: rgba(24, 84, 160, 0.08);
+  --chart-major: rgba(10, 10, 10, 0.12);
+  --chart-fill: rgba(24, 84, 160, 0.07);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE ----------------------------------
+     The rem-token equivalent of the desktop zoom module: every
+     ratio interpolates smoothly across 320px → 768px, so there
+     is one composition, not a stack of breakpoints. */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-hero: clamp(38px, 12.4vw, 60px);
+  --fs-kpi: clamp(19px, 5.6vw, 26px);
+  --topbar-h: 56px;
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+
+.app ::selection {
+  background: var(--blueprint);
+  color: #fff;
+}
+.app :focus-visible {
+  outline: 2px solid var(--sky);
+  outline-offset: 2px;
+}
+.app button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+.app a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.ic {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+
+/* ============================================================
+   TOPBAR
+   ============================================================ */
+.tbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--topbar-h);
+  padding: 0 var(--pad-x);
+  background: var(--ink);
+  color: var(--paper);
+  border-bottom: var(--border);
+  z-index: 30;
+}
+/* Burger sits first — it is the navigation now that the tab bar is gone */
+.tbarBurger {
+  margin-left: -8px;
+}
+.tbarMark {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: square;
+  flex-shrink: 0;
+}
+.tbarTxt {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+}
+.tbarName {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+.tbarSub {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--sky);
+  line-height: 1;
+}
+.tbarRight {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tbarBtn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  color: var(--paper);
+  transition: background 0.12s, border-color 0.12s;
+}
+.tbarBtn:active {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.tbarBtn .ic {
+  width: 19px;
+  height: 19px;
+}
+.bellDot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 9px;
+  height: 9px;
+  background: var(--sky);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar {
+  width: 0;
+}
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 104px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* ============================================================
+   LEAD CENTER BANNER — warning palette, no ink frame, no shadow
+   ============================================================ */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 2px solid var(--warning);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: linear-gradient(var(--warning-soft), var(--warning-soft)), var(--paper);
+  padding: 13px 14px;
+}
+.bannerHidden {
+  display: none;
+}
+.bannerClosing {
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  margin-bottom: calc(-1 * var(--gap));
+  overflow: hidden;
+  transition: height 0.3s var(--ease-out), opacity 0.2s ease, padding 0.3s var(--ease-out),
+    margin-bottom 0.3s var(--ease-out), border-width 0.3s var(--ease-out);
+}
+.bannerPin {
+  width: 24px;
+  height: 24px;
+  color: var(--warning);
+  margin-top: 1px;
+}
+.bannerBody {
+  min-width: 0;
+  flex: 1;
+}
+.bannerKicker {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--warning);
+  margin-bottom: 5px;
+}
+.bannerTxt {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+.bannerLink {
+  display: inline-block;
+  font-weight: 800;
+  color: var(--warning);
+  border-bottom: 1.5px solid var(--warning);
+  padding-bottom: 1px;
+}
+.bannerLink:active {
+  color: var(--warning-dark);
+  border-bottom-color: var(--warning-dark);
+}
+.bannerClose {
+  width: 44px;
+  height: 44px;
+  margin: -10px -10px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.bannerClose:active {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--paper-deep);
+}
+.bannerClose .ic {
+  width: 15px;
+  height: 15px;
+}
+
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead {
+  padding-top: 2px;
+}
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+}
+.pageTitle {
+  font-size: var(--fs-h1);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  line-height: 0.95;
+}
+
+/* ============================================================
+   MASTHEAD — one primary numeral + mono kicker + exactly two
+   annotations (the Proposals-page pattern, as the mobile hero)
+   ============================================================ */
+.masthead {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.mastMain {
+  padding: var(--card-pad);
+}
+.mastKicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.mastKicker::after {
+  content: "";
+  flex: 1;
+  height: 1.5px;
+  background: var(--hair);
+}
+.mastVal {
+  font-size: var(--fs-hero);
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.mastNotes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.mastNote {
+  padding: 11px var(--card-pad) 12px;
+  border-right: 1.5px solid var(--ink);
+}
+.mastNote:last-child {
+  border-right: none;
+}
+.mastNoteLbl {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.mastNoteVal {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.mastNoteVal.ok {
+  color: var(--success);
+}
+
+/* ============================================================
+   KPI STRIP — 3-up, single block, no labels under the numerals
+   ============================================================ */
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.kpi {
+  padding: 13px 10px 15px;
+  border-right: 1.5px solid var(--ink);
+  min-width: 0;
+}
+.kpi:last-child {
+  border-right: none;
+}
+.kpiLbl {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpiVal {
+  font-size: var(--fs-kpi);
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.kpiVal.accent {
+  color: var(--blueprint);
+}
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+.card {
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--card-pad);
+  position: relative;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.cardTitles {
+  min-width: 0;
+}
+.cardTitle {
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.cardSub {
+  margin-top: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-light);
+}
+.cardSub b {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+.cardLink {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+  flex-shrink: 0;
+}
+.cardLink span {
+  border-bottom: 1.5px solid var(--blueprint);
+  padding-bottom: 1px;
+}
+.cardLink .ic {
+  width: 13px;
+  height: 13px;
+  transition: transform 0.18s var(--ease-out);
+}
+.cardLink:active .ic {
+  transform: translate(2px, -2px);
+}
+.cardRule {
+  border: none;
+  border-top: 1.5px solid var(--hair-soft);
+  margin: 0 0 2px;
+}
+
+/* ============================================================
+   SEGMENTED RANGE — replaces the desktop dropdown: three taps
+   exposed instead of one tap to reveal three
+   ============================================================ */
+.seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.segBtn {
+  height: 44px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border-right: 1.5px solid var(--ink);
+  transition: background 0.14s, color 0.14s;
+}
+.segBtn:last-child {
+  border-right: none;
+}
+.segBtn.active {
+  background: var(--blueprint);
+  color: #fff;
+}
+
+/* ============================================================
+   CHART — mobile geometry (viewBox 340×212), touch scrub
+   ============================================================ */
+.chartWrap {
+  width: 100%;
+}
+.chartWrap svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.chOverlay {
+  touch-action: pan-y;
+}
+.chGuide {
+  stroke: var(--blueprint);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  pointer-events: none;
+  transition: transform 0.18s ease, opacity 0.15s ease;
+}
+.chTipg {
+  pointer-events: none;
+  transition: transform 0.18s var(--ease-out), opacity 0.15s ease;
+}
+.chTipBox {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.chTipText {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--ink);
+  pointer-events: none;
+}
+.chMinor {
+  stroke: var(--chart-minor);
+  stroke-width: 1;
+}
+.chMajor {
+  stroke: var(--chart-major);
+  stroke-width: 1;
+}
+.chAxis {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.chArea {
+  fill: var(--chart-fill);
+}
+.chLine {
+  stroke: var(--blueprint);
+  stroke-width: 2.5;
+  fill: none;
+}
+.chDot {
+  fill: var(--paper);
+  stroke: var(--blueprint);
+  stroke-width: 2.5;
+  transition: fill 0.15s ease;
+}
+.chDot.on {
+  fill: var(--blueprint);
+}
+.chLbl {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--muted);
+  letter-spacing: 0.04em;
+}
+.chNote {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--blueprint);
+  letter-spacing: 0.03em;
+  transition: opacity 0.2s ease;
+}
+
+/* ============================================================
+   THIS WEEK — full-bleed day strip
+   ============================================================ */
+/* The strip is inset to the card's own padding so its left and right edges
+   line up with the event rows below it — one column of content, not a
+   full-bleed band floating over an indented list. Five days, not seven: at
+   320px seven cells fall under the 44px target; five clear it everywhere. */
+.weekStrip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.day {
+  padding: 10px 2px 9px;
+  min-height: 58px;
+  text-align: center;
+  border-right: 1px solid var(--hair);
+  background: var(--paper);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.12s;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.day:last-child {
+  border-right: none;
+}
+.dayLbl {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--muted-light);
+  margin-bottom: 6px;
+}
+.dayNum {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.dayDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--blueprint);
+  margin: 6px auto 0;
+}
+.dayDot.off {
+  opacity: 0;
+}
+/* Seam repaint: a filled or outlined cell must not leave a white gap next to
+   its neighbour — the borders on both sides of the seam are recoloured. */
+.day.selected:not(.today) {
+  box-shadow: inset 0 0 0 2px var(--blueprint);
+  border-right-color: transparent;
+}
+.day.selected:not(.today) .dayNum {
+  color: var(--blueprint);
+}
+.day:has(+ .day.selected:not(.today)) {
+  border-right-color: transparent;
+}
+.day.today {
+  background: var(--blueprint);
+  border-right-color: var(--blueprint);
+}
+.day.today .dayLbl {
+  color: rgba(255, 255, 255, 0.65);
+}
+.day.today .dayNum {
+  color: #fff;
+}
+.day.today .dayDot {
+  background: #fff;
+}
+.day:has(+ .day.today) {
+  border-right-color: var(--blueprint);
+}
+
+.schedRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 46px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--hair-soft);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.schedRow:last-child {
+  border-bottom: none;
+}
+.tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.schedTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 18px 14px 16px;
+  text-align: center;
+}
+.emptyTxt {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.emptyAct {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.emptyAct .ic {
+  width: 13px;
+  height: 13px;
+}
+/* Floor the day list so the card does not jump between a busy day, a
+   one-event day and the empty note. Desktop pins a fixed 4 rows; on a phone
+   that wastes half a screen, so the floor is the tallest real state. */
+.weekList {
+  min-height: 104px;
+}
+
+/* ============================================================
+   UPCOMING JOBS — two-line row, stacked mono date plate
+   ============================================================ */
+.jobRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--hair-soft);
+}
+.jobRow:last-child {
+  border-bottom: none;
+}
+.jobDate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 52px;
+  padding: 7px 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.jobDate b {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.jobDate.today {
+  background: var(--blueprint);
+  color: #fff;
+  border-color: var(--blueprint);
+}
+.jobInfo {
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
+}
+.jobTitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.jobFoot {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.jobSub {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.chip.ok {
+  color: var(--success);
+  background: var(--success-soft);
+}
+.chip.wait {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+/* Lists: ≤4 plain, 5+ internal scroll (~4 visible), >10 visible rows get an
+   inline "Go to …" button as the LAST element inside the scroll. */
+.list {
+  position: relative;
+}
+.scrollable {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  /* Firefox. Literals, not --hair: a scrollbar is chrome, not a drawn line. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.scrollable::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollable::-webkit-scrollbar-thumb {
+  background: var(--muted-faint);
+  border-radius: 0;
+}
+.scrollable::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-light);
+}
+.cardFootBtn {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.cardFootBtn .ic {
+  width: 13px;
+  height: 13px;
+  transition: transform 0.18s var(--ease-out);
+}
+.cardFootBtn:active .ic {
+  transform: translate(2px, -2px);
+}
+.list .cardFootBtn {
+  display: none;
+}
+.list.hasMore .cardFootBtn {
+  display: flex;
+}
+
+/* ============================================================
+   RECENT ACTIVITY
+   ============================================================ */
+.actRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair-soft);
+}
+.actRow:last-child {
+  border-bottom: none;
+}
+.actIc {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.actIc .ic {
+  width: 15px;
+  height: 15px;
+}
+.actBody {
+  min-width: 0;
+}
+.actTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+}
+.actMeta {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+
+/* ============================================================
+   LEAD FLOW — swipeable stage rail (tap a card to move it)
+   ============================================================ */
+.sectionHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 4px;
+}
+.sectionTitle {
+  font-size: clamp(21px, 6.4vw, 28px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.railWrap {
+  position: relative;
+}
+.stageRail {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.stageRail::-webkit-scrollbar {
+  height: 0;
+}
+/* One column per swipe, full rail width — no neighbour peeking in at the
+   edge. The tick rule below is the affordance that says "there is more". */
+.stageCol {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  border-right: 1.5px solid var(--ink);
+  min-width: 0;
+}
+.stageCol:last-child {
+  border-right: none;
+}
+.stageColHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.stageDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sky);
+  flex-shrink: 0;
+}
+.stageLbl {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.stageCount {
+  margin-left: auto;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.stageCards {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  min-height: 96px;
+}
+.leadCard {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 10px 11px 11px;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.leadCard:active {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.leadName {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.leadJob {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.leadMeta {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.leadVal {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blueprint);
+}
+.leadAge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+.leadEmpty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 16px 8px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-light);
+}
+@keyframes leadLand {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+    background: rgba(24, 84, 160, 0.08);
+  }
+  60% {
+    opacity: 1;
+    transform: none;
+    background: rgba(24, 84, 160, 0.08);
+  }
+  100% {
+    background: var(--paper);
+  }
+}
+.landed {
+  animation: leadLand 0.45s var(--ease-out);
+}
+
+/* Rail position — tick marks only. The written "New · 1 of 5" readout was
+   removed at the owner's call: the ticks already say it, the words were noise. */
+.railMeta {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+}
+/* Ticks span the full card width — a measuring rule under the drawing, not a
+   dot pager tucked in a corner. */
+.railTicks {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+.railTick {
+  flex: 1;
+  height: 3px;
+  background: var(--hair);
+  transition: background 0.2s;
+}
+.railTick.on {
+  background: var(--blueprint);
+}
+
+/* ============================================================
+   FAB — context-aware primary action, parked in the thumb zone
+   ============================================================ */
+.fab {
+  position: fixed;
+  right: var(--pad-x);
+  bottom: calc(var(--safe-b) + 20px);
+  z-index: 60;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  height: 52px;
+  /* Symmetric padding: the icon stays optically centred once the label
+     column collapses to 0fr (52 = 17 + 18 + 17). */
+  padding: 0 17px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 3px 3px 0 var(--ink);
+  /* The collapse rides a grid fr track, not width/padding — the label column
+     closes without thrashing layout on every scroll frame. */
+  transition: grid-template-columns 0.28s var(--ease-out), transform 0.12s var(--ease),
+    box-shadow 0.12s var(--ease);
+}
+.fab .ic {
+  width: 18px;
+  height: 18px;
+}
+/* The gap lives on the INNER span so it is clipped along with the text.
+   Padding on .fabLbl itself survives overflow:hidden and left a dead 9px
+   strip that pushed the "+" off-centre in the collapsed state. */
+.fabLbl {
+  overflow: hidden;
+  min-width: 0;
+}
+.fabLblInner {
+  display: block;
+  padding-left: 10px;
+}
+.fab.mini {
+  grid-template-columns: auto 0fr;
+}
+.fab.mini .fabLbl {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.fab:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+/* ============================================================
+   NAV DRAWER — the reference sidebar, pulled out by the burger.
+   Replaces the bottom tab bar (owner's call, 2026-07-24).
+   ============================================================ */
+.sb {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--sidebar-w);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-right: var(--border);
+  /* transform, not left: this is the app's primary navigation and gets opened
+     constantly — the slide stays on the compositor instead of relaying out
+     the drawer every frame. visibility keeps the closed drawer's 22 links out
+     of the tab order and the accessibility tree. */
+  transform: translateX(calc(-100% - 24px));
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  box-shadow: 6px 0 0 rgba(10, 10, 10, 0.08);
+}
+.sb.open {
+  transform: none;
+  visibility: visible;
+}
+.sbOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+.sbOverlay.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sbHead {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  height: var(--topbar-h);
+  padding: 0 18px;
+  border-bottom: var(--border);
+  background: var(--ink);
+  color: var(--paper);
+  flex-shrink: 0;
+}
+.sbMark {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: square;
+  flex-shrink: 0;
+}
+.sbHeadTxt {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.sbHeadName {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+.sbHeadSub {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--sky);
+  line-height: 1;
+}
+.sbClose {
+  margin-left: auto;
+  margin-right: -10px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--paper);
+}
+.sbClose .ic {
+  width: 16px;
+  height: 16px;
+}
+.sbScroll {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 0 28px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sbScroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sbScroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sbScroll::-webkit-scrollbar-thumb {
+  background: var(--muted-faint);
+  border-radius: 0;
+}
+.sbSecLabel {
+  padding: 20px 22px 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+  user-select: none;
+}
+/* Every nav item carries its own square outline — a drawn box per row, the
+   way a legend is boxed on a drawing. Kept at muted-faint so the ACTIVE
+   item's solid-ink plate + offset shadow still clearly wins. */
+.sbLink {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 12px;
+  min-height: 44px;
+  padding: 8px 11px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sbLink .ic {
+  width: 17px;
+  height: 17px;
+  opacity: 0.72;
+}
+.sbLink:active:not(.active) {
+  background: var(--paper-deep);
+}
+.sbLink.active {
+  color: var(--ink);
+  font-weight: 700;
+  border-color: var(--ink);
+}
+.sbLink.active .ic {
+  opacity: 1;
+  color: var(--blueprint);
+}
+/* Active item is an outlined plate that SLIDES — never a black fill.
+   z-index + transparent background so a neighbour's press underlay cannot
+   paint over the offset shadow. */
+.sbIndicator {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 0;
+  height: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: transparent;
+  box-shadow: 2px 2px 0 var(--ink);
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+}
+.sbIndicator.ready {
+  opacity: 1;
+  transition: top 0.34s var(--ease-soft), height 0.34s var(--ease-soft);
+}
+.sbFoot {
+  flex-shrink: 0;
+  border-top: var(--border);
+  padding: 12px 14px calc(12px + var(--safe-b));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sbFootAcc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  text-align: left;
+}
+.sbFootAv {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--blueprint);
+  color: #fff;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+.sbFootTxt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sbFootName {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1;
+}
+.sbFootRole {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+  line-height: 1;
+}
+.sbFootIc {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.sbFootIc .ic {
+  width: 15px;
+  height: 15px;
+}
+/* Drawer nav cascade — the desktop shell's load cascade, re-timed to the
+   drawer's own entrance (dx -8px, 320ms, stagger 22ms). */
+@keyframes sbItemIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.sb.open .sbSecLabel,
+.sb.open .sbLink {
+  animation: sbItemIn 320ms var(--ease-out) both;
+}
+
+/* ============================================================
+   BOTTOM SHEET — hand-rolled (house style, no dialog library).
+   The mobile replacement for desktop drag & drop.
+   ============================================================ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  /* visibility (not just transform) so the closed sheet's buttons leave the
+     tab order and the accessibility tree instead of lurking off-screen */
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 80%;
+  display: flex;
+  flex-direction: column;
+}
+.sheet.on {
+  transform: none;
+  visibility: visible;
+}
+.sheetGrab {
+  width: 44px;
+  height: 3px;
+  background: var(--hair);
+  margin: 10px auto 0;
+}
+.sheetHead {
+  padding: 14px var(--pad-x) 12px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.sheetBody {
+  overflow-y: auto;
+}
+.sheetOpt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-align: left;
+  transition: background 0.12s;
+}
+.sheetOpt:active {
+  background: var(--paper-deep);
+}
+.sheetOpt .ic {
+  width: 16px;
+  height: 16px;
+  color: var(--blueprint);
+  margin-left: auto;
+}
+.sheetOpt.current {
+  color: var(--muted-light);
+}
+.sheetOptN {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted-light);
+  width: 18px;
+}
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn {
+  opacity: 1;
+  transform: none;
+}
+.rvCell {
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity 0.35s var(--ease-out), transform 0.35s var(--ease-out);
+}
+.rvCell.rvIn {
+  opacity: 1;
+  transform: none;
+}
+/* List rows restage on every (re)render — the renderers know nothing of it */
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rowIn {
+  animation: rowIn 300ms var(--ease-out) both;
+}
+@keyframes daySel2 {
+  0% {
+    transform: scale(0.94);
+  }
+  60% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.dayPressed {
+  animation: daySel2 0.28s var(--ease-out);
+}
+@keyframes press2 {
+  0% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.pressed {
+  animation: press2 0.18s ease-out;
+}
+
+/* Scoped to the page — the global kill switch stays the app's business */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   LARGE HANDHELDS / SMALL TABLETS (up to 768px)
+   Density relaxes; the composition does not change.
+   ============================================================ */
+@media (min-width: 600px) {
+  .content {
+    gap: 22px;
+  }
+  .jobDate {
+    width: 58px;
+  }
+}

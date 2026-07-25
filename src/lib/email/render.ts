@@ -17,27 +17,27 @@ export interface WrappedEmail {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
- * JobFlex transactional email — "The Well-Kept Shop" editorial system.
+ * JobFlex transactional email — blueprint drafting-paper system.
  *
  * Email clients don't support CSS custom properties or web fonts reliably,
- * so the LOCKED design tokens (globals.css) are inlined as literals below and
+ * so the design tokens (globals.css) are inlined as literals below and
  * the body is rendered with a web-safe stack. This is the sanctioned place to
  * hardcode token values — keep these in sync with --paper/--ink/--accent.
  * ──────────────────────────────────────────────────────────────────────── */
 
-// Cool-neutral / Pressed Sage palette (mirrors globals.css :root tokens).
+// Blueprint drafting-paper palette (mirrors globals.css :root tokens).
 const C = {
-  canvas: "#eef1f4", // --paper-deep · tinted, so the white card lifts off it
+  canvas: "#ebe8e1", // --paper-deep · tinted, so the white card lifts off it
   card: "#ffffff",
-  line: "#e4e8ee", //   --ink-line
-  ink: "#14181f", //    --ink
-  inkSoft: "#3a4150", //--ink-soft
-  inkMuted: "#5a6473", //--ink-muted (AA-safe small print)
-  accent: "#1f7a52", // --accent (Pressed Sage)
+  line: "#e2e2e2", //   --ink-line (rgba(10,10,10,.12) flattened onto white)
+  ink: "#0a0a0a", //    --ink
+  inkSoft: "#2a2a2a", //--ink-soft
+  inkMuted: "#555555", //--ink-muted (AA-safe small print)
+  accent: "#1854a0", // --accent (blueprint)
 } as const;
 
 const FONT =
-  "Geist,'Geist Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+  "Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 const URL_LINE = /^https?:\/\/\S+$/i;
 
