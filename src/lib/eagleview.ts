@@ -64,15 +64,26 @@ async function getToken(): Promise<string> {
 }
 
 async function evFetch(path: string, init?: RequestInit): Promise<Response> {
-  const token = await getToken();
-  return fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const send = async (token: string) =>
+    fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+    });
+
+  let res = await send(await getToken());
+  // A cached token can outlive its validity (key rotation, revocation, or a
+  // server that restarted the clock). One forced re-mint distinguishes a stale
+  // token from a genuinely unauthorized request, so callers never see a 401
+  // that a refresh would have fixed.
+  if (res.status === 401 && tokenCache) {
+    tokenCache = null;
+    res = await send(await getToken());
+  }
+  return res;
 }
 
 // Build a human error from a failed response. The sandbox is a mock — it 400s
@@ -90,6 +101,19 @@ async function evError(res: Response, op: string): Promise<Error> {
       "The EagleView sandbox only prices/orders its built-in test addresses. Use the sample roofs above, or connect a production EagleView account to measure a real address.",
     );
   }
+  // 401 here means the token minted fine but the API host rejected it — almost
+  // always a host/credential mismatch rather than a bad key. Sandbox keys hit
+  // against the production host answer "Authorization has been denied for this
+  // request."; the sandbox answers "invalid AccessToken" for a bad token. Name
+  // the host in the message, because the failure is invisible from the UI.
+  if (res.status === 401) {
+    const denied = /Authorization has been denied/i.test(detail);
+    return new Error(
+      denied
+        ? `EagleView rejected these credentials for ${API_BASE}. Sandbox keys only work against the sandbox host — set EAGLEVIEW_API_BASE_URL to https://sandbox.apicenter.eagleview.com (or unset it to use the default), then redeploy.`
+        : `EagleView authorization failed for ${API_BASE} (401)${detail ? `: ${detail.slice(0, 140)}` : ""}. Check EAGLEVIEW_CLIENT_ID / EAGLEVIEW_CLIENT_SECRET.`,
+    );
+  }
   return new Error(`${op} failed (${res.status})${detail ? `: ${detail.slice(0, 140)}` : ""}`);
 }
 
@@ -105,7 +129,7 @@ export interface EvProduct {
 
 export async function getAvailableProducts(): Promise<EvProduct[]> {
   const res = await evFetch("/v2/Product/GetAvailableProducts");
-  if (!res.ok) throw new Error(`GetAvailableProducts failed (${res.status})`);
+  if (!res.ok) throw await evError(res, "GetAvailableProducts");
   return (await res.json()) as EvProduct[];
 }
 
@@ -204,7 +228,7 @@ export interface EvReportSummary {
 
 export async function getReportSummary(reportId: number): Promise<EvReportSummary> {
   const res = await evFetch(`/v3/Report/GetReport?reportId=${encodeURIComponent(String(reportId))}`);
-  if (!res.ok) throw new Error(`GetReport failed (${res.status})`);
+  if (!res.ok) throw await evError(res, "GetReport");
   const r = (await res.json()) as Record<string, any>;
   const status = String(r.Status ?? "");
   return {
@@ -234,7 +258,7 @@ export async function getMeasurementModel(reportId: number): Promise<RoofModel> 
   const res = await evFetch(
     `/v1/File/GetReportFileAnyFormat?fileType=${EV_FILE.MEASUREMENT_JSON}&reportId=${encodeURIComponent(String(reportId))}`,
   );
-  if (!res.ok) throw new Error(`GetMeasurementJson failed (${res.status})`);
+  if (!res.ok) throw await evError(res, "GetMeasurementJson");
   const raw = await res.json();
   return parseRoofModel(raw, reportId);
 }
