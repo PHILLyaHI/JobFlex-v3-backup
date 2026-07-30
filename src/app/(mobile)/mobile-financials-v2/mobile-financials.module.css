@@ -1,0 +1,1272 @@
+/* ============================================================
+   MOBILE FINANCIALS (mobile-financials-v2) — Blueprint system
+   Fourth handheld surface, sibling to mobile-v2 (Overview),
+   mobile-proposals-v2 and mobile-clients-v2. Tokens, palette,
+   type scale and Motion System "Balanced" are the reference
+   dashboard's; the row-card / masthead / dropdown / bottom-sheet
+   vocabulary is copied from mobile-clients-v2 so the four pages
+   read as one product. Fully scoped — app tokens untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and all three sibling mobile modules. A white
+     paper variant was tried and reverted; paper-deep stays a shade RECESSED
+     from the sheet rather than lighter than it. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  --topbar-h: 56px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* ---- page-specific extras ----
+     A financials sheet is mostly figures, so it needs two mid-tier numeral
+     sizes the sibling pages did not: the stat-strip cell and the chart's
+     three-figure readout. Both fluid, so 320px never overflows a third of the
+     block and 768px does not look starved. */
+  --fs-kpi: clamp(19px, 5.6vw, 26px);
+  --fs-fig: clamp(15px, 4.6vw, 19px);
+  /* Chart line weights, the same values mobile-v2's Revenue Trend ships. */
+  --chart-minor: rgba(24, 84, 160, 0.08);
+  --chart-major: rgba(10, 10, 10, 0.12);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow.
+     Two grid rows only — MobileNav fills the first. No bottom bar: no page in
+     this family has one. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1). Unwrapped —
+   the page class followed directly by the element — it scores (0,1,1) and
+   silently beats EVERY single-class button rule in this file (0,1,0): every
+   background and every border below would be cancelled at render time, and it
+   parses, lints and typechecks clean while doing it. Do not un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* The only FILLED controls on the surface, alongside the filter button. A fill
+   on every button flattens the hierarchy (owner's call, 2026-07-29). */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* ============================================================
+   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations,
+   one set per tab. All three are computed off the live fixture, so
+   logging an expense or collecting an invoice moves them.
+   ============================================================ */
+.fmast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.fmastTop { padding: var(--card-pad); }
+.fmastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.fmastRule { flex: 1; height: 1.5px; background: var(--hair); }
+.fmastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.fmastVal.isGood { color: var(--success); }
+/* A month can run at a loss where the roll-up does not, so the tone is read
+   off the figure rather than pinned to the tab. */
+.fmastVal.isBad { color: var(--danger); }
+.fmastCnt {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.fmastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+.fmastSub:last-child { border-right: none; }
+.fmastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.fmastSubV {
+  font-size: 23px; font-weight: 800;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes mastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.slide { animation: mastIn 320ms var(--ease-out); }
+/* ============================================================
+   TABS — four segments. A single row of four cannot hold
+   "Change orders" plus its count badge on ONE line at 320px
+   (~78px per tab against ~120px of content), and stacking the
+   badge under the label is forbidden. So the strip is a 2×2 pad:
+   two exact halves each way, which keeps the indicator's
+   percentage translate exact in both axes.
+   ============================================================ */
+.ftabs {
+  position: relative;
+  display: grid;
+  /* minmax(0, 1fr) horizontally and a FIXED 52px row: the indicator is
+     50% × 52px translated by index × 100%, so it only ever lands on its own
+     tab if both tracks are exact. Plain 1fr floors at auto, and auto rows
+     would let one tab's height desynchronise the vertical step. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, 52px);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+.ftab {
+  position: relative;
+  z-index: 1;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  /* Sentence case, 13px, label and count on one line at every width. Side
+     padding is 3px so the 7px gap — the part the eye reads as breathing
+     room — keeps its budget. */
+  padding: 0 3px;
+  font-size: 13px; font-weight: 800;
+  letter-spacing: 0; text-transform: none;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--muted);
+  transition: color 0.16s, background 0.16s;
+}
+/* Dividers drawn as a plus sign: right edge on the left column, bottom edge on
+   the top row. nth-of-type counts the four buttons only, so the indicator
+   <span> never shifts the sequence. Nothing doubles against the 2px frame. */
+.ftab:nth-of-type(odd) { border-right: 1.5px solid var(--ink); }
+.ftab:nth-of-type(-n + 2) { border-bottom: 1.5px solid var(--ink); }
+.ftab.active { color: var(--ink); background: var(--paper-deep); }
+.ftabCount {
+  display: inline-flex; align-items: center; justify-content: center;
+  /* A hair taller than the 13px label so the digits sit in a real badge
+     rather than being crushed to the cap height. */
+  height: 19px;
+  min-width: 22px;
+  padding: 0 3px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  line-height: 1;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.ftab.active .ftabCount { border-color: var(--blueprint); color: var(--blueprint); }
+/* z-index 2: the 3px rule has to paint OVER the cell dividers, or the top
+   row's indicator hides behind the horizontal ink line. */
+.ftabInd {
+  position: absolute;
+  top: 0; left: 0;
+  width: 50%; height: 52px;
+  z-index: 2;
+  pointer-events: none;
+  transition: transform 0.34s var(--ease-soft);
+}
+.ftabInd::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: var(--blueprint);
+}
+/* ============================================================
+   CARDS — zoned like the desktop sheet: white head → white body
+   → beige strip. padding lives on the sections, so a strip can
+   run full-bleed to the frame.
+   ============================================================ */
+.card {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.cardHead {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: var(--card-pad) var(--card-pad) 0;
+}
+.cardTitles { min-width: 0; flex: 1; }
+.cardTitle {
+  font-size: 15px; font-weight: 900;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  line-height: 1.2;
+}
+.cardSub {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+/* ============================================================
+   CHART — revenue against expenses, 12 months. The desktop reads
+   a month by hovering its column; a phone reads it by dragging
+   across the plot, and the three-figure strip retargets at
+   whichever month is under the finger.
+   ============================================================ */
+.hstrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: var(--card-pad);
+  border-top: 1.5px solid var(--ink);
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.hs {
+  min-width: 0;
+  padding: 10px 8px 11px;
+  border-right: 1.5px solid var(--hair);
+}
+.hs:last-child { border-right: none; }
+.hsL {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+/* Reporting ONE month: the figures are the same three, so the tell is in the
+   labels, not the values. */
+.hstrip.isMonth .hsL { color: var(--blueprint); }
+.hsV {
+  margin-top: 7px;
+  font-size: var(--fs-fig); font-weight: 900;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hsV.toneOk { color: var(--success-dark); }
+.hsV.toneBad { color: var(--danger); }
+@keyframes hsSwap {
+  from { opacity: 0.25; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+/* Remounted on every scrub step (React key), so the 150ms swap replays even
+   when two months happen to read alike. */
+.hsSwap { animation: hsSwap 150ms var(--ease-out); }
+.swRev, .swExp, .swNet {
+  width: 10px; height: 10px;
+  flex-shrink: 0;
+}
+.swRev { background: var(--blueprint); }
+/* The expenses mark is a DRAFTING hatch, not the desktop's amber: status
+   colours are reserved for statuses, and 24 amber bars would blow the ~5%
+   accent budget on a phone-sized sheet. */
+.swExp {
+  background: repeating-linear-gradient(45deg, var(--muted) 0 1.5px, var(--paper-deep) 1.5px 4px);
+  border: 1px solid var(--muted);
+}
+.swNet { height: 0; width: 14px; border-top: 1.5px dashed var(--ink); }
+.chart { padding: 14px 10px 4px; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chOverlay {
+  fill: transparent;
+  /* pan-y so a vertical swipe still scrolls the page past the chart. */
+  touch-action: pan-y;
+}
+.gridLine { stroke: var(--chart-major); stroke-width: 1; }
+.axisLine { stroke: var(--ink); stroke-width: 1.5; }
+.axisTxt {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  fill: var(--muted-light);
+  letter-spacing: 0.04em;
+}
+.moLbl { fill: var(--muted); }
+.barRev { fill: var(--blueprint); }
+.barExp { fill: url(#mfHatch); stroke: var(--muted); stroke-width: 1; }
+.hatchBg { fill: var(--paper-deep); }
+.hatchLine { stroke: var(--muted); stroke-width: 2.4; }
+.netLine { fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.netDot { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; }
+.moHit { fill: transparent; transition: fill 140ms var(--ease-out); }
+/* The read month is unmistakable: its band lights, and every other month drops
+   back — dimming the rest is what makes one of twelve columns legible without
+   a floating tooltip the system does not use. */
+.moGroup.on .moHit { fill: rgba(24, 84, 160, 0.07); }
+.chart.isHot .moGroup { opacity: 0.42; transition: opacity 150ms var(--ease-out); }
+.chart.isHot .moGroup.on { opacity: 1; }
+.moGroup.on .moLbl { fill: var(--ink); font-weight: 700; }
+@keyframes barGrow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+/* Bars draw upward off the axis, 850ms like the reference chart, staggered by
+   month so the field reads as being plotted rather than pasted. */
+.barDraw { animation: barGrow 850ms var(--ease) both; transform-origin: 50% 100%; }
+/* ============================================================
+   MARGIN GAUGE — a semicircular scale with the 35% target drawn
+   on it. Geometry is the desktop's verbatim (cx 124, cy 134,
+   r 94, stroke 18); only the annotation type is raised, because
+   8.5px inside a 248-unit box is unreadable on a handset.
+   ============================================================ */
+.gstatus {
+  display: inline-block;
+  margin-left: auto;
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.mtOk { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
+.mtWarn { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.mtBad { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.gaugeWrap {
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px var(--card-pad) 10px;
+}
+.gaugeWrap svg { width: 100%; max-width: 268px; height: auto; display: block; }
+.gTrack { fill: none; stroke: var(--hair-soft); }
+.gFill { fill: none; stroke-linecap: butt; transition: stroke-dashoffset 760ms var(--ease-out); }
+.gTick { stroke: var(--paper); stroke-width: 2; }
+.gTarget { stroke: var(--ink); stroke-width: 2; }
+.gTlbl {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.04em;
+  fill: var(--ink);
+}
+/* Inter 900, never mono: a large numeral is not an annotation. */
+.gVal {
+  font-family: var(--font);
+  font-size: 33px; font-weight: 900;
+  letter-spacing: -0.02em;
+  text-anchor: middle;
+}
+.gCap {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.16em;
+  text-anchor: middle;
+  fill: var(--muted);
+}
+.gEnd {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  fill: var(--muted-light);
+}
+.gaugeFoot {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.gf { min-width: 0; padding: 11px 10px 12px; border-right: 1.5px solid var(--hair); }
+.gf:last-child { border-right: none; }
+.gfL {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gfV {
+  margin-top: 7px;
+  font-size: var(--fs-fig); font-weight: 900;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.toneOk { color: var(--success-dark); }
+.toneWarn { color: var(--warning-dark); }
+.toneBad { color: var(--danger); }
+/* ============================================================
+   STAT STRIP — the desktop's four cards as ONE block with drawn
+   internal rules, 2×2. Same border-top/left scheme as the filter
+   menu: correct at any cell count, never doubled on the frame.
+   ============================================================ */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.stat {
+  min-width: 0;
+  padding: 13px 13px 15px;
+  border-top: 1.5px solid var(--ink);
+  border-left: 1.5px solid var(--ink);
+}
+.stat:nth-child(-n + 2) { border-top: none; }
+.stat:nth-child(2n + 1) { border-left: none; }
+.statLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.statVal {
+  margin-top: 10px;
+  font-size: var(--fs-kpi); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.statVal.accent { color: var(--blueprint); }
+.statDelta {
+  margin-top: 9px;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.statHint {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+/* ============================================================
+   ATTENTION — two rows, each with its own full-width jump. The
+   count is the figure; the button is flat (frame, no fill).
+   ============================================================ */
+/* The card sections carry their own padding, so the list pays for the gap
+   under the head itself — its first row's rule IS the zoning line. */
+.attList { list-style: none; margin-top: var(--card-pad); }
+.att {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 11px 12px;
+  padding: 14px var(--card-pad) 16px;
+  border-top: 1.5px solid var(--hair);
+}
+.attTxt { grid-column: 1; grid-row: 1; min-width: 0; }
+.attT { font-size: 15px; font-weight: 700; line-height: 1.25; }
+.attH { margin-top: 5px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.attN {
+  grid-column: 2; grid-row: 1;
+  font-size: 21px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+}
+.attDanger { color: var(--danger); }
+.attAccent { color: var(--blueprint); }
+.attOpen {
+  grid-column: 1 / -1; grid-row: 2;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.attOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.attOpen .ic { width: 15px; height: 15px; }
+/* ============================================================
+   FIND BAR — search over the active ledger plus ONE filter
+   dropdown. A horizontal chip rail does not survive 320px, and
+   with three ledgers the filter's option set changes per tab.
+   ============================================================ */
+.find { display: flex; flex-direction: column; gap: 10px; }
+.srch {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.srch .ic { width: 17px; height: 17px; color: var(--muted); }
+.srchInput {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+}
+.srchInput::placeholder { color: var(--muted-light); }
+/* 44px of hit box, pulled tight with negative margin so it still READS as the
+   compact 34px glyph the siblings draw. Touch targets are never under 44. */
+.srchX {
+  width: 44px; height: 44px;
+  margin: 0 -13px 0 -5px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+.srchX .ic { width: 15px; height: 15px; }
+/* Custom .dd, never a native select: rotating caret, a menu on a 2px frame,
+   and the chosen value reading back on the face as PLAIN TEXT — no pill, no
+   frame, tone-only colouring. */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+.ddValue {
+  margin-left: auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ddValue.isAll { color: var(--ink); }
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* No offset shadow (owner's call, 2026-07-29): the hard ink drop read as a
+     black slab, and the 2px ink frame already lifts the panel off the sheet.
+     A 3-column grid, not a one-deep list — eight categories in a list is a
+     scroll on a phone. padding:0 so the CELL borders are the grid's rules. */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  /* Viewport height through --app-h, never a bare vh: the published value
+     follows visualViewport, so an open keyboard shortens the menu instead of
+     pushing its last row under the keys. */
+  max-height: calc(var(--app-h, 100dvh) * 0.6);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.ddMenu::-webkit-scrollbar { width: 6px; }
+.ddMenu::-webkit-scrollbar-track { background: transparent; }
+.ddMenu::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. Dividers are border-TOP and
+   border-LEFT with the first row and first column cleared, so the block draws
+   a correct table at ANY item count (five statuses or eight categories) and
+   never doubles a line against the menu's own frame. */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so the tick cannot squeeze the label in a ~87px cell. */
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  color: var(--blueprint);
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* ============================================================
+   LEDGERS — the desktop's 6-column tables re-cut as row cards.
+   Three lines: identity + actions, the mono line, then badge and
+   figures. Rows 2 and 3 are ONE group (16px above, 5px between),
+   so it reads identity / gap / data. The separator is a real
+   drawn 1.5px ink rule, not a faint wash.
+   ============================================================ */
+.ledger {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.frow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.frow:last-child { border-bottom: none; }
+.frow:active { background: var(--paper-deep); }
+/* Every child carries an explicit grid-column AND grid-row. A definite-row
+   item with no column is placed in its own pass and can claim the wrong
+   column, shoving a sibling sideways — that shipped once already. */
+.frowTitle {
+  grid-column: 1; grid-row: 1;
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.frowOpen {
+  grid-column: 2; grid-row: 1;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -6px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.frowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.frowOpen .ic { width: 18px; height: 18px; }
+.frowSub {
+  grid-column: 1 / -1; grid-row: 2;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  overflow-wrap: anywhere;
+}
+/* Two groups, not one wrapping flex line: badges wrap inside their own column
+   while the date and the amount stay welded together on the right. */
+.frowFoot {
+  grid-column: 1 / -1; grid-row: 3;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px 10px;
+  margin-top: 5px;
+}
+.frowTags {
+  grid-column: 1; grid-row: 1;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.frowFigs {
+  grid-column: 2; grid-row: 1;
+  display: flex; align-items: baseline; gap: 9px;
+  justify-self: end;
+  white-space: nowrap;
+}
+.frowMono {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.money {
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* Zero is a number; "nothing on this line" is an absence, so it draws as an
+   em dash rather than $0. */
+.money.isZero { color: var(--muted-faint); font-weight: 800; }
+.money.banked { color: var(--success-dark); }
+/* Invoice rows carry the client's initials: two letters scan far faster than
+   the same glyph repeated eight times. Same 38px plate as mobile-clients-v2. */
+.irow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.irow:last-child { border-bottom: none; }
+.irow:active { background: var(--paper-deep); }
+.iav {
+  grid-column: 1; grid-row: 1 / 3;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.iav.banked { background: var(--success-soft); border-color: var(--success); color: var(--success-dark); }
+.iname {
+  grid-column: 2; grid-row: 1;
+  align-self: end;
+  font-size: 15px; font-weight: 700;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.iwhere {
+  grid-column: 2; grid-row: 2;
+  align-self: start;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.irowOpen {
+  grid-column: 3; grid-row: 1 / 3;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -4px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.irowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.irowOpen .ic { width: 18px; height: 18px; }
+.ifoot {
+  grid-column: 1 / -1; grid-row: 3;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px 10px;
+  margin-top: 13px;
+}
+/* ---- badges: 1.5px border in the base tone + soft fill + base text ---- */
+.badge {
+  display: inline-block;
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+/* A category is not a status, so it stays neutral — the desktop's .cat tones. */
+.stCat { border-color: var(--hair-soft); background: var(--paper-deep); color: var(--ink-soft); }
+/* A missing receipt is a gap in the record, not a state of the money: dashed,
+   like a pencilled note on a drawing. */
+.stNone { border-style: dashed; border-color: var(--muted-faint); color: var(--muted-light); }
+.stDraft { border-color: var(--hair-soft); background: var(--paper-deep); color: var(--muted); }
+.stSent { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.06); color: var(--blueprint); }
+.stApproved { border-color: var(--success); background: var(--success-soft); color: var(--success-dark); }
+.stDeclined { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.stPending { border-color: var(--warning); background: var(--warning-soft); color: var(--warning-dark); }
+.stPaid { border-color: var(--success); background: var(--success-soft); color: var(--success-dark); }
+.stFailed { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.stRefunded { border-color: var(--hair-soft); background: var(--paper-deep); color: var(--muted); }
+/* ============================================================
+   PAGER + EMPTY STATES
+   ============================================================ */
+.pager { display: flex; align-items: center; gap: 10px; }
+.pagerBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; min-width: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.pagerBtn:active:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.pagerBtn:disabled { opacity: 0.35; }
+.pagerBtn .ic { width: 14px; height: 14px; }
+.pagerInfo {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* A dashed note, like an annotation on a drawing. Never blank: it says what
+   happened AND what to do next. */
+.fempty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 28px 18px;
+  text-align: center;
+}
+.femptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.femptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.femptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.femptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Two: the row actions menu, and the expense form (the desktop's
+   inline staged-receipt panel; a phone has no hover and CLAUDE.md
+   prefers sheets over modals).
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  /* translateY + visibility:hidden, so a closed sheet leaves the tab order and
+     the accessibility tree instead of lurking off-screen. */
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  /* Same rule as the filter menu: the ceiling is --app-h, not 92% of the
+     layout viewport, so the form sheet's beige foot survives the keyboard. */
+  max-height: calc(var(--app-h, 100dvh) * 0.92);
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+.sheetBody {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Firefox. Literals in the thumb, never --hair: a scrollbar is chrome, not a
+     drawn line. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sheetBody::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-track { background: transparent; }
+.sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+.menuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.menuItem:active:not(:disabled) { background: var(--paper-deep); }
+.menuItem:disabled { opacity: 0.45; }
+.miIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.miIc .ic { width: 14px; height: 14px; }
+.miBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.miSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.miOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.miWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.miDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.menuItemT { display: block; font-size: 15px; font-weight: 700; }
+.menuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+.menuItemDanger .menuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   EXPENSE FORM — the desktop receipt-capture panel, rebuilt as a
+   sheet. Opened blank ("Log expense") or pre-filled from a
+   captured receipt for review, which is what the desktop stages.
+   ============================================================ */
+.formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
+.fld { display: flex; flex-direction: column; }
+.fldLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.finput {
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+}
+.finput::placeholder { color: var(--muted-faint); }
+.finput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+.fld.invalid .finput { border-color: var(--danger); background: var(--danger-soft); }
+/* Category as a drawn 3-column pad rather than a native select: the OS picker
+   cannot carry the 2px frame, renders differently on every platform, and
+   hides seven options behind a tap. Same cell scheme as the filter menu. */
+.choice {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.choiceBtn {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 46px;
+  padding: 8px 6px;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--ink-soft);
+  transition: background 0.12s, color 0.12s;
+}
+.choiceBtn:nth-child(-n + 3) { border-top: none; }
+.choiceBtn:nth-child(3n + 1) { border-left: none; }
+.choiceBtn[aria-pressed="true"] { background: var(--paper-deep); color: var(--blueprint); font-weight: 800; }
+/* The job list stays one column: these are addresses, and truncating an
+   address to a third of 320px makes it unidentifiable. */
+.jobList {
+  display: flex; flex-direction: column;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.jobOpt {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-top: 1.5px solid var(--hair);
+  font-size: 13.5px; font-weight: 600;
+  text-align: left;
+  color: var(--ink-soft);
+  transition: background 0.12s, color 0.12s;
+}
+.jobOpt:first-child { border-top: none; }
+.jobOpt[aria-pressed="true"] { background: var(--paper-deep); color: var(--blueprint); font-weight: 700; }
+.jobOpt .ic { width: 15px; height: 15px; margin-left: auto; color: var(--blueprint); opacity: 0; }
+.jobOpt[aria-pressed="true"] .ic { opacity: 1; }
+/* A drawn checkbox, not a native one: the native control cannot carry the 2px
+   frame or the sub-label. aria-pressed keeps it a real toggle for AT. */
+.fchk {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  transition: background 0.12s;
+}
+.fchkBox {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: transparent;
+  flex-shrink: 0;
+  transition: background 0.14s, color 0.14s;
+}
+.fchkBox .ic { width: 14px; height: 14px; }
+.fchk[aria-pressed="true"] { background: var(--paper-deep); }
+.fchk[aria-pressed="true"] .fchkBox { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.fchkSub {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+/* The submit pair sits in a beige foot OUTSIDE the scrolling body, reached by
+   the form= attribute, so it is available without scrolling the form to its
+   end. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 18px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* A record that just changed gets one blue flash, so the row you acted on is
+   findable after the ledger re-orders around it. Both animations are listed:
+   a bare `animation` on .landed would drop the row's own entrance. */
+@keyframes landFlash {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: transparent; }
+}
+.landed { animation: rowIn 300ms var(--ease-out) both, landFlash 0.6s var(--ease-out); }
+/* Deleting a row plays the desktop's first beat: the line is STRUCK in danger
+   red over a danger wash and nudged out of its column, the way a line is
+   voided on a paper ledger — that beat is what says WHICH row is going. Then
+   it leaves and the ledger closes the gap. */
+.striking {
+  background: var(--danger-soft);
+  transform: translateX(3px);
+  transition: background 200ms var(--ease-out), transform 180ms var(--ease-out);
+}
+.striking .frowTitle,
+.striking .frowSub,
+.striking .frowMono,
+.striking .iname,
+.striking .iwhere,
+.striking .money {
+  color: var(--danger);
+  text-decoration: line-through;
+  text-decoration-color: var(--danger);
+  text-decoration-thickness: 2px;
+}
+.striking .badge { border-color: var(--danger); color: var(--danger); background: transparent; }
+.striking .frowOpen,
+.striking .irowOpen { opacity: 0.35; }
+/* Scoped to the page — the global kill switch stays the app's business */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything
+   declared after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+}
+@media (max-width: 520px) {
+  /* The head actions stop sharing a line with anything */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .money { font-size: 18px; }
+  .formFoot { grid-template-columns: 1fr; }
+}
+@media (max-width: 360px) {
+  .fmastCnt { grid-template-columns: 1fr; }
+  .fmastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .fmastSub:last-child { border-bottom: none; }
+  .iav { width: 34px; height: 34px; font-size: 12px; }
+  .ftab { font-size: 12.5px; gap: 6px; }
+  .hsL { font-size: 11px; letter-spacing: 0.04em; }
+}

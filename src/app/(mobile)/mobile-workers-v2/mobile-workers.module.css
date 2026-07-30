@@ -1,0 +1,906 @@
+/* ============================================================
+   MOBILE WORKERS (mobile-workers-v2) — Blueprint system
+   Fourth sibling to mobile-v2, mobile-proposals-v2 and
+   mobile-clients-v2. Tokens, palette, type scale and Motion
+   System "Balanced" are the reference dashboard's; every shared
+   region (page head, masthead, find bar, row cards, pager, empty
+   state, sheets) reuses the class vocabulary its siblings settled
+   on rather than a parallel set. Fully scoped — app tokens
+   untouched. The topbar and drawer are NOT here: they belong to
+   the shared <MobileNav />, which reads --paper / --ink /
+   --topbar-h / --sidebar-w / --pad-x / --tbar-gap / --safe-b and
+   friends from this root by inheritance.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and all three sibling mobile modules. A
+     white-paper variant was tried and reverted. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY, never decoration. Three tones each:
+     base border, soft fill, base text. On this page they carry exactly one
+     thing: the invite state of a worker. */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  --topbar-h: 56px;
+  /* Two 44px framed boxes + the mark + the wordmark have to clear 320px; the
+     bar gap is the only slack left, so it is fluid rather than a flat 10px. */
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow.
+     Two rows only — MobileNav's topbar fills the first, the scroller the
+     second. No page in this family has a bottom bar. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1). Drop the
+   :where() and the same rule scores (0,1,1) — a class plus an element — which
+   silently beats EVERY single-class button rule in this file (0,1,0): every
+   background and every border below would be cancelled at render time. A plain
+   element reset in the donor HTML never had this problem; scoping it to the
+   page root is what raises its specificity. Do not un-wrap these three. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* The only FILLED controls on the surface: the page-head action, a sheet
+   foot's submit pair, and the filter face. Everything else is flat — a fill on
+   every button flattens the hierarchy (owner's call, 2026-07-29). Flat means no
+   FILL, not no frame: the 2px ink border stays everywhere. */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* The destructive pair-mate is a bare danger frame, so the safe action keeps
+   the plate and the irreversible one never looks like the default. */
+.btnDanger { border-color: var(--danger); color: var(--danger); }
+.btnDanger:active { background: var(--danger-soft); }
+/* ============================================================
+   MASTHEAD — the desktop's three stat tiles, re-cut as one
+   numeral + mono kicker + EXACTLY two annotations. All three are
+   computed, so inviting or removing a worker moves them.
+   ============================================================ */
+.wmast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.wmastTop { padding: var(--card-pad); }
+.wmastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.wmastRule { flex: 1; height: 1.5px; background: var(--hair); }
+/* Inter 900 tabular, never mono: mono is the drawing-annotation layer only. */
+.wmastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+/* Two identical auto-flow children and no definite-row item anywhere in this
+   grid, so auto-placement is deterministic — and it survives the ≤360px
+   collapse to a single column, which a hard `grid-column: 2` would not. */
+.wmastCnt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.wmastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+.wmastSub:last-child { border-right: none; }
+.wmastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.wmastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* ============================================================
+   FIND BAR — search over the roster, plus the filter as ONE
+   dropdown. The desktop's three stat tiles are a horizontal rail
+   and a rail cannot survive 320px; the search box is the desktop
+   head's own, moved down to where the list is.
+   ============================================================ */
+.find { display: flex; flex-direction: column; gap: 10px; }
+.srch {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.srch .ic { width: 17px; height: 17px; color: var(--muted); }
+.srchInput {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+}
+.srchInput::placeholder { color: var(--muted-light); }
+.srchX {
+  width: 34px; height: 34px;
+  margin-right: -8px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+.srchX .ic { width: 15px; height: 15px; }
+/* Custom .dd, never a native select: rotating caret, menu on a 2px frame, and
+   the chosen filter reading back on the face as plain text — no pill, no
+   frame, tone-only colouring. */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ddValue.isAll { color: var(--ink); }
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* No offset shadow (owner's call, 2026-07-29). The hard 3px ink drop read as
+     a black slab behind the panel; the 2px ink frame is already enough to lift
+     it off the sheet. */
+  /* Five filter options in a 3-column grid instead of a one-deep list.
+     padding:0 so the CELL borders below are the grid's rules, with no gutter
+     between a cell edge and the menu frame. minmax(0, 1fr), not 1fr: plain 1fr
+     floors at auto, so one long label would widen its column and shove the
+     panel out of its own frame. */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  max-height: 60vh;
+  overflow-y: auto;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. The dividers are border-TOP
+   and border-LEFT with the first row and first column cleared — that way the
+   block reads as one drawn table at ANY item count and never doubles a line
+   against the menu's own 2px frame (a trailing border-right/bottom would). */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so the tick cannot squeeze the label in a ~87px cell. */
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  margin-left: 0;
+  color: var(--blueprint);
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* ============================================================
+   ROSTER — the desktop 7-column list re-cut as row cards.
+   Three lines: monogram + name + actions, how to reach them,
+   then the state badges and the figures.
+   ============================================================ */
+.book {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.wrow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  /* A real drawn rule between records, not a faint wash. */
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.wrow:last-child { border-bottom: none; }
+.wrow:active { background: var(--paper-deep); }
+/* EVERY child is pinned to an explicit cell. Giving .wav and .wrowOpen a
+   `grid-row` but no `grid-column` lets auto-placement drop the ⋮ button into
+   column 2 and push the name out to column 3 — the name renders hard right
+   with the button wedged against the monogram. Definite-row items are placed
+   in their own pass, so they claim columns before the auto items get a turn. */
+.wav {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+/* Not on the crew yet (invited or declined): a dashed frame, the house's
+   "note on a drawing" idiom for something provisional. Deliberately NOT a
+   blueprint plate — three filled plates in seven rows would blow the ~15%
+   accent budget, and the row already carries the state as a badge. */
+.wav.isProvisional {
+  border-style: dashed;
+  border-color: var(--muted-faint);
+  background: var(--paper);
+  color: var(--muted-light);
+}
+.wname {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+  align-self: end;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* The monogram spans rows 1–2, so line 2 belongs to the identity block and
+   sits tight under the name (4px); the whole block is then pushed well clear
+   of the data line below (13px). Same reading order as the proposals ledger —
+   identity, gap, data — reached with an avatar instead of a title. */
+.wmeta {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  margin-top: 4px;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  /* NOT uppercased: an email address you cannot read literally is an email
+     address you mistype. */
+  letter-spacing: 0.04em;
+  color: var(--muted-light);
+}
+.wrowOpen {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -4px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.wrowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.wrowOpen .ic { width: 18px; height: 18px; }
+/* Row 3 spans the whole card so the badges start at the left grid edge and the
+   figures close at the far right. Two groups, not one wrapping flex line: with
+   two badges plus a load count plus a rate, a single line overflows at 320px
+   and drops the RATE to its own row. The badges wrap inside their own column
+   and the figures stay welded together on the right. */
+.wrowFoot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px 10px;
+  margin-top: 13px;
+}
+.wbadges {
+  grid-column: 1;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.wrowFigs {
+  grid-column: 2;
+  display: flex; align-items: baseline; gap: 9px;
+  justify-self: end;
+  white-space: nowrap;
+}
+.badge {
+  display: inline-block;
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Invite state — the page's only status, so the only place status colour is
+   allowed to appear. */
+.badgeOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.badgeWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.badgeDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+/* Role is not a status: it takes the blueprint accent, as on the desktop. */
+.rolePill { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.07); color: var(--blueprint); }
+.wjobs {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+.wrate {
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* Mono is legitimate here: the UNIT is a technical annotation. The amount
+   itself stays Inter 900 tabular. */
+.wrateU {
+  margin-left: 2px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted-light);
+}
+/* A worker with no rate on file reads as a dash, not "$0" — zero is a number,
+   "not set yet" is an absence. */
+.wrate.isZero { color: var(--muted-faint); font-weight: 800; }
+/* ============================================================
+   PAGER + EMPTY STATES
+   ============================================================ */
+.pager { display: flex; align-items: center; gap: 10px; }
+.pagerBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; min-width: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.pagerBtn:active:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.pagerBtn:disabled { opacity: 0.35; }
+.pagerBtn .ic { width: 14px; height: 14px; }
+.pagerInfo {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Empty state — a dashed note, like an annotation on a drawing. Never blank:
+   it says what happened AND what to do next. Two of them, because a filter can
+   exclude everything: "nothing yet" and "no matches" are different problems. */
+.wempty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 28px 18px;
+  text-align: center;
+}
+.wemptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.wemptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.wemptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.wemptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Two elements: the worker sheet (three views — the desktop's ⋮
+   menu, its inspector aside and its remove dialog) and the
+   invite/edit form. A centre-screen modal has no place on a phone.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  /* translateY + visibility, so a closed sheet leaves the tab order and the
+     accessibility tree instead of lurking off-screen. */
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+/* The form is the only sheet that can be opened from another one, so it slides
+   in OVER the departing sheet rather than beside it. */
+.sheetForm { z-index: 83; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px var(--pad-x) 12px;
+  border-bottom: 1.5px solid var(--ink);
+  flex-shrink: 0;
+}
+.sheetHeadTxt { flex: 1; min-width: 0; }
+/* Flat, like every non-head button: a frame and a 44px target, no fill. */
+.sheetBack {
+  width: 44px; height: 44px;
+  margin-left: -6px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+.sheetBack:active { background: var(--paper-deep); }
+.sheetBack .ic { width: 17px; height: 17px; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* 6px, thumb on muted-faint over a transparent track — never painted with
+   --hair. Firefox gets the same two values through its own properties. */
+.sheetBody::-webkit-scrollbar,
+.ddMenu::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-track,
+.ddMenu::-webkit-scrollbar-track { background: transparent; }
+.sheetBody::-webkit-scrollbar-thumb,
+.ddMenu::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+.sheetBody,
+.ddMenu { scrollbar-width: thin; scrollbar-color: var(--muted-faint) transparent; }
+/* Row menu items: icon in a 26px tonal box, title + sub. Two rows arrive
+   DISABLED from real fixture state (no phone on Grant Mueller, no email on
+   Amara Cole) and one is the danger row. */
+.wmenuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.wmenuItem:active:not(:disabled) { background: var(--paper-deep); }
+.wmenuItem:disabled { opacity: 0.45; }
+.wmiIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.wmiIc .ic { width: 14px; height: 14px; }
+.wmiBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.wmiSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.wmiOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.wmiWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.wmiDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.wmenuItemTxt { min-width: 0; }
+.wmenuItemT { display: block; font-size: 15px; font-weight: 700; }
+.wmenuItemS {
+  display: block; margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--muted-light);
+}
+.wmenuItemDanger .wmenuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   RECORD VIEW — the desktop 360px inspector aside, as a sheet
+   view. Field rows, the active-job manifest, and the token
+   portal link the whole page exists to hand over.
+   ============================================================ */
+.recBody { padding: 4px var(--pad-x) 6px; }
+.fldRow { padding: 12px 0; border-bottom: 1.5px solid var(--hair-soft); }
+/* Same label class as the form, one notch denser: a form label needs room to
+   breathe above a 50px input, a read-only value does not. Compound (0,2,0), so
+   it wins over .fldLbl wherever it is declared in the file. */
+.fldRow .fldLbl { margin-bottom: 3px; }
+.linkBox .fldLbl { margin-bottom: 0; }
+.fldRowV { margin-top: 5px; font-size: 15px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+/* Declared AFTER .fldRowV and .wmeta, so both are overridden where they share
+   a property. One class for "this field has nothing in it", used by the row
+   meta line and by every record field. */
+.isMono { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0.04em; }
+.isNone { color: var(--muted-faint); font-style: italic; }
+.jobList { margin-top: 7px; display: flex; flex-direction: column; gap: 6px; }
+.jobRow {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 11px;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  font-size: 13.5px; font-weight: 600;
+}
+.jobRow .ic { width: 13px; height: 13px; color: var(--muted-light); }
+.jobTitle { min-width: 0; overflow-wrap: anywhere; }
+.linkBox {
+  margin-top: 14px;
+  padding: 12px 13px;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+}
+.linkRow { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.linkUrl {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  color: var(--ink-soft);
+}
+.linkBtn {
+  width: 44px; height: 44px;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.linkBtn:active { background: var(--paper); }
+.linkBtn .ic { width: 16px; height: 16px; }
+/* Compound, so it outranks the single-class tone boxes above. The check is the
+   confirmation of a clipboard write that actually happened. */
+.wmiIc.done,
+.linkBtn.done { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+/* ============================================================
+   CONFIRM VIEW — the desktop remove dialog
+   ============================================================ */
+.cfmBody { padding: 16px var(--pad-x) 4px; }
+.cfmTxt { font-size: 14.5px; font-weight: 500; line-height: 1.5; color: var(--muted); }
+/* The house info-banner treatment at note scale, per decisions.md → "Info
+   banner (the Lead Center pattern)": the warning palette, an amber border with
+   a heavier left edge, the soft tone as the fill, NO ink frame and NO offset
+   shadow (a black frame clashed with the amber and was rejected). It is a
+   framed amber note, not a bare accent tab. */
+.cfmWarn {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 14px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--warning);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  font-size: 13px; font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.cfmWarn .ic { width: 18px; height: 18px; color: var(--warning); }
+/* ============================================================
+   INVITE / EDIT FORM — the desktop dialog, rebuilt as a sheet.
+   ============================================================ */
+.formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
+.fld { display: flex; flex-direction: column; }
+.fldLbl {
+  display: block;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.pinput {
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+}
+.pinput::placeholder { color: var(--muted-faint); }
+.pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+/* Email is the worker's login identity, so it is read-only on edit — the field
+   has to LOOK inert, not merely refuse input. */
+.pinput:disabled { background: var(--paper-deep); color: var(--muted); border-color: var(--hair); cursor: not-allowed; }
+.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); line-height: 1.45; }
+.fld.invalid .pinput { border-color: var(--danger); background: var(--danger-soft); }
+/* Role picker — four drawn toggles, 2×2. Four identical auto-flow children and
+   no definite-row item, so auto-placement is deterministic. The selected one
+   takes a blueprint frame and a 8%-blueprint wash rather than an ink slab: it
+   is a selection state, not a fourth filled button on the surface. */
+.roleGrid {
+  display: grid;
+  /* Intrinsic, not breakpoint-driven: 2×2 at 320px, one row of four by the time
+     the sheet is 768px wide, and no rule of its own for the tablet range. */
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.roleBtn {
+  min-height: 48px;
+  padding: 0 10px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 13px; font-weight: 700;
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.roleBtn:active { background: var(--paper-deep); }
+.roleBtn.on { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.08); color: var(--blueprint); font-weight: 800; }
+/* What the invite actually does, in the drawing-annotation voice. */
+.formNote {
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 500;
+  letter-spacing: 0.03em;
+  line-height: 1.55;
+  color: var(--muted-light);
+}
+/* The action pair sits in a beige foot OUTSIDE the scrolling body and reaches
+   the form through form=, so it is always in the thumb zone. Shared by the
+   form, the record view and the confirm view — one action bar, never a
+   parallel style set per view. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 18px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* A record that just changed gets one blue flash, so the row you acted on is
+   findable after the roster re-sorts around it. */
+@keyframes landFlash {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: transparent; }
+}
+.landed { animation: landFlash 0.6s var(--ease-out); }
+/* Scoped to the page — the global kill switch stays the app's business */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+}
+@media (max-width: 520px) {
+  /* The head action stops sharing a line with anything */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .wrate { font-size: 18px; }
+  .formFoot { grid-template-columns: 1fr; }
+}
+@media (max-width: 360px) {
+  .wmastCnt { grid-template-columns: 1fr; }
+  .wmastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .wmastSub:last-child { border-bottom: none; }
+  .wav { width: 34px; height: 34px; font-size: 12px; }
+  /* Two badges plus a load count plus a rate on one 264px line: the badges
+     give up their tracking before they give up their line. */
+  .badge { font-size: 9.5px; letter-spacing: 0.08em; padding: 3px 5px; }
+  .wjobs { font-size: 11px; letter-spacing: 0.06em; }
+}

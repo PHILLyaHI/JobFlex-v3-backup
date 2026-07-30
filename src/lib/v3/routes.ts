@@ -63,7 +63,69 @@ export const V3_PORTED_ROUTES = {
   //
   // NOTE: sibling experiments /mobile-v1 and /mobile-v3 were deleted on
   // 2026-07-24 at the owner's request — mobile-v2 is the surviving direction.
+  //
+  // PROMOTED 2026-07-29: MobileDashboard also serves the LIVE /dashboard URL at
+  // ≤768px, via the media-query switch in
+  // src/components/v3/responsive-shell/responsive-dashboard-shell.tsx (mounted
+  // from src/app/dashboard/layout.tsx). Above 768px /dashboard is still the
+  // desktop BlueprintShell. This URL stays as the direct-review entry point;
+  // both point at the same component, so there is nothing to keep in sync.
   mobileV2: "/mobile-v2",
+  // jobflex-page-styler + mobile-app-ui-design — handheld rebuild of the
+  // Proposals surface, responsive 320–768px. Sibling of mobileV2, same
+  // (mobile) route group and same shell (dark topbar + hamburger drawer +
+  // FAB, white paper). Covers every desktop component: 3 tabs with live
+  // counts and a sliding rule, the per-tab masthead (one numeral + mono
+  // kicker + exactly two annotations), 6 filter chips that inherit their
+  // badge tones, all 7 status badges, ledger row cards (the 7-column table
+  // re-cut for 320px), contract dossiers with BOTH payment variants
+  // (≤5 instalments → columns, 6+ → row table with Remind), completion
+  // tear-sheets with stat strip / checklist / photo boxes / receipt footer,
+  // the "⋮" menu as a bottom sheet (5 tonal boxes + disabled + danger),
+  // pagers and empty states. Donor demo fixture.
+  //
+  // PROMOTED 2026-07-29: same arrangement as mobileV2 — MobileProposals also
+  // serves the LIVE /dashboard/proposals URL at ≤768px through
+  // responsive-dashboard-shell.tsx. Above 768px that URL is unchanged.
+  mobileProposalsV2: "/mobile-proposals-v2",
+  // jobflex-page-styler + mobile-app-ui-design — handheld rebuild of the
+  // Clients surface, responsive 320–768px. Third sibling of mobileV2 and
+  // mobileProposalsV2: same (mobile) route group, same shell (dark topbar with
+  // framed controls + hamburger drawer, cream paper, no FAB). Covers the whole
+  // desktop sheet: CRM head + New client, computed masthead (one numeral +
+  // mono kicker + exactly two annotations), the tag chip rail as ONE dropdown
+  // (plus VIP and Untagged), the 7-column table re-cut as row cards with
+  // initials avatars, VIP / multi-tag / untagged / zero-pipeline states, pager,
+  // BOTH empty states, the "⋮" menu as a bottom sheet (5 tonal boxes, the
+  // no-email row disabled, one danger), and the create-client modal as a sheet
+  // with required-field validation and the drawn VIP toggle. Adds a search box
+  // the desktop leaves to the global topbar — on a phone it is the fast route
+  // to a named client. Donor demo fixture.
+  //
+  // Also serves the LIVE /dashboard/clients URL at ≤768px via
+  // responsive-dashboard-shell.tsx. Above 768px that URL is unchanged.
+  mobileClientsV2: "/mobile-clients-v2",
+  // ── The batch of nine, 2026-07-29 ────────────────────────────────────────
+  // Same skills, same (mobile) route group, same shell — but these are the
+  // first pages built on the EXTRACTED nav
+  // (src/components/v3/mobile-shell/mobile-nav.tsx + sprite.tsx) instead of
+  // carrying a private copy of the drawer, so the chrome is one implementation
+  // across the whole handheld family. One agent per page, built in parallel
+  // against the three shipped siblings as the spec.
+  //
+  // All nine also serve their LIVE /dashboard/* URL at ≤768px via
+  // responsive-dashboard-shell.tsx. Above 768px those URLs are unchanged.
+  // These /mobile-*-v2 URLs stay as direct-review entry points; both point at
+  // the same component, so there is nothing to keep in sync.
+  mobileLeadsV2: "/mobile-leads-v2",
+  mobileProjectsV2: "/mobile-projects-v2",
+  mobileCrmV2: "/mobile-crm-v2",
+  mobileCalendarV2: "/mobile-calendar-v2",
+  mobileJobsV2: "/mobile-jobs-v2",
+  mobileWorkersV2: "/mobile-workers-v2",
+  mobileHireV2: "/mobile-hire-v2",
+  mobileCompanyV2: "/mobile-company-v2",
+  mobileFinancialsV2: "/mobile-financials-v2",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;

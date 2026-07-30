@@ -9,7 +9,10 @@
 // are the reference's; the composition is re-cut for a phone.
 //
 // What changes versus the desktop sheet, and why:
-//  · Sidebar → the locked 5-item tab bar + a context-aware FAB.
+//  · Sidebar → a burger drawer carrying the full nav, plus a 3-item bottom
+//    bar (New Proposal · Settings · Account). The floating FAB it replaced
+//    was removed at the owner's call, 2026-07-29: the action now lives in
+//    the bar, so nothing hovers over the content.
 //  · KPI row of 4 → a masthead hero numeral + a 3-up strip, so one number
 //    owns the screen instead of four competing for it.
 //  · Schedule and jobs move ABOVE revenue: on a phone the question is
@@ -19,11 +22,16 @@
 //    HTML5 drag has no touch equivalent, so the interaction is rebuilt
 //    rather than desktop-gated.
 
+import Image from "next/image";
+import Link from "next/link";
+import type { Route } from "next";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-v2.module.css";
 import {
   LEAD_STAGES,
   NAV_SECTIONS,
+  activeHref,
   PLOT,
   RANGES,
   TODAY,
@@ -140,12 +148,14 @@ export function MobileDashboard() {
   const [range, setRange] = useState<RangeKey>("7d");
   const [leads, setLeads] = useState<Lead[]>(() => seedLeads.map((l) => ({ ...l })));
   const [navOpen, setNavOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState("Overview");
+  /* The lit nav item is DERIVED from the URL, not held in state. It used to be
+     a label string the drawer set on click, which is why clicking a link only
+     moved the highlight and never changed the page. */
+  const activeNav = activeHref(usePathname() ?? "");
   const [banner, setBanner] = useState<"open" | "closing" | "hidden">("open");
   const [sheetLead, setSheetLead] = useState<Lead | null>(null);
   const [landedId, setLandedId] = useState<number | null>(null);
   const [railIdx, setRailIdx] = useState(0);
-  const [fabMini, setFabMini] = useState(false);
 
   /* ---------- viewport height ----------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL
@@ -233,19 +243,16 @@ export function MobileDashboard() {
     };
   }, []);
 
-  /* ---------- Motion: graph-paper parallax + FAB collapse ------------- */
+  /* ---------- Motion: graph-paper parallax ----------------------------
+     The direction-aware FAB collapse that used to share this handler went
+     with the FAB — the bottom bar is a fixed grid row and does not react
+     to scroll. */
   useEffect(() => {
     const host = scrollRef.current;
-    if (!host) return;
-    const reduced = prefersReducedMotion();
+    if (!host || prefersReducedMotion()) return;
     let ticking = false;
-    let last = 0;
     const onScroll = () => {
-      const y = host.scrollTop;
-      if (y > last + 6 && y > 60) setFabMini(true);
-      else if (y < last - 6) setFabMini(false);
-      last = y;
-      if (reduced || ticking) return;
+      if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
         host.style.setProperty("--gy", `${(-(host.scrollTop * 0.06)).toFixed(1)}px`);
@@ -297,7 +304,7 @@ export function MobileDashboard() {
   const onRootClick = useCallback((e: React.MouseEvent) => {
     if (prefersReducedMotion()) return;
     const target = e.target as HTMLElement;
-    const pressSel = `.${styles.segBtn}, .${styles.tbarBtn}, .${styles.cardFootBtn}, .${styles.sheetOpt}, .${styles.sheetCancel}, .${styles.emptyAct}, .${styles.sbFootIc}, .${styles.sbFootAcc}`;
+    const pressSel = `.${styles.segBtn}, .${styles.tbarBtn}, .${styles.cardFootBtn}, .${styles.sheetOpt}, .${styles.sheetCancel}, .${styles.emptyAct}, .${styles.sbFootIc}, .${styles.sbFootAcc}, .${styles.bnavBtn}`;
     const el = target.closest<HTMLElement>(pressSel);
     const cls = el ? styles.pressed : styles.dayPressed;
     const node = el ?? target.closest<HTMLElement>(`.${styles.day}`);
@@ -528,7 +535,7 @@ export function MobileDashboard() {
       {/* ============ TOPBAR ============ */}
       <header className={styles.tbar}>
         <button
-          className={`${styles.tbarBtn} ${styles.tbarBurger}`}
+          className={styles.tbarBtn}
           type="button"
           aria-label="Open navigation"
           aria-expanded={navOpen}
@@ -536,9 +543,16 @@ export function MobileDashboard() {
         >
           <Icon id="i-menu" />
         </button>
-        <svg className={styles.tbarMark} viewBox="0 0 24 24" aria-hidden="true">
-          <use href="#i-logo" />
-        </svg>
+        <span className={styles.tbarMarkBox}>
+          <Image
+            className={styles.tbarMarkImg}
+            src="/jobflex-mark.png"
+            alt=""
+            width={66}
+            height={66}
+            priority
+          />
+        </span>
         <span className={styles.tbarTxt}>
           <span className={styles.tbarName}>JOBFLEX</span>
           <span className={styles.tbarSub}>Contractor OS</span>
@@ -928,13 +942,29 @@ export function MobileDashboard() {
         </div>
       </main>
 
-      {/* ============ FAB — primary action ============ */}
-      <button className={`${styles.fab} ${fabMini ? styles.mini : ""}`} type="button">
-        <Icon id="i-plus" />
-        <span className={styles.fabLbl}>
-          <span className={styles.fabLblInner}>New Estimate</span>
-        </span>
-      </button>
+      {/* ============ BOTTOM NAV ============
+          A grid row of .app, so it never overlaps the scroller. Three cells:
+          the primary action, then the two account-level destinations. */}
+      <nav className={styles.bottomNav} aria-label="Primary actions">
+        <button className={`${styles.bnavBtn} ${styles.primary}`} type="button">
+          <span className={styles.bnavPlate}>
+            <Icon id="i-fileplus" />
+          </span>
+          <span className={styles.bnavLbl}>New Proposal</span>
+        </button>
+        <button className={styles.bnavBtn} type="button">
+          <span className={styles.bnavPlate}>
+            <Icon id="i-gear" />
+          </span>
+          <span className={styles.bnavLbl}>Settings</span>
+        </button>
+        <button className={styles.bnavBtn} type="button">
+          <span className={styles.bnavPlate}>
+            <Icon id="i-user" />
+          </span>
+          <span className={styles.bnavLbl}>Account</span>
+        </button>
+      </nav>
 
       {/* ============ NAV DRAWER (the reference sidebar) ============ */}
       <div
@@ -944,9 +974,9 @@ export function MobileDashboard() {
       />
       <aside className={`${styles.sb} ${navOpen ? styles.open : ""}`} aria-label="Main navigation" aria-hidden={!navOpen}>
         <div className={styles.sbHead}>
-          <svg className={styles.sbMark} viewBox="0 0 24 24" aria-hidden="true">
-            <use href="#i-logo" />
-          </svg>
+          <span className={styles.sbMarkBox}>
+            <Image className={styles.sbMarkImg} src="/jobflex-mark.png" alt="" width={68} height={68} />
+          </span>
           <div className={styles.sbHeadTxt}>
             <div className={styles.sbHeadName}>JOBFLEX</div>
             <div className={styles.sbHeadSub}>Contractor OS</div>
@@ -966,24 +996,38 @@ export function MobileDashboard() {
           {NAV_SECTIONS.map((sec) => (
             <div key={sec.label}>
               <div className={styles.sbSecLabel}>{sec.label}</div>
-              {sec.items.map((item) => (
-                <a
-                  key={item.label}
-                  className={`${styles.sbLink} ${activeNav === item.label ? styles.active : ""}`}
-                  href="#"
-                  aria-current={activeNav === item.label ? "page" : undefined}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setActiveNav(item.label);
-                    // Let the indicator settle on the new item before the
-                    // drawer slides away — otherwise the move is never seen.
-                    window.setTimeout(() => setNavOpen(false), 180);
-                  }}
-                >
-                  <Icon id={item.icon} />
-                  {item.label}
-                </a>
-              ))}
+              {sec.items.map((item) => {
+                const isActive = item.href === activeNav;
+                const cls = `${styles.sbLink} ${isActive ? styles.active : ""}`;
+                // Surfaces with no page yet stay dead, but they must not jump
+                // the scroller to the top of the document on the way — the
+                // drawer just closes.
+                return item.href === "#" ? (
+                  <a
+                    key={item.label}
+                    className={cls}
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setNavOpen(false);
+                    }}
+                  >
+                    <Icon id={item.icon} />
+                    {item.label}
+                  </a>
+                ) : (
+                  <Link
+                    key={item.label}
+                    className={cls}
+                    href={item.href as Route}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => setNavOpen(false)}
+                  >
+                    <Icon id={item.icon} />
+                    {item.label}
+                  </Link>
+                );
+              })}
             </div>
           ))}
         </nav>
@@ -1057,10 +1101,8 @@ function Sprite() {
   return (
     <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
       <defs>
-        <symbol id="i-logo" viewBox="0 0 24 24">
-          <path d="M15 4v11a4 4 0 0 1-4 4 4 4 0 0 1-4-4" />
-          <path d="M11 4h6" />
-        </symbol>
+        {/* i-logo (the drawn "J" sketch) is gone — both mastheads now render the
+            real product mark from /jobflex-mark.png. */}
         <symbol id="i-search" viewBox="0 0 24 24">
           <circle cx="11" cy="11" r="7" />
           <path d="m21 21-4.3-4.3" />
@@ -1130,6 +1172,18 @@ function Sprite() {
         <symbol id="i-plus" viewBox="0 0 24 24">
           <path d="M5 12h14" />
           <path d="M12 5v14" />
+        </symbol>
+        {/* lucide file-plus — "new proposal" reads better as a document being
+            created than as a bare "+", which is what the FAB had to settle for */}
+        <symbol id="i-fileplus" viewBox="0 0 24 24">
+          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" />
+          <path d="M14 2v6h6" />
+          <path d="M12 18v-6" />
+          <path d="M9 15h6" />
+        </symbol>
+        <symbol id="i-user" viewBox="0 0 24 24">
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
         </symbol>
         <symbol id="i-bell" viewBox="0 0 24 24">
           <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />

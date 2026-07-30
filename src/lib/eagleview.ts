@@ -298,8 +298,24 @@ export interface RoofFace {
   orientation: number; // degrees
   lineIds: string[];
 }
+// Where a model's geometry came from. "eagleview" is an ordered, human-QC'd
+// report — contract-grade. "synthetic" is reconstructed from Google Solar DSM
+// imagery (src/lib/roofRecon.ts): free and instant, but an ESTIMATE, and gated
+// out of the pricing path in the estimator UI.
+export type RoofModelSource = "eagleview" | "synthetic";
+
+export interface RoofProvenance {
+  imageryQuality: string; //  Solar API HIGH / MEDIUM / LOW
+  imageryDate?: string; //    e.g. "2023-07-11" — can be years stale
+  pixelSizeM: number; //      DSM ground sample distance
+  facetsFound: number;
+  facetsDropped: number;
+}
+
 export interface RoofModel {
   reportId?: number;
+  source?: RoofModelSource; //     absent = "eagleview" (all pre-existing models)
+  provenance?: RoofProvenance; // synthetic models only
   location: {
     address?: string;
     city?: string;

@@ -182,43 +182,17 @@ export const RANGES: { key: RangeKey; label: string }[] = [
  * burger. This replaced the bottom tab bar at the owner's call (2026-07-24).
  * Account is deliberately NOT in the nav: it lives in the drawer's pinned
  * footer, same as the desktop shell.
+ *
+ * Re-exported from the shared blueprint nav map (2026-07-29) rather than
+ * duplicated. The copy that used to live here carried no href at all, which is
+ * exactly why every drawer link was dead and the drawer could not change
+ * pages. Both mobile surfaces import NAV_SECTIONS from this module, so
+ * re-exporting keeps their import paths untouched while handing them the real
+ * routes — and there is now one list to edit, not two to keep in step.
  */
-export const NAV_SECTIONS = [
-  {
-    label: "Work",
-    items: [
-      { label: "Overview", icon: "i-grid" },
-      { label: "Proposals", icon: "i-file" },
-      { label: "Clients", icon: "i-users" },
-      { label: "Leads", icon: "i-target" },
-      { label: "Projects", icon: "i-folder" },
-      { label: "CRM", icon: "i-crm" },
-    ],
-  },
-  {
-    label: "Delivery",
-    items: [
-      { label: "Calendar", icon: "i-cal" },
-      { label: "Jobs", icon: "i-jobs" },
-      { label: "Workers", icon: "i-hardhat" },
-      { label: "Hire", icon: "i-userplus" },
-      { label: "Company", icon: "i-building" },
-    ],
-  },
-  { label: "Money", items: [{ label: "Financials", icon: "i-bank" }] },
-  {
-    label: "Automation",
-    items: [
-      { label: "Smart Proposal", icon: "i-bulb" },
-      { label: "Roof estimator", icon: "i-roof" },
-      { label: "Fence estimator", icon: "i-fence" },
-      { label: "Phone", icon: "i-phone" },
-      { label: "Messages", icon: "i-msg" },
-      { label: "Announcements", icon: "i-megaphone" },
-      { label: "Reviews", icon: "i-thumb" },
-      { label: "Trade board", icon: "i-board" },
-      { label: "Referrals", icon: "i-gift" },
-      { label: "Reports", icon: "i-chart" },
-    ],
-  },
-] as const;
+export {
+  NAV_SECTIONS,
+  activeHref,
+  type NavItem,
+  type NavSection,
+} from "@/components/v3/blueprint-shell/nav-map";

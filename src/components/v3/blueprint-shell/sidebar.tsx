@@ -15,67 +15,12 @@ import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
 
-type NavItem = { label: string; icon: string; href: string };
-type NavSection = { label: string; items: NavItem[] };
+// The nav map and the active-item resolver moved to ./nav-map.ts on 2026-07-29
+// so the mobile hamburger drawers could share them instead of carrying a
+// second, href-less copy. Re-exported here for existing importers.
+import { NAV_SECTIONS, activeHref } from "./nav-map";
 
-// Donor navigation map (design-system.md → "Sidebar navigation map").
-// `href: "#"` marks a surface that has no page yet — those keep the donor's
-// dead-link behavior (click is swallowed, indicator still slides).
-export const NAV_SECTIONS: NavSection[] = [
-  {
-    label: "Work",
-    items: [
-      { label: "Overview", icon: "i-grid", href: "/dashboard" },
-      { label: "Proposals", icon: "i-file", href: "/dashboard/proposals" },
-      { label: "Clients", icon: "i-users", href: "/dashboard/clients" },
-      { label: "Leads", icon: "i-target", href: "/dashboard/leads" },
-      { label: "Projects", icon: "i-folder", href: "/dashboard/projects" },
-      { label: "CRM", icon: "i-crm", href: "/dashboard/crm" },
-    ],
-  },
-  {
-    label: "Delivery",
-    items: [
-      { label: "Calendar", icon: "i-cal", href: "/dashboard/calendar" },
-      { label: "Jobs", icon: "i-jobs", href: "/dashboard/jobs" },
-      { label: "Workers", icon: "i-hardhat", href: "/dashboard/workers" },
-      { label: "Hire", icon: "i-userplus", href: "/dashboard/hire" },
-      { label: "Company", icon: "i-building", href: "/dashboard/company" },
-    ],
-  },
-  {
-    label: "Money",
-    items: [{ label: "Financials", icon: "i-bank", href: "/dashboard/financials" }],
-  },
-  {
-    label: "Automation",
-    items: [
-      { label: "Smart Proposal", icon: "i-bulb", href: "/dashboard/advanced-ai" },
-      { label: "Roof estimator", icon: "i-roof", href: "#" },
-      { label: "Fence estimator", icon: "i-fence", href: "#" },
-      { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
-      { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },
-      { label: "Announcements", icon: "i-megaphone", href: "/dashboard/announcements" },
-      { label: "Reviews", icon: "i-thumb", href: "/dashboard/reviews" },
-      { label: "Trade board", icon: "i-board", href: "/dashboard/trade" },
-      { label: "Referrals", icon: "i-gift", href: "/dashboard/referrals" },
-      { label: "Reports", icon: "i-chart", href: "/dashboard/reports" },
-    ],
-  },
-];
-
-/** Longest-prefix match so child routes keep their parent item lit. */
-function activeHref(pathname: string): string | null {
-  let best: string | null = null;
-  for (const section of NAV_SECTIONS) {
-    for (const item of section.items) {
-      if (item.href === "#") continue;
-      const hit = pathname === item.href || pathname.startsWith(item.href + "/");
-      if (hit && (best === null || item.href.length > best.length)) best = item.href;
-    }
-  }
-  return best;
-}
+export { NAV_SECTIONS };
 
 export function Sidebar() {
   const pathname = usePathname() ?? "";

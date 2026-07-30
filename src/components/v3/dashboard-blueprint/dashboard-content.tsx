@@ -10,15 +10,11 @@
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
 
-import { useEffect } from "react";
+import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initDashboardContent } from "./blueprint-behavior";
 
 export function DashboardContent() {
-  useEffect(() => {
-    const content = document.querySelector<HTMLElement>(".jf-blueprint .content");
-    if (!content) return;
-    return initDashboardContent(content);
-  }, []);
+  useBlueprintContent(initDashboardContent);
 
   return (
     <>

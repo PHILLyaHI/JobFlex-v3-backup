@@ -28,6 +28,69 @@
 
 @keyframes press2 { 0% { transform: scale(0.97); } 100% { transform: scale(1); } }
 
+/* ── Financials chart head-stat swap ────────────────────────────────
+   The Revenue vs Expenses strip retargets from the 12-month roll-up to a single
+   month on hover. Each figure replays this 150ms drop-in when its text changes,
+   so a swap between two similar months is still visible. Declared here for the
+   same reason as the keyframes above: names inside the modules pipeline get
+   hashed, and financials-behavior toggles the class by literal name. */
+@keyframes finHsSwap {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Create-dialog keyframes ─────────────────────────────────────────
+   NOT donor values — the donor ships no create form. Both durations sit in
+   the Motion System "Balanced" UI band (250–350ms) on the primary ease-out
+   curve; the scrim is a plain 150ms fade, as everywhere else in the system.
+   They live here for the same reason the donor's keyframes do: Lightning CSS
+   rejects @keyframes inside the modules pipeline, and the names must stay
+   literal because the page CSS references them by name. Shared by the
+   Projects / Clients / Jobs create dialogs (`.mdl`). */
+
+@keyframes mdlBgIn { from { opacity: 0; } to { opacity: 1; } }
+
+@keyframes mdlBoxIn { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+
+@keyframes mdlBgOut { from { opacity: 1; } to { opacity: 0; } }
+
+@keyframes mdlBoxOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px) scale(0.985); } }
+
+/* ── Dialog enter/exit, published for EVERY blueprint page ───────────
+   Three page modules (Jobs / Clients / Projects) already carried the enter
+   animation on their own `.mdl-bg` / `.mdl-box` rules; Workers and Leads
+   carried none, so their dialogs popped in hard. And no page had an EXIT at
+   all — `.open` came off and `display: none` cut the dialog mid-frame.
+
+   Both halves live here instead, on `.jf-blueprint .content .mdl.open > …`
+   (4 classes). That outranks every module's 3-class `.bp .content .mdl-box`
+   regardless of CSS import order, which is the whole point: the modules'
+   `animation` shorthands are shadowed by an identical value while their
+   width / border / shadow declarations are untouched.
+
+   `.mdl--closing` holds `display: flex` for the length of the exit so the
+   box can animate out before it is unmounted; mdl-motion.ts drops both
+   classes when the timer lands. Durations are the Motion System UI band
+   (enter 280ms, exit a deliberately shorter 190ms — dismissal should feel
+   quicker than arrival). */
+
+.jf-blueprint .content .mdl.open > .mdl-bg { animation: mdlBgIn 150ms linear; }
+.jf-blueprint .content .mdl.open > .mdl-box { animation: mdlBoxIn 280ms var(--ease-out); }
+
+.jf-blueprint .content .mdl.mdl--closing { display: flex; }
+.jf-blueprint .content .mdl.mdl--closing > .mdl-bg { animation: mdlBgOut 190ms linear forwards; }
+.jf-blueprint .content .mdl.mdl--closing > .mdl-box { animation: mdlBoxOut 190ms var(--ease-out) forwards; }
+
+/* A dialog on its way out must not swallow clicks aimed at the page behind it. */
+.jf-blueprint .content .mdl.mdl--closing { pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .content .mdl.open > .mdl-bg,
+  .jf-blueprint .content .mdl.open > .mdl-box,
+  .jf-blueprint .content .mdl.mdl--closing > .mdl-bg,
+  .jf-blueprint .content .mdl.mdl--closing > .mdl-box { animation: none; }
+}
+
 /* ── Token arbitration between the two donors ────────────────────────
    The shared shell carries BOTH page modules' `.bp` rules, and the two
    donors disagree on exactly two tokens. They only ever matter inside page
@@ -59,6 +122,89 @@ html:has(.jf-blueprint),
 body:has(.jf-blueprint) {
   height: 100%;
   overflow: hidden;
+}
+
+/* ── Address suggestion dropdown (blueprint-shell/places-suggest) ────
+   THE ONE BLOCK IN THIS FILE THAT IS NOT SCOPED UNDER `.jf-blueprint`, and it
+   has to be: the list is appended to `<body>`, deliberately OUTSIDE the shell
+   root. FLUID SCALE puts `zoom` on that root, and `zoom` rescales
+   `position: fixed` descendants — so a popup positioned from
+   `getBoundingClientRect()` (already zoomed) and placed inside the zoomed
+   subtree gets the scale applied twice and lands in the wrong place. On `<body>`
+   the rect coordinates and the fixed frame agree 1:1. Body also puts it beyond
+   any card's `overflow: hidden` and out of every stacking context.
+
+   `.bp-sug` is a namespaced class, so an unscoped selector is safe. Tokens
+   resolve from `:root` in globals.css, which is blueprint app-wide. `#i-pin`
+   resolves against the shell's sprite because SVG `href="#id"` is
+   document-scoped, not subtree-scoped. */
+
+.bp-sug {
+  position: fixed;
+  z-index: 130;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 288px;
+  overflow-y: auto;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+  display: none;
+}
+.bp-sug.open { display: block; }
+.bp-sug-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  transition: background 0.12s;
+}
+.bp-sug li + li .bp-sug-item { border-top: 1.5px solid var(--ink-line); border-top-left-radius: 0; border-top-right-radius: 0; }
+.bp-sug-item:hover, .bp-sug-item.on { background: var(--accent-soft); }
+.bp-sug-ic {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--ink-faint);
+}
+.bp-sug-item.on .bp-sug-ic, .bp-sug-item:hover .bp-sug-ic { color: var(--accent); }
+.bp-sug-txt { min-width: 0; flex: 1; }
+.bp-sug-main {
+  display: block;
+  font-family: var(--font-sans), sans-serif;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The "city, state" tail is the drawing-annotation layer — mono, quiet. */
+.bp-sug-sub {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Scrollbar environment restore ───────────────────────────────── */

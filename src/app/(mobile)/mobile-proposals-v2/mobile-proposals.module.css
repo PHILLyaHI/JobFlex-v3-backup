@@ -1,0 +1,914 @@
+/* ============================================================
+   MOBILE PROPOSALS (mobile-proposals-v2) — Blueprint system
+   Ported from the scratchpad donor
+   jobflex-proposals-mobile-blueprint.html. Tokens, palette, type
+   scale and Motion System "Balanced" are the reference dashboard's;
+   the proposals vocabulary (masthead, ledger rows, dossier cards,
+   tear-sheets, tonal menu boxes) follows design-system.md →
+   "Proposals page patterns". Fully scoped — app tokens untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and the sibling mobile-v2 module (owner's call,
+     2026-07-29 — reverses the 2026-07-24 white-mobile divergence). paper-deep
+     moves with it so the zoned strips stay a shade RECESSED from the sheet
+     rather than lighter than it. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  --topbar-h: 56px;
+  /* Burger + mark + wordmark + search + bell have to clear 320px; the bar gap
+     is the only slack left, so it is fluid. Same value as mobile-v2. */
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1).
+   Written as `.app button` it scored (0,1,1) and silently beat EVERY
+   single-class button rule in this file (0,1,0) — every background and every
+   border declared below was being cancelled at render time. A plain
+   `button {}` reset in the donor HTML never had this problem; scoping it to
+   the page is what raised its specificity. Do not un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* ============================================================
+   MASTHEAD — one numeral per tab + mono kicker + EXACTLY two
+   annotations. 320ms slide-in on tab change.
+   ============================================================ */
+.pmast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.pmastTop { padding: var(--card-pad); }
+.pmastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.pmastRule { flex: 1; height: 1.5px; background: var(--hair); }
+.pmastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.pmastVal.isGood { color: var(--success); }
+.pmastCnt {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.pmastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+.pmastSub:last-child { border-right: none; }
+.pmastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.pmastSubV { font-size: 23px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.005em; }
+@keyframes mastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.slide { animation: mastIn 320ms var(--ease-out); }
+/* ============================================================
+   TABS — 3 segments, sliding blueprint rule, live counts
+   ============================================================ */
+.ptabs {
+  position: relative;
+  display: grid;
+  /* minmax(0, 1fr), not 1fr: .ptabInd is width 33.3333% translated by
+     index * 100%, so the indicator is only ever under its tab if the columns
+     are EXACT thirds. Plain 1fr floors at auto, so a label wider than its
+     share widens its column and silently desynchronises the plate. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+/* Label and count sit on ONE line at every width (owner's call, 2026-07-29 —
+   reverses the earlier stacked treatment). That is only affordable because the
+   label is back to sentence case and down to 13px: "Accepted" in mixed case is
+   ~55px against the ~97px a 320px screen gives each of three tabs, so with a
+   5px gap, a 22px count box and 8px of padding the row lands at ~90px with
+   room to spare. Caps at 17px needed ~135px, which is why it used to stack. */
+.ptab {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 48px;
+  /* Side padding drops to 3px to pay for the wider gap: at 320px each tab has
+     only ~97px, and "Accepted" (~57px) + 7px gap + the 22px badge + 6px of
+     padding lands at ~92px. The gap is what the eye reads as breathing room,
+     so it gets the budget. */
+  padding: 0 3px;
+  font-size: 13px; font-weight: 800;
+  letter-spacing: 0; text-transform: none;
+  line-height: 1;
+  color: var(--muted);
+  border-right: 1.5px solid var(--ink);
+  transition: color 0.16s, background 0.16s;
+}
+.ptab:last-child { border-right: none; }
+.ptab.active { color: var(--ink); background: var(--paper-deep); }
+.ptabCount {
+  display: inline-flex; align-items: center; justify-content: center;
+  /* A hair taller than the 13px label so the digits sit in a real badge
+     rather than being crushed to the cap height. */
+  height: 19px;
+  min-width: 22px;
+  padding: 0 3px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  line-height: 1;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.ptab.active .ptabCount { border-color: var(--blueprint); color: var(--blueprint); }
+.ptabInd {
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 33.3333%; height: 3px;
+  background: var(--blueprint);
+  transition: transform 0.34s var(--ease-soft);
+  pointer-events: none;
+}
+/* ============================================================
+   FILTER — one dropdown instead of a six-chip rail (owner's call,
+   2026-07-29). Custom .dd, never a native select: a button with a
+   rotating arrow and a menu on a 2px frame with a 3px offset
+   shadow. The chosen filter reads back on the button face.
+   ============================================================ */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret {
+  color: var(--muted);
+  transition: transform 0.2s var(--ease-out);
+}
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+/* The chosen filter reads back on the face as plain text — no pill, no frame.
+   margin-left:auto sends it (and the caret after it) to the right edge, so the
+   face reads: icon + FILTER hard left ......... Draft · 3 ▼ hard right. The
+   value and its count stay joined as one unit. */
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Only the tone carries the status now that the frame is gone */
+.ddValue[data-f="ALL"] { color: var(--ink); }
+.ddValue[data-f="SENT"] { color: var(--blueprint); }
+.ddValue[data-f="VIEWED"] { color: var(--blueprint); }
+.ddValue[data-f="DECLINED"] { color: var(--danger); }
+.ddValue[data-f="EXPIRED"] { color: var(--warning); }
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* No offset shadow (owner's call, 2026-07-29). The hard 3px ink drop read as
+     a black slab behind the panel; the 2px ink frame is already enough to lift
+     it off the sheet. */
+  /* Six filter options in a 3-column grid instead of a one-deep list.
+     padding:0 so the CELL borders below are the grid's rules, with no gutter
+     between a cell edge and the menu frame. */
+  display: grid;
+  /* minmax(0, 1fr): plain 1fr floors at auto, so one long label could push its
+     column past a third and shove the panel out of its own frame. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. The dividers are border-TOP
+   and border-LEFT with the first row and first column cleared — that way the
+   block reads as one drawn table at ANY item count and never doubles a line
+   against the menu's own 2px frame (a trailing border-right/bottom would). */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  margin-left: 0;
+  color: var(--blueprint);
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* ============================================================
+   STATUS BADGES — 1.5px base border + soft fill + caps.
+   Sent = sky, Viewed = deep blueprint: both blue, instantly apart.
+   ============================================================ */
+.pstatus {
+  display: inline-block;
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.pstatusSent { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.pstatusViewed { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.pstatusAccepted { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.pstatusDeclined { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.pstatusExpired { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.pstatusPaid { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+/* ============================================================
+   LEDGER (ALL tab). The desktop 7-column table cannot survive
+   320px, so each record becomes a row card: title + actions, then
+   status/client/amount, then the mono meta line.
+   ============================================================ */
+.pledger {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+/* Three lines only: identity, who/where, then status + price. The divider
+   is a real drawn rule (1.5px ink — the weight decisions.md reserves for
+   dense ledger rows) rather than a faint wash, so the records read as
+   separate documents. */
+.prow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.prow:last-child { border-bottom: none; }
+.prow:active { background: var(--paper-deep); }
+.prowId {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted-light);
+  margin-bottom: 5px;
+}
+.prowTitle {
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+/* Rows 2 and 3 are ONE group: who/where sits tight above the badge+price
+   line, and the whole group is pushed well clear of the title. Reading top
+   to bottom you get identity, then a gap, then the record's data — instead
+   of three evenly-spaced lines that all compete.
+   Both span 1/-1 so they start at the card's left grid edge rather than
+   indenting under the title column. */
+.prowWho {
+  grid-column: 1 / -1;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+/* Row 3: badge leads, price closes at the far right. align-items:center puts
+   the badge, the view count and the amount on one shared optical axis even
+   though all three have different cap heights. */
+.prowFoot {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 5px;
+}
+.prowMono {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.prowMoney {
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.prowOpen {
+  width: 44px; height: 44px;
+  margin: -6px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.prowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.prowOpen .ic { width: 18px; height: 18px; }
+/* ============================================================
+   PAGER + EMPTY STATE
+   ============================================================ */
+.pager { display: flex; align-items: center; gap: 10px; }
+.pagerBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; min-width: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.pagerBtn:active:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.pagerBtn:disabled { opacity: 0.35; }
+.pagerBtn .ic { width: 14px; height: 14px; }
+.pagerInfo {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Empty state — a dashed note, like an annotation on a drawing */
+.pempty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 26px 18px;
+  text-align: center;
+  font-size: 14.5px; font-weight: 500;
+  color: var(--muted);
+  line-height: 1.5;
+}
+/* ============================================================
+   ACCEPTED — contract dossier cards. Zoning: white header →
+   beige payment strip → beige action bar.
+   ============================================================ */
+.pstack { display: flex; flex-direction: column; gap: var(--gap); }
+.pjob {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.pjobHead { padding: var(--card-pad); }
+.pjobTitle {
+  font-size: clamp(18px, 5.6vw, 22px); font-weight: 900;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  line-height: 1.15;
+}
+/* Same grouping as the ledger row: the sub line sits tight above the contract
+   value and the pair is pushed clear of the title, so the two card types read
+   with one rhythm instead of two. */
+.pjobSub {
+  margin-top: 16px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.pjobTotal { margin-top: 6px; }
+.pjobTotalL {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.pjobTotalV {
+  font-size: clamp(22px, 7vw, 28px); font-weight: 900;
+  letter-spacing: -0.005em;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+/* Payments: 1–5 instalments become columns, 6+ becomes a row table.
+   Intrinsic grid, so nothing spills out of the card at any width. */
+.pcols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.pcol {
+  padding: 12px var(--card-pad) 13px;
+  border-right: 1.5px solid var(--hair);
+  border-bottom: 1.5px solid var(--hair);
+}
+.pcolLbl {
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.pcolVal { font-size: 21px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.pcolSub {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.psched { border-top: 1.5px solid var(--ink); background: var(--paper-deep); }
+.pschedRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding: 10px var(--card-pad);
+  border-bottom: 1.5px solid var(--hair);
+}
+.pschedRow:last-child { border-bottom: none; }
+.pschedLbl { font-size: 14.5px; font-weight: 700; }
+.pschedAmt { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pschedDue {
+  grid-column: 1;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.pschedRem {
+  grid-column: 2;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  justify-self: end;
+}
+.pschedRem:active { background: var(--blueprint); color: #fff; border-color: var(--blueprint); }
+/* A 2×2 grid, not a wrapping flex row: the four actions then share exact
+   column edges, so the dividers line up into one cross instead of drifting.
+   Dividers are real ink rules (was --hair, near-invisible). Labels sit hard
+   left — centred labels read as a toolbar, not as a list of actions. */
+.pjobFoot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.pjobAct {
+  min-height: 54px;
+  display: inline-flex; align-items: center; justify-content: flex-start; gap: 9px;
+  padding: 0 14px;
+  border-right: 1.5px solid var(--ink);
+  border-bottom: 1.5px solid var(--ink);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-soft);
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+/* Close the outer edges — the card frame already draws those sides */
+.pjobAct:nth-child(2n) { border-right: none; }
+.pjobAct:nth-last-child(-n + 2) { border-bottom: none; }
+.pjobAct .ic { width: 18px; height: 18px; }
+.pjobAct:active { background: var(--paper-deep); color: var(--ink); }
+.pjobActAccent { color: var(--blueprint); }
+.pjobActOk { color: var(--success); }
+/* ============================================================
+   COMPLETED — tear-sheets. Least dense block of the funnel:
+   bigger sheet, 4px shadow.
+   ============================================================ */
+.psheets { display: flex; flex-direction: column; gap: var(--gap); }
+.psheet {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--shadow);
+  overflow: hidden;
+}
+.psheetHead { padding: var(--card-pad); }
+.psheetStamp {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-bottom: 12px;
+  padding: 5px 9px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.18em; text-transform: uppercase;
+}
+.psheetStamp .ic { width: 13px; height: 13px; }
+/* The stat strip reuses the SAME .pcols/.pcol classes as Accepted —
+   never a parallel style set for an identical block, that is how
+   typography drifts. */
+.pcolsSheet .pcolVal { font-size: 17px; }
+.psheetBody { padding: var(--card-pad); border-top: 1.5px solid var(--ink); }
+.psheetSecl {
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.pchk { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.pchkIc {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.pchkIc .ic { width: 12px; height: 12px; }
+.pchkLbl { font-size: 14.5px; font-weight: 600; flex-shrink: 0; }
+.pchkLead { flex: 1; border-bottom: 1px dashed var(--muted-faint); min-width: 12px; }
+.pchkAmt { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.psheetPhotos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+.photoBox {
+  min-height: 116px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border: 1px dashed var(--muted-faint);
+  border-radius: 4px;
+  background: rgba(10, 10, 10, 0.03);
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.photoBox .ic { width: 20px; height: 20px; }
+.psheetFoot {
+  padding: var(--card-pad);
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.psheetBanklbl {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.psheetSend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.pinput {
+  min-height: 44px;
+  padding: 0 11px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 14.5px; font-weight: 500;
+  color: var(--ink);
+  min-width: 0;
+  grid-column: 1 / -1;
+}
+.pinput::placeholder { color: var(--muted-light); }
+/* Stamp button — primary sheet actions. background-clip stops the
+   light-blue AA fringe on the accent variant. */
+.btnStamp {
+  min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 0 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background-clip: padding-box;
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.btnStamp .ic { width: 16px; height: 16px; }
+.btnStamp:active { transform: translate(2px, 2px); box-shadow: none; }
+.btnStampAccent { background: var(--blueprint); color: #fff; border-color: var(--ink); }
+/* ============================================================
+   ROW ACTIONS SHEET — the desktop "⋮" menu rebuilt as a bottom
+   sheet: icons in 26px tonal boxes, one disabled item and one
+   danger item.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 86%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle {
+  font-size: 18px; font-weight: 900;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  line-height: 1.2;
+}
+.sheetBody { overflow-y: auto; }
+.pmenuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.pmenuItem:active:not(:disabled) { background: var(--paper-deep); }
+.pmenuItem:disabled { opacity: 0.45; }
+.pmiIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.pmiIc .ic { width: 14px; height: 14px; }
+.pmiBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.pmiSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.pmiOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.pmiWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.pmiDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.pmenuItemT { font-size: 15px; font-weight: 700; display: block; }
+.pmenuItemS { margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); display: block; }
+.pmenuItemDanger .pmenuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+@keyframes flashOk {
+  0% { background: var(--success-soft); }
+  100% { background: transparent; }
+}
+.flashOk { animation: flashOk 0.6s var(--ease-out); }
+/* Scoped to the page — the global kill switch stays the app's business */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+
+  /* Compact density on true phones */
+  .pcol { padding: 11px 14px 12px; }
+  .pschedRow { padding: 9px 14px; }
+}
+/* The tab no longer stacks below 460px: at 13px sentence case the label and
+   its count fit on one line down to 320px, which is the whole point of the
+   smaller type. Do not reintroduce a flex-direction override here. */
+@media (max-width: 520px) {
+  /* The header actions stop competing for one line */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .prowMoney { font-size: 18px; }
+  .psheetPhotos { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 360px) {
+  .pmastCnt { grid-template-columns: 1fr; }
+  .pmastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .pmastSub:last-child { border-bottom: none; }
+}

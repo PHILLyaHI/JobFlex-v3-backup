@@ -37,7 +37,15 @@
   --shadow-md: 4px 4px 0 rgba(10, 10, 10, 0.08);
 
   /* ─── motion ──────────────────────────────────── */
+  /* The Motion System "Balanced" curve set (DESIGN.md). `--ease` predates the
+     blueprint swap and is kept as the generic curve; the three named curves
+     below are the system's own vocabulary and are what new work should use.
+     `--ease-out` in particular was already referenced by the financials gauge
+     before it was ever declared, so it silently resolved to the UA default. */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);   /* primary */
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);   /* light overshoot — indicators, knobs */
+  --ease-draw: cubic-bezier(0.4, 0, 0.2, 1);       /* line drawing */
 }
 
 .dark {

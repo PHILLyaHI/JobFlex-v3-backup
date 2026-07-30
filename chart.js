@@ -1,0 +1,21 @@
+const vals=[0,0,1850,0,0,3200,0,2400,0,0,5600,0,0,0,1200,4800,0,0,7400,0,0,2600,0,3900,0,0,6100,0,0,4200];
+const W=640,H=210,PAD={top:26,right:16,bottom:26,left:16};
+const innerW=W-PAD.left-PAD.right, innerH=H-PAD.top-PAD.bottom;
+const max=Math.max(...vals,1), n=vals.length-1;
+const pt=(i,v)=>[PAD.left+(i/n)*innerW, PAD.top+innerH-(v/max)*innerH];
+const pts=vals.map((v,i)=>pt(i,v));
+const line=pts.map(([x,y],i)=>`${i===0?'M':'L'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+const area=`${line} L${(PAD.left+innerW).toFixed(1)} ${PAD.top+innerH} L${PAD.left} ${PAD.top+innerH} Z`;
+const last=pts[pts.length-1];
+let peakIdx=0; vals.forEach((v,i)=>{if(v>vals[peakIdx])peakIdx=i;});
+const peak=pts[peakIdx];
+console.log('TOTAL='+vals.reduce((a,b)=>a+b,0));
+console.log('PEAK='+vals[peakIdx]+' idx='+peakIdx);
+console.log('LINE='+line);
+console.log('AREA='+area);
+console.log('LAST='+last[0].toFixed(1)+','+last[1].toFixed(1));
+console.log('PEAKPT='+peak[0].toFixed(1)+','+peak[1].toFixed(1));
+console.log('LABELX='+Math.min(peak[0]+5,W-90).toFixed(1));
+// tick marks every 7
+const d=new Date(2026,6,21);
+vals.forEach((v,i)=>{ if(i%7===0){ const dt=new Date(2026,5,22); dt.setDate(dt.getDate()+i); const lbl=String(dt.getMonth()+1).padStart(2,'0')+'/'+String(dt.getDate()).padStart(2,'0'); console.log('TICK i='+i+' x='+pt(i,0)[0].toFixed(1)+' label='+lbl);} });

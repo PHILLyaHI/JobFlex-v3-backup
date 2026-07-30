@@ -733,6 +733,16 @@ export function initProposalsContent(content: HTMLElement): () => void {
             r.style.transform = "none";
           }),
         );
+        // Drop the inline styles once the stagger lands. Left in place, the
+        // inline `transform: none` outranks every stylesheet `:hover` rule,
+        // so hover lift on rows and cards silently stops working.
+        r.addEventListener("transitionend", function te(e) {
+          if (e.propertyName !== "transform") return;
+          r.style.opacity = "";
+          r.style.transform = "";
+          r.style.transition = "";
+          r.removeEventListener("transitionend", te);
+        });
       });
     }
     ["propTableBody", "propStack", "doneStack"].forEach((id) => {

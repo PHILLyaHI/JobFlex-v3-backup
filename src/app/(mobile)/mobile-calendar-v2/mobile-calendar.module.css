@@ -1,0 +1,1390 @@
+/* ============================================================
+   MOBILE CALENDAR (mobile-calendar-v2) — Blueprint system
+   Tokens, palette, type scale and Motion System "Balanced" are
+   the reference dashboard's; the shell (topbar / drawer / sheets)
+   matches its siblings mobile-v2, mobile-proposals-v2 and
+   mobile-clients-v2 exactly. Fully scoped — app tokens untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and all three sibling mobile modules.
+     paper-deep stays a shade RECESSED from the sheet, never lighter. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  --topbar-h: 56px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1). Un-wrapped —
+   the page class used as a plain descendant selector — it would score (0,1,1)
+   and silently beat EVERY single-class control rule in this file (0,1,0):
+   every background and every border below would be cancelled at render time.
+   A plain element reset in a donor HTML file never had this problem; scoping
+   it to the page is what raises its specificity. Do not un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+:where(.app) textarea { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* One page-local symbol (i-calendar-ban). Out of flow and out of the a11y
+   tree — it is a definition, not a picture. */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* The only FILLED controls on the surface, together with the filter button.
+   Everything else is flat — a fill on every button flattens the hierarchy
+   (owner's call, 2026-07-29). */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* A live count riding a button face — inbox pending, tray waiting. */
+.btnCount {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 19px; min-width: 22px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  line-height: 1;
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+/* ============================================================
+   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations.
+   All three are computed from the fixture, so creating, deleting or
+   rescheduling an event moves them.
+   ============================================================ */
+.mast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.mastTop { padding: var(--card-pad); }
+.mastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.mastRule { flex: 1; height: 1.5px; background: var(--hair); }
+/* Inter 900 tabular, never mono: mono is the drawing-annotation layer, not
+   the layer big figures live on. */
+.mastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.mastCnt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.mastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); min-width: 0; }
+.mastSub:last-child { border-right: none; }
+.mastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.mastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* ============================================================
+   VIEW TABS — Month / Week / Team
+   ============================================================ */
+.tabs {
+  position: relative;
+  display: grid;
+  /* minmax(0, 1fr), not 1fr: .tabInd is width 33.3333% translated by
+     index * 100%, so the rule only lands under its tab if the columns are
+     EXACT thirds. Plain 1fr floors at auto, so a wider label widens its
+     column and silently desynchronises the plate. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+/* Label and count on ONE line at every width, sentence case, 13px. */
+.tab {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 48px;
+  padding: 0 3px;
+  font-size: 13px; font-weight: 800;
+  letter-spacing: 0; text-transform: none;
+  line-height: 1;
+  color: var(--muted);
+  border-right: 1.5px solid var(--ink);
+  transition: color 0.16s, background 0.16s;
+}
+.tab:last-child { border-right: none; }
+.tab.active { color: var(--ink); background: var(--paper-deep); }
+.tabCount {
+  display: inline-flex; align-items: center; justify-content: center;
+  /* A hair taller than the 13px label so the digits sit in a real badge
+     rather than being crushed to the cap height. */
+  height: 19px;
+  min-width: 22px;
+  padding: 0 3px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  line-height: 1;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.tab.active .tabCount { border-color: var(--blueprint); color: var(--blueprint); }
+.tabInd {
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 33.3333%; height: 3px;
+  background: var(--blueprint);
+  transition: transform 0.34s var(--ease-soft);
+  pointer-events: none;
+}
+/* ============================================================
+   RANGE BAR — the desktop toolbar. Prev / title / next, then Today
+   and the unscheduled tray. Every control here is FLAT: frames, no
+   fills. Only the head pair and the filter carry a background.
+   ============================================================ */
+.rbar { display: flex; flex-direction: column; gap: 10px; }
+.rbarNav { display: flex; align-items: center; gap: 10px; }
+.navBtn {
+  width: 46px; height: 46px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.navBtn:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.navBtn .ic { width: 18px; height: 18px; }
+.rbarTitle {
+  flex: 1; min-width: 0;
+  text-align: center;
+  font-size: 15.5px; font-weight: 900;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+}
+.rbarBtns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.rbarBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46px;
+  padding: 0 10px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.rbarBtn:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.rbarBtn .ic { width: 16px; height: 16px; }
+.rbarBtn .btnCount { border-color: var(--hair); color: var(--muted); }
+/* ============================================================
+   FIND BAR — search over the schedule, plus the worker dropdown and
+   the four status toggles collapsed into ONE dropdown. Two controls
+   side by side cannot survive 320px, and a chip rail is not an option.
+   ============================================================ */
+.find { display: flex; flex-direction: column; gap: 10px; }
+.srch {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.srch .ic { width: 17px; height: 17px; color: var(--muted); }
+.srchInput {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+}
+.srchInput::placeholder { color: var(--muted-light); }
+.srchX {
+  width: 34px; height: 34px;
+  margin-right: -8px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+.srchX .ic { width: 15px; height: 15px; }
+/* Custom .dd, never a native select: rotating caret, menu on a 2px frame, and
+   the chosen filter reading back on the face as PLAIN TEXT — no pill, no
+   frame, tone-only colouring. */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.ddValue.isAll { color: var(--ink); }
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* No offset shadow (owner's call, 2026-07-29). The hard 3px ink drop read as
+     a black slab behind the panel; the 2px ink frame already lifts it off the
+     sheet. */
+  /* Nine options in a 3-column grid instead of a one-deep list. padding:0 so
+     the CELL borders below are the grid's own rules, with no gutter between a
+     cell edge and the menu frame. */
+  display: grid;
+  /* minmax(0, 1fr): plain 1fr floors at auto, so "In progress" or "Marcus B."
+     would push its column past a third and shove the panel out of its frame. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  max-height: 60vh;
+  overflow-y: auto;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. The dividers are border-TOP
+   and border-LEFT with the first row and first column cleared — that way the
+   block reads as one drawn table at ANY item count and never doubles a line
+   against the menu's own 2px frame (a trailing border-right/bottom would). */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so the tick cannot squeeze the label inside a ~87px cell. */
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  margin-left: 0;
+  color: var(--blueprint);
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* ============================================================
+   MONTH GRID — the desktop 6×7 month, kept as a real month. The
+   desktop cell stacked full event chips; at ~42px per column a phone
+   gets the day number plus one status dot per event, and the chips
+   themselves move to the agenda below.
+   ============================================================ */
+.mcard {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.mgHead {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--paper-deep);
+  border-bottom: 1.5px solid var(--ink);
+}
+.mgHeadCell {
+  padding: 8px 2px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  min-width: 0;
+}
+.mgHeadShort { display: none; }
+.mgGrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+/* Same divider scheme as the filter menu: border-TOP + border-LEFT, first row
+   and first column cleared. No cell ever doubles a line against the card's own
+   frame, at any row count. */
+.mgCell {
+  position: relative;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start;
+  gap: 4px;
+  min-width: 0;
+  min-height: 50px;
+  padding: 7px 2px 8px;
+  border-top: 1px solid var(--hair-soft);
+  border-left: 1px solid var(--hair-soft);
+  border-radius: 0;
+  transition: background 0.12s;
+}
+.mgCell:nth-child(-n + 7) { border-top: none; }
+.mgCell:nth-child(7n + 1) { border-left: none; }
+.mgNum {
+  font-size: 13px; font-weight: 800;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.mgCell.isOut .mgNum { color: var(--muted-faint); }
+.mgCell.isOut .mgDot { opacity: 0.45; }
+/* "Today" is ALWAYS filled blueprint — the reference's rule, and the reason
+   the fill is a background rather than a border: a filled cell next to an
+   outlined one used to leave a white seam. */
+.mgCell.isToday { background: var(--blueprint); }
+.mgCell.isToday .mgNum { color: #fff; }
+/* Blueprint dots on a blueprint plate would vanish, so today's dots go paper.
+   The status tone is still one tap away in the agenda. */
+.mgCell.isToday .mgDot { background: var(--paper); }
+.mgCell.isToday .mgMore { color: rgba(255, 255, 255, 0.8); }
+/* Selected day — an INSET outline, so it cannot fight a neighbour's border. */
+.mgCell.isSel { box-shadow: inset 0 0 0 2px var(--blueprint); }
+.mgCell.isSel .mgNum { color: var(--blueprint); }
+.mgCell.isToday.isSel { box-shadow: inset 0 0 0 2px var(--ink); }
+.mgCell.isToday.isSel .mgNum { color: #fff; }
+.mgDots {
+  display: flex; align-items: center; justify-content: center;
+  gap: 3px;
+  min-height: 5px;
+}
+.mgDot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted-faint); }
+.mgMore {
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted-light);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* Status dots and status badges read from the same three-tone set. Kind is not
+   a status: appointments take sky, blocked time takes the ink plate. */
+.dotSched { background: var(--blueprint); }
+.dotProg { background: var(--warning); }
+.dotDone { background: var(--success); }
+.dotCancel { background: var(--danger); }
+.dotAppt { background: var(--sky); }
+.dotBlocked { background: var(--ink); }
+/* ============================================================
+   AGENDA — the selected day (Month view). Head names the day and
+   carries the create affordance the desktop got from clicking an
+   empty cell; a tap on the grid selects instead.
+   ============================================================ */
+.agenda {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.agHead {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px var(--card-pad) 12px;
+  background: var(--paper-deep);
+  border-bottom: 1.5px solid var(--ink);
+}
+.agHeadT {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink);
+}
+.agToday {
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  background: var(--blueprint);
+  color: #fff;
+  padding: 3px 6px;
+  border-radius: var(--radius);
+}
+.agAdd {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 44px; min-width: 44px;
+  padding: 0 12px;
+  margin: -6px -6px -6px 0;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.agAdd:active { background: var(--paper); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.agAdd .ic { width: 15px; height: 15px; }
+.agEmpty { padding: 16px var(--card-pad) 20px; }
+/* ============================================================
+   EVENT ROW — the desktop event chip re-cut as a row card. A chip
+   carried kind, title, time, crew and status in a 120px box; three
+   lines carry all five plus client and address.
+   ============================================================ */
+.agList { display: block; }
+.erow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0 12px;
+  padding: 13px var(--card-pad) 15px;
+  /* A real drawn rule between records, not a faint wash. */
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.erow:last-child { border-bottom: none; }
+.erow:active { background: var(--paper-deep); }
+/* EVERY child is pinned to an explicit cell. A child with a grid-row but no
+   grid-column is placed in its own earlier pass and can claim the wrong
+   column, shoving a sibling sideways. */
+.etime {
+  grid-column: 1;
+  grid-row: 1;
+  width: 48px; min-height: 44px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+.etimeH {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.etimeM {
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  line-height: 1;
+}
+/* An event happening today takes the filled blueprint plate — the same rule
+   the reference applies to the calendar's today cell. */
+.etime.isToday { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.etime.isToday .etimeM { color: rgba(255, 255, 255, 0.75); }
+.etitle {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  display: flex; align-items: flex-start; gap: 8px;
+  min-width: 0;
+}
+.ekind { width: 15px; height: 15px; margin-top: 2px; color: var(--muted); }
+.etitleTxt {
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.erowOpen {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  width: 44px; height: 44px;
+  margin-right: -6px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.erowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.erowOpen .ic { width: 18px; height: 18px; }
+/* Rows 2 and 3 are ONE group: who/where sits tight above the badge line, and
+   the whole group is pushed well clear of the title. Reading top to bottom you
+   get identity, then a gap, then the record's data — not three evenly spaced
+   lines that all compete. Both span 1/-1 so they start at the card's left grid
+   edge instead of indenting under the title column. */
+.ewho {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.erowFoot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 5px;
+}
+.estatus {
+  display: inline-block;
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.stSched { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.stProg { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.stDone { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.stCancel { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.stAppt { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.stBlocked { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+.ecrew {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edur {
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  margin-left: auto;
+  white-space: nowrap;
+}
+/* An all-day event has no clock span, so it reads as a dash — an absence, not
+   a zero. */
+.edur.isZero { color: var(--muted-faint); font-weight: 800; }
+/* ============================================================
+   WEEK — the desktop 8-column × 14-hour time grid, read vertically.
+   Seven day groups, each with its own head and its own events.
+   ============================================================ */
+.wstack { display: flex; flex-direction: column; gap: var(--gap); }
+.wgroup {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.wgHead {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px var(--card-pad) 11px;
+  background: var(--paper-deep);
+  border-bottom: 1.5px solid var(--ink);
+}
+.wgHeadT {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.wgHeadN {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted-light);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+/* A note on a drawing: dashed, quiet, and where it is a button it is the
+   fastest way to book that day. */
+.note {
+  display: block;
+  margin: 12px var(--card-pad);
+  padding: 14px 12px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  background: none;
+  font-size: 13px; font-weight: 500;
+  color: var(--muted-light);
+  text-align: center;
+  line-height: 1.45;
+}
+/* As a button it is the fastest way to book an open day, so it still clears the
+   44px target even though it reads as a quiet annotation. */
+.note:is(button) { width: calc(100% - var(--card-pad) * 2); min-height: 48px; }
+.note:is(button):active { background: var(--paper-deep); }
+/* ============================================================
+   TEAM — the desktop crew × 7-day grid as one card per crew member.
+   ============================================================ */
+.tstack { display: flex; flex-direction: column; gap: var(--gap); }
+.tcard {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.tcardHead {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px var(--card-pad) 13px;
+  background: var(--paper-deep);
+  border-bottom: 1.5px solid var(--ink);
+}
+/* Two letters scan far faster than the same glyph repeated on every card. */
+.tav {
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 13px; font-weight: 900;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.tav.isOn { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.tWho { flex: 1; min-width: 0; }
+.tname { font-size: 15px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.trole {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.tfigs { flex-shrink: 0; text-align: right; }
+.tfigV {
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.tfigV.isZero { color: var(--muted-faint); font-weight: 800; }
+.tfigL {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.tlist { display: block; }
+.trow {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px var(--card-pad);
+  border-bottom: 1.5px solid var(--ink);
+  text-align: left;
+  transition: background 0.12s;
+}
+.trow:last-child { border-bottom: none; }
+.trow:active { background: var(--paper-deep); }
+.trowTime {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+  width: 74px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.trowTitle {
+  flex: 1; min-width: 0;
+  font-size: 14px; font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.trowDot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--muted-faint); }
+/* ============================================================
+   EMPTY STATES — never blank: what happened AND what to do. Two of
+   them, because a filter that excludes everything is not the same
+   thing as an open day.
+   ============================================================ */
+.empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 28px 18px;
+  text-align: center;
+}
+.emptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.emptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.emptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.emptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Four: the row "⋮" menu, the crew inbox, the unscheduled tray, and
+   the create/edit form. The desktop side panel and its centre-screen
+   pop-overs have no place on a phone.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+/* translateY(100%) PLUS visibility:hidden, so a closed sheet leaves the tab
+   order and the accessibility tree instead of lurking off-screen. */
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* 6px thumb on a transparent track. Never painted with --hair. */
+.sheetBody::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-track { background: transparent; }
+.sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 3px; }
+.sheetBody { scrollbar-width: thin; scrollbar-color: var(--muted-faint) transparent; }
+/* Row menu items: icon in a 26px tonal box, title + sub, disabled rows driven
+   by real fixture state and one danger row. */
+.mrow {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.mrow:active:not(:disabled) { background: var(--paper-deep); }
+.mrow:disabled { opacity: 0.45; }
+.mrowIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.mrowIc .ic { width: 14px; height: 14px; }
+.miBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.miSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.miOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.miWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.miDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.mrowT { display: block; font-size: 15px; font-weight: 700; }
+.mrowS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+.mrowDanger .mrowT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   QUEUE ROWS — the crew inbox and the unscheduled tray. Same shape
+   both times: title, mono sub, then a status or estimate on the left
+   of a flat action button.
+   ============================================================ */
+.qrow {
+  padding: 14px var(--pad-x) 15px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.qrow:last-child { border-bottom: none; }
+.qrowT { font-size: 15px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.qrowS {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.qrowFoot {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.qrowEst {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+.queueBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.queueBtn:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.queueBtn .ic { width: 15px; height: 15px; }
+.qempty {
+  margin: 18px var(--pad-x) 22px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 24px 18px;
+  text-align: center;
+}
+/* ============================================================
+   CREATE / EDIT FORM — the desktop side panel, rebuilt as a sheet.
+   ============================================================ */
+.formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
+.fld { display: flex; flex-direction: column; }
+.fldLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.pinput {
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+}
+.pinput::placeholder { color: var(--muted-faint); }
+.pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+/* iOS centres the value inside a date/time field and hides the indicator in
+   the paper; both are pulled back onto the drawing. */
+.pinput::-webkit-date-and-time-value { text-align: left; }
+.pinput::-webkit-calendar-picker-indicator { opacity: 0.55; }
+.parea {
+  min-height: 84px;
+  padding: 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+  resize: vertical;
+  line-height: 1.5;
+}
+.parea::placeholder { color: var(--muted-faint); }
+.parea:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+.fld.invalid .pinput { border-color: var(--danger); background: var(--danger-soft); }
+/* Start and end share a line above 380px and stack below it. */
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+}
+/* The read-out the desktop detail panel opens with — an estimate-sheet block:
+   mono label, value on the right, thin rules. */
+.metaBox {
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  overflow: hidden;
+}
+.metaRow {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hair-soft);
+}
+.metaRow:last-child { border-bottom: none; }
+.metaL {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  width: 78px;
+  flex-shrink: 0;
+}
+.metaV {
+  flex: 1; min-width: 0;
+  font-size: 13.5px; font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+/* Kind decides which fields exist, so it leads the create form. */
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.kindBtn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 8px 4px;
+  border-right: 1.5px solid var(--hair);
+  border-radius: 0;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+  overflow-wrap: anywhere;
+  transition: background 0.12s, color 0.12s;
+}
+.kindBtn:last-child { border-right: none; }
+.kindBtn .ic { width: 17px; height: 17px; }
+.kindBtn.active { background: var(--paper-deep); color: var(--blueprint); }
+/* Four statuses as segments, 2×2 — a native select cannot carry the frame. */
+.seg {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.segBtn {
+  min-width: 0;
+  min-height: 46px;
+  padding: 8px 6px;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  border-radius: 0;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  transition: background 0.12s, color 0.12s;
+}
+.segBtn:nth-child(-n + 2) { border-top: none; }
+.segBtn:nth-child(2n + 1) { border-left: none; }
+.segBtn.active { background: var(--paper-deep); color: var(--blueprint); }
+/* Drawn checkbox, not a native one: the native control cannot carry the frame
+   or the sub-label, and it renders differently on every platform.
+   aria-pressed keeps it a real toggle for assistive tech. */
+.crewList { display: flex; flex-direction: column; gap: 8px; }
+.fchk {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  transition: background 0.12s;
+}
+.fchkBox {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: transparent;
+  flex-shrink: 0;
+  transition: background 0.14s, color 0.14s;
+}
+.fchkBox .ic { width: 14px; height: 14px; }
+.fchk[aria-pressed="true"] { background: var(--paper-deep); }
+.fchk[aria-pressed="true"] .fchkBox { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.fchkSub {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  text-align: right;
+  min-width: 0;
+}
+/* Link a record — the desktop tabbed picker, folded into the form as one
+   disclosure with its own search. Fifteen options behind a second sheet would
+   have stacked two sheets on one screen. */
+.linkBox { display: flex; flex-direction: column; }
+.linkBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  text-align: left;
+  transition: background 0.12s;
+}
+.linkBtn:active { background: var(--paper-deep); }
+.linkBtn .ic { width: 16px; height: 16px; color: var(--muted); }
+.linkVal {
+  flex: 1; min-width: 0;
+  font-size: 14px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.linkVal.linkNone { color: var(--muted-light); font-weight: 500; }
+.linkCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.linkBtn[aria-expanded="true"] .linkCaret { transform: rotate(180deg); }
+.linkPanel {
+  margin-top: 8px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+.linkSrch {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 46px;
+  padding: 0 12px;
+  border-bottom: 1.5px solid var(--hair);
+  background: var(--paper-deep);
+}
+.linkSrch .ic { width: 15px; height: 15px; color: var(--muted); }
+.linkList {
+  max-height: 232px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.linkList::-webkit-scrollbar { width: 6px; }
+.linkList::-webkit-scrollbar-track { background: transparent; }
+.linkList::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 3px; }
+/* grid-row is used, so every child carries an explicit grid-column. */
+.linkRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  align-items: center;
+  transition: background 0.12s;
+}
+.linkRow:last-child { border-bottom: none; }
+.linkRow:active { background: var(--paper-deep); }
+.linkKind {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.linkRowT { grid-column: 2; grid-row: 1; font-size: 14px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.linkRowM {
+  grid-column: 2;
+  grid-row: 2;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted-light);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+/* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
+   reachable without scrolling the form to its end, and reaches the form with
+   the form= attribute. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 18px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+/* The masthead slides in when the view changes — the reference's 320ms. */
+@keyframes mastSlide {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: none; }
+}
+.slide { animation: mastSlide 320ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* A calendar day presses like a stamp, not like a button — the reference gives
+   the day cell this pulse. */
+@keyframes dayPulse {
+  0% { transform: scale(0.94); }
+  55% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+.dayPressed { animation: dayPulse 0.28s var(--ease-out); }
+/* A record that just changed gets one blue flash, so the row you acted on is
+   findable after the schedule re-sorts around it. */
+@keyframes landFlash {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: transparent; }
+}
+.landed { animation: landFlash 0.6s var(--ease-out); }
+/* Scoped to the page — the global kill switch stays the app's business, and a
+   bare * selector here would leak into every other surface. */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+}
+@media (max-width: 520px) {
+  /* The head actions stop sharing a line with anything */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .edur { font-size: 18px; }
+  .formFoot { grid-template-columns: 1fr; }
+}
+@media (max-width: 400px) {
+  /* The range title takes the whole line so a two-month week label
+     ("Jul 26 – Aug 1, 2026") stops squeezing the two 46px nav boxes. */
+  .rbarTitle { font-size: 14px; }
+  .rbarBtn { letter-spacing: 0.06em; font-size: 11px; }
+  .trowTime { width: 66px; }
+}
+@media (max-width: 360px) {
+  .mastCnt { grid-template-columns: 1fr; }
+  .mastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .mastSub:last-child { border-bottom: none; }
+  /* Three-letter day names do not fit seven ~41px columns. */
+  .mgHeadLong { display: none; }
+  .mgHeadShort { display: inline; }
+  /* A shorter column is paid back in height, so the day's touch AREA stays
+     above a 44×44 target even though a 7-day row cannot give it 44px of
+     width at this size. */
+  .mgCell { min-height: 54px; }
+  .tav { width: 34px; height: 34px; font-size: 12px; }
+  .etime { width: 44px; }
+  .metaL { width: 66px; }
+}

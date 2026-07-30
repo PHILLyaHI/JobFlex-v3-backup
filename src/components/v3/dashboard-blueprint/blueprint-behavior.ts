@@ -677,6 +677,16 @@ export function initDashboardContent(content: HTMLElement): () => void {
             r.style.transform = "none";
           }),
         );
+        // Drop the inline styles once the stagger lands. Left in place, the
+        // inline `transform: none` outranks every stylesheet `:hover` rule,
+        // so hover lift on rows and cards silently stops working.
+        r.addEventListener("transitionend", function te(e) {
+          if (e.propertyName !== "transform") return;
+          r.style.opacity = "";
+          r.style.transform = "";
+          r.style.transition = "";
+          r.removeEventListener("transitionend", te);
+        });
       });
     }
     ["weekList", "jobsList", "actList"].forEach((id) => {
@@ -688,18 +698,24 @@ export function initDashboardContent(content: HTMLElement): () => void {
       disposers.push(() => mo.disconnect());
     });
 
-    // KPI count-up
+    // Numeral count-up. The digits-only rebuild below is safe for this page's
+    // plain "$12,400"/"18", but the other blueprint pages count values that
+    // carry a unit ("68%") or wrap an inline icon, so the pack now keeps
+    // whatever frames the number, skips decimals (digits-only mangles them)
+    // and skips nodes that hold elements rather than bare text.
     $$(".kpi-val").forEach((el) => {
-      const raw = (el.textContent || "").trim();
-      const money = raw.charAt(0) === "$";
-      const target = parseInt(raw.replace(/[^0-9]/g, ""), 10);
+      if (el.children.length) return;
+      const m = (el.textContent || "").trim().match(/^([^\d]*)(\d[\d,]*)([^\d]*)$/);
+      if (!m) return;
+      const [, prefix, digits, suffix] = m;
+      const target = parseInt(digits.replace(/,/g, ""), 10);
       if (!isFinite(target)) return;
       let t0: number | null = null;
       function frame(t: number) {
         if (!t0) t0 = t;
         const pr = Math.min(1, (t - t0) / 750);
         const e = 1 - Math.pow(1 - pr, 3);
-        el.textContent = (money ? "$" : "") + Math.round(target * e).toLocaleString("en-US");
+        el.textContent = prefix + Math.round(target * e).toLocaleString("en-US") + suffix;
         if (pr < 1) requestAnimationFrame(frame);
       }
       requestAnimationFrame(frame);

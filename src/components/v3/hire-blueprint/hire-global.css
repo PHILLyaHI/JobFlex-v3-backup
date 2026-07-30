@@ -1,0 +1,40 @@
+/* Hire blueprint — the GLOBAL layer of the donor port (plain stylesheet, not a
+   CSS module). Two kinds of rule live here:
+
+   1. Donor keyframes — Turbopack's Lightning CSS rejects keyframes inside CSS
+      modules, and the names must stay literal (the ported behavior triggers
+      them through class toggles).
+      `leadLand`, `daySel2` and `press2` are byte-identical to the copies
+      already declared in dashboard-blueprint/blueprint-global.css, so they are
+      NOT re-declared here — hire.module.css references the shared names.
+      The only donor keyframe unique to this page is `sheetIn`, renamed
+      `hire_sheetIn` (declaration + the single reference in hire.module.css) so
+      it can never collide with another page's port.
+
+   2. One escape hatch that has to sit outside the module's specificity.
+
+   Every visual value is verbatim from the donor file
+   jobflex-hire-blueprint_4.html. */
+
+/* ── Donor keyframes (page-unique, renamed) ─────────────────────── */
+
+@keyframes hire_sheetIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ── Stacking escape hatch for the candidate sheet ────────────────
+   In the donor, #sheetBg (z-index 110) and #sheet (z-index 111) are children
+   of `.layout` — OUTSIDE `.content` — so they paint above the sticky topbar
+   (z-index 30). Here they ship inside the page fragment, and `.content` is
+   `position: relative; z-index: 1`, which opens a stacking context that would
+   trap both under the topbar and hide the sheet's header.
+
+   Dropping `.content` back to `z-index: auto` restores the donor's paint
+   order exactly: `.content` still paints above the graph-paper field
+   (`.main::before`, z-index 0) because the pseudo-element precedes it in tree
+   order at the same stacking level, and the sheet's own 110/111 now resolve
+   against the same context the donor used.
+
+   `:has(> .sheet)` self-scopes this to the hire page — no other blueprint page
+   puts a `.sheet` element directly inside `.content` — so it cannot leak into
+   the dashboard or proposals routes even though every page module's `.bp`
+   class is applied to the one shared shell root. */
+.jf-blueprint .content:has(> .sheet) { z-index: auto; }

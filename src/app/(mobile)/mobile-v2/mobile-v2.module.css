@@ -8,13 +8,18 @@
    ============================================================ */
 
 .app {
-  /* ---- palette (the reference dashboard's, with one deliberate swap) ----
-     Paper is WHITE on this mobile surface (owner's call, 2026-07-24). The
-     desktop shell is still the #f2f0eb drafting cream — this is an
-     intentional divergence, not drift. paper-deep stays a hair off-white so
-     the zoned strips (masthead annotations, pressed states) still read. */
-  --paper: #ffffff;
-  --paper-deep: #f1f0ee;
+  /* ---- palette (the reference dashboard's, verbatim) ----
+     Paper is the #f2f0eb drafting cream, same as the desktop shell and the
+     app-wide token in globals.css (owner's call, 2026-07-29). This REVERSES
+     the 2026-07-24 call that made the mobile surface white: mobile and desktop
+     are now one paper again, which is what /dashboard serving both designs
+     from one URL made worth having.
+     paper-deep moves with it — #ebe8e1 is the desktop's value, and the pair
+     has to keep its RELATIONSHIP, not just its lightness: the zoned strips
+     (masthead annotations, pressed states) read as a shade recessed from the
+     sheet, so a deep tone lighter than the new paper would have inverted them. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -63,6 +68,10 @@
   --fs-hero: clamp(38px, 12.4vw, 60px);
   --fs-kpi: clamp(19px, 5.6vw, 26px);
   --topbar-h: 56px;
+  --bottomnav-h: 64px;
+  /* Four 44px framed boxes + the wordmark have to clear 320px. The bar gap is
+     the only slack left, so it is fluid rather than a flat 10px. */
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
   --sidebar-w: min(84vw, 288px);
   --safe-b: env(safe-area-inset-bottom, 0px);
 
@@ -72,7 +81,7 @@
   inset: 0;
   z-index: 20;
   display: grid;
-  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-rows: var(--topbar-h) 1fr auto;
   height: var(--app-h, 100dvh);
   overflow: hidden;
   font-family: var(--font);
@@ -90,14 +99,29 @@
   outline: 2px solid var(--sky);
   outline-offset: 2px;
 }
-.app button {
+/* :where() holds this reset at element-level specificity (0,0,1), matching the
+   sibling mobile-proposals module verbatim.
+   Written as `.app button` it scored (0,1,1) and silently beat EVERY
+   single-class button rule in this file (0,1,0), cancelling their `border` and
+   `background`. Eight rules were affected; the visible ones were .tbarBtn
+   (the topbar's white squares never drew) and .leadCard (Lead Flow cards lost
+   their ink outline).
+   The wrap was applied, reverted at the owner's request, and is now back
+   because "nav bar stays the same all the time" (owner, 2026-07-29) cannot be
+   satisfied otherwise: mobile-proposals already carries :where(), so its
+   topbar drew the white frames while this one did not. Two bars, one
+   selector's difference. Do not un-wrap without un-wrapping the sibling too. */
+:where(.app) button {
   font-family: inherit;
   border: none;
   background: none;
   cursor: pointer;
   color: inherit;
 }
-.app a {
+/* Same trap: at (0,1,1) this forced every single-class link rule to
+   `color: inherit`, which is why .bannerLink and .cardLink had to re-declare
+   their blueprint colour at higher specificity to survive. */
+:where(.app) a {
   text-decoration: none;
   color: inherit;
 }
@@ -120,7 +144,7 @@
 .tbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--tbar-gap);
   height: var(--topbar-h);
   padding: 0 var(--pad-x);
   background: var(--ink);
@@ -128,18 +152,47 @@
   border-bottom: var(--border);
   z-index: 30;
 }
-/* Burger sits first — it is the navigation now that the tab bar is gone */
-.tbarBurger {
-  margin-left: -8px;
-}
-.tbarMark {
-  width: 22px;
-  height: 22px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2.4;
-  stroke-linecap: square;
+/* ---- topbar element frames (owner's call, 2026-07-29) ----------------
+   The three BUTTONS — burger, search, bell — each sit in their own drawn
+   44px square, paper-white because the topbar is the page's one solid-ink
+   plate (everywhere else on the surface the frame is ink). Radius stays the
+   system's 2px, i.e. square.
+
+   The MARK is deliberately unframed (owner's call, same day): a logo inside
+   a box reads as a favicon, and the mark is not a control — boxing it put it
+   in the same visual class as the two buttons it sits beside.
+
+   The burger's former -8px margin-left is gone: it optically centred a bare
+   glyph against the padding line, but now that its frame is visible, the box
+   edge is what has to line up — and it has to line up with the bell's frame
+   on the other side. */
+
+/* No longer a frame — purely a crop window. The asset carries ~29% dead
+   transparent margin per side, and this box is what keeps that margin out of
+   the LAYOUT: the oversized image below is clipped to the ink plus ~2.7px. */
+.tbarMarkBox {
+  position: relative;
+  width: 28px;
+  height: 34px;
+  overflow: hidden;
   flex-shrink: 0;
+}
+/* The product mark is the real asset (/jobflex-mark.png), not a drawn glyph.
+   Rendered LARGER than its crop window on purpose: only ~42.5% of that
+   square is ink, so 66px lands the mark itself at ~28.1 × 22.9px. That is
+   deliberately level with the 28px JOBFLEX / CONTRACTOR OS block beside it
+   (16 + 3 + 9) — stepped up from the previous 23px at the owner's request,
+   2026-07-29. brightness(0) invert(1) turns the black mark paper-white for
+   the ink plate without needing a second colourway of the asset. */
+.tbarMarkImg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 66px;
+  height: 66px;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  filter: brightness(0) invert(1);
 }
 .tbarTxt {
   display: flex;
@@ -147,13 +200,28 @@
   justify-content: center;
   gap: 3px;
   min-width: 0;
+  overflow: hidden;
 }
+/* nowrap + ellipsis is the guard, not the plan: the wordmark is measured to
+   fit down to 320px. If a device font substitutes wider, it clips instead of
+   wrapping — a wrapped sub would break the 27px two-row block the mark is
+   sized against. */
+/* 16px / 9px matches the sibling mobile-proposals topbar AND both drawer
+   heads, so the masthead lockup is one size everywhere (owner's call,
+   2026-07-29: "nav bar stays the same all the time"). The topbar's old 15px
+   was the only outlier in the set. */
 .tbarName {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 900;
   letter-spacing: 0.01em;
   line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/* Held at 9px rather than the drawer head's 9.5px: at 320px the sub is the
+   widest thing in the bar, and 9.5px / 0.24em needs ~109px against ~112px of
+   space once the mark grew — under 3px of slack. 9px restores ~9px of it. */
 .tbarSub {
   font-size: 9px;
   font-weight: 800;
@@ -161,6 +229,9 @@
   text-transform: uppercase;
   color: var(--sky);
   line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tbarRight {
   margin-left: auto;
@@ -175,14 +246,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid transparent;
+  border: 1.5px solid var(--paper);
   border-radius: var(--radius);
   color: var(--paper);
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.12s;
 }
 .tbarBtn:active {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.16);
 }
 .tbarBtn .ic {
   width: 19px;
@@ -230,7 +300,9 @@
 .content {
   position: relative;
   z-index: 1;
-  padding: 16px var(--pad-x) calc(var(--safe-b) + 104px);
+  /* The bottom nav is a grid row now, not a floating FAB, so the scroller
+     already ends above it — this is breathing room, not clearance. */
+  padding: 16px var(--pad-x) 28px;
   display: flex;
   flex-direction: column;
   gap: var(--gap);
@@ -992,9 +1064,14 @@
 /* ============================================================
    LEAD FLOW — swipeable stage rail (tap a card to move it)
    ============================================================ */
+/* The link is a 44px touch target next to a ~28px cap-height heading. Aligned
+   flex-end, the label centred 22px above the shared baseline and read 8px
+   high; centred, the caps of "LEAD FLOW" and the caps of "OPEN LEADS" share
+   an optical centre line. Inter at line-height 1 puts its cap midpoint at the
+   box midpoint, so `center` is exact here, not approximate. */
 .sectionHead {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   padding-top: 4px;
@@ -1178,60 +1255,79 @@
 }
 
 /* ============================================================
-   FAB — context-aware primary action, parked in the thumb zone
+   BOTTOM NAV — replaces the floating FAB (owner's call, 2026-07-29).
+   Three items: the primary NEW PROPOSAL action, plus Settings and
+   Account, which until now were reachable only from the drawer
+   footer. It is a grid ROW of .app, not a fixed overlay, so the
+   scroller ends at the bar instead of running underneath it — no
+   phantom clearance padding, and nothing floats over content.
+   The full 22-item nav still lives in the burger drawer; this bar
+   is deliberately not a mirror of it.
    ============================================================ */
-.fab {
-  position: fixed;
-  right: var(--pad-x);
-  bottom: calc(var(--safe-b) + 20px);
+.bottomNav {
   z-index: 60;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: repeat(3, 1fr);
+  height: calc(var(--bottomnav-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: var(--paper);
+  border-top: var(--border);
+}
+.bnavBtn {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  height: 52px;
-  /* Symmetric padding: the icon stays optically centred once the label
-     column collapses to 0fr (52 = 17 + 18 + 17). */
-  padding: 0 17px;
-  border: var(--border);
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--ink-soft);
+  transition: background 0.12s;
+}
+/* Hairline rules between cells — the bar reads as three drawn compartments,
+   the way a title block is divided, not as three floating icons. */
+.bnavBtn + .bnavBtn {
+  border-left: 1.5px solid var(--hair-soft);
+}
+.bnavBtn:active {
+  background: var(--paper-deep);
+}
+/* Icon frames are gone (owner's call, 2026-07-29) — three outlined squares in
+   a row read as three buttons-inside-buttons, and the cell itself is already
+   the target. The glyphs stepped up 16 → 19px to hold the bar without a frame
+   around them. The primary keeps a blueprint FILL (a fill is not a frame): it
+   is the action, and it still has to be the loudest thing here. Its offset
+   shadow went with the border — a hard shadow with no outline reads as a
+   mistake in this system. */
+.bnavPlate {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
   border-radius: var(--radius);
+  transition: transform 0.12s var(--ease);
+}
+.bnavPlate .ic {
+  width: 19px;
+  height: 19px;
+}
+.bnavBtn.primary .bnavPlate {
   background: var(--blueprint);
   color: #fff;
-  font-size: 11px;
+}
+.bnavBtn.primary:active .bnavPlate {
+  transform: scale(0.94);
+}
+.bnavLbl {
+  font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
+  line-height: 1;
   white-space: nowrap;
-  box-shadow: 3px 3px 0 var(--ink);
-  /* The collapse rides a grid fr track, not width/padding — the label column
-     closes without thrashing layout on every scroll frame. */
-  transition: grid-template-columns 0.28s var(--ease-out), transform 0.12s var(--ease),
-    box-shadow 0.12s var(--ease);
 }
-.fab .ic {
-  width: 18px;
-  height: 18px;
-}
-/* The gap lives on the INNER span so it is clipped along with the text.
-   Padding on .fabLbl itself survives overflow:hidden and left a dead 9px
-   strip that pushed the "+" off-centre in the collapsed state. */
-.fabLbl {
-  overflow: hidden;
-  min-width: 0;
-}
-.fabLblInner {
-  display: block;
-  padding-left: 10px;
-}
-.fab.mini {
-  grid-template-columns: auto 0fr;
-}
-.fab.mini .fabLbl {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-.fab:active {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0 var(--ink);
+.bnavBtn.primary .bnavLbl {
+  color: var(--blueprint);
 }
 
 /* ============================================================
@@ -1286,14 +1382,25 @@
   color: var(--paper);
   flex-shrink: 0;
 }
-.sbMark {
-  width: 24px;
-  height: 24px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2.4;
-  stroke-linecap: square;
+/* Same treatment as the topbar mark, unframed for the same reason, scaled to
+   the drawer's own 28.5px text block (16 + 3 + 9.5): 68px ⇒ ~28.9 × 23.5px of
+   ink, level with the type exactly as in the bar. */
+.sbMarkBox {
+  position: relative;
+  width: 30px;
+  height: 35px;
+  overflow: hidden;
   flex-shrink: 0;
+}
+.sbMarkImg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 68px;
+  height: 68px;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  filter: brightness(0) invert(1);
 }
 .sbHeadTxt {
   display: flex;
@@ -1315,6 +1422,10 @@
   color: var(--sky);
   line-height: 1;
 }
+/* Framed to match the sibling mobile-proposals drawer head, which already
+   carried the paper-white square — the two mastheads have to be the same bar
+   (owner's call, 2026-07-29). Only renders now that the button reset is
+   wrapped in :where(); at (0,1,1) it was cancelled like the rest. */
 .sbClose {
   margin-left: auto;
   margin-right: -10px;
@@ -1323,6 +1434,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1.5px solid var(--paper);
+  border-radius: var(--radius);
   color: var(--paper);
 }
 .sbClose .ic {

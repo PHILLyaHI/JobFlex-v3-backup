@@ -33,6 +33,7 @@ import { RoofFacetTable } from "./RoofFacetTable";
 import { PlacesAutocomplete, type PickedAddress } from "./PlacesAutocomplete";
 import { pitchLabel, LABEL_MODES, EV_SAMPLES, type LabelMode } from "./roofViz";
 import { evRoofModel, evPriceRoof, evOrderRoof, evReportStatus } from "@/actions/eagleview";
+import { reconRoofPreview } from "@/actions/roofRecon";
 import type { RoofModel } from "@/lib/eagleview";
 import { estimateRoof, convertRoofEstimateToProposal } from "@/actions/roofEstimator";
 import {
@@ -94,6 +95,10 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
   const [confirming, setConfirming] = React.useState(false);
   const [ordering, setOrdering] = React.useState(false);
   const [pollMsg, setPollMsg] = React.useState<string | null>(null);
+  // Free Google-Solar-DSM preview: an ESTIMATE, deliberately barred from pricing.
+  const [previewBusy, setPreviewBusy] = React.useState(false);
+  const [googleArea, setGoogleArea] = React.useState<number | null>(null);
+  const [excludedSqft, setExcludedSqft] = React.useState<number[]>([]);
 
   // ── Estimate ──
   const [waste, setWaste] = React.useState("10%");
@@ -131,6 +136,42 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
       toast.error("Couldn't load measurement", err?.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Free preview — no EagleView order, no charge. Produces the same RoofModel the
+  // viewers already render, tagged synthetic so it cannot reach the pricing path.
+  async function loadPreview() {
+    setPreviewBusy(true);
+    setModel(null);
+    setMaterials([]);
+    setLabor([]);
+    setGoogleArea(null);
+    setExcludedSqft([]);
+    try {
+      const res = await reconRoofPreview({
+        address: picked?.address,
+        city,
+        state: stateCode,
+        zip,
+        lat: picked?.lat,
+        lng: picked?.lng,
+      });
+      if (!res.ok) throw new Error(res.error);
+      const { model: m, googleAreaSqft, multiStructure, excludedSqft: excluded } = res.preview;
+      setModel(m);
+      setCost(null);
+      setGoogleArea(googleAreaSqft);
+      setExcludedSqft(excluded.filter((a) => a > 120)); // ignore sheds/noise
+      setShowIntake(false);
+      toast.success(
+        "Roof estimated from aerial imagery",
+        `${m.totals.facetCount} facets · ${m.totals.squares.toFixed(1)} squares${multiStructure ? " · multiple structures" : ""}`,
+      );
+    } catch (err: any) {
+      toast.error("Couldn't estimate this roof", err?.message);
+    } finally {
+      setPreviewBusy(false);
     }
   }
 
@@ -190,6 +231,13 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
 
   async function generate() {
     if (!model) return;
+    if (model.source === "synthetic") {
+      toast.error(
+        "Estimated measurements can’t be priced",
+        "Order an EagleView measurement for this address to build a priced estimate.",
+      );
+      return;
+    }
     setGenBusy(true);
     try {
       const facetSummary = model.faces
@@ -203,6 +251,8 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
         pitch: pitchLabel(model.totals.predominantPitch),
         squares: Number(model.totals.squares.toFixed(1)),
         wastePct: Number(waste.replace("%", "")),
+        // Always EagleView here — the guard above returns for synthetic models,
+        // so a priced estimate can only ever be built from a measured report.
         measurementNotes: `EagleView measured: ${model.totals.squares.toFixed(1)} squares (${model.totals.areaSqft.toFixed(0)} sqft) across ${model.totals.facetCount} facets. Ridge ${model.totals.footageByType.RIDGE.toFixed(0)}ft, Hip ${model.totals.footageByType.HIP.toFixed(0)}ft, Valley ${model.totals.footageByType.VALLEY.toFixed(0)}ft, Eave ${model.totals.footageByType.EAVE.toFixed(0)}ft, Rake ${model.totals.footageByType.RAKE.toFixed(0)}ft. Facets — ${facetSummary}.`,
       });
       if (!res.ok) {
@@ -223,6 +273,13 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
   }
 
   async function convert() {
+    if (model?.source === "synthetic") {
+      toast.error(
+        "Estimated measurements can’t become a proposal",
+        "Order an EagleView measurement for this address first.",
+      );
+      return;
+    }
     if (!(await ensureWithinLimit("proposalsCreated"))) return;
     setConvertBusy(true);
     try {
@@ -242,6 +299,12 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
     }
   }
 
+  // Synthetic models are reconstructed from aerial imagery, not measured. They
+  // render and report measurements, but must never reach pricing or a proposal —
+  // a few percent of area error becomes a real bid error. Enforced in three
+  // places on purpose: the buttons are disabled, and generate()/convert() also
+  // refuse, so no future caller can route around the UI.
+  const isSynthetic = model?.source === "synthetic";
   const hasEstimate = materials.length > 0 || labor.length > 0;
   const materialsTotal = materials.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
   const laborTotal = labor.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
@@ -307,9 +370,11 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
               <div className="space-y-3 lg:border-l lg:border-[color:var(--ink-line)] lg:pl-8">
                 <div className="quiet-caps text-[color:var(--ink-faint)]">Or measure a new address</div>
                 <p className="text-[11px] text-[color:var(--ink-muted)] leading-relaxed">
-                  Ordering places a real EagleView measurement. The current <strong>sandbox</strong> account
-                  only returns the canned samples — measuring a real address needs a <strong>production</strong>{" "}
-                  account.
+                  <strong>Free estimate</strong> reconstructs the roof from Google aerial elevation data —
+                  instant, no charge, accurate to a few percent on area and pitch, but an estimate: it can’t
+                  be priced or sent as a proposal. <strong>Order</strong> places a real EagleView measurement
+                  for contract-grade geometry. The current <strong>sandbox</strong> account only returns the
+                  canned samples — measuring a real address needs a <strong>production</strong> account.
                 </p>
                 <PlacesAutocomplete onPick={onPick} />
                 <div className="grid grid-cols-3 gap-2">
@@ -318,6 +383,16 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   <Input label="ZIP" value={zip} onChange={(e) => setZip(e.target.value)} />
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    loading={previewBusy}
+                    disabled={!picked?.address || ordering}
+                    onClick={loadPreview}
+                    icon={<Ruler className="h-3.5 w-3.5" />}
+                  >
+                    Free estimate
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -360,6 +435,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                 {model?.location.city ? `, ${model.location.city} ${model.location.state}` : ""}
               </span>
               {cost != null && <Badge tone="neutral">${cost}</Badge>}
+              {isSynthetic && <Badge tone="warn">Estimated</Badge>}
             </div>
             <Button variant="ghost" size="sm" onClick={() => setShowIntake(true)} icon={<Ruler className="h-3.5 w-3.5" />}>
               Measure another
@@ -372,6 +448,40 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
         <motion.div variants={listItem}>
           <MeasurementSkeleton />
         </motion.div>
+      )}
+
+      {model && isSynthetic && !loading && (
+        <motion.section variants={listItem}>
+          <div className="paper-card p-4 flex items-start gap-3">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
+            <div className="text-[12px] leading-relaxed min-w-0">
+              <div className="font-medium text-[color:var(--ink)]">
+                Estimated from aerial imagery — not a verified measurement
+              </div>
+              <div className="text-[color:var(--ink-muted)] mt-1">
+                Reconstructed from Google elevation data
+                {model.provenance?.imageryDate ? ` captured ${model.provenance.imageryDate}` : ""}
+                {model.provenance ? ` at ${model.provenance.pixelSizeM} m/px` : ""}. Area and pitch are
+                typically within a few percent; roof-to-wall flashing can’t be seen from above and is not
+                included. Recent re-roofs or additions won’t appear.
+                {googleArea != null && (
+                  <>
+                    {" "}
+                    Google’s own figure for this roof:{" "}
+                    <span className="tabular">{Math.round(googleArea).toLocaleString("en-US")}</span> sqft.
+                  </>
+                )}
+              </div>
+              {excludedSqft.length > 0 && (
+                <div className="text-[color:var(--ink-muted)] mt-1.5">
+                  {excludedSqft.length} other structure{excludedSqft.length > 1 ? "s" : ""} nearby (
+                  {excludedSqft.map((a) => Math.round(a).toLocaleString("en-US")).join(", ")} sqft) were
+                  excluded as off-parcel. If any belong to this job, order a measurement instead.
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.section>
       )}
 
       {model && !loading && (
@@ -543,13 +653,26 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                     <option key={w}>{w}</option>
                   ))}
                 </Select>
-                <Button size="lg" loading={genBusy} onClick={generate} icon={<Sparkles className="h-4 w-4" />}>
+                <Button
+                  size="lg"
+                  loading={genBusy}
+                  disabled={isSynthetic}
+                  onClick={generate}
+                  icon={<Sparkles className="h-4 w-4" />}
+                >
                   Generate estimate
                 </Button>
-                {!aiEnabled && (
-                  <span className="text-[11px] text-[color:var(--ink-faint)]">
-                    AI disabled — you’ll get a sample to tune.
+                {isSynthetic ? (
+                  <span className="text-[11px] text-[color:var(--ink-muted)] leading-relaxed max-w-[26rem]">
+                    These measurements are <strong>estimated</strong> from aerial imagery, so they can’t be
+                    priced. Order an EagleView measurement for this address to build a quote.
                   </span>
+                ) : (
+                  !aiEnabled && (
+                    <span className="text-[11px] text-[color:var(--ink-faint)]">
+                      AI disabled — you’ll get a sample to tune.
+                    </span>
+                  )
                 )}
               </div>
             </Card>

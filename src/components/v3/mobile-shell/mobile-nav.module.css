@@ -1,0 +1,291 @@
+/* ============================================================
+   MOBILE NAV — the shared handheld navigation chrome.
+
+   Extracted VERBATIM from mobile-proposals-v2 on 2026-07-29 (owner's call):
+   the dark topbar and the slide-out drawer were byte-identical in all three
+   mobile page modules, so every new page re-declared 29 classes and its own
+   copy of the drawer behaviour. There is now one.
+
+   TOKEN CONTRACT: this module reads --paper / --ink / --sky / --topbar-h /
+   --sidebar-w / --pad-x / --tbar-gap / --safe-b / --border / --radius /
+   --ease-out / --ease-soft / --hair / --muted-light / --muted-faint /
+   --ink-soft / --blueprint from the page root it is mounted inside. Custom
+   properties inherit, so a page declaring them on its own .app is enough.
+   The structurally load-bearing ones carry fallbacks below, so a page that
+   forgets one degrades instead of collapsing.
+
+   The base `display: none` + mobile-layer `display: flex` pair for the drawer
+   lives HERE, both halves together. It used to straddle the page module's
+   mobile layer — which would have silently broken after the extraction, since
+   CSS-module hashes are per file and the page's .sb is not this .sb.
+   ============================================================ */
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+
+/* Gap is fluid, not a flat 10px: four elements plus the wordmark have to clear
+   320px, and the gap is the only slack. At the old flat 10px with a 9.5px sub
+   the bar overflowed ~3px at 320px and "CONTRACTOR OS" wrapped, breaking the
+   masthead into three lines. Identical token to the sibling mobile-v2 module. */
+.tbar {
+  display: flex; align-items: center; gap: var(--tbar-gap);
+  height: var(--topbar-h);
+  padding: 0 var(--pad-x);
+  background: var(--ink);
+  color: var(--paper);
+  border-bottom: var(--border);
+  z-index: 30;
+}
+/* The real product mark, same treatment as mobile-v2: an unframed crop window
+   over an oversized <img>, because only ~42.5% of /jobflex-mark.png is ink and
+   the rest is transparent margin that must stay out of the layout. 66px lands
+   the mark at ~28.1 × 22.9px, level with the 28px wordmark block.
+   brightness(0) invert(1) makes the black asset paper-white for the ink plate.
+   This replaces the drawn `i-logo` sketch J so every mobile bar carries the
+   actual logo (owner's call, 2026-07-29). */
+.tbarMarkBox { position: relative; width: 28px; height: 34px; overflow: hidden; flex-shrink: 0; }
+.tbarMarkImg {
+  position: absolute; top: 50%; left: 50%;
+  width: 66px; height: 66px;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+/* nowrap + ellipsis is the guard, not the plan — the block is measured to fit
+   to 320px. A substituted wider font clips rather than wrapping, because a
+   wrapped sub would break the two-row block the mark is sized against. */
+.tbarTxt { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; overflow: hidden; }
+.tbarName { font-size: 16px; font-weight: 900; letter-spacing: 0.01em; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 9px, not 9.5px — matches mobile-v2 and buys back the ~9px at 320px that the
+   larger mark spent. The drawer head keeps 9.5px; it has 288px to play with. */
+.tbarSub { font-size: 9px; font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase; color: var(--sky); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tbarRight { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.tbarBtn {
+  position: relative;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--paper);
+  border-radius: var(--radius);
+  color: var(--paper);
+  transition: background 0.12s, border-color 0.12s;
+}
+.tbarBtn:active { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.35); }
+.tbarBtn .ic { width: 19px; height: 19px; }
+/* Burger sits first — it is the navigation on this surface. No negative pull:
+   the bar's left and right insets are both exactly var(--pad-x), so the
+   burger's frame and the bell's frame are equidistant from their edges. */
+.bellDot {
+  position: absolute; top: 9px; right: 9px;
+  width: 9px; height: 9px;
+  background: var(--sky);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+/* ============================================================
+   NAV DRAWER — base display:none. Any node inside the shell must be
+   hidden outside the mobile layer, or on desktop it claims a grid
+   column and pushes the content off-screen.
+   ============================================================ */
+.sb,
+.sbOverlay { display: none; }
+.sb {
+  position: fixed;
+  top: 0; bottom: 0; left: 0;
+  width: var(--sidebar-w);
+  z-index: 90;
+  flex-direction: column;
+  background: var(--paper);
+  border-right: var(--border);
+  /* transform, not left: primary navigation, opened constantly — the
+     slide stays on the compositor. visibility keeps the closed drawer's
+     links out of the tab order and the accessibility tree. */
+  transform: translateX(calc(-100% - 24px));
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  box-shadow: 6px 0 0 rgba(10, 10, 10, 0.08);
+}
+.sb.open { transform: none; visibility: visible; }
+.sbOverlay {
+  position: fixed; inset: 0;
+  z-index: 89;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+.sbOverlay.on { opacity: 1; pointer-events: auto; }
+.sbHead {
+  display: flex; align-items: center; gap: 13px;
+  height: var(--topbar-h);
+  padding: 0 18px;
+  border-bottom: var(--border);
+  background: var(--ink);
+  color: var(--paper);
+  flex-shrink: 0;
+}
+/* Real mark, same crop-window treatment as the topbar, scaled to the drawer's
+   own 28.5px text block (16 + 3 + 9.5): 68px ⇒ ~28.9 × 23.5px of ink. */
+.sbMarkBox { position: relative; width: 30px; height: 35px; overflow: hidden; flex-shrink: 0; }
+.sbMarkImg {
+  position: absolute; top: 50%; left: 50%;
+  width: 68px; height: 68px;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+.sbHeadTxt { display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.sbHeadName { font-size: 16px; font-weight: 900; letter-spacing: 0.01em; line-height: 1; }
+.sbHeadSub { font-size: 9.5px; font-weight: 800; letter-spacing: 0.26em; text-transform: uppercase; color: var(--sky); line-height: 1; }
+.sbClose {
+  margin-left: auto; margin-right: -10px;
+  width: 40px; height: 40px;
+  border: 1.5px solid var(--paper);
+  border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--paper);
+}
+.sbClose .ic { width: 16px; height: 16px; }
+.sbScroll {
+  position: relative;
+  flex: 1;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 10px 0 28px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sbScroll::-webkit-scrollbar { width: 6px; }
+.sbScroll::-webkit-scrollbar-track { background: transparent; }
+.sbScroll::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+.sbSecLabel {
+  padding: 20px 22px 8px;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted-light);
+  user-select: none;
+}
+/* Every nav item carries its own square outline — a drawn box per row.
+   muted-faint so the ACTIVE item's ink plate + offset shadow still wins. */
+.sbLink {
+  position: relative;
+  z-index: 1;
+  display: flex; align-items: center; gap: 12px;
+  margin: 4px 12px;
+  min-height: 44px;
+  padding: 8px 11px;
+  font-size: 14.5px; font-weight: 600;
+  color: var(--ink-soft);
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.sbLink .ic { width: 17px; height: 17px; opacity: 0.72; }
+.sbLink:active:not(.active) { background: var(--paper-deep); }
+.sbLink.active { color: var(--ink); font-weight: 700; border-color: var(--ink); }
+.sbLink.active .ic { opacity: 1; color: var(--blueprint); }
+/* Active item is an outlined plate that SLIDES — never a black fill.
+   z-index + transparent background so a neighbour's press underlay
+   cannot paint over the offset shadow. */
+.sbIndicator {
+  position: absolute;
+  left: 12px; right: 12px;
+  top: 0; height: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: transparent;
+  box-shadow: 2px 2px 0 var(--ink);
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+}
+.sbIndicator.ready {
+  opacity: 1;
+  transition: top 0.34s var(--ease-soft), height 0.34s var(--ease-soft);
+}
+.sbFoot {
+  flex-shrink: 0;
+  border-top: var(--border);
+  padding: 12px 14px calc(12px + var(--safe-b));
+  display: flex; align-items: center; gap: 8px;
+}
+.sbFootAcc {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1; min-width: 0;
+  padding: 5px 8px;
+  /* transparent, not muted-faint: the drawer's nav ITEMS carry the drawn
+     boxes; boxing the account button too put a third frame in the footer. */
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  text-align: left;
+}
+.sbFootAv {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--blueprint);
+  color: #fff;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 900;
+  flex-shrink: 0;
+}
+.sbFootTxt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sbFootName { font-size: 14px; font-weight: 700; line-height: 1; }
+.sbFootRole {
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted-light);
+  line-height: 1;
+}
+.sbFootIc {
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.sbFootIc .ic { width: 15px; height: 15px; }
+@keyframes sbItemIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: none; }
+}
+.sb.open .sbSecLabel,
+.sb.open .sbLink { animation: sbItemIn 320ms var(--ease-out) both; }
+
+/* The press stamp. This has to live HERE, not in a page module: the nav's
+   press handler resolves `styles.pressed` against THIS file's hash space, and
+   a class that only exists in the page module is simply not the same class.
+   Extracting the chrome without extracting its keyframe left the nav pressing
+   a name nothing defined — valid code, silently no feedback. */
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+
+/* prefers-reduced-motion is honoured in JS (the handler early-returns) and
+   again here, so the kill switch holds even if a caller stamps the class
+   directly. */
+@media (prefers-reduced-motion: reduce) {
+  .sb,
+  .sbOverlay,
+  .sbIndicator,
+  .pressed,
+  .sbLink,
+  .tbarBtn {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   MOBILE LAYER — the drawer exists only in handheld mode. Rule 6 of the
+   styler skill: any node inside the shell needs a base display:none outside
+   media queries, or on a wide viewport it claims a grid column and shoves the
+   content off-screen. Both halves of that pair are in THIS file on purpose.
+   ============================================================ */
+@media (max-width: 860px) {
+  .sb { display: flex; }
+  .sbOverlay { display: block; }
+}

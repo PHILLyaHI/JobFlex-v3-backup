@@ -1,0 +1,1106 @@
+/* ============================================================
+   MOBILE COMPANY (mobile-company-v2) — Blueprint system
+   Tokens, palette, type scale and Motion System "Balanced" are
+   the reference dashboard's; the shell (topbar / drawer) is the
+   shared components/v3/mobile-shell/MobileNav, so this surface
+   matches mobile-v2, mobile-proposals-v2 and mobile-clients-v2
+   exactly. Fully scoped — app tokens untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting CREAM, matching the desktop shell, the
+     app-wide globals.css token and all three sibling mobile modules. A
+     white-paper variant was tried and reverted. paper-deep stays a shade
+     RECESSED from the sheet rather than lighter than it. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY, never decoration. Three tones each:
+     base border / soft fill / base text. */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  --topbar-h: 56px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. Two grid
+     rows — MobileNav fills the first, the scroller takes the rest. No bottom
+     bar: no page in this family has one. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1). Un-wrapped —
+   the page class followed directly by a bare element selector — it would score
+   (0,1,1) and silently beat EVERY single-class button rule in this file
+   (0,1,0): every background and every border below would be cancelled at
+   render time. A plain `button {}` reset in the donor HTML never had this
+   problem; scoping it to the page is what raises its specificity. Do not
+   un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+/* The page canvas paints no bar, like all three siblings. The scrollers that DO
+   show one (the sheet body, the filter menus) get the 6px treatment below. */
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* The only FILLED controls on the surface: this pair, the two filter dropdown
+   faces, and the form sheet's submit pair (which is this same pair). Everything
+   else is flat — a fill on every button flattens the hierarchy (owner's call,
+   2026-07-29). Flat means no FILL, not no frame: the 2px ink borders stay. */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* ============================================================
+   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations.
+   All three are computed: removing a log entry moves the numeral,
+   toggling a trade moves the second annotation.
+   ============================================================ */
+.omast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.omastTop { padding: var(--card-pad); }
+.omastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.omastRule { flex: 1; height: 1.5px; background: var(--hair); }
+/* Inter 900 tabular, never mono: mono is the drawing-annotation layer only. */
+.omastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.omastCnt {
+  display: grid;
+  /* minmax(0, 1fr) rather than 1fr 1fr: plain 1fr floors at auto, so a longer
+     annotation value would take more than its half and the two cells would
+     stop being equal. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.omastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+.omastSub:last-child { border-right: none; }
+.omastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.omastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* ============================================================
+   TABS — four sections, sliding blueprint rule.
+   No count badges: Branding / Team / Landing are settings groups,
+   not record lists, so a count on them would be invented — and
+   four columns at 320px leave ~65px per label, which a 13px label
+   fits ("Branding" ≈ 55px) but a label PLUS a 22px badge and its
+   7px gap (~89px) cannot. The one countable section (Activity)
+   carries its counts on its own filter faces instead.
+   ============================================================ */
+.tabs {
+  position: relative;
+  display: grid;
+  /* minmax(0, 1fr), not 1fr: .tabInd is width 25% translated by index * 100%,
+     so the rule only ever lands under its tab if the columns are EXACT
+     quarters. Plain 1fr floors at auto, so a label wider than its share widens
+     its column and silently desynchronises the plate. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+/* Sentence case, 13px, one line at every width — never stacked. */
+.tab {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 48px;
+  padding: 0 3px;
+  font-size: 13px; font-weight: 800;
+  letter-spacing: 0; text-transform: none;
+  line-height: 1;
+  color: var(--muted);
+  border-right: 1.5px solid var(--ink);
+  transition: color 0.16s, background 0.16s;
+}
+.tab:last-child { border-right: none; }
+.tab.active { color: var(--ink); background: var(--paper-deep); }
+.tabInd {
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 25%; height: 3px;
+  background: var(--blueprint);
+  transition: transform 0.34s var(--ease-soft);
+  pointer-events: none;
+}
+/* ============================================================
+   CARDS — house zoning: white header → white body → beige service
+   strip → beige foot. Every block except the head carries a
+   border-TOP, so consecutive blocks always share exactly ONE
+   1.5px ink rule and no joint ever doubles to 3px.
+   ============================================================ */
+.card {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.cardHead {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  padding: 13px var(--card-pad);
+}
+.cardTitle {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(17px, 5.2vw, 21px); font-weight: 900;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  line-height: 1.15;
+}
+/* Flat: frame only, no fill — it is not a page-head action. */
+.cardEdit {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px;
+  padding: 0 13px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.cardEdit .ic { width: 15px; height: 15px; }
+.cardEdit:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.cardBody { padding: var(--card-pad); border-top: 1.5px solid var(--ink); }
+/* Beige service strip — the logo target and the trade grid live here. */
+.zoneBeige {
+  padding: var(--card-pad);
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.zoneLbl {
+  display: flex; align-items: baseline; gap: 10px;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.zoneHint {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+/* The autosave line, as the card's beige foot. The desktop reports
+   "Saving…" → "All changes saved"; the mobile idle copy says the card
+   autosaves, because there is no Save button to look for. */
+.saveLine {
+  padding: 11px var(--card-pad) 12px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.saveLine.saved { color: var(--success); }
+/* ============================================================
+   IDENTITY — a read summary. The five fields live in the form
+   sheet: on a phone this panel is one long scroll, and a focused
+   input in the middle of it ends up under the keyboard.
+   ============================================================ */
+.idList { display: flex; flex-direction: column; }
+.idRow {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 11px 0 12px;
+  border-bottom: 1px solid var(--hair-soft);
+}
+.idRow:first-child { padding-top: 0; }
+.idRow:last-child { padding-bottom: 0; border-bottom: none; }
+.idLbl {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+}
+.idVal { font-size: 15px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.idVal.isEmpty { font-weight: 500; color: var(--muted-faint); }
+/* ============================================================
+   BRAND — colour presets, hex, logo target, live email preview
+   ============================================================ */
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+/* 44px, not the desktop's 30px: a colour chip is a touch target. */
+.sw {
+  width: 44px; height: 44px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.sw.on { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
+.hex {
+  width: 136px; max-width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 15px; font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.hex:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+/* A drawing note, not a filled button: dashed frame, no resting fill. */
+.logoDrop {
+  width: 100%;
+  min-height: 116px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+  padding: 16px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: 4px;
+  transition: border-color 0.14s, background 0.14s;
+}
+.logoDrop .ic { width: 20px; height: 20px; color: var(--muted); }
+.logoDrop:active, .logoDrop.over { border-color: var(--ink); background: rgba(10, 10, 10, 0.05); }
+.logoT { font-size: 15px; font-weight: 700; }
+.logoH {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-align: center;
+}
+/* The preview DEPICTS a branded email header, so the brand-coloured left rule
+   is content, not decoration: it is the thing the customer will see in their
+   inbox, carried over from the desktop card unchanged. The house system uses
+   the same device on its info banners (2px frame, heavy left edge). */
+.mailPrev {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 15px;
+  border: 1.5px solid var(--hair);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.mailMark {
+  width: 44px; height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 19px; font-weight: 900;
+}
+.mailTxt { min-width: 0; }
+.mailName {
+  display: block;
+  font-size: 15px; font-weight: 800;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+.mailSub {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+/* ============================================================
+   LEAD MATCHING — status badge, contact fields, trades, toggle
+   ============================================================ */
+/* Status badge: 1.5px border in the base tone + soft fill + base text. Three
+   tones, statuses only. */
+.leadState {
+  display: inline-block;
+  padding: 4px 8px;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.leadOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.leadWait { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.soonPill { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.07); color: var(--blueprint); }
+/* A 3-column grid rather than a ragged wrapping rail: 12 trades then draw as a
+   real table, and "Kitchen & Bath" cannot push a row out of line. auto-fit
+   gives 2 columns at 320px and 3 from ~400px with no breakpoint. */
+.trades {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 8px;
+}
+.trade {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  font-size: 13px; font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+/* A SELECTION state, not a resting fill — the same treatment the active filter
+   cell carries. Blueprint, never a status colour. */
+.trade.on {
+  border-color: var(--blueprint);
+  background: rgba(24, 84, 160, 0.07);
+  color: var(--blueprint);
+  font-weight: 800;
+}
+/* The whole row is the target, so the switch clears 44px instead of being a
+   24px-tall track. Flat: the row itself has no fill. */
+.tgRow {
+  display: flex; align-items: flex-start; gap: 16px;
+  width: 100%;
+  min-height: 64px;
+  padding: var(--card-pad);
+  border-top: 1.5px solid var(--ink);
+  text-align: left;
+  transition: background 0.12s;
+}
+.tgRow:active { background: var(--paper-deep); }
+.tgTxt { min-width: 0; }
+.tgT { display: block; font-size: 15px; font-weight: 800; }
+.tgH {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px; font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.tgl {
+  position: relative;
+  width: 54px; height: 32px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  transition: background 0.16s, border-color 0.16s;
+}
+.tgl::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 2px;
+  width: 24px; height: 24px;
+  border-radius: 1px;
+  background: var(--ink);
+  transform: translateY(-50%);
+  transition: transform 0.16s var(--ease), background 0.16s;
+}
+/* Lead matching being live IS a status, so the ON state takes the success
+   tones — the same three-tone token set as the badge above it. */
+.tgRow[aria-pressed="true"] .tgl { background: var(--success-soft); border-color: var(--success); }
+.tgRow[aria-pressed="true"] .tgl::after { transform: translateY(-50%) translateX(23px); background: var(--success); }
+/* ============================================================
+   TEAM — the unified-roster card
+   ============================================================ */
+.teamBody { padding: 34px var(--card-pad) 32px; text-align: center; }
+.teamIc {
+  width: 46px; height: 46px;
+  margin: 0 auto 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--blueprint);
+  border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.08);
+  color: var(--blueprint);
+}
+.teamIc .ic { width: 20px; height: 20px; }
+.teamT { font-size: 19px; font-weight: 900; letter-spacing: -0.005em; line-height: 1.25; }
+.teamP {
+  margin: 10px auto 14px;
+  max-width: 44ch;
+  font-size: 14.5px; font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.teamCrew {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.teamAct {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  margin-top: 20px;
+  min-height: 48px;
+  padding: 0 16px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.teamAct .ic { width: 16px; height: 16px; }
+.teamAct:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+/* ============================================================
+   FIND BAR — search over the log, plus the two filters. The
+   desktop chip rail + native <select> cannot survive 320px, and
+   with twelve entries across three axes search is the fast route.
+   ============================================================ */
+.find { display: flex; flex-direction: column; gap: 10px; }
+.srch {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.srch .ic { width: 17px; height: 17px; color: var(--muted); }
+.srchInput {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+}
+.srchInput::placeholder { color: var(--muted-light); }
+/* 44px of hit area, pulled into the bar's own padding so the control does not
+   inflate the 50px row. */
+.srchX {
+  width: 44px; height: 44px;
+  margin-right: -11px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+.srchX .ic { width: 15px; height: 15px; }
+/* Custom .dd, never a native select: rotating caret, menu on a 2px frame, and
+   the chosen value reading back on the face as PLAIN TEXT — no pill, no frame,
+   tone-only colouring. Both filters share this one construction. */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+/* Value + count sit hard right, the caret last. */
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ddValue.isAll { color: var(--ink); }
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* No offset shadow (owner's call, 2026-07-29): the hard 3px ink drop read as
+     a black slab behind the panel, and the 2px ink frame already lifts it off
+     the sheet.
+     A 3-column GRID, not a one-deep list. padding:0 so the CELL borders below
+     are the grid's own rules, with no gutter against the menu frame. */
+  display: grid;
+  /* minmax(0, 1fr): plain 1fr floors at auto, so "Leads & clients" would push
+     its column past a third and shove the panel out of its own frame. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  max-height: 60vh;
+  overflow-y: auto;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. Dividers are border-TOP and
+   border-LEFT with the first row and first column cleared — that way the block
+   reads as one drawn table at ANY item count and never doubles a line against
+   the menu's own 2px frame (a trailing border-right/bottom would). */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so the tick cannot squeeze the label in a ~87px cell. */
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  color: var(--blueprint);
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* ============================================================
+   ACTIVITY LOG — the desktop feed row re-cut as a row card, the
+   one list this page holds. Three lines: identity + actions
+   button, the mono annotation, then the status badge and figure.
+   The separator between records is a real drawn 1.5px ink rule.
+   ============================================================ */
+.book {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.aday {
+  padding: 9px var(--card-pad) 8px;
+  background: var(--paper-deep);
+  border-bottom: 1.5px solid var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+}
+/* No border-TOP here on purpose: the row above already drew its 1.5px rule, and
+   stacking a second one would render as a ~3px line at that one joint. */
+.arow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.arow:last-child { border-bottom: none; }
+.arow:active { background: var(--paper-deep); }
+/* EVERY child is pinned to an explicit cell. A `grid-row` without a
+   `grid-column` lets auto-placement drop the ⋮ button into column 2 and push
+   the text out to column 3 — definite-row items are placed in their own pass,
+   so they claim columns before the auto items get a turn. */
+.aav {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  align-self: start;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+/* The desktop bead: the entry's state colour, as a 3-tone dot. */
+.abead {
+  position: absolute;
+  right: -4px; bottom: -4px;
+  width: 10px; height: 10px;
+  border: 1.5px solid var(--paper);
+  border-radius: 50%;
+  background: var(--muted-faint);
+}
+.beadBp { background: var(--blueprint); }
+.beadWarn { background: var(--warning); }
+.beadOk { background: var(--success); }
+.beadDanger { background: var(--danger); }
+.beadNone { background: var(--muted-faint); }
+.atxt {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px; font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+/* The fixture carries inline <b> around the record each entry touched, and the
+   row renders it as real elements (never dangerouslySetInnerHTML) — so this
+   element rule is what weights them. Scoped under .atxt, it can only outrank
+   rules that target a bare <b>, of which there are none. */
+.atxt b { font-weight: 800; color: var(--ink); }
+.aactor { color: var(--ink); }
+.arowOpen {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -4px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.arowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.arowOpen .ic { width: 18px; height: 18px; }
+/* Rows 2 and 3 are ONE group: the mono annotation sits tight above the badge +
+   figure line, and the pair is pushed well clear of the identity line. Reading
+   down you get identity, a gap, then the record's data — instead of three
+   evenly spaced lines that all compete. Both span 1/-1 so they start at the
+   card's left grid edge rather than indenting under the avatar. */
+.ameta {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.afoot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 5px;
+}
+.badge {
+  display: inline-block;
+  padding: 3px 7px;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.toneBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.toneWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.toneOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.toneDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.toneNone { border-color: var(--muted-faint); color: var(--muted); }
+.amoney {
+  margin-left: auto;
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* An entry that moved no money reads as a dash, not $0 — zero is a number,
+   "no amount on this update" is an absence. */
+.amoney.isZero { color: var(--muted-faint); font-weight: 800; }
+/* ============================================================
+   PAGER + EMPTY STATES
+   ============================================================ */
+.pager { display: flex; align-items: center; gap: 10px; }
+.pagerBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; min-width: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.pagerBtn:active:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.pagerBtn:disabled { opacity: 0.35; }
+.pagerBtn .ic { width: 14px; height: 14px; }
+.pagerInfo {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* A dashed note, like an annotation on a drawing. Never blank: it says what
+   happened AND what to do. Two of them — "nothing yet" and "no matches" are
+   different facts. */
+.empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 28px 18px;
+  text-align: center;
+}
+.emptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.emptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.emptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.emptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Two of them: the row "⋮" menu, and the identity form.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+/* translateY(100%) PLUS visibility:hidden, so a closed sheet leaves the tab
+   order and the accessibility tree instead of sitting off-screen. */
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* 6px bar, muted-faint thumb, transparent track — never painted with --hair. */
+.sheetBody::-webkit-scrollbar,
+.ddMenu::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-track,
+.ddMenu::-webkit-scrollbar-track { background: transparent; }
+.sheetBody::-webkit-scrollbar-thumb,
+.ddMenu::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 3px; }
+.sheetBody,
+.ddMenu { scrollbar-width: thin; scrollbar-color: var(--muted-faint) transparent; }
+/* Row menu items: icon in a 26px TONAL box, title + sub. One row is disabled by
+   real fixture state (a team change has no proposal / job / lead behind it) and
+   one is danger. */
+.menuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.menuItem:active:not(:disabled) { background: var(--paper-deep); }
+.menuItem:disabled { opacity: 0.45; }
+.miIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.miIc .ic { width: 14px; height: 14px; }
+.miBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.miSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.miOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.miWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.miDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.menuItemT { display: block; font-size: 15px; font-weight: 700; }
+.menuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+.menuItemDanger .menuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   FORM FIELDS — one set, shared by the identity sheet, the lead
+   contact pair and the landing hero pair. Never a parallel set:
+   that is the main source of typography drift.
+   ============================================================ */
+.formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
+.fld { display: flex; flex-direction: column; }
+.fld + .fld { margin-top: 16px; }
+.formBody .fld + .fld { margin-top: 0; }
+.fldLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.pinput {
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+}
+.pinput::placeholder { color: var(--muted-faint); }
+.pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+.fld.invalid .pinput { border-color: var(--danger); background: var(--danger-soft); }
+/* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
+   reachable without scrolling the form to its end. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 18px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* A record that just changed gets one blue flash, so what you acted on is
+   findable after the list re-filters around it. */
+@keyframes landFlash {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: transparent; }
+}
+.landed { animation: landFlash 0.6s var(--ease-out); }
+/* A card resolves back to paper rather than to transparent — otherwise the
+   graph paper shows through for the last frame of the flash. */
+@keyframes cardLand {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: var(--paper); }
+}
+.card.landed { animation: cardLand 0.6s var(--ease-out); }
+/* Scoped to the page — the global kill switch stays the app's business. A bare
+   `*` selector here would leak into every other surface. */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+  /* The composition is already the handheld one; the ranges below only pay out
+     the last of the width. */
+}
+@media (max-width: 520px) {
+  /* The head actions stop sharing a line */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .amoney { font-size: 18px; }
+  .formFoot { grid-template-columns: 1fr; }
+  .tgRow { gap: 12px; }
+}
+@media (max-width: 360px) {
+  .omastCnt { grid-template-columns: 1fr; }
+  .omastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .omastSub:last-child { border-bottom: none; }
+  .aav { width: 34px; height: 34px; font-size: 11px; }
+  /* The swatches are NOT shrunk here: a colour chip is a touch target, so it
+     holds 44px and wraps to a second row instead. */
+  /* Two trades per row rather than a 104px floor that would leave a stub */
+  .trades { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* The toggle text and the switch stack, so neither is crushed */
+  .tgRow { flex-direction: column; gap: 14px; }
+  .tgl { margin-top: 0; }
+}

@@ -1,0 +1,83 @@
+/* Calendar blueprint — the GLOBAL layer of the donor port (plain stylesheet,
+   not a CSS module). Two kinds of rule live here, both because they cannot be
+   expressed inside calendar.module.css:
+
+   1. Donor keyframes — Turbopack's Lightning CSS rejects `@keyframes :global()`
+      inside modules, and the name must stay literal (the CSS references it by
+      name). Only ONE calendar keyframe is new: the donor's `sheetIn`, renamed
+      `calendar_sheetIn` here and at its single reference in
+      calendar.module.css. The donor's other three — leadLand, daySel2, press2 —
+      are byte-identical to the declarations already shipped in
+      dashboard-blueprint/blueprint-global.css, so they are REUSED by name and
+      deliberately not re-declared.
+
+   2. The donor's `html.eff-1280` / `html.eff-1000` breakpoint rules. They hang
+      off <html>, which sits above the page module's root, so they cannot be
+      written as `.bp :global(.content …)`. Values are unchanged; they are
+      re-anchored under the literal `.jf-blueprint` class the shell root always
+      carries, so they stop matching the moment a blueprint page unmounts.
+
+   Every visual value is verbatim from the donor file
+   jobflex-calendar-blueprint_5.html. */
+
+/* ── Donor keyframes ─────────────────────────────────────────────── */
+
+/* The donor's `sheetIn` keyframe is gone: the panel now transitions in AND out
+   (transform + opacity + visibility) so closing is as smooth as opening, which
+   a keyframe on a `display` switch could never be. See `.sheet` in
+   calendar.module.css. */
+
+/* ── Calendar animation pack ─────────────────────────────────────────
+   Same reason these live here as the donor keyframe above: Lightning CSS
+   rejects @keyframes inside a CSS module, and the names are referenced
+   literally from calendar.module.css. Durations follow Motion "Balanced":
+   entrances 280–340ms on the shared ease, feedback under 200ms. */
+
+/* The scrim behind the slide-out panel. */
+@keyframes calendar_scrimIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* Fields inside the panel arrive in a short cascade. */
+@keyframes calendar_fieldIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* View swap: straight up when the view changes, sideways when the cursor
+   steps to the next/previous week or month. */
+@keyframes calendar_viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes calendar_viewNext { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: none; } }
+@keyframes calendar_viewPrev { from { opacity: 0; transform: translateX(-22px); } to { opacity: 1; transform: none; } }
+
+/* Menu options on open, and the toolbar badge. */
+@keyframes calendar_optIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes calendar_badgeIn { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: none; } }
+
+/* The drag-to-create span held on the grid while the form is open: a slow
+   breath, so it reads as claimed-and-waiting rather than stuck. */
+@keyframes calendar_ghostHold {
+  0%, 100% { background: rgba(24, 84, 160, 0.12); }
+  50%      { background: rgba(24, 84, 160, 0.2); }
+}
+
+/* A chip that was just dropped or saved: one lift + a blueprint ring that
+   fades out. Deliberately no `background` frame — chips carry their own fill
+   (appointment tint, blocked hatching) and a keyframe would flatten it. */
+@keyframes calendar_evLand {
+  0%   { transform: translateY(-3px); box-shadow: 0 0 0 3px rgba(24, 84, 160, 0.34); }
+  60%  { transform: none; box-shadow: 0 0 0 2px rgba(24, 84, 160, 0.2); }
+  100% { transform: none; box-shadow: 0 0 0 0 rgba(24, 84, 160, 0); }
+}
+
+/* ── Effective-width breakpoints (donor "RESPONSIVE" block) ──────────
+   The donor's FLUID SCALE stamps .eff-1280 / .eff-1000 on <html>; the class
+   is the single source of truth for these breakpoints so window zoom and
+   viewport width agree. `html.eff-1000 .search` is topbar chrome and is
+   deliberately omitted. */
+html.eff-1280 .jf-blueprint .content .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+html.eff-1280 .jf-blueprint .content .kpi:nth-child(2) { border-right: none; }
+html.eff-1280 .jf-blueprint .content .kpi:nth-child(-n+2) { border-bottom: 1.5px solid var(--ink); }
+html.eff-1280 .jf-blueprint .content .grid-23 { grid-template-columns: 1fr; }
+html.eff-1280 .jf-blueprint .content .grid-11 { grid-template-columns: 1fr; }
+html.eff-1280 .jf-blueprint .content .stage-board { grid-template-columns: repeat(2, 1fr); }
+html.eff-1280 .jf-blueprint .content .stage-col { border-bottom: 1.5px solid var(--ink); }
+html.eff-1280 .jf-blueprint .content .stage-col:nth-child(2n) { border-right: none; }
+html.eff-1280 .jf-blueprint .content .stage-col:nth-child(5) { border-bottom: none; }
+html.eff-1000 .jf-blueprint .content .grid-11 { grid-template-columns: 1fr; }
+html.eff-1000 .jf-blueprint .content .page-title { font-size: 38px; }
