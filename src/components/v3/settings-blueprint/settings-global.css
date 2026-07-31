@@ -1,0 +1,43 @@
+/* Settings blueprint — the GLOBAL layer of the donor port (a plain
+   stylesheet, NOT a CSS module).
+
+   Only keyframes live here. Turbopack's Lightning CSS rejects `@keyframes`
+   inside a CSS module, and the names have to stay literal because
+   settings.module.css references them by name. Every name is prefixed
+   `settings_` so it can never collide with another page's port — the shell
+   loads several page stylesheets into one document.
+
+   settings-content.tsx imports this file itself, so the keyframes arrive
+   with the page and leave with it.
+
+   No `prefers-reduced-motion` guard is needed here: the always-on
+   proposals module already zeroes every `animation` and `transition`
+   inside `.bp` under that query.
+
+   `settings_setIn` is the donor's pane entrance, verbatim from donor line
+   1625 of jobflex-settings-blueprint (6).html. `settings_maskIn` and
+   `settings_modalIn` drive the F11 pop-up form and use the values the
+   owner specified. */
+
+/* ── Donor keyframe (page-unique, renamed) ──────────────────────── */
+
+/* donor 1625: `@keyframes setIn` — the `.pane.on` entrance, .34s var(--ease-out). */
+@keyframes settings_setIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── F11: the add-payout-account modal ──────────────────────────── */
+
+/* .18s, paired with `.mask` in settings.module.css. */
+@keyframes settings_maskIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* .28s var(--ease-out), paired with `.modal`. Rises and settles rather than
+   scaling up from nothing — the same restraint as the donor's pane entrance. */
+@keyframes settings_modalIn {
+  from { opacity: 0; transform: translateY(14px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}

@@ -1,0 +1,511 @@
+/* ============================================================
+   SETTINGS BLUEPRINT — port of the donor file
+   jobflex-settings-blueprint (6).html, CSS block lines 1605-1853.
+
+   Scoping strategy (same as company-blueprint / proposals-blueprint):
+   - every donor rule ships as `.bp :global(.content SEL)` so the class
+     names the panes render (set, rail-a, sc, prow, tg, cb, …) stay
+     literal;
+   - the donor `:root` token block lands on `.content`, NOT on `.bp` —
+     the shell chrome (sidebar / topbar) must keep the tokens it was
+     authored against, and `blueprint-global.css` softens `--hair` /
+     `--hair-soft` on `.jf-blueprint[data-page]`. This sheet is drawn
+     against the donor's hard hairlines (`#0a0a0a` /
+     `rgba(10,10,10,0.55)`), and a declaration on `.content` beats an
+     ancestor's regardless of specificity, so the donor values reach
+     every card border, row divider and table rule on this page;
+   - donor source ORDER is preserved verbatim; the cascade depends on
+     it (`.tg`, `.btn-sm` and `.prow` are each redefined further down
+     the donor sheet — the second definition is the one that ships).
+
+   SKIPPED (owned by the shell, never restyled here): everything above
+   donor line 1605 — html/body resets, `* { box-sizing }`, the button /
+   input font-family resets, `.layout`, `.main` + its graph-paper
+   `::before`, `.sb` and every `sb-*` class, `.topbar` / `.search` /
+   `.icon-btn` / `.nav-burger` / `.sb-overlay`, `.btn` / `.btn-primary` /
+   `.btn-ghost`, `.page-head` / `.kicker` / `.page-title`, `.ic`, the
+   `prefers-reduced-motion` block (donor 924 — the always-on proposals
+   module already kills every transition and animation inside `.bp`),
+   and the donor sprite `<svg>`. The one chrome rule that IS ported is
+   `.sb-foot-ic.on` (donor 1789): it lights the sidebar gear while
+   Settings is the active page, so it is scoped to `.bp` OUTSIDE
+   `.content`.
+
+   MANDATORY RENAME: the donor's settings TABLE class `.ptab`
+   (donor 1688-1697) collides with the proposals TAB BUTTON `.ptab`
+   (`display: inline-flex`), which is always applied to the shell root —
+   that collision is why the Plans and Payment-history tables render
+   broken in the donor. Here the table class is `.stab`.
+
+   Adaptations (format only, zero visual delta): fonts resolve through
+   the root layout's next/font variables (same families, donor
+   fallbacks kept); the donor's Russian section comments are translated;
+   `@keyframes setIn` moves to settings-global.css as `settings_setIn`
+   (Lightning CSS rejects keyframes inside CSS modules) and `.pane.on`
+   references the prefixed name; the donor's `@media (max-width: 1080px)`
+   block becomes `html.eff-1000` — under the shell's FLUID SCALE module
+   the layout is zoomed, so a plain media query in the 1000-1280 range
+   fires against the RAW viewport while the composition is still
+   effectively ~1384px wide (the rail would collapse to a scrolling row
+   on a page that has room for it). `eff-1000` keys off effective width,
+   which is what the donor's 1080 actually meant, and it also covers the
+   handheld band where the shell forces zoom to 1.
+
+   OWNER FIX LIST applied here: F1 (.seccols/.seccol/.seccol-act),
+   F2 (.prow--flush), F6 (.prow-act rebuilt to flex, the two grid rules
+   deleted), F7 (.btn-sm justify-content), F10 (.sel*), F11 (.mask +
+   .modal*), F12 (.tg-ic/.tg-on/.tg-off deleted), F13 (.sc-b--rows),
+   F14 (the .stab rename above), F15 (.prow-act--pair), F16
+   (.nrow/.nrow-t/.nev-ic), F17 (.colt deleted, .colw/.colw-l added).
+   Each is flagged at its site.
+   ============================================================ */
+
+/* ============================================================
+   DESIGN TOKENS — JobFlex Blueprint System (donor :root, lines 15-56)
+   ============================================================ */
+.bp :global(.content) {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft fill */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger:  #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0,0,0,0.035);
+  --hair: #0a0a0a;
+  --hair-soft: rgba(10,10,10,0.55);
+
+  --chart-minor: rgba(24,84,160,0.08);
+  --chart-major: rgba(10,10,10,0.12);
+  --chart-fill: rgba(24,84,160,0.07);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10,10,10,0.06);
+
+  --font: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --sidebar-w: 264px;
+  --topbar-h: 62px;
+}
+
+/* ============ SETTINGS (donor 1605-1853) ============ */
+.bp :global(.content .set) { display: grid; grid-template-columns: 240px minmax(0,1fr); gap: 34px; align-items: start; }
+.bp :global(.content .rail) { position: sticky; top: 8px; }
+.bp :global(.content .rail-nav) { display: flex; flex-direction: column; }
+.bp :global(.content .rail-a) { display: flex; align-items: center; gap: 11px; padding: 11px 13px; margin-bottom: 2px;
+  border: 1.5px solid transparent; border-radius: var(--radius); background: none;
+  font-size: 13.5px; font-weight: 600; color: var(--ink-soft); text-align: left;
+  transition: background .14s var(--ease), color .14s var(--ease), border-color .14s var(--ease); }
+.bp :global(.content .rail-a .ic) { width: 17px; height: 17px; opacity: .7; }
+.bp :global(.content .rail-a:hover) { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.content .rail-a.on) { border-color: var(--ink); box-shadow: 2px 2px 0 var(--shadow); color: var(--ink);
+  font-weight: 700; background: var(--paper); }
+.bp :global(.content .rail-a.on .ic) { opacity: 1; color: var(--blueprint); }
+.bp :global(.content .rail-new) { margin-left: auto; padding: 2px 6px; border: 1.5px solid var(--warning);
+  border-radius: var(--radius); background: var(--warning-soft); color: var(--warning);
+  font-size: 8.5px; font-weight: 900; letter-spacing: .1em; }
+.bp :global(.content .rail-sep) { height: 0; margin: 14px 0; border-top: 1.5px solid var(--hair); }
+
+.bp :global(.content .pane) { display: none; }
+/* donor: `animation: setIn .34s var(--ease-out)` — the keyframe lives in
+   settings-global.css under the page-prefixed name. */
+.bp :global(.content .pane.on) { display: block; animation: settings_setIn .34s var(--ease-out); }
+.bp :global(.content .pane-h) { margin-bottom: 18px; }
+.bp :global(.content .pane-k) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .pane-t) { margin-top: 8px; font-size: 26px; font-weight: 900; letter-spacing: -.03em; text-transform: uppercase; }
+
+.bp :global(.content .sc) { border: var(--border); border-radius: var(--radius); background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow); margin-bottom: 18px; }
+.bp :global(.content .sc-h) { display: flex; align-items: center; gap: 12px; padding: 15px 18px;
+  border-bottom: 1.5px solid var(--hair); }
+.bp :global(.content .sc-t) { font-size: 13.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.bp :global(.content .sc-s) { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.bp :global(.content .sc-h > div) { min-width: 0; }
+.bp :global(.content .sc-h .badge2) { margin-left: auto; flex-shrink: 0; }
+.bp :global(.content .sc-b) { padding: 18px; }
+.bp :global(.content .badge2) { display: inline-flex; align-items: center; gap: 7px; padding: 4px 9px;
+  border: 1.5px solid currentColor; border-radius: var(--radius);
+  font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.bp :global(.content .badge2 i) { width: 6px; height: 6px; background: currentColor; }
+.bp :global(.content .bg-ok) { color: var(--success); background: rgba(58,125,68,.08); }
+.bp :global(.content .bg-live) { color: var(--blueprint); background: rgba(24,84,160,.07); }
+.bp :global(.content .bg-warn) { color: var(--warning); background: var(--warning-soft); }
+.bp :global(.content .bg-off) { color: var(--muted); background: var(--paper-deep); border-color: var(--hair); }
+
+.bp :global(.content .fgrid) { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.bp :global(.content .fld > span) { display: block; margin-bottom: 7px; font-family: var(--font-mono); font-size: 9.5px;
+  font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .fin) { display: block; width: 100%; height: 42px; padding: 0 12px; border: 1.5px solid var(--hair);
+  border-radius: var(--radius); background: var(--paper-deep); font-size: 13.5px; outline: none;
+  transition: border-color .15s var(--ease); }
+.bp :global(.content .fin:focus) { border-color: var(--ink); }
+.bp :global(.content .fin:disabled) { color: var(--muted); cursor: not-allowed; }
+/* Inert after F10 (every <select class="fin"> became the custom .sel dropdown),
+   kept so the donor's `.fin` family ships whole. */
+.bp :global(.content .fin option) { background: var(--paper); }
+
+.bp :global(.content .prow) { display: flex; align-items: center; gap: 13px; padding: 14px 0;
+  border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .prow:last-child) { border-bottom: none; }
+.bp :global(.content .prow-ic) { flex-shrink: 0; width: 34px; height: 34px; display: grid; place-items: center;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); color: var(--muted); }
+.bp :global(.content .prow-ic .ic) { width: 16px; height: 16px; }
+.bp :global(.content .prow-b) { flex: 1; min-width: 0; }
+.bp :global(.content .prow-n) { display: block; font-size: 13.5px; font-weight: 800; }
+.bp :global(.content .prow-d) { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+
+/* First `.tg` definition — superseded by the second one further down
+   (donor 1809). Kept in place because the donor cascade depends on it. */
+.bp :global(.content .tg) { position: relative; flex-shrink: 0; width: 44px; height: 24px; border: var(--border-thin);
+  border-radius: var(--radius); background: var(--paper-deep); cursor: pointer;
+  transition: background .18s var(--ease); }
+.bp :global(.content .tg::after) { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  background: var(--ink); transition: transform .18s var(--ease-out), background .18s var(--ease); }
+.bp :global(.content .tg[aria-checked="true"]) { background: var(--blueprint); border-color: var(--ink); }
+.bp :global(.content .tg[aria-checked="true"]::after) { transform: translateX(20px); background: var(--paper); }
+.bp :global(.content .tg:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+.bp :global(.content .trow) { display: flex; align-items: center; gap: 13px; padding: 12px 0;
+  border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .trow:last-child) { border-bottom: none; }
+.bp :global(.content .trow-b) { flex: 1; min-width: 0; }
+.bp :global(.content .trow-n) { display: block; font-size: 13px; font-weight: 700; }
+.bp :global(.content .trow-d) { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+
+.bp :global(.content .plan-big) { font-size: 40px; font-weight: 900; letter-spacing: -.035em; line-height: 1; }
+.bp :global(.content .plan-meta) { margin-top: 12px; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--muted); }
+.bp :global(.content .plan-meta span) { display: block; margin-top: 4px; }
+/* F14 — donor `.ptab` renamed `.stab`. `border-collapse: collapse` is the one
+   declaration added to the donor block: the donor never set it, so both tables
+   fell back to `separate` + 2px border-spacing, which breaks each row rule into
+   per-cell dashes. Every other table in the system (`.ptable`, `.psched`)
+   collapses; these two now match. */
+.bp :global(.content .stab) { width: 100%; border-collapse: collapse; }
+.bp :global(.content .stab th), .bp :global(.content .stab td) { padding: 10px 14px; border-bottom: 1.5px solid var(--hair-soft); text-align: left;
+  font-size: 12.5px; }
+.bp :global(.content .stab th) { font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .stab td:last-child), .bp :global(.content .stab th:last-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.bp :global(.content .stab tbody tr:last-child td) { border-bottom: none; }
+.bp :global(.content .stab tbody tr:hover) { background: var(--paper-deep); }
+.bp :global(.content .stab .cur) { font-weight: 800; }
+.bp :global(.content .stab .cur td) { background: rgba(24,84,160,.05); }
+
+.bp :global(.content .sub) { display: flex; border: var(--border-thin); border-radius: var(--radius); overflow: hidden;
+  margin-bottom: 18px; }
+.bp :global(.content .sub-b) { flex: 1; padding: 10px 12px; border-right: 1.5px solid var(--hair); background: var(--paper);
+  font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+  transition: background .15s var(--ease), color .15s var(--ease); }
+.bp :global(.content .sub-b:last-child) { border-right: none; }
+.bp :global(.content .sub-b:hover) { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.content .sub-b.on) { background: var(--ink); color: var(--paper); }
+.bp :global(.content .subpane) { display: none; }
+.bp :global(.content .subpane.on) { display: block; }
+.bp :global(.content .mono-box) { display: flex; align-items: center; gap: 10px; padding: 11px 13px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); background: var(--paper-deep); }
+.bp :global(.content .mono-box code) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 11.5px; }
+.bp :global(.content .copy) { flex-shrink: 0; padding: 6px 10px; border: 1.5px solid var(--hair); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted); transition: color .15s, border-color .15s; }
+.bp :global(.content .copy:hover) { color: var(--ink); border-color: var(--ink); }
+.bp :global(.content .copy.done) { color: var(--success); border-color: var(--success); }
+.bp :global(.content .scopes) { display: flex; flex-direction: column; gap: 9px; }
+.bp :global(.content .scope) { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+.bp :global(.content .scope i) { flex-shrink: 0; width: 15px; height: 15px; display: grid; place-items: center;
+  background: var(--success); color: var(--paper); font-size: 9px; font-weight: 900; font-style: normal; }
+.bp :global(.content .scope code) { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.bp :global(.content .dlv) { display: flex; align-items: center; gap: 11px; padding: 10px 0;
+  border-bottom: 1.5px solid var(--hair-soft); font-size: 12.5px; }
+.bp :global(.content .dlv:last-child) { border-bottom: none; }
+.bp :global(.content .dlv b) { flex-shrink: 0; padding: 2px 7px; border: 1.5px solid var(--success); border-radius: var(--radius);
+  background: rgba(58,125,68,.08); color: var(--success);
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700; }
+.bp :global(.content .dlv b.err) { border-color: var(--danger); background: rgba(168,50,50,.08); color: var(--danger); }
+.bp :global(.content .dlv span) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp :global(.content .dlv u) { flex-shrink: 0; text-decoration: none; font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--muted); }
+.bp :global(.content .note) { display: flex; gap: 11px; padding: 13px 14px; border: 2px solid var(--warning);
+  border-left-width: 6px; border-radius: var(--radius); background: var(--warning-soft); }
+.bp :global(.content .note .ic) { width: 20px; height: 20px; color: var(--warning); }
+.bp :global(.content .note b) { display: block; font-size: 12.5px; font-weight: 800; }
+.bp :global(.content .note span) { display: block; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--ink-soft); }
+.bp :global(.content .note code) { font-family: var(--font-mono); font-size: 11px; }
+
+/* notifications: the event x channel matrix */
+.bp :global(.content .nwrap) { overflow-x: auto; }
+/* `border-collapse: collapse` added for the same reason as `.stab` above —
+   without it the 1.5px row rules break at every column gap. */
+.bp :global(.content .ntab) { width: 100%; min-width: 560px; table-layout: fixed; border-collapse: collapse; }
+.bp :global(.content .ntab td) { padding: 11px 0; border-top: 1.5px solid var(--hair-soft); text-align: center; }
+.bp :global(.content .ntab td:first-child) { text-align: left; }
+.bp :global(.content .nev) { display: block; font-size: 13px; font-weight: 700; }
+.bp :global(.content .nsub) { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+.bp :global(.content .cb) { position: relative; width: 20px; height: 20px; display: inline-grid; place-items: center;
+  vertical-align: middle;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); background: var(--paper);
+  transition: background .16s var(--ease), border-color .16s var(--ease), transform .1s var(--ease); }
+.bp :global(.content .cb::before) { content: ''; position: absolute; inset: -12px; }   /* 44px press zone */
+.bp :global(.content .cb:hover) { border-color: var(--ink); }
+.bp :global(.content .cb:active) { transform: scale(.88); }
+.bp :global(.content .cb-ic) { width: 13px; height: 13px; fill: none; stroke: var(--paper); stroke-width: 3.2;
+  stroke-linecap: round; stroke-linejoin: round; opacity: 0; transform: scale(.5);
+  transition: opacity .13s var(--ease), transform .2s var(--ease-out); }
+.bp :global(.content .cb[aria-checked="true"]) { background: var(--success); border-color: var(--success); }
+.bp :global(.content .cb[aria-checked="true"]:hover) { border-color: var(--ink); }
+.bp :global(.content .cb[aria-checked="true"] .cb-ic) { opacity: 1; transform: none; }
+.bp :global(.content .cb:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 3px; }
+.bp :global(.content .nfoot) { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; padding-top: 15px;
+  border-top: 1.5px solid var(--hair); }
+
+.bp :global(.content .sactions) { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 18px;
+  border-top: 1.5px solid var(--hair); }
+.bp :global(.content .saved) { display: inline-flex; align-items: center; gap: 7px; align-self: center;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--success); opacity: 0; transition: opacity .2s var(--ease); }
+.bp :global(.content .saved.on) { opacity: 1; }
+
+/* added actions */
+/* First `.btn-sm` definition — superseded by the second one (donor 1797). */
+.bp :global(.content .btn-sm) { height: 34px; padding: 0 12px; font-size: 10.5px; letter-spacing: .1em; flex-shrink: 0; }
+.bp :global(.content .btn-danger) { background: var(--danger); border-color: var(--ink); color: #fff; }
+.bp :global(.content .icon-sm) { flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 32px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); color: var(--muted);
+  transition: color .15s var(--ease), border-color .15s var(--ease); }
+.bp :global(.content .icon-sm:hover) { color: var(--danger); border-color: var(--danger); }
+.bp :global(.content .icon-sm .ic) { width: 14px; height: 14px; }
+.bp :global(.content .prow) { flex-wrap: wrap; }
+.bp :global(.content .prow .btn-sm), .bp :global(.content .prow .icon-sm) { margin-left: 8px; }
+.bp :global(.content .prow-conn) { display: block; margin-top: 5px; font-family: var(--font-mono); font-size: 10px;
+  font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--success); }
+.bp :global(.content .bg-bad) { color: var(--danger); background: rgba(168,50,50,.08); }
+.bp :global(.content .dl) { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--blueprint); }
+.bp :global(.content .dl:hover) { color: var(--ink); }
+.bp :global(.content .dl .ic) { width: 13px; height: 13px; }
+/* CHROME (donor 1789): the sidebar gear stays lit while Settings is the active
+   page. Scoped to `.bp` but OUTSIDE `.content`, so it can only fire on this
+   route — the shell root only carries this module's `.bp` class here. */
+.bp :global(.sb-foot-ic.on) { border-color: var(--ink); background: var(--paper-deep); color: var(--ink); }
+
+/* ── one action column: every button lands in the same place ──
+   F6 — rebuilt from the donor's `display: grid; grid-template-columns:
+   46px 152px` to flex. The two grid rules (the 46px/152px template and the
+   `:has(.icon-sm)` 152px/34px variant) are DELETED: they reserved a toggle
+   slot in every row, so a row without a toggle carried a 46px phantom offset
+   and its button sat 46px right of the one above it. Flex + `margin-left:
+   auto` packs the real children to the right edge with nothing reserved. */
+.bp :global(.content .prow-act) { flex-shrink: 0; margin-left: auto; display: flex; align-items: center;
+  justify-content: flex-end; gap: 12px; }
+/* Inert under flex (`justify-self` is a grid/align property) — kept so the
+   donor's `.prow-act` family reads whole; the flex parent already ends its
+   children at the right edge. */
+.bp :global(.content .prow-act > .badge2) { justify-self: end; }
+.bp :global(.content .prow-act .btn-sm), .bp :global(.content .prow-act .icon-sm) { margin-left: 0; }
+/* F7 — the donor's `.btn` is `display: inline-flex` with no
+   `justify-content`, so at `width: 100%` its icon + label packed left and left
+   dead space on the right. Centring the row is the fix the owner reports
+   needing on every page. */
+.bp :global(.content .btn-sm) { width: 100%; height: 36px; padding: 0 12px; gap: 7px; font-size: 10.5px;
+  letter-spacing: .1em; flex-shrink: 0; justify-content: center; }
+/* F6 — the 152px the deleted grid template used to supply, now carried by the
+   button itself so a card's buttons still share one width. */
+.bp :global(.content .prow-act .btn-sm) { width: 152px; }
+.bp :global(.content .btn-sm .ic) { width: 13px; height: 13px; }
+.bp :global(.content .badge2.inl) { margin-left: 9px; vertical-align: 2px; }
+
+/* ── button state: enables = green, disables = red ── */
+.bp :global(.content .btn-ghost.is-on) { border-color: var(--success); color: var(--success); }
+.bp :global(.content .btn-ghost.is-on:hover) { background: rgba(58,125,68,.09); box-shadow: 3px 3px 0 rgba(58,125,68,.25); }
+.bp :global(.content .btn-ghost.is-off) { border-color: var(--danger); color: var(--danger); }
+.bp :global(.content .btn-ghost.is-off:hover) { background: rgba(168,50,50,.08); box-shadow: 3px 3px 0 rgba(168,50,50,.25); }
+
+/* ── the toggle: green on, red off ──
+   F12 — the donor drew a check and a cross INSIDE the switch
+   (`.tg-ic` / `.tg-on` / `.tg-off`). Those three rules are DELETED along with
+   the two `<svg>` children; the colour states below carry the meaning. */
+.bp :global(.content .tg) { position: relative; flex-shrink: 0; width: 46px; height: 25px; border: var(--border-thin);
+  border-radius: var(--radius); background: rgba(168,50,50,.14); cursor: pointer;
+  transition: background .2s var(--ease), border-color .2s var(--ease); }
+.bp :global(.content .tg::after) { content: ''; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
+  background: var(--danger); transition: transform .2s var(--ease-out), background .2s var(--ease); }
+.bp :global(.content .tg[aria-checked="true"]) { background: rgba(58,125,68,.16); }
+.bp :global(.content .tg[aria-checked="true"]::after) { transform: translateX(21px); background: var(--success); }
+.bp :global(.content .tg:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* ── the matrix: fixed columns, emphatic headers ──
+   F17 — `.colt`, `.colt .ic`, `.colt.off` and `.colt:hover` are DELETED. The
+   per-column "All" affordance is a real toggle now (`.colw` / `.colw-l`,
+   below), because a badge did not read as something you could press. */
+.bp :global(.content .ntab col.nc) { width: 116px; }
+.bp :global(.content .ntab th) { padding: 0 0 14px; text-align: center; }
+.bp :global(.content .ntab th:first-child) { text-align: left; }
+.bp :global(.content .nhead) { display: block; font-family: var(--font); font-size: 11.5px; font-weight: 900;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--ink); }
+
+.bp :global(.content .panes) { min-width: 0; }
+
+/* ============================================================
+   OWNER FIX LIST — rules with no donor counterpart.
+   Values are derived from the nearest donor rule in every case; the
+   derivation is named inline.
+   ============================================================ */
+
+/* F1 — Account > Security: three stacked `.prow` rows became one row of three
+   columns. Dividers are vertical hairlines instead of horizontal ones, and the
+   columns carry no vertical padding of their own so the card body's 18px is
+   the only vertical space (the F13 complaint, solved structurally here).
+   `.seccol-act` is pushed to the bottom of its column with `margin-top: auto`
+   so all three buttons share one baseline even though the two-factor column
+   carries an extra badge; the guaranteed gap above it comes from the
+   description's own padding (13px = the donor's `.prow` inner rhythm). */
+.bp :global(.content .seccols) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+.bp :global(.content .seccol) { display: flex; flex-direction: column; align-items: flex-start; min-width: 0;
+  padding: 0 18px; border-right: 1.5px solid var(--hair-soft); }
+.bp :global(.content .seccol:first-child) { padding-left: 0; }
+.bp :global(.content .seccol:last-child) { padding-right: 0; border-right: none; }
+.bp :global(.content .seccol .prow-ic) { margin-bottom: 11px; }
+.bp :global(.content .seccol .prow-d) { padding-bottom: 13px; }
+.bp :global(.content .seccol .badge2) { margin-bottom: 13px; }
+.bp :global(.content .seccol-act) { margin-top: auto; width: 152px; }
+
+/* F2 — Account > Danger zone: the Delete button sits at the right end of the
+   title + description row, vertically centred, never wrapping. `padding: 0`
+   replaces the donor's inline `border:none;padding-bottom:0` on that row —
+   the card body's 18px is the whole frame. */
+.bp :global(.content .prow--flush) { flex-wrap: nowrap; padding: 0; border-bottom: none; }
+.bp :global(.content .prow--flush .prow-act) { align-self: center; }
+
+/* F13 — `.sc-b` is 18px and `.prow` / `.trow` / `.dlv` add another 14/12/10px,
+   so a row-list card read as ~32px of dead space top and bottom. The donor
+   patched this ad hoc with inline `padding-top:4px;padding-bottom:4px`; this
+   is the same values as a class, and every row-list `.sc-b` carries it. */
+.bp :global(.content .sc-b--rows) { padding-top: 4px; padding-bottom: 4px; }
+
+/* F15 — Integrations > Meta business > Connection: the org name and the two
+   buttons share one row, with the buttons held toward the LEFT (right after
+   the text) rather than pinned to the right edge, and they size to their
+   labels instead of stretching to the 152px column width. */
+.bp :global(.content .prow-act--pair) { margin-left: 34px; margin-right: auto; gap: 10px; }
+.bp :global(.content .prow-act--pair .btn-sm) { width: auto; }
+.bp :global(.content .prow-b:has(+ .prow-act--pair)) { flex: 0 1 auto; }
+
+/* F16 — every notification event gets an icon box before its text. Box, border
+   and icon sizes are the donor's `.prow-ic` verbatim; the 13px gap is the
+   donor's `.prow` gap. `padding-right` keeps the label off the first
+   checkbox column. */
+.bp :global(.content .nrow) { display: flex; align-items: center; gap: 13px; padding-right: 16px; }
+.bp :global(.content .nev-ic) { flex-shrink: 0; width: 34px; height: 34px; display: grid; place-items: center;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); color: var(--muted); }
+.bp :global(.content .nev-ic .ic) { width: 16px; height: 16px; }
+.bp :global(.content .nrow-t) { flex: 1; min-width: 0; }
+
+/* F17 — the per-column "All" control. Type is the deleted `.colt`'s verbatim
+   (mono 9px / 700 / .12em / uppercase) and so is the 7px it sits below
+   `.nhead`; the state colour now lives in the toggle itself. */
+.bp :global(.content .colw) { display: inline-flex; align-items: center; gap: 8px; margin: 7px auto 0; }
+.bp :global(.content .colw-l) { font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted); }
+
+/* F10 — every native `<select class="fin">` became this dropdown. The closed
+   control is the donor `.fin` to the pixel (42px tall, 0 12px, 1.5px hair,
+   paper-deep, 13.5px, the same focus transition); the open menu is a `.sc`
+   card (2px ink border, 3px 3px 0 hard shadow) and the selected option takes
+   the donor's `.stab .cur td` blueprint wash. */
+.bp :global(.content .sel) { position: relative; }
+.bp :global(.content .sel-btn) { display: flex; align-items: center; gap: 10px; width: 100%; height: 42px; padding: 0 12px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); background: var(--paper-deep);
+  font-size: 13.5px; text-align: left; transition: border-color .15s var(--ease); }
+.bp :global(.content .sel-btn:hover) { border-color: var(--ink); }
+.bp :global(.content .sel.on .sel-btn) { border-color: var(--ink); }
+.bp :global(.content .sel-btn:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+.bp :global(.content .sel-val) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp :global(.content .sel-chev) { flex-shrink: 0; width: 14px; height: 14px; color: var(--muted);
+  transition: transform .18s var(--ease-out); }
+.bp :global(.content .sel.on .sel-chev) { transform: rotate(180deg); }
+.bp :global(.content .sel-menu) { display: none; position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; right: 0;
+  max-height: 232px; overflow-y: auto; border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
+.bp :global(.content .sel.on .sel-menu) { display: block; }
+.bp :global(.content .sel-opt) { display: block; width: 100%; padding: 10px 12px; border-bottom: 1.5px solid var(--hair-soft);
+  background: none; font-size: 13px; text-align: left;
+  transition: background .14s var(--ease), color .14s var(--ease); }
+.bp :global(.content .sel-opt:last-child) { border-bottom: none; }
+.bp :global(.content .sel-opt:hover) { background: var(--paper-deep); }
+.bp :global(.content .sel-opt.is-sel) { background: rgba(24,84,160,.05); color: var(--blueprint); font-weight: 800; }
+
+/* F11 — the pop-up form. Geometry follows the fleet's hand-rolled dialog
+   (leads-blueprint `.mdl`): fixed inset 0, 20px gutter, rgba(10,10,10,.38)
+   backdrop, a 5px 5px 0 ink shadow on the box, a paper-deep footer above a
+   1.5px ink rule. Heights go through `var(--app-h, 100vh)` because FLUID SCALE
+   zooms the document and a bare 100vh would overshoot. Both keyframes live in
+   settings-global.css. No Radix — this is a plain conditionally-rendered
+   node, closed by Escape and by a click on the mask. */
+.bp :global(.content .mask) { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center;
+  justify-content: center; padding: 20px; background: rgba(10,10,10,.38);
+  animation: settings_maskIn .18s var(--ease); }
+.bp :global(.content .modal) { position: relative; display: flex; flex-direction: column; width: min(440px, 100%);
+  max-height: calc(var(--app-h, 100vh) - 40px); border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 5px 5px 0 var(--ink);
+  animation: settings_modalIn .28s var(--ease-out); }
+.bp :global(.content .modal-h) { display: flex; align-items: flex-start; gap: 12px; padding: 15px 17px;
+  border-bottom: 1.5px solid var(--hair); }
+.bp :global(.content .modal-t) { font-size: 15px; font-weight: 900; letter-spacing: .02em; text-transform: uppercase; }
+.bp :global(.content .modal-s) { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.bp :global(.content .modal-x) { flex-shrink: 0; margin-left: auto; display: grid; place-items: center; width: 32px; height: 32px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); color: var(--muted);
+  transition: color .15s var(--ease), border-color .15s var(--ease); }
+.bp :global(.content .modal-x:hover) { color: var(--ink); border-color: var(--ink); }
+.bp :global(.content .modal-x .ic) { width: 14px; height: 14px; }
+.bp :global(.content .modal-b) { display: grid; gap: 14px; padding: 17px; overflow-y: auto; }
+.bp :global(.content .modal-f) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep); }
+.bp :global(.content .modal-f .btn) { flex: 1; justify-content: center; }
+
+/* ============================================================
+   NARROW LAYOUT — the donor's `@media (max-width: 1080px)` block
+   (donor 1841-1851) keyed off the shell's effective-width class instead
+   of the raw viewport (see the header note), plus the F1 extension: the
+   three security columns stack and their dividers turn horizontal.
+   Last in the file so it wins at equal specificity.
+   ============================================================ */
+:global(html.eff-1000) .bp :global(.content .set) { grid-template-columns: 1fr; gap: 18px; }
+:global(html.eff-1000) .bp :global(.content .rail) { position: static; }
+:global(html.eff-1000) .bp :global(.content .rail-nav) { flex-direction: row; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+  scrollbar-width: none; }
+/* The pseudo-element sits OUTSIDE `:global(...)` — the shape every other page
+   module uses, and the one Lightning CSS is known to accept. */
+:global(html.eff-1000) .bp :global(.content .rail-nav)::-webkit-scrollbar { display: none; }
+:global(html.eff-1000) .bp :global(.content .rail-a) { flex-shrink: 0; margin-bottom: 0; padding: 9px 12px; font-size: 12px; }
+:global(html.eff-1000) .bp :global(.content .rail-a .ic) { width: 15px; height: 15px; }
+:global(html.eff-1000) .bp :global(.content .rail-sep) { display: none; }
+:global(html.eff-1000) .bp :global(.content .fgrid) { grid-template-columns: 1fr; }
+/* F1 at narrow width: one column, bottom dividers, the donor `.prow` 14px
+   rhythm back between rows, and the first/last rows flush with the card body. */
+:global(html.eff-1000) .bp :global(.content .seccols) { grid-template-columns: 1fr; }
+:global(html.eff-1000) .bp :global(.content .seccol) { padding: 14px 0; border-right: none;
+  border-bottom: 1.5px solid var(--hair-soft); }
+:global(html.eff-1000) .bp :global(.content .seccol:first-child) { padding-top: 0; }
+:global(html.eff-1000) .bp :global(.content .seccol:last-child) { padding-bottom: 0; border-bottom: none; }
