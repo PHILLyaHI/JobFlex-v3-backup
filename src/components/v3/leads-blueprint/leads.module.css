@@ -1490,7 +1490,20 @@
 .bp :global(.content .imeth-btn .ic) { width: 15px; height: 15px; }
 .bp :global(.content .imeth-btn:hover) { border-color: var(--ink); color: var(--ink); }
 .bp :global(.content .imeth-btn.active) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
-.bp :global(.content .imp-pane) { padding: 16px 18px 18px; max-width: 520px; }
+/* The form and the staging card share one row so the queue is on screen before
+   anything is in it. The donor's own 520px / 640px card widths give the ratio;
+   expressed as fr so the pair narrows together instead of overflowing once the
+   content column drops below their combined fixed width. Heights are left to
+   the grid: `.imp-forms` is a bare wrapper, so a tall queue costs whitespace
+   under the form card rather than inflating a bordered box. */
+.bp :global(.content .imp-grid) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 18px;
+  max-width: 1180px;
+}
+.bp :global(.content .imp-forms) { min-width: 0; }
+.bp :global(.content .imp-pane) { padding: 16px 18px 18px; }
 .bp :global(.content .imp-pane.is-hidden) { display: none; }
 .bp :global(.content .fld) { display: block; margin-bottom: 12px; }
 .bp :global(.content .fld-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
@@ -1514,11 +1527,33 @@
 }
 .bp :global(.content .dropzone .ic) { width: 18px; height: 18px; }
 .bp :global(.content .dropzone:hover), .bp :global(.content .dropzone.over) { border-color: var(--ink); color: var(--ink); }
-.bp :global(.content .staged) { margin-top: 18px; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; max-width: 640px; }
-.bp :global(.content .staged.is-hidden) { display: none; }
+/* Column, not block: the card takes its height from the grid row, and the body
+   below the fixed head absorbs whatever is left so the empty note fills the
+   card instead of floating at the top of it. */
+.bp :global(.content .staged) { display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
 .bp :global(.content .staged-head) { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1.5px solid var(--ink); background: var(--paper-deep); }
 .bp :global(.content .staged-title) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .staged-title b) { font-size: 13px; color: var(--ink); }
+/* Nothing to import yet is a dead control, not a live one that no-ops. */
+.bp :global(.content .staged-head .btn[disabled]) { opacity: 0.36; pointer-events: none; transform: none; box-shadow: none; }
+/* The floor keeps the card from reading as a stub on the narrow method panes
+   (File is barely taller than its dropzone) and gives the empty note room. */
+.bp :global(.content .staged-body) { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 168px; }
+/* Empty state — the page's dashed "note on a drawing", same 1.5px dashed
+   treatment as .pempty, inset so the card's own ink frame still reads. */
+.bp :global(.content .staged-empty) {
+  flex: 1;
+  margin: 14px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 7px;
+  padding: 20px 18px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.bp :global(.content .staged-empty .ic) { width: 22px; height: 22px; color: var(--muted-faint); }
+.bp :global(.content .staged-empty b) { font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.bp :global(.content .staged-empty span) { max-width: 36ch; font-size: 12px; line-height: 1.5; color: var(--muted-light); }
 .bp :global(.content .st-row) { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .st-row:last-child) { border-bottom: none; }
 .bp :global(.content .st-name) { font-size: 13px; font-weight: 700; }
@@ -1544,6 +1579,41 @@
    Layout is untouched and the rule stops matching the moment it closes. */
 .bp :global(.content:has(.mdl.open)) { z-index: auto; }
 
+/* Server-action failure surfaces. The lead actions reject with messages
+   written for the user ("You can only update your own leads", "That lead is
+   already claimed by someone else") — these are where that text lands.
+   Same rules as the workers sheet, so the two read as one system. */
+.bp :global(.content .mf-err) { margin-bottom: 12px; font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err--boxed) { margin: 0 14px 14px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+.bp :global(.content .mf-err.is-hidden) { display: none; }
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
+
+/* The toast for writes with no dialog of their own (a refused stage drag, a
+   lost accept/decline race). Fixed, so it is on screen wherever the board had
+   been scrolled to. */
+.bp :global(.content .l-toast) {
+  position: fixed; z-index: 130; left: 50%; bottom: 22px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(460px, calc(100vw - 32px)); padding: 11px 12px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 4px 4px 0 var(--ink);
+  font-size: 12.5px; font-weight: 700; line-height: 1.4; color: var(--danger);
+  animation: lToastIn 220ms var(--ease) both;
+}
+.bp :global(.content .l-toast.is-hidden) { display: none; }
+.bp :global(.content .l-toast > .ic) { flex: none; color: var(--danger); }
+.bp :global(.content .l-toast-x) {
+  flex: none; margin-left: 4px; width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius); color: var(--muted);
+}
+.bp :global(.content .l-toast-x:hover) { border-color: var(--ink); color: var(--ink); }
+@keyframes lToastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .l-toast) { animation: none; }
+}
+
 @media (max-width: 860px) {
   .bp :global(.content .lbar) { flex-wrap: wrap; }
   .bp :global(.content .lsearch) { max-width: none; flex: 1 1 100%; height: 42px; }
@@ -1565,7 +1635,10 @@
   .bp :global(.content .stage-col) { min-width: 0; border-right: none; border-bottom: 1.5px solid var(--ink); }
   .bp :global(.content .stage-col:nth-child(2n)) { border-right: none; }
   .bp :global(.content .stage-col:last-child) { border-right: none; border-bottom: none; }
-  .bp :global(.content .imp-pane), .bp :global(.content .staged) { max-width: none; }
+  /* Handheld: the row becomes a stack, form first, queue under it. The card is
+     still always rendered — the point of the change is that the destination is
+     visible before anything is staged, and that holds at one column too. */
+  .bp :global(.content .imp-grid) { grid-template-columns: minmax(0, 1fr); gap: 14px; max-width: none; }
   .bp :global(.content .ptable th:nth-child(2)), .bp :global(.content .ptable td:nth-child(2)),
   .bp :global(.content .ptable th:nth-child(4)), .bp :global(.content .ptable td:nth-child(4)) { display: none; }
 }

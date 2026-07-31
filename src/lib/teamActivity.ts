@@ -2,7 +2,7 @@
 // activity tab and the (legacy, unlinked) company/team page so the query and
 // row mapping can't drift between the two.
 import { db } from "@/lib/db";
-import type { TeamActivityRow, TeamMember } from "@/components/company/TeamActivity";
+import type { TeamActivityRow, TeamMember } from "@/lib/teamActivityView";
 
 export async function loadTeamActivity(
   organizationId: string,

@@ -126,6 +126,30 @@ export const V3_PORTED_ROUTES = {
   mobileHireV2: "/mobile-hire-v2",
   mobileCompanyV2: "/mobile-company-v2",
   mobileFinancialsV2: "/mobile-financials-v2",
+  // ── The Automation section, 2026-07-30 ───────────────────────────────────
+  // The ten remaining drawer surfaces, completing the handheld family at 22.
+  // Unlike every batch before it, these are mostly NOT ledgers: a stepped
+  // composer, two drawing tools that render the takeoff as an SVG blueprint
+  // plan (no map — network calls are out of scope and there are no keys in
+  // this build), a dialer, a thread view, three feeds, a board and a charts
+  // page. Same shared nav, tokens and motion; very different insides.
+  //
+  // All ten also serve their LIVE /dashboard/* URL at ≤768px via
+  // responsive-dashboard-shell.tsx. Above 768px those URLs are unchanged.
+  //
+  // NOTE: mobileSmartProposalV2 is the Smart Proposal surface. Its route slug
+  // is /dashboard/advanced-ai for historical reasons, but "AI" must never
+  // appear in the interface — the feature is called Smart Proposal.
+  mobileSmartProposalV2: "/mobile-advanced-ai-v2",
+  mobileRoofEstimatorV2: "/mobile-roof-estimator-v2",
+  mobileFenceEstimatorV2: "/mobile-fence-estimator-v2",
+  mobilePhoneV2: "/mobile-phone-v2",
+  mobileMessagesV2: "/mobile-messages-v2",
+  mobileAnnouncementsV2: "/mobile-announcements-v2",
+  mobileReviewsV2: "/mobile-reviews-v2",
+  mobileTradeV2: "/mobile-trade-v2",
+  mobileReferralsV2: "/mobile-referrals-v2",
+  mobileReportsV2: "/mobile-reports-v2",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;

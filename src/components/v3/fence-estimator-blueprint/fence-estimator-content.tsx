@@ -17,12 +17,39 @@
 // `position: absolute` <svg>, so it takes no space in the `.content` flex
 // column and contributes no `gap`.
 
+import { useCallback, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import type { Route } from "next";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initFenceEstimatorContent } from "./fence-estimator-behavior";
 import { Sprite } from "./sprite";
 
 export function FenceEstimatorContent() {
-  useBlueprintContent(initFenceEstimatorContent);
+  // "Convert to proposal" creates a real proposal and has to land on it. A
+  // behavior module is plain DOM with no React tree, so the only client-side
+  // router on this page is the one THIS component can hold — it is handed down
+  // as a callback, the same direction every other island prop travels.
+  //
+  // Through a ref, NOT the callback's deps: `useBlueprintContent` re-runs
+  // whenever `init` changes identity, and a re-run tears the page down and
+  // replays the whole reveal cascade. The ref is kept current so the behavior
+  // module can never navigate with a stale router, while `init` stays
+  // referentially stable for the life of the mount. (Same latest-ref pattern
+  // FenceDrawMap uses for its own callback props.)
+  const router = useRouter();
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
+
+  const init = useCallback(
+    (content: HTMLElement) =>
+      initFenceEstimatorContent(content, {
+        navigate: (href) => routerRef.current.push(href as Route),
+      }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -83,7 +110,9 @@ export function FenceEstimatorContent() {
         <div className="card fs-stage">
           <div className="stage-tools">
             <div className="tool-group">
-              <button className="tool" type="button" data-flash="Aligned">
+              {/* `data-act` drives the map's align MODE; `data-flash` is the
+                  fallback tick for when no map surface is mounted. */}
+              <button className="tool" type="button" data-act="align" data-flash="Aligned">
                 <svg className="ic">
                   <use href="#i-grid" />
                 </svg>
@@ -136,16 +165,21 @@ export function FenceEstimatorContent() {
             </div>
           </div>
 
-          {/* EMPTY MAP SLOT */}
+          {/* STAGE. Both slots carry a placeholder that is only ever SEEN when
+              the real surface cannot mount — the behavior module hides it and
+              appends the live host beside it. The copy therefore describes the
+              failure, not the feature: a placeholder that advertises what the
+              page would do is the thing that makes a fixture look finished. */}
           <div className="stage-canvas" id="stageCanvas">
             <div className="map-slot" id="mapSlot">
               <div className="map-slot-in">
                 <svg className="ic">
                   <use href="#i-pin" />
                 </svg>
-                <div className="ms-t">Map surface</div>
-                <div className="ms-h">Google Maps API key goes here — the traced run, parcel lines
-                  and gate pins render on this layer.</div>
+                <div className="ms-t">Map surface unavailable</div>
+                <div className="ms-h">Tracing needs a Google Maps browser key
+                  (NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY). The ledger and the price still work from run
+                  lengths typed by hand.</div>
               </div>
             </div>
             <div className="model-slot is-hidden" id="stage3d">
@@ -153,14 +187,14 @@ export function FenceEstimatorContent() {
                 <svg className="ic">
                   <use href="#i-box" />
                 </svg>
-                <div className="ms-t">3D preview</div>
-                <div className="ms-h">Scene mounts here — the traced run, panels, posts and openings
-                  render live from the ledger.</div>
+                <div className="ms-t">Nothing traced yet</div>
+                <div className="ms-h">The 3D preview is built from the traced run. Draw the fence on
+                  the map and it renders here.</div>
               </div>
             </div>
             <div className="stage-zoom">
-              <button className="zoom-btn" type="button" data-flash-icon="" aria-label="Zoom in">+</button>
-              <button className="zoom-btn" type="button" data-flash-icon="" aria-label="Zoom out">−</button>
+              <button className="zoom-btn" type="button" data-zoom="1" data-flash-icon="" aria-label="Zoom in">+</button>
+              <button className="zoom-btn" type="button" data-zoom="-1" data-flash-icon="" aria-label="Zoom out">−</button>
             </div>
           </div>
 
@@ -189,6 +223,10 @@ export function FenceEstimatorContent() {
             <div className="stat-strip" id="statStrip"></div>
             <div className="ledger-head">Runs</div>
             <ul className="runs" id="runsList"></ul>
+            {/* Same empty-state idiom as #openEmpty below. The page opens with
+                NO runs: every foot in the ledger is either traced on the map or
+                typed by the user, so nothing on the ticket is invented. */}
+            <div className="open-empty" id="runsEmpty">No runs yet — trace the fence on the map, or add a run and type its length.</div>
             <div className="runs-add">
               <button className="btn btn-ghost btn--sm" type="button" data-act="add-run">
                 <svg className="ic">

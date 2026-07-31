@@ -2,9 +2,17 @@
 // jobflex-hire-blueprint_4.html. Every id, string, phone number, role, source
 // and relative timestamp is the donor's exact value; only the shape is typed.
 //
-// `APPLICANTS_SEED` is the seed: the behavior clones it per mount so the
-// runtime mutations the donor performs (drag between columns, save, convert,
-// delete, add) never leak across navigations.
+// `APPLICANTS_SEED` is now a FALLBACK ONLY. The live page reads the org's real
+// applicants in src/app/dashboard/hire/page.tsx and hands them to the behavior
+// module, which writes every change back through src/actions/applicants.ts. The
+// seed is what a standalone/mock render (no session, nothing to query) falls
+// back to so the board is never blank in a design preview.
+//
+// The hub blocks below (HUB_DOORS / HUB_TALLY / HUB_LINKS) stay literal on
+// purpose: the marketplace layer (contracts, job posts, outbound applications)
+// has no Prisma models yet, and the classic hub at
+// src/app/(dashboard)/dashboard/hire/hub/page.tsx zeroes exactly the same three
+// tallies for exactly that reason. Wire them when the models land.
 
 export type HireColumnKey = "APPLIED" | "INTERVIEWING" | "HIRED" | "REJECTED";
 
@@ -15,6 +23,7 @@ export type HireColumn = {
 };
 
 export type Applicant = {
+  /** The real `Applicant.id` (cuid) once the page is fed from the database. */
   id: string;
   name: string;
   email: string | null;
@@ -22,6 +31,7 @@ export type Applicant = {
   role: string;
   status: HireColumnKey;
   source: string | null;
+  /** Relative "applied" plate — `relative(createdAt)` from @/lib/format. */
   age: string;
   notes: string;
 };
@@ -57,8 +67,6 @@ export const HK_COLUMNS: HireColumn[] = [
 ];
 
 export const SOURCES: string[] = ["Indeed", "Referral", "Walk-in", "LinkedIn", "Job fair", "Other"];
-
-export const AP_SEQ_START = 20;
 
 export const APPLICANTS_SEED: Applicant[] = [
   { id: 'a1', name: 'Casey Stone',    email: 'casey.stone@mail.com',  phone: '(425) 555-0210', role: 'Roofer',            status: 'APPLIED',      source: 'Indeed',   age: '2h ago', notes: '6 years on asphalt and metal. Has own truck and basic hand tools.' },

@@ -23,9 +23,53 @@
 
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
-import { ANN_SEED, ANN_SEQ_START, PRIORITY, type Announcement, type BannerModel } from "./announcements-data";
+import { initDatePopovers } from "@/components/v3/shared/date-popover";
+import { createAnnouncement, dismissAnnouncement } from "@/actions/announcements";
+import { longDate } from "@/lib/format";
+import { ANN_SEED, PRIORITY, type Announcement, type BannerModel } from "./announcements-data";
 
-export function initAnnouncementsContent(content: HTMLElement): () => void {
+export type AnnouncementsContentOptions = {
+  /** The org's real announcements, read server-side. Omit to fall back to the
+   *  donor fixture (the standalone mock routes have no session to read from). */
+  entries?: Announcement[];
+};
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("Manager access required", "Not found"). Surface that text; fall back to a
+ *  generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  // A Next.js server-action transport failure has no useful message.
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** Titles and bodies are user-authored and land in `innerHTML`. They were donor
+ *  fixture strings before this page read the database; now they are not. */
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** The expiry field carries the picker's "YYYY-MM-DD" string. Parsed to LOCAL
+ *  midnight, not `new Date(str)` (which reads the string as UTC and can render
+ *  a day early once the server formats it back with `longDate`). */
+function parseYmd(v: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.trim());
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+export function initAnnouncementsContent(
+  content: HTMLElement,
+  options: AnnouncementsContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -89,12 +133,17 @@ export function initAnnouncementsContent(content: HTMLElement): () => void {
   // Announcement: title, body, priority (0 normal | 1 warn | 2 high),
   // expiresAt, createdAt.
   //
-  // A per-mount COPY of the fixture. Retiring a banner and publishing a new one
-  // both write into this array, and the seed is a module-level constant —
-  // mutating it directly would leak every edit into the next visit to the page
-  // (and into any other importer of ANN_SEED).
-  let annSeq = ANN_SEQ_START;
-  const annData: Announcement[] = ANN_SEED.map((a) => ({ ...a }));
+  // The org's real rows, read in the page's server component. A per-mount COPY:
+  // retiring a banner and publishing a new one both write into this array, so
+  // mutating the caller's array (or, in the fixture fallback, the module-level
+  // seed) would leak every edit into the next visit to the page.
+  //
+  // This array is the local mirror of the database. Every write goes to the
+  // server action FIRST and is only mirrored here once it has committed, so a
+  // reload reads exactly what the board shows.
+  const annData: Announcement[] = (options.entries ?? ANN_SEED).map((a) => ({ ...a }));
+  /** One in-flight write at a time — publish and retire both guard on it. */
+  let saving = false;
 
   function active() {
     return annData.filter(function (a) {
@@ -108,15 +157,15 @@ export function initAnnouncementsContent(content: HTMLElement): () => void {
   }
 
   function bannerHtml(a: BannerModel, preview: boolean) {
-    return '<div class="bnr bnr--p' + a.priority + '"' + (preview ? '' : ' data-ann="' + a.id + '"') + '>' +
+    return '<div class="bnr bnr--p' + a.priority + '"' + (preview ? '' : ' data-ann="' + esc(a.id || '') + '"') + '>' +
       '<svg class="ic bnr-ic"><use href="#i-megaphone"/></svg>' +
       '<div class="bnr-main">' +
-        '<span class="bnr-t">' + (a.title || 'Your announcement title') + '</span>' +
-        '<span class="bnr-b">' + (a.body || 'Body text shows here beside the title.') + '</span>' +
+        '<span class="bnr-t">' + esc(a.title || 'Your announcement title') + '</span>' +
+        '<span class="bnr-b">' + esc(a.body || 'Body text shows here beside the title.') + '</span>' +
         '<div class="bnr-meta">' +
           '<span class="pri-tag">' + PRIORITY[a.priority] + '</span>' +
-          (a.created ? '<span>Posted ' + a.created + '</span>' : '') +
-          '<span>' + (a.expires ? 'Expires ' + a.expires : 'No expiry') + '</span>' +
+          (a.created ? '<span>Posted ' + esc(a.created) + '</span>' : '') +
+          '<span>' + (a.expires ? 'Expires ' + esc(a.expires) : 'No expiry') + '</span>' +
         '</div>' +
       '</div>' +
       (preview ? '' : '<button class="bnr-x" type="button" data-retire aria-label="Retire announcement">×</button>') +
@@ -150,9 +199,9 @@ export function initAnnouncementsContent(content: HTMLElement): () => void {
     card.classList.toggle('is-hidden', rows.length === 0);
     sub.textContent = rows.length + ' past announcement' + (rows.length === 1 ? '' : 's') + '.';
     list.innerHTML = rows.map(function (a) {
-      return '<li><div class="arch-t">' + a.title + '</div>' +
-        '<div class="arch-b">' + a.body + '</div>' +
-        '<div class="arch-m">' + PRIORITY[a.priority] + ' · expired ' + (a.expires || '—') + '</div></li>';
+      return '<li><div class="arch-t">' + esc(a.title) + '</div>' +
+        '<div class="arch-b">' + esc(a.body) + '</div>' +
+        '<div class="arch-m">' + PRIORITY[a.priority] + ' · expired ' + esc(a.expires || '—') + '</div></li>';
     }).join('');
   }
   function renderPreview() {
@@ -174,8 +223,30 @@ export function initAnnouncementsContent(content: HTMLElement): () => void {
   /** Installed by the motion module below; null under reduced motion. */
   let playStagger: (() => void) | null = null;
 
+  // ================= WRITE STATE =================
+  /** Inline error line — `null` hides it. Two of them: one in the dialog for
+   *  publish, one above the board for retire. */
+  function showError(id: string, msg: string | null) {
+    const box = byId(id);
+    if (!box) return;
+    box.textContent = msg || '';
+    box.classList.toggle('is-hidden', !msg);
+  }
+  /** Publish button label + disabled state while createAnnouncement is in flight. */
+  function setPublishing(on: boolean) {
+    saving = on;
+    const btn = root.querySelector<HTMLButtonElement>('#publishBtn');
+    if (!btn) return;
+    btn.disabled = on;
+    btn.classList.toggle('is-busy', on);
+    const lbl = btn.querySelector<HTMLElement>('[data-save-lbl]');
+    if (lbl) lbl.textContent = on ? 'Publishing…' : 'Publish';
+  }
+
   // ================= EVENTS =================
   function openDialog() {
+    showError('annErr', null);
+    setPublishing(false);
     ['annTitle', 'annBody', 'annExpires'].forEach(function (id) {
       const el = fieldById(id);
       if (el) el.value = '';
@@ -194,52 +265,124 @@ export function initAnnouncementsContent(content: HTMLElement): () => void {
 
   on(root, 'click', function (e) {
     const t = e.target as HTMLElement;
-    if (t.closest('#newAnnBtn')) { openDialog(); return; }
+    // Reopening mid-publish would clear the fields under an in-flight write.
+    if (t.closest('#newAnnBtn')) { if (!saving) openDialog(); return; }
     if (t.closest('[data-mdl="close"]')) { closeDialog(); return; }
     const retire = t.closest<HTMLElement>('[data-retire]');
     if (retire) {
-      const card = retire.closest<HTMLElement>('[data-ann]');
-      if (!card) return;
-      const a = annData.find(function (x) { return x.id === card.dataset.ann; });
-      // ONLY this card animates. It used to call renderAnn(), which rebuilt
-      // #activeList's innerHTML — and the observer on that list then replayed the
-      // entrance cascade across every surviving banner, so a retire looked like
-      // the whole board redrawing with no clue which announcement had gone.
-      leaveRow(card, function () {
-        if (a) { a.expired = true; a.expires = a.expires || 'Jul 22, 2026'; }
-        // The count and the empty state, plus the archive card the banner just
-        // moved INTO — but not #activeList's markup, whose surviving nodes the
-        // gap-closing FLIP is still holding.
-        syncActiveCount();
-        renderArchive();
-      }, after, { leaveClass: 'bnr--leaving' });
+      void retireBanner(retire);
       return;
     }
     if (t.closest('#publishBtn')) {
-      const titleEl = fieldById("annTitle");
-      const bodyEl = fieldById("annBody");
-      const priorityEl = fieldById("annPriority");
-      const expiresEl = fieldById("annExpires");
-      if (!titleEl || !bodyEl || !priorityEl || !expiresEl) return;
-      const title = titleEl.value.trim();
-      const body = bodyEl.value.trim();
-      if (!title) { titleEl.focus(); return; }
-      if (!body) { bodyEl.focus(); return; }
-      annSeq += 1;
-      annData.unshift({
-        id: 'a' + annSeq, title: title, body: body,
-        priority: Number(priorityEl.value),
-        created: 'Jul 22, 2026',
-        expires: expiresEl.value || null,
-        expired: false
-      });
-      closeDialog();
-      renderAnn();
-      // A publish genuinely re-lists the board, so the cascade is right here —
-      // unlike a retire, which is one card leaving.
-      playStagger?.();
+      void publish();
     }
   });
+
+  // ================= WRITES (real server actions) =================
+  // src/actions/announcements.ts — the same two the classic page used. Both are
+  // org-scoped on the server (createAnnouncement is manager-gated) and both
+  // revalidate, so a reload reads back exactly what the board shows. The local
+  // array is patched only AFTER the action resolves; nothing here is a fake.
+
+  /** Retire = the classic page's dismiss: the server stamps `expiresAt = now`,
+   *  which drops the row out of `active` and into the archive on the next read. */
+  async function retireBanner(retire: HTMLElement) {
+    if (saving) return;
+    const card = retire.closest<HTMLElement>('[data-ann]');
+    const id = card?.dataset.ann;
+    if (!card || !id || card.dataset.leaving) return;
+    const a = annData.find(function (x) { return x.id === id; });
+    if (!a) return;
+
+    showError('annListErr', null);
+    saving = true;
+    const btn = retire as HTMLButtonElement;
+    btn.disabled = true;
+    card.classList.add('is-busy');
+    try {
+      await dismissAnnouncement(id);
+    } catch (err) {
+      // The write did NOT land — leave the banner exactly where it is and say why.
+      saving = false;
+      btn.disabled = false;
+      card.classList.remove('is-busy');
+      showError('annListErr', actionError(err));
+      return;
+    }
+    saving = false;
+    card.classList.remove('is-busy');
+
+    // ONLY this card animates. It used to call renderAnn(), which rebuilt
+    // #activeList's innerHTML — and the observer on that list then replayed the
+    // entrance cascade across every surviving banner, so a retire looked like
+    // the whole board redrawing with no clue which announcement had gone.
+    leaveRow(card, function () {
+      a.expired = true;
+      // The server stamped `expiresAt = new Date()`, so the archive line reads
+      // today no matter what expiry the banner carried before.
+      a.expires = longDate(new Date());
+      // The count and the empty state, plus the archive card the banner just
+      // moved INTO — but not #activeList's markup, whose surviving nodes the
+      // gap-closing FLIP is still holding.
+      syncActiveCount();
+      renderArchive();
+    }, after, { leaveClass: 'bnr--leaving' });
+  }
+
+  async function publish() {
+    if (saving) return;
+    const titleEl = fieldById("annTitle");
+    const bodyEl = fieldById("annBody");
+    const priorityEl = fieldById("annPriority");
+    const expiresEl = fieldById("annExpires");
+    if (!titleEl || !bodyEl || !priorityEl || !expiresEl) return;
+    const title = titleEl.value.trim();
+    const body = bodyEl.value.trim();
+    // Mirrors the action's own zod schema (title and body both min(1)) so the
+    // common case fails in the field instead of as a server rejection.
+    if (!title) { showError('annErr', 'Give the announcement a title.'); titleEl.focus(); return; }
+    if (!body) { showError('annErr', 'Add a line of body text — it sits beside the title.'); bodyEl.focus(); return; }
+    const expiresRaw = expiresEl.value.trim();
+    let expiresAt: Date | null = null;
+    if (expiresRaw) {
+      expiresAt = parseYmd(expiresRaw);
+      if (!expiresAt) {
+        showError('annErr', 'Expiry must be a date like 2026-08-01 — use the picker.');
+        expiresEl.focus();
+        return;
+      }
+    }
+    const priority = Number(priorityEl.value);
+
+    showError('annErr', null);
+    setPublishing(true);
+    let created: { id: string };
+    try {
+      created = await createAnnouncement({ title, body, priority, expiresAt });
+    } catch (err) {
+      setPublishing(false);
+      showError('annErr', actionError(err));
+      return;
+    }
+    setPublishing(false);
+    // The action returns the real record id, so the row appended here is the
+    // database row and its retire × addresses the same announcement.
+    annData.unshift({
+      id: created.id,
+      title: title,
+      body: body,
+      priority: priority,
+      created: longDate(new Date()),
+      expires: expiresAt ? longDate(expiresAt) : null,
+      expired: false
+    });
+    closeDialog();
+    renderAnn();
+    // A publish genuinely re-lists the board, so the cascade is right here —
+    // unlike a retire, which is one card leaving.
+    playStagger?.();
+  }
+
   on(root, 'input', function (e) {
     const t = e.target as HTMLElement;
     if (['annTitle', 'annBody', 'annExpires'].indexOf(t.id) !== -1) renderPreview();
@@ -251,6 +394,16 @@ export function initAnnouncementsContent(content: HTMLElement): () => void {
 
   // ================= INITIALIZATION =================
   renderAnn();
+
+  // Expiry field: the blueprint month-grid popover replaces the native date
+  // input, whose OS panel no stylesheet can reach. An expiry is an end, so it
+  // takes the hourglass the calendar page gives an end (DTP_ICON). The picker
+  // writes through the input and fires bubbling input/change, so the delegated
+  // listeners above keep repainting the preview exactly as they did for a
+  // keystroke, and `expires` is still the same "YYYY-MM-DD" string.
+  disposers.push(
+    initDatePopovers(root, [{ sel: "#annExpires", icon: "i-hourglass", label: "Expires" }]),
+  );
 
   // The matchMedia polyfill, mobile nav drawer and FLUID SCALE belong to the
   // persistent chrome and live in

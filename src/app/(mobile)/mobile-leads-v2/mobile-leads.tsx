@@ -57,6 +57,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-leads.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   CSV_DEMO,
   LEADS_SEED,
@@ -219,13 +221,12 @@ export function MobileLeads() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -625,6 +626,13 @@ export function MobileLeads() {
 
   const anyOverlay = sheetLead !== null || moveLeadRec !== null || delLead !== null || addOpen;
 
+  // Swipe-down dismissal. Four sheets, four gestures, each pointed at the same
+  // setter Escape and the scrim already call.
+  const actionsDrag = useSheetDrag(sheetLead !== null, () => setSheetId(null));
+  const moveDrag = useSheetDrag(moveLeadRec !== null, () => setMoveId(null));
+  const delDrag = useSheetDrag(delLead !== null, () => setDelId(null));
+  const addDrag = useSheetDrag(addOpen, () => setAddOpen(false));
+
   /* Only the manual pane is a real form, so only it can be reached with form=. */
   const footPrimary =
     method === "manual"
@@ -981,9 +989,9 @@ export function MobileLeads() {
 
       {/* ============ ROW ACTIONS SHEET ============ */}
       <div className={`${styles.sheet} ${sheetLead ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-label="Lead actions" aria-hidden={!sheetLead}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-label="Lead actions" aria-hidden={!sheetLead} {...actionsDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
+        <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {sheetLead
               ? `${statusLabel(sheetLead.status)} · ${srcLabel(sheetLead.source)} · ${sheetLead.age}`
@@ -1009,9 +1017,9 @@ export function MobileLeads() {
 
       {/* ============ STAGE PICKER (the board's drag & drop) ============ */}
       <div className={`${styles.sheet} ${moveLeadRec ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-label="Move lead to stage" aria-hidden={!moveLeadRec}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-label="Move lead to stage" aria-hidden={!moveLeadRec} {...moveDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...moveDrag.handleProps} />
+        <div className={styles.sheetHead} {...moveDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {moveLeadRec ? `${moveLeadRec.project} · ${moveLeadRec.city}` : "Lead · —"}
           </div>
@@ -1036,9 +1044,9 @@ export function MobileLeads() {
 
       {/* ============ DELETE CONFIRMATION (the desktop dialog) ============ */}
       <div className={`${styles.sheet} ${delLead ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-labelledby="mlDelTitle" aria-hidden={!delLead}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-labelledby="mlDelTitle" aria-hidden={!delLead} {...delDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...delDrag.handleProps} />
+        <div className={styles.sheetHead} {...delDrag.handleProps}>
           <div className={styles.sheetKicker}>Pipeline / remove record</div>
           <div className={styles.sheetTitle} id="mlDelTitle">Delete lead?</div>
         </div>
@@ -1059,9 +1067,9 @@ export function MobileLeads() {
 
       {/* ============ ADD LEADS (the desktop Import panel) ============ */}
       <div className={`${styles.sheet} ${addOpen ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-labelledby="mlAddTitle" aria-hidden={!addOpen}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-labelledby="mlAddTitle" aria-hidden={!addOpen} {...addDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...addDrag.handleProps} />
+        <div className={styles.sheetHead} {...addDrag.handleProps}>
           <div className={styles.sheetKicker}>Pipeline / new records</div>
           <div className={styles.sheetTitle} id="mlAddTitle">Add leads</div>
         </div>

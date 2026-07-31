@@ -85,7 +85,10 @@ export async function saveReceiptExpense(input: {
     }
   }
 
-  await db.jobExpense.create({
+  // The id and the resolved receipt URL come back so a caller that keeps its
+  // own on-screen copy of the book can append the REAL row — one that its
+  // delete button can then address — instead of a placeholder.
+  const created = await db.jobExpense.create({
     data: {
       jobId: input.jobId,
       category: input.category,
@@ -98,5 +101,7 @@ export async function saveReceiptExpense(input: {
     },
   });
   revalidatePath(`/dashboard/jobs/${input.jobId}`);
-  return { ok: true };
+  revalidatePath("/dashboard/financials");
+  revalidatePath("/dashboard/financials/expenses");
+  return { ok: true, id: created.id, receiptUrl };
 }

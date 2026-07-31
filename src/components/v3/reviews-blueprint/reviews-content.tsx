@@ -10,13 +10,47 @@
 //
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
+//
+// NOT a fixture page any more: the rows are the org's real `ReviewRequest`
+// records, read in ../../../app/dashboard/reviews/page.tsx, and the request
+// dialog calls the real `createReviewRequest` server action. The dialog is the
+// one structural addition to the donor — it is a position:fixed overlay, so
+// putting it at the end of the fragment changes no layout, and the behavior
+// module excludes `.mdl` from the reveal cascade so the donor's block set and
+// its i*60ms stagger indices stay exactly as authored.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initReviewsContent } from "./reviews-behavior";
+import type { EligibleJob, ReviewEntry } from "./reviews-data";
 import { ReviewsSprite } from "./sprite";
 
-export function ReviewsContent() {
-  useBlueprintContent(initReviewsContent);
+export function ReviewsContent({
+  entries,
+  jobs,
+}: {
+  /** The org's real review requests, read in the page's server component. */
+  entries: ReviewEntry[];
+  /** Jobs with no review request yet — the request dialog's option list. */
+  jobs: EligibleJob[];
+}) {
+  // The seed reaches `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade — so the init has
+  // to stay referentially stable for the life of the mount. The ref is never
+  // written after creation: from the first commit the behavior module owns the
+  // list and keeps itself in step with the database through the server action.
+  const seedRef = useRef({ entries, jobs });
+
+  const init = useCallback(
+    (content: HTMLElement) =>
+      initReviewsContent(content, {
+        entries: seedRef.current.entries,
+        jobs: seedRef.current.jobs,
+      }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -24,6 +58,14 @@ export function ReviewsContent() {
         <div>
           <div className="kicker">Reputation</div>
           <h1 className="page-title">Reviews</h1>
+        </div>
+        <div className="page-actions">
+          <button className="btn btn-primary btn--sm" type="button" id="rvReqBtn">
+            <svg className="ic">
+              <use href="#i-plus" />
+            </svg>
+            Request review
+          </button>
         </div>
       </div>
 
@@ -67,6 +109,38 @@ export function ReviewsContent() {
         </aside>
       </div>
       <div className="pmenu" id="pMenu"></div>
+
+      {/* REQUEST DIALOG — the manual send. `createReviewRequest` creates the
+          request row and emails the client their /review/<token> link; the job
+          list is the set that has no request yet, so the action's idempotency
+          guard can never silently swallow a send made from here. */}
+      <div className="mdl" id="rvReqMdl">
+        <div className="mdl-bg" data-mdl="req"></div>
+        <div className="mdl-box">
+          <div className="mdl-head mdl-head--row">
+            <span>Request a review</span>
+            <button className="mdl-x" type="button" data-mdl="req" aria-label="Close dialog">
+              <svg className="ic">
+                <use href="#i-x" />
+              </svg>
+            </button>
+          </div>
+          <div className="mdl-body" id="rvReqBody"></div>
+          {/* The action refuses past the plan's monthly review-request cap —
+              the reason lands here rather than the dialog closing on a write
+              that never happened. */}
+          <div className="mf-err mf-err--boxed is-hidden" id="rvReqErr" role="alert"></div>
+          <div className="mdl-foot">
+            <button className="btn btn-ghost btn--sm" type="button" data-mdl="req">Cancel</button>
+            <button className="btn btn-primary btn--sm" type="button" id="rvReqOk">
+              <svg className="ic">
+                <use href="#i-send" />
+              </svg>
+              <span data-save-lbl>Send request</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       <ReviewsSprite />
     </>

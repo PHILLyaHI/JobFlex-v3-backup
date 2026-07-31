@@ -979,21 +979,34 @@ export const FenceModel3D = React.forwardRef<
   return (
     <div className={cn("relative overflow-hidden", className)}>
       <div ref={mountRef} className="absolute inset-0" />
+      {/* `data-fm3d` on the two overlays is a STYLE HOOK, not behaviour — one
+          stable selector each so a host with its own design system (the
+          blueprint Fence studio) can re-skin them. The utility classes stay the
+          default look for every other host. */}
       <div className="absolute left-3 top-3 pointer-events-none">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/85 backdrop-blur hairline px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] font-medium text-[color:var(--ink-soft)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]" />
+        <span
+          data-fm3d="badge"
+          className="inline-flex items-center gap-1.5 rounded-full bg-white/85 backdrop-blur hairline px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] font-medium text-[color:var(--ink-soft)]"
+        >
+          <span data-fm3d="dot" className="h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]" />
           Live · 3D
         </span>
       </div>
       {mode === "orbit" ? (
         <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
-          <span className="rounded-full bg-white/85 backdrop-blur hairline px-3 py-1 text-[11px] text-[color:var(--ink-muted)]">
+          <span
+            data-fm3d="hint"
+            className="rounded-full bg-white/85 backdrop-blur hairline px-3 py-1 text-[11px] text-[color:var(--ink-muted)]"
+          >
             Click to walk through · WASD move · Q/E up·down · Esc exit · drag to orbit
           </span>
         </div>
       ) : (
         <div className="absolute inset-x-0 bottom-3 flex justify-center pointer-events-none">
-          <span className="rounded-full bg-[color:var(--accent)] text-white px-3 py-1 text-[11px] shadow-[var(--shadow-sm)]">
+          <span
+            data-fm3d="hint-on"
+            className="rounded-full bg-[color:var(--accent)] text-white px-3 py-1 text-[11px] shadow-[var(--shadow-sm)]"
+          >
             Walking · move mouse to look · WASD · Esc to exit
           </span>
         </div>

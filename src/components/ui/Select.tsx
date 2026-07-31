@@ -6,10 +6,18 @@ import { ChevronDown } from "lucide-react";
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   hint?: string;
+  /**
+   * Overrides on the bordered field wrapper (not the inner <select>, which
+   * `className` targets) — the same escape hatch `Input` already exposes.
+   * Added so a blueprint page can put the shared `.bp-sel` treatment
+   * (blueprint-global.css) on this control instead of re-deriving a second
+   * styled select: `wrapperClassName="bp-sel"` + `className="bp-sel-in"`.
+   */
+  wrapperClassName?: string;
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function Select(
-  { className, label, hint, id, children, ...props },
+  { className, label, hint, id, children, wrapperClassName, ...props },
   ref,
 ) {
   const autoId = React.useId();
@@ -21,7 +29,12 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function 
           {label}
         </label>
       )}
-      <div className="relative flex h-10 items-center rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline transition-all focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]">
+      <div
+        className={cn(
+          "relative flex h-10 items-center rounded-[var(--r-md)] bg-white/60 dark:bg-white/[0.03] hairline transition-all focus-within:shadow-[0_0_0_3px_rgba(31,122,82,0.18)]",
+          wrapperClassName,
+        )}
+      >
         <select
           ref={ref}
           id={inputId}

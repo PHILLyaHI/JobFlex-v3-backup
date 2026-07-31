@@ -50,6 +50,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-financials.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   ALL,
   CO_STATUSES,
@@ -248,13 +250,12 @@ export function MobileFinancials() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -873,6 +874,11 @@ export function MobileFinancials() {
   };
 
   const anyOverlay = sheetOpen || formOpen;
+
+  // Swipe-down dismissal, one gesture per sheet, wired to the close paths the
+  // scrim and Cancel already use.
+  const actionsDrag = useSheetDrag(sheetOpen, () => setSheet(null));
+  const formDrag = useSheetDrag(formOpen, () => setFormOpen(false));
   const rowCls = (id: string) =>
     `${styles.rowIn} ${strike?.id === id ? styles.striking : ""} ${landedId === id ? styles.landed : ""}`;
 
@@ -1494,9 +1500,10 @@ export function MobileFinancials() {
         aria-modal="true"
         aria-label="Record actions"
         aria-hidden={!sheetOpen}
+        {...actionsDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
+        <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>{sheetHead.kicker}</div>
           <div className={styles.sheetTitle}>{sheetHead.title}</div>
         </div>
@@ -1531,9 +1538,10 @@ export function MobileFinancials() {
         aria-modal="true"
         aria-labelledby="mfFormTitle"
         aria-hidden={!formOpen}
+        {...formDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...formDrag.handleProps} />
+        <div className={styles.sheetHead} {...formDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {staged ? "Staged from receipt — check before saving" : "Money out / new record"}
           </div>

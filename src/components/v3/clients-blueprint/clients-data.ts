@@ -14,12 +14,25 @@ export type Client = {
   id: string;
   name: string;
   email: string | null;
+  /** DISPLAY string for the Location column — "Kirkland, WA", the same
+   *  `[city, state] || address` the classic list showed. */
   address: string;
   proposalCount: number;
   pipelineValue: number;
   vip: boolean;
   tags: ClientTag[];
   updated: string;
+  // ---- raw database columns, carried so the edit dialog can round-trip a
+  // record without wiping the fields the blueprint form has no input for.
+  // `updateClient` writes the whole address block, so a save that omitted
+  // line 1 / zip / phone would blank them. Optional because the donor fixture
+  // below (used by the standalone mock route, which has no session) has none.
+  phone?: string | null;
+  /** `Client.address` in the database — street line, not the display string. */
+  line1?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
 };
 
 export const CLIENTS_SEED: Client[] = [

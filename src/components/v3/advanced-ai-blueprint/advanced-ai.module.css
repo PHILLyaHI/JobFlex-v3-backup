@@ -1444,6 +1444,14 @@
 .bp :global(.content .li-total) { font-size: 13.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .bp :global(.content .li-link) { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--blueprint); margin-top: 3px; }
 .bp :global(.content .li-link .ic) { width: 11px; height: 11px; }
+/* The square icon control the line rows have always asked for (`.icon-sq` on
+   every "Remove line" button) but this module never declared — so it rendered
+   as a bare glyph. Byte-identical to the published rule in
+   financials.module.css, which is where the system keeps it. The Totals card's
+   "Remove discount" button uses the same control. */
+.bp :global(.content .icon-sq) { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); color: var(--muted); background: var(--paper); }
+.bp :global(.content .icon-sq:hover) { border-color: var(--ink); color: var(--ink); }
+.bp :global(.content .icon-sq .ic) { width: 13px; height: 13px; }
 .bp :global(.content .st-add) { padding: 11px 16px; border-top: 1.5px solid var(--hair-soft); }
 
 .bp :global(.content .st-refine) { display: flex; flex-direction: column; }
@@ -1462,6 +1470,24 @@
 .bp :global(.content .diff-m) { margin-top: 4px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 .bp :global(.content .diff-m s) { color: var(--muted-faint); }
 .bp :global(.content .diff-grp) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-light); }
+
+/* Two states the donor's refine card never had, because its refine never
+   called anything: the AI's caveats on a reviewed edit ("live pricing failed on
+   2 lines"), and a failed apply. Both are STATUS, so they take the system's
+   status tones — warning for a caveat you can still accept, danger for a
+   request that did not land. Same left-rule motif as `.diff-list li`. */
+.bp :global(.content .rf-warn) {
+  list-style: none; margin: 10px 0 0; padding: 9px 11px;
+  border: 1.5px solid var(--warning); border-left-width: 3px; border-radius: var(--radius);
+  background: var(--warning-soft);
+  font-size: 12px; line-height: 1.5; color: var(--warning-dark);
+}
+.bp :global(.content .rf-warn li + li) { margin-top: 5px; }
+.bp :global(.content .rf-err) {
+  display: block; margin-top: 10px;
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.06em; line-height: 1.45; color: var(--danger);
+}
 
 .bp :global(.content .assump) { list-style: none; margin: 0; padding: 6px 16px 14px; }
 .bp :global(.content .assump li) { display: flex; gap: 9px; padding: 9px 0; border-bottom: 1.5px solid var(--hair-soft); font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); }
@@ -1532,3 +1558,112 @@
 .bp :global(.content .st-pad) { padding: 12px 14px 14px; }
 .bp :global(.content .st-table td) { padding: 5px 9px; }
 .bp :global(.content .li-in) { height: 30px; }
+
+/* ============================================================
+   INTAKE GATE — CLARIFYING QUESTIONS DIALOG
+   ------------------------------------------------------------
+   Not donor: the Smart Proposal donor has no intake gate. This restores the
+   one the old estimator had (components/estimator/ClarifyingQuestions.tsx),
+   on the blueprint's terms instead of the sage design it was authored in.
+
+   The frame vocabulary is the Clients create dialog's, VERBATIM (.mdl /
+   .mdl-bg / .mdl-box / .mdl-head / .mdl-kick / .mdl-title / .mdl-x /
+   .mdl-body / .mdl-foot) — decisions.md: never create a parallel style set
+   for a block the system already has. Only the question layer (.cq-*) is new.
+
+   `.mdl` is a `.content` child, and `.content` has `z-index: 1`, which would
+   trap a fixed overlay below the sticky topbar (z-index: 30). While a dialog
+   is open `.content` drops to `z-index: auto` so it stops creating a stacking
+   context; the rule stops matching the moment the dialog closes.
+
+   The open/close ANIMATION is not declared here. mdlBgIn / mdlBoxIn / mdlBgOut
+   / mdlBoxOut and the `.mdl--closing` exit live in
+   dashboard-blueprint/blueprint-global.css at 4-class specificity (the modules
+   pipeline rejects @keyframes), which is what makes openMdl/closeMdl animate
+   both ways instead of cutting out.
+
+   This block is deliberately last in the file: the donor closes with two
+   override passes (the @media blocks, then "compact console"), so anything
+   appended before them would be re-declared out from under itself.
+   ============================================================ */
+.bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
+.bp :global(.content .mdl.open) { display: flex; }
+.bp :global(.content:has(.mdl.open)) { z-index: auto; }
+.bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
+.bp :global(.content .mdl-box) {
+  position: relative;
+  display: flex; flex-direction: column;
+  width: min(560px, 100%);
+  max-height: calc(var(--app-h, 100vh) - 40px);
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 5px 5px 0 var(--ink);
+  overflow: hidden;
+}
+
+/* head — mono kicker over a caps title, close control on the right */
+.bp :global(.content .mdl-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .mdl-kick) { display: block; margin-bottom: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-light); }
+.bp :global(.content .mdl-title) { font-size: 20px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.1; }
+.bp :global(.content .mdl-x) { width: 30px; height: 30px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); color: var(--muted); transition: border-color 0.12s, color 0.12s, background 0.12s; }
+.bp :global(.content .mdl-x:hover) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+.bp :global(.content .mdl-x .ic) { width: 15px; height: 15px; }
+.bp :global(.content .mdl-body) { display: grid; gap: 13px; padding: 16px 17px 18px; overflow-y: auto; }
+.bp :global(.content .mdl-foot) { display: flex; align-items: center; gap: 9px; padding: 12px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); }
+
+/* — the question layer — */
+/* The intake bar's status line gained a failure tone: the estimator is a real
+   server call now, so "couldn't reach it" / "upgrade required" / a plan cap all
+   have to land somewhere the contractor is already looking. Status colour on a
+   status, which is the only thing the 3-tone palette is for. */
+.bp :global(.content .est-status.err) { color: var(--danger); }
+
+.bp :global(.content .cq-lede) { margin-top: 7px; max-width: 52ch; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .cq-body) { gap: 0; padding: 0 17px; }
+.bp :global(.content .cq-q) { display: flex; gap: 13px; padding: 15px 0; border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .cq-q:last-child) { border-bottom: none; }
+/* `.cq-n` rides the console's ruled numeral (.est-n) — the same motif the
+   intake rail numbers its three steps with, so the dialog reads as a fourth
+   step rather than a foreign surface. It fills in once the question is
+   answered, on the same declaration `.est-step.done .est-n` uses. */
+.bp :global(.content .cq-n) { transition: background 0.12s, border-color 0.12s, color 0.12s; }
+.bp :global(.content .cq-q.is-done .cq-n) { background: var(--blueprint); border-color: var(--blueprint-dark); color: #fff; }
+.bp :global(.content .cq-main) { flex: 1; min-width: 0; }
+.bp :global(.content .cq-ask) { font-size: 13.5px; font-weight: 700; line-height: 1.4; color: var(--ink); }
+.bp :global(.content .cq-sel) { margin-top: 9px; max-width: 340px; }
+.bp :global(.content .cq-area) {
+  width: 100%; min-height: 60px; margin-top: 9px; padding: 9px 11px; resize: vertical;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: var(--paper); font-family: var(--font); font-size: 13px; line-height: 1.5; color: var(--ink);
+}
+.bp :global(.content .cq-area:focus) { outline: none; border-color: var(--ink); }
+.bp :global(.content .cq-area)::placeholder { color: var(--muted-faint); }
+.bp :global(.content .cq-area[hidden]) { display: none; }
+.bp :global(.content .cq-num) { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
+/* A measurement is a numeral: mono + tabular, and no OS spinner on a field the
+   contractor types two digits into. */
+.bp :global(.content .cq-in) {
+  width: 130px;
+  appearance: textfield; -moz-appearance: textfield;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+.bp :global(.content .cq-in)::-webkit-outer-spin-button,
+.bp :global(.content .cq-in)::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; margin: 0; }
+.bp :global(.content .cq-unit) { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .cq-count) { margin-right: auto; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .mdl-foot .btn) { min-height: 34px; padding: 0 13px; font-size: 11px; }
+.bp :global(.content .mdl-foot .btn[disabled]) { opacity: 0.45; pointer-events: none; }
+.bp :global(.content .mdl-foot .btn .ic) { width: 14px; height: 14px; }
+
+@media (max-width: 860px) {
+  /* handheld: the dialog docks to the bottom as a sheet and every control
+     clears the 44px target */
+  .bp :global(.content .mdl) { padding: 0; align-items: flex-end; }
+  .bp :global(.content .mdl-box) { width: 100%; max-height: calc(var(--app-h, 100vh) - 56px); border-width: 2px 0 0; box-shadow: none; }
+  .bp :global(.content .mdl-x) { width: 44px; height: 44px; }
+  .bp :global(.content .cq-sel) { max-width: none; }
+  .bp :global(.content .cq-in) { width: 100%; height: 44px; }
+  .bp :global(.content .mdl-foot) { flex-wrap: wrap; padding: 12px 14px calc(12px + var(--safe-bottom, 0px)); }
+  .bp :global(.content .cq-count) { flex: 1 0 100%; margin: 0 0 4px; }
+  .bp :global(.content .mdl-foot .btn) { flex: 1; min-height: 44px; justify-content: center; }
+}

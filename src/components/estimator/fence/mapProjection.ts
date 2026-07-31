@@ -2,7 +2,7 @@
 // the property origin: zoom-independent and accurate at property scale (a few
 // hundred feet — the small-angle error is negligible for a yard). +x east,
 // +y north, matching fenceGeometry's local frame.
-import type { PathPoint } from "./fenceTypes";
+import type { BuildingFootprint, PathPoint } from "./fenceTypes";
 
 export interface LatLng {
   lat: number;
@@ -100,4 +100,36 @@ export function simplifyPath(points: PathPoint[], toleranceFt: number): PathPoin
     }
   }
   return points.filter((_, i) => keep[i]);
+}
+
+/** Buildings keep more corner fidelity than the editable parcel outline. */
+export const BUILDING_SIMPLIFY_FT = 0.5;
+
+// Convert fetched building rings (lat/lng) into local-feet footprints, tagging the
+// ones on the subject parcel. Without a parcel ring, the building containing the
+// address pin (local origin) is the subject.
+//
+// Typed structurally rather than against `@/actions/fenceBoundary`'s BuildingRing
+// so this module keeps no dependency on an action; the action's type satisfies it.
+// Lives here, beside the projection helpers it is built from, because BOTH fence
+// surfaces need it — the sage studio (FenceStudio) and the blueprint studio's
+// 3D island — and it was previously private to the first of them.
+export function buildingsToFootprints(
+  raw: Array<{ ring: LatLng[]; heightFt: number }>,
+  origin: LatLng,
+  parcelFt: PathPoint[] | null,
+): BuildingFootprint[] {
+  const out: BuildingFootprint[] = [];
+  for (const b of raw) {
+    const ring = simplifyPath(
+      b.ring.map((ll) => latLngToLocalFeet(origin, ll)),
+      BUILDING_SIMPLIFY_FT,
+    );
+    if (ring.length < 3) continue;
+    const subject = parcelFt
+      ? pointInRingFt(ringCentroidFt(ring), parcelFt)
+      : pointInRingFt({ x: 0, y: 0 }, ring);
+    out.push({ ring, heightFt: b.heightFt, role: subject ? "subject" : "neighbor" });
+  }
+  return out;
 }

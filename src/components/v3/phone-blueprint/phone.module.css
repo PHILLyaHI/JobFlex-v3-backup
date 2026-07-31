@@ -30,8 +30,10 @@
    already declared in components/v3/dashboard-blueprint/blueprint-global.css
    and are REUSED from there (Lightning CSS rejects keyframes inside CSS
    modules), so only the rules that reference them ship here. The donor's one
-   page-unique keyframe, `sheetIn`, is renamed `phone_sheetIn` and declared in
-   phone-global.css.
+   page-unique keyframe, `sheetIn`, is retired — see the transcript-panel
+   block near the end of this file for why a one-shot keyframe could not give
+   the panel a dismissal, and phone-global.css for the note where it used to
+   be declared.
    ============================================================ */
 
 /* ============================================================
@@ -1389,16 +1391,43 @@
 .bp :global(.content .st--in_progress) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .bp :global(.content .lead-flag) { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); margin-left: 7px; }
 
-/* transcript panel */
-.bp :global(.content .sheet-bg) { display: none; position: fixed; inset: 0; z-index: 110; background: rgba(10, 10, 10, 0.32); }
-.bp :global(.content .sheet-bg.open) { display: block; }
-.bp :global(.content .sheet) { display: none; position: fixed; top: 0; right: 0; bottom: 0; z-index: 111; width: min(440px, 100%); border-left: var(--border); background: var(--paper); flex-direction: column; }
-/* @keyframes sheetIn -> phone_sheetIn, declared in phone-global.css.
-   `var(--ease-out)` is undefined in the donor too, so the shorthand is
-   invalid at computed-value time and the panel appears without animating —
-   copied exactly as authored, deliberately not "fixed". */
-.bp :global(.content .sheet.open) { display: flex; animation: phone_sheetIn 0.24s var(--ease-out); }
-.bp :global(.content .sheet-head) { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px; border-bottom: 2px solid var(--ink); background: var(--paper-deep); }
+/* transcript panel
+   The donor keyed the arrival off `display: none` -> `display: flex` plus a
+   one-shot keyframe, which gives an animated ENTER and a hard-cut EXIT —
+   `display` is not interpolable, so removing `.open` deleted the panel from
+   the frame instantly. The closed state is expressed with visibility +
+   opacity + an off-canvas transform instead, so the same class toggle plays
+   the arrival forwards and the dismissal in reverse. Durations sit in the
+   Motion System's UI band (250-350ms) on --ease-out. `visibility` is in the
+   transition on purpose: it holds `visible` for the whole exit and only then
+   flips, which is what keeps the panel paintable while it slides out and
+   still removes it from hit-testing and the tab order once closed.
+   prefers-reduced-motion is honoured by the global kill at the top of this
+   file (`transition: none !important`), which reduces both states to an
+   instant swap. */
+.bp :global(.content .sheet-bg) {
+  position: fixed; inset: 0; z-index: 110;
+  background: rgba(10, 10, 10, 0.32);
+  visibility: hidden; opacity: 0;
+  transition: opacity 0.26s var(--ease-out), visibility 0.26s;
+}
+.bp :global(.content .sheet-bg.open) { visibility: visible; opacity: 1; }
+.bp :global(.content .sheet) {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 111;
+  width: min(440px, 100%);
+  border-left: var(--border);
+  background: var(--paper);
+  display: flex; flex-direction: column;
+  visibility: hidden; opacity: 0;
+  transform: translateX(26px);
+  transition: transform 0.3s var(--ease-out), opacity 0.24s var(--ease-out), visibility 0.3s;
+}
+.bp :global(.content .sheet.open) { visibility: visible; opacity: 1; transform: none; }
+/* Exactly the topbar's box so the two bottom rules sit on one line. The old
+   15px padding + 28px close button + 2px border came to 60px against the
+   topbar's 62px — the 2px step visible where the panel meets the chrome.
+   Same fix, same shape as the calendar sheet. */
+.bp :global(.content .sheet-head) { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: var(--topbar-h); padding: 0 18px; border-bottom: 2px solid var(--ink); background: var(--paper-deep); flex-shrink: 0; }
 .bp :global(.content .sheet-title) { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
 .bp :global(.content .sheet-x) { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); font-size: 17px; line-height: 1; color: var(--muted); }
 .bp :global(.content .sheet-x:hover) { border-color: var(--ink); color: var(--ink); }
@@ -1423,6 +1452,39 @@
 .bp :global(.content .script-line.agent .script-who) { color: var(--blueprint); }
 .bp :global(.content .sh-act) { display: flex; gap: 9px; padding-top: 15px; border-top: 2px solid var(--hair-soft); }
 .bp :global(.content .sh-act .btn) { flex: 1; justify-content: center; }
+
+/* A transcript with no speaker labels — Twilio's raw transcription. It has no
+   two-column structure to draw, so it gets the plainest box on the sheet and
+   keeps its own line breaks. */
+.bp :global(.content .sh-raw) {
+  padding: 12px 13px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-soft);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* `createLeadFromCall` refuses when the plan's lead limit is reached, and the
+   message it throws is written for the user. It lands here, above the action
+   bar, instead of the button silently doing nothing. Same shape as the
+   workers sheet's `.mf-err`. */
+.bp :global(.content .mf-err) { margin-bottom: 12px; font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err.is-hidden) { display: none; }
+
+/* A write is on the wire: the button is disabled, so it must stop offering the
+   hover lift it can no longer honour. */
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
+
+/* The player is a real <audio>, so the button is a genuine play/pause toggle.
+   The sprite has no pause glyph — the two bars are drawn here rather than
+   inventing a 43rd symbol for one control. */
+.bp :global(.content .play-btn.is-playing) { gap: 3px; }
+.bp :global(.content .play-btn.is-playing .ic) { display: none; }
+.bp :global(.content .play-btn.is-playing::before),
+.bp :global(.content .play-btn.is-playing::after) {
+  content: ""; width: 3px; height: 12px; background: var(--ink);
+}
 
 @media (max-width: 860px) {
   .bp :global(.content .stat-grid) { grid-template-columns: repeat(2, 1fr); gap: 12px; }

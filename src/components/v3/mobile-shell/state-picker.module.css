@@ -1,0 +1,206 @@
+/* ============================================================================
+   STATE PICKER — shared handheld field + choice sheet.
+
+   Tokens are NOT redeclared here. This component always renders inside a page
+   whose .app root publishes the block, exactly as mobile-nav does, so a page
+   theme change reaches it without a second copy to keep in sync.
+
+   Geometry is lifted from the .sel it replaces (50px face, 2px ink frame,
+   drawn chevron) so the field still lands where the <select> did in a form row.
+   ========================================================================= */
+
+/* ---- the face -----------------------------------------------------------
+   A button, not a select, so the value colour and the row colours are set
+   independently. That is the whole fix for "the list is washed out until I
+   pick something": nothing here inherits a placeholder colour. */
+.face {
+  position: relative;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 36px 0 12px;
+  display: flex;
+  align-items: center;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.face:focus-visible { outline: none; border-color: var(--blueprint); }
+/* An unpicked state is a placeholder, not a value — and now ONLY the face is
+   muted. The sheet rows below stay full-contrast ink at all times. */
+.face[data-empty="1"] { color: var(--muted-light); font-weight: 600; }
+.faceTxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The same drawn chevron the select wrapper carried: two 1.5px strokes meeting
+   at a point, rotated. A button can host a pseudo-element, so no wrapper span. */
+.face::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--ink);
+  border-bottom: 1.5px solid var(--ink);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+/* ---- overlay + sheet ----------------------------------------------------
+   z-index sits ABOVE the pages' own sheets (81): this field is used inside the
+   roof estimator's form sheet, so its picker has to stack over its parent. */
+.ov {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(10, 10, 10, 0.4);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s var(--ease), visibility 0.3s;
+}
+.ov.on { opacity: 1; visibility: visible; }
+
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 91;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex;
+  flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+
+.grab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.head { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.title { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+
+/* ---- filter -------------------------------------------------------------
+   Fifty-two rows is past the point where scrolling to a known answer is the
+   job, so the sheet opens with a filter focused. */
+.srch {
+  position: relative;
+  flex-shrink: 0;
+  padding: 10px var(--pad-x);
+  border-bottom: 1.5px solid var(--ink);
+}
+.srchIn {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 40px 0 12px;
+  background: var(--paper-deep);
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 15px;
+  color: var(--ink);
+}
+.srchIn:focus { outline: none; border-color: var(--blueprint); }
+.srchIn::placeholder { color: var(--muted-light); }
+.srchX {
+  position: absolute;
+  right: calc(var(--pad-x) + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+
+/* ---- the list -----------------------------------------------------------
+   An INNER scroller, so it does paint a thumb — unlike the page scroller. */
+.body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.body::-webkit-scrollbar { width: 6px; }
+.body::-webkit-scrollbar-track { background: transparent; }
+.body::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+
+/* 56px, comfortably past the 44px floor — this is the "make them easier to
+   click" half of the request, and unlike option padding it is honoured on
+   every platform because it is ordinary DOM. */
+.row {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--pad-x);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1.5px solid var(--hair);
+  text-align: left;
+  color: var(--ink);
+}
+.row:last-child { border-bottom: none; }
+.rowOn { background: var(--paper-deep); }
+
+/* The code is a technical id, so it belongs to the mono annotation layer. */
+.code {
+  flex-shrink: 0;
+  width: 34px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--blueprint);
+}
+.name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tick { flex-shrink: 0; color: var(--blueprint); }
+
+/* ---- empty state --------------------------------------------------------
+   Reachable by filtering to nonsense. Says what happened AND what to do. */
+.empty { padding: 34px var(--pad-x) 40px; text-align: center; }
+.emptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; }
+.emptyB { margin-top: 8px; font-size: 14.5px; line-height: 1.5; color: var(--muted); }
+.emptyBtn {
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+.cancel {
+  flex-shrink: 0;
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* Motion off means motion off — scoped, never a bare * selector. */
+@media (prefers-reduced-motion: reduce) {
+  .ov, .sheet { transition: none; }
+}

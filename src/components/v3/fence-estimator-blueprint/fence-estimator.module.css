@@ -1430,8 +1430,36 @@
 }
 .bp :global(.content .op-ic) { grid-area: 1 / 1; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--blueprint); border-radius: var(--radius); background: rgba(24, 84, 160, 0.08); color: var(--blueprint); }
 .bp :global(.content .op-ic .ic) { width: 14px; height: 14px; }
-.bp :global(.content .op-sel) { grid-area: 1 / 2; width: 100%; min-width: 0; height: 30px; padding: 0 8px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 12.5px; color: var(--ink); }
-.bp :global(.content .op-sel:focus) { outline: none; border-color: var(--ink); }
+/* `.op-sel` is now the `.bp-sel` WRAPPER, not the <select>. The shared select
+   treatment (blueprint-global.css) draws its chevron from a pseudo-element,
+   which a <select> cannot carry — so the control gains a span around it, and
+   that span is what the grid has to place. Leaving `grid-area: 1 / 2` on the
+   inner control would have handed row 1 / column 2 to a child of a wrapper
+   that auto-placed itself somewhere else, which is exactly how the icon /
+   price / × alignment fixed above regresses. The wrapper takes the track (and
+   its `min-width: 0`, so the `minmax(0, 1fr)` column can still shrink); the
+   control fills it via the shared `width: 100%`. */
+.bp :global(.content .op-sel) { grid-area: 1 / 2; width: 100%; min-width: 0; }
+/* Geometry only — appearance and chevron both come from the shared rule. (It
+   also publishes a mono value type, but the donor reset above —
+   `.content select { font-family: inherit }`, 0-2-1 — out-specifies the shared
+   0-2-0, so the value renders in the page sans. Left alone deliberately:
+   restating the mono here would re-derive shared appearance AND make this page
+   the odd one out, since every already-converted page carries the same reset.)
+   The 30px height is the row's, matched to the icon and the × beside it;
+   the 8px inset is the compact ledger-row inset, and the 30px right pad is the
+   shared caret gutter restated because it ships as a `padding-right` longhand
+   that this page's `.content * { padding: 0 }` donor reset ties with. Border
+   colour is re-pointed at `--hair-soft` (the shared `--ink-line` is a far
+   lighter hairline than the run rows around it), and because that resting
+   colour out-specifies the shared states, the focus edge is restated. */
+.bp :global(.content .op-sel .bp-sel-in) {
+  height: 30px;
+  padding: 0 30px 0 8px;
+  border-color: var(--hair-soft);
+}
+.bp :global(.content .op-sel .bp-sel-in:hover),
+.bp :global(.content .op-sel .bp-sel-in:focus) { border-color: var(--ink); }
 .bp :global(.content .op-price) { grid-area: 1 / 3; font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; }
 .bp :global(.content .openings li .row-x) { grid-area: 1 / 4; }
 /* Row 2, under the select only — a block, so its own spacing actually applies. */
@@ -1552,7 +1580,10 @@
 .bp :global(.content .openings li) { grid-template-columns: 24px minmax(0, 1fr) auto 22px; column-gap: 8px; row-gap: 2px; }
 .bp :global(.content .op-ic) { width: 24px; height: 24px; }
 .bp :global(.content .op-ic .ic) { width: 12px; height: 12px; }
-.bp :global(.content .op-sel) { height: 27px; font-size: 12px; }
+/* The height belongs to the control inside the wrapper now; the wrapper only
+   holds the track. Font size is the shared rule's (12px mono) at both widths,
+   so there is nothing left to shrink here. */
+.bp :global(.content .op-sel .bp-sel-in) { height: 27px; }
 .bp :global(.content .op-sub) { font-size: 10px; }
 .bp :global(.content .op-price) { font-size: 11.5px; }
 .bp :global(.content .mat-sw) { width: 22px; height: 22px; }
@@ -1580,3 +1611,94 @@
   border-radius: 0;
   border: none;
 }
+
+/* --- live map surface --- */
+/* The Google-Maps draw surface (components/estimator/fence/FenceDrawMap) is
+   mounted into `#mapSlot` as a React island. `.map-live` is the island's own
+   host — created by the behavior module, never written to again — and
+   `.map-live-in` is the class handed to the surface's root, which otherwise
+   carries only a `position: relative` utility and would not fill the slot. */
+.bp :global(.content .map-live) { position: absolute; inset: 0; }
+.bp :global(.content .map-live-in) { position: absolute; inset: 0; }
+
+/* --- live 3D surface --- */
+/* Same island contract as the map: `.model-live` is the host the behavior
+   module creates inside `#stage3d` and never writes to again, `.model-live-in`
+   is the class handed to FenceModel3D's root. Both sit ON TOP of the slot's
+   hatched placeholder, which the module hides once the scene is mounted. */
+.bp :global(.content .model-live) { position: absolute; inset: 0; }
+.bp :global(.content .model-live-in) { position: absolute; inset: 0; }
+
+/* --- mounted interiors: blueprint skin --- */
+/* FenceDrawMap and FenceModel3D are SHARED components — the estimator at
+   /dashboard/advanced-ai/fence renders the same two files against the old
+   design. Their in-surface overlays are therefore re-skinned from here, through
+   the `data-fdm` / `data-fm3d` hooks those components expose, rather than by
+   rewriting their utility classes: this page's look must not follow them onto
+   that page. Every rule is scoped under `.content`, so nothing outside a
+   blueprint page can match one.
+   The shape is the whole point: blueprint has no pills and no blur. Squared
+   corners at the system radius, a hard offset shadow with no blur, mono at
+   annotation size, ink on paper. */
+
+/* The measurement chip that tracks the cursor while a run is being traced —
+   the one overlay that renders even for a chrome-less host. A drafting tag. */
+.bp :global(.content .map-live [data-fdm="len"]) {
+  border-radius: var(--r-xs);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 3px 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: none;
+}
+
+/* "Live · 3D" corner stamp. */
+.bp :global(.content .model-live [data-fm3d="badge"]) {
+  border-radius: var(--r-xs);
+  background: var(--paper);
+  color: var(--ink-soft);
+  border: 1.5px solid var(--hair);
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: none;
+}
+/* Its status dot becomes a square tick — round dots are the one shape this
+   system does not draw. */
+.bp :global(.content .model-live [data-fm3d="dot"]) {
+  border-radius: 0;
+  background: var(--blueprint);
+}
+
+/* The navigation hint along the bottom edge, resting and walking. */
+.bp :global(.content .model-live [data-fm3d="hint"]),
+.bp :global(.content .model-live [data-fm3d="hint-on"]) {
+  border-radius: var(--r-xs);
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: none;
+}
+.bp :global(.content .model-live [data-fm3d="hint"]) {
+  background: var(--paper);
+  color: var(--muted);
+  border: 1.5px solid var(--hair-soft);
+}
+.bp :global(.content .model-live [data-fm3d="hint-on"]) {
+  background: var(--blueprint);
+  color: var(--paper);
+  border: 1.5px solid var(--blueprint-dark);
+}
+
+/* Align is a MODE, not a one-shot action: the tool has to rest in an active
+   state for as long as the outline is draggable. */
+.bp :global(.content .tool.on) { border-color: var(--blueprint); color: var(--blueprint); background: var(--paper-deep); }

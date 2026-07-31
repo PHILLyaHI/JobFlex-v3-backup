@@ -1,0 +1,122 @@
+/* ============================================================================
+   ADDRESS FIELD — the input, plus the Places suggestion list.
+
+   Tokens are not redeclared: this always renders inside a page whose .app root
+   publishes them, exactly like mobile-nav and state-picker.
+
+   The list is a <ul> that places-suggest appends to <body> and positions with
+   inline fixed coordinates, so it is never clipped by a card's overflow and
+   never fights a stacking context. Because it lives outside the React tree, the
+   only thing that can style it safely is a hashed module class — which is why
+   attachPlacesSuggest takes `className`. Its INNER nodes keep global bp-sug-*
+   names, reached below with descendant selectors that outrank the desktop's
+   single-class rules in blueprint-global.css.
+   ========================================================================= */
+
+/* ---- the input ----------------------------------------------------------
+   Same geometry as every other form input in this family. */
+.in {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 12px;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.in:focus { outline: none; border-color: var(--blueprint); }
+.in::placeholder { color: var(--muted-light); font-weight: 600; }
+.bad { border-color: var(--danger); }
+
+/* ---- the suggestion list ------------------------------------------------
+   display is owned here, not inline: places-suggest toggles a global `open`
+   class. Above the page sheets (81) and the state picker (91), because an
+   address field can be inside a form sheet and its list must clear it. */
+.sug {
+  position: fixed;
+  z-index: 95;
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(46vh, 320px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* No drop shadow. A hard ink drop under a floating panel read as a black slab
+     on the filter menu and was removed there; this follows that decision. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sug:global(.open) { display: block; }
+.sug::-webkit-scrollbar { width: 6px; }
+.sug::-webkit-scrollbar-track { background: transparent; }
+.sug::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+
+.sug li { margin: 0; padding: 0; }
+
+/* 54px rows: a suggestion is a target you hit while typing one-handed, so it
+   gets more than the 44px floor. */
+.sug :global(.bp-sug-item) {
+  width: 100%;
+  min-height: 54px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  border-bottom: 1.5px solid var(--hair);
+  border-radius: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.sug li:last-child :global(.bp-sug-item) { border-bottom: none; }
+/* `on` is the keyboard-active row, set by places-suggest on arrow keys. */
+.sug :global(.bp-sug-item.on) { background: var(--paper-deep); }
+
+/* The desktop sizes this svg through a global `.ic`, which does not exist on
+   the handheld pages — their .ic is module-scoped. Size it explicitly or the
+   pin collapses to nothing. */
+.sug :global(.bp-sug-ic) {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  color: var(--blueprint);
+}
+
+.sug :global(.bp-sug-txt) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sug :global(.bp-sug-main) {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The locality tail is a technical annotation, so it belongs to the mono layer. */
+.sug :global(.bp-sug-sub) {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

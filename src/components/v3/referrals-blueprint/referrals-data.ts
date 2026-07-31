@@ -1,7 +1,9 @@
-// Referrals blueprint — demo fixture data, verbatim from the donor file
-// jobflex-referrals-blueprint_1.html (script section). Values must not be
-// edited independently of the donor: the page is a pixel-identical port,
-// content included.
+// Referrals blueprint — row SHAPE only.
+//
+// The donor file (jobflex-referrals-blueprint_1.html) shipped an eight-row demo
+// fixture here. It is gone: the page now reads the real `ReferralConversion`
+// rows in src/app/dashboard/referrals/page.tsx and passes them down, so the
+// only thing this module still owns is the type the server component fills.
 //
 // The donor's own note on the shape: "ReferralConversion: signupEmail,
 // status (PENDING | CONVERTED | PAID), rewardCents, createdAt."
@@ -10,20 +12,13 @@ export type ConversionStatus = "PENDING" | "CONVERTED" | "PAID";
 
 export type Conversion = {
   id: string;
+  /** `ReferralConversion.signupEmail` */
   email: string;
   status: ConversionStatus;
-  /** reward in cents — `money()` divides by 100 */
+  /** `ReferralConversion.rewardCents` — `money()` divides by 100. 0 when the
+   *  credit has not been sized yet (every PENDING row). */
   reward: number;
+  /** `relative(createdAt)` — "3d ago", already formatted server-side so the
+   *  markup builder stays a pure string join. */
   when: string;
 };
-
-export const CONVERSIONS: Conversion[] = [
-  { id: 'v1', email: 'ops@summitroofingnw.com',   status: 'PAID',      reward: 4900, when: '3d ago' },
-  { id: 'v2', email: 'mike@ridgelinefence.com',   status: 'PAID',      reward: 4900, when: '1w ago' },
-  { id: 'v3', email: 'hello@cascadeexteriors.co', status: 'CONVERTED', reward: 4900, when: '2w ago' },
-  { id: 'v4', email: 'dana@northshoregutters.com', status: 'CONVERTED', reward: 4900, when: '2w ago' },
-  { id: 'v5', email: 't.mercer@mercerdecks.com',  status: 'PENDING',   reward: 0,    when: '3w ago' },
-  { id: 'v6', email: 'crew@evergreensiding.net',  status: 'PENDING',   reward: 0,    when: '1mo ago' },
-  { id: 'v7', email: 'jr@harborfenceco.com',      status: 'PAID',      reward: 4900, when: '1mo ago' },
-  { id: 'v8', email: 'admin@pugetpropertypm.com', status: 'PENDING',   reward: 0,    when: '2mo ago' }
-];

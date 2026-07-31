@@ -13,9 +13,41 @@
 // - the donor's `safe(name, fn)` try/catch wrapper is dropped: the modules it
 //   guarded are either shell-owned or replaced by strict null checks below.
 
-import { CONVERSIONS, type Conversion } from "./referrals-data";
+import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import type { Conversion } from "./referrals-data";
 
-export function initReferralsContent(content: HTMLElement): () => void {
+export type ReferralsContentOptions = {
+  /** The org's real conversions (most recent 40), newest first. */
+  conversions: Conversion[];
+  /** Every conversion ever recorded — the list is capped, this is not. */
+  uses: number;
+  /** CONVERTED + PAID. */
+  convertedCount: number;
+  pendingCount: number;
+  /** CONVERTED-but-not-yet-credited. */
+  onTheWayCount: number;
+  /** Sum of `rewardCents` across PAID conversions. */
+  creditedCents: number;
+  /** `ReferralCode.code`, for the share sheet's message. */
+  code: string;
+  /** Contractor signup link — what Share sends and what it copies on fallback. */
+  signupUrl: string;
+};
+
+/** Emails are typed by whoever signed up, and they land in an innerHTML string
+ *  join. Everything interpolated goes through here. */
+function escapeText(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export function initReferralsContent(
+  content: HTMLElement,
+  options: ReferralsContentOptions,
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -69,9 +101,12 @@ export function initReferralsContent(content: HTMLElement): () => void {
   });
 
   // ================= REFERRALS: DATA =================
-  // The fixture lives in ./referrals-data.ts, verbatim from the donor. Nothing
-  // on this page writes to it (no create flow), so it is aliased, not copied.
-  const conversions: Conversion[] = CONVERSIONS;
+  // The donor's eight-row fixture is gone. These are the org's real
+  // `ReferralConversion` rows, read in src/app/dashboard/referrals/page.tsx.
+  // Nothing on this page writes to them (there is no create flow — rows appear
+  // when someone signs up with the code, via recordReferralConversion), so the
+  // array is read-only for the life of the mount.
+  const conversions: Conversion[] = options.conversions;
 
   const rfState = { filter: "ALL" };
 
@@ -86,22 +121,25 @@ export function initReferralsContent(content: HTMLElement): () => void {
   }
 
   // ================= RENDER =================
+  // The three tiles read the org-wide totals, not the loaded page: the list is
+  // capped at 40 rows, so counting it would quietly under-report "All time" for
+  // anyone whose code has done well.
   function renderStats() {
-    const uses = conversions.length;
-    const paid = conversions.filter(function (c) { return c.status === "PAID"; });
-    const conv = conversions.filter(function (c) { return c.status === "CONVERTED"; });
-    const pending = conversions.filter(function (c) { return c.status === "PENDING"; }).length;
-    const credited = paid.reduce(function (a, c) { return a + c.reward; }, 0);
     const grid = $("#statGrid");
     if (!grid) return;
+    const onTheWay = options.onTheWayCount;
     grid.innerHTML =
-      '<div class="stat"><div class="kpi-lbl">Code uses</div><div class="stat-val">' + uses + "</div>" +
+      '<div class="stat"><div class="kpi-lbl">Code uses</div><div class="stat-val">' + options.uses + "</div>" +
         '<div class="stat-hint">All time</div></div>' +
-      '<div class="stat"><div class="kpi-lbl">Converted signups</div><div class="stat-val">' + (paid.length + conv.length) + "</div>" +
-        '<div class="stat-hint">' + pending + " pending</div></div>" +
-      '<div class="stat"><div class="kpi-lbl">Credit earned</div><div class="stat-val accent">' + money(credited) + "</div>" +
-        '<div class="stat-hint">' + (conv.length ? conv.length + " credit" + (conv.length === 1 ? "" : "s") + " on the way" : "Nothing pending") + "</div></div>";
+      '<div class="stat"><div class="kpi-lbl">Converted signups</div><div class="stat-val">' + options.convertedCount + "</div>" +
+        '<div class="stat-hint">' + options.pendingCount + " pending</div></div>" +
+      '<div class="stat"><div class="kpi-lbl">Credit earned</div><div class="stat-val accent">' + money(options.creditedCents) + "</div>" +
+        '<div class="stat-hint">' + (onTheWay ? onTheWay + " credit" + (onTheWay === 1 ? "" : "s") + " on the way" : "Nothing pending") + "</div></div>";
   }
+  // The chips count the LOADED rows, because that is what filtering them can
+  // reveal. Built once: their labels never change, so switching filters toggles
+  // `.on` instead of rebuilding the strip — a rebuild would destroy the button
+  // the user just pressed, taking its focus and its press animation with it.
   function renderFilters() {
     const defs = [
       { k: "ALL", l: "All", n: conversions.length },
@@ -115,6 +153,11 @@ export function initReferralsContent(content: HTMLElement): () => void {
       return '<button class="rf-chip' + (rfState.filter === d.k ? " on" : "") + '" type="button" data-f="' + d.k + '">' + d.l + " " + d.n + "</button>";
     }).join("");
   }
+  function paintFilters() {
+    $$("#rfFilters .rf-chip").forEach(function (chip) {
+      chip.classList.toggle("on", chip.dataset.f === rfState.filter);
+    });
+  }
   function renderConversions() {
     const rows = rfState.filter === "ALL"
       ? conversions
@@ -123,9 +166,9 @@ export function initReferralsContent(content: HTMLElement): () => void {
     if (list) {
       list.innerHTML = rows.map(function (c) {
         return "<li>" +
-          '<span class="conv-av">' + initials(c.email) + "</span>" +
-          '<span class="conv-main"><span class="conv-t" style="display:block">' + c.email + "</span>" +
-          '<span class="conv-s" style="display:block">' + c.when + "</span></span>" +
+          '<span class="conv-av">' + escapeText(initials(c.email)) + "</span>" +
+          '<span class="conv-main"><span class="conv-t" style="display:block">' + escapeText(c.email) + "</span>" +
+          '<span class="conv-s" style="display:block">' + escapeText(c.when) + "</span></span>" +
           (c.reward > 0 ? '<span class="conv-amt">' + money(c.reward) + "</span>" : "") +
           '<span class="pstatus cs--' + c.status.toLowerCase() + '">' + label(c.status) + "</span>" +
           "</li>";
@@ -135,35 +178,105 @@ export function initReferralsContent(content: HTMLElement): () => void {
   }
   function renderReferrals() { renderStats(); renderFilters(); renderConversions(); }
 
-  // ================= EVENTS =================
-  function flashCopy(btn: HTMLElement) {
+  // ================= CLIPBOARD =================
+  // The donor flashed a checkmark on every copy button and never touched the
+  // clipboard — the code and the two links are the entire point of this page,
+  // so they are written for real, and the checkmark only appears when the write
+  // resolved. A refusal (insecure origin, denied permission) selects the text
+  // instead so ⌘C still works, rather than claiming a copy that never happened.
+  function selectFallback(srcId: string | undefined) {
+    if (!srcId) return;
+    const node = $("#" + srcId);
+    const sel = window.getSelection();
+    if (!node || !sel) return;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  async function copyFrom(btn: HTMLElement) {
     if (btn.dataset.busy) return;
+    const text = btn.dataset.copy ?? "";
+    if (!text) return;
     btn.dataset.busy = "1";
     const html = btn.innerHTML;
-    btn.classList.add("done");
-    btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>';
-    later(function () { btn.classList.remove("done"); btn.innerHTML = html; delete btn.dataset.busy; }, 1400);
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      selectFallback(btn.dataset.copySrc);
+    }
+    btn.classList.toggle("done", ok);
+    btn.innerHTML = ok
+      ? '<svg class="ic"><use href="#i-check"/></svg>'
+      : '<svg class="ic"><use href="#i-x"/></svg>';
+    later(function () {
+      btn.classList.remove("done");
+      btn.innerHTML = html;
+      delete btn.dataset.busy;
+    }, 1400);
   }
+
+  // ================= EVENTS =================
   on(document, "click", function (e) {
     const target = e.target instanceof Element ? e.target : null;
     if (!target) return;
     const cp = target.closest<HTMLElement>("[data-copy]");
-    if (cp) { flashCopy(cp); return; }
+    if (cp) { void copyFrom(cp); return; }
+    // Clicking the code plate is the same gesture as its copy button.
     if (target.closest("#codeVal")) {
       const cc = $(".code-copy");
-      if (cc) flashCopy(cc);
+      if (cc) void copyFrom(cc);
       return;
     }
     const f = target.closest<HTMLElement>("[data-f]");
-    if (f) { rfState.filter = f.dataset.f ?? rfState.filter; renderFilters(); renderConversions(); return; }
-    const share = target.closest<HTMLElement>("#shareBtn");
-    if (share && !share.dataset.busy) {
-      share.dataset.busy = "1";
-      const old = share.innerHTML;
-      share.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Link copied';
-      later(function () { share.innerHTML = old; delete share.dataset.busy; }, 1600);
+    if (f) {
+      rfState.filter = f.dataset.f ?? rfState.filter;
+      paintFilters();
+      renderConversions();
+      return;
     }
+    const share = target.closest<HTMLElement>("#shareBtn");
+    if (share) { void shareLink(share); return; }
   });
+
+  // Share: the OS sheet where there is one (that is the whole point on a phone),
+  // the clipboard everywhere else. Either way the button reports what actually
+  // happened — a cancelled share sheet says nothing at all.
+  async function shareLink(btn: HTMLElement) {
+    if (btn.dataset.busy) return;
+    const old = btn.innerHTML;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Try JobFlex",
+          text:
+            "Use my code " + options.code +
+            " to sign up on JobFlex — each contractor who upgrades to a paid plan knocks 50% off a month of your subscription.",
+          url: options.signupUrl,
+        });
+      } catch {
+        return; // cancelled, or the sheet refused — say nothing
+      }
+      btn.dataset.busy = "1";
+      btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Shared';
+      later(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1600);
+      return;
+    }
+    btn.dataset.busy = "1";
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(options.signupUrl);
+      ok = true;
+    } catch {
+      selectFallback("signupUrl");
+    }
+    btn.innerHTML = ok
+      ? '<svg class="ic"><use href="#i-check"/></svg>Link copied'
+      : '<svg class="ic"><use href="#i-x"/></svg>Press ⌘C';
+    later(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1600);
+  }
 
   // ================= INITIALIZATION =================
   renderReferrals();
@@ -171,7 +284,9 @@ export function initReferralsContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+    // (The donor's local EASE constant lived here for its hand-rolled row
+    // stagger; that stagger now comes from blueprint-shell/list-motion, which
+    // owns the same curve.)
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: a slow scroll gets the full 420ms
@@ -236,29 +351,18 @@ export function initReferralsContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".conv li, .stat"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-      });
-    }
+    // Row stagger — ONCE, on arrival.
+    //
+    // The donor wired this to a MutationObserver on both containers, so every
+    // filter click wiped the conversion list to opacity 0 and crawled it back
+    // in: the chip read as "the list reset and my click did nothing". The list
+    // genuinely arrives exactly once per mount (nothing on this page creates or
+    // deletes a conversion — rows appear when someone signs up with the code),
+    // so it plays here and the filter repaints silently.
     ["convList", "statGrid"].forEach((id) => {
       const list = $("#" + id);
       if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
+      staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".conv li, .stat")));
     });
 
     // Numeral count-up — Overview's `.kpi-val`. This page renders none (its

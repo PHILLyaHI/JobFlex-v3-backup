@@ -1,0 +1,743 @@
+/* ============================================================
+   MANUAL BUILDER — /dashboard/estimators/manual.
+
+   Registered in PAGE_STYLES under the key "estimators", because
+   blueprint-shell.tsx's `pageKey()` reads the FIRST path segment after
+   /dashboard and the builder is a child route. There is no
+   /dashboard/estimators page: choosing an estimator happens in the
+   topbar's New Estimate dialog, whose styles live in the sibling
+   estimators-global.css (it renders outside `.content`, on every page,
+   so it cannot depend on this module being active).
+
+   This page is NOT a donor port — there is no authored HTML for it. It
+   is React-authored, so there is no `*-behavior.ts`; the reveal cascade
+   lives in use-reveal.ts. Everything else follows the fleet contract
+   exactly:
+   - the donor `:root` token block lands on `.content`, NOT the module
+     root, so the shared shell chrome keeps the tokens it was authored
+     against;
+   - every content rule is `.bp :global(.content SEL)`, so the class
+     names in the TSX stay literal;
+   - shell chrome (html/body, .layout, .main, .sb*, .topbar, the sprite)
+     is NOT styled here — components/v3/blueprint-shell owns all of it.
+
+   No @keyframes in this file: Lightning CSS rejects them inside CSS
+   modules. `mbTotalFlash` is declared in
+   components/v3/dashboard-blueprint/blueprint-global.css and only
+   referenced here.
+   ============================================================ */
+
+/* ============================================================
+   DESIGN TOKENS — JobFlex Blueprint System (donor :root)
+   ============================================================ */
+.bp :global(.content) {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft fill */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger:  #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0,0,0,0.035);
+  --hair: #0a0a0a;
+  --hair-soft: rgba(10,10,10,0.55);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10,10,10,0.06);
+
+  --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* ── Environment restore ─────────────────────────────────────────
+     Not value changes: the app's Tailwind preflight + globals.css leak
+     INHERITED values the blueprint system never authored. Re-declare the
+     browser defaults so computed heights/spacing match the rest of the
+     fleet. */
+  line-height: normal;
+  text-rendering: auto;
+}
+
+/* ============================================================
+   RESET / BASE — matches the ported pages so shared class names
+   (.ic, buttons, inputs) behave identically across the fleet.
+   ============================================================ */
+.bp :global(.content *) {
+  margin: 0; padding: 0; box-sizing: border-box;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+.bp :global(.content svg) { display: inline; vertical-align: baseline; }
+.bp :global(.content button) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.bp :global(.content a) { text-decoration: none; color: inherit; }
+.bp :global(.content ul), .bp :global(.content ol) { list-style: none; }
+.bp :global(.content input), .bp :global(.content select) { font-family: inherit; }
+.bp :global(.content svg.ic) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; shape-rendering: geometricPrecision; }
+
+.bp :global(.content) ::selection { background: var(--blueprint); color: #fff; }
+
+/* ============================================================
+   REVEAL CASCADE — same classes and timings as the ported pages,
+   applied by use-reveal.ts instead of a behavior script.
+   ============================================================ */
+.bp :global(.content .rv) {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.bp :global(.content .rv-in) { opacity: 1; transform: none; }
+
+/* ============================================================
+   PAGE HEAD — the fleet's masthead vocabulary.
+   ============================================================ */
+.bp :global(.content .page-head) {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.bp :global(.content .kicker) {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+.bp :global(.content .page-title) {
+  margin: 4px 0 0;
+  font-family: var(--font);
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* Screen-reader-only, for the icon-button column header. */
+.bp :global(.content .sr-only) {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* ============================================================
+   MANUAL BUILDER — three-zone workspace.
+   Book and rail are sticky so the two things you are working BETWEEN
+   stay on screen while the sheet in the middle scrolls.
+   ============================================================ */
+.bp :global(.content .mb-work) {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+.bp :global(.content .mb-work--narrow) { grid-template-columns: 44px minmax(0, 1fr) 300px; }
+
+/* ── Price book ──────────────────────────────────────────────── */
+.bp :global(.content .mb-book) {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.bp :global(.content .mb-book--closed) { padding: 6px; overflow: hidden; }
+
+.bp :global(.content .mb-book-head) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hair);
+}
+.bp :global(.content .mb-book--closed .mb-book-head) { border-bottom: none; padding-bottom: 0; }
+.bp :global(.content .mb-book-title) {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+
+.bp :global(.content .mb-book-tabs) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 8px 0 10px;
+  border-bottom: 1px solid var(--muted-faint);
+}
+.bp :global(.content .mb-tab) {
+  min-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.bp :global(.content .mb-tab.is-on) { color: var(--ink); border-bottom-color: var(--blueprint); }
+
+.bp :global(.content .mb-book-search) {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--muted-faint);
+  border-radius: var(--radius);
+}
+.bp :global(.content .mb-book-search:focus) { outline: none; border-color: var(--blueprint); }
+
+.bp :global(.content .mb-book-target) { display: block; margin: 10px 0; }
+.bp :global(.content .mb-book-target select) {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 3px;
+  padding: 0 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--muted-faint);
+  border-radius: var(--radius);
+}
+.bp :global(.content .mb-book-target select:focus) { outline: none; border-color: var(--blueprint); }
+
+.bp :global(.content .mb-book-group) { margin-top: 12px; }
+.bp :global(.content .mb-book-group-name) {
+  padding-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+  border-bottom: 1px solid var(--muted-faint);
+}
+.bp :global(.content .mb-book-item) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 32px;
+  gap: 6px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 2px;
+  border-bottom: 1px dashed var(--muted-faint);
+}
+.bp :global(.content .mb-book-item:hover) { background: var(--paper-deep); }
+.bp :global(.content .mb-book-item-name) {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bp :global(.content .mb-book-item-cost) {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.bp :global(.content .mb-tpl) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px dashed var(--muted-faint);
+  border-radius: var(--radius);
+}
+.bp :global(.content .mb-tpl:hover) { border-color: var(--ink); border-style: solid; }
+.bp :global(.content .mb-tpl-name) { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.bp :global(.content .mb-tpl-meta) {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+
+/* ── Sheet ───────────────────────────────────────────────────── */
+.bp :global(.content .mb-sheet) {
+  padding: 18px;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* The drawing title block — the annotation layer, ruled like a real one. */
+.bp :global(.content .mb-title-block) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-bottom: 20px;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.bp :global(.content .tb-cell) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-right: 1px solid var(--muted-faint);
+  border-bottom: 1px solid var(--muted-faint);
+}
+.bp :global(.content .tb-label) {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+.bp :global(.content .tb-value) {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.bp :global(.content .mb-section) { margin-bottom: 22px; }
+.bp :global(.content .mb-section-head) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--ink);
+}
+.bp :global(.content .mb-section-name) {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+}
+.bp :global(.content .mb-section-name:hover) { border-bottom-color: var(--muted-faint); }
+.bp :global(.content .mb-section-name:focus) { outline: none; border-bottom-color: var(--blueprint); }
+.bp :global(.content .mb-section-sub) {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.bp :global(.content .mb-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 78px 64px 96px 104px 96px;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  border-bottom: 1px dashed var(--muted-faint);
+}
+.bp :global(.content .mb-row--head) { min-height: 30px; border-bottom: 1px solid var(--muted-faint); }
+.bp :global(.content .mb-row--head span) {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+.bp :global(.content .mb-row .num) { text-align: right; }
+
+/* Ruled paper, not a boxed form field: a rule under the value, and a
+   blueprint underline where the cursor is. */
+.bp :global(.content .mb-in) {
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+}
+.bp :global(.content .mb-in:hover) { border-bottom-color: var(--muted-faint); }
+.bp :global(.content .mb-in:focus) {
+  outline: none;
+  border-bottom: 2px solid var(--blueprint);
+  background: var(--chart-fill);
+}
+.bp :global(.content .mb-in.num) {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.bp :global(.content .mb-in--unit) {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-transform: lowercase;
+}
+/* Spinners break the tabular alignment and are useless at these magnitudes. */
+.bp :global(.content .mb-in[type="number"]) { appearance: textfield; -moz-appearance: textfield; }
+.bp :global(.content .mb-in[type="number"]::-webkit-outer-spin-button),
+.bp :global(.content .mb-in[type="number"]::-webkit-inner-spin-button) { appearance: none; margin: 0; }
+
+.bp :global(.content .mb-line-total) {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.bp :global(.content .mb-row-acts) { display: flex; gap: 2px; justify-content: flex-end; }
+.bp :global(.content .mb-icon-btn) {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 44px;
+  color: var(--muted-light);
+  border-radius: var(--radius);
+}
+.bp :global(.content .mb-icon-btn:hover:not(:disabled)) { color: var(--ink); background: var(--paper-deep); }
+.bp :global(.content .mb-icon-btn:disabled) { opacity: 0.3; cursor: default; }
+.bp :global(.content .mb-icon-btn .ic) { width: 15px; height: 15px; }
+.bp :global(.content .mb-icon-btn--up .ic) { transform: rotate(180deg); }
+.bp :global(.content .mb-icon-btn--down .ic) { transform: rotate(-90deg); }
+
+.bp :global(.content .mb-empty) {
+  padding: 16px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted-light);
+  border-bottom: 1px dashed var(--muted-faint);
+}
+
+.bp :global(.content .mb-add) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border: 1px dashed var(--muted-faint);
+  border-radius: var(--radius);
+}
+.bp :global(.content .mb-add:hover) { border-color: var(--ink); border-style: solid; }
+.bp :global(.content .mb-add .ic) { width: 14px; height: 14px; }
+
+/* ── Totals rail ─────────────────────────────────────────────── */
+.bp :global(.content .mb-rail) {
+  position: sticky;
+  top: 0;
+  padding: 14px;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.bp :global(.content .mb-rail-title) {
+  padding-bottom: 6px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border-bottom: 2px solid var(--ink);
+}
+
+.bp :global(.content .mb-rail-lines) { margin: 8px 0 12px; }
+.bp :global(.content .mb-rail-lines > div) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--muted-faint);
+}
+.bp :global(.content .mb-rail-lines dt) {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bp :global(.content .mb-rail-lines dd) {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+.bp :global(.content .mb-rail-sub) { border-bottom: none !important; border-top: 1px solid var(--hair); }
+.bp :global(.content .mb-rail-sub dt), .bp :global(.content .mb-rail-sub dd) { color: var(--ink); font-weight: 700; }
+
+.bp :global(.content .mb-rate) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--muted-faint);
+}
+.bp :global(.content .mb-rate input) {
+  min-height: 32px;
+  padding: 2px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--muted-faint);
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.bp :global(.content .mb-rate input:focus) { outline: none; border-bottom: 2px solid var(--blueprint); }
+.bp :global(.content .mb-rate input::-webkit-outer-spin-button),
+.bp :global(.content .mb-rate input::-webkit-inner-spin-button) { appearance: none; margin: 0; }
+.bp :global(.content .mb-rate-amt) {
+  grid-column: 1 / -1;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-light);
+}
+
+.bp :global(.content .mb-grand) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 6px;
+  border-top: 2px solid var(--ink);
+}
+.bp :global(.content .mb-grand.is-flash) { animation: mbTotalFlash 180ms linear; }
+.bp :global(.content .mb-grand-label) {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bp :global(.content .mb-grand-value) {
+  font-family: var(--font);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.bp :global(.content .mb-act) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: var(--radius);
+}
+.bp :global(.content .mb-act--primary) { color: #fff; background: var(--blueprint); }
+.bp :global(.content .mb-act--primary:hover) { background: var(--blueprint-dark); }
+.bp :global(.content .mb-act--ghost) { color: var(--ink); border: var(--border); }
+.bp :global(.content .mb-act--ghost:hover) { background: var(--paper-deep); }
+.bp :global(.content .mb-act .ic) { width: 15px; height: 15px; }
+
+/* ── Dialogs — the shared `.mdl` vocabulary. Enter animations come from
+   blueprint-global.css; these are the box rules. ──────────────── */
+.bp :global(.content .mdl) {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
+.bp :global(.content .mdl-box) {
+  position: relative;
+  width: min(440px, 100%);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 18px;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.1);
+}
+.bp :global(.content .mdl-head) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--ink);
+}
+.bp :global(.content .mdl-kick) {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+.bp :global(.content .mdl-title) {
+  margin-top: 2px;
+  font-family: var(--font);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.bp :global(.content .mdl-x) {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: -10px -10px 0 0;
+  color: var(--muted);
+  border-radius: var(--radius);
+}
+.bp :global(.content .mdl-x:hover) { color: var(--ink); background: var(--paper-deep); }
+.bp :global(.content .mdl-body) { padding: 14px 0; }
+.bp :global(.content .mdl-foot) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--muted-faint);
+}
+.bp :global(.content .mdl-foot .mb-act) { margin-top: 0; }
+
+.bp :global(.content .mb-field) { display: block; margin-bottom: 12px; }
+.bp :global(.content .mb-field input), .bp :global(.content .mb-field select) {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 3px;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--muted-faint);
+  border-radius: var(--radius);
+}
+.bp :global(.content .mb-field input:focus), .bp :global(.content .mb-field select:focus) {
+  outline: none;
+  border-color: var(--blueprint);
+}
+
+.bp :global(.content .mb-note) {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.bp :global(.content .mb-note--warn) {
+  margin-top: 12px;
+  padding: 8px 10px;
+  color: var(--warning-dark);
+  background: var(--warning-soft);
+  border-left: 2px solid var(--warning);
+}
+
+.bp :global(.content .mb-mdl-list) { margin: 6px 0 14px; }
+.bp :global(.content .mb-mdl-list > div) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--muted-faint);
+}
+.bp :global(.content .mb-mdl-list dt) {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bp :global(.content .mb-mdl-list dd) {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+.bp :global(.content .mb-mdl-rule) { border-top: 1px solid var(--hair); }
+.bp :global(.content .mb-mdl-grand) { border-bottom: none !important; border-top: 2px solid var(--ink); }
+.bp :global(.content .mb-mdl-grand dt), .bp :global(.content .mb-mdl-grand dd) {
+  font-weight: 900;
+  color: var(--ink);
+}
+.bp :global(.content .mb-mdl-grand dd) { font-size: 16px; }
+
+/* ============================================================
+   REDUCED MOTION — the reveal, the hover lift and the total flash
+   all go instant.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .rv) { opacity: 1; transform: none; transition: none; }
+  .bp :global(.content .mb-grand.is-flash) { animation: none; }
+}

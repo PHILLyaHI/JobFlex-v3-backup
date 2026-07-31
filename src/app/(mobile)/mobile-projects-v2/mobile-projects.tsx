@@ -44,6 +44,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-projects.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   FILTERS,
   PAGE_SIZE,
@@ -157,13 +159,12 @@ export function MobileProjects() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -426,6 +427,11 @@ export function MobileProjects() {
 
   const anyOverlay = Boolean(sheetProject) || newOpen;
 
+  // Swipe-down dismissal, one gesture per sheet, on the same setters the
+  // Escape ladder uses.
+  const actionsDrag = useSheetDrag(Boolean(sheetProject), () => setSheetId(null));
+  const newDrag = useSheetDrag(newOpen, () => setNewOpen(false));
+
   return (
     <div className={styles.app} onClick={onRootClick}>
 
@@ -558,14 +564,17 @@ export function MobileProjects() {
                     className={`${styles.pjrow} ${styles.rowIn} ${landedId === p.id ? styles.landed : ""}`}
                     style={rowStyle}
                   >
-                    {/* Row 1 — identity, actions hard right */}
+                    {/* Row 1 — the drawing annotation (delivery window + job
+                        tally) as a KICKER over the name. DOM order follows the
+                        visual order so a screen reader hears the dateline
+                        before the project it belongs to, same as the eye. */}
+                    <div className={styles.pjMeta}>{windowLabel(p)}</div>
+                    {/* Row 2 — identity, actions hard right */}
                     <div className={styles.pjName}>{p.name}</div>
                     <button className={styles.pjOpen} type="button"
                       aria-label={`Actions for ${p.name}`} onClick={() => setSheetId(p.id)}>
                       <Icon id="i-dots" />
                     </button>
-                    {/* Row 2 — the drawing annotation: delivery window + job tally */}
-                    <div className={styles.pjMeta}>{windowLabel(p)}</div>
                     {/* Row 3 — badge leads, the figures close at the far right */}
                     <div className={styles.pjFoot}>
                       <span className={`${styles.pjstatus} ${STATUS_CLASS[p.status] ?? ""}`}>
@@ -618,9 +627,9 @@ export function MobileProjects() {
 
       {/* ============ ROW ACTIONS SHEET ============ */}
       <div className={`${styles.sheet} ${sheetProject ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-label="Project actions" aria-hidden={!sheetProject}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-label="Project actions" aria-hidden={!sheetProject} {...actionsDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
+        <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {sheetProject
               ? `${statusLabel(sheetProject.status)} · ${sheetProject.jobCount} jobs · ${sheetProject.budget ? money(sheetProject.budget) : "no budget set"}`
@@ -651,9 +660,9 @@ export function MobileProjects() {
 
       {/* ============ NEW PROJECT SHEET ============ */}
       <div className={`${styles.sheet} ${newOpen ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-labelledby="mpNewTitle" aria-hidden={!newOpen}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-labelledby="mpNewTitle" aria-hidden={!newOpen} {...newDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...newDrag.handleProps} />
+        <div className={styles.sheetHead} {...newDrag.handleProps}>
           <div className={styles.sheetKicker}>Delivery / new record</div>
           <div className={styles.sheetTitle} id="mpNewTitle">New project</div>
         </div>

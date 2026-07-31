@@ -33,6 +33,22 @@
    masthead into three lines. Identical token to the sibling mobile-v2 module. */
 .tbar {
   display: flex; align-items: center; gap: var(--tbar-gap);
+  /* Mark→wordmark is NOT --tbar-gap: the lockup is one object and has to read
+     tighter than the spacing between the bar's separate controls. Declared here
+     rather than on the page root because 21 different page modules mount this
+     nav and none of them know the token — a local declaration is the only way
+     one value reaches every bar. Same number in the drawer head below and in
+     the desktop shells' .sb-head. */
+  --lockup-gap: clamp(2px, 0.7vw, 5px);
+  /* Mark geometry. --mark-size is the RENDER size of the square asset; the ink
+     inside it is only ~34.6% x 42.5% of that, so the box below derives its own
+     dimensions from the same token rather than repeating measured pixels.
+     --mark-top pins the ink's top edge, which is what makes the logo grow
+     downward when --mark-size changes. 116px is near the ceiling for a 64px
+     bar: the ink ends ~3.7px above the 2px bottom border. Going bigger means
+     raising --topbar-h first. */
+  --mark-size: 116px;
+  --mark-top: 9px;
   height: var(--topbar-h);
   padding: 0 var(--pad-x);
   background: var(--ink);
@@ -40,29 +56,69 @@
   border-bottom: var(--border);
   z-index: 30;
 }
-/* The real product mark, same treatment as mobile-v2: an unframed crop window
-   over an oversized <img>, because only ~42.5% of /jobflex-mark.png is ink and
-   the rest is transparent margin that must stay out of the layout. 66px lands
-   the mark at ~28.1 × 22.9px, level with the 28px wordmark block.
-   brightness(0) invert(1) makes the black asset paper-white for the ink plate.
+/* The real product mark: an unframed crop window over an oversized image,
+   because only ~42.5% of /jobflex-mark.png is ink and the rest is transparent
+   margin that must stay out of the layout. brightness(0) invert(1) makes the
+   black asset paper-white for the ink plate, so one asset serves both.
    This replaces the drawn `i-logo` sketch J so every mobile bar carries the
-   actual logo (owner's call, 2026-07-29). */
-.tbarMarkBox { position: relative; width: 28px; height: 34px; overflow: hidden; flex-shrink: 0; }
+   actual logo (owner's call, 2026-07-29).
+
+   108px lands the ink at ~45.9 × 37.3px. Fourth enlargement (66 → 78 → 92 →
+   108) at the owner's request, 2026-07-30. The mark now clearly LEADS the
+   lockup rather than matching the 28px JOBFLEX / CONTRACTOR OS block beside it.
+   Same number as the desktop shell's .sb-mark-img, so the two shells show one
+   logo at one size — see dashboard-blueprint/blueprint.module.css.
+
+   BOX = 39 x 47, which is the ink plus a hair. The previous 46 x 45 had the two
+   axes transposed: 46 is the ink HEIGHT (45.93), so as a WIDTH it left 8.6px of
+   dead transparent air — 4.3px on each side, silently holding the wordmark off
+   the mark — while the 45 height was 0.93px SHORT of the ink and clipped ~0.5px
+   off the top and bottom of the J.
+   Sizing to the real ink (37.39 x 45.93) both un-clips it and reclaims 7px,
+   which is what actually pulls the lockup together — nearly twice what
+   tightening --lockup-gap can buy. 320px budget: burger 44 + gap 6 + box 39 +
+   lockup 2 + gap 6 + search/bell 94 + 2x12.16 padding = 215.3px, leaving 80.4px
+   against a wordmark that measures ~89.4px at the 7.8px sub floor. */
+.tbarMarkBox {
+  position: relative;
+  /* Top-anchored, not centred: --mark-top IS where the ink's top edge sits,
+     measured from the bar's top. The -0.5px is the hair of clearance the box
+     carries so antialiasing is not clipped. */
+  align-self: flex-start;
+  margin-top: calc(var(--mark-top) - 0.5px);
+  width: calc(var(--mark-size) * 0.3462 + 1px);
+  height: calc(var(--mark-size) * 0.4253 + 1px);
+  overflow: hidden;
+  flex-shrink: 0;
+}
 .tbarMarkImg {
-  position: absolute; top: 50%; left: 50%;
-  width: 66px; height: 66px;
-  transform: translate(-50%, -50%);
+  position: absolute;
+  left: 50%;
+  /* Pull the oversized square up by the asset's own top inset so the INK, not
+     the image, starts at the box top. Only translateX here — a translateY would
+     re-centre it and undo the anchoring. */
+  top: calc(var(--mark-size) * -0.2876 + 0.5px);
+  width: var(--mark-size);
+  height: var(--mark-size);
+  transform: translateX(-50%);
   object-fit: contain;
   filter: brightness(0) invert(1);
 }
 /* nowrap + ellipsis is the guard, not the plan — the block is measured to fit
    to 320px. A substituted wider font clips rather than wrapping, because a
    wrapped sub would break the two-row block the mark is sized against. */
-.tbarTxt { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; overflow: hidden; }
+/* Flex `gap` is uniform, so the only way to tighten JUST the mark→wordmark pair
+   is to pull the text back over it — the burger→mark and wordmark→controls gaps
+   must stay at --tbar-gap. Negative by construction (--lockup-gap is always the
+   smaller of the two); it reclaims width rather than spending it. */
+.tbarTxt { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; overflow: hidden; margin-left: calc(var(--lockup-gap) - var(--tbar-gap)); }
 .tbarName { font-size: 16px; font-weight: 900; letter-spacing: 0.01em; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* 9px, not 9.5px — matches mobile-v2 and buys back the ~9px at 320px that the
-   larger mark spent. The drawer head keeps 9.5px; it has 288px to play with. */
-.tbarSub { font-size: 9px; font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase; color: var(--sky); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 9px everywhere a phone actually is (2.4vw hits 9px at 375px), shrinking only
+   below that. The clamp is back because the 92px mark is 5px wider than the
+   78px one and the 320px bar has no other slack: at a flat 9px the sub
+   overflows by ~0.4px there. Above 375px nothing about this changed.
+   The drawer head keeps a flat 9.5px; it has 288px to play with. */
+.tbarSub { font-size: clamp(7.8px, 2.4vw, 9px); font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase; color: var(--sky); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tbarRight { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 .tbarBtn {
   position: relative;
@@ -118,7 +174,16 @@
 }
 .sbOverlay.on { opacity: 1; pointer-events: auto; }
 .sbHead {
-  display: flex; align-items: center; gap: 13px;
+  /* Same lockup spacing as the topbar. The gap also lands between the wordmark
+     and the close button, but that one has margin-left:auto — the auto margin
+     eats the free space, so the extra few px are invisible there. */
+  --lockup-gap: clamp(2px, 0.7vw, 5px);
+  /* Re-declared, not inherited: .sbHead is a SIBLING of .tbar, not a
+     descendant, so the topbar's copy never reaches the drawer. Same head
+     height (--topbar-h), so the same numbers. Keep the two in step. */
+  --mark-size: 116px;
+  --mark-top: 9px;
+  display: flex; align-items: center; gap: var(--lockup-gap);
   height: var(--topbar-h);
   padding: 0 18px;
   border-bottom: var(--border);
@@ -126,13 +191,32 @@
   color: var(--paper);
   flex-shrink: 0;
 }
-/* Real mark, same crop-window treatment as the topbar, scaled to the drawer's
-   own 28.5px text block (16 + 3 + 9.5): 68px ⇒ ~28.9 × 23.5px of ink. */
-.sbMarkBox { position: relative; width: 30px; height: 35px; overflow: hidden; flex-shrink: 0; }
+/* One mark size across every masthead — this drawer, the topbar above, and the
+   desktop sidebar (2026-07-30). The drawer head used to run its own number
+   because its text block is 0.5px taller than the bar's; at this scale that is
+   invisible, and it was only ever one more thing to keep in step. */
+.sbMarkBox {
+  position: relative;
+  /* Top-anchored, not centred: --mark-top IS where the ink's top edge sits,
+     measured from the bar's top. The -0.5px is the hair of clearance the box
+     carries so antialiasing is not clipped. */
+  align-self: flex-start;
+  margin-top: calc(var(--mark-top) - 0.5px);
+  width: calc(var(--mark-size) * 0.3462 + 1px);
+  height: calc(var(--mark-size) * 0.4253 + 1px);
+  overflow: hidden;
+  flex-shrink: 0;
+}
 .sbMarkImg {
-  position: absolute; top: 50%; left: 50%;
-  width: 68px; height: 68px;
-  transform: translate(-50%, -50%);
+  position: absolute;
+  left: 50%;
+  /* Pull the oversized square up by the asset's own top inset so the INK, not
+     the image, starts at the box top. Only translateX here — a translateY would
+     re-centre it and undo the anchoring. */
+  top: calc(var(--mark-size) * -0.2876 + 0.5px);
+  width: var(--mark-size);
+  height: var(--mark-size);
+  transform: translateX(-50%);
   object-fit: contain;
   filter: brightness(0) invert(1);
 }

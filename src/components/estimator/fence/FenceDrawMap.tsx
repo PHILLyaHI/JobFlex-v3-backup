@@ -30,8 +30,11 @@ import {
 } from "./fenceTypes";
 import type { ArmedOpening } from "@/stores/useFenceStudioStore";
 
-const ACCENT = "#1f7a52"; // Pressed Sage (locked accent) for the drawn line
-const DOOR_INK = "#5a6473"; // cool-ink-muted — doors read neutral vs the sage gate
+// Defaults only. The colours are props (see FenceDrawMapProps) so a host with a
+// different design system passes its own tokens instead of inheriting the sage
+// studio's literals — the blueprint Fence studio passes --blueprint / --muted.
+const DEFAULT_ACCENT = "#1f7a52"; // Pressed Sage (locked accent) for the drawn line
+const DEFAULT_DOOR_INK = "#5a6473"; // cool-ink-muted — doors read neutral vs the sage gate
 // A real residential lot that is inside the Regrid free-trial coverage, so the map
 // is never blank and the sample "Load Property Lines" works out of the box.
 const DEFAULT_CENTER: LatLng = { lat: 32.834967, lng: -96.563861 };
@@ -75,6 +78,52 @@ function fitCenterT(i: number, tRaw: number, pts: PathPoint[], widthFt: number):
   return clamp(tRaw * segLen, w / 2, segLen - w / 2) / segLen;
 }
 
+/**
+ * The imperative handle the surface exposes to whoever hosts it. The sage studio
+ * drives it from the surface's own toolbar; a host that renders its OWN toolbar
+ * (the blueprint Fence studio) takes it through `onApi` and drives it from there.
+ */
+export type FenceDrawMapApi = {
+  clear: () => void;
+  closeLoop: () => void;
+  undo: () => void;
+  setFromPoints: () => void;
+  setAlign: (on: boolean) => void;
+  syncOpenings: () => void;
+  refreshCursor: () => void;
+  hideGhost: () => void;
+  zoomBy: (delta: number) => void;
+};
+
+export type FenceDrawMapProps = {
+  lat?: number;
+  lng?: number;
+  points: PathPoint[];
+  onChange: (pts: PathPoint[]) => void;
+  revision?: number; // bump to re-seed the polyline from `points` (parcel load / reset)
+  className?: string;
+  gates: GateSpec[];
+  armed: ArmedOpening | null;
+  customOpenings: CustomOpening[]; // user-created gate/door types (shown in the pickers)
+  onArm: (kind: OpeningKind, variant: string) => void; // Add gate/door tools (on the map)
+  onDropOpening: (segmentIndex: number, t: number, x?: number, y?: number) => void;
+  onUpdateGate: (id: string, patch: Partial<GateSpec>) => void; // marker drag → move/resize
+  onDisarm: () => void; // Esc / click-in-empty cancels the armed tool
+  /**
+   * Render the surface's own chrome — the Align/Close loop/Undo/Clear row, the
+   * Gate/Door pickers, the hint pill and Google's zoom control. Default true.
+   * A host with its own toolbar passes false and drives `onApi` instead, so the
+   * two never stack on the same corner of the same map.
+   */
+  chrome?: boolean;
+  /** Handed the api once the map is live, and null when it is torn down. */
+  onApi?: (api: FenceDrawMapApi | null) => void;
+  /** Drawn-line / gate colour. Defaults to the sage studio's accent. */
+  accentColor?: string;
+  /** Door marker colour (reads neutral against the gate colour). */
+  doorColor?: string;
+};
+
 export function FenceDrawMap({
   lat,
   lng,
@@ -89,21 +138,11 @@ export function FenceDrawMap({
   onDropOpening,
   onUpdateGate,
   onDisarm,
-}: {
-  lat?: number;
-  lng?: number;
-  points: PathPoint[];
-  onChange: (pts: PathPoint[]) => void;
-  revision?: number; // bump to re-seed the polyline from `points` (parcel load / reset)
-  className?: string;
-  gates: GateSpec[];
-  armed: ArmedOpening | null;
-  customOpenings: CustomOpening[]; // user-created gate/door types (shown in the pickers)
-  onArm: (kind: OpeningKind, variant: string) => void; // Add gate/door tools (on the map)
-  onDropOpening: (segmentIndex: number, t: number, x?: number, y?: number) => void;
-  onUpdateGate: (id: string, patch: Partial<GateSpec>) => void; // marker drag → move/resize
-  onDisarm: () => void; // Esc / click-in-empty cancels the armed tool
-}) {
+  chrome = true,
+  onApi,
+  accentColor = DEFAULT_ACCENT,
+  doorColor = DEFAULT_DOOR_INK,
+}: FenceDrawMapProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   const measureRef = React.useRef<HTMLDivElement>(null);
 
@@ -133,33 +172,43 @@ export function FenceDrawMap({
   const onDropRef = React.useRef(onDropOpening);
   const onUpdateGateRef = React.useRef(onUpdateGate);
   const onDisarmRef = React.useRef(onDisarm);
+  const onApiRef = React.useRef(onApi);
+  // Read inside the map-build effect, which deliberately depends only on the
+  // origin — routing them through refs keeps that dep list honest (and matches
+  // how every other prop that effect touches is already read). Seeded from the
+  // mount value, so the first build reads them correctly.
+  const chromeRef = React.useRef(chrome);
+  const accentRef = React.useRef(accentColor);
+  const doorRef = React.useRef(doorColor);
   React.useEffect(() => {
     onDropRef.current = onDropOpening;
     onUpdateGateRef.current = onUpdateGate;
     onDisarmRef.current = onDisarm;
+    onApiRef.current = onApi;
+    chromeRef.current = chrome;
+    accentRef.current = accentColor;
+    doorRef.current = doorColor;
   });
 
-  const apiRef = React.useRef<{
-    clear: () => void;
-    closeLoop: () => void;
-    undo: () => void;
-    setFromPoints: () => void;
-    setAlign: (on: boolean) => void;
-    syncOpenings: () => void;
-    refreshCursor: () => void;
-    hideGhost: () => void;
-  } | null>(null);
+  const apiRef = React.useRef<FenceDrawMapApi | null>(null);
 
   // Which opening picker menu is open (the pill dropdowns on the map).
   const [openMenu, setOpenMenu] = React.useState<OpeningKind | null>(null);
   const [aligning, setAligning] = React.useState(false);
   const aligningRef = React.useRef(false);
+  // `setAlign` owns the whole mode switch (ref + state + polyline options +
+  // cursor), so an EXTERNAL toolbar driving the api lands in exactly the same
+  // state as this button — previously the ref was flipped out here and an
+  // external caller would have left `aligningRef` stale, which is what the
+  // click/mousemove handlers read to suppress drawing.
   const toggleAlign = React.useCallback(() => {
     const next = !aligningRef.current;
+    if (apiRef.current) {
+      apiRef.current.setAlign(next);
+      return;
+    }
     aligningRef.current = next;
     setAligning(next);
-    apiRef.current?.setAlign(next);
-    apiRef.current?.refreshCursor();
   }, []);
 
   const firstRev = React.useRef(true);
@@ -193,6 +242,9 @@ export function FenceDrawMap({
         if (cancelled || !mountRef.current) return;
         const LatLngCtor = core.LatLng;
         const Marker = markerLib.Marker;
+        // Host-supplied palette, resolved once per map build.
+        const ACCENT = accentRef.current;
+        const DOOR_INK = doorRef.current;
         // No address yet → open on a real sample lot so the surface is never blank.
         const origin: LatLng = typeof lat === "number" && typeof lng === "number" ? { lat, lng } : DEFAULT_CENTER;
         const map = new maps.Map(mountRef.current, {
@@ -202,7 +254,9 @@ export function FenceDrawMap({
           tilt: 0,
           gestureHandling: "greedy",
           disableDefaultUI: true,
-          zoomControl: true,
+          // A host with its own chrome supplies its own zoom buttons; Google's
+          // would otherwise sit under them in the same corner.
+          zoomControl: chromeRef.current,
           keyboardShortcuts: false,
           draggableCursor: "crosshair", // signal "you can draw here"
         });
@@ -606,6 +660,30 @@ export function FenceDrawMap({
 
         // ── Live measurement chip + preview line ──
         const measureEl = measureRef.current;
+        // The chip is placed with `transform: translate()`, which is applied in
+        // the surface's OWN coordinate space, from a delta measured off
+        // `getBoundingClientRect()` and a pointer position — both of which are
+        // viewport pixels. Under a CSS-zoomed host the two spaces differ, so the
+        // delta has to be divided by the effective zoom or the chip drifts away
+        // from the cursor proportionally to the distance from the top-left
+        // corner. (The blueprint shell zooms its root: FLUID SCALE, window
+        // width / 1728, clamped 0.78–1.35 — so only an exactly 1728px viewport
+        // was correct. blueprint-shell/list-motion corrects its FLIP deltas the
+        // same way.) The sage studio is unzoomed and divides by 1.
+        // Cached per build and refreshed on resize, which is the only thing that
+        // changes it — reading it per mousemove would walk the tree 60×/second.
+        let hostZoom = 1;
+        const readZoom = () => {
+          let z = 1;
+          for (let n: HTMLElement | null = mountRef.current; n; n = n.parentElement) {
+            // Nested zooms multiply; `normal` / unsupported parses to NaN and is skipped.
+            const v = parseFloat(getComputedStyle(n).zoom);
+            if (isFinite(v) && v > 0) z *= v;
+          }
+          hostZoom = z > 0 ? z : 1;
+        };
+        readZoom();
+        window.addEventListener("resize", readZoom);
         const totalLenFt = () => {
           let total = 0;
           for (const r of runs) {
@@ -638,7 +716,11 @@ export function FenceDrawMap({
           const rect = mountRef.current?.getBoundingClientRect();
           const dom = e.domEvent as MouseEvent | undefined;
           if (rect && dom) {
-            measureEl.style.transform = `translate(${dom.clientX - rect.left + 14}px, ${dom.clientY - rect.top + 14}px)`;
+            // Measured delta → local space (see hostZoom); the 14px nudge is
+            // already local, so it is added after the division.
+            const dx = (dom.clientX - rect.left) / hostZoom + 14;
+            const dy = (dom.clientY - rect.top) / hostZoom + 14;
+            measureEl.style.transform = `translate(${dx}px, ${dy}px)`;
           }
           measureEl.style.display = "block";
           if (armedRef.current) {
@@ -833,24 +915,34 @@ export function FenceDrawMap({
             renderOpenings();
           },
           setAlign: (on: boolean) => {
+            aligningRef.current = on;
+            setAligning(on);
             for (const r of runs) r.line.setOptions({ draggable: on, editable: !on });
             if (on) stopTrace();
+            map.setOptions({ draggableCursor: on ? "move" : "crosshair" });
           },
           syncOpenings: renderOpenings,
           refreshCursor: () => {
             map.setOptions({ draggableCursor: aligningRef.current ? "move" : "crosshair" });
           },
           hideGhost,
+          zoomBy: (delta: number) => {
+            const z = map.getZoom();
+            if (typeof z === "number") map.setZoom(z + delta);
+          },
         };
 
         seedRuns();
         renderOpenings();
+        onApiRef.current?.(apiRef.current);
 
         cleanup = () => {
+          onApiRef.current?.(null);
           cancelAnimationFrame(raf);
           for (const l of listeners) l?.remove?.();
           while (runs.length) destroyRun(runs[runs.length - 1]);
           window.removeEventListener("keydown", onKey);
+          window.removeEventListener("resize", readZoom);
           for (const mk of openings.values()) removeMarker(mk);
           openings.clear();
           previewLine.setMap(null);
@@ -871,6 +963,9 @@ export function FenceDrawMap({
   }, [enabled, lat, lng]);
 
   if (!enabled) {
+    // A chrome-less host renders its own empty state (the blueprint studio keeps
+    // its `.map-slot` placeholder), so don't paint this one over it.
+    if (!chrome) return null;
     return (
       <div className={cn("grid place-items-center text-center p-6 bg-[color:var(--paper)]", className)}>
         <div className="max-w-xs text-[12px] text-[color:var(--ink-muted)] leading-relaxed">
@@ -888,14 +983,20 @@ export function FenceDrawMap({
     <div className={cn("relative overflow-hidden", className)}>
       <div ref={mountRef} className="absolute inset-0" />
 
-      {/* Live measurement chip — positioned imperatively from map mousemove. */}
+      {/* Live measurement chip — positioned imperatively from map mousemove.
+          `data-fdm="len"` is a STYLE HOOK, not behaviour: this chip renders even
+          for a chrome-less host, so a host with its own design system (the
+          blueprint Fence studio) needs one stable selector to re-skin it. The
+          utility classes below stay the default look for every other host. */}
       <div
         ref={measureRef}
+        data-fdm="len"
         style={{ display: "none" }}
         className="pointer-events-none absolute left-0 top-0 z-[5] rounded-full bg-[color:var(--ink)]/90 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white shadow-[var(--shadow-sm)] will-change-transform"
       />
 
       {/* Draw controls (left) */}
+      {chrome && (
       <div className="absolute left-3 top-3 flex gap-1.5">
         <MapBtn
           onClick={toggleAlign}
@@ -907,9 +1008,11 @@ export function FenceDrawMap({
         <MapBtn onClick={() => apiRef.current?.undo()} icon={<Undo2 className="h-3.5 w-3.5" />} label="Undo" />
         <MapBtn onClick={() => apiRef.current?.clear()} icon={<Trash2 className="h-3.5 w-3.5" />} label="Clear" />
       </div>
+      )}
 
       {/* Add gate / door tools (right) — each opens a minimal type picker; pick a
           variant to arm it, then click the map to place. */}
+      {chrome && (
       <div className="absolute right-3 top-3 flex gap-1.5">
         <OpeningPicker
           kind="gate"
@@ -942,7 +1045,9 @@ export function FenceDrawMap({
           onDisarm={onDisarm}
         />
       </div>
+      )}
 
+      {chrome && (
       <div className="absolute inset-x-0 bottom-3 flex justify-center px-3 pointer-events-none">
         <span
           className={cn(
@@ -959,6 +1064,7 @@ export function FenceDrawMap({
               : "Click to trace — dots magnet when close (close / connect) · right-click to stop · after stopping, click open ground to start a separate fence · right-click a dot to remove"}
         </span>
       </div>
+      )}
     </div>
   );
 }

@@ -43,6 +43,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-company.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   ACT_CATS,
   ALL_CAT,
@@ -276,13 +278,12 @@ export function MobileCompany() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -569,6 +570,11 @@ export function MobileCompany() {
   };
 
   const anyOverlay = Boolean(sheetEntry) || identityOpen;
+
+  // Swipe-down dismissal, one gesture per sheet, on the same setters the
+  // Escape ladder uses.
+  const actionsDrag = useSheetDrag(Boolean(sheetEntry), () => setSheetId(null));
+  const identityDrag = useSheetDrag(identityOpen, () => setIdentityOpen(false));
 
   return (
     <div className={styles.app} onClick={onRootClick}>
@@ -1160,9 +1166,10 @@ export function MobileCompany() {
         aria-modal="true"
         aria-label="Activity actions"
         aria-hidden={!sheetEntry}
+        {...actionsDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
+        <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {sheetEntry ? `${sheetEntry.meta} · ${sheetEntry.time} ago` : "Update · —"}
           </div>
@@ -1199,9 +1206,10 @@ export function MobileCompany() {
         aria-modal="true"
         aria-labelledby="mcoIdTitle"
         aria-hidden={!identityOpen}
+        {...identityDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...identityDrag.handleProps} />
+        <div className={styles.sheetHead} {...identityDrag.handleProps}>
           <div className={styles.sheetKicker}>Account / company record</div>
           <div className={styles.sheetTitle} id="mcoIdTitle">
             Identity

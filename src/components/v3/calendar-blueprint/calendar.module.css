@@ -908,6 +908,31 @@
 .bp :global(.content .pjob--picking .pjob-foot .btn[data-act="pick-mode"]) { border-color: var(--blueprint); color: var(--blueprint); background: var(--paper); }
 .bp :global(.content .pcols--sheet) { border-bottom: 2px solid var(--hair-soft); }
 
+/* — write-failed strip —
+   A drag-to-reschedule happens with no sheet open, so a refused write has no
+   field to report into. This sits above the slide-out panel (z-index 111) so it
+   is legible whichever surface the failure came from, and it moves on transform
+   + opacity only. Empty and non-interactive until something goes wrong. */
+.bp :global(.content .cal-toast) {
+  position: fixed; z-index: 130;
+  left: 50%; bottom: 26px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 11px 15px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 12.5px; font-weight: 600; line-height: 1.45; color: var(--ink);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 10px);
+  transition: opacity 0.2s ease, transform 0.28s var(--ease), visibility 0.28s;
+  visibility: hidden;
+}
+.bp :global(.content .cal-toast.on) { opacity: 1; transform: translate(-50%, 0); visibility: visible; }
+/* Refusals get the danger tone; a plain notice keeps the neutral plate. */
+.bp :global(.content .cal-toast--bad) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); box-shadow: 3px 3px 0 var(--danger); }
+
 .bp :global(.content .pmenu) {
   position: fixed; z-index: 60;
   width: 254px;
@@ -1418,9 +1443,18 @@
   background: var(--paper);
   font-size: 11px; line-height: 1.25; color: var(--ink);
   cursor: grab;
-  transition: border-color 0.12s, transform 0.1s var(--ease);
+  transition: border-color 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .evc:hover) { border-color: var(--ink); transform: translateX(1px); }
+/* Long-hands, NOT the `border-color` shorthand. The 3px left edge is the status
+   stripe — the only colour a chip carries — and the shorthand was repainting it
+   ink on hover. That is what made a hovered card "just go dark": it did not gain
+   emphasis, it lost its status. */
+.bp :global(.content .evc:hover) {
+  border-top-color: var(--ink);
+  border-right-color: var(--ink);
+  border-bottom-color: var(--ink);
+  transform: translateX(1px);
+}
 .bp :global(.content .evc.dragging) { opacity: 0.4; }
 .bp :global(.content .evc-t) { display: flex; align-items: center; gap: 5px; font-weight: 700; min-width: 0; }
 .bp :global(.content .evc-txt) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1514,7 +1548,16 @@
    flush against its column's grid lines. The only horizontal gap in the grid is
    the one BETWEEN two blocks sharing an hour, and the lane maths in the
    behavior module puts it there. */
-.bp :global(.content .wg-evs) { position: absolute; inset: 0; pointer-events: none; }
+/* `inset: 0` stopped at the INNER edge of the column's 1.5px right rule, so a
+   full-width block's own right border abutted that rule and the pair read as a
+   single 3px line — the horizontal twin of the flushTop problem, and the same
+   asymmetry: heavy on the right, correct on the left. Extending the layer by
+   exactly one line width lets the block's border paint OVER the rule, so both
+   edges read 1.5px. Saturday has no right rule to cover, so it opts out. The
+   layer stays pointer-transparent, so the 1.5px overhang cannot steal a drop
+   from the next column. */
+.bp :global(.content .wg-evs) { position: absolute; inset: 0 -1.5px 0 0; pointer-events: none; }
+.bp :global(.content .wg-col:last-child .wg-evs) { right: 0; }
 .bp :global(.content .wg-ev) {
   position: absolute; pointer-events: auto;
   display: flex; flex-direction: column; gap: 1px; justify-content: flex-start;
@@ -1522,7 +1565,30 @@
   font-size: 10.5px;
   box-shadow: 1px 1px 0 rgba(10, 10, 10, 0.1);
 }
-.bp :global(.content .wg-ev:hover) { transform: none; z-index: 2; box-shadow: 2px 2px 0 var(--ink); }
+/* A week block floats on hover, the same gesture the New event button makes:
+   a 1px lift toward the light and a hard offset shadow at the opposite corner,
+   no blur. It previously set `transform: none`, which cancelled the `.evc`
+   translate it inherits — so the card gained a shadow but never moved, and with
+   the stripe going ink at the same time the whole effect read as "it went
+   dark". `z-index: 2` keeps the floated card and its shadow above the blocks it
+   sits flush against. */
+.bp :global(.content .wg-ev:hover) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+  z-index: 2;
+}
+/* A short block carries the lighter 2px shadow — 3px on a 22px-tall block reads
+   heavy against the hour rules behind it. */
+.bp :global(.content .wg-ev.is-short:hover) { box-shadow: 2px 2px 0 var(--ink); }
+/* Press returns it to the grid, like every other stamp control in the system. */
+.bp :global(.content .wg-ev:active) {
+  transform: translate(0, 0);
+  box-shadow: 1px 1px 0 rgba(10, 10, 10, 0.1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .evc), .bp :global(.content .wg-ev:hover),
+  .bp :global(.content .wg-ev:active) { transition: none; transform: none; }
+}
 /* A block whose top lands exactly on an hour line is shifted up by one line
    width (see `flushTop` in calendar-behavior) so its own top border paints OVER
    that line instead of stacking directly beneath it. Without the shift the two
@@ -1698,6 +1764,35 @@
 .bp :global(.content .sf-crew) { display: flex; flex-wrap: wrap; gap: 6px; }
 .bp :global(.content .sf-act) { display: flex; gap: 9px; margin-top: 22px; padding-top: 16px; border-top: 2px solid var(--hair-soft); }
 .bp :global(.content .sf-act .btn) { flex: 1; justify-content: center; }
+/* A server action refused the write. The message is the action's own wording —
+   it is written for the user — so it gets the same weight as a field label,
+   not a whispered aside. */
+.bp :global(.content .sf-err) {
+  margin-top: 14px; padding: 10px 12px;
+  border: 1.5px solid var(--danger); border-radius: var(--radius);
+  background: var(--danger-soft);
+  font-size: 12px; line-height: 1.45; color: var(--danger);
+}
+.bp :global(.content .sf-err.is-hidden) { display: none; }
+/* The field the message in .sf-err is about. Border only — the error text
+   carries the reason, so the field just has to be findable, and a filled red
+   box behind a value the user is about to retype is harder to read, not
+   easier. Cleared on the next keystroke, not the next submit. */
+.bp :global(.content .sf-in.is-bad),
+.bp :global(.content .sf-area.is-bad) { border-color: var(--danger); }
+.bp :global(.content .sf-in.is-bad:focus),
+.bp :global(.content .sf-area.is-bad:focus) { border-color: var(--danger); }
+/* A field whose value is fixed by the rule behind it (blocked time is always
+   self-owned). It reads as a field so the form keeps its rhythm, but it is not
+   a control and must not look like one. */
+.bp :global(.content .sf-static) {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px dashed var(--hair-soft); border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
+}
+.bp :global(.content .sf-static .ic) { width: 14px; height: 14px; color: var(--muted); }
 .bp :global(.content .sf-meta) { display: flex; flex-direction: column; gap: 9px; margin-bottom: 20px; padding: 13px 14px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper-deep); }
 .bp :global(.content .sf-meta-row) { display: flex; align-items: baseline; gap: 9px; font-size: 12.5px; }
 .bp :global(.content .sf-meta-row .kpi-lbl) { flex: 0 0 84px; margin: 0; }

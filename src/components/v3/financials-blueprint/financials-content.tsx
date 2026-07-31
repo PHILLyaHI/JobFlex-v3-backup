@@ -11,12 +11,43 @@
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
-import { initFinancialsContent } from "./financials-behavior";
+import { initFinancialsContent, type FinancialsJob } from "./financials-behavior";
+import type { ChangeOrder, Expense, Invoice, MonthPoint, Rollup } from "./financials-data";
 import { FinancialsSprite } from "./sprite";
 
-export function FinancialsContent() {
-  useBlueprintContent(initFinancialsContent);
+export type FinancialsContentProps = {
+  /** The org's real jobs. Receipt capture books an expense against one of
+   *  these, so the picker cannot be a fixture — the id it submits has to
+   *  exist. */
+  jobs: FinancialsJob[];
+  monthly: MonthPoint[];
+  rollup: Rollup;
+  expenses: Expense[];
+  orders: ChangeOrder[];
+  invoices: Invoice[];
+};
+
+export function FinancialsContent(props: FinancialsContentProps) {
+  // Reaches `init` through a write-once ref, NOT the callback's deps:
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade. Same contract as
+  // the Workers page — which is why the whole payload goes through ONE ref
+  // rather than six.
+  const dataRef = useRef(props);
+  const init = useCallback((content: HTMLElement) => {
+    const d = dataRef.current;
+    return initFinancialsContent(content, {
+      jobs: d.jobs,
+      monthly: d.monthly,
+      rollup: d.rollup,
+      expenses: d.expenses,
+      orders: d.orders,
+      invoices: d.invoices,
+    });
+  }, []);
+  useBlueprintContent(init);
 
   return (
     <>
@@ -105,14 +136,28 @@ export function FinancialsContent() {
                 <use href="#i-receipt" />
               </svg>
             </div>
+            {/* The drop zone is a real upload now: the hidden input is what a
+                click opens, and a drag-and-drop reaches the same handler. Both
+                paths run the file through `scanReceipt` and stage the result
+                against a real job. */}
             <div className="rc-body">
               <button className="rc-drop" type="button" id="rcDrop">
                 <svg className="ic">
                   <use href="#i-imgadd" />
                 </svg>
                 <span className="rc-t">Drop a receipt or click to upload</span>
-                <span className="rc-h">JPG or PNG · we stage it for review</span>
+                <span className="rc-h">JPG or PNG · read, then charged to a job</span>
               </button>
+              <input
+                type="file"
+                id="rcFile"
+                accept="image/png,image/jpeg,image/webp"
+                className="is-hidden"
+              />
+              {/* Progress and failure both land here — "Reading the receipt…",
+                  "Vision is off, so these are placeholder values", or the
+                  server action's own message. */}
+              <div className="rc-note is-hidden" id="rcNote" role="status"></div>
               <div className="rc-staged is-hidden" id="rcStaged"></div>
             </div>
           </div>
@@ -136,6 +181,10 @@ export function FinancialsContent() {
             <span className="kpi-lbl">Job expenses</span>
             <span className="tb-total" id="expTotal"></span>
           </div>
+          {/* A refused write says so here rather than the row silently staying
+              put — `deleteJobExpense` throws "Not found" for anything outside
+              the org, and the server is manager-gated. */}
+          <div className="fi-tnote is-hidden" id="expNote" role="alert"></div>
           <table className="ptable fi-table">
             <thead>
               <tr>
@@ -164,6 +213,10 @@ export function FinancialsContent() {
             <span className="kpi-lbl">Change orders</span>
             <span className="tb-total" id="coTotal"></span>
           </div>
+          {/* `sendChangeOrder` refuses anything that is not a DRAFT, and
+              `deleteChangeOrder` the same — both messages are written for the
+              user, so they are shown verbatim. */}
+          <div className="fi-tnote is-hidden" id="coNote" role="alert"></div>
           <table className="ptable fi-table">
             <thead>
               <tr>
@@ -214,6 +267,42 @@ export function FinancialsContent() {
       </section>
 
       <div className="pmenu" id="pMenu"></div>
+
+      {/* Deleting an expense or a draft change order is a real, irreversible
+          database write, so it goes through a confirmation the same way the
+          classic tables' `confirm()` did — as a blueprint dialog rather than a
+          browser prompt. One dialog serves both books; the behavior module
+          retitles it and remembers which row is pending.
+
+          It lives inside `.content` (it is position:fixed, so layout is
+          unaffected) and is skipped by the reveal cascade — see the
+          `:not(.mdl)` in financials-behavior. */}
+      <div className="mdl" id="fiConfirm">
+        <div className="mdl-bg" data-mdl-close></div>
+        <div className="mdl-box">
+          <div className="mdl-head mdl-head--row">
+            <span id="fiConfirmTitle">Delete?</span>
+            <button className="mdl-x" type="button" data-mdl-close aria-label="Close dialog">
+              <svg className="ic">
+                <use href="#i-x" />
+              </svg>
+            </button>
+          </div>
+          <div className="mdl-txt" id="fiConfirmTxt"></div>
+          <div className="fi-tnote fi-tnote--boxed is-hidden" id="fiConfirmErr" role="alert"></div>
+          <div className="mdl-foot">
+            <button className="btn btn-ghost btn--sm" type="button" data-mdl-close>
+              Cancel
+            </button>
+            <button className="btn btn-primary btn--sm" type="button" id="fiConfirmOk">
+              <svg className="ic">
+                <use href="#i-trash" />
+              </svg>
+              <span data-save-lbl>Delete</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       <FinancialsSprite />
     </>

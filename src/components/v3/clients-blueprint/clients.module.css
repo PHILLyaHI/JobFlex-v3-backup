@@ -1422,3 +1422,32 @@
   .bp :global(.content .ptable th:nth-child(4)), .bp :global(.content .ptable td:nth-child(4)) { width: 62px; }
   .bp :global(.content .ptable th:nth-child(5)), .bp :global(.content .ptable td:nth-child(5)) { width: 86px; }
 }
+
+/* ============================================================
+   ROW ACTIONS + WRITE STATES
+   ------------------------------------------------------------
+   The last cell now carries two controls where the donor drew one: the row
+   menu (dots) and the link to the client's record. Both wear `.pt-open`, the
+   treatment already published above — decisions.md: one treatment per control,
+   never a parallel style set for the same block.
+
+   `.mf-err` is the dialog-level error plate the Workers invite dialog uses,
+   for the message a server action refuses with; `.btn.is-busy` is its
+   in-flight button state. Same declarations, so the two dialogs cannot drift.
+   ============================================================ */
+.bp :global(.content .pt-acts) { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+
+/* Same escape hatch the create dialog already uses: `.content` is `z-index: 1`,
+   so it creates a stacking context that would trap the fixed row menu below the
+   sticky topbar (z-index: 30) whenever the menu flips above its row. While a
+   menu is open `.content` stops creating one and `.pmenu`'s own z-index: 60
+   resolves against the topbar. Layout is untouched; the rule stops matching the
+   moment the menu closes. */
+.bp :global(.content:has(.pmenu.open)) { z-index: auto; }
+
+.bp :global(.content .mf-err) { margin-bottom: 12px; font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err--boxed) { margin: 0 17px 15px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+.bp :global(.content .mf-err.is-hidden) { display: none; }
+
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }

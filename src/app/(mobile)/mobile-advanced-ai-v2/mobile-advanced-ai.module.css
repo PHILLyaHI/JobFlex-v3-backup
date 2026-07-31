@@ -1,0 +1,961 @@
+/* ============================================================
+   MOBILE SMART PROPOSAL (mobile-advanced-ai-v2) — Blueprint system
+   Archetype C: composer / wizard. Tokens, palette, type scale and
+   Motion System "Balanced" are the reference dashboard's; the shell
+   (topbar / drawer) is the shared MobileNav, so this surface reads
+   as one product with mobile-clients-v2 and its siblings. Fully
+   scoped — app tokens untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and every sibling mobile module. paper-deep
+     stays a shade RECESSED from the sheet rather than lighter than it. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / soft / text */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* The sticky commit foot is pinned, not a grid row: the app grid stays two
+     rows (nav + scroller) like every sibling. The scroller pays the foot back
+     in bottom padding so nothing can hide underneath it. */
+  --foot-h: 80px;
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1). Scoped to the
+   page WITHOUT :where() it would score (0,1,1) and silently beat every
+   single-class button rule in this file (0,1,0) — every background and every
+   border below would be cancelled at render time. Do not un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+:where(.app) textarea, :where(.app) select { font-family: inherit; color: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  scrollbar-width: none;
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + var(--foot-h) + 28px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* ============================================================
+   BUTTONS — only the sticky commit pair carries a fill. Every other
+   control on this surface is FLAT: a 2px ink frame and no background.
+   Flat means no FILL, not no frame.
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 52px;
+  padding: 0 12px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  line-height: 1.15;
+  text-align: center;
+  /* The longest label on this surface is "Convert to proposal"; at 320px it
+     wraps to two lines inside the button rather than overflowing it. */
+  white-space: normal;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: none; }
+.btn:disabled { opacity: 0.4; }
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* Two-tap "Start over": the armed state is a real warning, not a colour swap
+   for its own sake. */
+.btnGhost.isArmed { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+/* ============================================================
+   WIZARD PROGRESS — a mono plate over a drawn rule filled to the
+   fraction. A horizontal stepper rail cannot label four steps at
+   320px, so there isn't one.
+   ============================================================ */
+.wiz { display: flex; flex-direction: column; gap: 10px; }
+.wizTop { display: flex; align-items: center; gap: 10px; }
+.wizPlate {
+  display: inline-flex; align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.wizNow {
+  min-width: 0;
+  font-size: 13px; font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wizRule {
+  position: relative;
+  height: 4px;
+  background: var(--hair);
+  overflow: hidden;
+}
+/* Scaled, not widened: animating `width` relayouts the rule on every frame.
+   transform-origin pins the fill to the left so it still reads as drawn. */
+.wizFill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 100%;
+  background: var(--blueprint);
+  transform-origin: left center;
+  transition: transform 0.34s var(--ease-soft);
+}
+/* ============================================================
+   ONE STEP, FULL WIDTH
+   ============================================================ */
+.step {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.stepHead {
+  display: flex; gap: 13px;
+  padding: var(--card-pad);
+  border-bottom: var(--border);
+  background: var(--paper-deep);
+}
+.stepMark {
+  width: 42px; height: 42px;
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+}
+.stepMark .ic { width: 20px; height: 20px; }
+.stepH { font-size: 20px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.1; }
+.stepHint { margin-top: 7px; font-size: 13px; font-weight: 500; line-height: 1.5; color: var(--muted); }
+.stepBody { padding: var(--card-pad); display: flex; flex-direction: column; gap: 18px; }
+/* ---- project type: framed tiles on an intrinsic grid, so the tablet
+   range needs no rules of its own ---- */
+.ptypes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 9px;
+}
+.ptype {
+  display: flex; align-items: center; gap: 9px;
+  min-height: 52px;
+  padding: 0 11px;
+  border: var(--border-thin);
+  border-color: var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 13.5px; font-weight: 700;
+  color: var(--muted);
+  text-align: left;
+  transition: border-color 0.12s, color 0.12s, background 0.12s, box-shadow 0.12s var(--ease);
+}
+.ptype .ic { width: 18px; height: 18px; }
+.ptype.on {
+  border-color: var(--blueprint);
+  color: var(--blueprint);
+  background: rgba(24, 84, 160, 0.07);
+  box-shadow: 2px 2px 0 var(--blueprint);
+}
+/* ---- fields ---- */
+.fld { display: flex; flex-direction: column; }
+.fldRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fldLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.pinput {
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+}
+.pinput::placeholder { color: var(--muted-faint); }
+.pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+.pinput.isNum { font-variant-numeric: tabular-nums; }
+.area {
+  width: 100%;
+  min-height: 132px;
+  padding: 11px 12px;
+  resize: vertical;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500; line-height: 1.5;
+  color: var(--ink);
+}
+.area::placeholder { color: var(--muted-faint); }
+.area:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+.rfArea { min-height: 96px; }
+.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldErr { margin-top: 8px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+.fld.invalid .pinput,
+.fld.invalid .area { border-color: var(--danger); background: var(--danger-soft); }
+/* The location step's <select> (.sel / .selWrap) and the local gazetteer list
+   (.cities / .city) were removed on 2026-07-30. The state field is now the
+   shared mobile-shell/state-picker sheet and the address field is the shared
+   mobile-shell/address-field running real Google Places, so both sets of rules
+   live in those components' own modules. */
+/* ---- sample briefs: full-width blocks, never a wrap rail. A 100-character
+   sentence in a chip does not survive 320px. ---- */
+.samples { display: flex; flex-direction: column; gap: 8px; }
+.sample {
+  min-height: 44px;
+  padding: 11px 12px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 13px; font-weight: 500; line-height: 1.45;
+  color: var(--muted);
+  text-align: left;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.sample:active { border-style: solid; border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+/* ---- review recap ---- */
+.review {
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+/* Every child is pinned to an explicit cell. A grid-row without a grid-column
+   lets auto-placement claim the wrong column and shove a sibling sideways. */
+.revRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 12px;
+  padding: 12px 13px 13px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.revRow:last-child { border-bottom: none; }
+.revLbl {
+  grid-column: 1; grid-row: 1;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.revVal {
+  grid-column: 1; grid-row: 2;
+  margin-top: 6px;
+  font-size: 15px; font-weight: 700; line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.revVal.isMissing { font-weight: 500; color: var(--warning); }
+.revEdit {
+  grid-column: 2; grid-row: 1 / 3;
+  align-self: center;
+  min-height: 44px; min-width: 60px;
+  padding: 0 10px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.revEdit:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+/* ---- the narration: the peak moment of the flow ---- */
+.stages { list-style: none; display: flex; flex-direction: column; }
+.stage {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 52px;
+  padding: 6px 0;
+  border-bottom: 1.5px solid var(--hair-soft);
+  font-size: 15px; font-weight: 500;
+  color: var(--muted-faint);
+  transition: color 0.2s var(--ease-out);
+}
+.stage:last-child { border-bottom: none; }
+.stageIc {
+  width: 26px; height: 26px;
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: transparent;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.stageIc .ic { width: 14px; height: 14px; }
+.stage.isNow { color: var(--blueprint); font-weight: 700; }
+.stage.isNow .stageIc { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.09); }
+.stage.isDone { color: var(--ink-soft); }
+.stage.isDone .stageIc { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+/* ============================================================
+   STUDIO — identity, then the numeral it belongs to
+   ============================================================ */
+.sthead {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  padding: var(--card-pad);
+}
+.stKicker {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.stTitle { font-size: 20px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.2; }
+.stActs { display: flex; margin-top: 15px; }
+.stAct {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.stAct .ic { width: 15px; height: 15px; }
+.stAct:active:not(:disabled) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.stAct:disabled { opacity: 0.35; }
+/* ---- masthead: one numeral + mono kicker + EXACTLY two annotations, all
+   computed, so editing a line moves them ---- */
+.smast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.smastTop { padding: var(--card-pad); }
+.smastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.smastRule { flex: 1; height: 1.5px; background: var(--hair); }
+.smastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.smastCnt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.smastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); min-width: 0; }
+.smastSub:last-child { border-right: none; }
+.smastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.smastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* An absence is a dash, not "$0" — zero is a number, "nothing costed" is not. */
+.isZero { color: var(--muted-faint); font-weight: 800; }
+/* ============================================================
+   STUDIO CARDS
+   ============================================================ */
+.card {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.cardHead {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px var(--card-pad);
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.cardLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+}
+.cardSum {
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.cardPad { padding: var(--card-pad); }
+.cardFoot { border-top: 1.5px solid var(--ink); }
+.addLine {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--blueprint);
+  transition: background 0.12s;
+}
+.addLine .ic { width: 15px; height: 15px; }
+.addLine:active { background: var(--paper-deep); }
+/* ---- line items: the desktop's 6-column table, re-cut as row cards.
+   Three lines — description + actions, the mono quantity annotation, then
+   the source tag and the line total hard right. Rows 2 and 3 read as ONE
+   group: 16px above row 2, only 5px between 2 and 3. ---- */
+.lines { display: block; }
+.lrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  /* A real drawn rule between records, not a faint wash. */
+  border-bottom: 1.5px solid var(--ink);
+}
+.lrow:last-child { border-bottom: none; }
+/* Title + quantity annotation are one 49px-tall target: 15px title, a 16px
+   gap, then the 11.5px mono line. Rows 2 and 3 stay ONE group — 16px above the
+   annotation, only 5px down to the figures. */
+.lname {
+  grid-column: 1; grid-row: 1;
+  min-width: 0;
+  align-self: start;
+  display: flex; flex-direction: column; align-items: flex-start;
+  text-align: left;
+  padding: 0;
+}
+.lnameT {
+  font-size: 15px; font-weight: 700; line-height: 1.25;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.lrowOpen {
+  grid-column: 2; grid-row: 1;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -4px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.lrowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.lrowOpen .ic { width: 18px; height: 18px; }
+.lmeta {
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.lfoot {
+  grid-column: 1 / -1; grid-row: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px 10px;
+  margin-top: 5px;
+}
+.llink {
+  grid-column: 1; grid-row: 1;
+  display: inline-flex; align-items: center; gap: 5px;
+  justify-self: start;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--blueprint);
+}
+.llink .ic { width: 12px; height: 12px; }
+.lown {
+  grid-column: 1; grid-row: 1;
+  justify-self: start;
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+.ltotal {
+  grid-column: 2; grid-row: 1;
+  justify-self: end;
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* Empty state — a dashed note, like an annotation on a drawing. Never blank:
+   it says what happened AND what to do next. */
+.lempty {
+  margin: var(--card-pad);
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 24px 16px;
+  text-align: center;
+}
+.lemptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.lemptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.lemptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.lemptyA .ic { width: 15px; height: 15px; }
+/* ---- assumptions ---- */
+.assump { list-style: none; padding: 4px var(--card-pad) 6px; }
+.assump li {
+  display: flex; gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1.5px solid var(--hair-soft);
+  font-size: 14.5px; font-weight: 500; line-height: 1.45;
+  color: var(--ink-soft);
+}
+.assump li:last-child { border-bottom: none; }
+.assump li::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  margin-top: 7px;
+  background: var(--blueprint);
+}
+/* ---- totals: an estimate sheet. Right-aligned tabular numerals, thin
+   dividers, and a ruled total row. ---- */
+.totRow {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 10px 0;
+}
+.totLbl { font-size: 13.5px; font-weight: 700; }
+.totVal { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.totGrand {
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: var(--border);
+}
+.totGrandVal {
+  font-size: 22px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--blueprint);
+}
+.marginBox {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+}
+.marginRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.marginRow + .marginRow { margin-top: 10px; }
+.marginRow .fldLbl { margin-bottom: 0; }
+.marginAdd { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.marginCtl {
+  display: inline-flex; align-items: stretch;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.marginBtn {
+  width: 44px;
+  min-height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 19px; font-weight: 800;
+  line-height: 1;
+  color: var(--ink);
+  transition: background 0.12s;
+}
+.marginBtn:active { background: var(--paper-deep); }
+.marginIn {
+  width: 54px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: none;
+  border-left: 1.5px solid var(--hair);
+  border-right: 1.5px solid var(--hair);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 15px; font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.marginIn::-webkit-outer-spin-button,
+.marginIn::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.marginIn:focus { outline: none; background: var(--paper); }
+/* ---- refine + the review diff ---- */
+.rfNote { font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--muted); }
+.rfNote + .fld { margin-top: 14px; }
+/* 118px, not 130: the card's inner width at 320px is ~264px, so a 130px floor
+   would collapse Discard / Apply onto separate rows. */
+.rfAct { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin-top: 14px; }
+.rfBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.rfBtn .ic { width: 15px; height: 15px; }
+.rfBtn:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.diffList { list-style: none; display: flex; flex-direction: column; gap: 9px; margin-top: 13px; }
+/* The 3px status edge is the donor's own diff row, and the house system already
+   sanctions a status-toned left edge (see the info-banner pattern in
+   design-system.md). It is a status, never decoration. */
+.diffItem {
+  border: 1.5px solid var(--hair);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: var(--paper);
+}
+.diffAdd { border-left-color: var(--success); }
+.diffChg { border-left-color: var(--warning); }
+.diffRem { border-left-color: var(--danger); }
+.diffGrp {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.diffT { margin-top: 4px; font-size: 14px; font-weight: 700; line-height: 1.3; }
+.diffM {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.diffOld { color: var(--muted-faint); }
+/* ============================================================
+   STICKY COMMIT FOOT — the wizard's Back / Next pair. It sits OUTSIDE
+   the scroller and pays out --safe-b. This is not a tab bar: no page
+   in this family has one.
+   ============================================================ */
+.wfoot {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px var(--pad-x) calc(12px + var(--safe-b));
+  border-top: var(--border);
+  background: var(--paper-deep);
+}
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Two of them: the line "⋮" menu, and the line editor.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+/* An INNER scroller, so it does paint a thumb — unlike the page scroller.
+   Literals in the thumb, never --hair: a scrollbar is chrome, not a rule. */
+.sheetBody {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sheetBody::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-track { background: transparent; }
+.sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+/* Row menu items: icon in a 26px tonal box, title + sub, one disabled (driven
+   by the fixture's `link` flag) and one danger. */
+.menuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.menuItem:active:not(:disabled) { background: var(--paper-deep); }
+.menuItem:disabled { opacity: 0.45; }
+.miIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.miIc .ic { width: 14px; height: 14px; }
+.miBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.miSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.miOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.miWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.miDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.menuItemT { display: block; font-size: 15px; font-weight: 700; }
+.menuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+.menuItemDanger .menuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ---- the line editor form ---- */
+.formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
+/* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
+   reachable without scrolling the form to its end. Sheet feet may carry fills. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 18px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+/* The step card travels in the direction you asked to go. */
+@keyframes stepFwd {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes stepBack {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: none; }
+}
+/* fill-mode is `backwards`, NOT `both`, and that is load-bearing — do not
+   "tidy" it back. Blink treats an element that still has a transform animation
+   IN EFFECT as a containing block for position:fixed descendants, and a
+   forwards fill keeps the animation in effect forever after it finishes. That
+   turned this card into the containing block for the step-2 state picker: its
+   scrim greyed only the card, its sheet anchored to the card's bottom edge,
+   sized itself 92% of the CARD, and then `overflow: hidden` above sliced the
+   first row in half. With no animation-delay, `backwards` paints the same
+   opening frame and stops being in effect the moment the 300ms is up, so the
+   picker's fixed layer is measured against the viewport, where it belongs.
+   Any future fixed-position popover inside a step depends on this too. */
+.stepFwd { animation: stepFwd 300ms var(--ease-out) backwards; }
+.stepBack { animation: stepBack 300ms var(--ease-out) backwards; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* A line that just changed gets one blue flash, so the row you acted on is
+   findable after the ledger re-flows around it. */
+@keyframes landFlash {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: transparent; }
+}
+.landed { animation: landFlash 0.6s var(--ease-out); }
+/* Scoped to the page — the global kill switch stays the app's business */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+}
+@media (max-width: 520px) {
+  .stepH { font-size: 19px; }
+  .ltotal { font-size: 18px; }
+  .totGrandVal { font-size: 20px; }
+  .formFoot { grid-template-columns: 1fr; }
+}
+@media (max-width: 360px) {
+  /* Two 148px tiles no longer clear the gutter; one column reads cleanly and
+     keeps every target well past 44px. */
+  .ptypes { grid-template-columns: 1fr; }
+  .smastCnt { grid-template-columns: 1fr; }
+  .smastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .smastSub:last-child { border-bottom: none; }
+  .fldRow { grid-template-columns: 1fr; }
+  .wfoot { grid-template-columns: minmax(80px, auto) minmax(0, 1fr); gap: 8px; }
+  .btn { font-size: 11.5px; letter-spacing: 0.08em; }
+}

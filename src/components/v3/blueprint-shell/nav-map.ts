@@ -46,6 +46,11 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Automation",
     items: [
+      // No "Estimators" item, deliberately: picking an engine is done in the
+      // topbar's New Estimate dialog (estimators-blueprint/estimator-picker),
+      // reachable from every page, so a nav entry would be a second door to a
+      // decision you make on your way somewhere else. The engines themselves
+      // keep their items below.
       { label: "Smart Proposal", icon: "i-bulb", href: "/dashboard/advanced-ai" },
       { label: "Roof estimator", icon: "i-roof", href: "/dashboard/roof-estimator" },
       { label: "Fence estimator", icon: "i-fence", href: "/dashboard/fence-estimator" },
@@ -79,6 +84,16 @@ const SURFACE_ALIASES: Record<string, string> = {
   "/mobile-hire-v2": "/dashboard/hire",
   "/mobile-company-v2": "/dashboard/company",
   "/mobile-financials-v2": "/dashboard/financials",
+  "/mobile-advanced-ai-v2": "/dashboard/advanced-ai",
+  "/mobile-roof-estimator-v2": "/dashboard/roof-estimator",
+  "/mobile-fence-estimator-v2": "/dashboard/fence-estimator",
+  "/mobile-phone-v2": "/dashboard/phone",
+  "/mobile-messages-v2": "/dashboard/messages",
+  "/mobile-announcements-v2": "/dashboard/announcements",
+  "/mobile-reviews-v2": "/dashboard/reviews",
+  "/mobile-trade-v2": "/dashboard/trade",
+  "/mobile-referrals-v2": "/dashboard/referrals",
+  "/mobile-reports-v2": "/dashboard/reports",
 };
 
 /**

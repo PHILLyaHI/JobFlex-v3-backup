@@ -19,12 +19,37 @@
 // cascade skips them in hire-behavior.ts — together those reproduce the
 // donor's paint order and motion exactly.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initHireContent } from "./hire-behavior";
+import type { Applicant } from "./hire-data";
 import "./hire-global.css";
 
-export function HireContent() {
-  useBlueprintContent(initHireContent);
+/**
+ * @param applicants the org's real pipeline, read in the page's server
+ *   component. The behavior module takes it as its starting state and then
+ *   keeps itself in step with the database through the applicant server
+ *   actions.
+ */
+export function HireContent({ applicants }: { applicants?: Applicant[] }) {
+  // The seed reaches `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a
+  // re-run tears the page down and replays the whole reveal cascade — so the
+  // init has to stay referentially stable for the life of the mount.
+  //
+  // The ref is never written after creation, and it does not need to be: it is
+  // seeded on the first render, the layout effect that reads it runs against
+  // that same commit, and from then on the behavior module owns the pipeline
+  // and keeps itself in step with the database through the server actions. A
+  // navigation away unmounts the component, so the next visit gets a fresh ref
+  // holding freshly-queried rows.
+  const seedRef = useRef(applicants);
+
+  const init = useCallback(
+    (content: HTMLElement) => initHireContent(content, { applicants: seedRef.current }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -94,6 +119,11 @@ export function HireContent() {
             </button>
           </div>
         </div>
+
+        {/* A stage move that the server refuses (permission, a row someone
+            else deleted) rolls the card back — this is where the action's own
+            message lands, so the rollback is never silent. */}
+        <div className="mf-err mf-err--boxed is-hidden" id="hkErr" role="alert"></div>
 
         <div className="hk-board" id="hkBoard"></div>
         <div className="pempty is-hidden" id="hkEmpty">

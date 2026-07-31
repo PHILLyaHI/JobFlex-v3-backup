@@ -16,17 +16,27 @@
 //   polyfill are environment shims, not behavior, and are dropped (the app
 //   always runs in a browser that has matchMedia).
 
+import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
+import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { toCsv } from "@/lib/csv";
 import {
-  RANGES,
-  MONTHS,
-  RANGE_MONTHS,
-  FUNNEL,
-  CREW,
+  FIXTURE_ROLLUP,
   FORMATS,
   type RangeKey,
+  type ReportsRollup,
 } from "./reports-data";
 
-export function initReportsContent(content: HTMLElement): () => void {
+export type ReportsContentOptions = {
+  /** The org's real aggregates, read server-side with getReportsRollup(). Omit
+   *  to fall back to the donor fixture (the standalone mock routes have no
+   *  session to read from). */
+  rollup?: ReportsRollup;
+};
+
+export function initReportsContent(
+  content: HTMLElement,
+  options: ReportsContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -54,6 +64,19 @@ export function initReportsContent(content: HTMLElement): () => void {
     });
     frames.add(id);
     return id;
+  };
+  /**
+   * setTimeout, tracked so a pending timer cannot outlive the page. The export
+   * dialog's exit animation runs on one of these, so an unmount mid-close must
+   * not fire the class cleanup into a detached tree. The returned cleanup
+   * drains `timers`.
+   */
+  const after = (ms: number, fn: () => void) => {
+    const id = setTimeout(() => {
+      timers.delete(id);
+      fn();
+    }, ms);
+    timers.add(id);
   };
 
   // Dismiss Lead Center banners (smooth height + gap collapse) — inert on this
@@ -83,33 +106,66 @@ export function initReportsContent(content: HTMLElement): () => void {
   });
 
   // ================= REPORTS: STATE =================
-  // The fixtures (RANGES / MONTHS / RANGE_MONTHS / FUNNEL / CREW / FORMATS)
-  // live in ./reports-data. Only the two selections are per mount, which is
-  // what the donor's module-level `rp` amounted to on a fresh page load.
+  // The sheet's numbers: the org's real aggregates when the page supplies them
+  // (src/app/dashboard/reports), the donor fixture otherwise. All four ranges
+  // are computed server-side in one pass, so switching a range chip is a pure
+  // repaint — no round trip, nothing to load.
+  const data = options.rollup ?? FIXTURE_ROLLUP;
+  // Only the two selections are per mount, which is what the donor's
+  // module-level `rp` amounted to on a fresh page load.
   const rp: { range: RangeKey; format: string } = { range: "q", format: "csv" };
 
   function money(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
   }
   function shortMoney(n: number) {
-    return n >= 1000 ? "$" + Math.round(n / 1000) + "k" : "$" + n;
+    // The donor's axis only ever saw $10k multiples. A real org's first months
+    // land in the hundreds, where `Math.round(n/1000)+"k"` collapses every
+    // gridline to "$0k" — so keep one decimal until the ticks are whole k.
+    if (n >= 1000) {
+      const k = n / 1000;
+      return "$" + (k >= 10 || Number.isInteger(k) ? Math.round(k) : k.toFixed(1)) + "k";
+    }
+    return "$" + Math.round(n);
+  }
+  /** A 1 / 2 / 2.5 / 5 × 10ⁿ gridline step, so the axis fits the org's actual
+   *  numbers instead of the donor's hardcoded $10k ladder. */
+  function niceStep(v: number) {
+    if (!isFinite(v) || v <= 0) return 100;
+    const mag = Math.pow(10, Math.floor(Math.log10(v)));
+    const n = v / mag;
+    const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+    return m * mag;
   }
   function initials(n: string) {
-    const p = n.split(" ");
-    return (p[0][0] + (p[1] ? p[1][0] : "")).toUpperCase();
+    // Real display names can be a single word, or (briefly, mid-invite) empty —
+    // the donor's `p[0][0]` would throw on the latter.
+    const p = n.trim().split(/\s+/).filter(Boolean);
+    if (!p.length) return "–";
+    return ((p[0][0] ?? "") + (p[1] ? p[1][0] : "")).toUpperCase();
+  }
+  /** Text is injected as HTML strings (donor architecture), so every value that
+   *  can come from the database has to be escaped on the way in. */
+  function esc(s: string) {
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
   function months() {
-    return MONTHS.slice(MONTHS.length - RANGE_MONTHS[rp.range]);
+    const n = Math.min(data.months.length, Math.max(1, data.rangeMonths[rp.range]));
+    return data.months.slice(data.months.length - n);
   }
-  function scale() {
-    return RANGE_MONTHS[rp.range] / 12;
+  function crewRows() {
+    return data.crew[rp.range] ?? [];
   }
 
   // ================= RENDER =================
   function renderRanges() {
     const host = $("#ranges");
     if (host)
-      host.innerHTML = RANGES.map(function (r) {
+      host.innerHTML = data.ranges.map(function (r) {
         return (
           '<button class="range' +
           (rp.range === r.key ? " on" : "") +
@@ -120,7 +176,7 @@ export function initReportsContent(content: HTMLElement): () => void {
           "</button>"
         );
       }).join("");
-    const cur = RANGES.find(function (r) {
+    const cur = data.ranges.find(function (r) {
       return r.key === rp.range;
     });
     const note = $("#rangeNote");
@@ -137,17 +193,20 @@ export function initReportsContent(content: HTMLElement): () => void {
     const invoiced = ms.reduce(function (a, m) {
       return a + m.invoiced;
     }, 0);
-    const f = FUNNEL[rp.range];
+    const f = data.funnel[rp.range];
     const jobs = f[3][1];
     const win = f[1][1] ? (f[2][1] / f[1][1]) * 100 : 0;
     const avg = jobs ? collected / jobs : 0;
     const outstanding = invoiced - collected;
+    // A real org can have nothing invoiced in a range; the donor's bare
+    // `collected / invoiced` printed NaN% there.
+    const collectedPct = invoiced ? Math.round((collected / invoiced) * 100) : 0;
     host.innerHTML =
       '<div class="stat"><div class="kpi-lbl">Collected</div><div class="stat-val accent">' +
       money(collected) +
       "</div>" +
       '<div class="stat-delta up">▲ ' +
-      Math.round((collected / invoiced) * 100) +
+      collectedPct +
       "% of invoiced</div></div>" +
       '<div class="stat"><div class="kpi-lbl">Outstanding</div><div class="stat-val">' +
       money(outstanding) +
@@ -168,19 +227,36 @@ export function initReportsContent(content: HTMLElement): () => void {
     const host = $("#revChart");
     if (!host) return;
     const ms = months();
-    const W = 660,
+    // The chart is one SVG scaled by `.rp-chart svg { width: 100%; height: auto }`,
+    // so the viewBox is not a pixel size — it is the chart's ASPECT RATIO plus
+    // the scale factor that every unit inside it (bar widths, `.axis-txt`'s
+    // 8.5px, the 42-unit y-gutter) gets multiplied by on screen.
+    //
+    // The donor's 660×220 was drawn for a card spanning the whole `.content`
+    // column (~950px of SVG once `.rp-chart`'s 18px sides are removed), i.e. a
+    // ~1.44× scale. In the 70% column of `.rp-split` that same box only gets
+    // ~645px, which would drop the scale to ~0.98 — the plot would lose a third
+    // of its height and the axis labels would render at ~8px, unreadable.
+    //
+    // Narrowing the viewBox to 450 restores the donor's on-screen scale
+    // (645 / 450 ≈ 1.43): identical rendered height (~315px) and identical
+    // rendered type size, on a 2:1 box that suits the narrower column. Height
+    // and paddings are the donor's, untouched. The `bw` cap below now binds on
+    // every range except 12-month, where bars land ~17px instead of ~23px —
+    // correct for the densest view in the narrowest card.
+    const W = 450,
       H = 220,
       padL = 42,
       padR = 10,
       padT = 12,
       padB = 26;
-    const max = Math.max.apply(
-      null,
-      ms.map(function (m) {
-        return m.invoiced;
-      }),
-    );
-    const step = Math.ceil(max / 4 / 10000) * 10000 || 10000;
+    // The taller of the two series sets the ceiling — with real data a month
+    // can collect more than it invoiced (last month's invoice paid this month),
+    // and the donor's invoiced-only max clipped that bar off the top.
+    const max = ms.reduce(function (a, m) {
+      return Math.max(a, m.invoiced, m.collected);
+    }, 0);
+    const step = niceStep(max / 4);
     const top = step * 4;
     const iw = W - padL - padR,
       ih = H - padT - padB;
@@ -281,11 +357,12 @@ export function initReportsContent(content: HTMLElement): () => void {
   function renderFunnel() {
     const host = $("#funnel");
     if (!host) return;
-    const f = FUNNEL[rp.range];
+    const f = data.funnel[rp.range];
     const top = f[0][1];
     host.innerHTML = f
       .map(function (row, i) {
-        const pct = (row[1] / top) * 100;
+        // An org with no leads yet has top === 0; the donor divided by it.
+        const pct = top ? (row[1] / top) * 100 : 0;
         const prev = i > 0 ? f[i - 1][1] : null;
         const drop = prev ? ((prev - row[1]) / prev) * 100 : null;
         return (
@@ -324,7 +401,7 @@ export function initReportsContent(content: HTMLElement): () => void {
   function renderConversion() {
     const host = $("#convBody");
     if (!host) return;
-    const f = FUNNEL[rp.range];
+    const f = data.funnel[rp.range];
     const quoteRate = f[0][1] ? (f[1][1] / f[0][1]) * 100 : 0;
     const closeRate = f[1][1] ? (f[2][1] / f[1][1]) * 100 : 0;
     const deliverRate = f[2][1] ? (f[3][1] / f[2][1]) * 100 : 0;
@@ -348,6 +425,7 @@ export function initReportsContent(content: HTMLElement): () => void {
         tone: deliverRate >= 85 ? "ok" : "warn",
       },
     ];
+    const avgDays = data.avgDaysToClose[rp.range];
     host.innerHTML =
       rows
         .map(function (r) {
@@ -368,61 +446,87 @@ export function initReportsContent(content: HTMLElement): () => void {
       '<div class="conv-row"><div><div class="conv-l">Average time to close</div>' +
       '<div class="conv-s">Proposal sent to signature</div></div>' +
       '<div class="conv-v">' +
-      (rp.range === "mtd" ? "4.2" : rp.range === "q" ? "5.1" : "5.8") +
-      '<span style="font-size:13px"> days</span></div></div>';
+      (avgDays === null
+        ? "—"
+        : avgDays.toFixed(1) + '<span style="font-size:13px"> days</span>') +
+      "</div></div>";
   }
   function renderCrew() {
     const host = $("#crewBody");
     if (!host) return;
-    const k = scale();
-    host.innerHTML = CREW.map(function (c) {
-      const jobs = Math.max(1, Math.round(c.jobs * k * 1.6));
-      const hours = Math.round(c.hours * k * 1.6);
-      const rev = Math.round(c.revenue * k * 1.6);
-      return (
-        '<tr class="prow">' +
-        '<td><div class="crew-name"><span class="crew-av">' +
-        initials(c.name) +
-        "</span>" +
-        '<span><span class="crew-n" style="display:block">' +
-        c.name +
-        "</span>" +
-        '<span class="crew-r" style="display:block">' +
-        c.role +
-        "</span></span></div></td>" +
-        '<td class="num"><span class="pt-mono">' +
-        jobs +
-        "</span></td>" +
-        '<td class="num"><span class="pt-mono">' +
-        hours +
-        "</span></td>" +
-        '<td class="num"><span class="pt-money">' +
-        money(rev) +
-        "</span></td>" +
-        '<td class="num"><span class="pt-mono">' +
-        money(hours ? rev / hours : 0) +
-        "</span></td>" +
-        '<td class="num"><span class="rate">' +
-        c.rating.toFixed(1) +
-        '<svg class="ic"><use href="#i-star"/></svg></span></td>' +
-        "</tr>"
-      );
-    }).join("");
+    const rows = crewRows();
+    if (!rows.length) {
+      // A real range can have no delivered jobs at all. An empty <tbody> under
+      // a header row reads as a broken table, so say what's missing.
+      host.innerHTML =
+        '<tr class="rp-empty-row"><td colspan="6">No jobs delivered in this range.</td></tr>';
+      return;
+    }
+    host.innerHTML = rows
+      .map(function (c) {
+        return (
+          '<tr class="prow">' +
+          '<td><div class="crew-name"><span class="crew-av">' +
+          esc(initials(c.name)) +
+          "</span>" +
+          '<span><span class="crew-n" style="display:block">' +
+          esc(c.name) +
+          "</span>" +
+          '<span class="crew-r" style="display:block">' +
+          esc(c.role) +
+          "</span></span></div></td>" +
+          '<td class="num"><span class="pt-mono">' +
+          c.jobs +
+          "</span></td>" +
+          '<td class="num"><span class="pt-mono">' +
+          c.hours +
+          "</span></td>" +
+          '<td class="num"><span class="pt-money">' +
+          money(c.revenue) +
+          "</span></td>" +
+          '<td class="num"><span class="pt-mono">' +
+          (c.hours ? money(c.revenue / c.hours) : "—") +
+          "</span></td>" +
+          '<td class="num"><span class="rate">' +
+          (c.rating === null
+            ? "—"
+            : c.rating.toFixed(1) + '<svg class="ic"><use href="#i-star"/></svg>') +
+          "</span></td>" +
+          "</tr>"
+        );
+      })
+      .join("");
   }
-  function renderReports() {
+  /**
+   * Repaint the whole sheet for the current range.
+   *
+   * Every figure for all four ranges is already in memory, so this is a pure
+   * repaint — but a range switch IS the sheet arriving with different numbers,
+   * which is the one case list-motion's contract says to stagger. (The donor
+   * drove this from a MutationObserver on the two containers; that fires on
+   * every write and is the pattern list-motion exists to replace.)
+   */
+  function renderReports(arriving = false) {
     renderRanges();
     renderSummary();
     renderChart();
     renderFunnel();
     renderConversion();
     renderCrew();
+    if (arriving) {
+      staggerIn($$("#summary .stat"));
+      staggerIn($$("#crewBody .prow"));
+    }
   }
 
   // ================= EXPORT =================
-  function renderExport() {
-    const cur = RANGES.find(function (r) {
+  function currentRange() {
+    return data.ranges.find(function (r) {
       return r.key === rp.range;
     });
+  }
+  function renderExport() {
+    const cur = currentRange();
     const note = $("#expRange");
     if (note && cur) note.textContent = cur.note;
     const list = $("#expList");
@@ -431,9 +535,12 @@ export function initReportsContent(content: HTMLElement): () => void {
         return (
           '<button class="exp-opt' +
           (rp.format === f.id ? " on" : "") +
+          (f.available ? "" : " is-soon") +
           '" type="button" data-fmt="' +
           f.id +
-          '">' +
+          '"' +
+          (f.available ? "" : " disabled aria-disabled=\"true\"") +
+          ">" +
           '<span class="exp-mark"></span>' +
           '<span><span class="exp-t" style="display:block">' +
           f.t +
@@ -445,6 +552,88 @@ export function initReportsContent(content: HTMLElement): () => void {
       }).join("");
   }
 
+  /**
+   * The CSV the Download button hands over: the same five blocks that are on
+   * screen, for the selected range, built from the same numbers the sheet just
+   * rendered. Sections are stacked with a blank line between them — the shape
+   * every spreadsheet reads as separate tables.
+   *
+   * Rows are encoded by `@/lib/csv`'s `toCsv`, which is what the three existing
+   * /api/exports/*.csv routes use; it also carries the formula-injection guard
+   * that matters here, because crew names are free text.
+   */
+  function buildCsv(): string {
+    const cur = currentRange();
+    const ms = months();
+    const f = data.funnel[rp.range];
+    const collected = ms.reduce((a, m) => a + m.collected, 0);
+    const invoiced = ms.reduce((a, m) => a + m.invoiced, 0);
+    const jobs = f[3][1];
+    const avgDays = data.avgDaysToClose[rp.range];
+    const sections: string[] = [];
+
+    sections.push(
+      toCsv(
+        [
+          { metric: "Range", value: cur ? cur.label : rp.range },
+          { metric: "Period", value: cur ? cur.note : "" },
+          { metric: "Collected", value: Math.round(collected) },
+          { metric: "Invoiced", value: Math.round(invoiced) },
+          { metric: "Outstanding", value: Math.round(invoiced - collected) },
+          { metric: "Jobs completed", value: jobs },
+          { metric: "Win rate %", value: f[1][1] ? Math.round((f[2][1] / f[1][1]) * 100) : 0 },
+          { metric: "Avg job value", value: jobs ? Math.round(collected / jobs) : 0 },
+          { metric: "Avg days to close", value: avgDays === null ? "" : avgDays.toFixed(1) },
+        ],
+        ["metric", "value"],
+      ),
+    );
+    sections.push(
+      "Revenue by month\n" +
+        toCsv(
+          ms.map((m) => ({
+            month: m.m,
+            invoiced: Math.round(m.invoiced),
+            collected: Math.round(m.collected),
+          })),
+          ["month", "invoiced", "collected"],
+        ),
+    );
+    sections.push(
+      "Pipeline\n" + toCsv(f.map((s) => ({ stage: s[0], count: s[1] })), ["stage", "count"]),
+    );
+    sections.push(
+      "Crew performance\n" +
+        toCsv(
+          crewRows().map((c) => ({
+            crew: c.name,
+            role: c.role,
+            jobs: c.jobs,
+            hours: c.hours,
+            revenue: Math.round(c.revenue),
+            revenuePerHour: c.hours ? Math.round(c.revenue / c.hours) : "",
+            rating: c.rating === null ? "" : c.rating.toFixed(1),
+          })),
+          ["crew", "role", "jobs", "hours", "revenue", "revenuePerHour", "rating"],
+        ),
+    );
+    return sections.join("\n\n");
+  }
+
+  /** Hand the file to the browser. The URL is revoked on the next tick, which
+   *  is after the synthetic click has already started the download. */
+  function downloadCsv(csv: string, filename: string) {
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    after(0, () => URL.revokeObjectURL(url));
+  }
+
   // ================= EVENTS =================
   // The donor delegates from `document`; kept there (the dialog's own controls
   // are inside `.content` either way) and tracked for removal on unmount.
@@ -453,47 +642,70 @@ export function initReportsContent(content: HTMLElement): () => void {
     if (!target) return;
     const r = target.closest<HTMLElement>("[data-r]");
     if (r) {
-      rp.range = r.dataset.r as RangeKey;
-      renderReports();
+      const next = r.dataset.r as RangeKey;
+      if (next === rp.range) return;
+      rp.range = next;
+      renderReports(true);
       return;
     }
+    // The dialog's enter AND exit both come from mdl-motion / blueprint-global.
+    // A bare `classList.add("open")` / `.remove("open")` pair — which this page
+    // used to carry — plays the 280ms arrival and then cuts the box out of the
+    // frame instantly, because `.mdl` is `display: none` without `.open`. That
+    // asymmetry is what reads as "there is no close animation".
     if (target.closest("#exportBtn")) {
       renderExport();
-      $("#expMdl")?.classList.add("open");
+      const mdl = $("#expMdl");
+      if (mdl) openMdl(mdl);
       return;
     }
     if (target.closest('[data-mdl="close"]')) {
-      $("#expMdl")?.classList.remove("open");
+      const mdl = $("#expMdl");
+      if (mdl) closeMdl(mdl, after);
       return;
     }
     const fmt = target.closest<HTMLElement>("[data-fmt]");
     if (fmt) {
-      rp.format = fmt.dataset.fmt as string;
+      const picked = FORMATS.find((f) => f.id === fmt.dataset.fmt);
+      // The unavailable formats render `disabled`, so this is belt and braces.
+      if (!picked || !picked.available) return;
+      rp.format = picked.id;
       renderExport();
       return;
     }
     const dl = target.closest<HTMLElement>("#downloadBtn");
     if (dl && !dl.dataset.busy) {
+      // The donor faked this: a 1.4s "Preparing…" and no file. It now builds
+      // the CSV from the sheet on screen and hands it to the browser.
       dl.dataset.busy = "1";
       const old = dl.innerHTML;
       dl.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Preparing…';
-      const t = setTimeout(function () {
-        timers.delete(t);
+      let failed = "";
+      try {
+        downloadCsv(buildCsv(), "jobflex-report-" + rp.range + ".csv");
+      } catch {
+        failed = "Couldn't build the file. Try again.";
+      }
+      after(600, function () {
         dl.innerHTML = old;
         delete dl.dataset.busy;
-        $("#expMdl")?.classList.remove("open");
-      }, 1400);
-      timers.add(t);
+        if (failed) {
+          const note = $("#expRange");
+          if (note) note.textContent = failed;
+          return;
+        }
+        const mdl = $("#expMdl");
+        if (mdl) closeMdl(mdl, after);
+      });
     }
   });
 
   // ================= INITIALIZATION =================
-  renderReports();
+  renderReports(true);
 
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: a slow scroll gets the full 420ms
@@ -564,40 +776,12 @@ export function initReportsContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".stat, .prow"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        raf(() =>
-          raf(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on rows and cards silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["summary", "crewBody"].forEach((id) => {
-      const list = $("#" + id);
-      if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
-    });
+    // Row stagger on list (re)render — now owned by renderReports(), which
+    // calls blueprint-shell/list-motion's staggerIn when the sheet genuinely
+    // ARRIVES (first paint, a new range). The donor drove it from a
+    // MutationObserver on #summary / #crewBody with { childList: true }, which
+    // replays the whole 45ms-per-row cascade on EVERY write to those
+    // containers; list-motion exists to replace exactly that pattern.
 
     // Numeral count-up — the donor targets `.kpi-val`, which Overview renders.
     // This page's figures are `.stat-val`, so the layer is inert here too; the

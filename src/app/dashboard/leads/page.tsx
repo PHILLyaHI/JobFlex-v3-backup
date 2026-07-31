@@ -5,11 +5,20 @@
 // ../layout.tsx, so this page renders only the donor's `.content` children.
 // Child routes (/[id], /kanban) live under the (dashboard) route group and
 // keep the classic layout.
+//
+// This page is NOT a fixture: the pipeline and the live Lead Center offers are
+// read from the database here, and every control on the sheet calls the real
+// lead server actions (see leads-behavior.ts). The query is the archived
+// classic page's — same sales-visibility slice, same ordering, same offer
+// window — so both editions describe the same pipeline.
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { auth } from "@/lib/auth";
+import { requireOrg, isSalesRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { db } from "@/lib/db";
+import { relative } from "@/lib/format";
 import { LeadsContent } from "@/components/v3/leads-blueprint/leads-content";
+import type { Lead, Offer } from "@/components/v3/leads-blueprint/leads-data";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +27,82 @@ export const metadata: Metadata = {
   description: "Leads — pipeline tabs, the lead table, the stage board and the import bench on one sheet.",
 };
 
+/** The donor's "Bothell, WA" plate. Either half may be missing on a real row. */
+function placeLabel(city: string | null, state: string | null): string {
+  return [city, state].filter(Boolean).join(", ") || "—";
+}
+
 export default async function LeadsPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/auth/login?next=%2Fdashboard%2Fleads");
+  let organizationId: string;
+  let role: string;
+  let userId: string;
+  try {
+    const ctx = await requireOrg();
+    organizationId = ctx.organizationId;
+    role = ctx.role;
+    userId = ctx.user.id;
+  } catch (err) {
+    if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fleads");
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <LeadsContent />;
+  // Sales reps see leads assigned to them, claimed by them, or still NEW (so
+  // they can claim from the shared pool). Managers see the whole pipeline.
+  // Live Lead Center offers (24h window) surface alongside them in Incoming.
+  const [leadRows, offerRows] = await Promise.all([
+    db.lead.findMany({
+      where: {
+        organizationId,
+        ...(isSalesRole(role)
+          ? { OR: [{ assignedToId: userId }, { claimedById: userId }, { status: "NEW" }] }
+          : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      include: { assignedTo: { select: { name: true, email: true } } },
+    }),
+    db.leadOffer.findMany({
+      where: { organizationId, status: "OFFERED", expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: "asc" },
+      include: { platformLead: true },
+    }),
+  ]);
+
+  const leads: Lead[] = leadRows.map((l) => ({
+    id: l.id,
+    name: l.name,
+    email: l.email,
+    phone: l.phone,
+    city: placeLabel(l.city, l.state),
+    project: l.projectType ?? "General inquiry",
+    spec: l.aiCategory,
+    conf: l.aiConfidence ?? 0,
+    status: l.status,
+    source: l.source ?? "MANUAL",
+    assignee: l.assignedTo?.name ?? l.assignedTo?.email ?? null,
+    age: relative(l.createdAt),
+    desc: l.description ?? "",
+  }));
+
+  // `new Date()`, not `Date.now()`: the react-hooks purity rule flags the
+  // latter even in an async server component, and the value is identical.
+  const now = new Date().getTime();
+  const offers: Offer[] = offerRows.map((o) => ({
+    id: o.id,
+    name: o.platformLead.name,
+    email: o.platformLead.email,
+    phone: o.platformLead.phone,
+    city: placeLabel(o.platformLead.city, o.platformLead.state),
+    project: o.platformLead.projectType ?? "General inquiry",
+    spec: o.platformLead.detectedTrade ?? "General",
+    conf: o.platformLead.aiConfidence ?? 0,
+    attempt: o.attempt,
+    // The donor's countdown is a whole-minute number; the offer window is the
+    // remaining life of the LeadOffer row.
+    mins: Math.max(0, Math.round((o.expiresAt.getTime() - now) / 60000)),
+    age: relative(o.createdAt),
+    desc: o.platformLead.description ?? "",
+  }));
+
+  return <LeadsContent leads={leads} offers={offers} />;
 }

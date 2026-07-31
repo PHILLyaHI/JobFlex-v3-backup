@@ -1345,6 +1345,23 @@
 .bp :global(.content .bnr--leaving) { border-color: var(--hair-soft); filter: saturate(0.35); }
 .bp :global(.content .pri-tag) { padding: 2px 7px; border-radius: var(--radius); border: 1.5px solid currentColor; }
 
+/* Write feedback
+   ------------------------------------------------------------
+   Publish and retire both call real server actions, so this page needs the two
+   states every writing blueprint page has: an inline refusal line and a busy
+   control. Both follow the roster's published shapes (`.mf-err`, `.btn.is-busy`
+   in workers.module.css) — same tokens, same weights — so a refusal reads the
+   same wherever the user meets one. */
+.bp :global(.content .mf-err) { margin-bottom: 12px; font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err.is-hidden) { display: none; }
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
+/* A banner whose retire is in flight: dimmed, and its × stops taking clicks
+   until the server answers. This is NOT the leaving state — the card is still
+   on the board and comes back at full strength if the write is refused. */
+.bp :global(.content .bnr.is-busy) { opacity: 0.6; cursor: progress; }
+.bp :global(.content .bnr-x:disabled) { cursor: progress; opacity: 0.5; }
+
 .bp :global(.content .an-archive.is-hidden) { display: none; }
 .bp :global(.content .arch) { list-style: none; margin: 0; padding: 0; }
 .bp :global(.content .arch li) { padding: 12px 18px; border-bottom: 1.5px solid var(--hair-soft); }
@@ -1367,9 +1384,23 @@
 .bp :global(.content:has(.mdl.open)) { z-index: auto; }
 .bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
 .bp :global(.content .mdl-box) { position: relative; width: min(460px, 100%); max-height: 88vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); overflow: hidden; }
-.bp :global(.content .mdl-head) { padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
+/* Title block left, corner dismiss right. */
+.bp :global(.content .mdl-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .mdl-title) { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
 .bp :global(.content .mdl-sub) { margin-top: 5px; max-width: 52ch; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+/* Corner dismiss — the same 26px plate, hair border and hover the create
+   dialogs on Trade / Workers use, at this dialog's 15px title scale. The
+   negative margin pulls it toward the box edge so it optically lines up with
+   the corner rather than with the title's text box. */
+.bp :global(.content .mdl-x) {
+  width: 26px; height: 26px; flex: 0 0 auto; margin: -2px -3px 0 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.bp :global(.content .mdl-x:hover) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+.bp :global(.content .mdl-x .ic) { width: 14px; height: 14px; }
 .bp :global(.content .mdl-body) { padding: 15px 17px 16px; overflow-y: auto; flex: 1; }
 .bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); flex: 0 0 auto; }
 .bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
@@ -1380,8 +1411,37 @@
 .bp :global(.content .af-area) { width: 100%; min-height: 76px; padding: 10px 11px; resize: vertical; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; line-height: 1.5; color: var(--ink); }
 .bp :global(.content .af-in:focus), .bp :global(.content .af-area:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .af-in)::placeholder, .bp :global(.content .af-area)::placeholder { color: var(--muted-faint); }
+/* — Priority picker: the SHARED select treatment on this form's metrics —
+   `.bp-sel` / `.bp-sel-in` (dashboard-blueprint/blueprint-global.css) own the
+   appearance reset and the drawn ink chevron; none of it is re-derived here.
+   (The shared rule also publishes a mono value type, but the donor reset above
+   — `.content select { font-family: inherit }`, 0-2-1 — out-specifies the
+   shared 0-2-0, so the value renders in the page sans. Left alone
+   deliberately: restating the mono here would re-derive shared appearance AND
+   make this page the odd one out, since every already-converted page carries
+   the same reset.)
+   Page-local is geometry only: Priority and Expires are
+   the two halves of one `.af-row`, so the picker takes the same 38px row and
+   11px text inset as the `.af-in` date field or the pair reads as two
+   different controls. The right pad is the shared rule's own 30px caret
+   gutter, restated because it ships as a `padding-right` longhand that this
+   page's `.content * { padding: 0 }` donor reset ties with on specificity.
+   Border colour is re-pointed at `--hair-soft` for the same reason — the
+   shared `--ink-line` default is a much lighter hairline — and that resting
+   colour then out-specifies the shared hover/focus, so the ink edge is
+   restated below. */
+.bp :global(.content .af .bp-sel-in) {
+  height: 38px;
+  padding: 0 30px 0 11px;
+  border-color: var(--hair-soft);
+}
+.bp :global(.content .af .bp-sel-in:hover),
+.bp :global(.content .af .bp-sel-in:focus) { border-color: var(--ink); }
 
 @media (max-width: 860px) {
   .bp :global(.content .af-row) { grid-template-columns: 1fr; }
   .bp :global(.content .bnr) { flex-wrap: wrap; }
+  /* Touch target — the dismiss grows to 44px off desktop, like every sibling. */
+  .bp :global(.content .mdl-x) { width: 44px; height: 44px; margin: -8px -8px 0 0; }
+  .bp :global(.content .mdl-x .ic) { width: 16px; height: 16px; }
 }

@@ -140,3 +140,53 @@ export const QUEUE_SEED: QueueItem[] = [
 ];
 
 export const Q_PAGE = 20;
+
+// ─────────────────────────────────────────────
+// LIVE DATA CONTRACT
+//
+// Everything above is the donor fixture and stays as the fallback for the
+// standalone mock render. `src/app/dashboard/crm/page.tsx` reads the real rows
+// out of Prisma — the SAME queries the classic CRM pages used
+// (src/app/(dashboard)/dashboard/crm/{queue,workflows,customers} and
+// old-design-pages/dashboard/crm) — and hands them to `initCrmContent`, which
+// then keeps itself in step with the database through the follow-up server
+// actions in src/actions/followUps.ts.
+// ─────────────────────────────────────────────
+
+/** Overview counters. Derived server-side from Lead / FollowUp / Conversation. */
+export type CrmStats = {
+  won: number;
+  lost: number;
+  active: number;
+  conversations: number;
+};
+
+/** An org email template, offered as the rule's send-time copy.
+ *  `FollowUpRule.template` stores this row's **id** — that is what
+ *  `dispatchOne()` looks the template up by. */
+export type TemplateOption = { id: string; name: string };
+
+/** The whole live payload. Every field is optional at the boundary only so the
+ *  donor fixture can still render without a session; the page always fills it. */
+export type CrmContentData = {
+  stats: CrmStats;
+  fresh: CrmLead[];
+  activity: ActivityItem[];
+  customers: Customer[];
+  rules: FollowUpRule[];
+  templates: TemplateOption[];
+  queue: QueueItem[];
+};
+
+/** Fixture-derived stats — the fallback when the page supplies no live data. */
+export const SEED_STATS: CrmStats = {
+  won: CRM_LEADS.filter((l) => l.status === "WON").length,
+  lost: CRM_LEADS.filter((l) => l.status === "LOST").length,
+  active: CRM_LEADS.filter(
+    (l) => ["NEW", "ROUTED", "CLAIMED", "CONTACTED", "QUOTED"].indexOf(l.status) !== -1,
+  ).length,
+  conversations: CONVERSATIONS_COUNT,
+};
+
+/** Fixture template list, shaped like the live one (id === name, no db row). */
+export const SEED_TEMPLATES: TemplateOption[] = TEMPLATES.map((t) => ({ id: t, name: t }));

@@ -1,0 +1,873 @@
+/* ============================================================
+   MOBILE TRADE BOARD (mobile-trade-v2) — Blueprint system
+   The desktop donor (components/v3/trade-blueprint) re-cut for a
+   handheld: the category chip rail becomes one dropdown, the
+   330px post-card grid becomes row cards, and both 5-column
+   influencer tables become the SAME row card. Tokens, palette,
+   type scale and Motion System "Balanced" are the reference
+   dashboard's; the shell (topbar / drawer) is the shared
+   MobileNav, so this surface is the same product as its twelve
+   siblings. Fully scoped — app tokens untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream. A white-paper variant was tried and
+     reverted; paper-deep stays a shade RECESSED from the sheet. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base border / soft fill /
+     base text. */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. Two rows —
+     MobileNav fills the first. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this element reset at element-level specificity (0,0,1).
+   Without the wrapper it would score (0,1,1) and silently outrank EVERY
+   single-class button rule in this file (0,1,0) — every background and every
+   border below would be cancelled at render time, with no lint, type or parse
+   error to show for it. Do not un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+:where(.app) textarea { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax. The main scroller
+   paints NO scrollbar; the 6px thumb treatment is for the inner
+   scrollers only (sheet body, filter menu).
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  scrollbar-width: none;
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD — the primary action lives here, never in a FAB.
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* The only FILLED controls on the page body: the head primary, the head ghost
+   and the filter face. Everything else is flat — a fill on every button
+   flattens the hierarchy. Flat means no FILL, not no frame. */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* ============================================================
+   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations,
+   all three computed from the fixture so publishing, closing or
+   removing a post moves them.
+   ============================================================ */
+.tmast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.tmastTop { padding: var(--card-pad); }
+.tmastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.tmastRule { flex: 1; height: 1.5px; background: var(--hair); }
+.tmastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.tmastCnt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.tmastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+.tmastSub:last-child { border-right: none; }
+.tmastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.tmastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+@keyframes mastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.slide { animation: mastIn 320ms var(--ease-out); }
+/* ============================================================
+   FIND BAR — search over the board, plus the category rail as ONE
+   dropdown. A five-chip rail does not survive 320px.
+   ============================================================ */
+.find { display: flex; flex-direction: column; gap: 10px; }
+.srch {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.srch .ic { width: 17px; height: 17px; color: var(--muted); }
+.srchInput {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+}
+.srchInput::placeholder { color: var(--muted-light); }
+/* A full 44px target. The negative margin keeps it from inflating the 50px
+   bar, so it costs nothing visually. */
+.srchX {
+  width: 44px; height: 44px;
+  margin-right: -10px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+.srchX .ic { width: 15px; height: 15px; }
+/* Custom .dd, never a native select. Face reads: icon · Filter · value · count
+   · caret, with the value hard right as PLAIN TEXT — no pill, no frame. No
+   offset shadow on the button or the menu: a hard ink drop read as a black
+   slab, and the 2px ink frame is already enough. */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ddValue.isAll { color: var(--ink); }
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* Five categories in a 3-column grid instead of a one-deep list. padding: 0
+     so the CELL borders below are the grid's own rules, with no gutter between
+     a cell edge and the menu frame. */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.ddMenu::-webkit-scrollbar { width: 6px; }
+.ddMenu::-webkit-scrollbar-thumb { background: var(--muted-faint); }
+.ddMenu::-webkit-scrollbar-track { background: transparent; }
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. The dividers are border-TOP
+   and border-LEFT with the first row and first column cleared — that way the
+   block reads as one drawn table at ANY item count and never doubles a line
+   against the menu's own 2px frame (a trailing border-right/bottom would). */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so neither mark can squeeze the label in a ~87px cell. */
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  color: var(--blueprint);
+}
+/* The donor's category legend swatch, carried over: the tone comes straight
+   off the fixture. Round, not square — at 7px a hard-cornered blueprint block
+   reads as a mis-render next to the cell's own 2px corners. */
+.ddDot {
+  position: absolute; top: 7px; left: 7px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* ============================================================
+   BADGES — 1.5px base border + soft fill + base text, caps. The
+   donor's category tones, verbatim; CLOSED is a genuine status.
+   ============================================================ */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 3.5px 9px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.catEquipment { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.06); }
+.catSubcontractor { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
+.catJobShare { border-color: var(--success); color: var(--success); background: var(--success-soft); }
+.catQuestion { border-color: var(--hair); color: var(--muted); background: var(--paper-deep); }
+.catClosed { border-color: var(--muted-faint); color: var(--muted); background: var(--paper-deep); }
+/* ============================================================
+   RECORD CARDS — the posting row. Three lines: identity + actions,
+   author/age in mono, then the classification on the left and the
+   decisive figure hard right. Rows 2 and 3 are one group (4px /
+   13px with the spanning avatar), so it reads identity / gap /
+   data.
+   ============================================================ */
+.board {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.trow {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  /* A real drawn rule between records, not a faint wash. */
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.trow:last-child { border-bottom: none; }
+.trow:active { background: var(--paper-deep); }
+/* EVERY child is pinned to an explicit cell. A grid-row without a
+   grid-column lets auto-placement claim the wrong track — definite-row items
+   are placed in their own pass, before the auto items get a turn — and a
+   sibling gets shoved sideways. */
+.tav {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+/* A thread you wrote takes the ink plate — the strongest mark on the row, and
+   never a status colour. */
+.tav.isMine { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.ttitle {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+  align-self: end;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trow.isClosed .ttitle { color: var(--muted); }
+.twho {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* The read target. Absolutely positioned, so it is the ONE child exempt from
+   the pin-every-child rule above: an abspos grid item takes its containing
+   block from the grid's padding box and claims no track, so the three-column
+   skeleton is untouched. Whole card, therefore always well past 44px. */
+.trowTap {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--radius);
+}
+/* Inset, because the board clips its overflow — a ring drawn outside the card
+   edge is cut in half on the first and last row. */
+.trowTap:focus-visible { outline-offset: -3px; }
+.trowOpen {
+  /* Stacked ABOVE the stretched read target, or the card would swallow every
+     press aimed at the actions button. */
+  position: relative;
+  z-index: 2;
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -4px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.trowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.trowOpen .ic { width: 18px; height: 18px; }
+/* Row 3 spans the whole card so the badges start at the left grid edge and the
+   figure closes at the far right. Two groups, not one wrapping flex line: with
+   two badges plus a label plus a numeral a single line overflows and drops the
+   FIGURE to its own row. */
+.trowFoot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px 10px;
+  margin-top: 13px;
+}
+.trowLead {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.trowFigs {
+  display: flex; align-items: baseline; gap: 9px;
+  justify-self: end;
+  white-space: nowrap;
+}
+.figLbl {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+.figVal {
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* Nothing there reads as a dash, not a zero: zero is a number, "no replies
+   yet" is an absence. */
+.figVal.isZero { color: var(--muted-faint); font-weight: 800; }
+/* ============================================================
+   PAGER + EMPTY STATES
+   ============================================================ */
+.pager { display: flex; align-items: center; gap: 10px; }
+.pagerBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; min-width: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.pagerBtn:active:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.pagerBtn:disabled { opacity: 0.35; }
+.pagerBtn .ic { width: 14px; height: 14px; }
+.pagerInfo {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Empty state — a dashed note, like an annotation on a drawing. Never blank:
+   it says what happened AND what to do next. */
+.tempty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 28px 18px;
+  text-align: center;
+}
+.temptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.temptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.temptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.temptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Three: the posting detail (read), the row actions menu (act), and
+   the desktop's centre-screen "New trade post" dialog rebuilt as a
+   sheet. All three share the frame below and differ only in body.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  /* translateY + visibility:hidden, so a closed sheet leaves the tab order and
+     the accessibility tree. */
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+/* An inner scroller, so it keeps a real thumb. */
+.sheetBody {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sheetBody::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); }
+.sheetBody::-webkit-scrollbar-track { background: transparent; }
+/* The full post body the row card refuses to carry — a ledger row is three
+   lines, and the excerpt belongs here. */
+.sheetQuote {
+  padding: 13px var(--pad-x) 14px;
+  border-bottom: 1px solid var(--hair-soft);
+  font-size: 14.5px; font-weight: 500;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+/* ---- POSTING DETAIL ------------------------------------------------
+   Three stacked blocks, in triage order: classification + author, the
+   dimension block, then the prose. Rules between them are the drawn
+   1px hairline, so the sheet reads as one sheet of paper and not as
+   three cards stacked inside a sheet. */
+.dtTop {
+  display: flex; flex-direction: column;
+  gap: 13px;
+  padding: 14px var(--pad-x) 15px;
+  border-bottom: 1px solid var(--hair-soft);
+}
+.dtBadges { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.dtWho { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.dtWhoText { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dtWhoName { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.dtWhoMeta {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+/* The dimension block. Label left in mono caps, value hard right — the
+   annotation layer of a technical drawing, and the reason the two facts a
+   contractor triages on (budget, location) can be read without prose. */
+.dtSpec {
+  padding: 4px var(--pad-x) 6px;
+  border-bottom: 1px solid var(--hair-soft);
+}
+.dtSpecRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 14px;
+  min-height: 38px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair-soft);
+}
+.dtSpecRow:last-child { border-bottom: none; }
+.dtSpecK {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.dtSpecV {
+  margin: 0;
+  justify-self: end;
+  text-align: right;
+  font-size: 14.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+/* An absent figure is stated, never faked: lighter weight and faint ink so it
+   never reads as a value someone entered. */
+.dtSpecV.isMissing { font-weight: 500; color: var(--muted-faint); }
+.dtBodyBlock { padding: 14px var(--pad-x) 18px; }
+.dtBodyLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.dtBodyText {
+  margin: 0;
+  font-size: 14.5px; font-weight: 500;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.cmenuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.cmenuItem:active:not(:disabled) { background: var(--paper-deep); }
+.cmenuItem:disabled { opacity: 0.45; }
+.cmiIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.cmiIc .ic { width: 14px; height: 14px; }
+.cmiBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.cmiSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.cmiOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.cmiWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.cmiDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.cmenuItemT { display: block; font-size: 15px; font-weight: 700; }
+.cmenuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+.cmenuItemDanger .cmenuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   NEW POST FORM — the desktop dialog, rebuilt as a sheet.
+   ============================================================ */
+.formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
+.fld { display: flex; flex-direction: column; }
+.fldLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.pinput {
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+}
+.pinput::placeholder { color: var(--muted-faint); }
+.pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+.parea {
+  min-height: 112px;
+  padding: 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink);
+  width: 100%;
+  resize: vertical;
+}
+.parea::placeholder { color: var(--muted-faint); }
+.parea:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+.fld.invalid .pinput,
+.fld.invalid .parea { border-color: var(--danger); background: var(--danger-soft); }
+/* The donor's native <select>, redrawn: four tappable choices carrying the
+   fixture's own legend tones. A native select cannot hold the 2px frame or a
+   44px target, and it renders differently on every platform. */
+.fseg {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.fsegBtn {
+  display: flex; align-items: center; gap: 9px;
+  min-height: 52px;
+  padding: 0 11px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 13px; font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.fsegBtn[aria-pressed="true"] { background: var(--paper-deep); border-color: var(--blueprint); color: var(--blueprint); }
+.fsegDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+/* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
+   reachable without scrolling the form to its end. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 18px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* A record that just changed gets one blue flash, so the row you acted on is
+   findable after the board re-sorts around it. */
+@keyframes landFlash {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: transparent; }
+}
+.landed { animation: landFlash 0.6s var(--ease-out); }
+/* Scoped to the page — the global kill switch stays the app's business */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+  /* The whole composition is already the handheld one; nothing to undo. */
+}
+@media (max-width: 520px) {
+  /* The head action stops sharing a line with anything */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .figVal { font-size: 18px; }
+  .formFoot { grid-template-columns: 1fr; }
+}
+@media (max-width: 360px) {
+  .tmastCnt { grid-template-columns: 1fr; }
+  .tmastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .tmastSub:last-child { border-bottom: none; }
+  .tav { width: 34px; height: 34px; font-size: 12px; }
+  .fseg { grid-template-columns: 1fr; }
+}

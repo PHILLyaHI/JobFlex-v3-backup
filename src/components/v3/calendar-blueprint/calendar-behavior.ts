@@ -17,13 +17,34 @@
 // to document.body.
 
 import {
-  TODAY,
+  createAppointment,
+  deleteAppointment,
+  updateAppointment,
+} from "@/actions/appointments";
+import {
+  createBlockedTime,
+  deleteBlockedTime,
+  rescheduleBlockedTime,
+} from "@/actions/blockedTime";
+import {
+  assignEventWorker,
+  createJobEvent,
+  deleteJobEvent,
+  rescheduleJobEventTime,
+  scheduleJobFromTray,
+  updateJob,
+  updateJobEvent,
+} from "@/actions/jobs";
+import { assignWorker, markAssignmentAccepted, unassignWorker } from "@/actions/workers";
+import { leaveRow } from "@/components/v3/blueprint-shell/list-motion";
+import {
+  TODAY as TODAY_FIXTURE,
   JOB_STATUSES,
-  workersData,
+  workersData as WORKERS_FIXTURE,
   EVENTS_SEED,
   TRAY_SEED,
   INBOX_SEED,
-  LINK_OPTIONS,
+  LINK_OPTIONS as LINK_FIXTURE,
   LINK_TABS,
   LINK_LABEL,
   WG_START,
@@ -33,6 +54,7 @@ import {
   DOW,
   DOW1,
   KIND_IC,
+  type CalendarSeed,
   type CalEvent,
   type CalKind,
   type InboxItem,
@@ -40,7 +62,29 @@ import {
   type TrayJob,
 } from "./calendar-data";
 
-export function initCalendarContent(content: HTMLElement): () => void {
+export type CalendarContentOptions = {
+  /** The org's real calendar, read server-side. Omit to fall back to the donor
+   *  fixture (the standalone mock route has no session to read from). */
+  seed?: CalendarSeed;
+};
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("You can only change appointments you created or are staffed on.",
+ *  "Link a lead, a client, or a proposal — not more than one"). Surface that
+ *  text; fall back to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  // A Next.js server-action transport failure has no useful message.
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+export function initCalendarContent(
+  content: HTMLElement,
+  options: CalendarContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -105,17 +149,149 @@ export function initCalendarContent(content: HTMLElement): () => void {
   });
 
   // ================= CALENDAR: DATA =================
+  // Real data when the page's server component supplied it, the donor fixture
+  // otherwise. `wired` is the single switch every mutation path checks: with a
+  // seed each change is sent to its server action and reverted if refused;
+  // without one the module stays the self-contained donor demo it started as.
+  const seed = options.seed ?? null;
+  const wired = seed !== null;
+  /** Manager-level membership. Dispatch (tray, crew inbox, team re-assignment)
+   *  goes through `requireManager()` actions — a sales rep or field worker sees
+   *  those surfaces but must not be handed a drag that can only be rejected. */
+  const canManage = seed ? seed.canManage : true;
+
+  // The fixture's frozen "today" is a fixture detail; a live calendar opens on
+  // the server's real date. Both are midnight-normalised so `sameDay` and the
+  // `atMins` defaults behave identically.
+  const TODAY = seed
+    ? (function () {
+        const d = new Date(seed.today);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      })()
+    : TODAY_FIXTURE;
+  /** Team-view rows and the crew picker. WorkerProfile ids on real data, which
+   *  is the id space `assignWorker` / `syncAssignments` accept. */
+  const workersData = seed ? seed.workers : WORKERS_FIXTURE;
+  const LINK_OPTIONS = seed ? seed.links : LINK_FIXTURE;
+  /** The kind tabs this role can actually submit — see `CalendarSeed`. */
+  const CREATE_KINDS: CalKind[] = seed ? seed.createKinds : ["job", "appointment", "blocked"];
+
   // Runtime mutations (drag-to-reschedule, create, delete, confirm) — clone the
-  // seeds per mount so every navigation starts from the donor's state.
-  const eventsData: CalEvent[] = EVENTS_SEED.map((e) => ({
+  // rows per mount so the module owns its copy and a revert has something to
+  // restore to.
+  const eventsData: CalEvent[] = (seed ? seed.events : EVENTS_SEED).map((e) => ({
     ...e,
     start: new Date(e.start),
     end: new Date(e.end),
     workers: e.workers.slice(),
+    assignmentIds: { ...(e.assignmentIds || {}) },
   }));
-  let trayJobs: TrayJob[] = TRAY_SEED.map((j) => ({ ...j }));
-  let inboxData: InboxItem[] = INBOX_SEED.map((r) => ({ ...r }));
+  let trayJobs: TrayJob[] = (seed ? seed.tray : TRAY_SEED).map((j) => ({ ...j }));
+  let inboxData: InboxItem[] = (seed ? seed.inbox : INBOX_SEED).map((r) => ({ ...r }));
   let evSeq = 100;
+
+  // ---------- write plumbing ----------
+  /** Failed writes have to say so. A drag-to-reschedule happens with no sheet
+   *  open, so `#calToast` is the only surface that can carry the message. */
+  let toastTimer = 0;
+  function toast(msg: string, bad = true) {
+    const el = byId("calToast");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle("cal-toast--bad", bad);
+    el.classList.add("on");
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () { el.classList.remove("on"); }, 6000);
+  }
+  disposers.push(() => window.clearTimeout(toastTimer));
+
+  /** Tracked timeout — an unmount mid-animation must not fire the rest of a
+   *  sequence into a detached tree. `leaveRow` takes this as its scheduler. */
+  const timers: number[] = [];
+  const after = (ms: number, fn: () => void) => { timers.push(window.setTimeout(fn, ms)); };
+  disposers.push(() => { timers.forEach((t) => window.clearTimeout(t)); timers.length = 0; });
+
+  /** Everything a move touches, so a refused write can be put back exactly. */
+  type EvSnap = { start: Date; end: Date; workers: string[]; allDay?: boolean; lane?: number };
+  function snapshot(e: CalEvent): EvSnap {
+    return { start: new Date(e.start), end: new Date(e.end), workers: e.workers.slice(), allDay: e.allDay, lane: e.lane };
+  }
+  function restore(e: CalEvent, s: EvSnap) {
+    e.start = s.start; e.end = s.end; e.workers = s.workers; e.allDay = s.allDay; e.lane = s.lane;
+  }
+
+  /**
+   * Send a completed drag to the server. The local model has ALREADY moved and
+   * rendered — this either confirms it or puts it back and says why.
+   *
+   * `workerId` is set only by a drop on a team-view row, which is a staffing
+   * change as well as a move.
+   */
+  async function persistMove(e: CalEvent, before: EvSnap, workerId?: string) {
+    if (!wired || !e.rid) return;
+    // Checked BEFORE any write: throwing after the reschedule landed would send
+    // the catch below into reverting a move the database had already accepted.
+    if (workerId && e.kind === "job" && !e.jobId) {
+      restore(e, before);
+      renderCal();
+      toast("This event isn’t linked to a job, so it has no crew to staff.");
+      return;
+    }
+    try {
+      if (e.kind === "job") {
+        await rescheduleJobEventTime(e.rid, e.start.toISOString(), e.end.toISOString());
+        if (workerId) {
+          try {
+            // ADDS the target worker to the job's crew — it does not strip the
+            // others. Removing crew is the sheet's picker, which is why the
+            // optimistic update in the drop handler appends rather than replaces.
+            await assignEventWorker(e.rid, workerId);
+          } catch (err) {
+            // The move landed; only the staffing did not. Roll back the crew and
+            // leave the block where the database now says it is.
+            e.workers = before.workers.slice();
+            renderCal();
+            toast(actionError(err));
+            return;
+          }
+        }
+      } else if (e.kind === "appointment") {
+        await updateAppointment(e.rid, {
+          startsAt: e.start.toISOString(),
+          endsAt: e.end.toISOString(),
+          ...(workerId ? { workerIds: [workerId] } : {}),
+        });
+      } else {
+        // Blocked time has exactly one move action and it changes the DATE
+        // only, keeping the clock time. The local model was reconciled to that
+        // before this ran (see `applyBlockedMove`), so nothing to fix up here.
+        await rescheduleBlockedTime(e.rid, e.start.toISOString());
+      }
+    } catch (err) {
+      restore(e, before);
+      renderCal();
+      toast(actionError(err));
+    }
+  }
+
+  /**
+   * Blocked time, moved. `rescheduleBlockedTime` is the whole API: it takes a
+   * new date and re-applies the ORIGINAL time of day. Mirroring that formula
+   * locally is what stops the grid from showing a slot the database does not
+   * hold — and the user is told, once, when the drop asked for a time it could
+   * not have.
+   */
+  function applyBlockedMove(e: CalEvent, before: EvSnap, day: Date, askedMins: number | null) {
+    const s = new Date(day);
+    s.setHours(before.start.getHours(), before.start.getMinutes(), 0, 0);
+    e.start = s;
+    e.end = new Date(s.getTime() + (before.end.getTime() - before.start.getTime()));
+    e.allDay = before.allDay;
+    e.lane = undefined;
+    if (askedMins != null && askedMins !== before.start.getHours() * 60 + before.start.getMinutes()) {
+      toast("Blocked time moves by the day — its time of day stays where you set it.", false);
+    }
+  }
 
   const cal = {
     view: "month" as "month" | "week" | "team",
@@ -383,10 +559,22 @@ export function initCalendarContent(content: HTMLElement): () => void {
   }
 
   // ================= RENDER: chips =================
+  /**
+   * Every JobEvent write — reschedule, staffing, delete — is behind
+   * `requireManager()`. A sales rep or a field worker CAN see those chips and
+   * CAN drag them, and every drag would be rejected on arrival. Offering a
+   * gesture that can only ever be undone is worse than not offering it, so the
+   * chip simply stops being draggable for them. Appointments and their own
+   * blocked time stay draggable — those actions accept their role.
+   */
+  function canDrag(e: CalEvent) {
+    return canManage || e.kind !== "job";
+  }
+
   function chipHtml(e: CalEvent, compact: boolean) {
-    return '<button class="evc ' + statusCls(e) + '" type="button" draggable="true" data-ev="' + e.id + '">' +
-      '<span class="evc-t"><svg class="ic"><use href="#' + (KIND_IC[e.kind] || "i-cal") + '"/></svg><span class="evc-txt">' + e.title + "</span></span>" +
-      (compact ? "" : '<span class="evc-time">' + (e.allDay ? "All day" : fmtTime(e.start)) + " · " + (workerNames(e).join(", ") || "unassigned") + "</span>") +
+    return '<button class="evc ' + statusCls(e) + '" type="button" draggable="' + canDrag(e) + '" data-ev="' + e.id + '">' +
+      '<span class="evc-t"><svg class="ic"><use href="#' + (KIND_IC[e.kind] || "i-cal") + '"/></svg><span class="evc-txt">' + esc(e.title) + "</span></span>" +
+      (compact ? "" : '<span class="evc-time">' + (e.allDay ? "All day" : fmtTime(e.start)) + " · " + esc(workerNames(e).join(", ") || "unassigned") + "</span>") +
       "</button>";
   }
 
@@ -466,16 +654,59 @@ export function initCalendarContent(content: HTMLElement): () => void {
   // user drew stays on the grid while the create form is open — it is cleared
   // when the form closes or when a render replaces the grid.
   let wgGhost: HTMLElement | null = null;
+  /** Where the preview sat before the paint currently in progress — the "First"
+   *  of a FLIP. Null when there is nothing to animate from. */
+  let ghostFrom: DOMRect | null = null;
+
   function ghostIn(col: HTMLElement) {
     const layer = col.querySelector<HTMLElement>(".wg-evs");
     if (!layer) return null;
-    if (!wgGhost || wgGhost.parentElement !== layer) {
-      wgGhost?.remove();
+    // Create ONCE and move the same node between columns. It used to be removed
+    // and rebuilt on every column change, which is why the preview vanished from
+    // one column and reappeared in the next instead of travelling: a brand-new
+    // element has no previous position to animate from.
+    if (!wgGhost) {
       wgGhost = document.createElement("div");
       wgGhost.className = "wg-ghost";
-      layer.appendChild(wgGhost);
     }
+    ghostFrom = wgGhost.isConnected ? wgGhost.getBoundingClientRect() : null;
+    if (wgGhost.parentElement !== layer) layer.appendChild(wgGhost);
     return wgGhost;
+  }
+
+  /**
+   * Animate the preview from where it just was to where it now is.
+   *
+   * A transition cannot do this on its own: `left`/`width` are percentages of
+   * the COLUMN, so crossing into a new column changes the containing block and
+   * the browser has no continuous value to interpolate. Measuring the real
+   * before/after boxes and animating the difference on `transform` works across
+   * the re-parent, and stays on the compositor.
+   */
+  function flipGhost() {
+    const el = wgGhost;
+    const from = ghostFrom;
+    ghostFrom = null;
+    if (!el || !from || reduced()) return;
+    const to = el.getBoundingClientRect();
+    // Rects are in zoomed pixels; a transform is applied in the element's own
+    // unzoomed space. Read the scale off the shell root, which is where FLUID
+    // SCALE puts it.
+    const host = el.closest<HTMLElement>(".jf-blueprint");
+    const zRaw = host ? parseFloat(getComputedStyle(host).zoom) : NaN;
+    const z = isFinite(zRaw) && zRaw > 0 ? zRaw : 1;
+    const dx = (from.left - to.left) / z;
+    const dy = (from.top - to.top) / z;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    el.style.transition = "none";
+    el.style.transform = "translate(" + dx.toFixed(1) + "px," + dy.toFixed(1) + "px)";
+    requestAnimationFrame(function () {
+      if (!el.isConnected) return;
+      // 160ms: inside the Motion System's UI band and deliberately at its fast
+      // end — the preview has to keep up with the cursor, not trail it.
+      el.style.transition = "transform 160ms cubic-bezier(0.22, 0.61, 0.36, 1)";
+      el.style.transform = "translate(0,0)";
+    });
   }
   function dropGhost() {
     clearPreview();
@@ -498,6 +729,11 @@ export function initCalendarContent(content: HTMLElement): () => void {
       '<span class="wg-ghost-t">' + esc(title) + "</span>" +
       '<span class="wg-ghost-time">' + fmtRange(atMins(day, lo), atMins(day, hi)) + "</span>" +
       '<span class="wg-ghost-dur">' + durLabel((hi - lo) * 60000) + "</span>";
+    // Only the DROP preview glides. The drag-to-create preview is being resized
+    // live under the pointer — animating that would make the box lag the hand
+    // that is drawing it.
+    if (extra === "is-move") flipGhost();
+    else ghostFrom = null;
   }
 
   // ---- live drop preview ----
@@ -519,6 +755,43 @@ export function initCalendarContent(content: HTMLElement): () => void {
     previewCol = null;
     previewKey = "";
   }
+  /**
+   * Which lane a block of `durMin` starting at `startMins` should take on `day`,
+   * and how many lanes its overlap cluster therefore needs.
+   *
+   * The blocks that are STAYING are laid out on their own, exactly as they are
+   * already rendered, and the newcomer is slotted into the first lane none of
+   * them occupies at that moment. Because the dragged block is excluded, the
+   * survivors' lane INDICES cannot move; only the divisor widens, so they narrow
+   * to make room instead of trading places.
+   *
+   * Extracted so the DROP can ask the identical question the PREVIEW asked. The
+   * preview alone was never enough: `layoutDay` has only two call sites and they
+   * share no state, so the moment the drop re-rendered the week the preview's
+   * answer was gone. See `CalEvent.lane`.
+   */
+  function laneFor(day: Date, startMins: number, durMin: number, dragId: string | null) {
+    const gStart = atMins(day, startMins).getTime();
+    const gEnd = atMins(day, startMins + durMin).getTime();
+    const placed = layoutDay(
+      eventsOn(day).filter(function (e) { return !e.allDay && e.id !== dragId; }),
+    );
+    // `layoutDay` floors every event at 15 minutes of height, so overlap is
+    // tested against the same floor it used.
+    const overlapping = placed.filter(function (p) {
+      const s = p.e.start.getTime();
+      return s < gEnd && Math.max(p.e.end.getTime(), s + 15 * 60000) > gStart;
+    });
+    const taken = overlapping.map(function (p) { return p.lane; });
+    let lane = 0;
+    while (taken.indexOf(lane) !== -1) lane += 1;
+    const lanes = overlapping.reduce(function (n, p) { return Math.max(n, p.lanes); }, lane + 1);
+    // Only the cluster the newcomer lands in narrows; a block elsewhere in the
+    // day keeps its full width.
+    overlapping.forEach(function (p) { p.lanes = lanes; });
+    return { lane: lane, lanes: lanes, placed: placed };
+  }
+
   function previewDrop(col: HTMLElement, day: Date, startMins: number, durMin: number, title: string, dragId: string | null) {
     const key = col.dataset.day + ":" + startMins + ":" + durMin;
     if (previewCol === col && previewKey === key) return;
@@ -526,36 +799,7 @@ export function initCalendarContent(content: HTMLElement): () => void {
     previewCol = col;
     previewKey = key;
 
-    const gStart = atMins(day, startMins).getTime();
-    const gEnd = atMins(day, startMins + durMin).getTime();
-
-    // The blocks that are STAYING are laid out on their own, exactly as they are
-    // already rendered, and the preview is then slotted into the first lane none
-    // of them occupies at that moment.
-    //
-    // The preview used to be sorted into the day alongside them and the whole
-    // column re-laned from scratch. Because `layoutDay` assigns lanes in start
-    // order, nudging the dragged card even one snap step earlier than a card it
-    // shares a start with flipped their order — and the card the user was NOT
-    // touching visibly jumped from the left lane to the right one. Lane indices
-    // for existing blocks are now fixed; only the divisor (`lanes`) can change,
-    // so they narrow to make room instead of trading places.
-    const rest = eventsOn(day).filter(function (e) { return !e.allDay && e.id !== dragId; });
-    const placed = layoutDay(rest);
-
-    // `layoutDay` gives every event at least 15 minutes of height, so overlap is
-    // tested against the same floor it used.
-    const overlapping = placed.filter(function (p) {
-      const s = p.e.start.getTime();
-      return s < gEnd && Math.max(p.e.end.getTime(), s + 15 * 60000) > gStart;
-    });
-    const taken = overlapping.map(function (p) { return p.lane; });
-    let gLane = 0;
-    while (taken.indexOf(gLane) !== -1) gLane += 1;
-    const lanes = overlapping.reduce(function (n, p) { return Math.max(n, p.lanes); }, gLane + 1);
-    // Only the cluster the preview actually lands in narrows; a block elsewhere
-    // in the day keeps its full width.
-    overlapping.forEach(function (p) { p.lanes = lanes; });
+    const { lane: gLane, lanes, placed } = laneFor(day, startMins, durMin, dragId);
 
     if (!ghostIn(col)) return;
     paintGhost(day, startMins, startMins + durMin, title, "is-move", { lane: gLane, lanes: lanes });
@@ -592,6 +836,7 @@ export function initCalendarContent(content: HTMLElement): () => void {
     let clusterEnd = -1;
     const flush = () => {
       const lanes = laneEnds.length || 1;
+      if (lanes > 1) honourLaneHints(cluster, lanes);
       cluster.forEach(function (p) { p.lanes = lanes; });
       out.push(...cluster);
       cluster = []; laneEnds = []; clusterEnd = -1;
@@ -609,6 +854,54 @@ export function initCalendarContent(content: HTMLElement): () => void {
     });
     if (cluster.length) flush();
     return out;
+  }
+
+  /**
+   * Give a just-dropped block back the lane its preview showed, by trading with
+   * whoever greedily took that lane first.
+   *
+   * A hint pointing outside this cluster's width is ignored, which is what makes
+   * a stale hint harmless once the day stops splitting that far.
+   *
+   * CAREFUL: a single lane can hold SEVERAL blocks in one cluster — they merely
+   * have to be disjoint in time from each other, not from everything. An earlier
+   * version of this asked `cluster.find(q => q.lane === want)` and traded with
+   * the first match, which silently rendered two cards on top of each other
+   * whenever the lane held more than one block. Both sides of the trade are
+   * therefore checked here: nothing in the target lane may overlap the incoming
+   * block, and the displaced partner must survive the lane being vacated.
+   */
+  function honourLaneHints(cluster: Placed[], lanes: number) {
+    const span = (p: Placed): [number, number] => {
+      const s = p.e.start.getTime();
+      return [s, Math.max(p.e.end.getTime(), s + 15 * 60000)];
+    };
+    const hits = (a: Placed, b: Placed) => {
+      const [aS, aE] = span(a);
+      const [bS, bE] = span(b);
+      return aS < bE && bS < aE;
+    };
+    cluster.forEach(function (p) {
+      const want = p.e.lane;
+      if (want == null || want === p.lane || want < 0 || want >= lanes) return;
+      // Everything already in `want` that p would sit on top of.
+      const blockers = cluster.filter(function (q) {
+        return q !== p && q.lane === want && hits(p, q);
+      });
+      if (blockers.length === 0) {
+        p.lane = want; // the lane is free at p's hours — just take it
+        return;
+      }
+      if (blockers.length > 1) return; // one trade cannot clear two
+      const other = blockers[0];
+      // The partner has to survive the lane p is vacating, too.
+      const clash = cluster.some(function (q) {
+        return q !== p && q !== other && q.lane === p.lane && hits(other, q);
+      });
+      if (clash) return;
+      other.lane = p.lane;
+      p.lane = want;
+    });
   }
 
   /** Gap between two blocks sharing an hour. Only BETWEEN them — a single block,
@@ -653,7 +946,7 @@ export function initCalendarContent(content: HTMLElement): () => void {
   function weekEvHtml(p: Placed) {
     const short = p.height < 42;
     return '<button class="evc wg-ev ' + statusCls(p.e) + (short ? " is-short" : "") +
-      (flushTop(p.top, p.height).onLine ? " is-flush-top" : "") + '" type="button" draggable="true"' +
+      (flushTop(p.top, p.height).onLine ? " is-flush-top" : "") + '" type="button" draggable="' + canDrag(p.e) + '"' +
       ' data-ev="' + p.e.id + '"' +
       ' style="' + geoStyle(p) + '">' +
       '<span class="evc-t"><svg class="ic"><use href="#' + (KIND_IC[p.e.kind] || "i-cal") + '"/></svg>' +
@@ -771,8 +1064,8 @@ export function initCalendarContent(content: HTMLElement): () => void {
     tgBody.innerHTML = workersData.map(function (w) {
       let row = '<div class="tg-row">' +
         '<div class="tg-who"><span class="cav">' + w.name.split(" ").map(function (p) { return p[0]; }).join("").slice(0, 2) + "</span>" +
-        '<span><span class="tg-name" style="display:block">' + w.name + "</span>" +
-        '<span class="tg-role" style="display:block">' + w.role + "</span></span></div>";
+        '<span><span class="tg-name" style="display:block">' + esc(w.name) + "</span>" +
+        '<span class="tg-role" style="display:block">' + esc(w.role) + "</span></span></div>";
       for (let d = 0; d < 7; d++) {
         const day = new Date(st); day.setDate(day.getDate() + d);
         const evs = eventsOn(day, w.id);
@@ -790,9 +1083,9 @@ export function initCalendarContent(content: HTMLElement): () => void {
     if (!trayList) return;
     trayList.innerHTML = trayJobs.map(function (j) {
       return '<div class="tray-card" draggable="true" data-job="' + j.id + '">' +
-        '<div class="tray-t">' + j.title + "</div>" +
-        '<div class="tray-c">' + j.client + " · " + j.city + "</div>" +
-        '<div class="tray-m">Est. ' + j.duration + " · drag to a day</div>" +
+        '<div class="tray-t">' + esc(j.title) + "</div>" +
+        '<div class="tray-c">' + esc(j.client) + " · " + esc(j.city) + "</div>" +
+        '<div class="tray-m">Est. ' + esc(j.duration) + " · drag to a day</div>" +
         "</div>";
     }).join("");
   }
@@ -816,6 +1109,10 @@ export function initCalendarContent(content: HTMLElement): () => void {
   /** Installed by the motion module below: replays one list's staggered row
    *  entrance. Stays null under `prefers-reduced-motion`. */
   let staggerRows: ((hostId: string) => void) | null = null;
+  /** Same contract for the week and team grids' chips. Separate from
+   *  `staggerRows` because those two hosts are addressed together and neither
+   *  is ever cascaded on its own. */
+  let staggerChips: (() => void) | null = null;
   /**
    * The active card animates in: from the right/left when the cursor moved
    * next/prev, straight up when the view itself changed.
@@ -834,6 +1131,7 @@ export function initCalendarContent(content: HTMLElement): () => void {
     // The month's rows cascade on the same signal as the card itself, so a real
     // navigation still reads as a page of the calendar turning.
     staggerRows?.("mgGrid");
+    staggerChips?.();
     const card = byId(cal.view === "month" ? "monthCard" : cal.view === "week" ? "weekCard" : "teamCard");
     if (!card) { cal.nav = ""; return; }
     const cls = cal.nav === "next" ? "swap-next" : cal.nav === "prev" ? "swap-prev" : "swap-in";
@@ -875,6 +1173,9 @@ export function initCalendarContent(content: HTMLElement): () => void {
   function closeSheet() {
     byId("sheet")?.classList.remove("open");
     byId("sheetBg")?.classList.remove("open");
+    // A refusal belongs to the form that caused it — it must not greet the next
+    // thing opened in this panel.
+    sheetBusy = false;
     // Nothing was created, so the span the preview was holding is released.
     dropGhost();
     cal.sheet = null; cal.editing = null; cal.form.pop = null;
@@ -888,8 +1189,13 @@ export function initCalendarContent(content: HTMLElement): () => void {
   // date-time pickers (Start / End), a crew dropdown and a job-or-proposal
   // picker. All three keep their value in `cal.form` and repaint in place.
 
-  /** Whoever owns the shop — an empty crew on a blocked event means "my time". */
-  const OWNER = workersData.find(function (w) { return w.role === "Owner"; }) || workersData[workersData.length - 1];
+  /** Whoever owns the shop — an empty crew on a blocked event means "my time".
+   *  A real org can have no WorkerProfile rows at all (a solo contractor who
+   *  never invited anyone), so this falls back to a row-less stand-in rather
+   *  than indexing off the end of an empty roster. */
+  const OWNER = workersData.find(function (w) { return w.role === "Owner"; })
+    || workersData[workersData.length - 1]
+    || { id: "", name: "You", role: "Owner" };
 
   const DTP_ICON: Record<string, string> = { start: "i-clock", end: "i-hourglass" };
   const DTP_LABEL: Record<string, string> = { start: "Start", end: "End" };
@@ -1031,7 +1337,7 @@ export function initCalendarContent(content: HTMLElement): () => void {
           return '<button class="pdd-opt' + (on ? " on" : "") + '" type="button" data-crew="' + w.id + '" aria-pressed="' + on + '">' +
             '<span class="ckbox"><svg class="ic"><use href="#i-check"/></svg></span>' +
             '<span class="cav">' + initials(w.name) + "</span>" +
-            '<span class="pdd-opt-t">' + w.name + "<em>" + w.role + "</em></span>" +
+            '<span class="pdd-opt-t">' + esc(w.name) + "<em>" + esc(w.role) + "</em></span>" +
             "</button>";
         }).join("") +
         (blocked
@@ -1041,6 +1347,21 @@ export function initCalendarContent(content: HTMLElement): () => void {
   }
   function crewFieldHtml() {
     const blocked = cal.kind === "blocked";
+    // `createBlockedTime` is self-owned by construction — the action takes no
+    // owner and there is no update path for one. On real data the picker would
+    // therefore be a control that changes nothing, so the field states the rule
+    // instead of offering a choice that cannot be honoured.
+    if (wired && blocked) {
+      // An existing block already has an owner; a new one will be the caller's.
+      const held = cal.form.crew.length
+        ? workersData.find(function (x) { return x.id === cal.form.crew[0]; })
+        : null;
+      return '<div class="sf" id="crewRow"><span class="sf-lbl">Block for</span>' +
+        '<div class="sf-static"><svg class="ic"><use href="#i-user"/></svg><span>' +
+          esc(held ? held.name : "Just me · " + OWNER.name) + "</span></div>" +
+        '<span class="sf-hint"><svg class="ic"><use href="#i-ban"/></svg>Blocked time belongs to whoever created it.</span>' +
+        "</div>";
+    }
     return '<div class="sf" id="crewRow"><span class="sf-lbl">' + (blocked ? "Block for" : "Crew") + "</span>" +
       '<div class="pdd' + (cal.form.pop === "crew" ? " open" : "") + '" data-pdd="crew">' + crewInnerHtml() + "</div>" +
       (blocked ? '<span class="sf-hint"><svg class="ic"><use href="#i-user"/></svg>' + (cal.form.crew.length ? "Blocks the selected crew" : "Blocks your own calendar") + "</span>" : "") +
@@ -1225,8 +1546,19 @@ export function initCalendarContent(content: HTMLElement): () => void {
   /** The create form. `start`/`end` come from the drag-to-create preview when
    *  there is one, otherwise from the clicked cell (2h default). */
   function openQuickAdd(start: Date | null, end: Date | null, allDay?: boolean) {
-    cal.sheet = "add"; cal.kind = "job"; cal.editing = null;
-    const s = start ? new Date(start) : atMins(TODAY, 8 * 60);
+    if (!CREATE_KINDS.length) {
+      dropGhost();
+      toast("Your role can view this calendar but not add to it.", false);
+      return;
+    }
+    cal.sheet = "add"; cal.kind = CREATE_KINDS[0]; cal.editing = null;
+    // No day was clicked (the "New event" button), so default to the day the
+    // calendar is SHOWING, not to today. `cal.cursor` is today until you
+    // navigate, so the common case is unchanged — but paging to another week
+    // and pressing New event used to file the event on today, i.e. into a
+    // different column, or out of the visible week entirely. It read as the
+    // event jumping columns the moment it was created.
+    const s = start ? new Date(start) : atMins(cal.cursor, 8 * 60);
     cal.form.start = s;
     cal.form.end = end ? new Date(end) : addMin(s, 120);
     cal.form.crew = [];
@@ -1237,32 +1569,47 @@ export function initCalendarContent(content: HTMLElement): () => void {
     cal.form.linkTab = "all";
     cal.form.linkQuery = "";
     cal.form.allDay = !!allDay;
-    openSheet("New event", quickAddHtml());
+    // `false` = do not inherit typed text. `quickAddHtml` reads the title and
+    // notes back out of the live DOM so they survive a kind switch — but the
+    // sheet's markup is only replaced by `openSheet` on the NEXT line, so at
+    // this moment the PREVIOUS event's form is still mounted. Inheriting here
+    // meant every event created after the first opened pre-filled with the last
+    // one's title, and creating three in a row produced three identical rows.
+    openSheet("New event", quickAddHtml(false));
     root.querySelector<HTMLInputElement>('[data-e="title"]')?.focus();
   }
   /** Rebuilt whole when the kind tab changes — Blocked drops the link field and
    *  relabels the crew picker, so the field set is not the same form. */
-  function quickAddHtml() {
+  function quickAddHtml(keepTyped = true) {
     const blocked = cal.kind === "blocked";
+    // Carried across a kind switch (the form is rebuilt in place, so whatever
+    // was typed must survive); never carried into a NEWLY opened form.
+    const seedTitle = keepTyped ? currentTitle() : "";
+    const seedNotes = keepTyped ? currentNotes() : "";
     const ph: Record<string, string> = {
       job: "Roof tear-off — 4812 Maple Ave",
       appointment: "Estimate visit — S. Rao",
       blocked: "Shop maintenance",
     };
-    return '<div class="sf-kinds" id="kindTabs">' +
-        (["job", "appointment", "blocked"] as const).map(function (k) {
-          return '<button class="sf-kind' + (cal.kind === k ? " on" : "") + '" type="button" data-kind="' + k + '">' +
-            '<svg class="ic"><use href="#' + KIND_IC[k] + '"/></svg>' +
-            (k === "job" ? "Job event" : k === "appointment" ? "Appointment" : "Blocked") + "</button>";
-        }).join("") +
-      "</div>" +
-      '<label class="sf"><span class="sf-lbl">Title</span><input class="sf-in" data-e="title" placeholder="' + ph[cal.kind] + '" value="' + esc(currentTitle()) + '"></label>' +
+    // A tab strip with one tab is a label pretending to be a choice — when the
+    // role can only create one kind, the strip is dropped entirely and the
+    // sheet's own title carries the meaning.
+    return (CREATE_KINDS.length > 1
+        ? '<div class="sf-kinds" id="kindTabs">' +
+            CREATE_KINDS.map(function (k) {
+              return '<button class="sf-kind' + (cal.kind === k ? " on" : "") + '" type="button" data-kind="' + k + '">' +
+                '<svg class="ic"><use href="#' + KIND_IC[k] + '"/></svg>' +
+                (k === "job" ? "Job event" : k === "appointment" ? "Appointment" : "Blocked") + "</button>";
+            }).join("") +
+          "</div>"
+        : "") +
+      '<label class="sf"><span class="sf-lbl">Title</span><input class="sf-in" data-e="title" placeholder="' + ph[cal.kind] + '" value="' + esc(seedTitle) + '"></label>' +
       allDayFieldHtml() +
       dtpFieldHtml("start") +
       dtpFieldHtml("end") +
       (blocked ? "" : linkFieldHtml()) +
       crewFieldHtml() +
-      '<label class="sf"><span class="sf-lbl">Notes</span><textarea class="sf-area" data-e="notes" placeholder="Anything the crew should know">' + esc(currentNotes()) + "</textarea></label>" +
+      '<label class="sf"><span class="sf-lbl">Notes</span><textarea class="sf-area" data-e="notes" placeholder="Anything the crew should know">' + esc(seedNotes) + "</textarea></label>" +
       '<div class="sf-act">' +
         '<button class="btn btn-primary btn--sm" type="button" data-act="create-event"><svg class="ic"><use href="#i-check"/></svg>' +
           (blocked ? "Block time" : "Create event") + "</button>" +
@@ -1281,8 +1628,8 @@ export function initCalendarContent(content: HTMLElement): () => void {
     openSheet("Crew confirmations · " + inboxData.length + " pending",
       inboxData.length ? inboxData.map(function (r) {
         return '<div class="inbox-row" data-inbox="' + r.id + '">' +
-          '<div class="inbox-t">' + r.title + "</div>" +
-          '<div class="inbox-s">' + r.worker + " · " + r.when + "</div>" +
+          '<div class="inbox-t">' + esc(r.title) + "</div>" +
+          '<div class="inbox-s">' + esc(r.worker) + " · " + esc(r.when) + "</div>" +
           '<div class="inbox-act"><span class="pstatus pstatus--pending">pending</span>' +
           '<button class="btn btn-primary btn--sm" type="button" data-act="confirm"><svg class="ic"><use href="#i-check"/></svg>Mark accepted</button></div>' +
           "</div>";
@@ -1521,6 +1868,16 @@ export function initCalendarContent(content: HTMLElement): () => void {
   // short landing flash so the eye can follow it (the donor's kanban idea).
   let landed: string | null = null;
 
+  // A 1×1 fully transparent GIF, handed to `setDragImage` so the browser has
+  // nothing to paint under the cursor. Dragging a week block used to show THREE
+  // things at once: this native snapshot flying with the pointer, the source
+  // block left in place at 40% opacity, and the blue landing preview. The first
+  // said nothing the other two did not already say, and being a snapshot of an
+  // element that is itself already faded it read as a smear.
+  const BLANK_DRAG = new Image();
+  BLANK_DRAG.src =
+    "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
   on(document, "dragstart", function (e) {
     const t = asEl(e.target);
     if (!t) return;
@@ -1533,6 +1890,17 @@ export function initCalendarContent(content: HTMLElement): () => void {
       // block lands with its top at the cursor and the two previews disagree.
       cal.dragGrabMin = 0;
       const col = chip.closest<HTMLElement>(".wg-col");
+      const dt = (e as DragEvent).dataTransfer;
+      if (dt) {
+        dt.effectAllowed = "move";
+        // Firefox refuses to start a drag with no payload; this module never set
+        // one, so HTML5 drag was silently dead there.
+        dt.setData("text/plain", chip.dataset.ev || "");
+        // ONLY in the week grid. Month and team have no `.wg-ghost` landing
+        // preview (previewDrop bails for cells without `data-timecol`), so there
+        // the flying copy is the only cursor-attached feedback and has to stay.
+        if (col) dt.setDragImage(BLANK_DRAG, 0, 0);
+      }
       const ev = eventsData.find(function (x) { return x.id === cal.dragEvent; });
       if (col && ev && !ev.allDay) {
         const box = chip.getBoundingClientRect();
@@ -1595,9 +1963,30 @@ export function initCalendarContent(content: HTMLElement): () => void {
       dropMins = dropStartMins(cell, (e as DragEvent).clientY);
       hour = Math.floor(dropMins / 60);
     }
+    const targetWorker = cell.dataset.worker || null;
     if (cal.dragEvent) {
       const ev = eventsData.find(function (x) { return x.id === cal.dragEvent; });
       if (ev) {
+        // Everything the move touches, captured before it moves — the revert
+        // path for a write the server refuses.
+        const before = snapshot(ev);
+        cal.dragEvent = null; cal.dragJob = null;
+
+        // Blocked time first: it has ONE move action, it changes the date only,
+        // and it has no owner-transfer at all — so none of the branches below
+        // describe anything it can actually do.
+        if (wired && ev.kind === "blocked") {
+          if (targetWorker) {
+            toast("Blocked time belongs to whoever created it — it can’t be handed to another crew member.");
+            return;
+          }
+          applyBlockedMove(ev, before, day, dropMins);
+          landed = ev.id;
+          renderCal(); flashEvent();
+          void persistMove(ev, before);
+          return;
+        }
+
         // Crossing between the all-day band and the time grid changes what the
         // event IS, so the flag follows the surface it was dropped on.
         const intoBand = !!cell.closest(".wg-ad-cell");
@@ -1606,8 +1995,8 @@ export function initCalendarContent(content: HTMLElement): () => void {
           ev.start = atMins(day, 0);
           ev.end = atMins(day, 23 * 60 + 59);
           landed = ev.id;
-          cal.dragEvent = null; cal.dragJob = null;
           renderCal(); flashEvent();
+          void persistMove(ev, before);
           return;
         }
         if (cell.dataset.timecol && ev.allDay) {
@@ -1615,8 +2004,8 @@ export function initCalendarContent(content: HTMLElement): () => void {
           const ns0 = atMins(day, dropMins != null ? dropMins : 8 * 60);
           ev.start = ns0; ev.end = addMin(ns0, 120);
           landed = ev.id;
-          cal.dragEvent = null; cal.dragJob = null;
           renderCal(); flashEvent();
+          void persistMove(ev, before);
           return;
         }
         const dur = ev.end.getTime() - ev.start.getTime();
@@ -1627,9 +2016,32 @@ export function initCalendarContent(content: HTMLElement): () => void {
               x.setHours(hour != null ? hour : ev.start.getHours(), hour != null ? 0 : ev.start.getMinutes(), 0, 0);
               return x;
             })();
+        // Ask for the lane BEFORE the span moves — `laneFor` excludes this event
+        // by id, but it reads every other block's live times, and the answer has
+        // to describe where the preview was showing the card land.
+        const landedLane =
+          cell.dataset.timecol && dropMins != null
+            ? laneFor(day, dropMins, Math.max(SNAP_MIN, Math.round(dur / 60000)), ev.id).lane
+            : undefined;
         ev.start = ns; ev.end = new Date(ns.getTime() + dur);
-        if (cell.dataset.worker && ev.workers.indexOf(cell.dataset.worker) === -1) ev.workers = [cell.dataset.worker];
+        // The hint is what stops the re-render from re-laning the pair in start
+        // order and swapping them under the cursor. Cleared for a drop outside
+        // the time grid, where lanes do not exist.
+        ev.lane = landedLane;
+        // A team-row drop is a staffing change as well as a move, and the two
+        // actions behind it disagree about what that means — so the optimistic
+        // update has to match whichever one is about to run.
+        // `assignEventWorker` ADDS the target to a job's crew; `syncAssignments`
+        // (inside updateAppointment) REPLACES an appointment's staff list.
+        if (targetWorker && ev.workers.indexOf(targetWorker) === -1) {
+          ev.workers = wired && ev.kind === "job"
+            ? ev.workers.concat([targetWorker])
+            : [targetWorker];
+        }
         landed = ev.id;
+        renderCal(); flashEvent();
+        void persistMove(ev, before, targetWorker && canManage ? targetWorker : undefined);
+        return;
       }
     } else if (cal.dragJob) {
       const j = trayJobs.find(function (x) { return x.id === cal.dragJob; });
@@ -1640,20 +2052,69 @@ export function initCalendarContent(content: HTMLElement): () => void {
           return x;
         })();
         evSeq += 1;
-        eventsData.push({
+        const created: CalEvent = {
           id: "e" + evSeq, kind: "job", title: j.title + " — " + j.client,
           start: ns, end: new Date(ns.getTime() + 4 * 3600 * 1000),
-          status: "SCHEDULED", workers: cell.dataset.worker ? [cell.dataset.worker] : [],
+          status: "SCHEDULED", workers: targetWorker ? [targetWorker] : [],
           client: j.client, addr: j.city,
-        });
+        };
+        eventsData.push(created);
         landed = "e" + evSeq;
         trayJobs = trayJobs.filter(function (x) { return x.id !== j.id; });
+        cal.dragEvent = null; cal.dragJob = null;
+        renderCal(); flashEvent();
+        if (wired) void persistTrayDrop(created, j, day, dropMins != null || hour != null, targetWorker);
+        return;
       }
     }
     cal.dragEvent = null; cal.dragJob = null;
     renderCal();
     flashEvent();
   });
+
+  /**
+   * A tray card became a scheduled job. `scheduleJobFromTray` is the action the
+   * classic dispatch tray used: it books the job, writes the JobEvent and logs
+   * the activity in one call — but it always books 9:00–14:00, so a drop that
+   * named a time follows up with `rescheduleJobEventTime` to keep the block
+   * where the user put it.
+   *
+   * The optimistic row is already on the grid under a temporary id; this
+   * rewrites it with the real one, or takes it back off and returns the card to
+   * the tray.
+   */
+  async function persistTrayDrop(
+    created: CalEvent,
+    job: TrayJob,
+    day: Date,
+    exactTime: boolean,
+    targetWorker: string | null,
+  ) {
+    try {
+      const res = await scheduleJobFromTray(job.id, day.toISOString());
+      created.id = res.id;
+      created.rid = res.id;
+      created.jobId = job.id;
+      if (exactTime) {
+        await rescheduleJobEventTime(res.id, created.start.toISOString(), created.end.toISOString());
+      } else {
+        // No time was named, so the action's own 9:00–14:00 is the truth.
+        created.start = atMins(day, 9 * 60);
+        created.end = atMins(day, 14 * 60);
+      }
+      if (targetWorker && canManage) {
+        await assignWorker(job.id, targetWorker);
+        created.workers = [targetWorker];
+      }
+      renderCal();
+    } catch (err) {
+      const i = eventsData.indexOf(created);
+      if (i > -1) eventsData.splice(i, 1);
+      trayJobs = trayJobs.concat([job]);
+      renderCal();
+      toast(actionError(err));
+    }
+  }
 
   function flashEvent() {
     const id = landed;
@@ -1785,60 +2246,371 @@ export function initCalendarContent(content: HTMLElement): () => void {
     };
 
     if (act.dataset.act === "save-event") {
-      const ev = eventsData.find(function (x) { return x.id === cal.editing; });
-      if (ev) {
-        const span = formSpan();
-        ev.title = val("title") || ev.title;
-        ev.allDay = cal.form.allDay || undefined;
-        ev.start = span.start;
-        ev.end = span.end;
-        if (ev.kind === "job") ev.status = cal.form.status || ev.status;
-        ev.notes = val("notes");
-        ev.workers = readCrew();
-        if (ev.kind === "blocked") {
-          ev.selfOnly = ev.workers.length === 0;
-          if (ev.selfOnly) ev.workers = [OWNER.id];
-        }
-        landed = ev.id;
-      }
-      closeSheet(); renderCal(); flashEvent(); return;
+      if (sheetBusy) return;
+      void saveEvent(val);
+      return;
     }
     if (act.dataset.act === "delete-event") {
-      const i = eventsData.findIndex(function (x) { return x.id === cal.editing; });
-      if (i > -1) eventsData.splice(i, 1);
-      closeSheet(); renderCal(); return;
+      if (sheetBusy) return;
+      void deleteEvent();
+      return;
     }
     if (act.dataset.act === "create-event") {
-      const title = val("title").trim();
-      if (!title) { root.querySelector<HTMLInputElement>('[data-e="title"]')?.focus(); return; }
-      const span = formSpan();
-      const st = span.start;
-      const en = span.end;
-      const crewIds = readCrew();
-      // Blocked time with nobody picked is MY time — it lands on the owner's
-      // row and reads as "Just me" everywhere it is shown.
-      const selfOnly = cal.kind === "blocked" && crewIds.length === 0;
-      const opt = linkOpt(cal.form.link);
-      evSeq += 1;
-      eventsData.push({
-        id: "e" + evSeq, kind: cal.kind, title: title, start: st, end: en,
-        status: cal.kind === "job" ? cal.form.status : "SCHEDULED",
-        workers: selfOnly ? [OWNER.id] : crewIds,
-        notes: val("notes"),
-        client: opt ? opt.client : undefined,
-        selfOnly: selfOnly || undefined,
-        allDay: cal.form.allDay || undefined,
-      });
-      landed = "e" + evSeq;
-      if (opt && opt.kind === "job") trayJobs = trayJobs.filter(function (x) { return x.id !== opt.id; });
-      closeSheet(); renderCal(); flashEvent(); return;
+      if (sheetBusy) return;
+      void createEvent(val);
+      return;
     }
     if (act.dataset.act === "confirm") {
       const row2 = act.closest<HTMLElement>("[data-inbox]");
-      if (row2) inboxData = inboxData.filter(function (x) { return x.id !== row2.dataset.inbox; });
-      renderBar(); openInbox(); return;
+      if (row2 && row2.dataset.inbox) void confirmAssignment(row2, row2.dataset.inbox);
+      return;
     }
   });
+
+  // ================= SHEET WRITES =================
+  /** Set while a sheet action is in flight: a second click on Save must not
+   *  start a second write against a form that is already committing. */
+  let sheetBusy = false;
+
+  /** The action's own wording, shown under the form it belongs to. Cleared by
+   *  passing null. */
+  function sheetError(msg: string | null) {
+    const body = byId("sheetBody");
+    if (!body) return;
+    let box = body.querySelector<HTMLElement>(".sf-err");
+    if (!msg) { box?.remove(); return; }
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "sf-err";
+      box.setAttribute("role", "alert");
+      body.appendChild(box);
+    }
+    box.textContent = msg;
+    box.scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" });
+  }
+
+  /**
+   * Refuse a save because a required field is empty: name the reason in the
+   * sheet's own error box, mark the field, and put the caret in it.
+   *
+   * The mark clears on the next keystroke rather than on the next submit —
+   * a field that stays red while you are fixing it is telling you something
+   * that has stopped being true.
+   */
+  function requireField(field: string, msg: string) {
+    sheetError(msg);
+    const el = root.querySelector<HTMLInputElement>('[data-e="' + field + '"]');
+    if (!el) return;
+    el.classList.add("is-bad");
+    el.setAttribute("aria-invalid", "true");
+    el.addEventListener("input", function clear() {
+      el.classList.remove("is-bad");
+      el.removeAttribute("aria-invalid");
+      sheetError(null);
+      el.removeEventListener("input", clear);
+    });
+    el.focus();
+  }
+
+  /** Disable the sheet's actions and say what is happening on the primary one.
+   *  Restores the label the button was authored with. */
+  function setSheetBusy(on: boolean, busyLabel?: string) {
+    sheetBusy = on;
+    const primary = root.querySelector<HTMLButtonElement>('.sheet [data-act="save-event"], .sheet [data-act="create-event"]');
+    root.querySelectorAll<HTMLButtonElement>(".sheet [data-act]").forEach(function (b) { b.disabled = on; });
+    if (!primary) return;
+    if (on) {
+      // The authored label carries an icon, so the whole inner markup is stashed
+      // and restored — replacing only the words would drop the check glyph.
+      if (!primary.dataset.label) primary.dataset.label = primary.innerHTML;
+      primary.textContent = busyLabel || "Saving…";
+    } else if (primary.dataset.label) {
+      primary.innerHTML = primary.dataset.label;
+    }
+  }
+
+  /** Which record a link option points at, in the shape each create action wants. */
+  function linkPayload(opt: LinkOption | null) {
+    const rid = opt ? opt.rid || opt.id : null;
+    return {
+      jobId: opt && opt.kind === "job" ? rid : null,
+      proposalId: opt && opt.kind === "proposal" ? rid : null,
+      leadId: opt && opt.kind === "lead" ? rid : null,
+      clientId: opt && opt.kind === "client" ? rid : null,
+    };
+  }
+
+  async function saveEvent(val: (f: string) => string) {
+    const ev = eventsData.find(function (x) { return x.id === cal.editing; });
+    if (!ev) { closeSheet(); return; }
+    const span = formSpan();
+    const before = snapshot(ev);
+    const beforeTitle = ev.title;
+    const beforeNotes = ev.notes;
+    const beforeStatus = ev.status;
+    // Clearing the title used to silently restore the old one, so the field
+    // could be emptied, saved, and come back full with no explanation. Refuse
+    // it the same way the create form does.
+    const title = val("title").trim();
+    if (!title) { requireField("title", "Give this a title before saving it."); return; }
+    sheetError(null);
+    const notes = val("notes");
+    const crew = readCrew();
+    const timeChanged =
+      span.start.getTime() !== before.start.getTime() || span.end.getTime() !== before.end.getTime();
+
+    if (wired && ev.rid) {
+      sheetError(null);
+      setSheetBusy(true, "Saving…");
+      try {
+        if (ev.kind === "job") {
+          await updateJobEvent(ev.rid, { title, notes: notes || null });
+          if (timeChanged || cal.form.allDay !== before.allDay) {
+            await rescheduleJobEventTime(ev.rid, span.start.toISOString(), span.end.toISOString());
+          }
+          // Status and crew live on the JOB, not the event — a jobless event has
+          // neither, and saying so beats silently dropping the edit.
+          if (ev.jobId) {
+            // The picker only ever offers JOB_STATUSES, but `cal.form.status` is
+            // a plain string — narrow against the same list the picker is built
+            // from rather than asserting.
+            const picked = JOB_STATUSES.find(function (s) { return s.value === cal.form.status; });
+            if (picked && picked.value !== beforeStatus) {
+              await updateJob(ev.jobId, { status: picked.value as "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED" });
+            }
+            await syncJobCrew(ev, crew);
+          } else if (cal.form.status !== beforeStatus || crew.join() !== before.workers.join()) {
+            setSheetBusy(false);
+            sheetError("This event isn’t linked to a job, so it has no status or crew of its own. The title, notes and times were saved.");
+            ev.title = title; ev.notes = notes; ev.start = span.start; ev.end = span.end;
+            ev.allDay = cal.form.allDay || undefined;
+            renderCal();
+            return;
+          }
+        } else if (ev.kind === "appointment") {
+          await updateAppointment(ev.rid, {
+            title,
+            notes: notes || null,
+            startsAt: span.start.toISOString(),
+            endsAt: span.end.toISOString(),
+            workerIds: crew,
+          });
+          ev.workers = crew;
+        } else {
+          // Blocked time has no update action at all — only a date move. Refuse
+          // the parts that cannot land instead of pretending they did.
+          if (title !== beforeTitle || notes !== beforeNotes) {
+            setSheetBusy(false);
+            sheetError("Blocked time can only be moved or removed from here — its reason and notes aren’t editable yet.");
+            return;
+          }
+          if (timeChanged) {
+            applyBlockedMove(ev, before, span.start, span.start.getHours() * 60 + span.start.getMinutes());
+            await rescheduleBlockedTime(ev.rid, ev.start.toISOString());
+          }
+          setSheetBusy(false);
+          landed = ev.id;
+          closeSheet(); renderCal(); flashEvent();
+          return;
+        }
+      } catch (err) {
+        // Some branches above have already moved the local model (the blocked
+        // path normalises the span before it writes). Put it back so a refused
+        // save leaves the grid exactly as the user found it.
+        restore(ev, before);
+        setSheetBusy(false);
+        sheetError(actionError(err));
+        renderCal();
+        return;
+      }
+      setSheetBusy(false);
+    }
+
+    ev.title = title;
+    ev.allDay = cal.form.allDay || undefined;
+    ev.start = span.start;
+    ev.end = span.end;
+    if (ev.kind === "job") ev.status = cal.form.status || ev.status;
+    ev.notes = notes;
+    if (!wired || ev.kind !== "appointment") ev.workers = crew;
+    if (ev.kind === "blocked") {
+      ev.selfOnly = ev.workers.length === 0;
+      if (ev.selfOnly) ev.workers = [OWNER.id];
+    }
+    landed = ev.id;
+    closeSheet(); renderCal(); flashEvent();
+  }
+
+  /**
+   * Crew on a job event is crew on the JOB. Diff the picker against what the
+   * event arrived with: added members go through `assignWorker` (which notifies
+   * them and puts the assignment in the crew inbox as PENDING — the same call
+   * the Jobs page makes), removed ones through `unassignWorker`, which needs the
+   * ASSIGNMENT id and is why the seed carries `assignmentIds`.
+   */
+  async function syncJobCrew(ev: CalEvent, next: string[]) {
+    if (!ev.jobId) return;
+    const prev = ev.workers.slice();
+    const added = next.filter(function (w) { return prev.indexOf(w) === -1; });
+    const removed = prev.filter(function (w) { return next.indexOf(w) === -1; });
+    for (const w of removed) {
+      const aid = ev.assignmentIds ? ev.assignmentIds[w] : undefined;
+      // No assignment id means the row was created in this session and was
+      // never read back; skip rather than guess at a delete target.
+      if (aid) {
+        await unassignWorker(aid);
+        delete ev.assignmentIds![w];
+      }
+    }
+    for (const w of added) await assignWorker(ev.jobId, w);
+    ev.workers = next;
+  }
+
+  async function deleteEvent() {
+    const i = eventsData.findIndex(function (x) { return x.id === cal.editing; });
+    if (i < 0) { closeSheet(); return; }
+    const ev = eventsData[i];
+    if (wired && ev.rid) {
+      sheetError(null);
+      setSheetBusy(true, "Deleting…");
+      try {
+        if (ev.kind === "job") await deleteJobEvent(ev.rid);
+        else if (ev.kind === "appointment") await deleteAppointment(ev.rid);
+        else await deleteBlockedTime(ev.rid);
+      } catch (err) {
+        setSheetBusy(false);
+        sheetError(actionError(err));
+        return;
+      }
+      setSheetBusy(false);
+    }
+    eventsData.splice(i, 1);
+    closeSheet(); renderCal();
+  }
+
+  async function createEvent(val: (f: string) => string) {
+    const title = val("title").trim();
+    // Was a bare `.focus()` and nothing else: pressing Create on an empty form
+    // moved the caret and gave no reason, so the button read as broken. A
+    // refusal has to say what it wants.
+    if (!title) { requireField("title", "Give this a title before creating it."); return; }
+    sheetError(null);
+    const span = formSpan();
+    const st = span.start;
+    const en = span.end;
+    const crewIds = readCrew();
+    // Blocked time with nobody picked is MY time — it lands on the owner's
+    // row and reads as "Just me" everywhere it is shown.
+    const selfOnly = cal.kind === "blocked" && crewIds.length === 0;
+    const opt = linkOpt(cal.form.link);
+    const link = linkPayload(opt);
+
+    let newId = "e" + (evSeq + 1);
+    let rid: string | undefined;
+    let jobId: string | null | undefined;
+
+    if (wired) {
+      sheetError(null);
+      setSheetBusy(true, cal.kind === "blocked" ? "Blocking…" : "Creating…");
+      try {
+        if (cal.kind === "job") {
+          const res = await createJobEvent({
+            title,
+            jobId: link.jobId,
+            proposalId: link.proposalId,
+            startsAt: st.toISOString(),
+            endsAt: en.toISOString(),
+            notes: val("notes") || null,
+          });
+          newId = res.id; rid = res.id; jobId = res.jobId;
+          // Staffing is a job-level write, so it only exists once a job does.
+          if (res.jobId && crewIds.length) {
+            for (const w of crewIds) await assignWorker(res.jobId, w);
+          }
+        } else if (cal.kind === "appointment") {
+          const res = await createAppointment({
+            title,
+            leadId: link.leadId,
+            clientId: link.clientId,
+            proposalId: link.proposalId,
+            startsAt: st.toISOString(),
+            endsAt: en.toISOString(),
+            notes: val("notes") || null,
+            status: "SCHEDULED",
+            workerIds: crewIds,
+          });
+          newId = "apt:" + res.id; rid = res.id;
+        } else {
+          const res = await createBlockedTime({
+            reason: title,
+            startsAt: st.toISOString(),
+            endsAt: en.toISOString(),
+          });
+          newId = "block:" + res.id; rid = res.id;
+        }
+      } catch (err) {
+        setSheetBusy(false);
+        sheetError(actionError(err));
+        return;
+      }
+      setSheetBusy(false);
+    } else {
+      evSeq += 1;
+    }
+
+    eventsData.push({
+      id: newId, rid, jobId, kind: cal.kind, title: title, start: st, end: en,
+      status: cal.kind === "job" ? cal.form.status : "SCHEDULED",
+      workers: selfOnly ? [OWNER.id] : crewIds,
+      notes: val("notes"),
+      client: opt ? opt.client : undefined,
+      selfOnly: selfOnly || undefined,
+      allDay: cal.form.allDay || undefined,
+    });
+    landed = newId;
+    // Linking a tray job schedules it, so it leaves the unscheduled list.
+    if (opt && opt.kind === "job") {
+      const linkedId = opt.rid || opt.id;
+      trayJobs = trayJobs.filter(function (x) { return x.id !== linkedId; });
+    }
+    closeSheet(); renderCal(); flashEvent();
+  }
+
+  /**
+   * Crew inbox: mark one pending assignment accepted. The confirmed row leaves
+   * on its own and the rows below close the gap — rebuilding the sheet body
+   * would restart every remaining row's entrance and steal the focus from the
+   * button that was just pressed.
+   */
+  async function confirmAssignment(row: HTMLElement, id: string) {
+    const btn = row.querySelector<HTMLButtonElement>('[data-act="confirm"]');
+    if (btn?.disabled) return;
+    // Stash the whole inner markup, not the words: the label carries a check
+    // glyph that a textContent restore would silently drop.
+    const label = btn ? btn.innerHTML : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Marking…"; }
+    if (wired) {
+      try {
+        await markAssignmentAccepted(id);
+      } catch (err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = label; }
+        toast(actionError(err));
+        return;
+      }
+    }
+    leaveRow(row, function () {
+      inboxData = inboxData.filter(function (x) { return x.id !== id; });
+      // Totals only — `leaveRow` measures the surviving rows right after this,
+      // so re-rendering the list here would leave the FLIP nothing to move.
+      renderBar();
+      const title = byId("sheetTitle");
+      if (title) title.textContent = "Crew confirmations · " + inboxData.length + " pending";
+      const body = byId("sheetBody");
+      if (body && !inboxData.length) {
+        body.innerHTML = '<div class="pempty"><b>Everyone has confirmed</b><br>All crew assignments have been accepted.</div>';
+      }
+    }, after);
+  }
 
   /** After the all-day switch flips: update the switch in place (so its knob
    *  slides instead of the node being replaced and re-running the field
@@ -1929,7 +2701,13 @@ export function initCalendarContent(content: HTMLElement): () => void {
   });
 
   // ================= INITIALIZATION =================
-  safe("init", function () { renderCal(); });
+  safe("init", function () {
+    // A role that cannot create anything gets no create button. The grid's
+    // click-to-create paths still exist (they are the same gesture as a click on
+    // an empty cell) and answer with the one-line explanation in `openQuickAdd`.
+    byId("newEventBtn")?.classList.toggle("is-hidden", CREATE_KINDS.length === 0);
+    renderCal();
+  });
 
   // Keep the week's "now" marker honest while the page stays open (outside the
   // motion block: the marker is information, not decoration).
@@ -2060,8 +2838,17 @@ export function initCalendarContent(content: HTMLElement): () => void {
       if (list) animateRows(list);
     };
 
-    // Week / team chips cascade on every (re)render — the renderers stay
+    // Week / team chips cascade on a real ARRIVAL only — the renderers stay
     // motion-agnostic, exactly like the month rows above.
+    //
+    // These two hosts were the last MutationObserver stagger left in the app,
+    // and the most costly one: `wgBody` is rebuilt by `renderWeek()`, which
+    // `renderCal()` runs after EVERY mutation — so completing a drag replayed
+    // the entrance animation across every chip in the week, under the cursor,
+    // at the exact moment the user wanted to see where the card had landed.
+    // Filter toggles and search keystrokes did the same. The month grid was
+    // already moved onto `playViewAnim`'s gate; this puts the other two views
+    // on the same one.
     function animateChips(host: HTMLElement, sel: string) {
       const chips = Array.from(host.querySelectorAll<HTMLElement>(sel));
       chips.forEach((c, i) => {
@@ -2084,13 +2871,17 @@ export function initCalendarContent(content: HTMLElement): () => void {
         });
       });
     }
-    ([["wgBody", ".wg-ev"], ["tgBody", ".evc"]] as const).forEach(([id, sel]) => {
-      const host = byId(id);
-      if (!host) return;
-      const mo = new MutationObserver(() => animateChips(host, sel));
-      mo.observe(host, { childList: true });
-      disposers.push(() => mo.disconnect());
-    });
+    const CHIP_HOSTS = [["wgBody", ".wg-ev"], ["tgBody", ".evc"]] as const;
+    /** Re-read by id on every call: `renderWeek`/`renderTeam` replace the host's
+     *  children, and the card itself is hidden and shown as views switch. */
+    const cascadeChips = () => {
+      CHIP_HOSTS.forEach(([id, sel]) => {
+        const host = byId(id);
+        if (host) animateChips(host, sel);
+      });
+    };
+    cascadeChips();
+    staggerChips = cascadeChips;
 
 
     // KPI count-up

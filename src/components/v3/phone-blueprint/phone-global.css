@@ -1,24 +1,23 @@
 /* Phone blueprint — the GLOBAL layer of the donor port (plain stylesheet, not
-   a CSS module). Two kinds of rule live here:
+   a CSS module). What lives here:
 
-   1. Donor keyframes — Turbopack's Lightning CSS rejects keyframes inside CSS
-      modules, and the names must stay literal (the CSS references them by
-      name).
-      `leadLand`, `daySel2` and `press2` are byte-identical to the copies
-      already declared in dashboard-blueprint/blueprint-global.css, so they are
-      NOT re-declared here — phone.module.css references the shared names.
-      The only donor keyframe unique to this page is `sheetIn`, renamed
-      `phone_sheetIn` (declaration + the single reference in phone.module.css)
-      so it can never collide with another page's port.
+   Donor keyframes would live here, because Turbopack's Lightning CSS rejects
+   keyframes inside CSS modules and the names must stay literal. This page
+   ships none: `leadLand`, `daySel2` and `press2` are byte-identical to the
+   copies already declared in dashboard-blueprint/blueprint-global.css, so
+   phone.module.css references the shared names. The one donor keyframe unique
+   to this page, `sheetIn` (renamed `phone_sheetIn` here), is GONE — a one-shot
+   keyframe can only animate the transcript panel's arrival, never its
+   dismissal, because the closed state was `display: none` and `display` does
+   not interpolate. phone.module.css now expresses both states as
+   visibility/opacity/transform on a transition, which plays in both
+   directions, so the keyframe had no remaining reference.
 
-   2. One escape hatch that has to sit outside the module's specificity.
+   What is left is one escape hatch that has to sit outside the module's
+   specificity.
 
    Every visual value is verbatim from the donor file
    jobflex-phone-blueprint_1.html. */
-
-/* ── Donor keyframes (page-unique, renamed) ─────────────────────── */
-
-@keyframes phone_sheetIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ── Stacking escape hatch for the transcript sheet ────────────────
    In the donor, #sheetBg (z-index 110) and #sheet (z-index 111) are children

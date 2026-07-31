@@ -5,11 +5,20 @@
 // ../layout.tsx, so this page renders only the donor's `.content` children.
 // The child route (/[id]) lives under the (dashboard) route group and keeps
 // the classic layout.
+//
+// Like the Workers page and unlike the rest of the blueprint fleet, this one is
+// NOT a fixture: the client book is read from the database here and the create
+// / edit dialog calls the real client server actions (see clients-behavior.ts).
+// The query is the archived classic page's — same joins, same ordering, same
+// pipeline formula, same VIP-is-a-tag rule — so both editions describe the same
+// book, and the ids in the rows are the ids proposals and jobs reference.
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { auth } from "@/lib/auth";
+import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { db } from "@/lib/db";
 import { ClientsContent } from "@/components/v3/clients-blueprint/clients-content";
+import type { Client } from "@/components/v3/clients-blueprint/clients-data";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +27,53 @@ export const metadata: Metadata = {
   description: "Clients — masthead, tag filters and the full client book on one sheet.",
 };
 
+/** The Updated column is the fixture's short plate ("Jul 22"), not a full date. */
+function updatedLabel(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+}
+
 export default async function ClientsPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/auth/login?next=%2Fdashboard%2Fclients");
+  let organizationId: string;
+  try {
+    const ctx = await requireOrg();
+    organizationId = ctx.organizationId;
+  } catch (err) {
+    if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fclients");
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <ClientsContent />;
+  const clients = await db.client.findMany({
+    where: { organizationId, deletedAt: null },
+    include: {
+      proposals: { select: { total: true, status: true } },
+      tags: { include: { tag: true } },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const entries: Client[] = clients.map((c) => ({
+    id: c.id,
+    name: c.name,
+    email: c.email,
+    address: [c.city, c.state].filter(Boolean).join(", ") || c.address || "",
+    proposalCount: c.proposals.length,
+    pipelineValue: c.proposals
+      .filter((p) => !["DECLINED", "EXPIRED", "ARCHIVED"].includes(p.status))
+      .reduce((a, p) => a + p.total, 0),
+    // VIP is an org-scoped Tag, not a column (see createClient). It renders as
+    // its own plate next to the name, so it is kept out of the Tags column.
+    vip: c.tags.some((t) => t.tag.label === "VIP"),
+    tags: c.tags
+      .filter((t) => t.tag.label !== "VIP")
+      .map((t) => ({ label: t.tag.label, color: t.tag.color })),
+    updated: updatedLabel(c.updatedAt),
+    phone: c.phone,
+    line1: c.address,
+    city: c.city,
+    state: c.state,
+    zip: c.zip,
+  }));
+
+  return <ClientsContent entries={entries} />;
 }

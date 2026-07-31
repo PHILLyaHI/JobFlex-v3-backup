@@ -20,12 +20,33 @@
 // The donor sprite is byte-identical to the shell's 42-symbol sprite, so no
 // page-local sprite is needed.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initCalendarContent } from "./calendar-behavior";
+import type { CalendarSeed } from "./calendar-data";
 import "./calendar-global.css";
 
-export function CalendarContent() {
-  useBlueprintContent(initCalendarContent);
+/**
+ * @param seed the org's real calendar, read in the page's server component.
+ *   Omitted only by the standalone mock route, which has no session to read
+ *   from and falls back to the donor fixture.
+ */
+export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
+  // The seed reaches `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade — so the init has
+  // to stay referentially stable for the life of the mount. The ref is never
+  // written after creation: it is seeded on the first render, the layout effect
+  // that reads it runs against that same commit, and from then on the behavior
+  // module owns the calendar and keeps itself in step with the database through
+  // the server actions.
+  const seedRef = useRef(seed);
+
+  const init = useCallback(
+    (content: HTMLElement) => initCalendarContent(content, { seed: seedRef.current }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -144,6 +165,12 @@ export function CalendarContent() {
         </aside>
       </div>
       <div className="pmenu" id="pMenu"></div>
+
+      {/* A rejected write has to say so somewhere. Drag-and-drop happens with no
+          sheet open, so the sheet's own error line cannot carry it — this strip
+          is the only surface a failed reschedule can speak from. It is
+          `position: fixed` and empty until something goes wrong. */}
+      <div className="cal-toast" id="calToast" role="status" aria-live="polite"></div>
 
       {/* Donor siblings of `.main` — both position: fixed. */}
       <div className="sheet-bg" id="sheetBg"></div>

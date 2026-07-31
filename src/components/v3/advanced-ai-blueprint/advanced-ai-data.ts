@@ -9,8 +9,29 @@
 
 export type ProjectType = { id: string; label: string; icon: string };
 
-/** A materials / labor line item. `link` renders the "Retail link" affordance. */
-export type Line = { id: string; name: string; qty: number; unit: string; price: number; link: boolean };
+/**
+ * A materials / labor line item.
+ *
+ * `id` is the identity the AI refine round-trips (see `refineAdvancedEstimate`
+ * rule 6), so a renamed row stays the same row and keeps its price and product
+ * link. The product fields below are the live-pricing metadata the estimator
+ * attaches to materials — they are carried, unmodified, all the way into the
+ * converted proposal's LineItems, which is what makes the proposal's Materials
+ * Request view shoppable. `link` is derived from `productUrl`.
+ */
+export type Line = {
+  id: string;
+  name: string;
+  qty: number;
+  unit: string;
+  price: number;
+  link: boolean;
+  store?: string;
+  productUrl?: string;
+  imageUrl?: string;
+  dimensions?: string;
+  notes?: string;
+};
 
 export type Seed = {
   scope: string;
@@ -49,6 +70,15 @@ export const SAMPLES: string[] = [
   'Replace gutters and downspouts on a two-story colonial, add leaf guards.'
 ];
 
+/**
+ * The donor's demo estimate.
+ *
+ * NO LONGER ON THE LIVE PATH: "Generate estimate" now calls
+ * `generateAdvancedEstimate`, which brings its own AI-disabled placeholder (and
+ * the studio labels that one as sample data). Kept because it is the donor's,
+ * and deleting a block of the reference fixture is the owner's call, not a side
+ * effect of wiring the estimator up.
+ */
 export const SEED: Seed = {
   scope: 'Tear off existing roofing down to the deck, inspect and replace damaged sheathing as ' +
     'needed, install synthetic underlayment and ice & water shield at eaves and valleys, install ' +
@@ -78,5 +108,17 @@ export const SEED: Seed = {
   ]
 };
 
-/** The generation "narration" the console types out, one line per 620ms tick. */
-export const STAGES: string[] = ['Reading your brief…', 'Pricing materials…', 'Costing labor…', 'Writing scope…'];
+// REMOVED: `STAGES`.
+//
+// It was the donor's four-line generation narration, ticked on a fixed 620ms
+// interval — "Pricing materials…" then "Costing labor…" then "Writing scope…"
+// announced whether or not the pipeline had reached any of them. Once
+// "Generate estimate" became a real `generateAdvancedEstimate` call that
+// reports no progress, that ticker was theatre laid over a real request: it
+// claimed a step the server may not have started, and on a slow call it fell
+// silent on "Writing scope…" for the rest of the wait.
+//
+// The console now narrates only boundaries it actually observes — the intake
+// gate, then the estimate — and puts a live elapsed-seconds counter on the
+// button (which is not an aria-live region, so a screen reader is not read a
+// new number every second). See `startElapsed` in advanced-ai-behavior.ts.

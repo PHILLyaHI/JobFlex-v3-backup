@@ -1,0 +1,12 @@
+/* Homeowner portal — the GLOBAL sliver of the donor port.
+
+   The donor sets `html { scroll-behavior: smooth; }`, which the page's four
+   `#top` anchors depend on. That cannot be expressed from inside
+   homeowner.module.css: `html` is an ancestor of the `.bp` wrapper, so no
+   descendant selector can reach it.
+
+   Gating on `:has(.jf-homeowner)` keeps the rule inert on every other route —
+   the literal `jf-homeowner` class only exists while this page is mounted —
+   even though Next hoists this stylesheet into the global bundle. */
+
+html:has(.jf-homeowner) { scroll-behavior: smooth; }

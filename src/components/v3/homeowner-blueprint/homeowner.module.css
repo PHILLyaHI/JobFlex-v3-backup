@@ -1,0 +1,750 @@
+/* ============================================================
+   HOMEOWNER PORTAL — BLUEPRINT
+   Pixel-identical port of `jobflex-homeowner-blueprint (14).html`.
+
+   Every value below is verbatim from the donor. Source order is
+   preserved — the cascade depends on it.
+
+   Scoping strategy: this page is STANDALONE (it ships its own nav and
+   footer and does not mount inside components/v3/blueprint-shell), so
+   it owns the whole document. Therefore:
+   - the donor's `:root` token block and its `body` rules both land on
+     `.bp`, the single wrapper element the page renders. `.bp` is sized
+     `min-height: 100dvh` and paints the donor's paper + 38px graph grid,
+     which covers the app-wide 40px grid and paper grain that
+     src/app/globals.css paints on `body`;
+   - every other donor rule `SEL { … }` becomes `.bp :global(SEL) { … }`,
+     so the donor's literal class names survive into the TSX untouched.
+
+   Adaptations (format only, never design):
+   - `--font-mono` resolves JetBrains Mono through the root layout's
+     next/font variable instead of the donor's Google Fonts <link>. Same
+     family, donor fallbacks kept in order behind it.
+   - `--font` is byte-identical to the donor: it names Inter as a plain
+     fallback, and the donor never loads Inter either, so both resolve
+     the same way.
+   - `html { scroll-behavior: smooth }` cannot be expressed from inside a
+     module (html is an ancestor of `.bp`); it ships in
+     homeowner-global.css, gated on `:has(.jf-homeowner)`.
+   - @keyframes stay in this module. Their names are hashed by the module
+     pipeline, but nothing references them by literal name from JS —
+     every trigger is a CSS `animation:` declaration in this same file.
+   ============================================================ */
+
+.bp {
+  --paper: #f2f0eb; --paper-deep: #e8e6e1;
+  --ink: #0a0a0a; --ink-soft: #2a2a2a;
+  --blueprint: #1854a0; --sky: #4a9eff;
+  --success: #2c5f34; --success-soft: rgba(44,95,52,0.12);
+  --warning: #b88420;
+  --gy: 0px;
+  --muted: #555; --muted-faint: #aaa;
+  --grid-light: rgba(0,0,0,0.028);
+  --grid-dark: rgba(255,255,255,0.08);
+  --grid-dark-lg: rgba(255,255,255,0.14);
+  --hair: rgba(10,10,10,0.14);
+  --font: 'Helvetica Neue', Helvetica, Inter, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --border-paper: 2px solid var(--paper);
+  --radius: 2px;
+  --shadow: rgba(10,10,10,0.09);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bp, .bp :global(*) { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* donor `body` — lands on the page wrapper (see the header note) */
+.bp {
+  min-height: 100dvh;
+  font-family: var(--font); color: var(--ink); overflow-wrap: break-word;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 38px 38px;
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+.bp :global(button), .bp :global(input), .bp :global(textarea) { font-family: inherit; color: inherit; }
+.bp :global(button) { border: none; background: none; cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(24,84,160,.12); }
+.bp :global(a) { text-decoration: none; color: inherit; cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(24,84,160,.12); }
+.bp :global(svg) { flex-shrink: 0; }
+.bp :global(svg.ic) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.bp :global(.ic-sm) { width: 14px; height: 14px; }
+
+@keyframes fade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes slidein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes blink { 50% { opacity: 0.3; } }
+@keyframes caret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.bp :global(.anim) { opacity: 0; animation: fade .9s var(--ease-out) forwards; }
+.bp :global(.a1) { animation-delay: .08s }
+.bp :global(.a2) { animation-delay: .20s }
+.bp :global(.a3) { animation-delay: .34s }
+.bp :global(.a4) { animation-delay: .48s }
+.bp :global(.rv) { opacity: 0; transform: translateY(16px);
+  transition: opacity .7s var(--ease-out), transform .7s var(--ease-out); }
+.bp :global(.rv.on) { opacity: 1; transform: none; }
+
+/* ============================================================
+   1. NAV — своя шапка портала: марка, пилюля, вход для подрядчиков
+   ============================================================ */
+.bp :global(.nav) { display: grid; grid-template-columns: auto auto 1fr auto; border-bottom: var(--border);
+  background: var(--ink); color: var(--paper); position: relative; z-index: 20;
+  --hmark: 92px; }
+.bp :global(.brand) { display: flex; align-items: center; gap: 6px; padding: 12px 22px;
+  border-right: var(--border-paper); }
+.bp :global(.brand-mark) { width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--radius);
+  background: var(--ink); color: var(--paper); font-size: 13px; font-weight: 900; letter-spacing: -0.04em; }
+/* The nav mark carries the real product logo instead of the donor's drawn "JF"
+   (owner's call). Same treatment the app shells use: the asset is mostly
+   transparent margin, so it renders well over its box and the box clips it back
+   — see .tbarMarkBox in mobile-shell/mobile-nav.module.css.
+
+   Measured on public/jobflex-mark.png (2048²): the ink is 34.62% x 42.53% of the
+   square and sits dead centre in it (left/right inset 0.3267/0.3271, top/bottom
+   0.2876/0.2871), so a centred crop window of exactly those two fractions shows
+   the whole glyph and nothing else. Both axes derive from --hmark; the 26px
+   SQUARE chip this replaces was 13px short of the ink height and clipped the top
+   and bottom off the J.
+
+   No paper chip any more (owner's call, 2026-07-30): the logo sits straight on
+   the ink bar with no plate behind it, painted paper-white by
+   `brightness(0) invert(1)` — the one-asset-two-colourways trick from the
+   shells. `position/overflow` and the `.nav`-scoped rules are all inert for the
+   FOOTER mark, which still renders the "JF" text on its own ink chip. */
+.bp :global(.brand-mark) { position: relative; overflow: hidden; }
+.bp :global(.nav .brand-mark) { background: transparent; color: var(--paper); border-radius: 0;
+  width: calc(var(--hmark) * 0.3462); height: calc(var(--hmark) * 0.4253); }
+.bp :global(.brand-mark-img) {
+  position: absolute; top: 50%; left: 50%;
+  width: 72px; height: 72px;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  filter: brightness(0); }
+.bp :global(.nav .brand-mark-img) {
+  width: var(--hmark); height: var(--hmark);
+  filter: brightness(0) invert(1); }
+.bp :global(.brand-txt) { font-size: 17px; font-weight: 900; letter-spacing: -0.02em; }
+.bp :global(.nav-tag) { display: flex; align-items: center; padding: 15px 22px;
+  border-right: var(--border-paper);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase;
+  color: var(--sky); white-space: nowrap; }
+.bp :global(.nav-gap) { border-right: var(--border-paper); }
+.bp :global(.nav-cta) { display: flex; align-items: center; gap: 9px; padding: 15px 26px;
+  background: var(--blueprint); color: var(--paper); white-space: nowrap;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;
+  transition: background .18s var(--ease); }
+.bp :global(.nav-cta:hover) { background: var(--paper); color: var(--ink); }
+
+/* ============================================================
+   2. HERO — центрированная колонка с мастером
+   ============================================================ */
+.bp :global(.hero) { position: relative; padding: clamp(30px, 5.4vh, 62px) clamp(18px, 4vw, 54px) clamp(20px, 3vh, 34px);
+  border-bottom: var(--border); }
+.bp :global(.hero-in) { max-width: 1180px; margin: 0 auto; }
+.bp :global(.hero-top) { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.bp :global(.pill) { display: inline-flex; align-items: center; gap: 9px; padding: 7px 15px;
+  border: var(--border); border-radius: var(--radius); background: var(--success-soft);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; }
+.bp :global(.pill i) { width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+  animation: blink 1.9s infinite; }
+.bp :global(.h1) { margin-top: 22px; font-size: clamp(31px, 5.6vw, 78px); font-weight: 900;
+  letter-spacing: -0.05em; line-height: 0.98; text-transform: uppercase; text-wrap: balance; }
+.bp :global(.h1 .inv) { display: inline-block; padding: 0 13px 3px; border-radius: var(--radius);
+  background: var(--ink); color: var(--paper); }
+/* Phone-only line break inside the h1 — off here, switched to `inline` in the
+   700px block, where the reasoning for the break point lives. */
+.bp :global(.brm) { display: none; }
+.bp :global(.h1-sub) { margin-top: 16px; max-width: 46ch; font-size: 14.5px; font-weight: 500;
+  line-height: 1.6; color: var(--muted); }
+
+/* ---- окно мастера ---- */
+.bp :global(.win) { position: relative; z-index: 2; border: var(--border); border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 0 2px 10px rgba(10,10,10,.10), 0 18px 44px -12px rgba(10,10,10,.30);
+  transition: box-shadow .3s var(--ease); }
+.bp :global(.win.drag) { box-shadow: 0 0 0 3px rgba(24,84,160,.30),
+  0 2px 10px rgba(10,10,10,.10), 0 22px 52px -12px rgba(10,10,10,.34); }
+/* Focus on the description field recolours the window's OWN 2px frame rather
+   than stacking a second ring outside it (owner's call). `.desc` has no border
+   of its own — the window frame IS the field's outline — so this is the only
+   edge that can carry the state. Transitioned on the same 180ms/`--ease` the
+   nav CTA uses, and it still meets the non-text contrast floor: blueprint on
+   paper is 6.3:1. Every other control keeps the donor's focus ring. */
+.bp :global(.win) { transition: box-shadow .3s var(--ease), border-color .18s var(--ease); }
+.bp :global(.win:has(.desc:focus)) { border-color: var(--blueprint); }
+
+/* окно мастера — консоль: чернильная шапка, небесный прогресс */
+.bp :global(.win-wrap) { position: relative; max-width: 760px; margin: clamp(24px, 4vh, 46px) auto 0; }
+.bp :global(.win-head) { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 20px; border-bottom: var(--border-thin);
+  background: var(--ink); border-bottom-color: var(--ink); color: var(--paper); }
+.bp :global(.win-step) { font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+  letter-spacing: 0.22em; text-transform: uppercase; color: var(--paper); }
+.bp :global(.win-ticks) { display: flex; align-items: center; gap: 5px; }
+.bp :global(.tick) { height: 5px; width: 16px; background: rgba(242,240,235,.30);
+  transition: width .45s var(--ease-out), background .45s var(--ease); }
+.bp :global(.tick.done) { background: var(--paper); }
+.bp :global(.tick.now) { width: 30px; background: var(--sky); }
+.bp :global(.drop-veil) { position: absolute; inset: 0; z-index: 30; display: none;
+  align-items: center; justify-content: center; background: rgba(242,240,235,.95);
+  border: 2px dashed var(--blueprint); }
+.bp :global(.win.drag .drop-veil) { display: flex; }
+.bp :global(.drop-veil span) { font-size: 12px; font-weight: 800; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--blueprint); }
+
+.bp :global(.pane) { animation: slidein .38s var(--ease-out); }
+.bp :global(.think) { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; min-height: 236px; padding: 46px 24px; }
+.bp :global(.think-dots) { display: flex; gap: 7px; }
+.bp :global(.think-dots i) { width: 9px; height: 9px; background: var(--ink); animation: bounce .9s infinite; }
+.bp :global(.think-dots i:nth-child(2)) { animation-delay: .12s; }
+.bp :global(.think-dots i:nth-child(3)) { animation-delay: .24s; }
+.bp :global(.think-t) { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+.bp :global(.desc) { display: block; width: 100%; min-height: 138px; resize: none; border: none;
+  background: transparent; outline: none; padding: 18px 20px 6px;
+  font-size: 16px; line-height: 1.6; color: var(--ink); }
+.bp :global(.desc::placeholder) { color: var(--muted-faint); }
+.bp :global(.guess) { display: inline-flex; align-items: center; gap: 9px; margin: 0 20px 4px;
+  padding: 6px 12px; border: 1.5px solid var(--blueprint); border-radius: var(--radius);
+  background: rgba(24,84,160,.06); color: var(--blueprint);
+  font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
+  animation: slidein .3s var(--ease-out); }
+.bp :global(.guess i) { width: 6px; height: 6px; background: var(--success); }
+.bp :global(.ups) { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 20px 2px; }
+.bp :global(.up) { position: relative; display: inline-flex; align-items: center; gap: 7px; overflow: hidden;
+  padding: 6px 10px; border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: var(--paper-deep); font-size: 11px; font-weight: 600; color: var(--ink-soft);
+  animation: slidein .3s var(--ease-out); }
+.bp :global(.up .ic) { width: 13px; height: 13px; color: var(--muted); }
+.bp :global(.up-ok) { font-weight: 900; color: var(--success); }
+.bp :global(.up-bar) { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--hair); }
+.bp :global(.up-bar span) { display: block; height: 100%; width: 0; background: var(--blueprint);
+  transition: width .2s linear; }
+
+.bp :global(.tools) { display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
+  padding: 13px 20px; border-top: var(--border-thin); }
+.bp :global(.tool) { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px;
+  border: var(--border-thin); border-radius: var(--radius); background: var(--paper);
+  font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  transition: transform .15s var(--ease), box-shadow .15s var(--ease), background .15s var(--ease); }
+.bp :global(.tool:hover) { transform: translate(-1px,-1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.tool .ic) { width: 15px; height: 15px; }
+.bp :global(.tool.on) { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+/* `.desc` dropped from this list — see the `.win:has(.desc:focus)` rule below. */
+.bp :global(.tool:focus-visible), .bp :global(.go:focus-visible), .bp :global(.chip:focus-visible), .bp :global(.cat:focus-visible),
+.bp :global(.q-in:focus-visible), .bp :global(.back:focus-visible), .bp :global(.restart:focus-visible)
+  { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+.bp :global(.cat-wrap) { position: relative; }
+.bp :global(.cats) { position: absolute; left: 0; bottom: 48px; z-index: 40; display: none;
+  width: 274px; padding: 12px; border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 4px 4px 0 var(--shadow); }
+.bp :global(.cats.open) { display: block; animation: slidein .2s var(--ease-out); }
+.bp :global(.cats-in) { display: flex; flex-wrap: wrap; gap: 6px; }
+.bp :global(.cat) { padding: 6px 10px; border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: var(--paper-deep); font-size: 11px; font-weight: 700;
+  transition: background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease); }
+.bp :global(.cat:hover) { border-color: var(--ink); }
+.bp :global(.cat.on) { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.bp :global(.go) { display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  margin-left: auto; height: 46px; padding: 0 20px; border: var(--border);
+  border-radius: var(--radius); background: var(--blueprint); color: #fff;
+  font-size: 12.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  text-indent: 0.08em;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform .1s var(--ease), box-shadow .1s var(--ease); }
+.bp :global(.go:hover:not(:disabled)) { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--ink); }
+.bp :global(.go:active:not(:disabled)) { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+.bp :global(.go:disabled) { opacity: .5; cursor: not-allowed; }
+.bp :global(.go .ic) { width: 15px; height: 15px; }
+
+.bp :global(.qs) { padding: 20px; }
+.bp :global(.qs-h) { font-size: 15px; font-weight: 900; letter-spacing: -0.015em; }
+.bp :global(.q) { margin-top: 16px; animation: slidein .4s var(--ease-out) backwards; }
+/* Question labels: up from the donor's 9.5px/600/--muted (owner's call — they
+   read as blended annotation, not as the question). 11.5px/700 on --ink lifts
+   them clear of the 13.5px input text below without leaving the mono
+   annotation layer; letter-spacing eases 0.14em → 0.11em because tracking that
+   wide gets loose once the glyphs grow. Contrast goes 4.9:1 → 19.4:1. */
+.bp :global(.q-l) { display: block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink); }
+.bp :global(.q-in) { display: block; width: 100%; height: 40px; margin-top: 7px; padding: 0 12px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); background: var(--paper-deep);
+  font-size: 13.5px; outline: none; transition: border-color .15s var(--ease); }
+.bp :global(.q-in:focus) { border-color: var(--ink); }
+.bp :global(.q-in::placeholder) { color: var(--muted-faint); }
+.bp :global(.chips) { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.bp :global(.chip) { padding: 5px 10px; border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: var(--paper); font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+  transition: background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease); }
+.bp :global(.chip:hover) { border-color: var(--ink); }
+.bp :global(.chip.on) { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.bp :global(.pane-foot) { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin-top: 24px; }
+.bp :global(.back) { padding: 8px 0; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted); transition: color .15s var(--ease); }
+.bp :global(.back:hover) { color: var(--ink); }
+
+.bp :global(.scope-head) { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bp :global(.scope-stamp) { padding: 5px 11px; border-radius: var(--radius); background: var(--ink);
+  color: var(--paper); font-size: 9px; font-weight: 900; letter-spacing: 0.22em;
+  text-transform: uppercase; }
+.bp :global(.sheet) { margin-top: 16px; padding: 20px; border: var(--border-thin); border-radius: var(--radius);
+  background: var(--paper-deep);
+  background-image:
+    linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
+  background-size: 22px 22px; }
+.bp :global(.sheet-n) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.sheet-p) { margin-top: 10px; font-size: 14.5px; line-height: 1.65; color: var(--ink-soft); }
+.bp :global(.sheet-list) { margin-top: 16px; display: flex; flex-direction: column; gap: 9px; }
+.bp :global(.sl) { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.5;
+  color: var(--ink-soft); animation: slidein .4s var(--ease-out) backwards; }
+.bp :global(.sl i) { flex-shrink: 0; width: 15px; height: 15px; margin-top: 2px; display: grid;
+  place-items: center; background: var(--success); color: var(--paper);
+  font-size: 9px; font-weight: 900; font-style: normal; }
+.bp :global(.sl b) { color: var(--ink); }
+
+.bp :global(.cform) { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+/* Contact-form labels track `.q-l` — same role, same treatment; leaving these
+   at 9.5px/--muted would have split the two field groups apart. */
+.bp :global(.fld-l) { display: block; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.11em; text-transform: uppercase; color: var(--ink); }
+.bp :global(.pane-lede) { margin-top: 7px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+
+/* `.pane.done`, not the donor's bare `.done` — DELIBERATE FIX, not a
+   transcription slip. The wizard's completed progress ticks are `.tick.done`,
+   so a bare `.done` selector also matched them and handed each one
+   `min-height: 268px` + `padding: 42px 24px`; min-height outranks the tick's
+   own `height: 5px`, so the first tick inflated to ~350px and dragged the
+   whole ink header down with it. The donor has this bug too (its `.tick.done`
+   is line 128, its `.done` line 251) — it just shows up only once you reach
+   step 2. Qualifying with `.pane` cannot match a tick and leaves the done
+   pane's own rendering byte-identical. */
+.bp :global(.pane.done) { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 268px; padding: 42px 24px; text-align: center; }
+.bp :global(.done-mark) { width: 58px; height: 58px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius); background: var(--success);
+  color: var(--paper); box-shadow: 4px 4px 0 var(--shadow); }
+.bp :global(.done-mark .ic) { width: 28px; height: 28px; stroke-width: 2.6; }
+.bp :global(.done-mark use) { stroke-dasharray: 30; stroke-dashoffset: 30;
+  animation: draw .6s var(--ease-out) .18s forwards; }
+.bp :global(.done-h) { margin-top: 20px; font-size: 22px; font-weight: 900; letter-spacing: -0.035em;
+  text-transform: uppercase; }
+.bp :global(.done-p) { margin-top: 12px; max-width: 40ch; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+.bp :global(.restart) { margin-top: 22px; font-size: 11px; font-weight: 800; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted); transition: color .15s var(--ease); }
+.bp :global(.restart:hover) { color: var(--ink); }
+
+.bp :global(.trust-row) { display: flex; gap: 12px;
+  max-width: 760px; margin: clamp(34px, 6vh, 70px) auto 0; }
+.bp :global(.tr) { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center;
+  gap: 9px; padding: 15px 14px;
+  border: var(--border); border-radius: var(--radius); background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+.bp :global(.tr:hover) { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--shadow); }
+.bp :global(.tr .ic) { width: 15px; height: 15px; }
+.bp :global(.tr:nth-child(1) svg) { color: var(--warning); }
+.bp :global(.tr:nth-child(2) svg) { color: var(--blueprint); }
+.bp :global(.tr:nth-child(3) svg) { color: var(--success); }
+.bp :global(.tr) { transition: transform .15s var(--ease), box-shadow .15s var(--ease), background .18s var(--ease); }
+
+/* ============================================================
+   3. STEPS — четыре карточки с живыми виньетками
+   ============================================================ */
+.bp :global(.steps) { padding: clamp(38px, 6.4vh, 76px) clamp(18px, 4vw, 54px);
+  border-bottom: var(--border); }
+.bp :global(.sec-in) { max-width: 1180px; margin: 0 auto; }
+.bp :global(.sec-n) { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.26em; text-transform: uppercase; color: var(--blueprint); }
+.bp :global(.sec-h) { margin-top: 14px; font-size: clamp(26px, 3.6vw, 46px); font-weight: 900;
+  letter-spacing: -0.045em; line-height: 1.02; text-transform: uppercase; text-wrap: balance; }
+.bp :global(.sec-h .inv) { display: inline-block; padding: 0 12px 3px; border-radius: var(--radius);
+  background: var(--ink); color: var(--paper); }
+.bp :global(.grid4) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 34px;
+  border: var(--border); border-radius: var(--radius); background: var(--paper);
+  box-shadow: 5px 5px 0 var(--shadow); }
+.bp :global(.st) { position: relative; padding: 16px; border-right: var(--border-thin);
+  transition: background .2s var(--ease); }
+.bp :global(.st::before) { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: var(--blueprint); transform: scaleX(0); transform-origin: left;
+  transition: transform .35s var(--ease-out); }
+.bp :global(.st:hover) { background: var(--paper-deep); }
+.bp :global(.st:hover::before) { transform: scaleX(1); }
+.bp :global(.st:hover .vig) { border-color: var(--blueprint); box-shadow: 3px 3px 0 var(--shadow); }
+.bp :global(.st:last-child) { border-right: none; }
+.bp :global(.vig-in) { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.bp :global(.vig) { position: relative; height: 132px; overflow: hidden; border: 1.5px solid var(--hair);
+  border-radius: var(--radius); background: var(--paper-deep);
+  transition: border-color .2s var(--ease), box-shadow .2s var(--ease); }
+.bp :global(.st-n) { margin-top: 16px; font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.2em; color: var(--blueprint); }
+.bp :global(.st-t) { margin-top: 9px; font-size: 15.5px; font-weight: 900; letter-spacing: -0.025em;
+  line-height: 1.2; text-transform: uppercase; }
+.bp :global(.st-b) { margin-top: 9px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+/* виньетка 1 — печать */
+.bp :global(.v-type) { position: absolute; left: 14px; right: -14px; top: 14px; bottom: -14px;
+  padding: 13px; border: 1.5px solid var(--hair); border-top-left-radius: var(--radius);
+  background: var(--paper); }
+.bp :global(.v-l) { font-family: var(--font-mono); font-size: 8.5px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted-faint); }
+.bp :global(.v-p) { margin-top: 7px; font-size: 11.5px; line-height: 1.5; color: var(--ink); }
+.bp :global(.v-caret) { display: inline-block; width: 1.5px; height: 11px; margin-left: 1px;
+  background: var(--blueprint); vertical-align: middle; animation: caret 1s step-end infinite; }
+/* виньетка 2 — чипы */
+.bp :global(.v-q) { padding: 14px; }
+.bp :global(.v-qt) { font-size: 11.5px; font-weight: 900; }
+.bp :global(.v-qt.dim) { margin-top: 12px; color: var(--muted-faint); }
+.bp :global(.v-chips) { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.bp :global(.v-chip) { padding: 4px 8px; border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: var(--paper); font-size: 10px; font-weight: 700;
+  transition: background .3s var(--ease), color .3s var(--ease), border-color .3s var(--ease); }
+.bp :global(.v-chip.on) { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+/* виньетка 3 — превращение в смету */
+.bp :global(.v-s) { padding: 14px; }
+.bp :global(.v-raw) { font-size: 10.5px; line-height: 1.45; font-style: italic; color: var(--muted-faint); }
+.bp :global(.v-arrow) { width: 13px; height: 13px; margin: 5px 0; color: var(--blueprint); }
+.bp :global(.v-rows) { display: flex; flex-direction: column; gap: 6px; }
+.bp :global(.v-row) { display: flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 600;
+  color: var(--ink); opacity: 0; transform: translateY(4px);
+  transition: opacity .4s var(--ease), transform .4s var(--ease-out); }
+.bp :global(.v-row.on) { opacity: 1; transform: none; }
+.bp :global(.v-row i) { flex-shrink: 0; width: 13px; height: 13px; display: grid; place-items: center;
+  background: var(--success); color: var(--paper); font-size: 8px; font-weight: 900; font-style: normal; }
+/* виньетка 4 — уведомление */
+.bp :global(.v-back) { position: absolute; left: 22px; right: 22px; top: 38px; height: 44px;
+  border: 1.5px solid var(--hair); background: var(--paper); }
+.bp :global(.v-note) { position: absolute; left: 14px; right: 14px; top: 24px; display: flex;
+  align-items: flex-start; gap: 10px; padding: 11px; border: var(--border-thin);
+  background: var(--paper); box-shadow: 3px 3px 0 var(--shadow);
+  opacity: 0; transform: translateY(-12px);
+  transition: opacity .45s var(--ease), transform .5s var(--ease-out); }
+.bp :global(.v-note.on) { opacity: 1; transform: none; }
+.bp :global(.v-mark) { flex-shrink: 0; width: 24px; height: 24px; display: grid; place-items: center;
+  border-radius: var(--radius); background: var(--blueprint); color: var(--paper);
+  font-size: 11px; font-weight: 900; letter-spacing: -0.04em; }
+.bp :global(.v-nt) { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.bp :global(.v-nt b) { font-size: 10.5px; font-weight: 900; }
+.bp :global(.v-nt span) { font-family: var(--font-mono); font-size: 8.5px; color: var(--muted-faint); }
+.bp :global(.v-nb) { margin-top: 3px; font-size: 10.5px; line-height: 1.45; color: var(--muted); }
+.bp :global(.v-nb em) { font-style: normal; font-weight: 800; color: var(--ink); }
+.bp :global(.v-nb b) { font-weight: 800; color: var(--warning); }
+
+/* ============================================================
+   4. NETWORK — чернильная полоса с крупным заголовком
+   ============================================================ */
+.bp :global(.net) { position: relative; overflow: hidden; padding: clamp(40px, 7vh, 84px) clamp(18px, 4vw, 54px)
+  clamp(40px, 7vh, 80px); border-bottom: var(--border); background: var(--ink); color: var(--paper); }
+.bp :global(.net::before) { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-dark) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+  background-size: 40px 40px; background-position: 0 var(--gy); }
+.bp :global(.net::after) { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-dark-lg) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark-lg) 1px, transparent 1px);
+  background-size: 200px 200px; background-position: 0 calc(var(--gy) * 2.2); }
+.bp :global(.net-in) { position: relative; z-index: 2; max-width: 1180px; margin: 0 auto; }
+.bp :global(.net-h) { text-align: center; font-size: clamp(30px, 6.2vw, 88px); font-weight: 900;
+  letter-spacing: -0.055em; line-height: 0.94; text-transform: uppercase; white-space: nowrap;
+  max-width: 100%; }
+.bp :global(.net-h span) { color: rgba(242,240,235,.18);
+  -webkit-text-stroke: 1.4px rgba(242,240,235,.70); }
+.bp :global(.net-cards) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
+  align-items: end; margin-top: clamp(26px, 3.4vh, 40px); }
+.bp :global(.nc-col) { display: contents; }
+.bp :global(.nc-1) { order: 1 }
+.bp :global(.nc-2) { order: 2 }
+.bp :global(.nc-3) { order: 3 }
+.bp :global(.nc-4) { order: 4 }
+.bp :global(.nc) { display: flex; flex-direction: column; border: var(--border-paper); border-radius: var(--radius);
+  background: rgba(0,0,0,.34); box-shadow: 5px 5px 0 rgba(0,0,0,.45);
+  transition: transform .22s var(--ease-out), box-shadow .22s var(--ease-out),
+              border-color .22s var(--ease); }
+.bp :global(.nc:hover) { transform: translate(-3px,-3px); box-shadow: 9px 9px 0 rgba(0,0,0,.45);
+  border-color: var(--sky); }
+.bp :global(.nc:hover .nc-cap span) { color: var(--sky); }
+.bp :global(.nc-1) { height: clamp(252px, 30vh, 286px); }
+.bp :global(.nc-2) { height: clamp(300px, 36vh, 344px); }
+.bp :global(.nc-3) { height: clamp(348px, 42vh, 404px); }
+.bp :global(.nc-4) { height: clamp(276px, 33vh, 314px); }
+.bp :global(.nc-art) { position: relative; flex: 1; overflow: hidden; }
+.bp :global(.nc-cap) { flex-shrink: 0; min-height: 96px; padding: 17px 16px; border-top: var(--border-paper);
+  line-height: 1.42; }
+.bp :global(.nc-cap b) { display: block; font-size: 17px; font-weight: 900; letter-spacing: -0.025em;
+  line-height: 1.2; }
+.bp :global(.nc-cap span) { display: block; margin-top: 7px; font-size: 13px; color: rgba(242,240,235,.8); }
+.bp :global(.nc-svg) { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bp :global(.nc-svg [class^="nc-"]) { vector-effect: non-scaling-stroke; }
+.bp :global(.nc-face) { fill: rgba(242,240,235,.07); stroke: rgba(242,240,235,.5); stroke-width: 1.2; }
+.bp :global(.nc-edge) { fill: none; stroke: var(--paper); stroke-width: 1.8; stroke-linejoin: round; }
+.bp :global(.nc-hip) { fill: none; stroke: rgba(242,240,235,.5); stroke-width: 1; stroke-dasharray: 5 4; }
+.bp :global(.nc-dot) { fill: var(--sky); }
+.bp :global(.nc-bar) { fill: rgba(242,240,235,.72); }
+.bp :global(.nc-road) { fill: none; stroke: rgba(242,240,235,.30); stroke-width: 2.5; }
+.bp :global(.nc-min) { fill: none; stroke: rgba(242,240,235,.34); stroke-width: 1; }
+.bp :global(.nc-hatch) { fill: url(#hatch); stroke: none; }
+.bp :global(.nc-pinf) { fill: var(--ink); stroke: var(--paper); stroke-width: 1.5; }
+.bp :global(.nc-pind) { fill: var(--sky); }
+.bp :global(.nc-area) { fill: var(--sky); font-family: var(--font-mono); font-size: 9px;
+  font-weight: 600; letter-spacing: 1.2px; }
+.bp :global(.nc-xs) { fill: rgba(242,240,235,.72); font-family: var(--font-mono); font-size: 7.5px;
+  font-weight: 600; letter-spacing: 1.1px; }
+.bp :global(.nc-cell) { fill: none; stroke: rgba(242,240,235,.42); stroke-width: 1; }
+.bp :global(.nc-fill) { fill: var(--sky); stroke: none; }
+.bp :global(.nc-key) { fill: none; stroke: var(--sky); stroke-width: 2.6; stroke-linecap: square;
+  stroke-dasharray: 420; stroke-dashoffset: 420; }
+.bp :global(.nc.on .nc-key) { animation: draw 1.1s var(--ease-out) .15s forwards; }
+.bp :global(.nc-s) { fill: rgba(242,240,235,.82); font-family: var(--font-mono); font-weight: 600;
+  font-size: 9px; letter-spacing: 1.8px; }
+.bp :global(.nc-num) { fill: var(--paper); font-family: var(--font); font-size: 38px; font-weight: 900;
+  letter-spacing: -1.6px; }
+.bp :global(.nc-plus) { fill: var(--sky); }
+
+/* ============================================================
+   5. REVIEWS — арка планшетов + три отзыва
+   ============================================================ */
+.bp :global(.revs) { padding: clamp(38px, 6.4vh, 78px) clamp(18px, 4vw, 54px); border-bottom: var(--border); }
+.bp :global(.arch) { position: relative; display: flex; justify-content: center; gap: 14px;
+  padding-bottom: clamp(96px, 12vh, 138px); }
+.bp :global(.arch-col) { display: flex; flex-direction: column; gap: 14px; width: 118px; flex-shrink: 0; }
+/* Each plate carries a photograph of the trade it names (set inline from ARCH in
+   homeowner-content.tsx; the files are in /public/trades). Twelve photographs by
+   twelve different photographers will not agree on white balance, saturation or
+   time of day, and a wall of full-colour stock is exactly the generic-SaaS look
+   DESIGN.md lists as an anti-reference. So the resting state blends each photo
+   to LUMINOSITY over neutral `--muted`: the picture keeps its structure and
+   loses its colour cast, which makes the arch read as one greyscale drawing
+   sheet and keeps the band inside the ~80% neutral share of the distribution
+   rule. Hover restores the real colour on that one plate — the photo IS the
+   hover reward, alongside the donor's lift.
+   `background-color` must stay in the shorthand-free form here: the blend needs
+   a colour layer UNDER the image, and `background: <color>` would wipe the
+   inline `background-image` the component sets. */
+.bp :global(.plate) { position: relative; overflow: hidden; border: var(--border-thin); border-radius: var(--radius);
+  background-color: var(--muted); background-size: cover; background-position: 50% 50%;
+  background-blend-mode: luminosity; }
+/* The 45° hatch stays ON TOP of the photograph — it is the drawing overlay that
+   ties the picture back to the blueprint, not a fill for an empty plate. */
+.bp :global(.plate::before) { content: ""; position: absolute; inset: 0;
+  background-image: repeating-linear-gradient(45deg, rgba(24,84,160,.10) 0 1px, transparent 1px 7px); }
+.bp :global(.plate) { transition: transform .22s var(--ease-out), box-shadow .22s var(--ease-out),
+  border-color .22s var(--ease), background-color .22s var(--ease); }
+.bp :global(.plate:hover) { transform: translate(-2px,-2px); box-shadow: 4px 4px 0 var(--shadow);
+  border-color: var(--blueprint); background-color: transparent; background-blend-mode: normal; }
+.bp :global(.plate:hover .plate-l) { color: var(--blueprint); border-color: var(--blueprint); }
+.bp :global(.plate-l) { position: absolute; left: 7px; right: 7px; bottom: 7px; z-index: 2;
+  transition: color .2s var(--ease), border-color .2s var(--ease);
+  padding: 4px 6px; background: var(--paper); border: 1px solid var(--hair);
+  font-family: var(--font-mono); font-size: 7.5px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp :global(.arch-mid) { position: absolute; left: 0; right: 0; top: 248px; z-index: 5;
+  display: flex; flex-direction: column; align-items: center; text-align: center; }
+.bp :global(.arch-tag) { display: inline-block; padding: 7px 16px; border: var(--border);
+  border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; }
+.bp :global(.arch-h) { margin-top: 20px; max-width: 700px; font-size: clamp(26px, 3.6vw, 46px);
+  font-weight: 900; letter-spacing: -0.05em; line-height: 1.08; text-transform: uppercase; }
+.bp :global(.arch-h span) { color: var(--blueprint); }
+.bp :global(.revs-grid) { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 34px;
+  border: var(--border); border-radius: var(--radius); background: var(--paper);
+  box-shadow: 5px 5px 0 var(--shadow); }
+.bp :global(.rev) { padding: 22px 20px 20px; border-right: var(--border-thin);
+  transition: background .2s var(--ease); }
+.bp :global(.rev:hover) { background: var(--paper-deep); }
+.bp :global(.rev:last-child) { border-right: none; }
+.bp :global(.rate) { display: flex; gap: 4px; }
+.bp :global(.rate i) { width: 9px; height: 9px; background: var(--blueprint);
+  transform: scale(0); transition: transform .3s var(--ease-out); }
+.bp :global(.rv.on .rate i) { transform: scale(1); }
+.bp :global(.rate i:nth-child(2)) { transition-delay: .06s }
+.bp :global(.rate i:nth-child(3)) { transition-delay: .12s }
+.bp :global(.rate i:nth-child(4)) { transition-delay: .18s }
+.bp :global(.rate i:nth-child(5)) { transition-delay: .24s }
+.bp :global(.rev-q) { margin-top: 14px; font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); }
+.bp :global(.rev-who) { display: flex; align-items: center; gap: 11px; margin-top: 18px;
+  padding-top: 14px; border-top: 1.5px solid var(--hair); }
+.bp :global(.rev-av) { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--radius);
+  background: var(--ink); color: var(--paper); font-size: 13px; font-weight: 900; }
+.bp :global(.rev:nth-child(2) .rev-av) { background: var(--blueprint); }
+.bp :global(.rev:nth-child(3) .rev-av) { background: var(--success); }
+.bp :global(.rev:nth-child(2) .rate i) { background: var(--blueprint); }
+.bp :global(.rev:nth-child(3) .rate i) { background: var(--success); }
+.bp :global(.rev-n) { font-size: 12.5px; font-weight: 900; }
+.bp :global(.rev-r) { margin-top: 2px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+/* ============================================================
+   6. CTA + FOOTER
+   ============================================================ */
+.bp :global(.cta) { padding: clamp(40px, 7vh, 88px) clamp(18px, 4vw, 54px); border-bottom: var(--border);
+  background: var(--ink); color: var(--paper); text-align: center; }
+.bp :global(.cta-in) { max-width: 900px; margin: 0 auto; }
+.bp :global(.cta-q) { font-size: clamp(22px, 3vw, 42px); font-weight: 900; letter-spacing: -0.045em;
+  line-height: 1.08; text-transform: uppercase; color: rgba(242,240,235,.66); }
+.bp :global(.cta-a) { margin-top: 8px; font-size: clamp(22px, 3vw, 42px); font-weight: 900;
+  letter-spacing: -0.045em; line-height: 1.08; text-transform: uppercase; }
+.bp :global(.cta-btn) { display: inline-flex; align-items: center; gap: 12px; margin-top: 32px;
+  padding: 17px 30px; border: var(--border-paper); border-radius: var(--radius);
+  background: var(--paper); color: var(--ink); box-shadow: 4px 4px 0 rgba(242,240,235,.22);
+  font-size: 12px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase;
+  transition: transform .15s var(--ease), box-shadow .15s var(--ease); }
+.bp :global(.cta-btn:hover) { transform: translate(-1px,-1px); box-shadow: 6px 6px 0 rgba(242,240,235,.22); }
+.bp :global(.cta-btn .ic) { width: 15px; height: 15px; }
+.bp :global(.foot) { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center;
+  padding: 22px clamp(18px, 4vw, 54px) 32px; }
+.bp :global(.foot-b) { display: flex; align-items: center; gap: 10px; }
+.bp :global(.foot-links) { display: flex; flex-wrap: wrap; gap: 22px; }
+.bp :global(.foot-links a), .bp :global(.foot span) { font-size: 10.5px; font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--muted); }
+.bp :global(.foot-links a:hover) { color: var(--ink); }
+.bp :global(.foot-links a.lead) { color: var(--blueprint); }
+
+.bp :global(.nojs) { padding: 14px 20px; border-bottom: var(--border); background: var(--warning);
+  color: var(--ink); font-size: 12px; font-weight: 700; text-align: center; }
+
+@media (max-width: 1080px) {
+  .bp :global(.net-h) { letter-spacing: -0.03em; }
+  .bp :global(.net-h span) { -webkit-text-stroke-width: 1.2px; }
+  .bp :global(.grid4) { grid-template-columns: repeat(2, 1fr); }
+  .bp :global(.st:nth-child(2)) { border-right: none; }
+  .bp :global(.st:nth-child(1)), .bp :global(.st:nth-child(2)) { border-bottom: var(--border-thin); }
+  .bp :global(.net-cards) { grid-template-columns: repeat(2, 1fr); align-items: start; }
+  .bp :global(.nc-col) { display: flex; flex-direction: column; gap: 18px; }
+  .bp :global(.nc-1), .bp :global(.nc-3) { height: 300px; }
+  .bp :global(.nc-2) { height: 334px; }
+  .bp :global(.nc-4) { height: 266px; }
+  .bp :global(.net-h) { white-space: normal; }
+  .bp :global(.arch-col) { display: none; }
+  .bp :global(.arch) { display: block; padding-bottom: 0; }
+  .bp :global(.arch-mid) { position: static; align-items: flex-start; text-align: left; }
+  .bp :global(.arch-h) { max-width: none; font-size: clamp(23px, 5.6vw, 36px); }
+  .bp :global(.revs-grid) { grid-template-columns: 1fr; }
+  .bp :global(.rev) { border-right: none; border-bottom: var(--border-thin); }
+  .bp :global(.rev:last-child) { border-bottom: none; }
+}
+@media (max-width: 700px) {
+  .bp :global(.nav) { grid-template-columns: auto 1fr auto; --hmark: 82px; }
+  .bp :global(.nav-tag) { display: none; }
+  /* 10px of vertical padding against a 34.9px-tall mark keeps the bar at ~55px,
+     i.e. the height it had when the mark was a clipped 26px chip. */
+  .bp :global(.brand) { padding: 10px 15px; gap: 5px; }
+  .bp :global(.brand-txt) { font-size: 15px; }
+  .bp :global(.nav-cta) { padding: 13px 14px; font-size: 9.5px; letter-spacing: 0.08em; gap: 7px; }
+  .bp :global(.nav-cta .ic-sm) { width: 13px; height: 13px; }
+
+  .bp :global(.hero) { padding-left: 16px; padding-right: 16px; }
+  /* `.hero-top` centres its children, so the h1 shrank to fit-content and
+     `text-wrap: balance` then split it into a narrow stack of 2–3 word rows.
+     Full width + normal wrapping lets each line run the whole 16px-gutter
+     measure, which is what the owner asked for. Still centred — the
+     `text-align: center` lives on `.hero-top`. */
+  /* Row count, not size, is what the owner reads as "too tall": at 7.4vw the
+     headline came to FIVE rows on a 375px phone, because "DESCRIBE YOUR
+     PROJECT." alone measured ~343px against 343px of available width and broke
+     in two. Inter 900 caps advance ~13.17em over those 22 characters, less
+     0.045em/char of tracking = ~12.18em, so the widest clause fits iff
+     font-size <= (100vw - 32px) / 12.18 — i.e. ~7.4vw is exactly the width at
+     which it fails. 6.6vw lands it at ~301px with ~12% headroom at 375px and
+     still clears 320px (257px against 288px). With `.brm` breaking the second
+     clause, the headline is now three deliberate rows:
+        DESCRIBE YOUR PROJECT. / GET REAL / CONTRACTOR QUOTES.
+     The clamp floor drops 23px -> 20px so it can never overtake 6.6vw on the
+     narrow phones the floor exists for. */
+  .bp :global(.h1) { width: 100%; text-wrap: normal;
+    font-size: clamp(20px, 6.6vw, 78px); letter-spacing: -0.045em; }
+  .bp :global(.brm) { display: inline; }
+  /* The knockout's 13px side padding is ~1 character of the line budget at this
+     size; 8px keeps the plate reading as a plate without spending it. */
+  .bp :global(.h1 .inv) { padding: 0 8px 2px; }
+  .bp :global(.h1-sub) { font-size: 13.5px; }
+  .bp :global(.pill) { font-size: 9.5px; letter-spacing: 0.14em; }
+
+  /* окно мастера */
+  .bp :global(.win-head) { padding: 11px 14px; gap: 10px; }
+  .bp :global(.win-step) { font-size: 10px; letter-spacing: 0.14em; }
+  .bp :global(.tick) { width: 12px; }
+  .bp :global(.tick.now) { width: 22px; }
+  .bp :global(.guess) { margin-left: 16px; margin-right: 16px; }
+  .bp :global(.ups) { padding-left: 16px; padding-right: 16px; }
+  .bp :global(.desc) { min-height: 148px; padding: 15px 16px 4px; }
+  .bp :global(.tools) { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 16px; }
+  .bp :global(.tool) { width: 100%; height: 44px; justify-content: center; }
+  .bp :global(.cat-wrap) { width: 100%; }
+  .bp :global(.go) { height: 48px; }
+  /* главная кнопка выносится под карточку */
+  .bp :global(.win-wrap) { padding-bottom: 62px; }
+  .bp :global(.go-refine) { position: absolute; left: 0; right: 0; top: calc(100% + 14px);
+    width: auto; margin: 0; }
+  /* выпадашка прижимается к правому краю кнопки и не вылезает за экран */
+  .bp :global(.cats) { left: auto; right: 0; width: min(274px, calc(100vw - 44px)); }
+  .bp :global(.qs) { padding: 16px; }
+  .bp :global(.q-in), .bp :global(.c-in) { height: 44px; font-size: 16px; }   /* 16px — иначе iOS зумит при фокусе */
+  .bp :global(.chip) { min-height: 38px; padding: 10px 13px; font-size: 11.5px; }
+  .bp :global(.cat) { min-height: 38px; padding: 10px 13px; font-size: 11.5px; }
+  .bp :global(.scope-head) { flex-wrap: wrap; }
+  .bp :global(.sheet) { padding: 16px; }
+  .bp :global(.pane-foot) { flex-direction: column-reverse; align-items: stretch; gap: 10px; margin-top: 20px; }
+  .bp :global(.back) { padding: 12px 0; text-align: center; }
+  .bp :global(.pane.done) { min-height: 210px; padding: 32px 18px; }   /* see the .pane.done note above */
+  .bp :global(.done-h) { font-size: 19px; }
+  .bp :global(.restart) { padding: 10px 0; }
+
+  /* белые карточки — сетка 2×2 */
+  .bp :global(.grid4) { grid-template-columns: repeat(2, 1fr); }
+  .bp :global(.st) { padding: 12px; border-right: var(--border-thin); border-bottom: none; }
+  .bp :global(.st:nth-child(2n)) { border-right: none; }
+  .bp :global(.st:nth-child(-n+2)) { border-bottom: var(--border-thin); }
+  .bp :global(.vig) { height: 112px; }
+  .bp :global(.vig-in) { width: 152%; height: 152%; transform: scale(.658); transform-origin: top left; }
+  .bp :global(.st-n) { margin-top: 12px; }
+  .bp :global(.st-t) { margin-top: 7px; font-size: 12.5px; }
+  .bp :global(.st-b) { margin-top: 7px; font-size: 11.5px; }
+  /* чёрные карточки — сетка 2×2, суммы колонок равны */
+  .bp :global(.net-cards) { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .bp :global(.nc-col) { gap: 12px; }
+  .bp :global(.nc-1), .bp :global(.nc-3) { height: 232px; }
+  .bp :global(.nc-2) { height: 258px; }
+  .bp :global(.nc-4) { height: 206px; }
+  .bp :global(.nc-cap) { min-height: 0; padding: 12px; }
+  .bp :global(.nc-cap b) { font-size: 14px; }
+  .bp :global(.nc-cap span) { margin-top: 5px; font-size: 11.5px; }
+  /* "Trusted Contractors" was the quietest band headline on a phone — up from
+     the donor's clamp(26px, 7.2vw, 46px) (owner's call). It still wraps to two
+     lines inside the 16px gutters at 320px. */
+  .bp :global(.net-h) { font-size: clamp(34px, 9.6vw, 60px); letter-spacing: -0.03em; line-height: 1.02; }
+  .bp :global(.net-h span) { -webkit-text-stroke-width: 1px; }
+  .bp :global(.cform) { grid-template-columns: 1fr; }
+  .bp :global(.trust-row) { flex-direction: column; gap: 10px; }
+  .bp :global(.tr) { justify-content: flex-start; padding: 15px 18px; }
+  .bp :global(.revs-grid), .bp :global(.grid4) { box-shadow: 3px 3px 0 var(--shadow); }
+  .bp :global(.foot) { grid-template-columns: 1fr; gap: 14px;
+    padding-bottom: calc(30px + env(safe-area-inset-bottom, 0px)); }
+  .bp :global(.foot-links) { gap: 16px; }
+}
+@media (max-width: 380px) {
+  .bp :global(.brand-txt) { display: none; }
+  .bp :global(.nav-cta) { font-size: 9px; padding: 13px 12px; }
+  .bp :global(.tool) { font-size: 10px; letter-spacing: 0.08em; padding: 0 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bp, .bp :global(*), .bp :global(*::before), .bp :global(*::after) {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; }
+  .bp :global(.rv) { opacity: 1; transform: none; }
+  .bp :global(.anim) { opacity: 1; animation: none; }
+}

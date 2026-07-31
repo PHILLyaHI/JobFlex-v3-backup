@@ -17,9 +17,9 @@ import { computeFenceLayout } from "./fenceGeometry";
 import { buildFenceLineItems, type FenceLabels } from "./fencePricing";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { reportPlanLimit, ensureWithinLimit } from "@/stores/usePlanLimitStore";
-import { fetchPropertyBoundary, type BuildingRing } from "@/actions/fenceBoundary";
-import { latLngToLocalFeet, simplifyPath, pointInRingFt, ringCentroidFt } from "./mapProjection";
-import type { BuildingFootprint, PathPoint } from "./fenceTypes";
+import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
+import { latLngToLocalFeet, simplifyPath, buildingsToFootprints } from "./mapProjection";
+import type { BuildingFootprint } from "./fenceTypes";
 import { FenceModel3D, type FenceModel3DHandle } from "./FenceModel3D";
 import { FenceDrawMap } from "./FenceDrawMap";
 import { FenceToolbelt } from "./FenceToolbelt";
@@ -34,26 +34,11 @@ type View = "draw" | "3d";
 const NO_BUILDINGS: BuildingFootprint[] = [];
 
 const PARCEL_SIMPLIFY_FT = 1; // Douglas–Peucker tolerance for trimming redundant parcel vertices
-const BUILDING_SIMPLIFY_FT = 0.5; // buildings keep more corner fidelity than the editable parcel
 
-// Convert fetched building rings (lat/lng) into local-feet footprints, tagging the
-// ones on the subject parcel. Without a parcel ring, the building containing the
-// address pin (local origin) is the subject.
-function toFootprints(raw: BuildingRing[], origin: { lat: number; lng: number }, parcelFt: PathPoint[] | null): BuildingFootprint[] {
-  const out: BuildingFootprint[] = [];
-  for (const b of raw) {
-    const ring = simplifyPath(
-      b.ring.map((ll) => latLngToLocalFeet(origin, ll)),
-      BUILDING_SIMPLIFY_FT,
-    );
-    if (ring.length < 3) continue;
-    const subject = parcelFt
-      ? pointInRingFt(ringCentroidFt(ring), parcelFt)
-      : pointInRingFt({ x: 0, y: 0 }, ring);
-    out.push({ ring, heightFt: b.heightFt, role: subject ? "subject" : "neighbor" });
-  }
-  return out;
-}
+// `toFootprints` moved to ./mapProjection as `buildingsToFootprints` — the
+// blueprint Fence studio's 3D island needs the same conversion, and one copy
+// beats two. Same body, same tolerance; only the call site changed.
+const toFootprints = buildingsToFootprints;
 
 export function FenceStudio() {
   const router = useRouter();

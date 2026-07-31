@@ -14,22 +14,70 @@
 //   polyfill are environment shims, not behavior, and are dropped (the app
 //   always runs in a browser that has matchMedia).
 
+import { scanReceipt, saveReceiptExpense } from "@/actions/receiptOcr";
+import { deleteJobExpense } from "@/actions/expenses";
+import { deleteChangeOrder, sendChangeOrder } from "@/actions/changeOrders";
+import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
+import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
-  MONTHLY,
-  ROLLUP,
   EXPENSE_CATEGORIES,
-  STAGE_JOBS,
-  EXPENSES_SEED,
-  ORDERS_SEED,
-  INVOICES,
-  EXP_SEQ_START,
-  type Expense,
   type ChangeOrder,
+  type Expense,
+  type Invoice,
+  type MonthPoint,
+  type Rollup,
 } from "./financials-data";
 
+/** `job` holds a real Job ID once a receipt is staged — it is submitted as-is. */
 type Staged = { vendor: string; total: number; category: string; job: string };
 
-export function initFinancialsContent(content: HTMLElement): () => void {
+/** A job a receipt can be charged to. */
+export type FinancialsJob = { id: string; title: string; status: string };
+
+/**
+ * Everything on this page is read from the database in
+ * src/app/dashboard/financials/page.tsx and handed in here. There are no
+ * defaults worth having: an absent book is an EMPTY book, which the page's
+ * empty states already say out loud — a fixture fallback would quietly show
+ * somebody else's numbers.
+ */
+export type FinancialsOptions = {
+  /** The org's real jobs. Empty is handled: the drop zone says so rather than
+   *  staging a receipt that cannot be saved. */
+  jobs?: FinancialsJob[];
+  monthly?: MonthPoint[];
+  rollup?: Rollup;
+  expenses?: Expense[];
+  orders?: ChangeOrder[];
+  invoices?: Invoice[];
+};
+
+const EMPTY_ROLLUP: Rollup = {
+  revenue30d: 0,
+  expenses30d: 0,
+  profit30d: 0,
+  marginPct: 0,
+  pipelineValue: 0,
+  invoicesPending: 0,
+  invoicesOverdue: 0,
+  changeOrdersPending: 0,
+};
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("Only drafts can be deleted.", "Not found"). Surface that text; fall back
+ *  to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+export function initFinancialsContent(
+  content: HTMLElement,
+  options: FinancialsOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -58,14 +106,14 @@ export function initFinancialsContent(content: HTMLElement): () => void {
     timers.add(id);
   };
 
-  // Runtime mutations (save / delete / send) — clone the seeds per mount so a
-  // remount starts from the donor's load-time state.
-  let expensesData: Expense[] = EXPENSES_SEED.map((e) => ({ ...e }));
-  let ordersData: ChangeOrder[] = ORDERS_SEED.map((o) => ({ ...o }));
-  const invoicesData = INVOICES;
-  const monthly = MONTHLY;
-  const rollup = ROLLUP;
-  let expSeq = EXP_SEQ_START;
+  // The server's rows, copied so the local edits made after a successful write
+  // (an appended expense, a change order that just went out) cannot mutate the
+  // props React is still holding.
+  let expensesData: Expense[] = (options.expenses ?? []).map((e) => ({ ...e }));
+  let ordersData: ChangeOrder[] = (options.orders ?? []).map((o) => ({ ...o }));
+  const invoicesData: Invoice[] = options.invoices ?? [];
+  const monthly: MonthPoint[] = options.monthly ?? [];
+  const rollup: Rollup = { ...EMPTY_ROLLUP, ...(options.rollup ?? {}) };
 
   // Dismiss Lead Center banners (smooth height + gap collapse) — inert on this
   // page (no banner in the markup), kept for donor parity with shared shells.
@@ -94,6 +142,18 @@ export function initFinancialsContent(content: HTMLElement): () => void {
   });
 
   const fin: { tab: string; staged: Staged | null } = { tab: "overview", staged: null };
+  const jobs: FinancialsJob[] = options.jobs ?? [];
+  /** Blocks a double submit while the expense is on the wire. */
+  let savingExpense = false;
+
+  /** Attribute-safe text for the option/vendor strings written into markup. */
+  function esc(s: string) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
 
   function money(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
@@ -113,13 +173,27 @@ export function initFinancialsContent(content: HTMLElement): () => void {
       padR = 10,
       padT = 12,
       padB = 26;
+    // A brand-new org has no months and no money. The donor never had to draw
+    // that: `gw` would divide by zero and `step` would collapse to 0, so every
+    // bar height became NaN and the SVG rendered as a blank box with no
+    // explanation in it.
+    const chartEl = $("#revChart");
+    if (!monthly.length) {
+      if (chartEl)
+        chartEl.innerHTML =
+          '<div class="fi-chart-empty">No paid invoices or job expenses yet — the last twelve months will draw here.</div>';
+      paintHeadStats(null);
+      return;
+    }
     const max = Math.max.apply(
       null,
       monthly.map(function (m) {
         return Math.max(m.revenue, m.expenses);
       }),
     );
-    const step = Math.ceil(max / 4 / 10000) * 10000;
+    // Floor the scale at $10k a division so a quiet month still has a readable
+    // axis instead of a zero-height grid.
+    const step = Math.max(10000, Math.ceil(max / 4 / 10000) * 10000);
     const top = step * 4;
     const iw = W - padL - padR,
       ih = H - padT - padB;
@@ -247,8 +321,7 @@ export function initFinancialsContent(content: HTMLElement): () => void {
       base +
       '"/>';
     svg += "</svg>";
-    const chart = $("#revChart");
-    if (chart) chart.innerHTML = svg;
+    if (chartEl) chartEl.innerHTML = svg;
 
     paintHeadStats(null);
   }
@@ -471,27 +544,31 @@ export function initFinancialsContent(content: HTMLElement): () => void {
   // ================= STAT CARDS AND ATTENTION =================
   function renderStats() {
     const cards: Array<{
+      k: string;
       l: string;
       v: string;
       h: string;
       d?: { txt: string; up: boolean };
     }> = [
-      { l: "Revenue · 30d", v: money(rollup.revenue30d), h: "Paid invoices" },
-      { l: "Expenses · 30d", v: money(rollup.expenses30d), h: "Job-level" },
+      { k: "revenue", l: "Revenue · 30d", v: money(rollup.revenue30d), h: "Paid invoices" },
+      { k: "expenses", l: "Expenses · 30d", v: money(rollup.expenses30d), h: "Job-level" },
       {
+        k: "profit",
         l: "Profit · 30d",
         v: money(rollup.profit30d),
         h: "Revenue − expenses",
         d: { txt: rollup.marginPct.toFixed(1) + "%", up: rollup.marginPct >= 0 },
       },
-      { l: "Pipeline value", v: money(rollup.pipelineValue), h: "Open proposals" },
+      { k: "pipeline", l: "Pipeline value", v: money(rollup.pipelineValue), h: "Open proposals" },
     ];
     const grid = $("#statGrid");
     if (!grid) return;
     grid.innerHTML = cards
       .map(function (c) {
         return (
-          '<div class="stat"><div class="kpi-lbl">' +
+          '<div class="stat" data-stat="' +
+          c.k +
+          '"><div class="kpi-lbl">' +
           c.l +
           "</div>" +
           '<div class="stat-val">' +
@@ -513,6 +590,28 @@ export function initFinancialsContent(content: HTMLElement): () => void {
       })
       .join("");
   }
+  /**
+   * Rewrite the figures the roll-up owns, in place.
+   *
+   * NOT renderStats(): rebuilding `#statGrid`'s innerHTML throws away all four
+   * cards to change two numbers, which replays their entrance stagger and
+   * re-runs the count-up on values that did not move.
+   */
+  function patchStats() {
+    const set = (key: string, text: string) => {
+      const el = root.querySelector<HTMLElement>('[data-stat="' + key + '"] .stat-val');
+      if (el && el.textContent !== text) el.textContent = text;
+    };
+    set("expenses", money(rollup.expenses30d));
+    set("profit", money(rollup.profit30d));
+    const delta = root.querySelector<HTMLElement>('[data-stat="profit"] .stat-delta');
+    if (delta) {
+      const up = rollup.marginPct >= 0;
+      delta.className = "stat-delta " + (up ? "tone-ok" : "tone-bad");
+      delta.textContent = (up ? "▲" : "▼") + " " + rollup.marginPct.toFixed(1) + "%";
+    }
+  }
+
   function renderAttention() {
     const rows = [
       {
@@ -554,89 +653,117 @@ export function initFinancialsContent(content: HTMLElement): () => void {
   }
 
   // ================= TABLES =================
-  function renderExpenses() {
-    const total = expensesData.reduce(function (a, e) {
-      return a + e.amount;
-    }, 0);
-    const totalEl = $("#expTotal");
-    if (totalEl) totalEl.textContent = money(total) + " · " + expensesData.length + " items";
-    const body = $("#expBody");
-    if (body)
-      body.innerHTML = expensesData
-        .map(function (e) {
-          return (
-            '<tr class="prow" data-exp="' +
-            e.id +
-            '">' +
-            '<td><div class="fi-title">' +
-            e.job +
-            "</div></td>" +
-            '<td><span class="pstatus cat">' +
-            e.category +
-            "</span></td>" +
-            '<td><span class="fi-note">' +
-            (e.note || "—") +
-            "</span></td>" +
-            '<td><span class="pt-mono">' +
-            e.when +
-            "</span></td>" +
-            '<td class="num"><span class="pt-money">' +
-            money(e.amount) +
-            "</span></td>" +
-            '<td class="num"><span class="row-act">' +
-            (e.receipt
-              ? '<button class="icon-sq" type="button" data-flash-icon aria-label="Open receipt"><svg class="ic"><use href="#i-ext"/></svg></button>'
-              : "") +
-            '<button class="icon-sq danger" type="button" data-act="del-exp" aria-label="Delete expense"><svg class="ic"><use href="#i-trash"/></svg></button>' +
-            "</span></td></tr>"
-          );
-        })
-        .join("");
-    const empty = $("#expEmpty");
-    if (empty) empty.classList.toggle("is-hidden", expensesData.length !== 0);
+  /** The job cell is a real destination now — the same link the classic
+   *  expenses table used. */
+  function jobCell(jobId: string | null, title: string) {
+    if (!jobId) return '<div class="fi-title">' + esc(title) + "</div>";
+    return (
+      '<a class="fi-title fi-link" href="/dashboard/jobs/' +
+      esc(jobId) +
+      '">' +
+      esc(title) +
+      "</a>"
+    );
   }
+
+  /** One expense row. Extracted so a receipt just saved can be inserted on its
+   *  own instead of the whole tbody being rebuilt around it. */
+  function expenseRowHtml(e: Expense) {
+    return (
+      '<tr class="prow" data-exp="' +
+      esc(e.id) +
+      '">' +
+      "<td>" +
+      jobCell(e.jobId, e.job) +
+      "</td>" +
+      '<td><span class="pstatus cat">' +
+      esc(e.category) +
+      "</span></td>" +
+      '<td><span class="fi-note">' +
+      (e.note ? esc(e.note) : "—") +
+      "</span></td>" +
+      '<td><span class="pt-mono">' +
+      esc(e.when) +
+      "</span></td>" +
+      '<td class="num"><span class="pt-money">' +
+      money(e.amount) +
+      "</span></td>" +
+      '<td class="num"><span class="row-act">' +
+      // The receipt button used to flash a tick and put itself back (the donor's
+      // `data-flash-icon`). It is the stored image now — blob URL when a token
+      // is configured, the data URL otherwise — opened in a new tab.
+      (e.receiptUrl
+        ? '<a class="icon-sq" href="' +
+          esc(e.receiptUrl) +
+          '" target="_blank" rel="noreferrer" aria-label="Open receipt"><svg class="ic"><use href="#i-ext"/></svg></a>'
+        : "") +
+      '<button class="icon-sq danger" type="button" data-act="del-exp" aria-label="Delete expense"><svg class="ic"><use href="#i-trash"/></svg></button>' +
+      "</span></td></tr>"
+    );
+  }
+
+  function renderExpenses() {
+    syncExpenseTotals();
+    const body = $("#expBody");
+    if (body) body.innerHTML = expensesData.map(expenseRowHtml).join("");
+  }
+
+  /** The row actions a change order's CURRENT status allows.
+   *
+   *  Both server actions refuse anything that is not a DRAFT
+   *  (`sendChangeOrder`: "Only draft change orders can be sent.";
+   *  `deleteChangeOrder`: "Only drafts can be deleted."). The donor offered
+   *  Delete on every row, so three rows in four presented a button that could
+   *  only ever fail — the classic table showed them on drafts alone, and so
+   *  does this. */
+  function orderActs(o: ChangeOrder) {
+    if (o.status !== "DRAFT") return "";
+    return (
+      '<button class="icon-sq" type="button" data-act="send-co" aria-label="Send change order"><svg class="ic"><use href="#i-send"/></svg></button>' +
+      '<button class="icon-sq danger" type="button" data-act="del-co" aria-label="Delete change order"><svg class="ic"><use href="#i-trash"/></svg></button>'
+    );
+  }
+
   function renderOrders() {
-    const total = ordersData.reduce(function (a, o) {
-      return a + o.amount;
-    }, 0);
-    const totalEl = $("#coTotal");
-    if (totalEl) totalEl.textContent = money(total) + " · " + ordersData.length + " orders";
+    syncOrderTotals();
     const body = $("#coBody");
     if (body)
       body.innerHTML = ordersData
         .map(function (o) {
           return (
             '<tr class="prow" data-co="' +
-            o.id +
+            esc(o.id) +
             '">' +
             '<td><div class="fi-title">' +
-            o.title +
+            esc(o.title) +
             "</div></td>" +
-            '<td><span class="fi-note">' +
-            o.job +
-            "</span></td>" +
+            "<td>" +
+            (o.jobId
+              ? '<a class="fi-note fi-link" href="/dashboard/jobs/' +
+                esc(o.jobId) +
+                '">' +
+                esc(o.job) +
+                "</a>"
+              : '<span class="fi-note">' + esc(o.job) + "</span>") +
+            "</td>" +
             '<td><span class="pstatus co--' +
             lower(o.status) +
             '">' +
             lower(o.status) +
             "</span></td>" +
             '<td><span class="pt-mono">' +
-            o.when +
+            esc(o.when) +
             "</span></td>" +
             '<td class="num"><span class="pt-money">' +
-            money(o.amount) +
+            (o.amount < 0 ? "−" : "") +
+            money(Math.abs(o.amount)) +
             "</span></td>" +
             '<td class="num"><span class="row-act">' +
-            (o.status === "DRAFT"
-              ? '<button class="icon-sq" type="button" data-act="send-co" aria-label="Send"><svg class="ic"><use href="#i-send"/></svg></button>'
-              : "") +
-            '<button class="icon-sq danger" type="button" data-act="del-co" aria-label="Delete"><svg class="ic"><use href="#i-trash"/></svg></button>' +
+            orderActs(o) +
             "</span></td></tr>"
           );
         })
         .join("");
-    const empty = $("#coEmpty");
-    if (empty) empty.classList.toggle("is-hidden", ordersData.length !== 0);
   }
   function renderInvoices() {
     const paid = invoicesData
@@ -656,22 +783,34 @@ export function initFinancialsContent(content: HTMLElement): () => void {
         .map(function (i) {
           return (
             '<tr class="prow">' +
-            '<td><div class="fi-title">' +
-            i.num +
-            "</div></td>" +
+            "<td>" +
+            // An invoice is billed off a proposal, so the number opens the
+            // contract behind it — the classic invoices table's link.
+            (i.proposalId
+              ? '<a class="fi-title fi-link" href="/dashboard/proposals/' +
+                esc(i.proposalId) +
+                '">' +
+                esc(i.num) +
+                "</a>"
+              : '<div class="fi-title">' + esc(i.num) + "</div>") +
+            "</td>" +
             '<td><span class="fi-note">' +
-            i.client +
+            esc(i.client) +
             "</span></td>" +
             '<td><span class="pstatus inv--' +
             lower(i.status) +
             '">' +
             lower(i.status) +
+            "</span>" +
+            // Pending is not the same problem as pending-and-late; the classic
+            // table flagged it and the attention list counts it.
+            (i.overdue ? '<span class="inv-late">overdue</span>' : "") +
+            "</td>" +
+            '<td><span class="pt-mono">' +
+            esc(i.provider) +
             "</span></td>" +
             '<td><span class="pt-mono">' +
-            i.provider +
-            "</span></td>" +
-            '<td><span class="pt-mono">' +
-            i.due +
+            esc(i.due) +
             "</span></td>" +
             '<td class="num"><span class="pt-money' +
             (i.status === "PAID" ? " banked" : "") +
@@ -713,68 +852,401 @@ export function initFinancialsContent(content: HTMLElement): () => void {
       if (b && !b.classList.contains("active") && b.dataset.tab) switchTab(b.dataset.tab);
     });
 
-  // receipt recognition: fill in the parsed fields for review
-  function stageReceipt() {
-    const staged: Staged = {
-      vendor: "Bothell Building Supply",
-      total: 1284.4,
-      category: "Materials",
-      job: expensesData[0].job,
-    };
-    fin.staged = staged;
+  // ================= RECEIPT CAPTURE (real) =================
+  // The donor staged a hardcoded "Bothell Building Supply · $1,284.40" the
+  // moment you clicked the box — nothing was uploaded and nothing was saved.
+  // The whole server side already existed and was simply never called:
+  //   scanReceipt({ jobId, dataUrl })        → OCR (returns a stub when OpenAI is off)
+  //   saveReceiptExpense({ …, dataUrl, … })  → Vercel Blob upload + JobExpense create
+  // Both are org-scoped and manager-gated on the server.
+
+  /** The picked file, held between the scan and the save so the SAME bytes are
+   *  the ones uploaded — re-reading the input can miss (the user may have
+   *  cleared it) and would upload a different file than the one reviewed. */
+  let rcDataUrl: string | null = null;
+  let rcFilename = "receipt.jpg";
+
+  function jobOptions(selected: string) {
+    if (!jobs.length) {
+      return '<option value="">No jobs yet — create one first</option>';
+    }
+    return jobs
+      .map(function (j) {
+        return (
+          '<option value="' + esc(j.id) + '"' + (j.id === selected ? " selected" : "") + ">" +
+          esc(j.title) +
+          "</option>"
+        );
+      })
+      .join("");
+  }
+
+  function rcNote(msg: string, tone?: "bad") {
+    const el = $("#rcNote");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle("is-hidden", !msg);
+    el.classList.toggle("rc-note--bad", tone === "bad");
+  }
+
+  /** Read the picked file, run it past the OCR, and stage the result for review. */
+  async function captureReceipt(file: File) {
+    if (!jobs.length) {
+      rcNote("A receipt is charged to a job, and this org has none yet.", "bad");
+      return;
+    }
+    if (!/^image\//.test(file.type)) {
+      rcNote("That is not an image — receipts upload as JPG, PNG or WebP.", "bad");
+      return;
+    }
+    // 8MB: comfortably above a phone photo, below anything that would stall the
+    // vision call or the blob upload.
+    if (file.size > 8 * 1024 * 1024) {
+      rcNote("That image is over 8MB — try a smaller photo.", "bad");
+      return;
+    }
+
+    rcFilename = file.name || "receipt.jpg";
+    rcNote("Reading the receipt…");
+    $("#rcDrop")?.classList.add("is-busy");
+
+    try {
+      rcDataUrl = await new Promise<string>(function (resolve, reject) {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result || ""));
+        fr.onerror = () => reject(new Error("Could not read that file"));
+        fr.readAsDataURL(file);
+      });
+
+      // scanReceipt is job-scoped on the server (it checks the job belongs to
+      // the org before spending a vision call), so it needs a job up front. The
+      // first live job is the default; the reviewer can change it before saving.
+      const res = await scanReceipt({ jobId: jobs[0].id, dataUrl: rcDataUrl });
+      if (!res.ok) {
+        rcNote(res.error || "Could not read that receipt.", "bad");
+        return;
+      }
+      const ocr = res.ocr;
+      fin.staged = {
+        vendor: ocr.vendor || "",
+        total: Number(ocr.total) || 0,
+        category: ocr.category || EXPENSE_CATEGORIES[0],
+        job: jobs[0].id,
+      };
+      rcNote(
+        res.disabled
+          ? "Vision is off, so these are placeholder values — check every field."
+          : "",
+      );
+      paintStaged();
+    } catch (err) {
+      console.error("[financials] receipt capture failed:", err);
+      rcNote("Could not read that file.", "bad");
+    } finally {
+      $("#rcDrop")?.classList.remove("is-busy");
+    }
+  }
+
+  function paintStaged() {
+    const staged = fin.staged;
     const box = $("#rcStaged");
-    if (!box) return;
+    if (!box || !staged) return;
     box.classList.remove("is-hidden");
     box.innerHTML =
       '<div class="kpi-lbl">Staged from receipt — check before saving</div>' +
       '<div class="rc-row" style="margin-top:10px">' +
       '<div><label class="rc-lbl">Vendor</label><input class="rc-in" data-r="vendor" value="' +
-      staged.vendor +
+      esc(staged.vendor) +
       '"></div>' +
-      '<div><label class="rc-lbl">Total</label><input class="rc-in" data-r="total" value="' +
+      '<div><label class="rc-lbl">Total</label><input class="rc-in" type="number" step="0.01" min="0" data-r="total" value="' +
       staged.total.toFixed(2) +
       '"></div>' +
       "</div>" +
       '<div class="rc-row">' +
-      '<div><label class="rc-lbl">Category</label><select class="rc-in" data-r="category">' +
-      EXPENSE_CATEGORIES.map(function (c) {
-        return "<option" + (c === staged.category ? " selected" : "") + ">" + c + "</option>";
-      }).join("") +
-      "</select></div>" +
-      '<div><label class="rc-lbl">Job</label><select class="rc-in" data-r="job">' +
-      STAGE_JOBS.map(function (j) {
-        return "<option>" + j + "</option>";
-      }).join("") +
-      "</select></div>" +
+      '<div><label class="rc-lbl">Category</label><span class="bp-sel"><select class="rc-in bp-sel-in" data-r="category">' +
+      // The vision model is free to answer with something outside the list; if
+      // it does, keep its answer as an option rather than silently re-filing
+      // the receipt under whatever happens to be first.
+      (EXPENSE_CATEGORIES.indexOf(staged.category) === -1 && staged.category
+        ? EXPENSE_CATEGORIES.concat([staged.category])
+        : EXPENSE_CATEGORIES
+      )
+        .map(function (c) {
+          return (
+            "<option" + (c === staged.category ? " selected" : "") + ">" + esc(c) + "</option>"
+          );
+        })
+        .join("") +
+      "</select></span></div>" +
+      // The job picker is the whole point of "charge it to a job": its value is
+      // a real Job id, and it is what saveReceiptExpense books against.
+      '<div><label class="rc-lbl">Charge to job</label><span class="bp-sel"><select class="rc-in bp-sel-in" data-r="job">' +
+      jobOptions(staged.job) +
+      "</select></span></div>" +
       "</div>" +
       '<div class="rc-act">' +
-      '<button class="btn btn-primary btn--sm" type="button" data-act="save-exp"><svg class="ic"><use href="#i-check"/></svg>Save expense</button>' +
+      '<button class="btn btn-primary btn--sm" type="button" data-act="save-exp"><svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Save expense</span></button>' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="discard-exp">Discard</button>' +
       "</div>";
   }
 
+  /**
+   * Book the staged receipt against the picked job.
+   *
+   * Writes for real: `saveReceiptExpense` uploads the image to Vercel Blob when
+   * a token is configured (falling back to the data URL otherwise) and creates
+   * the JobExpense with its `receiptUrl` — which is what makes the receipt
+   * ATTACHED to the job rather than merely mentioned in a note.
+   */
+  async function saveStagedExpense(btn: HTMLElement) {
+    if (savingExpense) return;
+    const val = function (f: string) {
+      const el = root.querySelector<HTMLInputElement | HTMLSelectElement>('[data-r="' + f + '"]');
+      return el ? el.value : "";
+    };
+    const jobId = val("job");
+    const total = parseFloat(val("total"));
+    if (!jobId) {
+      rcNote("Pick the job this receipt belongs to.", "bad");
+      return;
+    }
+    if (!isFinite(total) || total <= 0) {
+      rcNote("Enter the receipt total.", "bad");
+      return;
+    }
+    if (!rcDataUrl) {
+      rcNote("The image is gone — upload the receipt again.", "bad");
+      return;
+    }
+
+    savingExpense = true;
+    const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    const idle = lbl?.textContent || "Save expense";
+    if (lbl) lbl.textContent = "Saving…";
+    btn.classList.add("is-busy");
+    rcNote("");
+
+    try {
+      const saved = await saveReceiptExpense({
+        jobId,
+        dataUrl: rcDataUrl,
+        filename: rcFilename,
+        vendor: val("vendor"),
+        total,
+        category: val("category"),
+        note: null,
+        ocrJson: null,
+      });
+      // Mirror it into the on-screen book so the Expenses tab shows it at once.
+      // The id is the DATABASE id the action just created — which is what makes
+      // the new row's own Delete button work without a reload; a made-up local
+      // id would have been rejected as "Not found".
+      const job = jobs.find(function (j) { return j.id === jobId; });
+      const entry: Expense = {
+        id: saved.id,
+        jobId,
+        job: job ? job.title : jobId,
+        category: val("category"),
+        amount: total,
+        // saveReceiptExpense stores "Vendor: …" when no note is given; match it
+        // so the row reads the same before and after a reload.
+        note: val("vendor") ? "Vendor: " + val("vendor") : "",
+        when: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit" }),
+        receiptUrl: saved.receiptUrl,
+      };
+      expensesData.unshift(entry);
+      rcDataUrl = null;
+      fin.staged = null;
+      $("#rcStaged")?.classList.add("is-hidden");
+      const fileEl = root.querySelector<HTMLInputElement>("#rcFile");
+      if (fileEl) fileEl.value = "";
+
+      // ONE row is inserted and staggered in. Re-rendering the tbody would
+      // replace every surviving node and replay the whole entrance cascade for
+      // the sake of a single new line.
+      const body = $("#expBody");
+      if (body) {
+        body.insertAdjacentHTML("afterbegin", expenseRowHtml(entry));
+        const fresh = body.firstElementChild as HTMLElement | null;
+        if (fresh) staggerIn([fresh]);
+      }
+      syncExpenseTotals();
+      // The 30-day figures move with it: an expense booked today is inside the
+      // window the gauge and the stat strip read.
+      rollup.expenses30d += total;
+      rollup.profit30d = rollup.revenue30d - rollup.expenses30d;
+      rollup.marginPct = rollup.revenue30d > 0 ? (rollup.profit30d / rollup.revenue30d) * 100 : 0;
+      patchStats();
+      renderGauge();
+      switchTab("expenses");
+    } catch (err) {
+      // The action's messages are written for people ("Not found" when the job
+      // is not yours), so show them rather than a generic failure.
+      const msg = err instanceof Error && err.message ? err.message : "Could not save that expense.";
+      rcNote(msg, "bad");
+    } finally {
+      savingExpense = false;
+      btn.classList.remove("is-busy");
+      if (lbl) lbl.textContent = idle;
+    }
+  }
+
+  // ================= BOOK WRITES (real server actions) =================
+  // The donor spliced its in-memory arrays and called that a delete. These are
+  // the same actions the classic financials tables call
+  // (src/components/financials/{ExpensesTable,ChangeOrdersTable}.tsx): they are
+  // org-scoped and manager-gated on the server, `sendChangeOrder` sends the
+  // actual approval email, and each one revalidates the classic routes. The
+  // on-screen book is patched from the result, so a reload reads it back the
+  // same.
+
+  /** A note under a book's head strip — used for a refused write that has no
+   *  dialog open to carry it (the change-order Send). */
+  function tableNote(which: "exp" | "co", msg: string) {
+    const el = $(which === "exp" ? "#expNote" : "#coNote");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle("is-hidden", !msg);
+  }
+
+  /** The row whose delete is waiting on the confirmation dialog. */
+  let pendingDelete: { kind: "exp" | "co"; id: string; row: HTMLElement } | null = null;
+  let deleting = false;
+
+  function confirmErr(msg: string) {
+    const el = $("#fiConfirmErr");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle("is-hidden", !msg);
+  }
+
+  function askDelete(kind: "exp" | "co", id: string, row: HTMLElement, title: string) {
+    const mdl = $("#fiConfirm");
+    if (!mdl) return;
+    pendingDelete = { kind, id, row };
+    confirmErr("");
+    const head = $("#fiConfirmTitle");
+    const txt = $("#fiConfirmTxt");
+    if (kind === "exp") {
+      if (head) head.textContent = "Delete this expense?";
+      if (txt)
+        txt.textContent =
+          "“" +
+          title +
+          "” comes off the job and off the 30-day figures. The receipt image is not recoverable from here.";
+    } else {
+      if (head) head.textContent = "Delete this draft?";
+      if (txt)
+        txt.textContent =
+          "“" + title + "” has not been sent, so the client never sees it. This cannot be undone.";
+    }
+    setDeleting(false);
+    openMdl(mdl);
+  }
+
+  function closeConfirm() {
+    const mdl = $("#fiConfirm");
+    if (mdl) closeMdl(mdl, after);
+    pendingDelete = null;
+  }
+
+  /** Button label + disabled state while the delete is on the wire. */
+  function setDeleting(on: boolean) {
+    deleting = on;
+    const btn = root.querySelector<HTMLButtonElement>("#fiConfirmOk");
+    if (!btn) return;
+    btn.disabled = on;
+    btn.classList.toggle("is-busy", on);
+    const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    if (lbl) lbl.textContent = on ? "Deleting…" : "Delete";
+  }
+
+  async function runDelete() {
+    if (deleting || !pendingDelete) return;
+    const { kind, id, row } = pendingDelete;
+    confirmErr("");
+    setDeleting(true);
+    try {
+      if (kind === "exp") await deleteJobExpense(id);
+      else await deleteChangeOrder(id);
+    } catch (err) {
+      // The row stays exactly where it is: nothing was deleted, and the reason
+      // belongs in the dialog the user is still looking at.
+      setDeleting(false);
+      confirmErr(actionError(err));
+      return;
+    }
+    setDeleting(false);
+    pendingDelete = null;
+    const mdl = $("#fiConfirm");
+    if (mdl) closeMdl(mdl, after);
+    // Only now does the row leave — the strike/lift/close beats report a write
+    // that has already landed, not one that is being attempted.
+    strikeRowOut(row, () => {
+      if (kind === "exp") {
+        expensesData = expensesData.filter(function (x) {
+          return x.id !== id;
+        });
+        // Totals and the empty state only — NOT renderExpenses(). A full tbody
+        // rebuild is what made every surviving row re-animate, which is exactly
+        // what buried the one row that actually left.
+        syncExpenseTotals();
+      } else {
+        ordersData = ordersData.filter(function (x) {
+          return x.id !== id;
+        });
+        syncOrderTotals();
+      }
+    });
+  }
+
+  /** Send a DRAFT change order. On success only the ONE row is repainted — the
+   *  status pill flips and the two draft-only buttons go, because they no
+   *  longer apply. */
+  async function sendOrder(btn: HTMLElement, row: HTMLElement, id: string) {
+    if (row.dataset.busy) return;
+    const o = ordersData.find(function (x) {
+      return x.id === id;
+    });
+    if (!o) return;
+    row.dataset.busy = "1";
+    tableNote("co", "");
+    try {
+      await sendChangeOrder(id);
+    } catch (err) {
+      delete row.dataset.busy;
+      tableNote("co", actionError(err));
+      return;
+    }
+    o.status = "SENT";
+    delete row.dataset.busy;
+    const pill = row.querySelector<HTMLElement>(".pstatus");
+    if (pill) {
+      pill.className = "pstatus co--sent";
+      pill.textContent = "sent";
+    }
+    const acts = btn.closest<HTMLElement>(".row-act");
+    if (acts) acts.innerHTML = orderActs(o);
+    syncOrderTotals();
+  }
+
   on(root, "click", function (e) {
     const target = e.target as Element;
+    if (target.closest("[data-mdl-close]")) {
+      if (!deleting) closeConfirm();
+      return;
+    }
     const goto = target.closest<HTMLElement>("[data-goto]");
     if (goto) {
       if (goto.dataset.goto) switchTab(goto.dataset.goto);
       return;
     }
     if (target.closest("#rcDrop")) {
-      stageReceipt();
+      root.querySelector<HTMLInputElement>("#rcFile")?.click();
       return;
     }
-    const iconFlash = target.closest<HTMLElement>("[data-flash-icon]");
-    if (iconFlash && !iconFlash.dataset.busy) {
-      iconFlash.dataset.busy = "1";
-      const html = iconFlash.innerHTML;
-      iconFlash.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>';
-      const t = setTimeout(function () {
-        timers.delete(t);
-        iconFlash.innerHTML = html;
-        delete iconFlash.dataset.busy;
-      }, 1200);
-      timers.add(t);
+    if (target.closest("#fiConfirmOk")) {
+      void runDelete();
       return;
     }
     const act = target.closest<HTMLElement>("[data-act]");
@@ -782,24 +1254,7 @@ export function initFinancialsContent(content: HTMLElement): () => void {
     const kind = act.dataset.act;
 
     if (kind === "save-exp") {
-      const val = function (f: string) {
-        const el = root.querySelector<HTMLInputElement | HTMLSelectElement>('[data-r="' + f + '"]');
-        return el ? el.value : "";
-      };
-      expSeq += 1;
-      expensesData.unshift({
-        id: "x" + expSeq,
-        job: val("job"),
-        category: val("category"),
-        amount: parseFloat(val("total")) || 0,
-        note: val("vendor"),
-        when: "Jul 22",
-        receipt: true,
-      });
-      $("#rcStaged")?.classList.add("is-hidden");
-      fin.staged = null;
-      renderExpenses();
-      switchTab("expenses");
+      void saveStagedExpense(act);
       return;
     }
     if (kind === "discard-exp") {
@@ -809,41 +1264,40 @@ export function initFinancialsContent(content: HTMLElement): () => void {
     }
     if (kind === "del-exp") {
       const row = act.closest<HTMLElement>("[data-exp]");
-      if (!row) return;
-      const id = row.dataset.exp;
-      strikeRowOut(row, () => {
-        expensesData = expensesData.filter(function (x) {
-          return x.id !== id;
-        });
-        // Totals and the empty state only — NOT renderExpenses(). A full tbody
-        // rebuild is what made every surviving row re-animate, which is exactly
-        // what buried the one row that actually left.
-        syncExpenseTotals();
+      const id = row?.dataset.exp;
+      if (!row || !id) return;
+      const entry = expensesData.find(function (x) {
+        return x.id === id;
       });
+      askDelete("exp", id, row, entry ? entry.job : "This expense");
       return;
     }
     if (kind === "send-co") {
       const row = act.closest<HTMLElement>("[data-co]");
-      if (!row) return;
-      const o = ordersData.find(function (x) {
-        return x.id === row.dataset.co;
-      });
-      if (o) o.status = "SENT";
-      renderOrders();
+      const id = row?.dataset.co;
+      if (!row || !id) return;
+      void sendOrder(act, row, id);
       return;
     }
     if (kind === "del-co") {
       const row = act.closest<HTMLElement>("[data-co]");
-      if (!row) return;
-      const id = row.dataset.co;
-      strikeRowOut(row, () => {
-        ordersData = ordersData.filter(function (x) {
-          return x.id !== id;
-        });
-        syncOrderTotals();
+      const id = row?.dataset.co;
+      if (!row || !id) return;
+      const entry = ordersData.find(function (x) {
+        return x.id === id;
       });
+      askDelete("co", id, row, entry ? entry.title : "This change order");
       return;
     }
+  });
+
+  // Escape closes the confirmation, the way every other blueprint dialog does —
+  // but not while the delete is in flight, or the user would be left unsure
+  // whether it went through.
+  on(document, "keydown", function (e) {
+    if ((e as KeyboardEvent).key !== "Escape") return;
+    if (deleting) return;
+    if ($("#fiConfirm")?.classList.contains("open")) closeConfirm();
   });
 
   // ================= TARGETED ROW REMOVAL =================
@@ -871,8 +1325,12 @@ export function initFinancialsContent(content: HTMLElement): () => void {
    *  pixels while `transform: translateY()` is applied in the element's own
    *  unzoomed space. Every measured delta has to be divided by this. */
   function currentZoom(): number {
-    const raw = getComputedStyle(document.documentElement).zoom;
-    const z = parseFloat(raw);
+    // The SHELL ROOT, not documentElement: FLUID SCALE moved zoom onto the shell
+    // root so it could not leak into the rest of the app, and documentElement
+    // has reported `normal` ever since — which made this silently return 1 and
+    // left every FLIP delta below un-corrected at any width but 1728px.
+    const host = root.closest<HTMLElement>(".jf-blueprint") ?? document.documentElement;
+    const z = parseFloat(getComputedStyle(host).zoom);
     return isFinite(z) && z > 0 ? z : 1;
   }
 
@@ -968,7 +1426,20 @@ export function initFinancialsContent(content: HTMLElement): () => void {
     on(rcDrop, "drop", function (e) {
       e.preventDefault();
       rcDrop.classList.remove("over");
-      stageReceipt();
+      // A real file now, not a hardcoded fixture.
+      const file = (e as DragEvent).dataTransfer?.files?.[0];
+      if (file) void captureReceipt(file);
+      else rcNote("Drop an image file.", "bad");
+    });
+  }
+
+  // Clicking the zone opens the file picker; picking a file runs the same
+  // capture path a drop does, so the two can never diverge.
+  const rcFile = root.querySelector<HTMLInputElement>("#rcFile");
+  if (rcFile) {
+    on(rcFile, "change", function () {
+      const file = rcFile.files?.[0];
+      if (file) void captureReceipt(file);
     });
   }
 
@@ -983,7 +1454,6 @@ export function initFinancialsContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 
     // Reveal: load + scroll. The reveal adapts to scroll speed: slow scroll —
     // full 420ms animation; fast — shorter (down to 200ms): never lagging, but
@@ -1005,7 +1475,12 @@ export function initFinancialsContent(content: HTMLElement): () => void {
         },
         { passive: true },
       );
-    const blocks = $$(".content > *");
+    // `:not(.mdl)` — the confirmation dialog is rendered inside `.content` (it
+    // is position:fixed, so layout is unaffected), and the donor's block
+    // cascade must keep the same member set, and therefore the same i*60ms
+    // indices, that it had before the dialog existed. Same treatment as the
+    // Workers dialogs.
+    const blocks = $$(".content > *:not(.mdl)");
     blocks.forEach((el, i) => {
       el.classList.add("rv");
       const initial = el.getBoundingClientRect().top < vpH;
@@ -1015,7 +1490,7 @@ export function initFinancialsContent(content: HTMLElement): () => void {
     // Second layer of the arrival — Overview cascades its `.kpi` strip here.
     // This page has no `.kpi`, so the layer was silently absent; its equivalent
     // small units are the section cards (`.stat` already staggers through
-    // animateRows below, so it stays out of this). Skip anything the block
+    // staggerIn below, so it stays out of this). Skip anything the block
     // cascade claimed: no element should carry `rv` and `rv-cell` at once.
     const cells = $$(".fi-card").filter((el) => !el.classList.contains("rv"));
     cells.forEach((el, i) => {
@@ -1050,49 +1525,19 @@ export function initFinancialsContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render.
+    // Row stagger — played ONCE, here, because this is the only moment the
+    // books genuinely arrive.
     //
-    // Only rows that have never been staggered are animated. The observer fires
-    // on ANY childList change, so a surgical single-row removal (see
-    // strikeRowOut) used to replay the entrance cascade across every survivor —
-    // which is what made a delete look like the whole table redrawing and hid
-    // which line had actually gone. A full `innerHTML` re-render produces fresh
-    // unflagged nodes, so genuine repaints still cascade as authored.
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".prow, .stat")).filter(
-        (r) => !r.dataset.rvRow,
-      );
-      rows.forEach((r, i) => {
-        r.dataset.rvRow = "1";
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on rows and stat cells silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["statGrid", "expBody", "invBody"].forEach((id) => {
+    // This used to be a MutationObserver on each tbody with `{childList:true}`.
+    // It fired on ANY change, so a single-row delete replayed the 45ms-per-row
+    // entrance across every survivor and buried the one line that had actually
+    // gone. Everything that changes a list after load now patches its own node
+    // (see patchStats, sendOrder, strikeRowOut) or staggers exactly the row it
+    // inserted (saveStagedExpense) — see blueprint-shell/list-motion.
+    ["statGrid", "expBody", "coBody", "invBody"].forEach((id) => {
       const list = $("#" + id);
       if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
+      staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".prow, .stat")));
     });
 
     // Numeral count-up — Overview's `.kpi-val`; here the stat grid and the

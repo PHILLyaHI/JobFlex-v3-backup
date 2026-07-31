@@ -1,0 +1,1042 @@
+/* ============================================================
+   MOBILE ROOF ESTIMATOR (mobile-roof-estimator-v2) — Blueprint
+   system, handheld build. Archetype D: the drawing is the content.
+   Tokens, palette, type scale and Motion System "Balanced" are the
+   reference dashboard's; the shell (topbar / drawer / sheets)
+   matches its twelve siblings exactly. Fully scoped — app tokens
+   untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and every sibling mobile module. A white-paper
+     variant was tried and reverted. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / soft fill / base text */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* Page-specific: the drawing frame. Sized from the REAL viewport height so
+     the plan is always readable in one look and never needs an inner
+     scroller — the whole point of a drawing surface. */
+  --plan-h: clamp(200px, calc(var(--app-h, 100dvh) * 0.36), 360px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1). Scoped to the
+   page WITHOUT :where() it would score (0,1,1) and silently beat every
+   single-class button rule in this file (0,1,0) — every background and every
+   border below would be cancelled at render time, with no lint, no type error
+   and no console warning. Do not un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  scrollbar-width: none;
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD — the ONLY filled buttons on the surface live here
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* The only FILLED controls in the page body. Everything else is flat — a fill
+   on every button flattens the hierarchy (owner's call, 2026-07-29). Sheet
+   feet are the documented exception. */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* ============================================================
+   CARD — frame only. Padding belongs to the children, so tables
+   and the drawing sit flush against the frame.
+   No overflow:hidden: the waste dropdown is absolutely positioned
+   inside a card and would be clipped by it.
+   ============================================================ */
+.card {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.cardHead { padding: var(--card-pad) var(--card-pad) 13px; border-bottom: 1.5px solid var(--hair-soft); }
+.cardTitle { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.cardSub {
+  margin-top: 7px;
+  font-size: 12.5px; font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+/* ============================================================
+   INTAKE — the intro note and the sample book
+   ============================================================ */
+.introK {
+  display: block;
+  padding: var(--card-pad) var(--card-pad) 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+}
+.introT {
+  padding: 10px var(--card-pad) 0;
+  font-size: 18px; font-weight: 900;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  line-height: 1.2;
+}
+.introS {
+  padding: 9px var(--card-pad) var(--card-pad);
+  font-size: 14px; font-weight: 500;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.book {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+/* A record is three lines: identity + actions, then who/where and the figures
+   as ONE group. The separator is a real drawn 1.5px ink rule, not a wash. */
+.srow {
+  position: relative;
+  border-bottom: 1.5px solid var(--ink);
+}
+.srow:last-child { border-bottom: none; }
+.srowMain {
+  display: flex; flex-direction: column;
+  width: 100%;
+  padding: 14px var(--card-pad) 15px;
+  text-align: left;
+  transition: background 0.12s;
+}
+.srowMain:active { background: var(--paper-deep); }
+.sname {
+  display: block;
+  padding-right: 48px;
+  font-size: 15px; font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.swhere {
+  display: block;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  line-height: 1.35;
+  color: var(--muted-light);
+  overflow-wrap: anywhere;
+}
+.srowFoot {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px;
+  margin-top: 5px;
+}
+.tag {
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* The record's decisive value is its report number — a technical id, so the
+   drawing-annotation face (mono) is right here. Big Inter numerals stay
+   reserved for measured amounts. */
+.sfig {
+  font-family: var(--font-mono);
+  font-size: 14px; font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.srowOpen {
+  position: absolute;
+  top: 11px; right: calc(var(--card-pad) - 6px);
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.srowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.srowOpen .ic { width: 18px; height: 18px; }
+/* ============================================================
+   EMPTY STATES — a dashed note, like an annotation on a drawing.
+   Never blank: what happened AND what to do next.
+   ============================================================ */
+.empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 28px 18px;
+  text-align: center;
+}
+.emptyIn {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  margin: var(--card-pad);
+  margin-top: 0;
+  padding: 24px 16px;
+  text-align: center;
+}
+.emptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.emptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.emptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.emptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   MEASURING — the donor's five stages, on one card
+   ============================================================ */
+.measTop {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: var(--card-pad) var(--card-pad) 0;
+}
+.measNum {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* A drawn plate, the way a wizard states its position. */
+.measStep {
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.measStage {
+  padding: 12px var(--card-pad) 0;
+  font-size: 18px; font-weight: 900;
+  letter-spacing: -0.005em;
+}
+.measTrack {
+  margin: 15px var(--card-pad) 0;
+  height: 12px;
+  border: var(--border-thin);
+  background: var(--paper);
+  overflow: hidden;
+}
+/* The bar is DRAWN, not laid out: scaleX from the left edge is pixel-identical
+   for a solid fill and costs no layout, which matters while the reveal cascade
+   is still running on the same frame. */
+.measFill {
+  display: block;
+  width: 100%; height: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: var(--blueprint);
+  transition: transform 520ms var(--ease-out);
+}
+.measHint {
+  padding: 12px var(--card-pad) var(--card-pad);
+  font-size: 12.5px; font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* ============================================================
+   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations.
+   All three computed from the fixture geometry.
+   ============================================================ */
+.mast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.mastTop { padding: var(--card-pad); }
+.mastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.mastRule { flex: 1; height: 1.5px; background: var(--hair); }
+.mastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.mastCnt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.mastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+.mastSub:last-child { border-right: none; }
+.mastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.mastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* ============================================================
+   THE DRAWING — full-bleed inside its frame, on graph paper
+   ============================================================ */
+.planCard { overflow: hidden; }
+.planCanvas {
+  height: var(--plan-h);
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 20px 20px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.planSvg { display: block; width: 100%; height: 100%; }
+.facetG { cursor: pointer; }
+.facet {
+  fill: rgba(24, 84, 160, 0.1);
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  transition: fill 0.16s var(--ease);
+}
+/* Four shading steps of the SAME blueprint, so neighbouring planes read apart
+   without a second hue entering the drawing. */
+.tone1 { fill: rgba(24, 84, 160, 0.1); }
+.tone2 { fill: rgba(24, 84, 160, 0.16); }
+.tone3 { fill: rgba(24, 84, 160, 0.06); }
+.tone4 { fill: rgba(24, 84, 160, 0.13); }
+/* Two classes (0,2,0) so the selection beats the tone it sits on. */
+.facet.isSel { fill: rgba(24, 84, 160, 0.34); stroke-width: 2; }
+.fLbl {
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 700;
+  fill: var(--ink);
+  text-anchor: middle;
+}
+.fSub {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600;
+  fill: var(--muted);
+  text-anchor: middle;
+}
+/* Edge type is encoded with the house palette plus WEIGHT and DASH, not with a
+   five-colour ramp: the donor's rake purple (#7c3aed) is on the design
+   system's anti-reference list and a rainbow series is forbidden outright.
+   Line type is also how a real roof plan reads. */
+.edgeLine { fill: none; stroke-linecap: square; }
+.eRidge { stroke: var(--ink); stroke-width: 3.6; }
+.eHip { stroke: var(--blueprint); stroke-width: 3; }
+.eValley { stroke: var(--sky); stroke-width: 3; }
+.eEave { stroke: var(--muted); stroke-width: 2.4; }
+.eRake { stroke: var(--ink); stroke-width: 2.2; stroke-dasharray: 7 4; }
+.edgeLbl {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 700;
+  fill: var(--ink);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+}
+/* Overall dimensions, drawing-sheet style: a thin blueprint rule with witness
+   ticks, the mono label knocked out of the line it sits on. */
+.dimLine { stroke: var(--blueprint); stroke-width: 1.2; }
+.dimTick { stroke: var(--blueprint); stroke-width: 1.2; }
+.dimText {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em;
+  fill: var(--blueprint);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 4;
+  stroke-linejoin: round;
+}
+.planLegend {
+  display: flex; flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px var(--card-pad);
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.lg {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.lgSw { width: 22px; height: 6px; flex-shrink: 0; overflow: visible; }
+.planFoot {
+  display: flex; align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 6px var(--card-pad);
+  background: var(--paper-deep);
+}
+.planMode {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+.planBtn {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.planBtn .ic { width: 15px; height: 15px; }
+.planBtn:active { background: var(--paper); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+/* ============================================================
+   MEASUREMENT + TAKEOFF TABLES — estimate sheets: mono numerals
+   right-aligned, thin dividers, a ruled total row.
+   table-layout:fixed keeps three columns inside 320px without any
+   horizontal scroller.
+   ============================================================ */
+.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.tbl th {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted-light);
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.tbl td {
+  padding: 11px 12px;
+  border-bottom: 1.5px solid var(--hair-soft);
+  font-size: 14px;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+.tbl tbody tr:last-child td { border-bottom: none; }
+/* Last column carries the figures; a two-column table gets the same anchor. */
+.tbl th:last-child, .tbl td:last-child { width: 80px; }
+.tbl th:nth-child(2):not(:last-child), .tbl td:nth-child(2):not(:last-child) { width: 64px; }
+.tblNum {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* (0,2,1) — a plain .cellFlush (0,1,0) would lose to `.tbl td` (0,1,1) and the
+   cell button would sit inside the cell's own padding. */
+.tbl td.cellFlush { padding: 0; }
+.fcellBtn {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 12px;
+  text-align: left;
+  transition: background 0.12s;
+}
+.fcellBtn:active { background: var(--paper-deep); }
+.fcellName { font-size: 14px; font-weight: 700; line-height: 1.25; }
+.fcellDir {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.tbl .rowSel td { background: rgba(24, 84, 160, 0.1); }
+.tbl .rowSel td:first-child { box-shadow: inset 3px 0 0 var(--blueprint); }
+.tbl .tblTotal td {
+  border-top: 2px solid var(--ink);
+  border-bottom: none;
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.lfKey { display: inline-flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; }
+/* ============================================================
+   PITCH MIX
+   ============================================================ */
+.pmBody { padding: 4px var(--card-pad) 10px; }
+.pmRow { padding: 11px 0; border-bottom: 1.5px solid var(--hair-soft); }
+.pmRow:last-child { border-bottom: none; }
+.pmTop { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pmP { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pmA {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.pmTrack { margin-top: 8px; height: 10px; border: var(--border-thin); background: var(--paper); overflow: hidden; }
+.pmFill {
+  display: block;
+  width: 100%; height: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: var(--blueprint);
+  transition: transform 620ms var(--ease-out);
+}
+/* Status tones, used as statuses: a steep plane changes the labor rate and a
+   low plane changes the product. Never decoration. */
+.pmFill.isSteep { background: var(--warning); }
+.pmFill.isLow { background: var(--sky); }
+.calls { display: flex; flex-direction: column; gap: 8px; padding: 0 var(--card-pad) var(--card-pad); }
+.call {
+  padding: 11px 12px;
+  border: 1.5px solid var(--hair-soft);
+  /* The house advisory edge, at the donor's own 3px. This is the documented
+     Lead-Center banner pattern (decisions.md), not a decorative accent tab —
+     the tone carries a status the estimator has to act on. */
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  font-size: 13px; line-height: 1.45; font-weight: 500;
+  color: var(--ink-soft);
+}
+.callWarn { border-left-color: var(--warning); background: var(--warning-soft); }
+.callInfo { border-left-color: var(--sky); background: rgba(74, 158, 255, 0.07); }
+/* ============================================================
+   TAKEOFF — the waste dropdown and the priced sections
+   ============================================================ */
+.tkoCtl { padding: var(--card-pad); }
+/* Custom .dd, never a native select: rotating caret, a menu on a 2px frame,
+   and the chosen value reading back on the face as plain text — no pill, no
+   frame, no offset shadow (the hard ink drop read as a black slab). */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* A 3-column grid, not a one-deep list. padding:0 so the CELL borders are
+     the grid's own rules, with no gutter against the menu frame. */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  max-height: calc(var(--app-h, 100dvh) * 0.6);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+.ddMenu::-webkit-scrollbar { width: 6px; }
+.ddMenu::-webkit-scrollbar-thumb { background: var(--muted-faint); }
+.ddMenu::-webkit-scrollbar-track { background: transparent; }
+/* A cell, not a row: label over count, centred. Dividers are border-TOP and
+   border-LEFT with the first row and first column cleared, so the block draws
+   a correct table at ANY item count and never doubles a line against the
+   menu's own frame. */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so the check can never squeeze the label in a ~87px cell. */
+.ddItem .ic { position: absolute; top: 5px; right: 5px; width: 13px; height: 13px; color: var(--blueprint); }
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+.boSec { border-top: 1.5px solid var(--ink); }
+.boHead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 11px var(--card-pad);
+  background: var(--paper-deep);
+}
+.boLbl {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+}
+.boSum {
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tkoItem { display: block; font-size: 13.5px; font-weight: 700; line-height: 1.25; }
+.tkoSub {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.boTotal {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 14px;
+  padding: 15px var(--card-pad);
+  border-top: 2px solid var(--ink);
+  background: var(--paper-deep);
+}
+.boTotalL {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+}
+/* A grand total is an AMOUNT — Inter 900 tabular, never mono. */
+.boTotalV {
+  font-size: 26px; font-weight: 900;
+  letter-spacing: -0.005em;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Three: the sample "⋮" menu, plan options, and the order form.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+.sheetBody {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sheetBody::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); }
+.sheetBody::-webkit-scrollbar-track { background: transparent; }
+/* Row menu items: icon in a 26px tonal box, title + sub, one disabled (driven
+   by a sample with no street address) and one danger. */
+.menuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.menuItem:active:not(:disabled) { background: var(--paper-deep); }
+.menuItem:disabled { opacity: 0.45; }
+.miIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.miIc .ic { width: 14px; height: 14px; }
+.miBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.miSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.miOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.miWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.miDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.menuItemT { display: block; font-size: 15px; font-weight: 700; }
+.menuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+.menuItemDanger .menuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   PLAN OPTIONS — the desktop's two inline switch rails, as cells.
+   Same divider scheme as the filter menu, at two columns.
+   ============================================================ */
+.segGroup { padding: var(--card-pad) var(--pad-x) 0; }
+.segGroup:last-child { padding-bottom: 4px; }
+.segLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.segGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: var(--border-thin);
+  border-radius: var(--radius);
+}
+.segBtn {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  min-height: 64px;
+  padding: 10px 8px;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  border-radius: 0;
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.segBtn:nth-child(-n + 2) { border-top: none; }
+.segBtn:nth-child(2n + 1) { border-left: none; }
+.segBtn:active { background: var(--paper-deep); }
+.segBtn.active { background: var(--paper-deep); color: var(--blueprint); }
+.segT { font-size: 13px; font-weight: 700; line-height: 1.2; }
+.segBtn.active .segT { font-weight: 800; }
+.segS {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.segBtn.active .segS { color: var(--blueprint); }
+.segBtn .ic { position: absolute; top: 5px; right: 5px; width: 13px; height: 13px; color: var(--blueprint); }
+/* ============================================================
+   ORDER FORM — the desktop address grid, rebuilt as a sheet
+   ============================================================ */
+.formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
+.fld { display: flex; flex-direction: column; min-width: 0; }
+.fldRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fldLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.pinput {
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+}
+.pinput::placeholder { color: var(--muted-faint); }
+.pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+/* The native state <select> (.pselect) was replaced on 2026-07-30 by the shared
+   mobile-shell/state-picker sheet, which styles its own face and rows. The OS
+   picker turned out to be the wrong control after all: it renders its options
+   in the SELECT's colour, so the whole list read washed out while the
+   placeholder was showing, and it ignores row height entirely. */
+.fldHint { margin-top: 9px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+.fld.invalid .pinput { border-color: var(--danger); background: var(--danger-soft); }
+.priceBtn {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 9px;
+  min-height: 46px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.priceBtn .ic { width: 15px; height: 15px; }
+.priceBtn:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.price {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 700;
+  color: var(--ink);
+}
+.price b { color: var(--blueprint); font-weight: 700; }
+/* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
+   reachable without scrolling the form to its end. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 18px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* Scoped to the page — the global kill switch stays the app's business.
+   `.rv` is declared in the JSX (so a phase swap never paints at full opacity
+   before being hidden), which means the reduced-motion branch has to
+   neutralise it here: with transitions off, an untouched `.rv` would leave
+   the whole page invisible. (0,2,0) beats `.rv` at (0,1,0). */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  .app .rv { opacity: 1; transform: none; }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+}
+@media (max-width: 520px) {
+  /* Head actions stop sharing a line with anything */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .formFoot { grid-template-columns: 1fr; }
+  .boTotalV { font-size: 23px; }
+}
+@media (max-width: 360px) {
+  .mastCnt { grid-template-columns: 1fr; }
+  .mastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .mastSub:last-child { border-bottom: none; }
+  /* Three columns still fit, but the figures need the room more than the
+     column headings do. */
+  .tbl th, .tbl td { padding-left: 10px; padding-right: 10px; }
+  .tbl th:last-child, .tbl td:last-child { width: 74px; }
+  .tbl th:nth-child(2):not(:last-child), .tbl td:nth-child(2):not(:last-child) { width: 58px; }
+  .planFoot { flex-wrap: wrap; min-height: 0; padding-top: 10px; padding-bottom: 10px; }
+  .planBtn { margin-left: 0; width: 100%; justify-content: center; }
+}

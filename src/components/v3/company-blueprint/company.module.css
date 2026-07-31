@@ -56,6 +56,12 @@
   --grid-light: rgba(0,0,0,0.035);
   --hair: #0a0a0a;
   --hair-soft: rgba(10,10,10,0.55);
+  /* The shared blueprint controls in blueprint-global.css (.bp-sel) draw their
+     frame with --ink-line. On this sheet the hairline is --hair-soft, so the
+     shared token is re-pointed at it here rather than the control being
+     re-styled locally — otherwise the styled <select> would sit next to the
+     .cf-in fields with a visibly lighter border. */
+  --ink-line: var(--hair-soft);
 
   --chart-minor: rgba(24,84,160,0.08);
   --chart-major: rgba(10,10,10,0.12);
@@ -1336,7 +1342,11 @@
 .bp :global(.content .cf-in:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .cf-in)::placeholder { color: var(--muted-faint); }
 
-.bp :global(.content .co-color) { margin-top: 18px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
+/* padding-bottom is the guaranteed breathing room between the swatch row and
+   the save-line rule under it. The selected swatch paints a ring 4px OUTSIDE
+   its 30px box (.sw.on below), so without a floor here the rule reads as if it
+   were touching the selected square whenever the column runs out of slack. */
+.bp :global(.content .co-color) { margin-top: 18px; padding-top: 15px; padding-bottom: 10px; border-top: 1.5px solid var(--hair-soft); }
 .bp :global(.content .swatches) { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 9px; }
 .bp :global(.content .sw) {
   width: 30px; height: 30px; flex: 0 0 auto;
@@ -1344,12 +1354,28 @@
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
 .bp :global(.content .sw:hover) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+/* Selection ring: box-shadow, never a border — it must not change the swatch's
+   box model, or picking a colour would reflow the row it sits in. It does paint
+   4px outside the box, which `.co-color`'s padding-bottom above accounts for. */
 .bp :global(.content .sw.on) { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
 .bp :global(.content .sw-hex) { width: 108px; height: 30px; padding: 0 9px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
 .bp :global(.content .sw-hex:focus) { outline: none; border-color: var(--ink); }
 
-.bp :global(.content .save-line) { margin-top: 16px; padding-top: 12px; border-top: 1.5px solid var(--hair-soft); text-align: right; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); min-height: 17px; }
+/* The save line reserves its FILLED height while it is still empty.
+   The donor's `min-height: 17px` is a border-box height, so an empty line is
+   17px tall while "Saving…" makes it 12px padding + 1.5px rule + one 11px mono
+   line ≈ 28px. On the branding card that 11px of growth is not free: the
+   column is height-locked to its neighbour (see `.co-grid` at the end of this
+   file) and the save line hangs off `margin-top: auto`, so the growth is paid
+   for out of the auto margin and the rule jumps UP toward the swatches the
+   first time anything autosaves. An explicit line-height plus an empty
+   ::before keeps one line box present at all times, so the box measures the
+   same before and after the first save and nothing moves. */
+.bp :global(.content .save-line) { margin-top: 16px; padding-top: 12px; border-top: 1.5px solid var(--hair-soft); text-align: right; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); line-height: 17px; min-height: 17px; }
+.bp :global(.content .save-line)::before { content: ''; display: inline-block; }
 .bp :global(.content .save-line.saved) { color: var(--success-dark); }
+/* A save that the server refused. Status colour, statuses only. */
+.bp :global(.content .save-line.err) { color: var(--danger); }
 
 /* logo and preview */
 .bp :global(.content .logo-drop) {
@@ -1361,10 +1387,15 @@
 }
 .bp :global(.content .logo-drop:hover), .bp :global(.content .logo-drop.over) { border-color: var(--ink); background: rgba(10, 10, 10, 0.05); }
 .bp :global(.content .logo-drop .ic) { width: 20px; height: 20px; color: var(--muted); }
+/* With a logo saved, the drop target becomes the preview of it. */
+.bp :global(.content .logo-drop.has-img) { padding: 10px; border-style: solid; border-color: var(--hair-soft); background: var(--paper); }
+.bp :global(.content .logo-img) { max-width: 100%; max-height: 112px; object-fit: contain; }
 .bp :global(.content .logo-t) { font-size: 13px; font-weight: 700; color: var(--ink); }
 .bp :global(.content .logo-h) { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
 .bp :global(.content .mail-prev) { display: flex; align-items: center; gap: 12px; padding: 14px 15px; border: 1.5px solid var(--hair-soft); border-left-width: 4px; border-radius: var(--radius); background: var(--paper); }
 .bp :global(.content .mail-mark) { width: 38px; height: 38px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius); color: #fff; font-size: 17px; font-weight: 900; }
+.bp :global(.content .mail-mark--img) { padding: 3px; background: var(--paper); border: 1.5px solid var(--hair-soft); }
+.bp :global(.content .mail-mark--img img) { width: 100%; height: 100%; object-fit: contain; }
 .bp :global(.content .mail-name) { font-size: 15px; font-weight: 800; letter-spacing: -0.005em; }
 .bp :global(.content .mail-sub) { margin-top: 3px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 
@@ -1404,12 +1435,24 @@
 .bp :global(.content .act-cat) { height: 30px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-size: 11.5px; font-weight: 700; color: var(--muted); }
 .bp :global(.content .act-cat:hover) { border-color: var(--ink); color: var(--ink); }
 .bp :global(.content .act-cat.on) { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.bp :global(.content .lsearch) { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); margin-left: auto; }
+/* The search box and the person filter are one pair of controls and share one
+   height (--act-ctl-h); the search used to be shorter than the select. */
+.bp :global(.content .act-bar) { --act-ctl-h: 34px; }
+.bp :global(.content .lsearch) { display: flex; align-items: center; gap: 8px; height: var(--act-ctl-h); padding: 0 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); margin-left: auto; }
 .bp :global(.content .lsearch .ic) { width: 13px; height: 13px; color: var(--muted-light); flex: 0 0 auto; }
 .bp :global(.content .lsearch input) { width: 150px; border: none; background: none; outline: none; font-family: var(--font); font-size: 12px; color: var(--ink); }
-.bp :global(.content .act-person) { width: 148px; height: 30px; font-size: 12px; }
+/* `.act-person` is the `.bp-sel` WRAPPER — it owns the track, the control
+   inside owns the box. The shared treatment publishes no height, so the page
+   sets it (and the room the wrapper's chevron needs on the right). */
+.bp :global(.content .act-person) { width: 148px; flex: 0 0 auto; }
+.bp :global(.content .act-person .bp-sel-in) { height: var(--act-ctl-h); padding: 0 30px 0 11px; font-size: 12px; }
 .bp :global(.content .act-feed) { padding: 4px 0 0; }
-.bp :global(.content .act-day) { padding: 11px 16px 7px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); background: var(--paper); position: sticky; top: 0; z-index: 1; }
+/* Day heading: larger and heavier than the mono annotation layer around it,
+   and separated from the previous group by a clear band of paper so "Today"
+   and "Yesterday" read as two blocks rather than one running list. The gap is
+   a margin, not padding, so the sticky header itself stays compact. */
+.bp :global(.content .act-day) { padding: 11px 16px 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); background: var(--paper); position: sticky; top: 0; z-index: 1; }
+.bp :global(.content .act-day:not(:first-child)) { margin-top: 22px; }
 .bp :global(.content .act-row) { display: flex; align-items: flex-start; gap: 12px; padding: 11px 16px; border-top: 1.5px solid var(--hair-soft); }
 .bp :global(.content .act-av) { position: relative; width: 32px; height: 32px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep); font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
 .bp :global(.content .act-bead) { position: absolute; right: -4px; bottom: -4px; width: 9px; height: 9px; border: 1.5px solid var(--paper); border-radius: 50%; background: var(--muted-faint); }

@@ -347,19 +347,24 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
               {/* Instant samples */}
               <div className="space-y-2">
                 <div className="quiet-caps text-[color:var(--ink-faint)]">Instant samples · no charge</div>
-                <div className="space-y-2">
+                {/* `samples` / `sample` / `sample-t` / `sample-d` are the blueprint
+                    page's own class names (roof-estimator.module.css, scoped
+                    `.bp :global(.content …)`). They are inert on this classic
+                    route — nothing outside a `.jf-blueprint .content` declares
+                    them — so the same markup serves both skins. */}
+                <div className="samples space-y-2">
                   {EV_SAMPLES.map((s) => (
                     <button
                       key={s.reportId}
                       type="button"
                       disabled={loading}
                       onClick={() => loadReport(s.reportId)}
-                      className="group w-full flex items-center gap-3 text-left rounded-[var(--r-md)] hairline px-3 py-2.5 hover:bg-[color:var(--accent-soft)] transition-colors disabled:opacity-50"
+                      className="sample group w-full flex items-center gap-3 text-left rounded-[var(--r-md)] hairline px-3 py-2.5 hover:bg-[color:var(--accent-soft)] transition-colors disabled:opacity-50"
                     >
                       <span className="h-2 w-2 rounded-full bg-[color:var(--accent)] shrink-0" />
                       <span className="min-w-0">
-                        <span className="block text-[13px] font-medium text-[color:var(--ink)]">{s.label}</span>
-                        <span className="block text-[11px] text-[color:var(--ink-muted)] truncate">{s.detail}</span>
+                        <span className="sample-t block text-[13px] font-medium text-[color:var(--ink)]">{s.label}</span>
+                        <span className="sample-d block text-[11px] text-[color:var(--ink-muted)] truncate">{s.detail}</span>
                       </span>
                     </button>
                   ))}
@@ -384,6 +389,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
+                    className="btn btn-ghost"
                     variant="outline"
                     size="sm"
                     loading={previewBusy}
@@ -394,6 +400,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                     Free estimate
                   </Button>
                   <Button
+                    className="btn btn-ghost"
                     variant="outline"
                     size="sm"
                     loading={pricing}
@@ -404,9 +411,10 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                     Price
                   </Button>
                   {price != null && (
-                    <div className="flex-1 flex items-center justify-between rounded-[var(--r-sm)] bg-[color:var(--accent-soft)] px-3 py-1.5">
+                    <div className="rf-price flex-1 flex items-center justify-between rounded-[var(--r-sm)] bg-[color:var(--accent-soft)] px-3 py-1.5">
                       <span className="text-[12px] text-[color:var(--accent-ink)] tabular">${price}</span>
                       <Button
+                        className="btn btn-primary"
                         size="sm"
                         loading={ordering}
                         onClick={() => setConfirming(true)}
@@ -437,7 +445,13 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
               {cost != null && <Badge tone="neutral">${cost}</Badge>}
               {isSynthetic && <Badge tone="warn">Estimated</Badge>}
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowIntake(true)} icon={<Ruler className="h-3.5 w-3.5" />}>
+            <Button
+              className="btn btn-ghost"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowIntake(true)}
+              icon={<Ruler className="h-3.5 w-3.5" />}
+            >
               Measure another
             </Button>
           </div>
@@ -489,15 +503,18 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
           {/* ── B2 · Hero viewer ── */}
           <motion.section
             variants={listItem}
-            className="rounded-[var(--r-lg)] overflow-hidden shadow-[var(--shadow-md)] hairline bg-white"
+            className="rfx-viewer rounded-[var(--r-lg)] overflow-hidden shadow-[var(--shadow-md)] hairline bg-white"
           >
-            {/* tone-flooded identity header */}
+            {/* tone-flooded identity header. `rfx-hero` / `rfx-hero-wash` are
+                hooks for the blueprint page, which flattens this to a solid ink
+                masthead and drops the wash (gradients are off-system there).
+                Both classes are inert on this route. */}
             <div
-              className="relative overflow-hidden px-5 py-4"
+              className="rfx-hero relative overflow-hidden px-5 py-4"
               style={{ background: "color-mix(in srgb, var(--accent), var(--ink) 58%)" }}
             >
               <div
-                className="absolute inset-0"
+                className="rfx-hero-wash absolute inset-0"
                 style={{
                   background:
                     "radial-gradient(120% 140% at 90% -30%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 60%), radial-gradient(ellipse at 0% 130%, rgba(255,255,255,0.10), transparent 55%)",
@@ -508,7 +525,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   <div className="text-[10px] uppercase tracking-[0.16em] text-white/55">
                     EagleView measurement
                   </div>
-                  <div className="text-[19px] font-semibold text-white truncate">
+                  <div className="rfx-hero-title text-[19px] font-semibold text-white truncate">
                     {model.location.address || "Roof model"}
                     {model.location.city ? ` · ${model.location.city}, ${model.location.state}` : ""}
                   </div>
@@ -530,7 +547,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
             {/* light canvas + overlaid controls — 2D gets a distinct inset drawing
                 surface (subtle tone + faint dot grid); 3D's sky covers its own. */}
             <div
-              className="relative h-[360px] sm:h-[480px]"
+              className="rfx-canvas relative h-[360px] sm:h-[480px]"
               style={
                 view === "2d"
                   ? {
@@ -542,12 +559,14 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   : { backgroundColor: "var(--paper)" }
               }
             >
-              <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2">
+              {/* `vsw` is the blueprint page's segmented-switch class; there it
+                  replaces the floating pill with the donor's boxed switch. */}
+              <div className="rfx-vwctl absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2">
                 <SegmentedControl
                   aria-label="Viewer"
                   value={view}
                   onChange={setView}
-                  className={FLOAT_CTRL}
+                  className={`${FLOAT_CTRL} vsw`}
                   options={[
                     { value: "2d", label: "2D", icon: <Layers className="h-3.5 w-3.5" /> },
                     { value: "3d", label: "3D", icon: <Box className="h-3.5 w-3.5" /> },
@@ -559,7 +578,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                     variant="surface"
                     value={labelMode}
                     onChange={(v) => setLabelMode(v as LabelMode)}
-                    className={FLOAT_CTRL}
+                    className={`${FLOAT_CTRL} vsw`}
                     options={LABEL_MODES.map((m) => ({ value: m.id, label: m.label }))}
                   />
                   {view === "3d" && (
@@ -568,7 +587,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                       variant="surface"
                       value={showHouse ? "house" : "roof"}
                       onChange={(v) => setShowHouse(v === "house")}
-                      className={FLOAT_CTRL}
+                      className={`${FLOAT_CTRL} vsw`}
                       options={[
                         { value: "house", label: "House", icon: <Home className="h-3.5 w-3.5" /> },
                         { value: "roof", label: "Roof", icon: <Square className="h-3.5 w-3.5" /> },
@@ -583,7 +602,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   key={`wf-${model.reportId ?? model.location.address ?? "m"}`}
                   model={model}
                   mode={labelMode}
-                  className="w-full h-full"
+                  className="rfx-2d w-full h-full"
                 />
               ) : (
                 <RoofModel3D
@@ -591,7 +610,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   model={model}
                   labelMode={labelMode}
                   showHouse={showHouse}
-                  className="w-full h-full"
+                  className="rfx-3d w-full h-full"
                 />
               )}
             </div>
@@ -638,7 +657,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
 
           {/* ── B5 · Estimate ── */}
           <motion.section variants={listItem}>
-            <Card className="border-l-[3px] border-l-[color:var(--accent)]">
+            <Card className="rf-build border-l-[3px] border-l-[color:var(--accent)]">
               <CardHeader>
                 <div>
                   <CardTitle>Build an estimate</CardTitle>
@@ -647,13 +666,30 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   </CardSubtitle>
                 </div>
               </CardHeader>
-              <div className="flex flex-wrap items-end gap-3">
-                <Select label="Waste factor" value={waste} onChange={(e) => setWaste(e.target.value)} className="w-32">
+              {/* `build-ctl` puts the picker and the button on ONE control row.
+                  On the blueprint page that row is the page's own
+                  `.rf-build .build-ctl .btn { height: var(--field-h) }` rule, so
+                  "Generate estimate" measures exactly the same 38px as the waste
+                  picker beside it instead of the primitive's 48px `size="lg"`. */}
+              <div className="build-ctl flex flex-wrap items-end gap-3">
+                {/* The SHARED styled select (blueprint-global.css): `.bp-sel`
+                    wrapper draws the ink chevron, `.bp-sel-in` owns the
+                    appearance reset. Never a second styled select. Both classes
+                    are inert outside `.jf-blueprint`, so this route keeps the
+                    primitive's own look. */}
+                <Select
+                  label="Waste factor"
+                  value={waste}
+                  onChange={(e) => setWaste(e.target.value)}
+                  wrapperClassName="bp-sel"
+                  className="bp-sel-in w-32"
+                >
                   {WASTES.map((w) => (
                     <option key={w}>{w}</option>
                   ))}
                 </Select>
                 <Button
+                  className="btn btn-primary"
                   size="lg"
                   loading={genBusy}
                   disabled={isSynthetic}
@@ -720,10 +756,15 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
               time — we’ll poll for it.
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+              <Button className="btn btn-ghost" variant="ghost" size="sm" onClick={() => setConfirming(false)}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={placeOrder} icon={<Sparkles className="h-3.5 w-3.5" />}>
+              <Button
+                className="btn btn-primary"
+                size="sm"
+                onClick={placeOrder}
+                icon={<Sparkles className="h-3.5 w-3.5" />}
+              >
                 Confirm order
               </Button>
             </div>

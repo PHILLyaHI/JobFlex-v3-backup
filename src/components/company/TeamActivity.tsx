@@ -8,38 +8,24 @@ import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { listStagger, listItem } from "@/lib/theme/motion";
+// The row shape and the pure derivations (verb, category, day/time labels) are
+// shared with the Blueprint company sheet's feed — see lib/teamActivityView.
+import {
+  CATEGORIES,
+  VERB,
+  categoryOf,
+  dayLabel,
+  timeOfDay,
+  type Category,
+  type TeamActivityRow,
+  type TeamMember,
+} from "@/lib/teamActivityView";
 
-export type TeamActivityRow = {
-  id: string;
-  kind: string;
-  summary: string;
-  createdAt: string; // ISO string
-  actorId: string | null;
-  actorName: string | null;
-  proposalId: string | null;
-  proposalTitle: string | null;
-  clientId: string | null;
-  clientName: string | null;
-  leadId: string | null;
-  leadName: string | null;
-};
+export type { TeamActivityRow, TeamMember };
 
-// Each event reads as a sentence; the verb carries the only colour. Routine
-// actions (created/edited) stay ink so the coloured verbs — accepted, paid,
-// scheduled, completed — read as the signal. (Status-Is-Not-Decoration.)
-const VERB: Record<string, string> = {
-  CREATED: "created",
-  EDITED: "edited",
-  SENT: "sent",
-  VIEWED: "viewed",
-  ACCEPTED: "accepted",
-  PAID: "marked paid",
-  SCHEDULED: "scheduled",
-  COMPLETED: "completed",
-  DECLINED: "declined",
-  UPDATED: "updated",
-};
-
+// The verb carries the only colour. Routine actions (created/edited) stay ink so
+// the coloured verbs — accepted, paid, scheduled, completed — read as the
+// signal. (Status-Is-Not-Decoration.)
 const VERB_CLASS: Record<string, string> = {
   CREATED: "text-[color:var(--ink-soft)]",
   EDITED: "text-[color:var(--ink-soft)]",
@@ -69,50 +55,6 @@ const BEAD_CLASS: Record<string, string> = {
 };
 
 const PAGE = 12;
-
-// ── Category lens ───────────────────────────────────────────────────────────
-// ActivityEvent has no jobId relation, so category is derived: the object it
-// points at wins first, then job-shaped verbs, then everything else is team /
-// system chatter (invites, workspace, password resets).
-type Category = "all" | "proposals" | "leads" | "jobs" | "team";
-
-const CATEGORIES: { key: Category; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "proposals", label: "Proposals" },
-  { key: "leads", label: "Leads & clients" },
-  { key: "jobs", label: "Jobs" },
-  { key: "team", label: "Team" },
-];
-
-function categoryOf(row: TeamActivityRow): Exclude<Category, "all"> {
-  if (row.proposalId) return "proposals";
-  if (row.leadId || row.clientId) return "leads";
-  if (row.kind === "SCHEDULED" || row.kind === "COMPLETED") return "jobs";
-  return "team";
-}
-
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-
-function dayLabel(iso: string) {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
-  if (diffDays <= 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
-  }).format(d);
-}
-
-function timeOfDay(iso: string) {
-  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(
-    new Date(iso),
-  );
-}
 
 // The secondary line names the object the action touched, and — where we hold
 // an id — links straight to it so the feed doubles as a triage queue. Confident
@@ -166,8 +108,6 @@ function ObjectLine({ row }: { row: TeamActivityRow }) {
   const text = row.clientName ?? row.leadName ?? row.summary;
   return <span className="text-[color:var(--ink-muted)]">{text}</span>;
 }
-
-export type TeamMember = { id: string; name: string };
 
 export function TeamActivity({
   activities,

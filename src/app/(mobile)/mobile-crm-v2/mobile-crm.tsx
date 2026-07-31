@@ -43,6 +43,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-crm.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   ACTIVE_STATUSES,
   ACTIVITY_FEED,
@@ -240,13 +242,12 @@ export function MobileCrm() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -789,6 +790,11 @@ export function MobileCrm() {
   const tabIndex = TABS.findIndex((t) => t.key === tab);
   const anyOverlay = Boolean(sheetView) || ruleOpen;
 
+  // Swipe-down dismissal, one gesture per sheet, wired to the close paths the
+  // scrim and Cancel already use.
+  const actionsDrag = useSheetDrag(Boolean(sheetView), () => setSheet(null));
+  const ruleDrag = useSheetDrag(ruleOpen, () => setRuleOpen(false));
+
   return (
     <div className={styles.app} onClick={onRootClick}>
 
@@ -1281,9 +1287,10 @@ export function MobileCrm() {
         aria-modal="true"
         aria-label="Record actions"
         aria-hidden={!sheetView}
+        {...actionsDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
+        <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>{sheetView?.kicker ?? "CRM · —"}</div>
           <div className={styles.sheetTitle}>{sheetView?.title ?? "Actions"}</div>
         </div>
@@ -1318,9 +1325,10 @@ export function MobileCrm() {
         aria-modal="true"
         aria-labelledby="mcrRuleTitle"
         aria-hidden={!ruleOpen}
+        {...ruleDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...ruleDrag.handleProps} />
+        <div className={styles.sheetHead} {...ruleDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {editingId ? "Workflows / edit rule" : "Workflows / new rule"}
           </div>

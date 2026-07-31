@@ -11,6 +11,7 @@
 // between blueprint pages — no teardown, no re-running the entry cascade.
 
 import { Fragment } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
@@ -22,16 +23,43 @@ import { NAV_SECTIONS, activeHref } from "./nav-map";
 
 export { NAV_SECTIONS };
 
-export function Sidebar() {
+export type SidebarUser = {
+  /** Display name for the account block. */
+  name: string;
+  /** Org role, already humanised ("Owner", "Installer"). */
+  role: string;
+};
+
+/** Initials for the avatar plate — the same rule the rest of the app uses. */
+function monogram(name: string): string {
+  const p = name.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
+  if (!p.length) return "?";
+  return p.length === 1
+    ? p[0].slice(0, 2).toUpperCase()
+    : (p[0][0] + p[p.length - 1][0]).toUpperCase();
+}
+
+export function Sidebar({ user }: { user?: SidebarUser }) {
   const pathname = usePathname() ?? "";
   const active = activeHref(pathname);
+  // The shell renders on routes that read the session server-side and pass it
+  // down. The fallback is deliberately generic rather than the donor's "Ivan":
+  // a wrong name is worse than no name.
+  const name = user?.name || "Account";
+  const role = user?.role || "";
 
   return (
     <aside className="sb">
       <div className="sb-head">
-        <svg className="sb-mark" viewBox="0 0 24 24">
-          <use href="#i-logo" />
-        </svg>
+        {/* The real product mark, not the drawn `i-logo` sketch J (owner's
+            call, 2026-07-30) — desktop now shows the same logo as the handheld
+            shell. The asset is mostly transparent margin, so it renders larger
+            than its box and the box clips it; see .sb-mark-img in
+            dashboard-blueprint/blueprint.module.css. The i-logo symbol stays in
+            the sprite: /v3/proposals-v2 and /v3/proposals-v3 still draw it. */}
+        <span className="sb-mark-box">
+          <Image className="sb-mark-img" src="/jobflex-mark.png" alt="" width={108} height={108} priority />
+        </span>
         <div className="sb-head-txt">
           <div className="sb-head-name">JOBFLEX</div>
           <div className="sb-head-sub">Contractor OS</div>
@@ -71,16 +99,26 @@ export function Sidebar() {
         ))}
       </nav>
 
+      {/* The account block was a dead <button> showing the hardcoded literals
+          "Ivan" / "Owner" — the donor's demo identity, displayed to every user
+          regardless of who was signed in. It is now a real link to the account
+          page, and the name, role and monogram come from the session. */}
       <div className="sb-foot">
-        <button className="sb-foot-acc" title="Account">
-          <span className="sb-foot-av">I</span>
+        <Link className="sb-foot-acc" href={"/dashboard/settings/account" as Route} title="Account">
+          <span className="sb-foot-av">{monogram(name)}</span>
           <span className="sb-foot-txt">
-            <span className="sb-foot-name">Ivan</span>
-            <span className="sb-foot-role">Owner</span>
+            <span className="sb-foot-name">{name}</span>
+            <span className="sb-foot-role">{role}</span>
           </span>
-        </button>
+        </Link>
+        {/* The donor's settings page marks this gear active (donor line 1974
+            ships it as `class="sb-foot-ic on"`), so it lights up while any
+            /dashboard/settings URL is open. The `.sb-foot-ic.on` rule lives in
+            settings-blueprint/settings.module.css — it is the one chrome rule
+            that page's stylesheet owns, and it only applies while that
+            stylesheet is on the shell root. */}
         <Link
-          className="sb-foot-ic"
+          className={`sb-foot-ic${pathname.startsWith("/dashboard/settings") ? " on" : ""}`}
           href={"/dashboard/settings" as Route}
           title="Settings"
           aria-label="Settings"

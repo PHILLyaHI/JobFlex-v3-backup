@@ -1,0 +1,298 @@
+/* Blueprint date field (.dpk) — the SHARED layer for the month-grid popover
+   built by date-popover.ts. Imported by that module, so a page that wires the
+   picker cannot forget the stylesheet.
+
+   WHY THIS IS A PLAIN SHEET AND NOT A PAGE MODULE
+   Every page module's `.bp` is hashed per page and registered in
+   blueprint-shell.tsx's PAGE_STYLES — one module can only ever dress one page,
+   and the shell is reserved. Three pages share this control, so its rules are
+   written the way calendar-global.css writes its own un-modulable layer:
+   a plain stylesheet anchored under the literal `.jf-blueprint` class the shell
+   root always carries, so nothing here matches once a blueprint page unmounts.
+
+   Every class carries the `dpk-` prefix. The calendar page's date-TIME picker
+   is `dtp-`, and the two sets must not overlap: this sheet stays in the
+   document after a client-side navigation, and same-named rules at equal
+   specificity would then fight the calendar's own module for its pickers.
+
+   TOKENS
+   None are declared here. The panel is appended inside `.content`, where each
+   page declares the blueprint token block, so --paper / --ink / --blueprint /
+   --hair-soft / --radius / --border / --font-mono / --ease all resolve to the
+   host page's values. That is also why the panel is parented to `.mdl` rather
+   than to `document.body`.
+
+   GEOMETRY
+   Deliberately the calendar's `.dtp` numbers — 24px nav squares, a 7-column
+   grid of 26px mono day cells, 1.5px hairline borders, 2px radii, the 3px 3px 0
+   ink shadow, the beige footer bar. The two controls have to read as one
+   family; only the clock half of the calendar's is missing, because these
+   fields carry a date and nothing else.
+
+   MOTION — "Balanced": a 160ms fade with a 6px rise on --ease-out for the
+   panel (UI band), 120ms for cell feedback (micro band). Translate only, never
+   scale: date-popover.ts measures the panel with getBoundingClientRect() while
+   the transition runs, and a scale would corrupt the height it flips on. */
+
+.jf-blueprint .content .dpk {
+  position: relative;
+  display: block;
+}
+
+/* The page's own input class (.pinput on jobs/projects, .af-in on
+   announcements) still owns height, border and focus ring. This adds only the
+   drawing-annotation type the date belongs in and the room the two icons need
+   — leading identity glyph left, disclosure right. */
+.jf-blueprint .content .dpk-in {
+  width: 100%;
+  padding-left: 32px;
+  padding-right: 34px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.jf-blueprint .content .dpk-lead {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  pointer-events: none;
+  color: var(--blueprint);
+}
+.jf-blueprint .content .dpk-lead .ic {
+  width: 15px;
+  height: 15px;
+}
+.jf-blueprint .content .dpk-tgl {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  bottom: 1px;
+  width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  color: var(--muted);
+  transition: color 0.12s, background 0.12s;
+}
+.jf-blueprint .content .dpk-tgl:hover {
+  color: var(--ink);
+  background: var(--paper-deep);
+}
+.jf-blueprint .content .dpk-chev {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.2s var(--ease);
+}
+.jf-blueprint .content .dpk.is-open .dpk-chev {
+  transform: rotate(180deg);
+}
+.jf-blueprint .content .dpk.is-open .dpk-in {
+  border-color: var(--ink);
+}
+
+/* --- the panel -------------------------------------------------------
+   Absolutely positioned inside the `.mdl` overlay (see date-popover.ts):
+   `.mdl-box` is overflow:hidden and `.mdl-body` scrolls, so a panel parented
+   to the field would be cut off by the dialog. left/top/min-width are written
+   by the module; `display` is toggled there too, because a merely invisible
+   panel still passes the dialogs' `offsetParent !== null` tab-trap filter. */
+/* `width: max-content` sizes the panel to its own footer; the module then
+   floors it at the field's width and ceilings it at the layer's, both in the
+   page's own units — `vw` would be wrong here, because the shell's FLUID SCALE
+   zoom and viewport units do not agree. */
+.jf-blueprint .content .dpk-pop {
+  position: absolute;
+  z-index: 10;
+  width: max-content;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.16s ease, transform 0.18s var(--ease-out, cubic-bezier(0.22, 0.61, 0.36, 1));
+}
+.jf-blueprint .content .dpk-pop.is-open {
+  opacity: 1;
+  transform: none;
+}
+
+.jf-blueprint .content .dpk-cal {
+  padding: 10px 10px 12px;
+}
+.jf-blueprint .content .dpk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.jf-blueprint .content .dpk-month {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.jf-blueprint .content .dpk-nav {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.jf-blueprint .content .dpk-nav:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--paper-deep);
+}
+.jf-blueprint .content .dpk-nav .ic {
+  width: 12px;
+  height: 12px;
+}
+.jf-blueprint .content .dpk-nav .ic.rot-l {
+  transform: rotate(90deg);
+}
+.jf-blueprint .content .dpk-nav .ic.rot-r {
+  transform: rotate(-90deg);
+}
+
+/* Flexible columns, not a fixed 26px: the panel is floored at the width of the
+   field it belongs to, and fixed columns would leave dead paper on the right of
+   any field wider than the grid's natural 182px. */
+.jf-blueprint .content .dpk-dow,
+.jf-blueprint .content .dpk-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(26px, 1fr));
+}
+.jf-blueprint .content .dpk-dow {
+  margin-bottom: 4px;
+}
+.jf-blueprint .content .dpk-dow span {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted-light);
+}
+.jf-blueprint .content .dpk-day {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.jf-blueprint .content .dpk-day:hover {
+  background: var(--paper-deep);
+  border-color: var(--hair);
+}
+.jf-blueprint .content .dpk-day:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
+}
+.jf-blueprint .content .dpk-day.out {
+  color: var(--muted-faint);
+}
+/* Today is a ring, the chosen day is a fill — the same two states the week
+   strip and the calendar's own grid use, so a day never means two things. */
+.jf-blueprint .content .dpk-day.today {
+  border-color: var(--blueprint);
+  color: var(--blueprint);
+}
+.jf-blueprint .content .dpk-day.sel {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.jf-blueprint .content .dpk-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  border-top: 1.5px solid var(--hair-soft);
+  background: var(--paper-deep);
+}
+.jf-blueprint .content .dpk-val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.jf-blueprint .content .dpk-acts {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.jf-blueprint .content .dpk-act {
+  padding: 5px 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s;
+}
+.jf-blueprint .content .dpk-act:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* Handheld — matches the ≥44px targets the dialogs already switch to at this
+   width. Last block in the file so nothing later can outrank it. */
+@media (max-width: 860px) {
+  .jf-blueprint .content .dpk-tgl {
+    width: 42px;
+  }
+  .jf-blueprint .content .dpk-in {
+    padding-right: 46px;
+  }
+  .jf-blueprint .content .dpk-dow,
+  .jf-blueprint .content .dpk-grid {
+    grid-template-columns: repeat(7, minmax(34px, 1fr));
+  }
+  .jf-blueprint .content .dpk-day {
+    height: 34px;
+    font-size: 12.5px;
+  }
+  .jf-blueprint .content .dpk-act {
+    min-height: 34px;
+    padding: 0 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .content .dpk-pop {
+    transition: none;
+    transform: none;
+  }
+  .jf-blueprint .content .dpk-chev,
+  .jf-blueprint .content .dpk-day,
+  .jf-blueprint .content .dpk-nav,
+  .jf-blueprint .content .dpk-act,
+  .jf-blueprint .content .dpk-tgl {
+    transition: none;
+  }
+}

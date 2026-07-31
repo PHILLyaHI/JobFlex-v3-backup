@@ -1,0 +1,985 @@
+/* ============================================================
+   MOBILE REVIEWS (mobile-reviews-v2) — Blueprint system
+   Archetype B (FEED). Tokens, palette, type scale and Motion
+   System "Balanced" are the reference dashboard's; the shell
+   (topbar / drawer) is the shared MobileNav, so nothing of its
+   vocabulary is redeclared here. Fully scoped — app tokens
+   untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and every sibling mobile module. paper-deep
+     stays a shade RECESSED from the sheet rather than lighter than it. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft.
+     On this surface a SCORE is a status, so the rating meter and numeral
+     draw from the same three tones. Nothing decorative touches them. */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
+  /* Two 44px framed boxes + the mark + the wordmark have to clear 320px; the
+     bar gap is the only slack left, so it is fluid rather than a flat 10px. */
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this element reset at element-level specificity (0,0,1).
+   Un-wrapped it would score (0,1,1) and silently beat EVERY single-class button
+   rule in this file (0,1,0) — every background and every border below would be
+   cancelled at render time, and it would still parse, lint and typecheck
+   clean. Do not un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  /* The page scroller paints no bar at all; the 6px treatment below is for
+     INNER scrollers (sheet body, filter menu) only. */
+  scrollbar-width: none;
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* The only FILLED controls on the surface — head primary, head ghost, and the
+   filter face. Everything else is flat: a fill on every button flattens the
+   hierarchy (owner's call, 2026-07-29). Flat means no FILL, not no frame. */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* ============================================================
+   THE RATING METER — five 2px ink-framed cells filled to the
+   score, like a gauge on a technical drawing. NO STARS: house
+   rule, and five 12px glyphs are unreadable in jobsite glare.
+   The tone class sets --meter, which both the numeral beside it
+   and the fill inside it read.
+   ============================================================ */
+.toneHi { --meter: var(--success); }
+.toneMid { --meter: var(--warning); }
+.toneLow { --meter: var(--danger); }
+/* No submissions yet — an unrated book has no status, so it takes none. */
+.toneNone { --meter: var(--muted-faint); }
+.meter { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.meterCell {
+  display: block;
+  width: 13px; height: 18px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+/* The last cell takes the fraction, which is what a gauge does and what five
+   discrete glyphs cannot: 4.13 reads as four cells and a sliver.
+   The fill is drawn with scaleX from --fill (0…1) rather than an animated
+   width: forty-five of these fill in at once on mount, and a transform costs
+   no layout. The cell clips it, so the two are visually identical. */
+.meterFill {
+  display: block;
+  width: 100%; height: 100%;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  background: var(--meter, var(--ink));
+  transition: transform 620ms var(--ease-out);
+}
+.meterLg { gap: 4px; }
+.meterLg .meterCell {
+  width: clamp(18px, 5vw, 26px);
+  height: clamp(28px, 8vw, 38px);
+}
+/* ============================================================
+   MASTHEAD — the desktop's three-stat grid folded into ONE
+   numeral, a mono kicker and EXACTLY two annotations. All three
+   computed, so deleting a review moves them.
+   ============================================================ */
+.rmast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.rmastTop { padding: var(--card-pad); }
+.rmastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.rmastRule { flex: 1; height: 1.5px; background: var(--hair); }
+.rmastRow {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: clamp(10px, 3.5vw, 18px);
+}
+.rmastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--meter, var(--blueprint));
+  font-variant-numeric: tabular-nums;
+}
+.rmastCnt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.rmastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+.rmastSub:last-child { border-right: none; }
+.rmastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.rmastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* ============================================================
+   CARD — the shell for Score spread and Awaiting response, the
+   desktop's two right-rail blocks. A 320px viewport has no rail,
+   so they stack under the feed.
+   ============================================================ */
+.card {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.cardHead {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 13px var(--card-pad) 12px;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.cardTitle { font-size: 15px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; }
+.cardNote {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The count of unanswered requests is a status, not decoration — amber. */
+.cardCount {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 23px;
+  padding: 0 6px;
+  border: 1.5px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  color: var(--warning);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+/* Nothing outstanding is not a warning — the amber drops out at zero. */
+.cardCount.isZero { border-color: var(--muted-faint); background: transparent; color: var(--muted-light); }
+/* ============================================================
+   SCORE SPREAD — five drawn tracks, filled on mount.
+   ============================================================ */
+.spread { padding: 10px var(--card-pad) 14px; }
+.spRow { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.spK {
+  flex: 0 0 24px;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.spTrack {
+  flex: 1; min-width: 0;
+  height: 13px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+.spFill {
+  display: block;
+  width: 100%; height: 100%;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  background: var(--meter, var(--muted-faint));
+  transition: transform 620ms var(--ease-out);
+}
+.spN {
+  flex: 0 0 26px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* ============================================================
+   FILTER — one dropdown, never the desktop's six-chip rail: a
+   chip rail does not survive 320px. Custom .dd, never a native
+   select. The chosen score reads back on the face as plain text —
+   no pill, no frame, no shadow on button or menu (a hard ink drop
+   read as a black slab and was removed, 2026-07-29).
+   ============================================================ */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ddValue.isAll { color: var(--ink); }
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* Six options as a 3-column GRID, not a one-deep list. padding:0 so the CELL
+     borders below are the grid's own rules, with no gutter between a cell edge
+     and the menu frame. minmax(0, 1fr) because plain 1fr floors at auto, so one
+     long label would push its column past a third. */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  /* Off --app-h, not a bare 60vh: the phone's URL bar changes the visual
+     viewport mid-scroll and the published value is the one that tracks it. */
+  max-height: calc(var(--app-h, 100dvh) * 0.6);
+  overflow-y: auto;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.ddMenu::-webkit-scrollbar { width: 6px; }
+.ddMenu::-webkit-scrollbar-track { background: transparent; }
+.ddMenu::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 3px; }
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. The dividers are border-TOP
+   and border-LEFT with the first row and first column cleared — that draws a
+   correct table at ANY item count and never doubles a line against the menu's
+   own 2px frame (a trailing border-right/bottom would). */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so the tick cannot squeeze the label inside a ~87px cell. */
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  color: var(--blueprint);
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* ============================================================
+   THE FEED — chronological entry cards, newest first, grouped
+   under drawn date rules. An entry card is not a ledger row: it
+   carries a body excerpt, clamped to two lines, with the full
+   text in the sheet.
+   ============================================================ */
+.feed { display: flex; flex-direction: column; gap: var(--gap); }
+/* min-width: 0 so a long job line inside the card can never widen the group
+   past the flex column and push the sheet sideways. */
+.fgroup { display: block; min-width: 0; }
+/* A 1.5px ink rule with the mono date label SITTING on it — the section marker
+   off a technical drawing. The label paints paper over the rule and over the
+   graph-paper ground, exactly like a label plate on a sheet. */
+.fdate {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 20px;
+  margin-bottom: 12px;
+}
+.fdate::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 50%;
+  height: 1.5px;
+  margin-top: -0.75px;
+  background: var(--ink);
+}
+.fdateT {
+  position: relative;
+  padding-right: 12px;
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink);
+}
+.fdateN {
+  position: relative;
+  padding-left: 12px;
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.fcard {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+/* EVERY child is pinned to an explicit cell. A grid-row without a grid-column
+   lets auto-placement drop a definite-row item into the wrong column and shove
+   a sibling sideways — that shipped once already. */
+.frow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  /* A real drawn rule between records, not a faint wash. */
+  border-bottom: 1.5px solid var(--ink);
+  transition: background 0.12s;
+}
+.frow:last-child { border-bottom: none; }
+.frow:active { background: var(--paper-deep); }
+.fav {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.fname {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  font-size: 15px; font-weight: 700;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.frowOpen {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -4px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.frowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.frowOpen .ic { width: 18px; height: 18px; }
+/* Rows 2 and 3 are one group: 4px above the mono line, 13px above the score —
+   the same distribution mobile-clients-v2 ships under a spanning avatar. */
+.fjob {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted-light);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.ffoot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  margin-top: 13px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.frate {
+  grid-column: 1;
+  display: inline-flex; align-items: center; gap: 9px;
+  min-width: 0;
+}
+.frateVal {
+  font-size: 20px; font-weight: 800;
+  letter-spacing: -0.005em;
+  color: var(--meter, var(--ink));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fwhen {
+  grid-column: 2;
+  justify-self: end;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+/* Two lines and an ellipsis; the sheet carries the rest. */
+.fquote {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin: 11px 0 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--blueprint);
+  font-size: 14px; font-style: italic;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* ============================================================
+   AWAITING RESPONSE — three lines, same shape as a row card:
+   identity + actions, mono meta, then the status badge with the
+   nudge closing at the far right.
+   ============================================================ */
+.plist { display: block; }
+.prow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  border-bottom: 1.5px solid var(--ink);
+  transition: background 0.12s;
+}
+.prow:last-child { border-bottom: none; }
+.pname {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 15px; font-weight: 700;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.prowOpen {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -4px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.prowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.prowOpen .ic { width: 18px; height: 18px; }
+.pmeta {
+  grid-column: 1;
+  grid-row: 2;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted-light);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+/* minmax(0, 1fr) on the badge column, not `auto auto`: two auto columns pack at
+   the START of the row, which would park the nudge button against the badge
+   instead of at the far right where the row card puts its anchor. */
+.pfoot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  margin-top: 13px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.pbadge {
+  grid-column: 1;
+  justify-self: start;
+  display: inline-block;
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.stSent { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.stPending { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+/* Flat: no fill, but it keeps its frame. */
+.pbtn {
+  grid-column: 2;
+  justify-self: end;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; min-width: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.pbtn .ic { width: 15px; height: 15px; }
+.pbtn:active:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.pbtn:disabled { color: var(--success); border-color: var(--success); }
+/* ============================================================
+   EMPTY STATES — a dashed note, like an annotation on a drawing.
+   Never blank: what happened AND what to do. Three of them are
+   reachable from the fixture: no reviews at all (delete the eight),
+   no matches (Score 1 has none), and every request answered
+   (cancel the three).
+   ============================================================ */
+.empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 28px 18px;
+  text-align: center;
+}
+.emptyIn { margin: var(--card-pad); }
+.emptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.emptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.emptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.emptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Two of them: the entry / request sheet (which is also where the
+   full comment lives), and the request-review form.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  /* visibility, not just transform: a closed sheet must leave the tab order
+     and the accessibility tree. */
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+.sheetBody {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sheetBody::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-track { background: transparent; }
+.sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 3px; }
+/* The detail block: the score on its meter, the job, and the FULL comment the
+   feed card had to clamp. */
+.rdetail {
+  padding: 15px var(--pad-x) 16px;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.rdetailTop { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rdetailJob {
+  margin-top: 11px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.rquoteFull {
+  margin: 12px 0 0;
+  padding-left: 13px;
+  border-left: 3px solid var(--blueprint);
+  font-size: 14.5px; font-style: italic;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.rnote {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  font-size: 13px; font-weight: 500;
+  color: var(--muted-light);
+  line-height: 1.45;
+}
+/* Menu items: icon in a 26px tonal box, title + sub, one disabled and one
+   danger present in every variant of the row set. */
+.rmenuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.rmenuItem:active:not(:disabled) { background: var(--paper-deep); }
+.rmenuItem:disabled { opacity: 0.45; }
+.rmiIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.rmiIc .ic { width: 14px; height: 14px; }
+.rmiBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.rmiSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.rmiOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.rmiWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.rmiDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.rmenuItemT { display: block; font-size: 15px; font-weight: 700; }
+.rmenuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+.rmenuItemDanger .rmenuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   REQUEST-REVIEW FORM — a sheet, not a centre-screen modal.
+   ============================================================ */
+.formBody { padding: var(--card-pad) var(--pad-x) 4px; display: flex; flex-direction: column; gap: 18px; }
+.fld { display: flex; flex-direction: column; }
+.fldLbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.req { color: var(--danger); margin-left: 3px; }
+.pinput {
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+  width: 100%;
+}
+.pinput::placeholder { color: var(--muted-faint); }
+.pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
+.fld.invalid .pinput { border-color: var(--danger); background: var(--danger-soft); }
+/* A drawn checkbox, not a native one: the native control cannot carry the 2px
+   frame or the sub-label, and it renders differently on every platform.
+   aria-pressed keeps it a real toggle for assistive tech. */
+.fchk {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  transition: background 0.12s;
+}
+.fchkBox {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: transparent;
+  flex-shrink: 0;
+  transition: background 0.14s, color 0.14s;
+}
+.fchkBox .ic { width: 14px; height: 14px; }
+.fchk[aria-pressed="true"] { background: var(--paper-deep); }
+.fchk[aria-pressed="true"] .fchkBox { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.fchkSub {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+/* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
+   reachable without scrolling the form to its end. Sheet feet carry fills. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 18px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* A record that just changed gets one blue flash, so the row you acted on is
+   findable after the list re-sorts around it. */
+@keyframes landFlash {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: transparent; }
+}
+.landed { animation: landFlash 0.6s var(--ease-out); }
+/* Scoped to the page — the global kill switch stays the app's business */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+}
+@media (max-width: 520px) {
+  /* The head actions stop sharing a line */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .formFoot { grid-template-columns: 1fr; }
+}
+@media (max-width: 360px) {
+  .rmastCnt { grid-template-columns: 1fr; }
+  .rmastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .rmastSub:last-child { border-bottom: none; }
+  .fav { width: 34px; height: 34px; font-size: 12px; }
+  /* The score and its meter keep the line to themselves; the age tag drops
+     under them rather than crushing the gauge. */
+  .frateVal { font-size: 18px; }
+  .meterCell { width: 12px; height: 17px; }
+  .spRow { gap: 9px; }
+}

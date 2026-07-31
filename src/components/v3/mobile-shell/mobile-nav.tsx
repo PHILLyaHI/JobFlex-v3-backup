@@ -35,7 +35,9 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { NAV_SECTIONS, activeHref } from "@/components/v3/blueprint-shell/nav-map";
+import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
 import styles from "./mobile-nav.module.css";
+import "@/components/v3/estimators-blueprint/estimators-global.css";
 import { MobileSprite } from "./sprite";
 
 const prefersReducedMotion = () =>
@@ -111,6 +113,13 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
       {/* One sprite for the whole surface — the page ships none of its own. */}
       <MobileSprite />
 
+      {/* The estimator picker, mounted here for the same reason the desktop
+          shell mounts it: this component is on every handheld surface, so the
+          dialog its topbar button opens belongs beside it rather than in any
+          one page. Its stylesheet carries its own tokens and keyframes, so it
+          does not need the blueprint shell to be present. */}
+      <EstimatorPicker />
+
       <header className={styles.tbar} onClick={press}>
         <button
           className={styles.tbarBtn}
@@ -131,8 +140,8 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
             className={styles.tbarMarkImg}
             src="/jobflex-mark.png"
             alt=""
-            width={66}
-            height={66}
+            width={108}
+            height={108}
             priority
           />
         </span>
@@ -141,6 +150,19 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
           <span className={styles.tbarSub}>Contractor OS</span>
         </span>
         <div className={styles.tbarRight}>
+          {/* New Estimate — the handheld twin of the desktop topbar's button,
+              and the only way onto the estimator picker from a phone. An icon
+              rather than a labelled button: the mobile topbar has no room for
+              a word next to the mark, and every other control up here is an
+              icon already. */}
+          <button
+            className={styles.tbarBtn}
+            type="button"
+            aria-label="New estimate"
+            onClick={() => document.dispatchEvent(new CustomEvent("jf:estimator-picker"))}
+          >
+            <Icon id="i-plus" />
+          </button>
           {showSearch ? (
             <button className={styles.tbarBtn} type="button" aria-label="Search">
               <Icon id="i-search" />
@@ -166,7 +188,7 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
       >
         <div className={styles.sbHead}>
           <span className={styles.sbMarkBox}>
-            <Image className={styles.sbMarkImg} src="/jobflex-mark.png" alt="" width={68} height={68} />
+            <Image className={styles.sbMarkImg} src="/jobflex-mark.png" alt="" width={108} height={108} />
           </span>
           <div className={styles.sbHeadTxt}>
             <div className={styles.sbHeadName}>JOBFLEX</div>

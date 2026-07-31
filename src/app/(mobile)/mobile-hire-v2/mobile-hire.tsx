@@ -51,6 +51,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-hire.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   ALL,
   APPLICANTS_SEED,
@@ -225,13 +227,12 @@ export function MobileHire() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -538,6 +539,11 @@ export function MobileHire() {
 
   const anyOverlay = Boolean(sheetApplicant) || formOpen;
 
+  // Swipe-down dismissal, one gesture per sheet, on the same setters the
+  // Escape ladder uses.
+  const actionsDrag = useSheetDrag(Boolean(sheetApplicant), () => setSheetId(null));
+  const formDrag = useSheetDrag(formOpen, () => setFormOpen(false));
+
   return (
     <div className={styles.app} onClick={onRootClick}>
 
@@ -807,9 +813,9 @@ export function MobileHire() {
 
       {/* ============ ROW ACTIONS SHEET ============ */}
       <div className={`${styles.sheet} ${sheetApplicant ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-label="Candidate actions" aria-hidden={!sheetApplicant}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-label="Candidate actions" aria-hidden={!sheetApplicant} {...actionsDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
+        <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {sheetApplicant
               ? `${sheetApplicant.role} · ${sheetApplicant.source ?? "Other"} · applied ${sheetApplicant.age}`
@@ -838,9 +844,9 @@ export function MobileHire() {
           editable fields rather than read-only rows, and "Applied" rides
           the sheet kicker. ============ */}
       <div className={`${styles.sheet} ${formOpen ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-labelledby="mhFormTitle" aria-hidden={!formOpen}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-labelledby="mhFormTitle" aria-hidden={!formOpen} {...formDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...formDrag.handleProps} />
+        <div className={styles.sheetHead} {...formDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {editId
               ? `Candidate · applied ${data.find((a) => a.id === editId)?.age ?? "—"}`

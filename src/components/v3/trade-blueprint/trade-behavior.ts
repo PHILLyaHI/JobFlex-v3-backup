@@ -3,7 +3,8 @@
 // stagger, formula and string is the donor's exact value. Adaptations are
 // mechanical only:
 // - queries are scoped to the mounted `.content` root;
-// - document/window listeners and observers are tracked for unmount cleanup;
+// - document/window listeners, timers and observers are tracked for unmount
+//   cleanup;
 // - the donor's chrome modules (matchMedia polyfill, mobile nav drawer, FLUID
 //   SCALE, the sidebar entry cascade, the sliding active indicator and the
 //   graph-paper parallax) are NOT ported here — the shared shell
@@ -12,16 +13,59 @@
 //   guarded are either shell-owned or replaced by strict null checks below.
 
 import {
-  CATEGORIES,
-  INF_PERIOD,
-  PAYOUTS,
-  POSTS_SEED,
-  POST_SEQ_START,
-  STATEMENTS,
-  type TradePost,
-} from "./trade-data";
+  closeTradePost,
+  createTradePost,
+  deleteTradePost,
+} from "@/actions/tradePosts";
+import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
+import { CATEGORIES, POSTS_SEED, type TradePost } from "./trade-data";
 
-export function initTradeContent(content: HTMLElement): () => void {
+export type TradeContentOptions = {
+  /** The org's real board, read server-side. Omit to fall back to the donor
+   *  fixture (the standalone mock routes have no session to read from). */
+  entries?: TradePost[];
+  /** The signed-in contractor's display name, so a just-published card carries
+   *  the byline the server already wrote instead of waiting for a reload. */
+  viewer?: string;
+};
+
+/** The trade actions reject with an Error whose message is written for the user
+ *  ("Only the author can close this post.", "This thread is closed."). Surface
+ *  that text; fall back to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  // A Next.js server-action transport failure has no useful message.
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  // requireManager() throws the framework's own role refusal.
+  if (/forbidden|unauthor/i.test(msg)) {
+    return "You don't have permission to post on this board.";
+  }
+  return msg;
+}
+
+/** Text interpolated into an innerHTML string. The donor could inline its
+ *  fixture copy raw; these are database rows a contractor typed. */
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** The post detail lives under the (dashboard) route group, which keeps the
+ *  classic layout — a real page with the reply thread on it. */
+function postHref(id: string): string {
+  return "/dashboard/trade/" + encodeURIComponent(id);
+}
+
+export function initTradeContent(
+  content: HTMLElement,
+  options: TradeContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -36,6 +80,20 @@ export function initTradeContent(content: HTMLElement): () => void {
     target.addEventListener(ev, fn, opts);
     disposers.push(() => target.removeEventListener(ev, fn, opts));
   };
+  // Tracked timeouts — the dialog's exit animation runs on one, so an unmount
+  // mid-close must not fire the cleanup into a detached tree.
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const after = (ms: number, fn: () => void) => {
+    const id = setTimeout(() => {
+      timers.delete(id);
+      fn();
+    }, ms);
+    timers.add(id);
+  };
+  disposers.push(() => {
+    timers.forEach((id) => clearTimeout(id));
+    timers.clear();
+  });
   const $ = (sel: string) => root.querySelector<HTMLElement>(sel);
   const $$ = (sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
@@ -65,24 +123,40 @@ export function initTradeContent(content: HTMLElement): () => void {
     });
   });
 
+  // An unmount mid-write must not paint into a detached tree.
+  let alive = true;
+  disposers.push(() => {
+    alive = false;
+  });
+
   // ================= TRADE BOARD: DATA =================
-  // A per-mount COPY of the fixture. The publish flow below unshifts into this
-  // array, and the seed is a module-level constant — mutating it directly would
-  // leak every published post into the next visit to the page (and into any
-  // other importer of POSTS_SEED).
-  let postSeq = POST_SEQ_START;
-  const postsData: TradePost[] = POSTS_SEED.map((p) => ({ ...p }));
+  // The org's real board when the page supplies one (src/app/dashboard/trade),
+  // the donor fixture otherwise. Either way it is CLONED: publish / close /
+  // delete mutate it in place. The server actions are the source of truth and
+  // this array mirrors them, so the board repaints the moment one returns
+  // instead of waiting on a round trip through the router — and mutating the
+  // module-level seed would leak every published post into the next visit.
+  const postsData: TradePost[] = (options.entries ?? POSTS_SEED).map((p) => ({ ...p }));
+  const authorName = options.viewer || "You";
 
-  const statements = STATEMENTS;
-  const payouts = PAYOUTS;
+  // Only the board is left, so the page's view state is the category filter
+  // plus whichever post's row menu is open. `td.tab` went with the tab strip.
+  const td: { cat: string; menuId: string | null } = { cat: "all", menuId: null };
 
-  const td = { tab: "posts", cat: "all" };
+  /**
+   * Installed by the motion module below; null under reduced motion.
+   *
+   * Still takes a list id even though #postList is the only list: the two
+   * moments it fires from (first paint, a publish) are far apart in this file,
+   * and naming the target at the call site is what kept them readable.
+   */
+  let playStagger: ((listId: "postList") => void) | null = null;
 
-  function money(n: number) {
-    return "$" + Math.round(n).toLocaleString("en-US");
-  }
   function initials(n: string) {
     const p = n.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
+    // Real rows can carry a name the donor's fixtures never did — an email-only
+    // author, a handle with no Latin letters — which leaves nothing to slice.
+    if (p.length === 0) return "—";
     return p.length === 1
       ? p[0].slice(0, 2).toUpperCase()
       : (p[0][0] + p[p.length - 1][0]).toUpperCase();
@@ -97,8 +171,7 @@ export function initTradeContent(content: HTMLElement): () => void {
   // ================= RENDER: POSTS =================
   function renderCats() {
     const cats = $("#cats");
-    const postsN = $("#postsN");
-    if (!cats || !postsN) return;
+    if (!cats) return;
     cats.innerHTML = CATEGORIES.map(function (c) {
       const n =
         c.key === "all"
@@ -119,8 +192,67 @@ export function initTradeContent(content: HTMLElement): () => void {
         "</span></button>"
       );
     }).join("");
-    postsN.textContent = String(postsData.length);
+    // The board's total used to be echoed on the Posts tab (#postsN). With the
+    // tab strip gone the "All" chip above is the only place it belongs.
   }
+  /** The category / closed plates a card opens with. Broken out so closing a
+   *  thread can patch THAT ONE strip instead of re-rendering the board. */
+  function postTop(p: TradePost) {
+    const closed = p.status === "CLOSED";
+    return (
+      '<span class="pstatus cat--' +
+      esc(p.cat) +
+      '">' +
+      esc(catLabel(p.cat)) +
+      "</span>" +
+      (closed ? '<span class="pstatus cat--closed">closed</span>' : "") +
+      // The donor left `.pmenu` in the markup with nothing to open it. This is
+      // the trigger: the two items behind it (close, delete) are the trade
+      // actions that already exist end to end, and the third opens the thread.
+      '<button class="pt-open" type="button" data-menu="' +
+      esc(p.id) +
+      '" aria-haspopup="menu" aria-label="Post actions"><svg class="ic"><use href="#i-dots"/></svg></button>'
+    );
+  }
+
+  function postCard(p: TradePost) {
+    const closed = p.status === "CLOSED";
+    return (
+      '<article class="post' +
+      (closed ? " closed" : "") +
+      '" data-post="' +
+      esc(p.id) +
+      '">' +
+      '<div class="post-top" data-cell="top">' +
+      postTop(p) +
+      "</div>" +
+      // The title is the link to the thread, so the detail page is reachable by
+      // keyboard as well as by pointer. The donor's card went nowhere.
+      '<h3 class="post-t"><a href="' +
+      esc(postHref(p.id)) +
+      '">' +
+      esc(p.title) +
+      "</a></h3>" +
+      '<p class="post-b">' +
+      esc(p.body) +
+      "</p>" +
+      '<div class="post-foot">' +
+      '<span class="post-av">' +
+      esc(initials(p.author)) +
+      "</span>" +
+      '<span class="post-who">' +
+      esc(p.author) +
+      "</span>" +
+      '<span class="post-when">' +
+      esc(p.when) +
+      "</span>" +
+      '<span class="post-rep"><svg class="ic"><use href="#i-msg"/></svg>' +
+      p.replies +
+      "</span>" +
+      "</div></article>"
+    );
+  }
+
   function renderPosts() {
     const list = $("#postList");
     const empty = $("#postEmpty");
@@ -131,147 +263,19 @@ export function initTradeContent(content: HTMLElement): () => void {
         : postsData.filter(function (p) {
             return p.cat === td.cat;
           });
-    list.innerHTML = rows
-      .map(function (p) {
-        const closed = p.status === "CLOSED";
-        return (
-          '<article class="post' +
-          (closed ? " closed" : "") +
-          '" data-post="' +
-          p.id +
-          '">' +
-          '<div class="post-top">' +
-          '<span class="pstatus cat--' +
-          p.cat +
-          '">' +
-          catLabel(p.cat) +
-          "</span>" +
-          (closed ? '<span class="pstatus cat--closed">closed</span>' : "") +
-          "</div>" +
-          '<h3 class="post-t">' +
-          p.title +
-          "</h3>" +
-          '<p class="post-b">' +
-          p.body +
-          "</p>" +
-          '<div class="post-foot">' +
-          '<span class="post-av">' +
-          initials(p.author) +
-          "</span>" +
-          '<span class="post-who">' +
-          p.author +
-          "</span>" +
-          '<span class="post-when">' +
-          p.when +
-          "</span>" +
-          '<span class="post-rep"><svg class="ic"><use href="#i-msg"/></svg>' +
-          p.replies +
-          "</span>" +
-          "</div></article>"
-        );
-      })
-      .join("");
+    list.innerHTML = rows.map(postCard).join("");
     empty.classList.toggle("is-hidden", rows.length !== 0);
     list.classList.toggle("is-hidden", rows.length === 0);
   }
 
-  // ================= RENDER: PARTNERS =================
-  function renderInfluencers() {
-    const infStats = $("#infStats");
-    const periodLabel = $("#periodLabel");
-    const stmtBody = $("#stmtBody");
-    const payBody = $("#payBody");
-    if (!infStats || !periodLabel || !stmtBody || !payBody) return;
-    const clicks = statements.reduce(function (a, s2) {
-      return a + s2.clicks;
-    }, 0);
-    const conv = statements.reduce(function (a, s2) {
-      return a + s2.conv;
-    }, 0);
-    const earn = statements.reduce(function (a, s2) {
-      return a + s2.earn;
-    }, 0);
-    const rate = clicks ? (conv / clicks) * 100 : 0;
-    infStats.innerHTML =
-      '<div class="stat"><div class="kpi-lbl">Clicks · this period</div><div class="stat-val">' +
-      clicks.toLocaleString("en-US") +
-      '</div><div class="stat-hint">' +
-      INF_PERIOD +
-      "</div></div>" +
-      '<div class="stat"><div class="kpi-lbl">Conversions</div><div class="stat-val">' +
-      conv +
-      '</div><div class="stat-hint">Signed accounts</div></div>' +
-      '<div class="stat"><div class="kpi-lbl">Conversion rate</div><div class="stat-val">' +
-      rate.toFixed(1) +
-      '%</div><div class="stat-hint">Of tracked clicks</div></div>' +
-      '<div class="stat"><div class="kpi-lbl">Earnings</div><div class="stat-val accent">' +
-      money(earn) +
-      '</div><div class="stat-hint">Owed this period</div></div>';
+  // The donor's second renderer — renderInfluencers(), which painted the stat
+  // tiles, the statements rollup and the payouts table — is gone with the
+  // panel it filled. Influencer numbers are real, per-account data now and are
+  // served by /influencer behind requireInfluencer().
 
-    periodLabel.textContent = INF_PERIOD;
-    stmtBody.innerHTML = statements
-      .map(function (s2) {
-        const r = s2.clicks ? (s2.conv / s2.clicks) * 100 : 0;
-        return (
-          '<tr class="prow">' +
-          '<td><div class="inf-name"><span class="inf-av">' +
-          initials(s2.name) +
-          "</span>" +
-          '<span><span class="inf-n" style="display:block">' +
-          s2.name +
-          "</span>" +
-          '<span class="inf-h" style="display:block">' +
-          s2.handle +
-          "</span></span></div></td>" +
-          '<td class="num"><span class="pt-mono">' +
-          s2.clicks.toLocaleString("en-US") +
-          "</span></td>" +
-          '<td class="num"><span class="pt-mono">' +
-          s2.conv +
-          "</span></td>" +
-          '<td class="num"><span class="pt-mono">' +
-          r.toFixed(1) +
-          "%</span></td>" +
-          '<td class="num"><span class="pt-money">' +
-          money(s2.earn) +
-          "</span></td>" +
-          "</tr>"
-        );
-      })
-      .join("");
-
-    payBody.innerHTML = payouts
-      .map(function (p) {
-        return (
-          '<tr class="prow">' +
-          '<td><span class="inf-n">' +
-          p.name +
-          "</span></td>" +
-          '<td><span class="pt-mono">' +
-          p.period +
-          "</span></td>" +
-          '<td><span class="pt-mono">' +
-          p.method +
-          "</span></td>" +
-          '<td><span class="pstatus pay--' +
-          p.status.toLowerCase() +
-          '">' +
-          p.status.toLowerCase() +
-          "</span></td>" +
-          '<td class="num"><span class="pt-money' +
-          (p.status === "PAID" ? " banked" : "") +
-          '">' +
-          money(p.amount) +
-          "</span></td>" +
-          "</tr>"
-        );
-      })
-      .join("");
-  }
   function renderTrade() {
     renderCats();
     renderPosts();
-    renderInfluencers();
   }
 
   // ================= EVENTS =================
@@ -280,37 +284,280 @@ export function initTradeContent(content: HTMLElement): () => void {
   const postBodyEl = root.querySelector<HTMLTextAreaElement>("#postBody");
   const postCatEl = root.querySelector<HTMLSelectElement>("#postCat");
 
+  // The dialog's enter AND exit both come from mdl-motion / blueprint-global.
+  // A bare `classList.add("open")` / `.remove("open")` pair — which this page
+  // used to carry — plays the 280ms arrival and then cuts the box out of the
+  // frame instantly, because `.mdl` is `display: none` without `.open`. That
+  // asymmetry is what reads as "there is no close animation".
   function openDialog() {
     const title = inp("#postTitle");
     if (!title || !postBodyEl || !postCatEl || !postMdl) return;
+    if (publishing) return;
     title.value = "";
     postBodyEl.value = "";
     postCatEl.value = "question";
-    postMdl.classList.add("open");
+    dlgError(null);
+    openMdl(postMdl);
     title.focus();
   }
 
-  const tdTabs = $("#tdTabs");
-  if (tdTabs) {
-    on(tdTabs, "click", function (e) {
-      const b = (e.target as HTMLElement).closest<HTMLElement>(".td-tab");
-      if (!b || b.classList.contains("active")) return;
-      td.tab = b.dataset.tab || "";
-      $$("#tdTabs .td-tab").forEach(function (t) {
-        t.classList.toggle("active", t === b);
-      });
-      $$(".ppanel").forEach(function (p) {
-        p.classList.toggle("is-hidden", p.dataset.panel !== td.tab);
-      });
-    });
+  function closeDialog() {
+    if (!postMdl) return;
+    closeMdl(postMdl, after);
   }
+
+  /** The action's own message, or nothing. */
+  function dlgError(msg: string | null) {
+    const box = $("#postErr");
+    if (!box) return;
+    box.textContent = msg || "";
+    box.classList.toggle("is-hidden", !msg);
+  }
+
+  /** Submit label + disabled state while the write is in flight. */
+  let publishing = false;
+  function setPublishing(onNow: boolean) {
+    publishing = onNow;
+    const btn = root.querySelector<HTMLButtonElement>("#publishPost");
+    if (!btn) return;
+    btn.disabled = onNow;
+    btn.classList.toggle("is-busy", onNow);
+    const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    if (lbl) lbl.textContent = onNow ? "Posting…" : "Post";
+  }
+
+  async function publish() {
+    if (publishing) return;
+    const titleEl = inp("#postTitle");
+    if (!titleEl || !postBodyEl || !postCatEl) return;
+    const title = titleEl.value.trim();
+    const body = postBodyEl.value.trim();
+    if (!title) {
+      dlgError("Give the post a title — one line is enough.");
+      titleEl.focus();
+      return;
+    }
+    if (!body) {
+      dlgError("Add the details: condition, price, location, who to call.");
+      postBodyEl.focus();
+      return;
+    }
+    const cat = postCatEl.value;
+    dlgError(null);
+    setPublishing(true);
+    try {
+      // The real write. Same action, same payload shape and same org scope the
+      // classic NewTradePostSheet posted with — only the frame is different.
+      const res = await createTradePost({ title, body, category: cat });
+      if (!alive) return;
+      postsData.unshift({
+        id: res.id,
+        cat,
+        status: "OPEN",
+        title,
+        body,
+        author: authorName,
+        when: "just now",
+        replies: 0,
+        mine: true,
+      });
+      closeDialog();
+      td.cat = "all";
+      renderCats();
+      renderPosts();
+      // A publish genuinely re-lists the board — a new post at the top and the
+      // category reset back to All — so the cascade belongs here.
+      playStagger?.("postList");
+    } catch (err) {
+      if (!alive) return;
+      dlgError(actionError(err));
+    } finally {
+      if (alive) setPublishing(false);
+    }
+  }
+
+  // ================= ROW MENU (#pMenu) =================
+  const pMenu = $("#pMenu");
+
+  function menuItem(icon: string, title: string, sub: string, act: string, danger?: boolean) {
+    return (
+      '<button class="pmenu-item' +
+      (danger ? " is-danger" : "") +
+      '" type="button" role="menuitem" data-mact="' +
+      act +
+      '"><svg class="ic"><use href="#' +
+      icon +
+      '"/></svg>' +
+      '<span><span class="pmenu-item-t">' +
+      esc(title) +
+      '</span><span class="pmenu-item-s" style="display:block">' +
+      esc(sub) +
+      "</span></span></button>"
+    );
+  }
+
+  function menuError(msg: string) {
+    const box = pMenu?.querySelector<HTMLElement>("[data-menu-err]");
+    if (!box) return;
+    box.textContent = msg;
+    box.classList.toggle("is-hidden", !msg);
+  }
+
+  function openMenu(id: string, btn: HTMLElement) {
+    const p = postsData.find((x) => x.id === id);
+    if (!p || !pMenu) return;
+    td.menuId = id;
+    const closed = p.status === "CLOSED";
+    pMenu.setAttribute("role", "menu");
+    pMenu.innerHTML =
+      '<div class="pmenu-head"><div class="pmenu-title">' +
+      esc(p.title) +
+      '</div><div class="pmenu-sub">' +
+      esc(p.author + " · " + p.when) +
+      "</div></div>" +
+      menuItem(
+        "i-msg",
+        "Open thread",
+        p.replies === 1 ? "1 reply" : p.replies + " replies",
+        "open",
+      ) +
+      // closeTradePost / deleteTradePost both refuse a non-author, so the two
+      // items only appear on the signed-in contractor's own posts rather than
+      // being offered and then refused.
+      (p.mine && !closed
+        ? menuItem("i-ban", "Close thread", "Stops new replies", "close")
+        : "") +
+      (p.mine ? menuItem("i-trash", "Delete post", "Removes it for everyone", "del", true) : "") +
+      '<div class="pmenu-err is-hidden" data-menu-err role="alert"></div>';
+    pMenu.classList.add("open");
+    // FLUID SCALE zooms the shell root, so viewport maths has to be un-zoomed
+    // before it can be compared with a zoomed getBoundingClientRect.
+    const host = root.closest<HTMLElement>(".jf-blueprint");
+    const zRaw = host ? parseFloat(getComputedStyle(host).zoom) : 1;
+    const z = isFinite(zRaw) && zRaw > 0 ? zRaw : 1;
+    const vw = window.innerWidth / z;
+    const vh = window.innerHeight / z;
+    const r = btn.getBoundingClientRect();
+    const mw = 254;
+    let left = Math.min(r.right - mw, vw - mw - 12);
+    left = Math.max(12, left);
+    pMenu.style.left = left + "px";
+    pMenu.style.top = "0px";
+    const mh = pMenu.offsetHeight;
+    let top = r.bottom + 6;
+    if (top + mh > vh - 12) top = Math.max(12, r.top - mh - 6);
+    pMenu.style.top = top + "px";
+  }
+
+  function closeMenu() {
+    td.menuId = null;
+    pMenu?.classList.remove("open");
+  }
+  if (main) on(main, "scroll", closeMenu, { passive: true });
+
+  let menuBusy = false;
+
+  /** Closing a thread changed ONE post. Patch that card's plate strip; a
+   *  renderPosts() here would destroy every card the user is looking at and
+   *  replay the board's entrance. */
+  function applyClosed(p: TradePost) {
+    p.status = "CLOSED";
+    const card = $('[data-post="' + CSS.escape(p.id) + '"]');
+    if (!card) return;
+    card.classList.add("closed");
+    const top = card.querySelector<HTMLElement>('[data-cell="top"]');
+    if (top) top.innerHTML = postTop(p);
+  }
+
+  async function runMenu(act: string, id: string, item: HTMLElement) {
+    if (menuBusy) return;
+    const p = postsData.find((x) => x.id === id);
+    if (!p) return;
+    menuBusy = true;
+    menuError("");
+    const label = item.querySelector<HTMLElement>(".pmenu-item-t");
+    const idle = label?.textContent || "";
+    if (label) label.textContent = "Working…";
+    pMenu?.classList.add("is-busy");
+    try {
+      if (act === "close") {
+        await closeTradePost(id);
+        if (!alive) return;
+        applyClosed(p);
+        closeMenu();
+      } else {
+        await deleteTradePost(id);
+        if (!alive) return;
+        const i = postsData.indexOf(p);
+        if (i >= 0) postsData.splice(i, 1);
+        closeMenu();
+        const card = $('[data-post="' + CSS.escape(id) + '"]');
+        // That row leaves and the rest of the grid closes the gap. Rebuilding
+        // the list instead would blink every other card.
+        if (card) {
+          leaveRow(
+            card,
+            () => {
+              const list = $("#postList");
+              const empty = $("#postEmpty");
+              const gone = !list?.querySelector(".post");
+              empty?.classList.toggle("is-hidden", !gone);
+              list?.classList.toggle("is-hidden", gone);
+            },
+            after,
+          );
+        }
+        renderCats();
+      }
+    } catch (err) {
+      if (!alive) return;
+      if (label) label.textContent = idle;
+      menuError(actionError(err));
+    } finally {
+      menuBusy = false;
+      pMenu?.classList.remove("is-busy");
+    }
+  }
+
+  // The `#tdTabs` delegate that swapped `.td-tab.active` / `.ppanel.is-hidden`
+  // and played the statements cascade on first reveal is gone: with Posts the
+  // only view there is nothing to switch to. `.is-hidden` itself is still in
+  // use — renderPosts() toggles it on the board and its empty state.
   on(document, "click", function (e) {
     const t = e.target as HTMLElement;
+    if (!root.contains(t) && !pMenu?.contains(t)) {
+      closeMenu();
+      return;
+    }
+    const trigger = t.closest<HTMLElement>("[data-menu]");
+    if (trigger) {
+      if (td.menuId === trigger.dataset.menu) closeMenu();
+      else openMenu(trigger.dataset.menu || "", trigger);
+      return;
+    }
+    const item = t.closest<HTMLElement>(".pmenu-item");
+    if (item && pMenu?.contains(item)) {
+      const act = item.dataset.mact || "";
+      const id = td.menuId;
+      if (!id) return;
+      if (act === "open") {
+        closeMenu();
+        window.location.assign(postHref(id));
+        return;
+      }
+      void runMenu(act, id, item);
+      return;
+    }
+    if (td.menuId) closeMenu();
     const c = t.closest<HTMLElement>("[data-cat]");
     if (c) {
       td.cat = c.dataset.cat || "all";
       renderCats();
       renderPosts();
+      // No cascade: narrowing the board to a category is a REPAINT of posts the
+      // user is already looking at. Replaying the entrance here — which the old
+      // MutationObserver did — drops the whole board to opacity 0 and crawls it
+      // back on every chip click.
       return;
     }
     if (t.closest("#newPostBtn") || t.closest("#emptyPostBtn")) {
@@ -318,38 +565,16 @@ export function initTradeContent(content: HTMLElement): () => void {
       return;
     }
     if (t.closest('[data-mdl="close"]')) {
-      postMdl?.classList.remove("open");
+      closeDialog();
       return;
     }
     if (t.closest("#publishPost")) {
-      const titleEl = inp("#postTitle");
-      if (!titleEl || !postBodyEl || !postCatEl) return;
-      const title = titleEl.value.trim();
-      const body = postBodyEl.value.trim();
-      if (!title) {
-        titleEl.focus();
-        return;
-      }
-      if (!body) {
-        postBodyEl.focus();
-        return;
-      }
-      postSeq += 1;
-      postsData.unshift({
-        id: "p" + postSeq,
-        cat: postCatEl.value,
-        status: "OPEN",
-        title: title,
-        body: body,
-        author: "Ivan Petrov",
-        when: "just now",
-        replies: 0,
-      });
-      postMdl?.classList.remove("open");
-      td.cat = "all";
-      renderCats();
-      renderPosts();
+      void publish();
     }
+  });
+
+  on(document, "keydown", (e) => {
+    if ((e as KeyboardEvent).key === "Escape" && td.menuId) closeMenu();
   });
 
   // ================= INITIALIZATION =================
@@ -362,7 +587,8 @@ export function initTradeContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+    // The row cascade's curve now lives in blueprint-shell/list-motion, which
+    // owns both halves of list motion for every blueprint page.
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: a slow scroll gets the full 420ms
@@ -432,40 +658,19 @@ export function initTradeContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".post, .prow"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so the `.post` hover lift silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["postList", "stmtBody"].forEach((id) => {
-      const list = $("#" + id);
+    // Entrance cascade — on ARRIVAL only.
+    //
+    // This used to hang off a MutationObserver on #postList, so every category
+    // chip replayed the whole board's entrance — every post blanked to opacity
+    // 0 and crawled back because the user narrowed the list. The two arrivals
+    // that are real are wired by hand instead: first paint and a publish. See
+    // blueprint-shell/list-motion for the reasoning.
+    playStagger = (listId) => {
+      const list = $("#" + listId);
       if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
-    });
+      staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".post")));
+    };
+    playStagger("postList");
 
     // Numeral count-up on `.kpi-val` — the donor's selector, kept verbatim.
     // The trade board renders its figures as `.stat-val`, so this pass is

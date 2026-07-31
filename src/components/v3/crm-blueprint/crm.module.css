@@ -1413,10 +1413,33 @@
    "SELECTION/SWITCHING"). Press feedback moved to the TRACK, which owns no
    transform of its own, so nothing competes for the knob's `transform`.
 
-   Travel is 20px, not 18: the track's content box is 37px (40 − 2 × 1.5px
-   border) and the knob is 15px inset 2px, so 37 − 2 − 15 = 20 is what puts
-   the same 2px of air on both ends. At 18 the knob rested visibly
-   off-centre. */
+   TRAVEL = 18px. The working, from the real CSS rather than from memory.
+
+   Box model: this module declares no `box-sizing`, so the value in force is
+   Tailwind preflight's `*, ::before, ::after { box-sizing: border-box }`
+   (globals.css → @tailwind base; the config sets no corePlugins override).
+   So `width: 40px` is the BORDER box.
+     track border box   40 × 22
+     track padding box  40 − 2 × 1.5 = 37 wide,  22 − 2 × 1.5 = 19 tall
+
+   The knob is `position: absolute` and the track is `position: relative`, so
+   the knob's containing block is the track's PADDING box — `left: 2px` is
+   measured from the INNER edge of the 1.5px border, not the outer edge. The
+   knob is 15px wide (border-box, no border of its own).
+     off  →  left edge 2,      right edge 17      →  air: 2 left, 20 right
+     on   →  left edge 2 + T,  right edge 17 + T  →  air right = 37 − 17 − T
+                                                              = 20 − T
+   Equal air at both ends means 20 − T = 2, so T = 18.
+
+   The old value, 20, came from `37 − 2 − 15 = 20`, which is the knob's FINAL
+   left offset from the padding-box origin — not its travel. The knob already
+   starts 2px in, so it has to move 20 − 2 = 18. At T = 20 the knob's right
+   edge landed on 37, flush against the inner border with ZERO air, which is
+   exactly the "too close to the border when it's on" that was reported.
+
+   Cross-check on the other axis, which nobody complained about: 19 − 2 − 15
+   = 2px of air below a 2px top inset. Already symmetric. 2px is the air this
+   control is drawn with, and 18px is the travel that gives it horizontally. */
 .bp :global(.content .tgl) {
   width: 40px; height: 22px; flex: 0 0 auto;
   border: 1.5px solid var(--ink); border-radius: var(--radius);
@@ -1429,7 +1452,7 @@
   transition: transform 0.28s var(--ease-soft), background 0.24s var(--ease-out);
 }
 .bp :global(.content .tgl.on) { background: rgba(58, 125, 68, 0.2); border-color: var(--success-dark); }
-.bp :global(.content .tgl.on)::after { transform: translateX(20px); background: var(--success-dark); }
+.bp :global(.content .tgl.on)::after { transform: translateX(18px); background: var(--success-dark); }
 /* Stamp press on the track — the blueprint system's click gesture. */
 .bp :global(.content .tgl:active) { transform: scale(0.94); }
 .bp :global(.content .tgl:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
@@ -1440,20 +1463,74 @@
 .bp :global(.content .rst--on) { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
 .bp :global(.content .rst--off) { border-color: var(--hair-soft); color: var(--muted); background: var(--paper-deep); }
 .bp :global(.content .rule-name .pstatus) { transition: background 0.2s var(--ease), border-color 0.2s var(--ease), color 0.2s var(--ease); }
-/* New rule sits top-right of the rules card, matched to the CRM tab metrics. */
-.bp :global(.content .newrule-btn) { align-self: flex-start; height: 34px; padding: 0 14px; font-size: 12.5px; border-width: 1.5px; flex-shrink: 0; }
+/* New rule sits top-right of the rules card, matched to the CRM tab metrics.
+   `margin-left: auto` is what pins it to the card's right border: .card-head is
+   a flex row and .card-titles is `flex: 0 1 auto`, so on a wide card the
+   description fits on one line and the button used to hug the end of that text
+   instead of the card edge. Same mechanism .card-link already uses — one
+   pattern for "trailing action in a card head", not two.
+   `align-self: flex-start` keeps it level with the TITLE; without it the head's
+   `align-items: center` would centre a 34px button against a two-line text
+   block and drop it below the title line. */
+.bp :global(.content .newrule-btn) { align-self: flex-start; margin-left: auto; height: 34px; padding: 0 14px; font-size: 12.5px; border-width: 1.5px; flex-shrink: 0; }
 .bp :global(.content .newrule-btn .ic) { width: 14px; height: 14px; }
 .bp :global(.content .rule-form) { padding: 14px 16px 16px; border-bottom: 2px solid var(--hair-soft); background: var(--paper-deep); }
 .bp :global(.content .rule-form.is-hidden) { display: none; }
 .bp :global(.content .rf-grid) { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .bp :global(.content .rf-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
-.bp :global(.content .rf-in), .bp :global(.content .rf-sel) {
+.bp :global(.content .rf-in) {
   width: 100%; height: 36px; padding: 0 10px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
   background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink);
 }
-.bp :global(.content .rf-in:focus), .bp :global(.content .rf-sel:focus) { outline: none; border-color: var(--ink); }
+.bp :global(.content .rf-in:focus) { outline: none; border-color: var(--ink); }
+/* The rule form's two selects are on the shared `.bp-sel` / `.bp-sel-in`
+   treatment (blueprint-global.css), which owns appearance, chevron, mono type
+   and focus — none of that is re-derived here. The old `.rf-sel` rule is gone
+   rather than kept alongside it: at `.bp .content .rf-sel` (3 classes) it
+   out-specified `.jf-blueprint .bp-sel-in` (2) and would have pulled the
+   native font, size and border straight back.
+
+   What IS left to the host form is geometry, and only the two values that make
+   a converted select line up with its <input> siblings in the same .rf-grid
+   row: the 36px row height and the 10px text inset (`.bp-sel-in` sets only
+   `padding-right: 30px`, clearing the chevron). Border color is re-pointed at
+   this card's own `--hair-soft` hairline; the global default `--ink-line` is
+   far lighter and would have made the selects read as a different weight of
+   control from the inputs beside them.
+
+   Scoped on `.rf-body`, not `.rule-form`: ruleFormHtml() is rendered into
+   #ruleForm when CREATING but straight into a rules <li> when EDITING, and
+   `.rf-body` is the one wrapper both paths share. */
+.bp :global(.content .rf-body .bp-sel-in) {
+  height: 36px; padding-left: 10px;
+  border-color: var(--hair-soft);
+}
+.bp :global(.content .rf-body .bp-sel-in:hover),
+.bp :global(.content .rf-body .bp-sel-in:focus) { border-color: var(--ink); }
 .bp :global(.content .rf-act) { display: flex; gap: 8px; margin-top: 14px; }
+/* What "None" means, said once under the two selects rather than left for the
+   user to discover at send time. */
+.bp :global(.content .rf-note) { margin-top: 10px; font-size: 11px; color: var(--muted); }
+
+/* Action failures.
+   Rule CRUD is manager-gated and the queue actions are org-scoped, so a refusal
+   is a normal outcome, not an exception — the server writes those messages for
+   the user and they have to land somewhere visible. Same treatment the Workers
+   dialogs already use; only the outer margins differ, because here the box sits
+   inside a card (`--boxed`) or free on the sheet (`--flush`). */
+.bp :global(.content .mf-err) { font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err--boxed) { margin: 0 16px 12px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+.bp :global(.content .mf-err--flush) { margin-left: 0; margin-right: 0; }
+.bp :global(.content .rf-body .mf-err) { margin: 12px 0 0; }
+.bp :global(.content .mf-err.is-hidden) { display: none; }
+/* A button with a write in flight: dimmed, no hover lift, cursor says "wait". */
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
+/* The rule row's own controls while its write is in flight — the switch has no
+   `.btn` treatment to inherit. */
+.bp :global(.content .tgl[disabled]),
+.bp :global(.content .rule-del[disabled]) { opacity: 0.6; cursor: progress; }
 
 /* — Follow-up queue — */
 .bp :global(.content .q-table .q-who) { font-size: 13px; font-weight: 700; }

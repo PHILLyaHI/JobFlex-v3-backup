@@ -54,7 +54,10 @@
   --card-pad: clamp(14px, 4.2vw, 20px);
   --fs-h1: clamp(30px, 9.2vw, 44px);
   --fs-mast: clamp(34px, 11vw, 52px);
-  --topbar-h: 56px;
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
   /* Two 44px framed boxes + the mark + the wordmark have to clear 320px; the
      bar gap is the only slack left, so it is fluid rather than a flat 10px. */
   --tbar-gap: clamp(6px, 1.8vw, 11px);
@@ -67,6 +70,11 @@
      10.5px still clear AA on the soft fill; the base tones would not. */
   --warning-dark: #96691a;
   --success-dark: #2c6335;
+
+  /* The project name is the card's headline, so it scales with the viewport
+     like --fs-h1 does rather than sitting at a flat 15px: 18px at 320px,
+     22px by 430px. Anything larger and a two-line name eats the row. */
+  --fs-pjname: clamp(18px, 5.4vw, 22px);
 
   /* The shell owns the viewport: the route renders inside the app's root
      wrapper, so it pins itself rather than fighting the outer flow. */
@@ -346,6 +354,12 @@
 }
 .ddItem:nth-child(-n + 3) { border-top: none; }
 .ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
 .ddItem:active { background: var(--paper-deep); }
 .ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
 /* Absolute, so the tick cannot squeeze the label in a ~87px cell. */
@@ -363,10 +377,11 @@
 .ddItem.active .ddCount { color: var(--blueprint); }
 /* ============================================================
    PROJECT LIST — the desktop 2-up card grid re-cut as row cards.
-   Three text lines plus a drawn progress rule: identity + actions,
-   the mono window/job annotation, then status + figures, then the
-   rule. The separator between records is a real 1.5px ink line,
-   not a faint wash, so the records read as separate documents.
+   Three text lines plus a drawn progress rule: the mono window/job
+   annotation as a KICKER, the name under it + actions, then status
+   + figures, then the rule. The separator between records is a real
+   1.5px ink line, not a faint wash, so the records read as
+   separate documents.
    ============================================================ */
 .book {
   border: var(--border);
@@ -381,7 +396,9 @@
      push the actions button off the card. */
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0 12px;
-  padding: 14px var(--card-pad) 16px;
+  /* Top pad is 12px, not 14px: the kicker now leads the card, and a mono caps
+     line has visually more air above it than a 700-weight name did. */
+  padding: 12px var(--card-pad) 16px;
   border-bottom: 1.5px solid var(--ink);
   width: 100%;
   text-align: left;
@@ -392,26 +409,33 @@
 /* EVERY child is pinned to an explicit grid-column. A child given a grid-row
    but no grid-column is placed in its own earlier pass and can claim the wrong
    column, shoving a sibling sideways — that shipped once on the clients rows. */
+/* The headline. 3px under the kicker and nothing else between them: the pair
+   reads as one stamped block — annotation over title — rather than two rows
+   that happen to sit near each other. line-height is pulled to 1.15 because at
+   18–22px the old 1.3 put a visible band of air inside a two-line name. */
 .pjName {
   grid-column: 1;
-  grid-row: 1;
+  grid-row: 2;
   min-width: 0;
+  margin-top: 3px;
   overflow-wrap: anywhere;
-  font-size: 15px; font-weight: 700;
+  font-size: var(--fs-pjname); font-weight: 800;
+  letter-spacing: -0.01em;
   color: var(--ink);
-  line-height: 1.3;
-  align-self: center;
+  line-height: 1.15;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+/* Spans the kicker+title block and centres on it, so the button reads as
+   belonging to the whole heading rather than to either line. */
 .pjOpen {
   grid-column: 2;
-  grid-row: 1;
-  align-self: start;
+  grid-row: 1 / span 2;
+  align-self: center;
   width: 44px; height: 44px;
-  margin: -4px -6px 0 0;
+  margin: 0 -6px 0 0;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
@@ -421,29 +445,34 @@
 }
 .pjOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
 .pjOpen .ic { width: 18px; height: 18px; }
-/* Rows 2, 3 and 4 are ONE GROUP: ~16px clear of the name, then only ~5px and
-   ~11px inside the group. Reading down you get identity, a gap, then the
-   record's data — instead of four evenly-spaced lines that all compete.
-   All three span 1/-1 so they start at the card's left grid edge rather than
-   indenting under the name column. */
+/* The KICKER. Same drawing-annotation register as before — mono, small, muted,
+   caps — it has only moved above the name, where a dateline stamped over a
+   title is the register's natural home. It stays in column 1: spanning under
+   the actions button would let a long window string run beneath it. */
 .pjMeta {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  margin-top: 16px;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 11.5px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
+  line-height: 1.35;
   color: var(--muted-light);
 }
 /* Badge leads, the figures close at the far right. align-items:center puts the
    badge, the percentage and the budget on one shared optical axis even though
    all three have different cap heights. */
+/* Rows 3 and 4 are ONE GROUP, and the 14px above this line is the card's only
+   real gap: kicker→name is 3px, name→data is 14px, data→rule is 11px. Reading
+   down you get the heading block, one break, then the record's figures —
+   instead of four evenly-spaced lines that all compete. Both span 1/-1 so they
+   start at the card's left grid edge rather than indenting under the name. */
 .pjFoot {
   grid-column: 1 / -1;
   grid-row: 3;
   display: flex; align-items: center;
   gap: 10px;
-  margin-top: 5px;
+  margin-top: 14px;
 }
 /* One welded group, not a wrapping flex line: with a long badge the single line
    could drop the budget to its own row. */
@@ -797,6 +826,11 @@
   .formFoot { grid-template-columns: 1fr; }
 }
 @media (max-width: 360px) {
+  /* The kicker has to survive the longest string the fixture can print —
+     "AUG 04 → SEP 26 · 5/8 DONE" — on ONE line beside the 44px actions button.
+     A wrapped dateline stops reading as a kicker and starts reading as a
+     detached row, which is exactly what this rhythm is built to avoid. */
+  .pjMeta { font-size: 11px; letter-spacing: 0.05em; }
   .pmastCnt { grid-template-columns: 1fr; }
   .pmastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
   .pmastSub:last-child { border-bottom: none; }

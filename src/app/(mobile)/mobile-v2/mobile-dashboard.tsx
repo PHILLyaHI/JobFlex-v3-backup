@@ -47,6 +47,8 @@ import {
   type RangeKey,
   type StageKey,
 } from "./mobile-data";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -169,13 +171,12 @@ export function MobileDashboard() {
     setH();
     window.addEventListener("resize", setH);
     window.visualViewport?.addEventListener("resize", setH);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", setH);
       window.visualViewport?.removeEventListener("resize", setH);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -526,6 +527,9 @@ export function MobileDashboard() {
     return () => document.removeEventListener("keydown", onKey);
   }, [sheetLead]);
 
+  // Swipe-down dismissal, on the same close path as Escape and the scrim.
+  const sheetDrag = useSheetDrag(Boolean(sheetLead), () => setSheetLead(null));
+
   const rowDelay = (i: number) => ({ animationDelay: `${i * 45}ms` });
 
   return (
@@ -548,8 +552,8 @@ export function MobileDashboard() {
             className={styles.tbarMarkImg}
             src="/jobflex-mark.png"
             alt=""
-            width={66}
-            height={66}
+            width={108}
+            height={108}
             priority
           />
         </span>
@@ -975,7 +979,7 @@ export function MobileDashboard() {
       <aside className={`${styles.sb} ${navOpen ? styles.open : ""}`} aria-label="Main navigation" aria-hidden={!navOpen}>
         <div className={styles.sbHead}>
           <span className={styles.sbMarkBox}>
-            <Image className={styles.sbMarkImg} src="/jobflex-mark.png" alt="" width={68} height={68} />
+            <Image className={styles.sbMarkImg} src="/jobflex-mark.png" alt="" width={108} height={108} />
           </span>
           <div className={styles.sbHeadTxt}>
             <div className={styles.sbHeadName}>JOBFLEX</div>
@@ -1058,9 +1062,10 @@ export function MobileDashboard() {
         aria-modal="true"
         aria-label="Move lead to stage"
         aria-hidden={!sheetLead}
+        {...sheetDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...sheetDrag.handleProps} />
+        <div className={styles.sheetHead} {...sheetDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {sheetLead ? `${sheetLead.name} · $${usd(sheetLead.val)}` : "Lead · —"}
           </div>

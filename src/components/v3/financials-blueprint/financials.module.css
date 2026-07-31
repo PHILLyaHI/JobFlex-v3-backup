@@ -1366,6 +1366,24 @@
 /* receipt + attention */
 .bp :global(.content .fi-two) { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: stretch; }
 .bp :global(.content .rc-body) { padding: 16px 18px 18px; flex: 1; }
+/* Capture status — the drawing-annotation layer, so it reads as a margin note
+   on the drop zone rather than another control. */
+.bp :global(.content .rc-note) {
+  margin-top: 9px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.bp :global(.content .rc-note--bad) { color: var(--danger); font-weight: 700; }
+.bp :global(.content .rc-note.is-hidden) { display: none; }
+/* While the file is being read and scanned the zone stops inviting a click. */
+.bp :global(.content .rc-drop.is-busy) { opacity: 0.6; pointer-events: none; cursor: progress; }
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
+
 .bp :global(.content .rc-drop) {
   width: 100%; min-height: 128px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
@@ -1479,4 +1497,97 @@
   .bp :global(.content .rc-row) { grid-template-columns: 1fr; }
   .bp :global(.content .fi-table th:nth-child(3)), .bp :global(.content .fi-table td:nth-child(3)),
   .bp :global(.content .fi-table th:nth-child(4)), .bp :global(.content .fi-table td:nth-child(4)) { display: none; }
+}
+
+/* ── Table notes ──────────────────────────────────────────────────────
+   A refused write (server-side manager gate, "Only drafts can be sent") has
+   to land somewhere the user is already looking. These sit directly under the
+   book's head strip, in the drawing-annotation layer like `.rc-note`, so they
+   read as a margin note on the ledger rather than as another control. */
+.bp :global(.content .fi-tnote) {
+  padding: 9px 17px 11px;
+  border-bottom: 1.5px solid var(--hair-soft);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.bp :global(.content .fi-tnote.is-hidden) { display: none; }
+/* Inside a dialog there is no head strip to hang off, so it becomes a box. */
+.bp :global(.content .fi-tnote--boxed) {
+  margin: 0 17px 15px;
+  padding: 9px 11px;
+  border: 1.5px solid var(--danger);
+  border-bottom-width: 1.5px;
+  border-radius: var(--radius);
+}
+
+/* ── Confirmation dialog ──────────────────────────────────────────────
+   Same overlay contract as every other blueprint dialog (Workers, Leads, the
+   create dialogs): `.content` carries z-index 1 in the shell, so an open
+   dialog needs the `:has()` escape hatch or its scrim renders under the
+   topbar. The enter/exit keyframes live in dashboard-blueprint/
+   blueprint-global.css on `.mdl.open` / `.mdl.mdl--closing`. */
+.bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
+.bp :global(.content .mdl.open) { display: flex; }
+.bp :global(.content:has(.mdl.open)) { z-index: auto; }
+.bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
+.bp :global(.content .mdl-box) { position: relative; width: min(380px, 100%); border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); }
+.bp :global(.content .mdl-head) { padding: 15px 17px 0; font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
+.bp :global(.content .mdl-head--row) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.bp :global(.content .mdl-x) {
+  width: 26px; height: 26px; flex: 0 0 auto; margin: -3px -3px 0 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.bp :global(.content .mdl-x:hover) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+.bp :global(.content .mdl-x .ic) { width: 14px; height: 14px; }
+.bp :global(.content .mdl-txt) { padding: 7px 17px 15px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); }
+.bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
+
+/* ── Row links ────────────────────────────────────────────────────────
+   The job on an expense, the job on a change order and the invoice number are
+   real destinations now, so they carry the accent on hover the way every other
+   blueprint link does. `.icon-sq` is shared with the buttons beside it, so an
+   anchor wearing it only needs its own centring. */
+.bp :global(.content .fi-link) { color: inherit; transition: color 0.12s; }
+.bp :global(.content .fi-link:hover) { color: var(--blueprint); text-decoration: underline; text-underline-offset: 2px; }
+.bp :global(.content a.icon-sq) { text-decoration: none; }
+.bp :global(.content .prow[data-busy]) { opacity: 0.55; }
+.bp :global(.content .prow[data-busy] .icon-sq) { pointer-events: none; }
+
+@media (max-width: 860px) {
+  .bp :global(.content .mdl-x) { width: 44px; height: 44px; margin: -8px -8px 0 0; }
+  .bp :global(.content .mdl-x .ic) { width: 16px; height: 16px; }
+}
+
+/* An org with no paid invoices and no expenses has no chart to draw. Say that
+   in the chart's own box instead of leaving an empty frame. */
+.bp :global(.content .fi-chart-empty) {
+  height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--muted);
+}
+/* PENDING and PENDING-past-due are different problems; the pill says the first,
+   this says the second. */
+.bp :global(.content .inv-late) {
+  margin-left: 7px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--danger);
 }

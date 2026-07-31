@@ -19,8 +19,11 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { initBlueprintShell, type ShellHandle } from "./shell-behavior";
+import { CommandPalette } from "./command-palette";
+import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
+import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { Sprite } from "./sprite";
-import { Sidebar } from "./sidebar";
+import { Sidebar, type SidebarUser } from "./sidebar";
 import { Topbar } from "./topbar";
 import proposalStyles from "@/components/v3/proposals-blueprint/proposals.module.css";
 import dashboardStyles from "@/components/v3/dashboard-blueprint/blueprint.module.css";
@@ -37,6 +40,8 @@ import projectsStyles from "@/components/v3/projects-blueprint/projects.module.c
 import workersStyles from "@/components/v3/workers-blueprint/workers.module.css";
 import advancedAiStyles from "@/components/v3/advanced-ai-blueprint/advanced-ai.module.css";
 import announcementsStyles from "@/components/v3/announcements-blueprint/announcements.module.css";
+import estimatorsStyles from "@/components/v3/estimators-blueprint/estimators.module.css";
+import "@/components/v3/estimators-blueprint/estimators-global.css";
 import fenceEstimatorStyles from "@/components/v3/fence-estimator-blueprint/fence-estimator.module.css";
 import messagesStyles from "@/components/v3/messages-blueprint/messages.module.css";
 import phoneStyles from "@/components/v3/phone-blueprint/phone.module.css";
@@ -44,6 +49,7 @@ import referralsStyles from "@/components/v3/referrals-blueprint/referrals.modul
 import reportsStyles from "@/components/v3/reports-blueprint/reports.module.css";
 import reviewsStyles from "@/components/v3/reviews-blueprint/reviews.module.css";
 import roofEstimatorStyles from "@/components/v3/roof-estimator-blueprint/roof-estimator.module.css";
+import settingsStyles from "@/components/v3/settings-blueprint/settings.module.css";
 import tradeStyles from "@/components/v3/trade-blueprint/trade.module.css";
 
 /**
@@ -60,6 +66,10 @@ const PAGE_STYLES: Record<string, string> = {
   clients: clientsStyles.bp,
   company: companyStyles.bp,
   crm: crmStyles.bp,
+  // One entry for TWO routes: pageKey() reads the first segment after
+  // /dashboard, so /dashboard/estimators and /dashboard/estimators/manual both
+  // land here and share a stylesheet.
+  estimators: estimatorsStyles.bp,
   "fence-estimator": fenceEstimatorStyles.bp,
   financials: financialsStyles.bp,
   hire: hireStyles.bp,
@@ -72,6 +82,10 @@ const PAGE_STYLES: Record<string, string> = {
   reports: reportsStyles.bp,
   reviews: reviewsStyles.bp,
   "roof-estimator": roofEstimatorStyles.bp,
+  // Only the /dashboard/settings INDEX is a blueprint page; its child routes
+  // (/account, /billing, /team, …) still render on the classic (dashboard)
+  // shell, which never mounts this component — so the key is safe to claim.
+  settings: settingsStyles.bp,
   trade: tradeStyles.bp,
   workers: workersStyles.bp,
 };
@@ -87,7 +101,16 @@ function pageKey(pathname: string): string {
   return rest.split("/")[0];
 }
 
-export function BlueprintShell({ children }: { children: React.ReactNode }) {
+export function BlueprintShell({
+  children,
+  user,
+}: {
+  children: React.ReactNode;
+  /** Signed-in identity for the sidebar's account block. Read server-side in
+   *  the layout — the blueprint tree has no SessionProvider, so `useSession`
+   *  is not available down here. */
+  user?: SidebarUser;
+}) {
   const rootRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<ShellHandle | null>(null);
   const pathname = usePathname() ?? "/dashboard";
@@ -118,8 +141,29 @@ export function BlueprintShell({ children }: { children: React.ReactNode }) {
     >
       <Sprite />
 
+      {/* Mounted once, in the shell, so ⌘K works on every blueprint page
+          without each one carrying its own copy. */}
+      <CommandPalette />
+
+      {/* Same reasoning: the topbar's New Estimate button is on every page, so
+          the picker it opens belongs to the chrome, not to a route. It replaced
+          a /dashboard/estimators page and its sidebar item — choosing an engine
+          is a decision on the way somewhere, not a place you go. */}
+      <EstimatorPicker />
+
+      {/* Same reasoning, and it closes a gap six separate pages hit
+          independently: the create flows call `reportPlanLimit()` when the org
+          is over its plan, but the dialog that call opens was mounted ONLY in
+          the classic (dashboard) layout — so on every blueprint page the limit
+          was reported into a void and the user got, at best, a line of text
+          with no way to upgrade. It is the existing component, mounted, not a
+          blueprint re-draw: it carries the old design's visual language, which
+          is the same trade the MaterialsSheet island already makes.
+          Store-driven (Zustand, module-level), so it needs no provider. */}
+      <PlanLimitDialog />
+
       <div className="layout">
-        <Sidebar />
+        <Sidebar user={user} />
 
         <div className="sb-overlay" id="sbOverlay"></div>
 

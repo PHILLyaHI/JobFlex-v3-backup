@@ -34,6 +34,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-clients.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   ALL,
   CLIENTS_SEED,
@@ -136,13 +138,12 @@ export function MobileClients() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -377,6 +378,11 @@ export function MobileClients() {
 
   const anyOverlay = Boolean(sheetClient) || newOpen;
 
+  // Swipe-down dismissal. Each sheet gets its own gesture bound to the same
+  // close path Cancel and the scrim already use, so nothing else changes.
+  const actionsDrag = useSheetDrag(Boolean(sheetClient), () => setSheetId(null));
+  const newDrag = useSheetDrag(newOpen, () => setNewOpen(false));
+
   return (
     <div className={styles.app} onClick={onRootClick}>
 
@@ -555,9 +561,9 @@ export function MobileClients() {
 
       {/* ============ ROW ACTIONS SHEET ============ */}
       <div className={`${styles.sheet} ${sheetClient ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-label="Client actions" aria-hidden={!sheetClient}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-label="Client actions" aria-hidden={!sheetClient} {...actionsDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
+        <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {sheetClient
               ? `${sheetClient.proposalCount} proposals · ${sheetClient.pipelineValue ? money(sheetClient.pipelineValue) : "nothing open"} · upd ${sheetClient.updated}`
@@ -583,9 +589,9 @@ export function MobileClients() {
 
       {/* ============ NEW CLIENT SHEET ============ */}
       <div className={`${styles.sheet} ${newOpen ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-labelledby="mcNewTitle" aria-hidden={!newOpen}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-labelledby="mcNewTitle" aria-hidden={!newOpen} {...newDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...newDrag.handleProps} />
+        <div className={styles.sheetHead} {...newDrag.handleProps}>
           <div className={styles.sheetKicker}>CRM / new record</div>
           <div className={styles.sheetTitle} id="mcNewTitle">New client</div>
         </div>

@@ -12,18 +12,43 @@
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
 //
+// One RE-LAYOUT (owner request): the donor stacks Revenue full width and then
+// pairs Pipeline + Conversion in `.rp-two`. Here Revenue and Conversion share
+// one 70/30 row (`.rp-split`) and Pipeline runs full width beneath it. Every
+// card's internal markup is the donor's, untouched; only the wrappers and the
+// block order changed. The revenue chart's viewBox is retuned for the 70%
+// column in reports-behavior.ts → renderChart().
+//
 // One relocation: the donor parks the export dialog (`.mdl#expMdl`) OUTSIDE
 // `.content`, as a direct child of `.layout`. Nothing may be appended to
 // document.body from a page module, so it ships as the last block here
 // instead; it is `position: fixed`, so DOM order changes nothing visually, and
 // reports.module.css restores its stacking with `.content:has(.mdl.open)`.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initReportsContent } from "./reports-behavior";
+import type { ReportsRollup } from "./reports-data";
 import { ReportsSprite } from "./sprite";
 
-export function ReportsContent() {
-  useBlueprintContent(initReportsContent);
+/**
+ * @param rollup the org's real aggregates, read in the page's server component
+ *   (getReportsRollup). All four ranges are precomputed, so the range chips
+ *   switch without a round trip.
+ */
+export function ReportsContent({ rollup }: { rollup: ReportsRollup }) {
+  // The rollup reaches `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade — so the init has
+  // to stay referentially stable for the life of the mount. The ref is never
+  // written after creation; a navigation away unmounts the component, so the
+  // next visit gets a fresh ref holding freshly-queried aggregates.
+  const seedRef = useRef(rollup);
+  const init = useCallback(
+    (content: HTMLElement) => initReportsContent(content, { rollup: seedRef.current }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -51,31 +76,21 @@ export function ReportsContent() {
       {/* SUMMARY */}
       <div className="stat-grid" id="summary"></div>
 
-      {/* REVENUE */}
-      <div className="card rp-card">
-        <div className="rp-head">
-          <div>
-            <div className="card-title">Revenue</div>
-            <div className="card-sub">Collected against invoiced, by month.</div>
-          </div>
-          <div className="rp-legend">
-            <span><i className="sw-inv"></i>Invoiced</span>
-            <span><i className="sw-col"></i>Collected</span>
-          </div>
-        </div>
-        <div className="rp-chart" id="revChart"></div>
-      </div>
-
-      <div className="rp-two">
-        {/* FUNNEL */}
+      {/* REVENUE + CONVERSION — one row, 70 / 30 (see .rp-split) */}
+      <div className="rp-split">
+        {/* REVENUE */}
         <div className="card rp-card">
           <div className="rp-head">
             <div>
-              <div className="card-title">Pipeline</div>
-              <div className="card-sub">Where the work falls out.</div>
+              <div className="card-title">Revenue</div>
+              <div className="card-sub">Collected against invoiced, by month.</div>
+            </div>
+            <div className="rp-legend">
+              <span><i className="sw-inv"></i>Invoiced</span>
+              <span><i className="sw-col"></i>Collected</span>
             </div>
           </div>
-          <div className="funnel" id="funnel"></div>
+          <div className="rp-chart" id="revChart"></div>
         </div>
 
         {/* CONVERSION */}
@@ -88,6 +103,17 @@ export function ReportsContent() {
           </div>
           <div className="conv-body" id="convBody"></div>
         </div>
+      </div>
+
+      {/* FUNNEL — full width */}
+      <div className="card rp-card">
+        <div className="rp-head">
+          <div>
+            <div className="card-title">Pipeline</div>
+            <div className="card-sub">Where the work falls out.</div>
+          </div>
+        </div>
+        <div className="funnel" id="funnel"></div>
       </div>
 
       {/* CREWS */}

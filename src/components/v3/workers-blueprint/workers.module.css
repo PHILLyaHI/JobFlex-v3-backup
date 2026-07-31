@@ -1399,6 +1399,12 @@
 .bp :global(.content .link-btn:hover) { border-color: var(--ink); color: var(--ink); }
 .bp :global(.content .link-btn .ic) { width: 13px; height: 13px; }
 .bp :global(.content .link-btn.done) { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
+/* "Open full profile" — the classic roster's route out to /dashboard/workers/<id>.
+   A quiet text link under the portal-link box, so it never competes with the
+   two primary inspector actions below it. */
+.bp :global(.content .insp-profile) { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.bp :global(.content .insp-profile:hover) { color: var(--accent); }
+.bp :global(.content .insp-profile .ic) { width: 12px; height: 12px; color: currentColor; }
 .bp :global(.content .insp-act) { display: flex; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 2px solid var(--hair-soft); }
 .bp :global(.content .insp-act .btn) { flex: 1; justify-content: center; }
 .bp :global(.content .btn--danger) { border-color: var(--danger); color: var(--danger); }

@@ -15,11 +15,34 @@
 // The donor's 42-symbol sprite is byte-identical to the shell's, so no local
 // sprite is rendered — every <use href="#i-…"> here resolves against it.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initJobsContent } from "./jobs-behavior";
+import type { Job, JobClientOption, JobCrewOption } from "./jobs-data";
 
-export function JobsContent() {
-  useBlueprintContent(initJobsContent);
+export type JobsContentProps = {
+  /** The org's real board, read server-side. */
+  entries: Job[];
+  /** Clients the create dialog can attach the job to. */
+  clients: JobClientOption[];
+  /** Workers the create dialog can staff it with (empty for installers). */
+  crew: JobCrewOption[];
+  /** Owner/manager. Gates the row menu's status writes — `updateJob` refuses
+   *  for anyone else, so the items are not offered. */
+  canManage: boolean;
+};
+
+export function JobsContent({ entries, clients, crew, canManage }: JobsContentProps) {
+  // The seed reaches `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade — so the init has
+  // to stay referentially stable for the life of the mount. Written once, on
+  // first render; from then on the behavior module owns the board and keeps
+  // itself in step with the database through the server actions.
+  const seedRef = useRef({ entries, clients, crew, canManage });
+
+  const init = useCallback((content: HTMLElement) => initJobsContent(content, seedRef.current), []);
+  useBlueprintContent(init);
 
   return (
     <>
@@ -51,6 +74,7 @@ export function JobsContent() {
                 <th>Status</th>
                 <th>Schedule</th>
                 <th className="num">Crew</th>
+                <th className="th-open"></th>
                 <th className="th-open"></th>
               </tr>
             </thead>
@@ -104,20 +128,16 @@ export function JobsContent() {
               <span className="fld-err">Enter what the job is</span>
             </div>
 
+            {/* Real clients, read server-side. The value carried is the client
+                id — `createJob` links by id, not by name — so this is a select
+                and not the free-text field the fixture era used. */}
             <div className="fld">
               <label className="fld-lbl" htmlFor="jfClient">Client</label>
-              <input
-                className="pinput"
-                id="jfClient"
-                name="client"
-                type="text"
-                placeholder="D. Reyes"
-                autoComplete="off"
-                list="jfClientList"
-              />
-              {/* the clients already on the page, offered as suggestions —
-                  filled on mount from the same fixture the table renders */}
-              <datalist id="jfClientList"></datalist>
+              <span className="bp-sel">
+                <select className="bp-sel-in" id="jfClient" name="clientId" defaultValue="">
+                  <option value="">— No client —</option>
+                </select>
+              </span>
             </div>
 
             <div className="fld">
@@ -138,40 +158,48 @@ export function JobsContent() {
               </div>
             </div>
 
+            {/* Schedule. `type="text"`, not `type="date"`: the native control
+                opens an OS panel no stylesheet can reach, so both fields are
+                upgraded on mount by components/v3/shared/date-popover.ts —
+                which wraps them, adds the Start/End identity icons and hangs
+                the blueprint month grid off each. The value they carry is
+                still the same "YYYY-MM-DD" string the native input produced,
+                which is what parseDay / longDate / relLabel parse. */}
             <div className="mdl-row">
               <div className="fld">
                 <label className="fld-lbl" htmlFor="jfStart">Starts</label>
-                <input className="pinput" id="jfStart" name="start" type="date" />
+                <input className="pinput" id="jfStart" name="start" type="text" placeholder="YYYY-MM-DD" autoComplete="off" />
               </div>
               <div className="fld">
                 <label className="fld-lbl" htmlFor="jfEnd">Ends</label>
-                <input className="pinput" id="jfEnd" name="end" type="date" />
+                <input className="pinput" id="jfEnd" name="end" type="text" placeholder="YYYY-MM-DD" autoComplete="off" />
               </div>
             </div>
 
-            <div className="fld">
-              <label className="fld-lbl" htmlFor="jfCrew">Crew</label>
-              <input
-                className="pinput"
-                id="jfCrew"
-                name="crew"
-                type="text"
-                placeholder="Marcus B., Dan K."
-                autoComplete="off"
-              />
-              <span className="fld-hint">Comma-separated — leave empty to dispatch later.</span>
+            {/* Crew toggles, filled on mount from the org's real roster. The
+                whole field is hidden for installers, who are auto-assigned to
+                their own jobs server-side and can't staff anyone else. */}
+            <div className="fld" id="jfCrewFld">
+              <span className="fld-lbl">Crew</span>
+              <div className="fseg" id="jfCrew" role="group" aria-label="Assign crew"></div>
+              <span className="fld-hint">Tap to assign — leave empty to dispatch later.</span>
             </div>
           </form>
+
+          {/* createJob refuses with a message written for the user (plan limit
+              reached, worker profile missing). It lands here rather than the
+              dialog closing on a write that never happened. */}
+          <div className="mf-err mf-err--boxed is-hidden" id="jNewErr" role="alert"></div>
 
           <div className="mdl-foot">
             <button className="btn btn-ghost" type="button" data-mdl="close">
               Cancel
             </button>
-            <button className="btn btn-primary" type="submit" form="jNewForm">
+            <button className="btn btn-primary" type="submit" form="jNewForm" id="jNewOk">
               <svg className="ic">
                 <use href="#i-check" />
               </svg>
-              Create job
+              <span data-save-lbl>Create job</span>
             </button>
           </div>
         </div>

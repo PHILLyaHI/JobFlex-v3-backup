@@ -12,7 +12,8 @@
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { auth } from "@/lib/auth";
+import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { db } from "@/lib/db";
 import { AdvancedAiContent } from "@/components/v3/advanced-ai-blueprint/advanced-ai-content";
 
 export const dynamic = "force-dynamic";
@@ -24,10 +25,31 @@ export const metadata: Metadata = {
 };
 
 export default async function AdvancedAiPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/auth/login?next=%2Fdashboard%2Fadvanced-ai");
+  let organizationId: string;
+  try {
+    const ctx = await requireOrg();
+    organizationId = ctx.organizationId;
+  } catch (err) {
+    if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fadvanced-ai");
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <AdvancedAiContent />;
+  // The hidden profit markup `convertEstimateToProposal` will apply when it
+  // writes the proposal. Read here so the studio's Totals card can state the
+  // client price the proposal will actually carry, instead of the donor's
+  // editable "Margin %" box that the server never saw.
+  const org = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { materialMarkupPct: true, laborMarkupPct: true },
+  });
+
+  return (
+    <AdvancedAiContent
+      markup={{
+        materialMarkupPct: org?.materialMarkupPct ?? 0,
+        laborMarkupPct: org?.laborMarkupPct ?? 0,
+      }}
+    />
+  );
 }

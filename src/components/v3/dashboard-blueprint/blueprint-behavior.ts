@@ -1,25 +1,62 @@
-// Blueprint dashboard — runtime behaviors, ported verbatim from the donor
-// file's <script> (jobflex-dashboard-blueprint.html). Every duration, easing,
-// stagger, threshold and formula is the donor's exact value. Adaptations are
-// mechanical only: queries are scoped to the mounted root, document/window
-// listeners and observers are tracked for unmount cleanup, and the donor's
-// `window load` re-layout gains a `document.fonts.ready` equivalent (in an
-// SPA the load event may already have fired before mount).
+// Blueprint dashboard — runtime behaviors, ported from the donor file's
+// <script> (jobflex-dashboard-blueprint.html). Every duration, easing, stagger,
+// threshold and formula is the donor's exact value. Adaptations:
+//
+// - queries are scoped to the mounted root; document/window listeners, timers
+//   and observers are tracked for unmount cleanup;
+// - the donor's `window load` re-layout gains a `document.fonts.ready`
+//   equivalent (in an SPA the load event may already have fired before mount);
+// - the persistent chrome (mobile nav drawer, FLUID SCALE, sidebar cascade,
+//   sliding indicator, graph-paper parallax) lives in
+//   components/v3/blueprint-shell/shell-behavior.ts and is not re-implemented;
+// - EVERY region is filled from `data`, the org's real aggregates read in
+//   src/app/dashboard/page.tsx. The donor's demo arrays are gone;
+// - the Lead Flow board PERSISTS: a drop calls `updateLeadStatus`, the same
+//   action the classic kanban used, and rolls the card back with the server's
+//   own message if the write is refused;
+// - the donor's row-stagger MutationObserver is replaced by `staggerIn` called
+//   where a list genuinely ARRIVES (first paint, a day switch). The observer
+//   fired on every render, so a repaint replayed the whole entrance and read as
+//   "the list wiped itself" (see references/decisions.md, Session 3).
 
+import { updateLeadStatus } from "@/actions/leads";
+import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
-  TODAY,
-  weekEvents,
-  jobsData,
-  activities,
-  LEADS_SEED,
   LEAD_STAGES,
-  chartDatasets,
-  type Lead,
+  type BoardLead,
+  type ChartRange,
+  type DashboardData,
 } from "./blueprint-data";
 
 const SVGNS = "http://www.w3.org/2000/svg";
 
-export function initDashboardContent(content: HTMLElement): () => void {
+/** The classic CompleteLeadProfileBanner snoozed the Lead Center nudge for a
+ *  week in localStorage, deliberately not in the schema. Same key, same window,
+ *  so a dismissal made on either edition is honoured by both. */
+const SNOOZE_KEY = "jf.leadProfileNag";
+const SNOOZE_DAYS = 7;
+
+/** Every string below comes from the database — client names, job titles,
+ *  activity summaries. They are injected as HTML, so they are escaped. */
+function escapeText(v: string): string {
+  return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function escapeAttr(v: string): string {
+  return escapeText(v).replace(/"/g, "&quot;");
+}
+
+/** `updateLeadStatus` rejects with a message written for the user ("You can
+ *  only update your own leads"). Surface that text; fall back to a generic line
+ *  for a transport failure, which carries nothing useful. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+export function initDashboardContent(content: HTMLElement, data: DashboardData): () => void {
   const disposers: Array<() => void> = [];
   const on = (
     target: EventTarget,
@@ -30,112 +67,244 @@ export function initDashboardContent(content: HTMLElement): () => void {
     target.addEventListener(ev, fn, opts);
     disposers.push(() => target.removeEventListener(ev, fn, opts));
   };
+  // Donor `setTimeout` calls, tracked so an unmount mid-animation cannot fire
+  // into a detached tree.
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const after = (ms: number, fn: () => void) => {
+    const t = setTimeout(() => {
+      timers.delete(t);
+      fn();
+    }, ms);
+    timers.add(t);
+  };
+  disposers.push(() => {
+    timers.forEach((t) => clearTimeout(t));
+    timers.clear();
+  });
+
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const $ = (sel: string) => content.querySelector<HTMLElement>(sel);
   const $$ = (sel: string) => Array.from(content.querySelectorAll<HTMLElement>(sel));
   const main = content.closest<HTMLElement>(".main");
 
-  // Drag & drop mutates stages — clone the seed so a remount starts fresh.
-  const leadsData: Lead[] = LEADS_SEED.map((l) => ({ ...l }));
+  // The board mutates stages locally before the server confirms — clone so a
+  // remount starts from the server rows again.
+  const leadsData: BoardLead[] = data.leads.map((l) => ({ ...l }));
+  /** Cards with a stage write still in flight; a second drop would race its own
+   *  rollback. */
+  const busyLeads = new Set<string>();
 
-  // Dismiss Lead Center banners (smooth height + gap collapse)
-  $$(".banner-close").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const b = btn.closest<HTMLElement>(".banner");
-      if (!b || b.classList.contains("closing")) return;
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        b.classList.add("hidden");
-        return;
-      }
-      b.style.height = b.offsetHeight + "px";
-      b.style.transitionDelay = "0ms";
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          b.classList.add("closing");
-          b.style.height = "0px";
-        }),
-      );
-      b.addEventListener("transitionend", function te(e) {
-        if (e.propertyName !== "height") return;
-        b.classList.add("hidden");
-        b.removeEventListener("transitionend", te);
-      });
+  // ================= TOAST =================
+  // The only channel a refused board move has: it owns no dialog.
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  function toast(msg: string) {
+    const el = $("#dToast");
+    const txt = $("#dToastText");
+    if (!el || !txt) return;
+    txt.textContent = msg;
+    el.classList.remove("is-hidden");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastTimer = null;
+      el.classList.add("is-hidden");
+    }, 6000);
+    timers.add(toastTimer);
+  }
+  const toastEl = $("#dToast");
+  if (toastEl) {
+    on(toastEl, "click", (ev) => {
+      const t = ev.target as HTMLElement | null;
+      if (t?.closest('[data-toast="close"]')) toastEl.classList.add("is-hidden");
     });
+  }
+
+  // ================= LEAD CENTER BANNER =================
+  // Rendered only when the org genuinely cannot receive platform leads. The
+  // dismissal snoozes for a week, exactly as the classic banner did.
+  const banner = $("#leadBanner");
+  if (banner && data.leadProfile) {
+    let snoozed = false;
+    try {
+      snoozed = Date.now() < Number(window.localStorage.getItem(SNOOZE_KEY) ?? 0);
+    } catch {
+      snoozed = false;
+    }
+    if (snoozed) {
+      // Removed rather than hidden: this runs inside the mount's layout effect,
+      // before the first paint, so the banner never flashes — and a removed node
+      // is not part of the reveal cascade's block list below.
+      banner.remove();
+    } else {
+      const gap = data.leadProfile;
+      const missing = $("#bannerMissing");
+      if (missing) {
+        missing.textContent =
+          gap.needsAddress && gap.needsTrades
+            ? "your business address and the trades you take"
+            : gap.needsAddress
+              ? "your business address"
+              : "the trades you take";
+      }
+      const close = banner.querySelector<HTMLElement>(".banner-close");
+      close?.addEventListener("click", () => {
+        try {
+          window.localStorage.setItem(
+            SNOOZE_KEY,
+            String(Date.now() + SNOOZE_DAYS * 24 * 60 * 60 * 1000),
+          );
+        } catch {
+          /* still collapse for this visit */
+        }
+        if (banner.classList.contains("closing")) return;
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          banner.classList.add("hidden");
+          return;
+        }
+        banner.style.height = banner.offsetHeight + "px";
+        banner.style.transitionDelay = "0ms";
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            banner.classList.add("closing");
+            banner.style.height = "0px";
+          }),
+        );
+        banner.addEventListener("transitionend", function te(e) {
+          if (e.propertyName !== "height") return;
+          banner.classList.add("hidden");
+          banner.removeEventListener("transitionend", te);
+        });
+      });
+    }
+  }
+
+  // ================= HEAD + KPI STRIP =================
+  // Written before the motion pack runs, so its count-up animates the real
+  // figure rather than a placeholder.
+  const greet = $("#greetKicker");
+  if (greet) greet.textContent = data.greeting;
+  const kpiTargets: Array<[string, string]> = [
+    ["#kpiRevenue", data.kpis.revenue],
+    ["#kpiPipeline", data.kpis.pipeline],
+    ["#kpiOpen", data.kpis.openProposals],
+    ["#kpiLeads", data.kpis.newLeads],
+  ];
+  kpiTargets.forEach(([sel, val]) => {
+    const el = $(sel);
+    if (el) el.textContent = val;
   });
 
   // ================= RENDER =================
-  function renderWeek(day: number) {
+  let selectedIso = data.week.days.some((d) => d.iso === data.week.todayIso)
+    ? data.week.todayIso
+    : (data.week.days[0]?.iso ?? "");
+
+  function renderWeekHead() {
+    const range = $("#weekRange");
+    if (!range) return;
+    const n = data.week.scheduled;
+    range.innerHTML =
+      escapeText(data.week.range) + " · <b>" + n + " scheduled</b>";
+  }
+
+  function renderWeekStrip() {
+    const strip = $("#weekStrip");
+    if (!strip) return;
+    strip.innerHTML = data.week.days
+      .map(
+        (d) =>
+          '<div class="day' +
+          (d.today ? " today" : "") +
+          (d.iso === selectedIso ? " selected" : "") +
+          '" data-iso="' +
+          escapeAttr(d.iso) +
+          '"><div class="day-lbl">' +
+          escapeText(d.lbl) +
+          '</div><div class="day-num">' +
+          d.num +
+          '</div><div class="day-dot' +
+          (d.has ? "" : " off") +
+          '"></div></div>',
+      )
+      .join("");
+  }
+
+  /** @param arriving true when a different day was picked — a genuinely new set
+   *   of blocks is being put in front of the user, so the rows come in. */
+  function renderWeek(iso: string, arriving?: boolean) {
     const list = $("#weekList");
     if (!list) return;
-    const evs = (weekEvents[day] || []).slice().sort((a, b) => a.m - b.m);
+    const evs = (data.week.events[iso] || []).slice().sort((a, b) => a.m - b.m);
     let html = evs.length
       ? evs
           .map(
             (e) =>
               '<div class="sched-row"><span class="tag">' +
-              e.t +
+              escapeText(e.t) +
               '</span><span class="sched-title">' +
-              e.title +
+              escapeText(e.title) +
               "</span></div>",
           )
           .join("")
       : '<div class="empty">Nothing scheduled for this day.</div>';
     html +=
-      '<a class="card-foot-btn" href="#">Go to Calendar<svg class="ic"><use href="#i-arrow"/></svg></a>';
+      '<a class="card-foot-btn" href="/dashboard/calendar">Go to Calendar<svg class="ic"><use href="#i-arrow"/></svg></a>';
     list.innerHTML = html;
     list.classList.add("scrollable");
     list.classList.toggle("has-more", evs.length > 10);
+    if (arriving) staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".sched-row, .empty")));
   }
 
   function renderJobs() {
     const list = $("#jobsList");
     if (!list) return;
-    const sorted = jobsData.slice().sort((a, b) => a.k - b.k); // nearest first
-    let html = sorted
-      .map(
-        (j) =>
-          '<div class="job-row"><span class="job-date' +
-          (j.k === 700 + TODAY ? " today" : "") +
-          '">' +
-          j.date +
-          "</span>" +
-          '<div class="job-info"><div class="job-title">' +
-          j.title +
-          '</div><div class="job-sub">' +
-          j.sub +
-          "</div></div>" +
-          '<span class="chip ' +
-          (j.st === "ok" ? "ok" : "wait") +
-          '">' +
-          (j.st === "ok" ? "Confirmed" : "Pending") +
-          "</span></div>",
-      )
-      .join("");
+    let html = data.jobs.length
+      ? data.jobs
+          .map(
+            (j) =>
+              '<div class="job-row"><span class="job-date' +
+              (j.today ? " today" : "") +
+              '">' +
+              escapeText(j.date) +
+              "</span>" +
+              '<div class="job-info"><div class="job-title">' +
+              escapeText(j.title) +
+              '</div><div class="job-sub">' +
+              escapeText(j.sub) +
+              "</div></div>" +
+              '<span class="chip ' +
+              (j.st === "ok" ? "ok" : "wait") +
+              '">' +
+              (j.st === "ok" ? "Confirmed" : "Pending") +
+              "</span></div>",
+          )
+          .join("")
+      : '<div class="empty">Your calendar is clear.</div>';
     html +=
-      '<a class="card-foot-btn" href="#">Go to Jobs<svg class="ic"><use href="#i-arrow"/></svg></a>';
+      '<a class="card-foot-btn" href="/dashboard/jobs">Go to Jobs<svg class="ic"><use href="#i-arrow"/></svg></a>';
     list.innerHTML = html;
     list.classList.add("scrollable");
-    list.classList.toggle("has-more", sorted.length > 10);
+    list.classList.toggle("has-more", data.jobs.length > 10);
   }
 
   function renderActivity() {
     const list = $("#actList");
     if (!list) return;
-    const shown = activities.slice(0, 10); // limit: max 10 even if 15
-    list.innerHTML = shown
-      .map(
-        (a) =>
-          '<div class="act-row"><div class="act-ic"><svg class="ic"><use href="#' +
-          a.i +
-          '"/></svg></div>' +
-          '<div><div class="act-title">' +
-          a.t +
-          '</div><div class="act-meta">' +
-          a.m +
-          "</div></div></div>",
-      )
-      .join("");
+    list.innerHTML = data.activities.length
+      ? data.activities
+          .map(
+            (a) =>
+              '<div class="act-row"><div class="act-ic"><svg class="ic"><use href="#' +
+              escapeAttr(a.i) +
+              '"/></svg></div>' +
+              '<div><div class="act-title">' +
+              escapeText(a.t) +
+              '</div><div class="act-meta">' +
+              escapeText(a.m) +
+              "</div></div></div>",
+          )
+          .join("")
+      : '<div class="empty">No activity yet.</div>';
     list.classList.add("scrollable");
   }
 
@@ -149,31 +318,33 @@ export function initDashboardContent(content: HTMLElement): () => void {
   function stageItems(st: string) {
     return leadsData.filter((l) => l.stage === st);
   }
-  function leadCardHtml(l: Lead) {
+  function leadCardHtml(l: BoardLead) {
     return (
       '<div class="lead-card" draggable="true" data-id="' +
-      l.id +
+      escapeAttr(l.id) +
       '">' +
       '<div class="lead-name">' +
-      l.name +
+      escapeText(l.name) +
       "</div>" +
       '<div class="lead-job">' +
-      l.job +
+      escapeText(l.job) +
       " · " +
-      l.city +
+      escapeText(l.city) +
       "</div>" +
-      '<div class="lead-meta"><span class="lead-val">$' +
-      l.val.toLocaleString("en-US") +
+      '<div class="lead-meta"><span class="lead-val' +
+      (l.owner ? "" : " none") +
+      '">' +
+      escapeText(l.owner || "Unassigned") +
       '</span><span class="lead-age">' +
-      l.age +
-      " ago</span></div>" +
+      escapeText(l.age) +
+      "</span></div>" +
       "</div>"
     );
   }
   function bindCards(wrap: HTMLElement) {
     wrap.querySelectorAll<HTMLElement>(".lead-card").forEach((card) => {
       card.addEventListener("dragstart", (e) => {
-        const lead = leadsData.find((l) => String(l.id) === card.dataset.id);
+        const lead = leadsData.find((l) => l.id === card.dataset.id);
         dragH = card.offsetHeight;
         dragSrcStage = lead ? lead.stage : null;
         if (e.dataTransfer) {
@@ -204,11 +375,11 @@ export function initDashboardContent(content: HTMLElement): () => void {
     slot.classList.remove("open");
     slot.style.height = "0px";
     slot.addEventListener("transitionend", () => slot.remove(), { once: true });
-    setTimeout(() => {
+    after(300, () => {
       if (slot.parentNode) slot.remove();
-    }, 300);
+    });
   }
-  function renderStage(st: string, opts?: { animateAll?: boolean; highlightId?: number | null }) {
+  function renderStage(st: string, opts?: { animateAll?: boolean; highlightId?: string | null }) {
     opts = opts || {};
     const col = $('.stage-col[data-stage="' + st + '"]');
     if (!col) return;
@@ -248,7 +419,9 @@ export function initDashboardContent(content: HTMLElement): () => void {
       });
     }
     if (opts.highlightId != null && !rm) {
-      const el = wrap.querySelector<HTMLElement>('.lead-card[data-id="' + opts.highlightId + '"]');
+      const el = wrap.querySelector<HTMLElement>(
+        '.lead-card[data-id="' + CSS.escape(opts.highlightId) + '"]',
+      );
       if (el) {
         el.classList.add("landed");
         el.addEventListener("animationend", () => el.classList.remove("landed"), { once: true });
@@ -259,6 +432,48 @@ export function initDashboardContent(content: HTMLElement): () => void {
   function renderBoard() {
     LEAD_STAGES.forEach((st) => renderStage(st, { animateAll: true }));
   }
+
+  /**
+   * The card lands at the END of the target column — exactly where the preview
+   * slot sat — and only the two touched columns repaint, so the rest of the
+   * board never flickers.
+   */
+  function applyMove(id: string, to: string, highlight: boolean) {
+    const idx = leadsData.findIndex((l) => l.id === id);
+    if (idx === -1) return;
+    const lead = leadsData[idx];
+    const from = lead.stage;
+    leadsData.splice(idx, 1);
+    lead.stage = to;
+    leadsData.push(lead);
+    renderStage(from);
+    renderStage(to, { highlightId: highlight ? lead.id : null });
+  }
+
+  /**
+   * OPTIMISTIC, then PERSISTED with `updateLeadStatus` — the same action the
+   * classic kanban board used. The server is org-scoped and gates sales reps to
+   * their own slice, so a refusal is real and has to be honoured: the card goes
+   * back to the column it came from and the action's own message is shown.
+   */
+  async function moveLead(id: string, to: string) {
+    if (!to) return;
+    const lead = leadsData.find((l) => l.id === id);
+    if (!lead || lead.stage === to) return;
+    if (busyLeads.has(id)) return;
+    const from = lead.stage;
+    busyLeads.add(id);
+    applyMove(id, to, true);
+    try {
+      await updateLeadStatus(id, to.toUpperCase());
+      busyLeads.delete(id);
+    } catch (err) {
+      busyLeads.delete(id);
+      applyMove(id, from, false);
+      toast(actionError(err));
+    }
+  }
+
   (function bindBoardColumns() {
     $$(".stage-col").forEach((col) => {
       col.addEventListener("dragover", (e) => {
@@ -278,7 +493,7 @@ export function initDashboardContent(content: HTMLElement): () => void {
             slot.style.height = (dragH || 64) + "px";
           });
           // If the open slot pushed the board past the bottom edge — scroll it into view
-          setTimeout(() => {
+          after(230, () => {
             if (!wrap.querySelector(".drop-slot")) return;
             const board = $(".stage-board");
             const mainEl = main;
@@ -289,7 +504,7 @@ export function initDashboardContent(content: HTMLElement): () => void {
               const rmq = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
               mainEl.scrollBy({ top: over, behavior: rmq ? "auto" : "smooth" });
             }
-          }, 230);
+          });
         }
       });
       col.addEventListener("dragleave", (e) => {
@@ -302,16 +517,8 @@ export function initDashboardContent(content: HTMLElement): () => void {
         col.classList.remove("dragover");
         collapseSlot(col, true);
         const id = e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
-        const idx = leadsData.findIndex((l) => String(l.id) === id);
-        if (idx === -1) return;
-        const lead = leadsData[idx];
-        if (lead.stage === col.dataset.stage) return;
-        const from = lead.stage;
-        leadsData.splice(idx, 1);
-        lead.stage = col.dataset.stage || lead.stage;
-        leadsData.push(lead); // lands at the end of the column — exactly where the preview slot was
-        renderStage(from);
-        renderStage(lead.stage, { highlightId: lead.id });
+        if (!id) return;
+        void moveLead(id, col.dataset.stage || "");
       });
     });
   })();
@@ -348,15 +555,19 @@ export function initDashboardContent(content: HTMLElement): () => void {
   }
 
   // ================= DAY SELECTION =================
-  let selectedDay = TODAY;
-  $$(".week-strip .day").forEach((d) => {
-    d.addEventListener("click", () => {
-      selectedDay = parseInt(d.dataset.day || "0", 10);
-      $$(".week-strip .day").forEach((x) => x.classList.toggle("selected", x === d));
-      renderWeek(selectedDay);
+  // Delegated: the strip's cells are rendered from the real week, so there is
+  // nothing to bind to until after the first paint.
+  const strip = $("#weekStrip");
+  if (strip) {
+    on(strip, "click", (ev) => {
+      const d = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".day");
+      if (!d || !d.dataset.iso || d.dataset.iso === selectedIso) return;
+      selectedIso = d.dataset.iso;
+      strip.querySelectorAll<HTMLElement>(".day").forEach((x) => x.classList.toggle("selected", x === d));
+      renderWeek(selectedIso, true);
       layoutSync();
     });
-  });
+  }
 
   // ================= CHART: DATA, RENDER, FILTER, HOVER =================
   type ChartPt = { x: number; y: number; v: number; d: string };
@@ -392,8 +603,8 @@ export function initDashboardContent(content: HTMLElement): () => void {
     return "$" + k + "K";
   }
 
-  function renderChart(range: string) {
-    const ds = chartDatasets[range];
+  function renderChart(range: ChartRange) {
+    const ds = data.chart[range];
     const gY = $("#chY");
     const gX = $("#chX");
     const gD = $("#chData");
@@ -402,8 +613,9 @@ export function initDashboardContent(content: HTMLElement): () => void {
     gX.innerHTML = "";
     gD.innerHTML = "";
     const n = ds.values.length;
+    if (!n) return;
     chartPts = ds.values.map((v, i) => ({
-      x: 70 + i * (720 / (n - 1)),
+      x: n === 1 ? 430 : 70 + i * (720 / (n - 1)),
       y: 288 - (v / ds.yMax) * 272,
       v: v,
       d: ds.labels[i],
@@ -465,18 +677,15 @@ export function initDashboardContent(content: HTMLElement): () => void {
           line.style.transition = "stroke-dashoffset 850ms cubic-bezier(0.4, 0, 0.2, 1)";
           line.style.strokeDashoffset = "0";
           dots.forEach((d, i) => {
-            setTimeout(
-              () => {
-                d.style.transition = "opacity 180ms ease";
-                d.style.opacity = "1";
-              },
-              Math.round(850 * (i / Math.max(1, dots.length - 1))),
-            );
+            after(Math.round(850 * (i / Math.max(1, dots.length - 1))), () => {
+              d.style.transition = "opacity 180ms ease";
+              d.style.opacity = "1";
+            });
           });
-          setTimeout(() => {
+          after(950, () => {
             area.style.opacity = "1";
             note.style.opacity = "1";
-          }, 950);
+          });
         }),
       );
     }
@@ -504,7 +713,7 @@ export function initDashboardContent(content: HTMLElement): () => void {
     if (!hoverUI) return;
     hoverUI.guide.style.opacity = "0";
     hoverUI.tipg.style.opacity = "0";
-    if (chartEls) {
+    if (chartEls && chartEls.dots.length) {
       chartEls.dots.forEach((d) => d.classList.remove("on"));
       chartEls.dots[chartEls.dots.length - 1].classList.add("on");
       chartEls.note.style.opacity = "1";
@@ -565,10 +774,25 @@ export function initDashboardContent(content: HTMLElement): () => void {
     });
     dd.querySelectorAll<HTMLElement>(".dd-item").forEach((item) => {
       item.addEventListener("click", () => {
-        dd.querySelectorAll(".dd-item").forEach((i) => i.classList.remove("active"));
+        // `aria-selected` moves with `.active`. The class is what the eye reads
+        // and the attribute is what a screen reader reads; they describe the
+        // same fact, so they are never set apart.
+        dd.querySelectorAll(".dd-item").forEach((i) => {
+          i.classList.remove("active");
+          i.setAttribute("aria-selected", "false");
+        });
         item.classList.add("active");
-        label.textContent = item.textContent;
-        if (item.dataset.range) renderChart(item.dataset.range);
+        item.setAttribute("aria-selected", "true");
+        const text = (item.textContent || "").trim();
+        label.textContent = text;
+        if (item.dataset.range) {
+          renderChart(item.dataset.range as ChartRange);
+          // The chart is `role="img"`: its label has to name the range it is
+          // actually drawing, or it keeps announcing the first one forever.
+          content
+            .querySelector("#revChart")
+            ?.setAttribute("aria-label", "Revenue trend for the " + text.toLowerCase());
+        }
         dd.classList.remove("open");
         btn.setAttribute("aria-expanded", "false");
       });
@@ -580,7 +804,9 @@ export function initDashboardContent(content: HTMLElement): () => void {
   })();
 
   // ================= INITIALIZATION =================
-  renderWeek(selectedDay);
+  renderWeekHead();
+  renderWeekStrip();
+  renderWeek(selectedIso);
   renderJobs();
   renderActivity();
   renderChart("7d");
@@ -602,7 +828,6 @@ export function initDashboardContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 
     // Reveal: load + scroll
     // Reveal adapts to scroll speed: slow scroll — the full 420ms animation;
@@ -623,7 +848,9 @@ export function initDashboardContent(content: HTMLElement): () => void {
         },
         { passive: true },
       );
-    const blocks = $$(".content > *");
+    // `.d-toast` is a fixed, display:none overlay — it never intersects, so the
+    // cascade would strand it at opacity 0 the first time a refusal shows it.
+    const blocks = $$(".content > *:not(.d-toast)");
     blocks.forEach((el, i) => {
       el.classList.add("rv");
       const initial = el.getBoundingClientRect().top < vpH;
@@ -663,46 +890,19 @@ export function initDashboardContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".sched-row, .job-row, .act-row, .empty"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on rows and cards silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
+    // Row stagger on ARRIVAL only. The donor wired this to a MutationObserver,
+    // which replayed the whole entrance on every repaint; `staggerIn` is played
+    // by whoever knows a list genuinely arrived (here: first paint, and the day
+    // switch in renderWeek).
     ["weekList", "jobsList", "actList"].forEach((id) => {
       const list = $("#" + id);
       if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
+      staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".sched-row, .job-row, .act-row, .empty")));
     });
 
-    // Numeral count-up. The digits-only rebuild below is safe for this page's
-    // plain "$12,400"/"18", but the other blueprint pages count values that
-    // carry a unit ("68%") or wrap an inline icon, so the pack now keeps
-    // whatever frames the number, skips decimals (digits-only mangles them)
-    // and skips nodes that hold elements rather than bare text.
+    // Numeral count-up over the real figures written above. Keeps whatever
+    // frames the number, skips decimals (digits-only mangles them) and skips
+    // nodes that hold elements rather than bare text.
     $$(".kpi-val").forEach((el) => {
       if (el.children.length) return;
       const m = (el.textContent || "").trim().match(/^([^\d]*)(\d[\d,]*)([^\d]*)$/);
@@ -734,7 +934,22 @@ export function initDashboardContent(content: HTMLElement): () => void {
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
     pressify(".page-actions .btn, .card-foot-btn, .dd-item", "pressed");
-    pressify(".week-strip .day", "day-pressed");
+    // The week strip is re-rendered from real data, so its press is delegated.
+    const stripEl = $("#weekStrip");
+    if (stripEl) {
+      on(stripEl, "click", (ev) => {
+        const d = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".day");
+        if (!d) return;
+        d.classList.remove("day-pressed");
+        void d.offsetWidth;
+        d.classList.add("day-pressed");
+      });
+      on(stripEl, "animationend", (ev) => {
+        (ev.target as HTMLElement | null)
+          ?.closest<HTMLElement>(".day")
+          ?.classList.remove("day-pressed");
+      });
+    }
 
     // (Graph-paper parallax lives in the shell — it owns .main.)
   })();

@@ -3,62 +3,81 @@
 // Blueprint dashboard — page CONTENT only. The donor's `.content` children,
 // verbatim; the sidebar, topbar, sprite and graph-paper field come from the
 // shared shell (components/v3/blueprint-shell), which persists across
-// navigation. Dynamic regions (#weekList, #jobsList, #actList, the chart
-// groups, the stage columns) are left empty exactly like the donor and filled
-// by the ported script on mount — same architecture, same timing.
+// navigation. Dynamic regions (#weekStrip, #weekList, #jobsList, #actList, the
+// chart groups, the stage columns) are left empty exactly like the donor and
+// filled by the ported script on mount — same architecture, same timing.
 //
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
+//
+// Nothing on this sheet is a fixture any more: `data` is the org's real
+// aggregates, read in src/app/dashboard/page.tsx.
 
+import { useCallback, useRef } from "react";
+import Link from "next/link";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initDashboardContent } from "./blueprint-behavior";
+import type { DashboardData } from "./blueprint-data";
 
-export function DashboardContent() {
-  useBlueprintContent(initDashboardContent);
+export function DashboardContent({ data }: { data: DashboardData }) {
+  // The server rows reach `init` through a ref, NOT through the callback's
+  // deps. `useBlueprintContent` re-runs whenever `init` changes identity, and a
+  // re-run tears the page down and replays the whole reveal cascade — so the
+  // init has to stay referentially stable for the life of the mount. The ref is
+  // seeded on the first render and never written again; a navigation away
+  // unmounts the page, so the next visit gets freshly-queried rows.
+  const seedRef = useRef(data);
+
+  const init = useCallback((content: HTMLElement) => initDashboardContent(content, seedRef.current), []);
+  useBlueprintContent(init);
 
   return (
     <>
-      {/* LEAD CENTER BANNER */}
-      <div className="banner">
-        <svg className="ic banner-pin">
-          <use href="#i-pin" />
-        </svg>
-        <div className="banner-body">
-          <div className="banner-kicker">Lead Center</div>
-          <div className="banner-txt">
-            Homeowner leads near you aren&apos;t reaching your shop yet — add your business
-            address and the trades you take to start receiving them.{" "}
-            <a className="banner-link" href="#">
-              Complete your profile
-            </a>
-          </div>
-        </div>
-        <button className="banner-close" aria-label="Dismiss">
-          <svg className="ic">
-            <use href="#i-x" />
+      {/* LEAD CENTER BANNER — only for an org that cannot receive platform
+          leads yet. The behavior module fills the missing-piece phrase and
+          honours the 7-day localStorage snooze the classic banner wrote. */}
+      {data.leadProfile && (
+        <div className="banner" id="leadBanner">
+          <svg className="ic banner-pin">
+            <use href="#i-pin" />
           </svg>
-        </button>
-      </div>
+          <div className="banner-body">
+            <div className="banner-kicker">Lead Center</div>
+            <div className="banner-txt">
+              Homeowner leads near you aren&apos;t reaching your shop yet — add{" "}
+              <span id="bannerMissing"></span> to start receiving them.{" "}
+              <Link className="banner-link" href="/dashboard/company">
+                Complete your profile
+              </Link>
+            </div>
+          </div>
+          <button className="banner-close" type="button" aria-label="Dismiss for a week">
+            <svg className="ic">
+              <use href="#i-x" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* PAGE HEAD */}
       <div className="page-head">
         <div>
-          <div className="kicker">Good Evening · Jul 22</div>
+          <div className="kicker" id="greetKicker"></div>
           <h1 className="page-title">Overview</h1>
         </div>
         <div className="page-actions">
-          <button className="btn btn-primary">
+          <Link className="btn btn-primary" href="/dashboard/advanced-ai">
             <svg className="ic">
               <use href="#i-bulb" />
             </svg>
             Smart Proposal
-          </button>
-          <button className="btn btn-ghost">
+          </Link>
+          <Link className="btn btn-ghost" href="/dashboard/proposals/new">
             <svg className="ic">
               <use href="#i-file" />
             </svg>
             Manual proposal
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -66,19 +85,19 @@ export function DashboardContent() {
       <div className="kpi-grid">
         <div className="kpi">
           <div className="kpi-lbl">Revenue · 30D</div>
-          <div className="kpi-val">$48,250</div>
+          <div className="kpi-val" id="kpiRevenue"></div>
         </div>
         <div className="kpi">
           <div className="kpi-lbl">Pipeline Value</div>
-          <div className="kpi-val">$132,400</div>
+          <div className="kpi-val" id="kpiPipeline"></div>
         </div>
         <div className="kpi">
           <div className="kpi-lbl">Open Proposals</div>
-          <div className="kpi-val accent">7</div>
+          <div className="kpi-val accent" id="kpiOpen"></div>
         </div>
         <div className="kpi">
           <div className="kpi-lbl">New Leads · 7D</div>
-          <div className="kpi-val">12</div>
+          <div className="kpi-val" id="kpiLeads"></div>
         </div>
       </div>
 
@@ -97,13 +116,17 @@ export function DashboardContent() {
                 </svg>
               </button>
               <div className="dd-menu" role="listbox">
-                <button className="dd-item active" type="button" role="option" data-range="7d">
+                {/* `aria-selected` is REQUIRED on role="option" — without it a
+                    screen reader announces three ranges and cannot say which one
+                    the chart is currently drawing. It mirrors the `.active`
+                    class, and initDropdown keeps the two in step on every pick. */}
+                <button className="dd-item active" type="button" role="option" aria-selected="true" data-range="7d">
                   Last 7 Days
                 </button>
-                <button className="dd-item" type="button" role="option" data-range="30d">
+                <button className="dd-item" type="button" role="option" aria-selected="false" data-range="30d">
                   Last 30 Days
                 </button>
-                <button className="dd-item" type="button" role="option" data-range="90d">
+                <button className="dd-item" type="button" role="option" aria-selected="false" data-range="90d">
                   Last 90 Days
                 </button>
               </div>
@@ -150,20 +173,10 @@ export function DashboardContent() {
           <div className="card-head">
             <div className="card-titles">
               <div className="card-title">This Week</div>
-              <div className="card-sub">
-                Jul 19 – 25 · <b>11 scheduled</b>
-              </div>
+              <div className="card-sub" id="weekRange"></div>
             </div>
           </div>
-          <div className="week-strip">
-            <div className="day" data-day="19"><div className="day-lbl">SU</div><div className="day-num">19</div><div className="day-dot off"></div></div>
-            <div className="day" data-day="20"><div className="day-lbl">MO</div><div className="day-num">20</div><div className="day-dot"></div></div>
-            <div className="day" data-day="21"><div className="day-lbl">TU</div><div className="day-num">21</div><div className="day-dot"></div></div>
-            <div className="day today selected" data-day="22"><div className="day-lbl">WE</div><div className="day-num">22</div><div className="day-dot"></div></div>
-            <div className="day" data-day="23"><div className="day-lbl">TH</div><div className="day-num">23</div><div className="day-dot"></div></div>
-            <div className="day" data-day="24"><div className="day-lbl">FR</div><div className="day-num">24</div><div className="day-dot"></div></div>
-            <div className="day" data-day="25"><div className="day-lbl">SA</div><div className="day-num">25</div><div className="day-dot"></div></div>
-          </div>
+          <div className="week-strip" id="weekStrip"></div>
           <div className="list" id="weekList"></div>
         </div>
 
@@ -184,12 +197,12 @@ export function DashboardContent() {
         <div>
           <h2 className="section-title">Lead Flow</h2>
         </div>
-        <a className="card-link" href="#">
+        <Link className="card-link" href="/dashboard/leads">
           Open leads
           <svg className="ic">
             <use href="#i-arrow" />
           </svg>
-        </a>
+        </Link>
       </div>
 
       <div className="stage-board">
@@ -213,6 +226,19 @@ export function DashboardContent() {
           <div className="stage-col-head"><span className="stage-dot"></span><span className="stage-lbl">Quoted</span><span className="stage-count">0</span></div>
           <div className="stage-cards"></div>
         </div>
+      </div>
+
+      {/* A refused stage move has no dialog of its own to speak through. Fixed,
+          so the reason is on screen wherever the board was scrolled to. The
+          reveal cascade skips it for the same reason it skips `.mdl`: a
+          display:none element never intersects, so it would be stranded at
+          opacity 0 the first time it was shown. */}
+      <div className="d-toast is-hidden" id="dToast" role="alert" aria-live="assertive">
+        <svg className="ic"><use href="#i-ban" /></svg>
+        <span id="dToastText"></span>
+        <button className="d-toast-x" type="button" data-toast="close" aria-label="Dismiss">
+          <svg className="ic"><use href="#i-x" /></svg>
+        </button>
       </div>
     </>
   );

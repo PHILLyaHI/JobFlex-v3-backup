@@ -1,0 +1,815 @@
+/* ============================================================
+   MOBILE REFERRALS (mobile-referrals-v2) — Blueprint system
+   Handheld rebuild of the desktop referrals sheet
+   (components/v3/referrals-blueprint). Tokens, palette, type
+   scale and Motion System "Balanced" are the reference
+   dashboard's; the shell (topbar / drawer) is the shared
+   MobileNav, so this page declares no nav classes of its own.
+   Fully scoped — app tokens untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and every sibling mobile module. paper-deep
+     stays a shade RECESSED from the sheet rather than lighter than it. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* ---- page-specific extras ----
+     The donor paints the "converted" badge in the DARK success tone. The base
+     #3a7d44 lands at 4.40:1 on paper, just under AA for 10px/800 caps; the dark
+     tone clears it, so it is carried over rather than substituted. */
+  --success-dark: #2c6335;
+  /* The referral code's own step, between the H1 and the masthead numeral. */
+  --fs-code: clamp(28px, 8.6vw, 40px);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1). Unwrapped, a
+   page-scoped element reset scores (0,1,1) and silently beats EVERY
+   single-class control rule in this file (0,1,0) — every background and every
+   border below would be cancelled at render time, with no lint, no type error
+   and no console warning. A plain element reset in the donor HTML never had
+   this problem; scoping it to the page is what raises its specificity.
+   Do not un-wrap these three. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax. The MAIN scroller
+   paints no scrollbar at all; the 6px thumb below is for the
+   inner scrollers only (sheet body, filter menu).
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  background: var(--paper);
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD — the surface's one primary action lives here.
+   No floating action button on any page in this family.
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* The only FILLED controls on the surface, alongside the filter face. Every
+   other button here is flat — a fill on every button flattens the hierarchy. */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+/* ============================================================
+   PROGRAM HEADER — the code plate. The desktop's split hero card
+   (code + note + two link chips + 50% side panel) folds into two
+   zones: the code on paper, the reward terms on the beige strip.
+   The prose note is gone: the strip states the whole programme,
+   so the paragraph added nothing that was not already visible.
+   The two link chips move into the share sheet — a URL chip rail
+   cannot survive 320px.
+   ============================================================ */
+.prog {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.progTop { padding: var(--card-pad); }
+.progLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.progRule { flex: 1; height: 1.5px; background: var(--hair); }
+/* The copy confirmation, drawn as an annotation on the rule. A fixed min-width
+   means the rule never changes length when the word appears, so nothing on the
+   card shifts; the text itself is what changes, which is what makes the live
+   region announce. */
+.progFlag {
+  min-width: 62px;
+  text-align: right;
+  color: var(--success-dark);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.progFlag.isOn { opacity: 1; }
+.progCode { display: flex; align-items: center; gap: 12px; }
+/* Mono is right here: a referral code is a technical annotation, not an amount.
+   The plate is itself the tap target, exactly as the desktop code is. */
+.progVal {
+  flex: 1; min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-code); font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-align: left;
+  padding: 6px 10px;
+  margin-left: -10px;
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+  transition: background 0.12s;
+}
+.progVal:active { background: rgba(24, 84, 160, 0.08); }
+/* Flat: a 2px ink frame and no fill. The success tint below is a status tone
+   on a status, not decoration, and it lasts 1.6s. */
+.progCopy {
+  width: 44px; height: 44px;
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  color: var(--ink);
+  transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.progCopy:active { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.progCopy.isDone { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
+.progCopy .ic { width: 18px; height: 18px; }
+.progFoot {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 12px var(--card-pad) 13px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+/* A figure, so Inter 900 tabular — never mono. */
+.progRwV {
+  font-size: 26px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--blueprint);
+  line-height: 1;
+}
+.progRwL {
+  flex: 1; min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* ============================================================
+   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations.
+   All three are computed from the fixture, so removing a referral
+   moves them.
+   ============================================================ */
+.mast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.mastTop { padding: var(--card-pad); }
+.mastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.mastRule { flex: 1; height: 1.5px; background: var(--hair); }
+.mastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+/* Flex, not grid: two equal cells with no definite rows anywhere, so there is
+   nothing for grid auto-placement to get wrong, and the narrow-width stack is
+   a single flex-direction flip. */
+.mastCnt {
+  display: flex;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.mastSub {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 11px var(--card-pad) 12px;
+  border-right: 1.5px solid var(--ink);
+}
+.mastSub:last-child { border-right: none; }
+.mastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.mastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* ============================================================
+   FIND BAR — search over the ledger, plus the status filter as
+   ONE dropdown. The desktop's four-chip rail cannot survive
+   320px, and an email address is a string you type, not one you
+   scan for.
+   ============================================================ */
+.find { display: flex; flex-direction: column; gap: 10px; }
+.srch {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.srch .ic { width: 17px; height: 17px; color: var(--muted); }
+.srchInput {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-size: 15px; font-weight: 500;
+  color: var(--ink);
+}
+.srchInput::placeholder { color: var(--muted-light); }
+/* A full 44px target, not the 34px the sibling ledgers settled for: the bar is
+   50px tall, so the larger box costs nothing and the ≥44px rule has no
+   exceptions. The negative margin keeps the optical inset the same. */
+.srchX {
+  width: 44px; height: 44px;
+  margin-right: -12px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+.srchX .ic { width: 15px; height: 15px; }
+/* Custom .dd, never a native select: rotating caret, menu on a 2px frame, and
+   the chosen bucket reading back on the face as plain text — no pill, no
+   frame, tone-only. */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ddValue.isAll { color: var(--ink); }
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* No offset shadow: the hard ink drop read as a black slab behind the panel,
+     and the 2px ink frame already lifts it off the sheet.
+     A 3-column grid, not a one-deep list. padding:0 so the CELL borders below
+     are the grid's own rules, with no gutter against the menu frame. */
+  display: grid;
+  /* minmax(0, 1fr): plain 1fr floors at auto, so the longest label would widen
+     its column and break the equal thirds the divider scheme assumes. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.ddMenu::-webkit-scrollbar { width: 6px; }
+.ddMenu::-webkit-scrollbar-thumb { background: var(--muted-faint); }
+.ddMenu::-webkit-scrollbar-track { background: transparent; }
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. The dividers are border-TOP and
+   border-LEFT with the first row and first column cleared — that draws one
+   correct table at ANY item count and never doubles a line against the menu's
+   own 2px frame, which a trailing border-right/bottom would. */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so the tick cannot squeeze the label inside an ~87px cell. */
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  color: var(--blueprint);
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* ============================================================
+   REFERRAL LEDGER — the desktop conversion list re-cut as row
+   cards. Three lines: initials + address, when it happened,
+   then the status badge and the credit it is worth.
+   ============================================================ */
+.book {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.rrow {
+  display: grid;
+  /* minmax(0,1fr) not 1fr: a plain 1fr floors at the text column's max-content
+     width, so one long address pushes the dots button off the row edge instead
+     of wrapping. The zero floor lets the address wrap onto a second line. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  /* A real drawn rule between records, not a faint wash. */
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.rrow:last-child { border-bottom: none; }
+.rrow:active { background: var(--paper-deep); }
+/* EVERY child is pinned to an explicit cell. A child given a grid-row but no
+   grid-column is placed in its own pass, before the auto items, so it can claim
+   the wrong column and shove a sibling sideways — that shipped once. */
+.rav {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.remail {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+  align-self: end;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  /* Long addresses stack onto a second line rather than ellipsising into the
+     dots button. Two lines is the ceiling — a third would push the status row
+     out of thumb reach. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+/* The signup age. A time value earns its place here: the desktop gives it a
+   dedicated line, and how long a referral has sat unconverted is the whole
+   question this ledger answers. */
+.rwhen {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.rowOpen {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: start;
+  /* The tap target stays a full 44px; only the DRAWN plate shrinks to 30px,
+     carried by the ::before. A 44px box of ink next to a 15px address read as
+     the loudest thing in the row, which it is not. */
+  width: 44px; height: 44px;
+  margin: -4px -8px 0 0;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.rowOpen::before {
+  content: "";
+  position: absolute;
+  width: 30px; height: 30px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.rowOpen .ic { position: relative; }
+.rowOpen:active::before { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.rowOpen .ic { width: 16px; height: 16px; }
+/* Row 3 spans the whole card, so the badge starts at the left grid edge and the
+   credit closes at the far right. Both children take an explicit column. */
+.rowFoot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 8px 10px;
+  margin-top: 13px;
+}
+.badge {
+  grid-column: 1;
+  justify-self: start;
+  display: inline-flex; align-items: center;
+  padding: 4px 9px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* The donor's three tones, unchanged: credited takes the blueprint accent
+   (money banked), converted the success tone (the event happened), pending the
+   neutral plate (nothing has happened yet). */
+.csPaid { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07); }
+.csConverted { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
+.csPending { border-color: var(--muted-faint); color: var(--muted); background: var(--paper-deep); }
+.rfig {
+  grid-column: 2;
+  justify-self: end;
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* A referral that has earned nothing reads as a dash, not $0 — zero is a
+   number, "no credit yet" is an absence. */
+.rfig.isZero { color: var(--muted-faint); font-weight: 800; }
+/* ============================================================
+   PAGER + EMPTY STATES
+   ============================================================ */
+.pager { display: flex; align-items: center; gap: 10px; }
+.pagerBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; min-width: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.pagerBtn:active:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.pagerBtn:disabled { opacity: 0.35; }
+.pagerBtn .ic { width: 14px; height: 14px; }
+.pagerInfo {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* A dashed note, like an annotation on a drawing. Never blank: it says what
+   happened AND what to do next. Two of them — nothing yet, and no matches. */
+.rempty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 28px 18px;
+  text-align: center;
+}
+.remptyIc { width: 22px; height: 22px; color: var(--muted-light); }
+.remptyT { margin-top: 12px; font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.remptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.remptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.remptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Two: the row actions menu, and the share sheet that carries the
+   desktop's two link chips.
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+/* translateY(100%) plus visibility:hidden, so a closed sheet leaves the tab
+   order and the accessibility tree instead of sitting off-screen and focusable. */
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle {
+  font-size: 18px; font-weight: 900;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+/* An INNER scroller, so it does paint a thumb. */
+.sheetBody {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.sheetBody::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); }
+.sheetBody::-webkit-scrollbar-track { background: transparent; }
+/* Menu items: icon in a 26px tonal box, title + sub. Flat — no fill; the tonal
+   box is the only colour a row carries. */
+.rmenuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.rmenuItem:active:not(:disabled) { background: var(--paper-deep); }
+.rmenuItem:disabled { opacity: 0.45; }
+.rmiIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.rmiIc .ic { width: 14px; height: 14px; }
+.rmiBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.rmiSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.rmiOk { border-color: var(--success); background: var(--success-soft); color: var(--success-dark); }
+.rmiWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.rmiDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.rmiTxt { min-width: 0; flex: 1; }
+.rmenuItemT { display: block; font-size: 15px; font-weight: 700; }
+.rmenuItemS {
+  display: block; margin-top: 3px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--muted-light);
+  overflow-wrap: anywhere;
+}
+.rmenuItemDanger .rmenuItemT { color: var(--danger); }
+/* The share sheet's per-row confirmation. Fixed min-width so the row does not
+   reflow when the word appears. */
+.rmiFlag {
+  flex: 0 0 auto;
+  min-width: 58px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--success-dark);
+}
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* A record you just acted on gets one blue flash, so it stays findable after
+   the sheet closes over it. */
+@keyframes landFlash {
+  0% { background: rgba(24, 84, 160, 0.1); }
+  100% { background: transparent; }
+}
+.landed { animation: landFlash 0.6s var(--ease-out); }
+/* Scoped to the page — the global kill switch stays the app's business. */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything the
+   page declares after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 860px) {
+}
+@media (max-width: 520px) {
+  /* The head action stops sharing a line with anything */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .rfig { font-size: 18px; }
+}
+@media (max-width: 360px) {
+  .mastCnt { flex-direction: column; }
+  .mastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .mastSub:last-child { border-bottom: none; }
+  .rav { width: 34px; height: 34px; font-size: 12px; }
+  .progRwV { font-size: 23px; }
+}

@@ -57,7 +57,10 @@
   --card-pad: clamp(14px, 4.2vw, 20px);
   --fs-h1: clamp(30px, 9.2vw, 44px);
   --fs-mast: clamp(34px, 11vw, 52px);
-  --topbar-h: 56px;
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
   --tbar-gap: clamp(6px, 1.8vw, 11px);
   --sidebar-w: min(84vw, 288px);
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -69,6 +72,12 @@
      block and 768px does not look starved. */
   --fs-kpi: clamp(19px, 5.6vw, 26px);
   --fs-fig: clamp(15px, 4.6vw, 19px);
+  /* Legend marks in the chart's three-figure strip. ONE slot width for all
+     three marks (square, hatched square, dashed rule) so the labels start on
+     the same x in every cell — a per-mark width silently indents one label
+     further than its neighbours and the strip reads crooked. */
+  --legend-mark: 10px;
+  --legend-gap: 6px;
   /* Chart line weights, the same values mobile-v2's Revenue Trend ships. */
   --chart-minor: rgba(24, 84, 160, 0.08);
   --chart-major: rgba(10, 10, 10, 0.12);
@@ -353,26 +362,51 @@
   border-bottom: 1.5px solid var(--ink);
   background: var(--paper-deep);
 }
+/* Every cell is LEFT-aligned, not centred: the values are tabular numerals of
+   unequal length ($536,650 / $305,700 / $230,950 differ by a digit and a sign),
+   and centring three unequal strings gives three different left edges — the
+   digit columns stop reading as one estimate-sheet column. Left-aligned, the
+   mark, the label and the figure all hang off one rule per cell. */
 .hs {
+  --hs-pad: clamp(7px, 2.4vw, 12px);
+  position: relative;
   min-width: 0;
-  padding: 10px 8px 11px;
-  border-right: 1.5px solid var(--hair);
+  padding: 10px var(--hs-pad) 11px;
 }
-.hs:last-child { border-right: none; }
+/* Divider drawn on top of the track instead of as a border: with border-box a
+   border-right steals 1.5px of content from cells 1–2 only, so the three
+   "equal" 1fr cells were not equal and the third figure sat a hair wide. */
+.hs::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; right: 0;
+  width: 1.5px;
+  background: var(--hair);
+}
+.hs:last-child::after { content: none; }
 .hsL {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: var(--legend-gap);
   font-family: var(--font-mono);
   font-size: 11.5px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
+  /* Pinned: a flex row will not wrap a single word, so "EXPENSES" would
+     overrun the divider rather than reflow — the ≤360px block below buys it
+     room by tightening tracking, not by letting the line grow. One line in
+     every cell is also what keeps the three figures on one baseline. */
+  line-height: 1;
+  white-space: nowrap;
   color: var(--muted);
   transition: color 0.15s;
 }
 /* Reporting ONE month: the figures are the same three, so the tell is in the
    labels, not the values. */
 .hstrip.isMonth .hsL { color: var(--blueprint); }
+/* Same margin-top, same size, same line-height in all three cells, and the
+   label above can no longer wrap — so the three figures share one baseline. */
 .hsV {
   margin-top: 7px;
   font-size: var(--fs-fig); font-weight: 900;
+  line-height: 1.05;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -386,8 +420,11 @@
 /* Remounted on every scrub step (React key), so the 150ms swap replays even
    when two months happen to read alike. */
 .hsSwap { animation: hsSwap 150ms var(--ease-out); }
+/* One slot, three marks. The net rule used to be 14px wide, which pushed the
+   NET label 4px further right than REVENUE and EXPENSES — the offset the strip
+   was read as. Widths are the slot token now, never per-mark. */
 .swRev, .swExp, .swNet {
-  width: 10px; height: 10px;
+  width: var(--legend-mark); height: var(--legend-mark);
   flex-shrink: 0;
 }
 .swRev { background: var(--blueprint); }
@@ -398,7 +435,13 @@
   background: repeating-linear-gradient(45deg, var(--muted) 0 1.5px, var(--paper-deep) 1.5px 4px);
   border: 1px solid var(--muted);
 }
-.swNet { height: 0; width: 14px; border-top: 1.5px dashed var(--ink); }
+/* A rule, not a plate: the net line on the chart is dashed ink. Drawn as a
+   gradient rather than `border-top: dashed` because UA dash length is
+   unspecified and at a 10px slot it degraded to two dots. */
+.swNet {
+  height: 1.5px;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 5px);
+}
 .chart { padding: 14px 10px 4px; }
 .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
 .chOverlay {
@@ -722,6 +765,12 @@
 }
 .ddItem:nth-child(-n + 3) { border-top: none; }
 .ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
 .ddItem:active { background: var(--paper-deep); }
 .ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
 /* Absolute, so the tick cannot squeeze the label in a ~87px cell. */

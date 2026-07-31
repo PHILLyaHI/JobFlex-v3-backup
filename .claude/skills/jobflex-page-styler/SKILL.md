@@ -18,9 +18,21 @@ frame, wrong animation".
 2. Read `references/decisions.md` — WHY the rules are what they are: the
    process, hard-won fixes, exact numbers, and the list of anti-patterns
    the owner has already rejected. Violating an anti-pattern = a
-   guaranteed redo.
+   guaranteed redo. **Session 3 at the end of that file is the highest-value
+   section for work on a LIVE page**: eleven traps that each shipped as a
+   bug and were re-reported on several different pages before the cause was
+   found. Read it before touching an existing page, not after.
 3. Open `assets/jobflex-dashboard-blueprint.html` — the source of truth.
    It is not "an example for inspiration"; it is a code donor.
+4. **Only if the page lives under `src/app/(mobile)/mobile-*-v2/`** — read
+   `references/handheld.md`. The handheld fleet is ~22 separate pages with
+   their own shell and their own token blocks, not the desktop pages
+   shrunk, so the "Responsiveness" section below does not describe them.
+   That file carries the traps that have actually cost time there: the
+   `:where()` reset (a plain `.app button` silently deletes the border and
+   background off every button rule in the file), the 320px topbar width
+   budget, and the fact that tokens are declared per page so one token is a
+   22-file edit. Skip it entirely for desktop work.
 
 ## Assembling a page
 
@@ -156,3 +168,40 @@ where cards move on tap, and a palette half a shade cooler
   with the checks re-run.
 - If the page introduced a NEW reusable pattern — offer the owner to
   codify it in design-system.md.
+
+## Editing a LIVE page (not a mock)
+
+The 22 blueprint pages are shipped and imperative: a `*-content.tsx`
+renders static markup once, a `*-behavior.ts` fills the `#id` regions and
+owns every event. Some markup is built as HTML STRINGS inside the behavior
+module — always check both places before concluding a control does not
+exist.
+
+Before writing a line, check whether a shared module already does it.
+Re-deriving one of these is a bug, not a variant:
+
+    blueprint-shell/mdl-motion      openMdl / closeMdl / MDL_EXIT_MS
+    blueprint-shell/list-motion     staggerIn / leaveRow
+    blueprint-shell/places-suggest  Google Places on a plain <input>
+    blueprint-shell/react-island    mountIsland (React inside a DOM page)
+    blueprint-shell/nav-map         NAV_SECTIONS — the ONE nav truth
+    lib/scrollLock                  lockScroll
+    blueprint-global.css            .bp-sel, .bp-sug, the .mdl enter/exit
+
+Three rules that account for most of the bugs found on live pages:
+
+1. **Never attach a MutationObserver to replay a row stagger.** It fires on
+   every render, so a filter, a keystroke or a selection replays the whole
+   list's entrance and the owner reports that the list wiped itself.
+2. **Never hand-roll `document.body.style.overflow`.** Nested locks poison
+   each other and the page stays locked until a reload.
+3. **A repaint is not a re-render.** When only ONE thing changed — a
+   selection, a toggle, a count — patch that node in place. Rebuilding a
+   container's `innerHTML` destroys the element the user just interacted
+   with, steals focus from it, and replays every entrance animation inside.
+
+Verification: the dashboard routes are auth-gated and dev.db has no seeded
+login, so a page CANNOT be rendered locally. `tsc --noEmit`, eslint on the
+touched dirs, and a postcss parse of every changed stylesheet is the whole
+gate. Report "not visually confirmed" plainly — do not imply an appearance
+was checked when it was not.

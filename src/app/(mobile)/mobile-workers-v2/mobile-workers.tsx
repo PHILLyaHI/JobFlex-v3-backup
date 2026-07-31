@@ -42,6 +42,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-workers.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   ALL,
   FILTERS,
@@ -178,13 +180,12 @@ export function MobileWorkers() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -359,6 +360,17 @@ export function MobileWorkers() {
     setSheetId(id);
   };
 
+  /* Tapping the ROW opens the same sheet already on its record view. The row is
+     an identity, not a menu: on a phone the question a crew row raises is "who
+     is this and how do I reach them", and making you pick "Worker record" out of
+     a six-row action list first is a tap spent on nothing. The ⋮ button still
+     opens the action list, so both intents keep a target of their own. */
+  const openRecord = (id: string) => {
+    setView("record");
+    setCopied(false);
+    setSheetId(id);
+  };
+
   /* ---------- the token portal link ------------------------------------
      The link is the thing a manager actually hands to a worker, so it goes on
      the clipboard for real; the check flash is the confirmation of a write that
@@ -513,6 +525,12 @@ export function MobileWorkers() {
 
   const anyOverlay = Boolean(sheetWorker) || formOpen;
 
+  // Swipe-down dismissal. The worker sheet closes outright rather than stepping
+  // back a view: the pull is the scrim's gesture, not the Back chevron's, and
+  // the chevron and Escape still walk the views.
+  const workerDrag = useSheetDrag(Boolean(sheetWorker), () => setSheetId(null));
+  const formDrag = useSheetDrag(formOpen, () => setFormOpen(false));
+
   return (
     <div className={styles.app} onClick={onRootClick}>
 
@@ -651,10 +669,24 @@ export function MobileWorkers() {
                     className={`${styles.wrow} ${styles.rowIn} ${landedId === e.id ? styles.landed : ""}`}
                     style={{ animationDelay: `${i * 45}ms` }}
                   >
+                    {/* The whole card is the target for "open this worker".
+                        A transparent stretched button rather than wrapping the
+                        row in one: the ⋮ is a button too, and a button cannot
+                        legally nest inside a button. It is listed FIRST so the
+                        record is what a tab reaches before the ⋮ overflow. */}
+                    <button className={styles.wrowHit} type="button"
+                      aria-label={`Open ${e.name}'s record`} onClick={() => openRecord(e.id)} />
                     <span className={`${styles.wav} ${e.invite === "ACCEPTED" ? "" : styles.isProvisional}`}>
                       {monogram(e.name)}
                     </span>
-                    <div className={styles.wname}>{e.name}</div>
+                    <div className={styles.wname}>
+                      {e.name}
+                      {/* The affordance. Without it a flat row card reads as a
+                          read-out, and only the ⋮ looks pressable — so the
+                          disclosure chevron rides with the name, where the eye
+                          already is, and slides on press. */}
+                      <Icon id="i-chevr" className={`${styles.ic} ${styles.wnameChev}`} />
+                    </div>
                     <button className={styles.wrowOpen} type="button"
                       aria-label={`Actions for ${e.name}`} onClick={() => openSheet(e.id)}>
                       <Icon id="i-dots" />
@@ -720,9 +752,9 @@ export function MobileWorkers() {
           are three views of one sheet, so stepping between them never slides
           two sheets past each other. */}
       <div className={`${styles.sheet} ${sheetWorker ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-label="Worker actions" aria-hidden={!sheetWorker}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-label={sheetWorker ? `Worker · ${sheetWorker.name}` : "Worker"} aria-hidden={!sheetWorker} {...workerDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...workerDrag.handleProps} />
+        <div className={styles.sheetHead} {...workerDrag.handleProps}>
           {view === "actions" ? null : (
             <button className={styles.sheetBack} type="button" aria-label="Back to actions"
               onClick={() => setView("actions")}>
@@ -767,6 +799,17 @@ export function MobileWorkers() {
         {view === "record" && sheetWorker ? (
           <>
             <div className={`${styles.sheetBody} ${styles.recBody}`}>
+              {/* Status leads the record now that the row opens straight here:
+                  the row's badge scrolls out of sight behind the sheet, and
+                  "are they actually on the crew" governs every field under it. */}
+              <div className={styles.fldRow}>
+                <div className={styles.fldLbl}>Status</div>
+                <div className={styles.fldRowV}>
+                  <span className={`${styles.badge} ${styles[(INVITE[sheetWorker.invite] ?? INVITE.PENDING).cls]}`}>
+                    {(INVITE[sheetWorker.invite] ?? INVITE.PENDING).label}
+                  </span>
+                </div>
+              </div>
               <div className={styles.fldRow}>
                 <div className={styles.fldLbl}>Email</div>
                 <div className={`${styles.fldRowV} ${sheetWorker.email ? "" : styles.isNone}`}>
@@ -872,9 +915,10 @@ export function MobileWorkers() {
 
       {/* ============ INVITE / EDIT SHEET ============ */}
       <div className={`${styles.sheet} ${styles.sheetForm} ${formOpen ? styles.on : ""}`} role="dialog"
-        aria-modal="true" aria-labelledby="mwFormTitle" aria-hidden={!formOpen}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-modal="true" aria-labelledby="mwFormTitle" aria-hidden={!formOpen}
+        {...formDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...formDrag.handleProps} />
+        <div className={styles.sheetHead} {...formDrag.handleProps}>
           <div className={styles.sheetHeadTxt}>
             <div className={styles.sheetKicker}>{editId ? "Crew / edit record" : "Crew / new invite"}</div>
             <div className={styles.sheetTitle} id="mwFormTitle">

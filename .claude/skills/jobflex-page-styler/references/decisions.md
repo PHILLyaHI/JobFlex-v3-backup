@@ -317,3 +317,160 @@ ANTI-PATTERNS (explicitly rejected by the owner — do not propose again)
   good in Completed) + a mono kicker with a short line + **exactly two**
   annotations (mono label + value 15px/800). Full width, a card frame with
   a shadow, a 320ms slide-in on tab change.
+
+
+---
+
+# Session 3 — 22 live pages: the traps that repeat
+
+Everything below cost real debugging on a shipped page. These are not style
+opinions — they are bugs the donor's own patterns invite, and each was
+re-reported by the owner on a DIFFERENT page before the cause was found.
+The owner never reports them in these words; the phrases in bold are what
+they actually say.
+
+## THE MUTATION-OBSERVER STAGGER (the most expensive trap in the codebase)
+The donor's motion pack wires its row stagger to
+`new MutationObserver(() => animateRows(list))` with `{ childList: true }`.
+That fires on ANY change to the children — so EVERY render replays the full
+45ms-per-row entrance, including renders nobody thinks of as "the list
+arriving": deleting one row, toggling a filter, typing one character in a
+search box, selecting a row. The list drops to `opacity: 0` and crawls back
+each time.
+
+Reported as **"the list wiped itself"** or **"my click did nothing"** —
+never as an animation bug. Found independently on Financials, Calendar,
+Announcements, Messages, Fence studio, Company, Phone and Trade board.
+
+FIX: delete the observer. The CALLER decides when a list is genuinely
+ARRIVING (first paint, a real navigation, a publish) and calls the stagger
+there; everything else repaints silently.
+
+    import { staggerIn, leaveRow } from "@/components/v3/blueprint-shell/list-motion";
+    let playStagger: (() => void) | null = null;   // assigned in the motion IIFE
+
+Deleting one row is `leaveRow(row, commit, after)`: that row fades out
+alone and the rows below FLIP up to close the gap. Nothing else moves.
+
+NEVER stagger inside a `display: none` subtree. The animation cannot run,
+`transitionend` never fires, and the inline `transform: none` stays pinned
+— which outranks every stylesheet `:hover` rule, so hover silently dies on
+every row. If a panel starts hidden, play its cascade the first time it is
+REVEALED, guarded by a flag.
+
+## THE SCROLL LOCK (23 files carried the same broken shape)
+Every page and sheet had its own save-and-restore:
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+
+Correct alone, broken the moment two overlap — and they always do, because
+a page locks scroll AND the sheets inside it lock scroll. Page saves `""`;
+the sheet then saves `"hidden"`, already poisoned; the page restores `""`;
+the sheet restores `"hidden"`. The body stays locked with nothing holding
+it. Reported as **"it scrolled fine until I opened a popup and closed
+it"**, and only a reload clears it.
+
+FIX: `import { lockScroll } from "@/lib/scrollLock"` — reference-counted,
+first locker saves, last releaser restores, idempotent release. Never
+hand-roll `document.body.style.overflow` again.
+
+## ZOOM LIVES ON THE SHELL ROOT, NOT documentElement
+FLUID SCALE sets `zoom` on the shell root so it cannot leak into the rest
+of the app. Code that un-zooms a measurement must read it from
+`el.closest(".jf-blueprint")`. Reading `document.documentElement` returns
+`normal`, parses to NaN, falls back to 1, and silently leaves every
+`getBoundingClientRect` delta uncorrected at any viewport but 1728px.
+Applies to every FLIP: rect deltas are ZOOMED pixels, a `transform` is
+applied in unzoomed space, so dividing by the live zoom is mandatory.
+
+## DIALOGS THAT ANIMATE IN BUT NOT OUT
+A dialog toggling `.open` by hand gets the enter keyframes and then
+vanishes on a `display: none` switch. The asymmetry is the half you notice.
+Always `openMdl(el)` / `closeMdl(el, after)` from
+`blueprint-shell/mdl-motion` — the exit rules are published globally for
+any `.mdl`. Defer any form reset by `MDL_EXIT_MS`, or the fields visibly
+blank while the box is still on screen.
+
+## HAIRLINES DOUBLE WHERE A BLOCK MEETS A GRID LINE
+A 1.5px block border abutting a 1.5px grid rule reads as one 3px line — and
+only on the edges where they abut, so a card looks heavy on top and thin on
+the bottom, or heavy on the right. Reported as **"the line is thicker"**.
+Shift the block by one line width so its own border paints OVER the rule
+(`flushTop`, or `.wg-evs { inset: 0 -1.5px 0 0 }` for the vertical twin).
+The LAST column has no rule to cover and must opt out.
+
+## THE `border-color` SHORTHAND EATS THE STATUS STRIPE
+Chips carry their status as a 3px coloured LEFT border. A hover rule written
+`border-color: var(--ink)` repaints all four sides, so a hovered chip loses
+the only colour it had — reported as **"it just goes dark"**. Use the three
+long-hands and leave the left edge alone. A hover should ADD emphasis (the
+button's `translate(-1px,-1px)` + hard offset shadow), never remove
+information.
+
+## A LIST MUST NOT SORT ON WHAT READING IT CHANGES
+Messages sorted unread-first. Opening a thread clears its unread count, so
+the row slid down past everything still unread — the list reordered itself
+as a direct result of being read. Sort on recency, or anything the reader
+cannot alter, and show unread as a badge instead.
+
+## RE-DERIVED LAYOUT LOSES USER INTENT
+The week grid re-ran its lane assignment from scratch on every render, so
+dragging one of two side-by-side blocks to an earlier time made the pair
+swap places under the cursor. Stabilising only the PREVIEW is not enough —
+the drop re-renders and the preview's answer is gone. Persist the decision
+on the record (`CalEvent.lane`) and honour it at layout time. When trading
+positions, validate BOTH sides: one lane can hold several non-overlapping
+blocks, so "find the one in that lane" renders cards on top of each other.
+
+## ONE TREATMENT PER CONTROL, PUBLISHED ONCE
+`<select>` renders with the OS chevron and OS metrics — the one control on a
+blueprint card that does not belong to the drawing. There is exactly ONE
+styled select, in blueprint-global.css:
+
+    <span class="bp-sel"><select class="bp-sel-in">…</select></span>
+
+The wrapper draws the caret (a `<select>` cannot carry a pseudo-element);
+`data-empty="1"` greys an unpicked placeholder. Never re-derive
+`appearance: none` + a caret on a page — ten pages each inventing their own
+is the drift this file already warns about for typography.
+
+Native `<input type="date">` is worse: its POPUP CANNOT BE STYLED AT ALL,
+it is an OS widget. Honouring "style the date picker" means REPLACING the
+control with a popover; the calendar page's `.dtp` is the reference.
+
+## MOUNTING REACT INSIDE AN IMPERATIVE PAGE
+Blueprint pages are plain DOM with no React tree, but several finished
+viewers already exist as React components (roof 2D/3D, the fence draw map).
+Do not rewrite them — mount them:
+
+    import { mountIsland } from "@/components/v3/blueprint-shell/react-island";
+    const island = mountIsland(hostEl, Component, props);  // destroy() in disposers
+
+Give the island its OWN empty host the behavior module never writes to
+again, or React and the module fight over the same children. Props flow IN
+only; the island reports back through callbacks. Every mount needs a
+matching `destroy()` — an unmatched one leaks a React root per navigation.
+Derive prop types from the component (`Parameters<typeof X>[0]`) so an
+upstream change is a type error, not a runtime one. Cross-fade panes with
+opacity, never `display: none`: a WebGL viewer sizing itself from a
+ResizeObserver gets a zero box and dies.
+
+## SHARED MODULES — IMPORT, DO NOT RE-DERIVE
+    blueprint-shell/mdl-motion      openMdl / closeMdl / MDL_EXIT_MS
+    blueprint-shell/list-motion     staggerIn / leaveRow
+    blueprint-shell/places-suggest  Google Places on a plain <input>
+    blueprint-shell/react-island    mountIsland
+    blueprint-shell/nav-map         NAV_SECTIONS — the ONE nav truth
+    lib/scrollLock                  lockScroll
+    blueprint-global.css            .bp-sel, .bp-sug, the .mdl enter/exit
+A second implementation of any of these is a bug, not a variant.
+
+## VERIFICATION HONESTY
+The dashboard routes are auth-gated and dev.db has no seeded login, so a
+page CANNOT be rendered locally. `tsc --noEmit` + eslint + a postcss parse
+is the whole gate. Say **"not visually confirmed"** plainly rather than
+implying a visual result that was never observed. And a 307 from a route
+proves the redirect fired, NOT that the page compiled — middleware answers
+before the page component is ever reached.

@@ -1,0 +1,997 @@
+/* ============================================================
+   MOBILE REPORTS (mobile-reports-v2) — Blueprint system
+   The chart surface of the handheld family. Tokens, palette,
+   type scale and Motion System "Balanced" are the reference
+   dashboard's; the masthead / dropdown / row-card / bottom-sheet
+   vocabulary is copied from mobile-clients-v2 and the chart
+   vocabulary from mobile-v2 and mobile-financials-v2, so the
+   pages read as one product. Fully scoped — app tokens untouched.
+   ============================================================ */
+.app {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream, matching the desktop shell, the
+     app-wide globals.css token and every sibling mobile module. A white paper
+     variant was tried and reverted; paper-deep stays a shade RECESSED from the
+     sheet rather than lighter than it. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Three tones: base / dark / soft */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --fs-mast: clamp(34px, 11vw, 52px);
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* ---- page-specific extras ----
+     A report is figures in thirds: the chart readout and the sheet's stat strip
+     both cut the width into three, so their numeral size is fluid rather than
+     flat — at 320px a six-figure amount has to clear ~80px of cell. */
+  --fs-fig: clamp(14px, 4.4vw, 19px);
+  --fs-cell: clamp(17px, 5.2vw, 22px);
+  /* Chart line weights — the values mobile-v2's Revenue Trend ships. */
+  --chart-major: rgba(10, 10, 10, 0.12);
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow.
+     Two grid rows only — MobileNav fills the first. No bottom bar: no page in
+     this family has one. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+.app ::selection { background: var(--blueprint); color: #fff; }
+.app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* :where() holds this reset at element-level specificity (0,0,1). Unwrapped —
+   the page class followed directly by the element name — it scores (0,1,1) and
+   silently beats EVERY single-class button rule in this file (0,1,0): every
+   background and every border below would be cancelled at render time, and it
+   parses, lints and typechecks clean while doing it. Do not un-wrap these. */
+:where(.app) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:where(.app) a { text-decoration: none; color: inherit; }
+:where(.app) input { font-family: inherit; }
+.ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax. The page scroller
+   paints no scrollbar; the inner ones (sheet body) do.
+   ============================================================ */
+.scroll {
+  position: relative;
+  overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  background: var(--paper);
+}
+.scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.scroll::-webkit-scrollbar { width: 0; }
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex; flex-direction: column;
+  gap: var(--gap);
+}
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.pageHead { padding-top: 2px; }
+.kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+.pageTitle {
+  font-size: var(--fs-h1); font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+/* Intrinsic grid — the tablet range needs no rules of its own */
+.pageActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.btn .ic { width: 18px; height: 18px; }
+.btn:active { transform: translate(1px, 1px); box-shadow: none; }
+.btn:disabled { opacity: 0.6; }
+/* The only FILLED controls on the surface, plus the sheet foot's submit pair.
+   Everything else is flat — a fill on every button flattens the hierarchy
+   (owner's call, 2026-07-29). Flat means no FILL, not no frame. */
+.btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* ============================================================
+   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations.
+   All three are computed from the fixture, so changing the range
+   moves them.
+   ============================================================ */
+.mast {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.mastTop { padding: var(--card-pad); }
+.mastLbl {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.mastRule { flex: 1; height: 1.5px; background: var(--hair); }
+.mastVal {
+  font-size: var(--fs-mast); font-weight: 900;
+  letter-spacing: -0.005em; line-height: 0.92;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.mastCnt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.mastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); min-width: 0; }
+.mastSub:last-child { border-right: none; }
+.mastSubL {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.mastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* Nothing owed reads as a dash, not $0 — zero is a number, "nothing left
+   outstanding" is an absence. */
+.mastSubV.isZero { color: var(--muted-faint); }
+/* ============================================================
+   RANGE — the desktop's four chips as ONE dropdown, with the
+   range note under it as a drawing annotation. A chip rail does
+   not survive 320px.
+   ============================================================ */
+.find { display: flex; flex-direction: column; gap: 10px; }
+/* Custom .dd, never a native select: rotating caret, menu on a 2px frame, and
+   the chosen range reading back on the face as plain text — no pill, no
+   frame, no offset shadow (a hard ink drop read as a black slab). */
+.dd { position: relative; }
+.ddBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease);
+}
+.ddBtn .ic { width: 17px; height: 17px; }
+.ddCaret { color: var(--muted); transition: transform 0.2s var(--ease-out); }
+.dd.open .ddCaret { transform: rotate(180deg); }
+.dd.open .ddBtn { background: var(--paper-deep); }
+.ddValue {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.ddMenu {
+  position: absolute;
+  top: calc(100% + 6px); left: 0; right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* Four ranges in a 3-column grid instead of a one-deep list. padding:0 so the
+     CELL borders below are the grid's own rules, with no gutter between a cell
+     edge and the menu frame. minmax(0, 1fr): plain 1fr floors at auto, so
+     "Last 12 months" would push its column past a third. */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* A cell, not a row: label over count, centred. The dividers are border-TOP and
+   border-LEFT with the first row and first column cleared — that way the block
+   reads as one drawn table at ANY item count and never doubles a line against
+   the menu's own 2px frame (a trailing border-right/bottom would). */
+.ddItem {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ddItem:nth-child(-n + 3) { border-top: none; }
+.ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
+.ddItem:active { background: var(--paper-deep); }
+.ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
+/* Absolute, so the tick cannot squeeze the label in a ~87px cell. */
+.ddItem .ic {
+  position: absolute; top: 5px; right: 5px;
+  width: 13px; height: 13px;
+  color: var(--blueprint);
+}
+.ddCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.ddItem.active .ddCount { color: var(--blueprint); }
+/* The dates the whole page is reporting on — mono, like a note on a drawing. */
+.rnote {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+.rnoteRule { flex: 1; height: 1.5px; background: var(--hair); }
+/* ============================================================
+   CARDS
+   ============================================================ */
+.card {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.cardHead {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: var(--card-pad) var(--card-pad) 0;
+}
+.cardTitles { min-width: 0; flex: 1; }
+.cardTitle {
+  font-size: 15px; font-weight: 900;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  line-height: 1.2;
+}
+.cardSub {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+/* ============================================================
+   REVENUE CHART — invoiced against collected, by month. The
+   desktop reads a month by hovering its column; a phone reads it
+   by dragging across the plot, and the three-figure strip above
+   retargets at whichever month is under the finger — so the
+   numbers are never hidden under it.
+   ============================================================ */
+.legend {
+  display: flex; flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 12px var(--card-pad) 0;
+}
+.lgd {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+/* The invoiced mark is a DRAFTING hatch, exactly like the bars it names. */
+.swInv {
+  width: 10px; height: 10px; flex-shrink: 0;
+  background: repeating-linear-gradient(45deg, var(--muted-light) 0 2px, var(--paper-deep) 2px 5px);
+  border: 1px solid var(--muted);
+}
+.swCol { width: 10px; height: 10px; flex-shrink: 0; background: var(--blueprint); }
+.hstrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: var(--card-pad);
+  border-top: 1.5px solid var(--ink);
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.hs {
+  min-width: 0;
+  padding: 10px 7px 11px;
+  border-right: 1.5px solid var(--hair);
+}
+.hs:last-child { border-right: none; }
+.hsL {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+/* Reporting ONE month: the three figures are the same three, so the tell is in
+   the labels, not the values. */
+.hstrip.isMonth .hsL { color: var(--blueprint); }
+.hsV {
+  margin-top: 7px;
+  font-size: var(--fs-fig); font-weight: 900;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+@keyframes hsSwap {
+  from { opacity: 0.25; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+/* Remounted on every scrub step (React key), so the 150ms swap replays even
+   when two months happen to read alike. */
+.hsSwap { animation: hsSwap 150ms var(--ease-out); }
+.chart { padding: 14px 10px 4px; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chOverlay {
+  fill: transparent;
+  /* pan-y so a vertical swipe still scrolls the page past the chart. */
+  touch-action: pan-y;
+}
+.gridLine { stroke: var(--chart-major); stroke-width: 1; }
+.axisLine { stroke: var(--ink); stroke-width: 1.5; }
+.axisTxt {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  fill: var(--muted-light);
+  letter-spacing: 0.04em;
+}
+.moLbl { fill: var(--muted); }
+.barInv { fill: url(#mrHatch); stroke: var(--muted); stroke-width: 1; }
+.barCol { fill: var(--blueprint); }
+.hatchBg { fill: var(--paper-deep); }
+.hatchLine { stroke: var(--muted); stroke-width: 2.4; }
+.moHit { fill: transparent; transition: fill 140ms var(--ease-out); }
+/* The read month is unmistakable: its band lights and every other month drops
+   back — dimming the rest is what makes one of twelve columns legible without
+   a floating tooltip the system does not use. */
+.moGroup.on .moHit { fill: rgba(24, 84, 160, 0.07); }
+.chart.isHot .moGroup { opacity: 0.42; transition: opacity 150ms var(--ease-out); }
+.chart.isHot .moGroup.on { opacity: 1; }
+.moGroup.on .moLbl { fill: var(--ink); }
+@keyframes barGrow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+/* Bars draw upward off the axis, 850ms like the reference chart, staggered by
+   month so the field reads as being plotted rather than pasted. Keyed by range
+   in the markup, so switching range replays the drawing. */
+.barDraw { animation: barGrow 850ms var(--ease) both; transform-origin: 50% 100%; }
+/* ============================================================
+   PIPELINE FUNNEL — the drawn tracks, verbatim in structure from
+   the desktop, at handheld type sizes.
+   ============================================================ */
+.funnel { padding: 6px var(--card-pad) 16px; }
+.fnRow { padding: 10px 0; }
+.fnTop { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.fnL { font-size: 15px; font-weight: 700; }
+.fnV {
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.fnTrack {
+  margin-top: 8px;
+  height: 24px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+@keyframes fnGrow {
+  from { width: 0; }
+  to { width: var(--fw); }
+}
+/* The fill's target width rides in on --fw, so the keyframe can draw to it —
+   a CSS transition cannot animate a width the element already has on mount. */
+.fnFill {
+  display: block;
+  height: 100%;
+  width: var(--fw);
+  background: var(--blueprint);
+  animation: fnGrow 640ms var(--ease-out) both;
+}
+.fnFill.s2 { background: rgba(24, 84, 160, 0.72); }
+.fnFill.s3 { background: rgba(24, 84, 160, 0.5); }
+/* Delivered is the only step that is an outcome, so it is the only one that
+   takes a status tone. */
+.fnFill.s4 { background: var(--success); }
+.fnDrop {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.fnDropV { color: var(--ink); font-weight: 700; }
+.fnDrop.bad .fnDropV { color: var(--danger); }
+/* What the funnel resolves to — the desktop's fourth stat card, as the card's
+   beige foot (white content → beige bar, the house card zoning). */
+.fnFoot {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.fnFootCell { min-width: 0; padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--hair); }
+.fnFootCell:last-child { border-right: none; }
+.fnFootL {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.fnFootV {
+  font-size: var(--fs-cell); font-weight: 800;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* ============================================================
+   CONVERSION
+   ============================================================ */
+.conv { padding: 4px var(--card-pad) 10px; }
+.convRow {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.convRow:last-child { border-bottom: none; }
+.convTxt { min-width: 0; }
+.convL { font-size: 15px; font-weight: 700; color: var(--ink); line-height: 1.25; }
+.convS {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted-light);
+}
+/* Column, not inline: the one row carrying a unit ("5.1 / days") stacks it
+   under the numeral so its right edge lines up with the bare percentages.
+   No-op for the unitless rows — a single-child column measures the same. */
+.convV {
+  display: flex; flex-direction: column; align-items: center;
+  flex-shrink: 0;
+  font-size: 20px; font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Threshold tones, the donor's own: a rate under target is a status, not
+   decoration. */
+.convV.toneOk { color: var(--success-dark); }
+.convV.toneWarn { color: var(--warning-dark); }
+.convUnit { font-size: 13px; font-weight: 700; line-height: 1.15; color: var(--muted); }
+/* ============================================================
+   CREW — the desktop 6-column table re-cut as row cards. Three
+   lines: avatar + name, role, then rating and the figures. Hours
+   and $/hr live in the row sheet; the desktop's own narrow layer
+   just hides them, which is half of what a crew report is for.
+   ============================================================ */
+.book { border-top: 1.5px solid var(--ink); margin-top: var(--card-pad); }
+.crow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  /* A real drawn rule between records, not a faint wash. */
+  border-bottom: 1.5px solid var(--ink);
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+.crow:active { background: var(--paper-deep); }
+/* EVERY child is pinned to an explicit cell. Giving .cav and .crowOpen a
+   grid-row but no grid-column lets auto-placement drop the ⋮ button into
+   column 2 and push the name out to column 3 — definite-row items are placed
+   in their own pass, so they claim columns before the auto items get a turn. */
+.cav {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+.cname {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+  align-self: end;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.crole {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.crowOpen {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: start;
+  width: 44px; height: 44px;
+  margin: -4px -6px 0 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.crowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.crowOpen .ic { width: 18px; height: 18px; }
+/* Row 3 spans the whole card so the rating starts at the left grid edge and
+   the revenue closes at the far right. Two groups, not one wrapping flex line:
+   the figures stay welded together on the right. */
+.crowFoot {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: 8px 10px;
+  margin-top: 13px;
+}
+/* The rating is NOT a status: it takes a neutral drawn frame with the house
+   Reviews thumb, never a star (there is none) and never a status tone. */
+.rate {
+  grid-column: 1;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rate .ic { width: 13px; height: 13px; }
+.crowFigs {
+  grid-column: 2;
+  display: flex; align-items: baseline; gap: 9px;
+  justify-self: end;
+  white-space: nowrap;
+}
+.cjobs {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.crev {
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.crev.isZero { color: var(--muted-faint); font-weight: 800; }
+/* The last line of an estimate: a ruled total with the numerals on the right. */
+.total {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 12px var(--card-pad) 13px;
+  background: var(--paper-deep);
+}
+.totalL {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  min-width: 0;
+}
+.totalJ {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+.totalV {
+  font-size: 17px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Excluding a crew member is reversible, and the way back is stated where the
+   loss shows. The house info-banner idiom: the warning palette carries its own
+   rules — an ink frame against the amber was rejected on the desktop banner
+   and would be no better here. */
+.note {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: var(--card-pad);
+  padding: 8px var(--card-pad) 9px;
+  border-top: 1.5px solid var(--warning);
+  border-bottom: 1.5px solid var(--warning);
+  background: var(--warning-soft);
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--warning-dark);
+}
+.noteBtn {
+  margin-left: auto;
+  min-height: 44px;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 0 10px;
+  border: 1.5px solid var(--warning-dark);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--warning-dark);
+}
+.noteBtn .ic { width: 14px; height: 14px; }
+/* The book's rule and the note's rule must not double up when both are on. */
+.note + .book { border-top: none; margin-top: 0; }
+/* Empty state — a dashed note, like an annotation on a drawing. Never blank:
+   it says what happened AND what to do next. Reachable: exclude all four crew
+   from the row sheet. */
+.empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  margin: var(--card-pad);
+  padding: 26px 18px;
+  text-align: center;
+}
+.emptyT { font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.emptyS { margin-top: 8px; font-size: 14.5px; font-weight: 500; color: var(--muted); line-height: 1.5; }
+.emptyA {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 16px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.emptyA .ic { width: 15px; height: 15px; }
+/* ============================================================
+   BOTTOM SHEETS — hand-rolled (house style, no dialog library).
+   Two: the crew row sheet, and the export dialog (the desktop
+   centre-screen modal has no place on a phone).
+   ============================================================ */
+.scrim {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  /* Closed: off-screen AND out of the tab order / accessibility tree. */
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex; flex-direction: column;
+}
+.sheet.on { transform: none; visibility: visible; }
+.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+/* An INNER scroller, so it paints the 6px thumb the page scroller does not. */
+.sheetBody {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Firefox. Literals in the thumb, never --hair: a scrollbar is chrome, not a
+     drawn line. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-faint) transparent;
+}
+.sheetBody::-webkit-scrollbar { width: 6px; }
+.sheetBody::-webkit-scrollbar-track { background: transparent; }
+.sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+/* The two table columns a row card cannot hold, plus the one it can. */
+.sstrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.sst { min-width: 0; padding: 11px 10px 12px; border-right: 1.5px solid var(--hair); }
+.sst:last-child { border-right: none; }
+.sstL {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.sstV {
+  font-size: var(--fs-fig); font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Row menu items: icon in a 26px tonal box, title + sub, one disabled and one
+   danger present. */
+.menuItem {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px var(--pad-x);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.menuItem:active:not(:disabled) { background: var(--paper-deep); }
+.menuItem:disabled { opacity: 0.45; }
+.miIc {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.miIc .ic { width: 14px; height: 14px; }
+.miBp { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.1); color: var(--blueprint); }
+.miSky { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
+.miOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.miWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.miDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.menuItemT { display: block; font-size: 15px; font-weight: 700; }
+.menuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+.menuItemDanger .menuItemT { color: var(--danger); }
+.sheetCancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+/* ============================================================
+   EXPORT — the desktop modal, rebuilt as a form sheet.
+   ============================================================ */
+.formBody { padding: var(--card-pad) var(--pad-x) 6px; display: flex; flex-direction: column; gap: 14px; }
+.expNote {
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.expList { display: flex; flex-direction: column; gap: 10px; }
+.expOpt {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 60px;
+  padding: 10px 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+.expOpt.on { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.07); }
+/* A radio IS round — the one place the near-square rule yields, because a
+   round mark is what tells a single choice from a multiple one. */
+.expMark {
+  position: relative;
+  width: 18px; height: 18px; flex-shrink: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+}
+.expOpt.on .expMark { border-color: var(--blueprint); }
+.expOpt.on .expMark::after {
+  content: "";
+  position: absolute; inset: 3px;
+  border-radius: 50%;
+  background: var(--blueprint);
+}
+.expT { display: block; font-size: 15px; font-weight: 700; }
+.expH { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+/* The submit pair sits in a beige foot OUTSIDE the scrolling body and reaches
+   the form with form=, so it is there without scrolling to the end. */
+.formFoot {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  margin-top: 14px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   ============================================================ */
+.rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.rvIn { opacity: 1; transform: none; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rowIn { animation: rowIn 300ms var(--ease-out) both; }
+@keyframes press2 {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.pressed { animation: press2 0.18s ease-out; }
+/* Scoped to the page — the global kill switch stays the app's business */
+@media (prefers-reduced-motion: reduce) {
+  .app *,
+  .app *::before,
+  .app *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* ============================================================
+   MOBILE LAYER — must be the LAST block in this file. Anything
+   declared after it would win at equal specificity and part of
+   the responsive behaviour would silently fail to apply.
+   ============================================================ */
+@media (max-width: 520px) {
+  /* The head action stops sharing a line with anything */
+  .pageActions { grid-template-columns: 1fr; }
+  .btn { min-height: 46px; }
+  .crev { font-size: 18px; }
+  .convV { font-size: 19px; }
+  .formFoot { grid-template-columns: 1fr; }
+}
+@media (max-width: 360px) {
+  .mastCnt { grid-template-columns: 1fr; }
+  .mastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  .mastSub:last-child { border-bottom: none; }
+  .cav { width: 34px; height: 34px; font-size: 12px; }
+  /* A third of 320px leaves ~83px of text: "Of invoiced" has to stay on one
+     line or its cell's value drops out of line with the other two. */
+  .hs { padding: 10px 6px 11px; }
+  .hsL { font-size: 10.5px; letter-spacing: 0.06em; }
+  .crowFigs { gap: 7px; }
+  /* Twelve months puts $396,800 in the total row; the two mono labels give up
+     the width rather than letting the figure wrap. */
+  .totalL, .totalJ { font-size: 10.5px; letter-spacing: 0.06em; }
+  /* The note's label and its way back stop competing for one line. */
+  .note { flex-wrap: wrap; }
+  .noteBtn { margin-left: 0; }
+}

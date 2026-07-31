@@ -10,11 +10,32 @@
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initProjectsContent } from "./projects-behavior";
+import type { Project } from "./projects-data";
 
-export function ProjectsContent() {
-  useBlueprintContent(initProjectsContent);
+/**
+ * @param projects the org's real project book, read in the page's server
+ *   component. The behavior module takes it as its starting state and then
+ *   keeps itself in step with the database through `createProject`.
+ */
+export function ProjectsContent({ projects }: { projects?: Project[] }) {
+  // The rows reach `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a
+  // re-run tears the page down and replays the whole reveal cascade — so the
+  // init has to stay referentially stable for the life of the mount. The ref is
+  // never written after creation: it is seeded on the first render, the layout
+  // effect that reads it runs against that same commit, and from then on the
+  // behavior module owns the book. A navigation away unmounts the component, so
+  // the next visit gets a fresh ref holding freshly-queried rows.
+  const seedRef = useRef(projects);
+
+  const init = useCallback(
+    (content: HTMLElement) => initProjectsContent(content, { projects: seedRef.current }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -67,6 +88,10 @@ export function ProjectsContent() {
           </div>
 
           <form className="mdl-body" id="pjNewForm" noValidate>
+            {/* Server-action failures land here — the plan-limit refusal and the
+                permission refusal both carry text written for the user. */}
+            <div className="mdl-err is-hidden" id="pjNewErr" role="alert"></div>
+
             <div className="fld" data-fld="name">
               <label className="fld-lbl" htmlFor="pjfName">
                 Project name<span className="req">*</span>
@@ -107,14 +132,21 @@ export function ProjectsContent() {
               </div>
             </div>
 
+            {/* Schedule. `type="text"`, not `type="date"`: the native control
+                opens an OS panel no stylesheet can reach, and both fields drew
+                the same grey browser glyph, so Starts and Ends looked
+                identical. components/v3/shared/date-popover.ts upgrades them on
+                mount — a clock on Starts, an hourglass on Ends (the calendar
+                page's own pairing) and the blueprint month grid on each. The
+                value stays the "YYYY-MM-DD" string shortDate parses. */}
             <div className="mdl-row">
               <div className="fld">
                 <label className="fld-lbl" htmlFor="pjfStart">Starts</label>
-                <input className="pinput" id="pjfStart" name="startsAt" type="date" />
+                <input className="pinput" id="pjfStart" name="startsAt" type="text" placeholder="YYYY-MM-DD" autoComplete="off" />
               </div>
               <div className="fld">
                 <label className="fld-lbl" htmlFor="pjfEnd">Ends</label>
-                <input className="pinput" id="pjfEnd" name="endsAt" type="date" />
+                <input className="pinput" id="pjfEnd" name="endsAt" type="text" placeholder="YYYY-MM-DD" autoComplete="off" />
               </div>
             </div>
 
@@ -136,11 +168,11 @@ export function ProjectsContent() {
             <button className="btn btn-ghost" type="button" data-mdl="close">
               Cancel
             </button>
-            <button className="btn btn-primary" type="submit" form="pjNewForm">
+            <button className="btn btn-primary" type="submit" form="pjNewForm" id="pjNewOk">
               <svg className="ic">
                 <use href="#i-check" />
               </svg>
-              Create project
+              <span data-save-lbl>Create project</span>
             </button>
           </div>
         </div>

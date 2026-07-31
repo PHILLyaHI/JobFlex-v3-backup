@@ -9,18 +9,17 @@
 //
 // Every region / view / variant of the desktop calendar sheet is covered:
 //  · Delivery head + the New-event action + the crew-inbox action with its badge
-//  · computed masthead (one numeral + mono kicker + EXACTLY two annotations)
 //  · 3 view tabs (Month / Week / Team) with live counts + sliding rule
 //  · the toolbar: prev / next / Today / range title, plus the tray badge
 //  · search + the worker dropdown + the four status toggles, as ONE dropdown
 //  · MONTH: the 6×7 grid — today filled blueprint, selected day inset, out-of-
 //    month faded, status dots, "+N" past three — plus the selected day's agenda
-//  · WEEK: the 7 days as one agenda, grouped by day, TODAY stamped
-//  · TEAM: one card per crew member with their week and their booked hours
+//  · WEEK: a swipe rail — one day per full-width panel, its events as rows
+//  · TEAM: a swipe rail — one crew member per panel, their week as rows
 //  · the desktop event chip re-cut as a row card (time plate / title / actions,
 //    who-where in mono, status badge + crew + duration)
-//  · the "⋮" popover as a bottom sheet: 6 tonal rows, three ways to reach a
-//    disabled row, one danger row
+//  · a tap on a row opens the EVENT DETAIL sheet; the "⋮" opens the actions
+//    sheet: 6 tonal rows, three ways to reach a disabled row, one danger row
 //  · the create AND edit forms as a bottom sheet: kind tabs, required-field
 //    validation, all-day switch, status segments, crew picker, the link-a-record
 //    picker with its own search, and the meta read-out on an existing event
@@ -30,9 +29,14 @@
 // What changes versus the desktop sheet, and why:
 //  · The week TIME GRID (8 columns × 14 one-hour rows) and the team GRID
 //    (crew × 7 days) are the two things a 320px viewport cannot hold, and
-//    hiding columns is not allowed. Both become agendas: Week groups the seven
-//    days into one list, Team gives each crew member a card. Nothing is
-//    dropped — the same events, the same days, read vertically.
+//    hiding columns is not allowed. Columns side by side on a phone are ~45px
+//    of unreadable slivers, so BOTH become scroll-snap rails: one column per
+//    swipe, full width, its events read as ROWS. Nothing is dropped — the same
+//    events, the same days, one panel at a time.
+//  · No aggregate masthead. "59 booked hours / 14 events" is a number nobody
+//    acts on standing in a driveway, and it sat between the page title and the
+//    schedule itself (owner's call, 2026-07-30). The tab counts still carry how
+//    much is in each range, and Team still carries per-crew load.
 //  · Drag-and-drop is gone; there is no drag on a touch surface worth
 //    defending. Its two jobs are now explicit: "Push to tomorrow" in the
 //    actions sheet reschedules, and the tray's "Schedule" opens the create form
@@ -52,6 +56,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-calendar.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   ALL,
   DOW,
@@ -118,36 +124,6 @@ function Icon({ id, className }: { id: string; className?: string }) {
   );
 }
 
-/** 750ms easeOutCubic. tabular-nums keep the digit columns from jumping. */
-function CountUp({ value, suffix, className }: { value: number; suffix?: string; className?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const out = (n: number) => `${Math.round(n).toLocaleString("en-US")}${suffix ?? ""}`;
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const print = (n: number) => `${Math.round(n).toLocaleString("en-US")}${suffix ?? ""}`;
-    if (prefersReducedMotion()) {
-      el.textContent = print(value);
-      return;
-    }
-    let raf = 0;
-    let t0: number | null = null;
-    const frame = (t: number) => {
-      if (t0 === null) t0 = t;
-      const pr = Math.min(1, (t - t0) / 750);
-      el.textContent = print(value * (1 - Math.pow(1 - pr, 3)));
-      if (pr < 1) raf = requestAnimationFrame(frame);
-    };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
-  }, [value, suffix]);
-  return (
-    <div ref={ref} className={className}>
-      {out(value)}
-    </div>
-  );
-}
-
 type MenuRow = {
   act: string;
   icon: string;
@@ -181,14 +157,21 @@ const TONE_DOT: Record<string, string> = {
  * A chip carried kind, title, time, crew and status inside a ~120px box; these
  * three lines carry all five plus the client and the address.
  *
+ * `showDay` is for the Team rail only: its panel is a crew member, so a row can
+ * be any day of the week and the plate has to name which. Month and Week panels
+ * are already one day, so there it would be the same word on every row.
+ *
  * Declared at module scope, not inside MobileCalendar: a component created
  * during render is a NEW type on every keystroke, so React unmounts and
  * remounts every row — which would restart the row's entrance animation each
  * time the search box changed.
  */
 function EventRow({
-  e, i, landed, onOpen,
-}: { e: CalEvent; i: number; landed: boolean; onOpen: (id: string) => void }) {
+  e, i, landed, showDay, onOpen, onSelect,
+}: {
+  e: CalEvent; i: number; landed: boolean; showDay?: boolean;
+  onOpen: (id: string) => void; onSelect: (id: string) => void;
+}) {
   const tone = toneKey(e);
   const today = sameDay(e.start, TODAY);
   return (
@@ -199,6 +182,7 @@ function EventRow({
       {/* Time is the one thing a calendar row is about, so it takes the left
           plate. Today is ALWAYS filled blueprint — the reference's rule. */}
       <span className={`${styles.etime} ${today ? styles.isToday : ""}`}>
+        {showDay ? <span className={styles.etimeD}>{DOW[e.start.getDay()]}</span> : null}
         {e.allDay ? (
           <>
             <span className={styles.etimeH}>ALL</span>
@@ -211,10 +195,19 @@ function EventRow({
           </>
         )}
       </span>
-      <div className={styles.etitle}>
-        <Icon id={KIND_IC[e.kind]} className={`${styles.ic} ${styles.ekind}`} />
+      {/* The kind glyph that used to lead this line is gone (owner's call,
+          2026-07-30): it indented every title by 23px and said nothing the
+          status badge on row 3 does not already say in words — "Appointment",
+          "Blocked", or one of the four job statuses.
+          The title IS the row's control: its ::after covers the whole card, so
+          a tap anywhere outside the ⋮ opens the detail sheet. One button, and
+          its accessible name is the event — no second tab stop for the card. */}
+      <button className={styles.etitle} type="button" onClick={() => onSelect(e.id)}>
+        {/* The clamp lives on the inner span, not the button: the button is
+            what carries the stretched ::after, and an -webkit-box with
+            overflow:hidden is the one box you do not want owning it. */}
         <span className={styles.etitleTxt}>{e.title}</span>
-      </div>
+      </button>
       <button
         className={styles.erowOpen}
         type="button"
@@ -235,6 +228,31 @@ function EventRow({
       </div>
     </div>
   );
+}
+
+/**
+ * The estimate-sheet read-out an event opens with. ONE list, shared by the
+ * detail sheet and the edit form's meta box, so the two can never drift into
+ * disagreeing about the same event. Optional fields are omitted rather than
+ * printed empty — a blank "Phone —" row is noise, and the fixture deliberately
+ * carries events with no phone, no address and no client.
+ */
+function metaRowsFor(e: CalEvent): [string, string][] {
+  const rows: [string, string][] = [
+    ["When", e.allDay ? fmtDate(e.start) : `${fmtDate(e.start)} · ${fmtRange(e.start, e.end)}`],
+    ["Duration", e.allDay ? "All day" : durLabel(e.end.getTime() - e.start.getTime())],
+  ];
+  if (e.client) rows.push(["Client", e.client]);
+  if (e.phone) rows.push(["Phone", e.phone]);
+  if (e.addr) rows.push(["Address", e.addr]);
+  rows.push([
+    "Crew",
+    e.kind === "blocked" && e.selfOnly
+      ? `Just me · ${OWNER.name}`
+      : e.workers.map(workerName).join(", ") || "Unassigned",
+  ]);
+  if (e.scope) rows.push(["Scope", e.scope]);
+  return rows;
 }
 
 /** Never blank: it says what happened AND what to do. Two distinct states —
@@ -301,6 +319,7 @@ export function MobileCalendar() {
   const filterRef = useRef<HTMLDivElement>(null);
 
   const [actId, setActId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [trayOpen, setTrayOpen] = useState(false);
@@ -332,13 +351,12 @@ export function MobileCalendar() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -426,7 +444,7 @@ export function MobileCalendar() {
       styles.btn, styles.ddBtn, styles.ddItem, styles.tab, styles.navBtn, styles.rbarBtn,
       styles.agAdd, styles.erowOpen, styles.mrow, styles.sheetCancel, styles.emptyA,
       styles.srchX, styles.segBtn, styles.fchk, styles.kindBtn, styles.linkBtn,
-      styles.linkRow, styles.queueBtn, styles.trow, styles.mgCell,
+      styles.linkRow, styles.queueBtn, styles.mgCell,
     ].map((c) => `.${c}`).join(", ");
     const el = (e.target as HTMLElement).closest<HTMLElement>(sel2);
     if (!el) return;
@@ -439,7 +457,9 @@ export function MobileCalendar() {
 
   /* ---------- Esc closes what the PAGE owns ----------------------------
      The drawer is not listed: MobileNav owns its own Escape and only binds
-     while open, so the two listeners can never claim one key press. */
+     while open, so the two listeners can never claim one key press. Innermost
+     first — the detail sheet is checked before the actions sheet because Edit
+     is reached THROUGH it, so it is the newer layer. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -449,10 +469,11 @@ export function MobileCalendar() {
       else if (trayOpen) setTrayOpen(false);
       else if (inboxOpen) setInboxOpen(false);
       else if (actId) setActId(null);
+      else if (detailId) setDetailId(null);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [filterOpen, linkOpen, formOpen, trayOpen, inboxOpen, actId]);
+  }, [filterOpen, linkOpen, formOpen, trayOpen, inboxOpen, actId, detailId]);
 
   /* ---------- Filter dropdown: close on outside pointerdown ------------ */
   useEffect(() => {
@@ -498,32 +519,47 @@ export function MobileCalendar() {
     team: crewOn,
   };
 
-  /* ---------- masthead: one numeral, mono kicker, TWO annotations ------- */
-  const mast = useMemo(() => {
-    const sum = (list: CalEvent[]) => list.reduce((a, e) => a + eventHours(e), 0);
-    if (view === "month") {
-      return {
-        kicker: "Booked hours · month",
-        value: sum(monthEvents),
-        a1: { l: "Events", v: String(monthEvents.length) },
-        a2: { l: "Unscheduled", v: String(tray.length) },
-      };
-    }
-    if (view === "week") {
-      return {
-        kicker: "Booked hours · week",
-        value: sum(weekEvents),
-        a1: { l: "Events", v: String(weekEvents.length) },
-        a2: { l: "Crew booked", v: `${crewOn}/${workersData.length}` },
-      };
-    }
-    return {
-      kicker: "Crew hours · week",
-      value: sum(weekEvents),
-      a1: { l: "Crew booked", v: `${crewOn}/${workersData.length}` },
-      a2: { l: "Unscheduled", v: String(tray.length) },
-    };
-  }, [view, monthEvents, weekEvents, tray.length, crewOn]);
+  /* ---------- swipe rails: Week (7 days) and Team (4 crew) --------------
+     Both views used to lay their columns out side by side, which on a phone is
+     seven ~40px slivers nobody can read. Each is now a scroll-snap rail: one
+     full-width panel per swipe, its events as ROWS. The index below is only
+     ever a READ-OUT of where the rail already is — nothing writes scrollLeft
+     from it, so the finger is always the authority. */
+  const weekRailRef = useRef<HTMLDivElement>(null);
+  const teamRailRef = useRef<HTMLDivElement>(null);
+  const [weekIdx, setWeekIdx] = useState(0);
+  const [teamIdx, setTeamIdx] = useState(0);
+
+  /** Which panel is under the viewport, from the rail's own scroll position. */
+  const railIndex = (rail: HTMLDivElement, count: number) => {
+    const col = rail.firstElementChild as HTMLElement | null;
+    const w = col?.offsetWidth || 1;
+    return Math.max(0, Math.min(count - 1, Math.round(rail.scrollLeft / w)));
+  };
+
+  /* The week rail opens on the day you were already looking at, not on Sunday:
+     landing on an empty Sunday when today is Wednesday is the single easiest
+     way to make a swipe rail feel broken. Nothing here sets `sel`, so this
+     cannot loop back on itself. */
+  useEffect(() => {
+    if (view !== "week") return;
+    const rail = weekRailRef.current;
+    if (!rail) return;
+    const idx = Math.max(0, weekDays.findIndex((d) => sameDay(d, sel)));
+    const col = rail.firstElementChild as HTMLElement | null;
+    rail.scrollTo({ left: (col?.offsetWidth ?? 0) * idx, behavior: "auto" });
+    setWeekIdx(idx);
+  }, [view, weekDays, sel]);
+
+  /* The rail unmounts with its view, so its scrollLeft is 0 again on return and
+     the read-out has to be reset with it or it reports a stale panel. Done on
+     the tab press rather than in an effect: switching view is an event, not a
+     synchronisation with an outside system. The week rail needs no equivalent —
+     its effect below re-derives the index from the position it scrolls to. */
+  const changeView = (next: ViewKey) => {
+    setView(next);
+    setTeamIdx(0);
+  };
 
   /* ---------- range navigation -----------------------------------------
      Moving the range keeps the agenda honest: the selected day snaps into the
@@ -572,8 +608,12 @@ export function MobileCalendar() {
   const options = useMemo(() => filterOptions(), []);
   const activeOption = options.find((o) => o.key === filter) ?? options[0];
 
-  /* ---------- actions sheet -------------------------------------------- */
+  /* ---------- actions sheet / detail sheet ------------------------------
+     Both read back out of `data` rather than holding a copy of the event, so a
+     sheet that is open while the record changes underneath it (mark completed,
+     push to tomorrow) redraws with the new values instead of the stale ones. */
   const actEvent = actId === null ? null : (data.find((e) => e.id === actId) ?? null);
+  const detailEvent = detailId === null ? null : (data.find((e) => e.id === detailId) ?? null);
 
   const menuRows = useMemo<MenuRow[]>(() => {
     const e = actEvent;
@@ -736,13 +776,23 @@ export function MobileCalendar() {
     setFormOpen(false);
   };
 
-  const anyOverlay = Boolean(actEvent) || formOpen || inboxOpen || trayOpen;
+  const anyOverlay = Boolean(actEvent) || Boolean(detailEvent) || formOpen || inboxOpen || trayOpen;
   const closeAll = () => {
     setActId(null);
+    setDetailId(null);
     setFormOpen(false);
     setInboxOpen(false);
     setTrayOpen(false);
   };
+
+  // Swipe-down dismissal. Five sheets, five gestures, each on the same setter
+  // the Escape ladder above uses — the detail sheet closes without disturbing
+  // the actions sheet it was reached from.
+  const actDrag = useSheetDrag(Boolean(actEvent), () => setActId(null));
+  const detailDrag = useSheetDrag(Boolean(detailEvent), () => setDetailId(null));
+  const inboxDrag = useSheetDrag(inboxOpen, () => setInboxOpen(false));
+  const trayDrag = useSheetDrag(trayOpen, () => setTrayOpen(false));
+  const formDrag = useSheetDrag(formOpen, () => setFormOpen(false));
 
   return (
     <div className={styles.app} onClick={onRootClick}>
@@ -786,26 +836,11 @@ export function MobileCalendar() {
             </div>
           </div>
 
-          {/* MASTHEAD — key on view so the 320ms slide-in replays */}
-          <div className={`${styles.mast} ${styles.slide}`} key={view}>
-            <div className={styles.mastTop}>
-              <div className={styles.mastLbl}>
-                {mast.kicker}
-                <span className={styles.mastRule} />
-              </div>
-              <CountUp value={mast.value} suffix="h" className={styles.mastVal} />
-            </div>
-            <div className={styles.mastCnt}>
-              {[mast.a1, mast.a2].map((a) => (
-                <div className={styles.mastSub} key={a.l}>
-                  <div className={styles.mastSubL}>{a.l}</div>
-                  <div className={styles.mastSubV}>{a.v}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* VIEW TABS */}
+          {/* VIEW TABS — also the only aggregate left on the page: the count on
+              each tab says how much is in that range, in the control you would
+              use to go there. The masthead that used to sit here spent a whole
+              card on "59h / 14 events / 4 unscheduled" above the schedule
+              itself (removed, owner's call 2026-07-30). */}
           <div className={styles.tabs}>
             <span
               className={styles.tabInd}
@@ -817,7 +852,7 @@ export function MobileCalendar() {
                 className={`${styles.tab} ${view === v.key ? styles.active : ""}`}
                 type="button"
                 aria-current={view === v.key ? "page" : undefined}
-                onClick={() => setView(v.key)}
+                onClick={() => changeView(v.key)}
               >
                 {v.label}
                 <span className={styles.tabCount}>{counts[v.key]}</span>
@@ -953,7 +988,11 @@ export function MobileCalendar() {
             </div>
           )}
 
-          {/* MONTH: the selected day's agenda */}
+          {/* MONTH: the selected day's agenda. The head is deliberately
+              lopsided — the DATE owns the row at 900 weight and the Add button
+              is a hairline chip beside it. It used to be the other way round:
+              a 1.5px ink box shouting ADD next to an 11px mono date, so the eye
+              landed on the action before it knew which day it was on. */}
           {view === "month" && (
             <div className={styles.agenda}>
               <div className={styles.agHead}>
@@ -973,7 +1012,14 @@ export function MobileCalendar() {
               {dayEvents.length ? (
                 <div className={styles.agList}>
                   {dayEvents.map((e, i) => (
-                    <EventRow e={e} i={i} key={e.id} landed={landedId === e.id} onOpen={setActId} />
+                    <EventRow
+                      e={e}
+                      i={i}
+                      key={e.id}
+                      landed={landedId === e.id}
+                      onOpen={setActId}
+                      onSelect={setDetailId}
+                    />
                   ))}
                 </div>
               ) : (
@@ -989,7 +1035,11 @@ export function MobileCalendar() {
             </div>
           )}
 
-          {/* ============ VIEW: WEEK — the 7 days as one agenda ============ */}
+          {/* ============ VIEW: WEEK — one day per swipe ============
+              Seven day COLUMNS side by side is ~40px of sliver each on a phone.
+              The same seven days are now a scroll-snap rail: one full-width
+              panel per swipe, the day's events as the same row cards the month
+              agenda uses, and a tick rule underneath saying where you are. */}
           {view === "week" && (
             weekEvents.length === 0 ? (
               <EmptyState
@@ -999,37 +1049,78 @@ export function MobileCalendar() {
                 onNew={() => openNew()}
               />
             ) : (
-              <div className={styles.wstack}>
-                {weekDays.map((day) => {
-                  const evs = weekEvents.filter((e) => sameDay(e.start, day)).sort(byStart);
-                  return (
-                    <div className={styles.wgroup} key={day.toISOString()}>
-                      <div className={styles.wgHead}>
-                        <div className={styles.wgHeadT}>
-                          {DOW[day.getDay()]} · {fmtDayShort(day)}
-                          {sameDay(day, TODAY) ? <span className={styles.agToday}>Today</span> : null}
+              <div className={styles.railWrap}>
+                <div
+                  className={styles.rail}
+                  ref={weekRailRef}
+                  onScroll={(ev) => setWeekIdx(railIndex(ev.currentTarget, weekDays.length))}
+                >
+                  {weekDays.map((day) => {
+                    const evs = weekEvents.filter((e) => sameDay(e.start, day)).sort(byStart);
+                    return (
+                      <section
+                        className={styles.railCol}
+                        key={day.toISOString()}
+                        aria-label={fmtDate(day)}
+                      >
+                        <div className={styles.agHead}>
+                          <div className={styles.agHeadT}>
+                            {DOW[day.getDay()]} · {fmtDayShort(day)}
+                            {sameDay(day, TODAY) ? <span className={styles.agToday}>Today</span> : null}
+                          </div>
+                          <button
+                            className={styles.agAdd}
+                            type="button"
+                            onClick={() => openNew(day)}
+                            aria-label={`New event on ${fmtDate(day)}`}
+                          >
+                            <Icon id="i-plus" />Add
+                          </button>
                         </div>
-                        <div className={styles.wgHeadN}>{evs.length ? `${evs.length} ev` : "open"}</div>
-                      </div>
-                      {evs.length ? (
-                        <div className={styles.agList}>
-                          {evs.map((e, i) => (
-                            <EventRow e={e} i={i} key={e.id} landed={landedId === e.id} onOpen={setActId} />
-                          ))}
-                        </div>
-                      ) : (
-                        <button className={styles.note} type="button" onClick={() => openNew(day)}>
-                          Nothing scheduled — tap to book this day
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                        {evs.length ? (
+                          <div className={styles.agList}>
+                            {evs.map((e, i) => (
+                              <EventRow
+                                e={e}
+                                i={i}
+                                key={e.id}
+                                landed={landedId === e.id}
+                                onOpen={setActId}
+                                onSelect={setDetailId}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <button className={styles.note} type="button" onClick={() => openNew(day)}>
+                            Nothing scheduled — tap to book this day
+                          </button>
+                        )}
+                      </section>
+                    );
+                  })}
+                </div>
+                {/* A measuring rule under the drawing, not a dot pager: seven
+                    ticks across the full width, the live one filled blueprint,
+                    plus the panel number in mono for anyone who cannot see it. */}
+                <div className={styles.railMeta}>
+                  <span className={styles.railTicks} aria-hidden="true">
+                    {weekDays.map((d, i) => (
+                      <i key={d.toISOString()} className={`${styles.railTick} ${i === weekIdx ? styles.on : ""}`} />
+                    ))}
+                  </span>
+                  <span className={styles.railNow} aria-live="polite">
+                    Day {weekIdx + 1} / {weekDays.length}
+                  </span>
+                </div>
               </div>
             )
           )}
 
-          {/* ============ VIEW: TEAM — one card per crew member ============ */}
+          {/* ============ VIEW: TEAM — one crew member per swipe ============
+              Same restructure as Week, keyed on the person instead of the day:
+              the desktop's crew × 7-day grid becomes one full-width panel per
+              installer. Rows carry their weekday on the time plate, since a
+              crew panel spans the whole week. */}
           {view === "team" && (
             weekEvents.length === 0 ? (
               <EmptyState
@@ -1039,49 +1130,61 @@ export function MobileCalendar() {
                 onNew={() => openNew()}
               />
             ) : (
-              <div className={styles.tstack}>
-                {workersData.map((w) => {
-                  const evs = weekEvents.filter((e) => e.workers.includes(w.id)).sort(byStart);
-                  const hrs = evs.reduce((a, e) => a + eventHours(e), 0);
-                  return (
-                    <div className={styles.tcard} key={w.id}>
-                      <div className={styles.tcardHead}>
-                        <span className={`${styles.tav} ${evs.length ? styles.isOn : ""}`}>{initials(w.name)}</span>
-                        <div className={styles.tWho}>
-                          <div className={styles.tname}>{w.name}</div>
-                          <div className={styles.trole}>{w.role}</div>
-                        </div>
-                        <div className={styles.tfigs}>
-                          <div className={`${styles.tfigV} ${hrs ? "" : styles.isZero}`}>
-                            {hrs ? `${Math.round(hrs)}h` : "—"}
+              <div className={styles.railWrap}>
+                <div
+                  className={styles.rail}
+                  ref={teamRailRef}
+                  onScroll={(ev) => setTeamIdx(railIndex(ev.currentTarget, workersData.length))}
+                >
+                  {workersData.map((w) => {
+                    const evs = weekEvents.filter((e) => e.workers.includes(w.id)).sort(byStart);
+                    const hrs = evs.reduce((a, e) => a + eventHours(e), 0);
+                    return (
+                      <section className={styles.railCol} key={w.id} aria-label={`${w.name}, ${w.role}`}>
+                        <div className={styles.tcardHead}>
+                          <span className={`${styles.tav} ${evs.length ? styles.isOn : ""}`}>{initials(w.name)}</span>
+                          <div className={styles.tWho}>
+                            <div className={styles.tname}>{w.name}</div>
+                            <div className={styles.trole}>{w.role}</div>
                           </div>
-                          <div className={styles.tfigL}>{evs.length} booked</div>
+                          <div className={styles.tfigs}>
+                            <div className={`${styles.tfigV} ${hrs ? "" : styles.isZero}`}>
+                              {hrs ? `${Math.round(hrs)}h` : "—"}
+                            </div>
+                            <div className={styles.tfigL}>{evs.length} booked</div>
+                          </div>
                         </div>
-                      </div>
-                      {evs.length ? (
-                        <div className={styles.tlist}>
-                          {evs.map((e, i) => (
-                            <button
-                              key={e.id}
-                              type="button"
-                              className={`${styles.trow} ${styles.rowIn} ${landedId === e.id ? styles.landed : ""}`}
-                              style={{ animationDelay: `${i * 45}ms` }}
-                              onClick={() => setActId(e.id)}
-                            >
-                              <span className={styles.trowTime}>
-                                {DOW[e.start.getDay()]} {e.allDay ? "all day" : fmtClock(e.start)}
-                              </span>
-                              <span className={styles.trowTitle}>{e.title}</span>
-                              <span className={`${styles.trowDot} ${TONE_DOT[toneKey(e)] ?? ""}`} />
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className={styles.note}>Nothing on this week</div>
-                      )}
-                    </div>
-                  );
-                })}
+                        {evs.length ? (
+                          <div className={styles.agList}>
+                            {evs.map((e, i) => (
+                              <EventRow
+                                e={e}
+                                i={i}
+                                key={e.id}
+                                landed={landedId === e.id}
+                                showDay
+                                onOpen={setActId}
+                                onSelect={setDetailId}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className={styles.note}>Nothing on this week</div>
+                        )}
+                      </section>
+                    );
+                  })}
+                </div>
+                <div className={styles.railMeta}>
+                  <span className={styles.railTicks} aria-hidden="true">
+                    {workersData.map((w, i) => (
+                      <i key={w.id} className={`${styles.railTick} ${i === teamIdx ? styles.on : ""}`} />
+                    ))}
+                  </span>
+                  <span className={styles.railNow} aria-live="polite">
+                    Crew {teamIdx + 1} / {workersData.length}
+                  </span>
+                </div>
               </div>
             )
           )}
@@ -1102,9 +1205,10 @@ export function MobileCalendar() {
         aria-modal="true"
         aria-label="Event actions"
         aria-hidden={!actEvent}
+        {...actDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...actDrag.handleProps} />
+        <div className={styles.sheetHead} {...actDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {actEvent
               ? `${fmtDayShort(actEvent.start)} · ${actEvent.allDay ? "All day" : fmtRange(actEvent.start, actEvent.end)}`
@@ -1136,6 +1240,86 @@ export function MobileCalendar() {
         </button>
       </div>
 
+      {/* ============ EVENT DETAIL SHEET ============
+          What a row card cannot hold: the full span, the phone number, the
+          whole crew, the scope and the notes. A tap on the row opens it; the
+          "⋮" still goes straight to the actions, so the two paths never fight.
+          Closing is the scrim, Escape, the foot, or a pull down on the handle —
+          the house set. */}
+      <div
+        className={`${styles.sheet} ${detailEvent ? styles.on : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Event detail"
+        aria-hidden={!detailEvent}
+        {...detailDrag.sheetProps}
+      >
+        <div className={styles.sheetGrab} {...detailDrag.handleProps} />
+        <div className={styles.sheetHead} {...detailDrag.handleProps}>
+          <div className={styles.sheetKicker}>
+            {detailEvent
+              ? `${DOW[detailEvent.start.getDay()]} · ${fmtDayShort(detailEvent.start)}`
+              : "Event · —"}
+          </div>
+          <div className={styles.sheetTitle}>{detailEvent?.title ?? "Event"}</div>
+        </div>
+        <div className={styles.sheetBody}>
+          {detailEvent ? (
+            <>
+              {/* Status leads, in its own tone; kind and span follow in the
+                  neutral badge so three badges never read as three statuses. */}
+              <div className={styles.dBadges}>
+                <span className={`${styles.estatus} ${TONE_BADGE[toneKey(detailEvent)] ?? ""}`}>
+                  {toneLabel(detailEvent)}
+                </span>
+                <span className={styles.estatus}>{KIND_LABEL[detailEvent.kind]}</span>
+                <span className={styles.estatus}>
+                  {detailEvent.allDay
+                    ? "All day"
+                    : durLabel(detailEvent.end.getTime() - detailEvent.start.getTime())}
+                </span>
+              </div>
+
+              <div className={styles.dSec}>
+                <div className={styles.metaBox}>
+                  {metaRowsFor(detailEvent).map(([l, v]) => (
+                    <div className={styles.metaRow} key={l}>
+                      <span className={styles.metaL}>{l}</span>
+                      <span className={styles.metaV}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className={styles.dSec}>
+                <div className={styles.dSecLbl}>Notes</div>
+                {detailEvent.notes ? (
+                  <div className={styles.dNote}>{detailEvent.notes}</div>
+                ) : (
+                  <div className={styles.note}>Nothing noted on this event</div>
+                )}
+              </div>
+            </>
+          ) : null}
+        </div>
+        <div className={styles.formFoot}>
+          <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setDetailId(null)}>
+            Close
+          </button>
+          <button
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            type="button"
+            onClick={() => {
+              const e = detailEvent;
+              setDetailId(null);
+              if (e) openEdit(e);
+            }}
+          >
+            <Icon id="i-file" />Edit event
+          </button>
+        </div>
+      </div>
+
       {/* ============ CREW INBOX SHEET ============ */}
       <div
         className={`${styles.sheet} ${inboxOpen ? styles.on : ""}`}
@@ -1143,9 +1327,10 @@ export function MobileCalendar() {
         aria-modal="true"
         aria-label="Crew confirmations"
         aria-hidden={!inboxOpen}
+        {...inboxDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...inboxDrag.handleProps} />
+        <div className={styles.sheetHead} {...inboxDrag.handleProps}>
           <div className={styles.sheetKicker}>Crew confirmations</div>
           <div className={styles.sheetTitle}>{inbox.length} pending</div>
         </div>
@@ -1192,9 +1377,10 @@ export function MobileCalendar() {
         aria-modal="true"
         aria-label="Unscheduled work"
         aria-hidden={!trayOpen}
+        {...trayDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...trayDrag.handleProps} />
+        <div className={styles.sheetHead} {...trayDrag.handleProps}>
           <div className={styles.sheetKicker}>Unscheduled · drop onto a day</div>
           <div className={styles.sheetTitle}>{tray.length} waiting</div>
         </div>
@@ -1233,9 +1419,10 @@ export function MobileCalendar() {
         aria-modal="true"
         aria-labelledby="mcalFormTitle"
         aria-hidden={!formOpen}
+        {...formDrag.sheetProps}
       >
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        <div className={styles.sheetGrab} {...formDrag.handleProps} />
+        <div className={styles.sheetHead} {...formDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {form.mode === "edit" ? "Delivery / edit event" : "Delivery / new record"}
           </div>
@@ -1270,18 +1457,9 @@ export function MobileCalendar() {
               {(() => {
                 const e = form.id ? data.find((x) => x.id === form.id) : null;
                 if (!e) return null;
-                const rows: [string, string][] = [
-                  ["When", e.allDay ? fmtDate(e.start) : `${fmtDate(e.start)} · ${fmtRange(e.start, e.end)}`],
-                  ["Duration", e.allDay ? "All day" : durLabel(e.end.getTime() - e.start.getTime())],
-                ];
-                if (e.client) rows.push(["Client", e.client]);
-                if (e.phone) rows.push(["Phone", e.phone]);
-                if (e.addr) rows.push(["Address", e.addr]);
-                rows.push(["Crew", e.kind === "blocked" && e.selfOnly
-                  ? `Just me · ${OWNER.name}`
-                  : e.workers.map(workerName).join(", ") || "Unassigned"]);
-                if (e.scope) rows.push(["Scope", e.scope]);
-                return rows.map(([l, v]) => (
+                // Same builder the detail sheet uses. Notes are NOT appended
+                // here — the editable field for them is a few rows down.
+                return metaRowsFor(e).map(([l, v]) => (
                   <div className={styles.metaRow} key={l}>
                     <span className={styles.metaL}>{l}</span>
                     <span className={styles.metaV}>{v}</span>

@@ -91,6 +91,60 @@ const MobileFinancials = dynamic(
   () => import("@/app/(mobile)/mobile-financials-v2/mobile-financials").then((m) => m.MobileFinancials),
   { ssr: false, loading: MobileHold },
 );
+// The Automation section, 2026-07-30: the ten remaining drawer surfaces. Mostly
+// NOT ledgers — a composer, two drawing tools, a dialer, a thread view, three
+// feeds, a board and a charts page — so these vary far more in shape than the
+// list pages above, while sharing the same nav, tokens and motion.
+const MobileSmartProposal = dynamic(
+  () => import("@/app/(mobile)/mobile-advanced-ai-v2/mobile-advanced-ai").then((m) => m.MobileSmartProposal),
+  { ssr: false, loading: MobileHold },
+);
+const MobileRoofEstimator = dynamic(
+  () => import("@/app/(mobile)/mobile-roof-estimator-v2/mobile-roof-estimator").then((m) => m.MobileRoofEstimator),
+  { ssr: false, loading: MobileHold },
+);
+const MobileFenceEstimator = dynamic(
+  () => import("@/app/(mobile)/mobile-fence-estimator-v2/mobile-fence-estimator").then((m) => m.MobileFenceEstimator),
+  { ssr: false, loading: MobileHold },
+);
+const MobilePhone = dynamic(
+  () => import("@/app/(mobile)/mobile-phone-v2/mobile-phone").then((m) => m.MobilePhone),
+  { ssr: false, loading: MobileHold },
+);
+const MobileMessages = dynamic(
+  () => import("@/app/(mobile)/mobile-messages-v2/mobile-messages").then((m) => m.MobileMessages),
+  { ssr: false, loading: MobileHold },
+);
+const MobileAnnouncements = dynamic(
+  () => import("@/app/(mobile)/mobile-announcements-v2/mobile-announcements").then((m) => m.MobileAnnouncements),
+  { ssr: false, loading: MobileHold },
+);
+const MobileReviews = dynamic(
+  () => import("@/app/(mobile)/mobile-reviews-v2/mobile-reviews").then((m) => m.MobileReviews),
+  { ssr: false, loading: MobileHold },
+);
+const MobileTrade = dynamic(
+  () => import("@/app/(mobile)/mobile-trade-v2/mobile-trade").then((m) => m.MobileTrade),
+  { ssr: false, loading: MobileHold },
+);
+const MobileReferrals = dynamic(
+  () => import("@/app/(mobile)/mobile-referrals-v2/mobile-referrals").then((m) => m.MobileReferrals),
+  { ssr: false, loading: MobileHold },
+);
+// The manual builder, 2026-07-30. Its estimator PICKER has no handheld page of
+// its own — it is a dialog mounted in MobileNav, reachable from every mobile
+// surface — so only the builder needs a route here.
+const MobileManualBuilder = dynamic(
+  () =>
+    import("@/app/(mobile)/mobile-manual-builder-v2/mobile-manual-builder").then(
+      (m) => m.MobileManualBuilder,
+    ),
+  { ssr: false, loading: MobileHold },
+);
+const MobileReports = dynamic(
+  () => import("@/app/(mobile)/mobile-reports-v2/mobile-reports").then((m) => m.MobileReports),
+  { ssr: false, loading: MobileHold },
+);
 
 /** Add a route here the day its handheld build lands. */
 const HANDHELD_SURFACES: Record<string, React.ComponentType> = {
@@ -106,6 +160,19 @@ const HANDHELD_SURFACES: Record<string, React.ComponentType> = {
   "/dashboard/hire": MobileHire,
   "/dashboard/company": MobileCompany,
   "/dashboard/financials": MobileFinancials,
+  // Automation. The route slug /dashboard/advanced-ai is historical; the
+  // surface is called Smart Proposal everywhere a user can see it.
+  "/dashboard/advanced-ai": MobileSmartProposal,
+  "/dashboard/roof-estimator": MobileRoofEstimator,
+  "/dashboard/fence-estimator": MobileFenceEstimator,
+  "/dashboard/phone": MobilePhone,
+  "/dashboard/messages": MobileMessages,
+  "/dashboard/announcements": MobileAnnouncements,
+  "/dashboard/reviews": MobileReviews,
+  "/dashboard/trade": MobileTrade,
+  "/dashboard/referrals": MobileReferrals,
+  "/dashboard/reports": MobileReports,
+  "/dashboard/estimators/manual": MobileManualBuilder,
 };
 
 // Module-scope so the identities are stable across renders — a fresh
@@ -124,12 +191,20 @@ const getSnapshot = () => window.matchMedia(HANDHELD).matches;
 // visitor on every route, which is a worse trade.
 const getServerSnapshot = () => false;
 
-export function ResponsiveDashboardShell({ children }: { children: React.ReactNode }) {
+export function ResponsiveDashboardShell({
+  children,
+  user,
+}: {
+  children: React.ReactNode;
+  /** Signed-in identity, read in the server layout and handed to the desktop
+   *  sidebar. The handheld shell draws its own account row. */
+  user?: { name: string; role: string };
+}) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const pathname = usePathname();
 
   const Handheld = HANDHELD_SURFACES[pathname ?? ""];
   if (isHandheld && Handheld) return <Handheld />;
 
-  return <BlueprintShell>{children}</BlueprintShell>;
+  return <BlueprintShell user={user}>{children}</BlueprintShell>;
 }

@@ -12,19 +12,56 @@
 //   matchMedia polyfill, the mobile nav drawer, FLUID SCALE, the sidebar entry
 //   cascade, the sliding active indicator and the graph-paper parallax.
 //
+// This page is no longer a fixture. The donor's autosave was a 700ms timer
+// that wrote "All changes saved" and persisted nothing; every save line below
+// now runs the matching server action (updateBranding / updateLeadProfile /
+// updateLanding in actions/company.ts) behind the same 700ms debounce and
+// reports what the server actually did. The activity feed reads real
+// ActivityEvent rows and the trade chips offer the canonical taxonomy the
+// action validates against.
+//
 // The donor creates no DOM outside `.content`; `#pMenu` (position: fixed) is
 // the only fixed-position overlay and it ships inline in the markup, empty and
 // display:none, exactly as the donor leaves it on this page.
 
+import { updateBranding, updateLanding, updateLeadProfile } from "@/actions/company";
+import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
   COLOR_PRESETS,
   TRADE_TYPES,
   ACT_CATS,
-  MEMBERS,
-  ACTIVITY_DATA,
+  type ActivityEntry,
+  type CompanyOrgState,
+  type TeamMember,
 } from "./company-data";
 
-export function initCompanyContent(content: HTMLElement): () => void {
+export type CompanyContentOptions = {
+  org: CompanyOrgState;
+  activity: ActivityEntry[];
+  members: TeamMember[];
+  /** The three company actions are `requireManager`-guarded. When the viewer is
+   *  a limited role the sheet still reads, but every control is inert and the
+   *  save lines say so instead of letting the server reject each keystroke. */
+  canEdit: boolean;
+};
+
+/** The company actions reject with an Error whose message is written for the
+ *  user ("Manager access required"). Surface that text; fall back to a generic
+ *  line for a transport failure, which carries no useful message. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Couldn’t save — check your connection and try again.";
+  }
+  // Zod's parse failures are JSON blobs, not sentences.
+  if (msg.startsWith("[") || msg.startsWith("{")) return "Couldn’t save — check the highlighted fields.";
+  return msg;
+}
+
+export function initCompanyContent(
+  content: HTMLElement,
+  options: CompanyContentOptions,
+): () => void {
   const root = content;
   const main = content.closest<HTMLElement>(".main");
   const disposers: Array<() => void> = [];
@@ -97,43 +134,147 @@ export function initCompanyContent(content: HTMLElement): () => void {
   });
 
   // ================= COMPANY: STATE =================
+  // Seeded from the database row the page component read; every mutation below
+  // writes back through a company server action.
+  const { org, activity, members, canEdit } = options;
+  const activityData = activity;
   const co = {
     tab: "branding",
-    color: "#1F7A52",
-    trades: ["Roofing", "Fencing", "Decking", "Siding"] as string[],
-    leadsOn: true,
-    publicOn: false,
+    color: org.primaryColor || COLOR_PRESETS[0],
+    logoUrl: org.logoUrl,
+    trades: org.tradeTypes.slice(),
+    leadsOn: org.leadOffersEnabled,
+    publicOn: org.publicProfileEnabled,
     actCat: "all",
     actQuery: "",
-    actPerson: "Everyone",
+    /** Membership user id, or "" for Everyone. */
+    actPerson: "",
     actVisible: 6,
     timers: {} as Record<string, ReturnType<typeof setTimeout> | undefined>,
+    /** Per-save-line sequence number: a later save always wins the line. */
+    seq: {} as Record<string, number>,
   };
 
   function monogram(n: string) {
     const p = n.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
+    if (!p.length) return "—";
     return p.length === 1
       ? p[0].slice(0, 2).toUpperCase()
       : (p[0][0] + p[p.length - 1][0]).toUpperCase();
   }
-  // Autosave as in the original: "Saving…" → "All changes saved"
-  function autosave(which: string) {
+
+  // ================= SAVING =================
+  // The donor's autosave was a 700ms timer that typed "All changes saved" and
+  // persisted nothing. Same line, same debounce — it now runs the action and
+  // reports what the server actually did.
+  function saveLine(which: string, text: string, tone: "" | "saved" | "err") {
     const el = $("#" + which);
     if (!el) return;
-    el.classList.remove("saved");
-    el.textContent = "Saving…";
+    el.classList.remove("saved", "err");
+    if (tone) el.classList.add(tone);
+    el.textContent = text;
+  }
+
+  async function commit(which: string, run: () => Promise<unknown>) {
+    const token = (co.seq[which] = (co.seq[which] ?? 0) + 1);
+    saveLine(which, "Saving…", "");
+    try {
+      await run();
+      if (co.seq[which] !== token) return; // a newer save owns the line
+      saveLine(which, "All changes saved", "saved");
+    } catch (err) {
+      if (co.seq[which] !== token) return;
+      saveLine(which, actionError(err), "err");
+    }
+  }
+
+  /** Debounced save — the donor's 700ms, now in front of a real write. */
+  function autosave(which: string, run: () => Promise<unknown>, delay = 700) {
+    if (!canEdit) return;
+    saveLine(which, "Saving…", "");
     const prev = co.timers[which];
     if (prev !== undefined) {
       clearTimeout(prev);
       timers.delete(prev);
     }
     co.timers[which] = later(() => {
-      el.textContent = "All changes saved";
-      el.classList.add("saved");
-    }, 700);
+      void commit(which, run);
+    }, delay);
+  }
+
+  const val = (sel: string) => $<HTMLInputElement>(sel)?.value.trim() ?? "";
+  const orNull = (v: string) => (v ? v : null);
+  const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+  // Branding and Lead matching edit the SAME two Organization columns (address,
+  // phone). Keep the pair of inputs in step so the sheet never shows two
+  // different values for one column — patch the sibling node, never re-render.
+  function mirrorField(from: "b" | "l", field: "addr" | "phone") {
+    const src = $<HTMLInputElement>('[data-' + from + '="' + field + '"]');
+    const dst = $<HTMLInputElement>('[data-' + (from === "b" ? "l" : "b") + '="' + field + '"]');
+    if (!src || !dst || dst === document.activeElement) return;
+    dst.value = src.value;
+  }
+
+  function saveBranding() {
+    const name = val('[data-b="name"]');
+    if (!name) {
+      saveLine("saveBranding", "Company name can’t be empty", "err");
+      return;
+    }
+    const email = val('[data-b="email"]');
+    if (email && !EMAIL_RE.test(email)) {
+      saveLine("saveBranding", "Enter a valid billing email", "err");
+      return;
+    }
+    autosave("saveBranding", () =>
+      updateBranding({
+        name,
+        billingEmail: orNull(email),
+        phone: orNull(val('[data-b="phone"]')),
+        website: orNull(val('[data-b="site"]')),
+        address: orNull(val('[data-b="addr"]')),
+        primaryColor: co.color,
+      }),
+    );
+  }
+
+  function saveLead() {
+    autosave("saveLead", () =>
+      updateLeadProfile({
+        address: orNull(val('[data-l="addr"]')),
+        phone: orNull(val('[data-l="phone"]')),
+        tradeTypes: co.trades,
+        leadOffersEnabled: co.leadsOn,
+      }),
+    );
+  }
+
+  function saveLanding() {
+    autosave("saveLanding", () =>
+      updateLanding({
+        publicProfileEnabled: co.publicOn,
+        landingHeroTitle: orNull(val('[data-g="title"]')),
+        landingHeroSubtitle: orNull(val('[data-g="sub"]')),
+      }),
+    );
   }
 
   // ================= RENDER =================
+  /** Every interpolation below lands in innerHTML, so anything that came from
+   *  the database (company name, website, trade names) is escaped first. */
+  function esc(v: string) {
+    return v
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+  const dis = canEdit ? "" : " disabled";
+  /** The empty-state markup React rendered inside the drop target, kept so the
+   *  control can go back to it if the logo is ever cleared. */
+  const logoDropDefault = $("#logoDrop")?.innerHTML ?? "";
+
   function renderSwatches() {
     const host = $("#swatches");
     if (!host) return;
@@ -148,27 +289,52 @@ export function initCompanyContent(content: HTMLElement): () => void {
           c +
           '" aria-label="Pick color ' +
           c +
-          '"></button>'
+          '"' +
+          dis +
+          "></button>"
         );
       }).join("") +
-      '<input class="sw-hex" id="hexInput" value="' + co.color + '" aria-label="Brand color hex">';
+      '<input class="sw-hex" id="hexInput" value="' +
+      esc(co.color) +
+      '" aria-label="Brand color hex"' +
+      (canEdit ? "" : " readonly") +
+      ">";
   }
   function renderPreview() {
-    const val = function (f: string) {
+    const field = function (f: string) {
       const el = $<HTMLInputElement>('[data-b="' + f + '"]');
       return el ? el.value.trim() : "";
     };
-    const name = val("name") || "Your company";
-    const sub = val("site") || val("phone") || val("email") || "—";
+    const name = field("name") || "Your company";
+    const sub = field("site") || field("phone") || field("email") || "—";
     const prev = $("#mailPrev");
     if (!prev) return;
     prev.style.borderLeftColor = co.color;
+    // With a logo saved, the header sample shows the logo — that is what the
+    // customer receives. Without one it falls back to the donor's initial mark.
+    const mark = co.logoUrl
+      ? '<span class="mail-mark mail-mark--img"><img src="' + esc(co.logoUrl) + '" alt=""></span>'
+      : '<span class="mail-mark" style="background:' +
+        esc(co.color) +
+        '">' +
+        esc(name.charAt(0).toUpperCase()) +
+        "</span>";
     prev.innerHTML =
-      '<span class="mail-mark" style="background:' + co.color + '">' +
-      name.charAt(0).toUpperCase() +
-      "</span>" +
-      '<span style="min-width:0"><span class="mail-name" style="display:block">' + name + "</span>" +
-      '<span class="mail-sub" style="display:block">' + sub + "</span></span>";
+      mark +
+      '<span style="min-width:0"><span class="mail-name" style="display:block">' + esc(name) + "</span>" +
+      '<span class="mail-sub" style="display:block">' + esc(sub) + "</span></span>";
+  }
+  /** The drop target shows the saved logo once there is one. */
+  function renderLogo() {
+    const drop = $("#logoDrop");
+    if (!drop) return;
+    if (co.logoUrl) {
+      drop.classList.add("has-img");
+      drop.innerHTML = '<img class="logo-img" src="' + esc(co.logoUrl) + '" alt="Company logo">';
+    } else if (drop.classList.contains("has-img")) {
+      drop.classList.remove("has-img");
+      drop.innerHTML = logoDropDefault;
+    }
   }
   function renderTrades() {
     const host = $("#trades");
@@ -178,13 +344,20 @@ export function initCompanyContent(content: HTMLElement): () => void {
           '<button class="trade' +
           (co.trades.indexOf(t) !== -1 ? " on" : "") +
           '" type="button" data-trade="' +
-          t +
-          '">' +
-          t +
+          esc(t) +
+          '"' +
+          dis +
+          ">" +
+          esc(t) +
           "</button>"
         );
       }).join("");
     }
+    renderLeadState();
+  }
+  /** The matching badge only — patched on its own when a chip or the toggle
+   *  changes, so the chip row keeps its focus. */
+  function renderLeadState() {
     const badge = $("#leadState");
     if (!badge) return;
     const ready = co.trades.length > 0 && co.leadsOn;
@@ -208,14 +381,19 @@ export function initCompanyContent(content: HTMLElement): () => void {
     }
     const sel = $<HTMLSelectElement>("#actPerson");
     if (sel && !sel.options.length) {
-      sel.innerHTML = MEMBERS.map(function (m) {
-        return "<option>" + m + "</option>";
-      }).join("");
+      // Real memberships, keyed by user id — two people can share a first name.
+      sel.innerHTML =
+        '<option value="">Everyone</option>' +
+        members
+          .map(function (m) {
+            return '<option value="' + esc(m.id) + '">' + esc(m.name) + "</option>";
+          })
+          .join("");
     }
     const q = co.actQuery.trim().toLowerCase();
-    const rows = ACTIVITY_DATA.filter(function (a) {
+    const rows = activityData.filter(function (a) {
       if (co.actCat !== "all" && a.cat !== co.actCat) return false;
-      if (co.actPerson !== "Everyone" && a.actor !== co.actPerson) return false;
+      if (co.actPerson && a.actorId !== co.actPerson) return false;
       if (!q) return true;
       return (
         (a.actor + " " + a.summary + " " + a.meta)
@@ -229,7 +407,7 @@ export function initCompanyContent(content: HTMLElement): () => void {
     let lastDay: string | null = null;
     shown.forEach(function (a) {
       if (a.day !== lastDay) {
-        html += '<div class="act-day">' + a.day + "</div>";
+        html += '<div class="act-day">' + esc(a.day) + "</div>";
         lastDay = a.day;
       }
       html +=
@@ -241,7 +419,7 @@ export function initCompanyContent(content: HTMLElement): () => void {
           : '<span class="act-bead"></span>') +
         "</span>" +
         '<span class="act-txt"><span class="act-sum" style="display:block"><b>' +
-        a.actor +
+        esc(a.actor) +
         "</b> " +
         a.summary +
         "</span>" +
@@ -249,7 +427,7 @@ export function initCompanyContent(content: HTMLElement): () => void {
         a.meta +
         "</span></span>" +
         '<span class="act-time">' +
-        a.time +
+        esc(a.time) +
         "</span>" +
         "</div>";
     });
@@ -260,10 +438,20 @@ export function initCompanyContent(content: HTMLElement): () => void {
   }
   function renderCompany() {
     renderSwatches();
+    renderLogo();
     renderPreview();
     renderTrades();
     renderActivity();
   }
+  /**
+   * Installed by the motion module below; null under reduced motion.
+   *
+   * `fromIndex` skips the rows that were already on screen, which is what "Show
+   * more" needs: `renderActivity` rebuilds the feed's markup wholesale, so the
+   * six rows the reader is mid-sentence in are new nodes too — cascading them
+   * again would blink the text out from under them.
+   */
+  let playStagger: ((fromIndex?: number) => void) | null = null;
 
   // ================= EVENTS =================
   const coTabs = $("#coTabs");
@@ -286,14 +474,20 @@ export function initCompanyContent(content: HTMLElement): () => void {
     const t = e.target as HTMLElement | null;
     if (!t || !root.contains(t)) return;
     if (t.matches("[data-b]")) {
+      // address / phone are one column shared with Lead matching.
+      if (t.matches('[data-b="addr"]')) mirrorField("b", "addr");
+      if (t.matches('[data-b="phone"]')) mirrorField("b", "phone");
       renderPreview();
-      autosave("saveBranding");
+      saveBranding();
     }
     if (t.matches("[data-l]")) {
-      autosave("saveLead");
+      if (t.matches('[data-l="addr"]')) mirrorField("l", "addr");
+      if (t.matches('[data-l="phone"]')) mirrorField("l", "phone");
+      if (t.matches('[data-l="phone"]')) renderPreview();
+      saveLead();
     }
     if (t.matches("[data-g]")) {
-      autosave("saveLanding");
+      saveLanding();
     }
     if (t.id === "hexInput") {
       const v = (t as HTMLInputElement).value.trim();
@@ -303,7 +497,7 @@ export function initCompanyContent(content: HTMLElement): () => void {
           b.classList.toggle("on", (b.dataset.color ?? "").toLowerCase() === v.toLowerCase());
         });
         renderPreview();
-        autosave("saveBranding");
+        saveBranding();
       }
     }
     if (t.id === "actSearch") {
@@ -328,33 +522,41 @@ export function initCompanyContent(content: HTMLElement): () => void {
 
     const sw = t.closest<HTMLElement>("[data-color]");
     if (sw) {
+      if (!canEdit) return;
       co.color = sw.dataset.color ?? co.color;
       renderSwatches();
       renderPreview();
-      autosave("saveBranding");
+      // A swatch is a decision, not typing — save it without the type-ahead wait.
+      autosave("saveBranding", () => updateBranding({ primaryColor: co.color }), 0);
       return;
     }
     const tr = t.closest<HTMLElement>("[data-trade]");
     if (tr) {
+      if (!canEdit) return;
       const trade = tr.dataset.trade ?? "";
       const i = co.trades.indexOf(trade);
       if (i === -1) co.trades.push(trade);
       else co.trades.splice(i, 1);
-      renderTrades();
-      autosave("saveLead");
+      // Patch the one chip the user pressed — re-rendering the row would steal
+      // the focus ring off the control they just used.
+      tr.classList.toggle("on", i === -1);
+      renderLeadState();
+      autosave("saveLead", () => updateLeadProfile({ tradeTypes: co.trades }), 0);
       return;
     }
     if (t.closest("#leadToggle")) {
+      if (!canEdit) return;
       co.leadsOn = !co.leadsOn;
       $("#leadToggle")?.classList.toggle("on", co.leadsOn);
-      renderTrades();
-      autosave("saveLead");
+      renderLeadState();
+      autosave("saveLead", () => updateLeadProfile({ leadOffersEnabled: co.leadsOn }), 0);
       return;
     }
     if (t.closest("#publicToggle")) {
+      if (!canEdit) return;
       co.publicOn = !co.publicOn;
       $("#publicToggle")?.classList.toggle("on", co.publicOn);
-      autosave("saveLanding");
+      autosave("saveLanding", () => updateLanding({ publicProfileEnabled: co.publicOn }), 0);
       return;
     }
     const cat = t.closest<HTMLElement>("[data-cat]");
@@ -365,52 +567,120 @@ export function initCompanyContent(content: HTMLElement): () => void {
       return;
     }
     if (t.closest("#actMoreBtn")) {
+      // Count the rows on screen BEFORE the render, so only the six the click
+      // adds cascade in. This is the one activity action that genuinely brings
+      // new rows — the category chips, the search box and the person select all
+      // just narrow the same feed.
+      const shown = $$("#actFeed .act-row").length;
       co.actVisible += 6;
       renderActivity();
+      playStagger?.(shown);
       return;
     }
     if (t.closest("#logoDrop")) {
-      const d = $("#logoDrop");
-      if (d) {
-        d.classList.add("over");
-        later(function () {
-          d.classList.remove("over");
-        }, 600);
-      }
-      autosave("saveBranding");
+      if (!canEdit) return;
+      // Open the real picker. The donor flashed the border and saved nothing.
+      $<HTMLInputElement>("#logoFile")?.click();
       return;
     }
-    const fl = t.closest<HTMLElement>("[data-flash]");
-    if (fl && !fl.dataset.busy) {
-      fl.dataset.busy = "1";
-      const old = fl.innerHTML;
-      fl.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>' + (fl.dataset.flash ?? "");
-      later(function () {
-        fl.innerHTML = old;
-        delete fl.dataset.busy;
-      }, 1500);
-    }
   });
+
+  // ================= LOGO =================
+  // Same rules as the classic LogoDropzone: images only, 2 MB ceiling, read to
+  // a data URL. (Until Vercel Blob is configured that data URL IS the stored
+  // value — `Organization.logoUrl` holds whatever the classic form stores.)
+  const MAX_LOGO = 2 * 1024 * 1024;
+
+  function readDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(new Error("Couldn’t read that file."));
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function acceptLogo(file: File) {
+    if (!canEdit) return;
+    if (!file.type.startsWith("image/")) {
+      saveLine("saveLogo", "Image files only", "err");
+      return;
+    }
+    if (file.size > MAX_LOGO) {
+      saveLine("saveLogo", "Too large — keep it under 2 MB", "err");
+      return;
+    }
+    let dataUrl: string;
+    try {
+      dataUrl = await readDataUrl(file);
+    } catch (err) {
+      saveLine("saveLogo", actionError(err), "err");
+      return;
+    }
+    const previous = co.logoUrl;
+    // Optimistic: the picture appears while the write is in flight, and rolls
+    // back if the server refuses.
+    co.logoUrl = dataUrl;
+    renderLogo();
+    renderPreview();
+    await commit("saveLogo", async () => {
+      try {
+        await updateBranding({ logoUrl: dataUrl });
+      } catch (err) {
+        co.logoUrl = previous;
+        renderLogo();
+        renderPreview();
+        throw err;
+      }
+    });
+  }
+
+  const logoFile = $<HTMLInputElement>("#logoFile");
+  if (logoFile) {
+    on(logoFile, "change", () => {
+      const f = logoFile.files?.[0];
+      logoFile.value = "";
+      if (f) void acceptLogo(f);
+    });
+  }
 
   const logoDrop = $("#logoDrop");
   if (logoDrop) {
     ["dragenter", "dragover"].forEach(function (ev) {
       on(logoDrop, ev, function (e) {
         e.preventDefault();
-        logoDrop.classList.add("over");
+        if (canEdit) logoDrop.classList.add("over");
       });
     });
-    ["dragleave", "drop"].forEach(function (ev) {
-      on(logoDrop, ev, function (e) {
-        e.preventDefault();
-        logoDrop.classList.remove("over");
-      });
+    on(logoDrop, "dragleave", function (e) {
+      e.preventDefault();
+      logoDrop.classList.remove("over");
+    });
+    on(logoDrop, "drop", function (e) {
+      e.preventDefault();
+      logoDrop.classList.remove("over");
+      const f = (e as DragEvent).dataTransfer?.files?.[0];
+      if (f) void acceptLogo(f);
     });
   }
 
   // ================= INITIALIZATION =================
   safe("init", function () {
     renderCompany();
+    if (!canEdit) {
+      // Limited roles (worker / sales / estimator) can read the sheet; the
+      // actions would reject every write, so say that once instead of turning
+      // each keystroke into a server error.
+      $$(".cf-in").forEach((el) => {
+        (el as HTMLInputElement).readOnly = true;
+      });
+      $$(".tgl").forEach((el) => {
+        (el as HTMLButtonElement).disabled = true;
+      });
+      ["saveBranding", "saveLogo", "saveLead", "saveLanding"].forEach((w) => {
+        saveLine(w, "View only — ask an owner or manager", "");
+      });
+    }
   });
 
   // The mobile nav drawer and FLUID SCALE belong to the persistent chrome and
@@ -419,7 +689,8 @@ export function initCompanyContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+    // The row cascade's curve now lives in blueprint-shell/list-motion, which
+    // owns both halves of list motion for every blueprint page.
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: slow scroll gets the full 420ms
@@ -485,38 +756,22 @@ export function initCompanyContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".act-row"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        raf2(() => {
-          r.style.opacity = "1";
-          r.style.transform = "none";
-        });
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on activity rows silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["actFeed", "trades"].forEach((id) => {
-      const list = $("#" + id);
-      if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
-    });
+    // Entrance cascade — on ARRIVAL only: first paint, and the rows "Show more"
+    // adds.
+    //
+    // This used to hang off a MutationObserver on #actFeed, so the whole feed
+    // replayed its entrance on every category chip, every person select and
+    // every KEYSTROKE in the activity search — the rows the user was reading
+    // dropped to opacity 0 and crawled back once per letter typed. The second
+    // observer, on #trades, was inert from the start: `animateRows` only ever
+    // matched `.act-row`, and #trades holds `.trade` buttons, so it re-scanned
+    // an empty set on every trade toggle. See blueprint-shell/list-motion.
+    playStagger = (fromIndex = 0) => {
+      const feed = $("#actFeed");
+      if (!feed) return;
+      staggerIn(Array.from(feed.querySelectorAll<HTMLElement>(".act-row")).slice(fromIndex));
+    };
+    playStagger();
 
     // KPI count-up
     $$(".kpi-val").forEach((el) => {

@@ -1397,6 +1397,56 @@
 .bp :global(.content .pend-empty) { padding: 20px 16px; font-size: 12.5px; color: var(--muted); }
 .bp :global(.content .pend-empty.is-hidden) { display: none; }
 
+/* request dialog
+   Enter/exit motion is NOT declared here: it is published once for every
+   blueprint page in dashboard-blueprint/blueprint-global.css (mdlBgIn /
+   mdlBoxIn / mdlBgOut / mdlBoxOut on `.mdl.open` and `.mdl.mdl--closing`).
+   The overlay geometry below is the Workers dialog's, unchanged, so the two
+   dialogs are the same object on two pages.
+
+   `.content` is what receives z-index 1 in the shell, so an open dialog needs
+   the same escape hatch the create dialogs use, or the scrim renders beneath
+   the topbar. */
+.bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
+.bp :global(.content .mdl.open) { display: flex; }
+.bp :global(.content:has(.mdl.open)) { z-index: auto; }
+.bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
+.bp :global(.content .mdl-box) { position: relative; width: min(420px, 100%); border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); }
+.bp :global(.content .mdl-head) { padding: 15px 17px 0; font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
+/* Title left, dismiss right. The × is optically pulled toward the corner so it
+   lines up with the box edge rather than with the title's text box. */
+.bp :global(.content .mdl-head--row) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.bp :global(.content .mdl-x) {
+  width: 26px; height: 26px; flex: 0 0 auto; margin: -3px -3px 0 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.bp :global(.content .mdl-x:hover) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+.bp :global(.content .mdl-x .ic) { width: 14px; height: 14px; }
+.bp :global(.content .mdl-body) { padding: 14px 17px 16px; }
+.bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); }
+.bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
+.bp :global(.content .mf) { margin-bottom: 12px; }
+.bp :global(.content .mf-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+
+/* What the request actually does, in the drawing-annotation voice. */
+.bp :global(.content .mf-note) { margin: -2px 0 4px; font-family: var(--font-mono); font-size: 10px; font-weight: 500; line-height: 1.55; letter-spacing: 0.04em; color: var(--muted-light); }
+
+/* Server-action failures (plan cap, transport). Sits where the eye already is
+   — directly above the confirm button. */
+.bp :global(.content .mf-err) { font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err--boxed) { margin: 0 17px 15px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+.bp :global(.content .mf-err.is-hidden) { display: none; }
+
+/* In-flight write: the button stops inviting a second click and drops its
+   hover lift, so the pending state reads as pending rather than as broken. */
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
+.bp :global(.content .btn:disabled) { opacity: 0.55; cursor: not-allowed; }
+.bp :global(.content .btn:disabled:hover) { transform: none; box-shadow: none; }
+
 @media (max-width: 1000px) { .bp :global(.content .rv-grid) { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 860px) {
   .bp :global(.content .stat-grid) { grid-template-columns: 1fr; }

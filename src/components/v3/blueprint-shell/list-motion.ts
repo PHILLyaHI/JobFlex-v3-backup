@@ -36,12 +36,23 @@ function reduced(): boolean {
 }
 
 /**
- * FLUID SCALE zooms the document, so `getBoundingClientRect` reports ZOOMED
- * pixels while a `transform: translateY()` is applied in the element's own
- * unzoomed space. Every measured delta has to be divided by this.
+ * FLUID SCALE zooms the page, so `getBoundingClientRect` reports ZOOMED pixels
+ * while a `transform: translateY()` is applied in the element's own unzoomed
+ * space. Every measured delta has to be divided by this.
+ *
+ * Read off the SHELL ROOT, not `document.documentElement`. An earlier version of
+ * this function read documentElement — which is where zoom used to live before
+ * it moved onto the shell root so it could not leak into the rest of the app
+ * (see shell-behavior.ts, "Zoom is applied to the shell root"). documentElement
+ * therefore always reports `normal`, this always returned 1, and every FLIP
+ * delta was left un-corrected at any viewport other than exactly 1728px.
+ *
+ * Walking up from the measured element rather than querying `.jf-blueprint`
+ * globally keeps it correct if a page is ever rendered outside the shell.
  */
-function currentZoom(): number {
-  const z = parseFloat(getComputedStyle(document.documentElement).zoom);
+function currentZoom(from: Element): number {
+  const host = from.closest<HTMLElement>(".jf-blueprint") ?? document.documentElement;
+  const z = parseFloat(getComputedStyle(host).zoom);
   return isFinite(z) && z > 0 ? z : 1;
 }
 
@@ -144,7 +155,8 @@ export function leaveRow(
       next = next.nextElementSibling;
     }
     const beforeTop = followers.map((el) => el.getBoundingClientRect().top);
-    const zoom = currentZoom();
+    // Measured from a follower (the row itself is about to leave the tree).
+    const zoom = currentZoom(followers[0] ?? row);
 
     row.remove();
     commit();

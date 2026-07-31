@@ -54,7 +54,10 @@
   --card-pad: clamp(14px, 4.2vw, 20px);
   --fs-h1: clamp(30px, 9.2vw, 44px);
   --fs-mast: clamp(34px, 11vw, 52px);
-  --topbar-h: 56px;
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
   --tbar-gap: clamp(6px, 1.8vw, 11px);
   --sidebar-w: min(84vw, 288px);
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -396,6 +399,12 @@
 }
 .ddItem:nth-child(-n + 3) { border-top: none; }
 .ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
 .ddItem:active { background: var(--paper-deep); }
 .ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
 /* Absolute, so it cannot squeeze the label in a ~87px cell. */

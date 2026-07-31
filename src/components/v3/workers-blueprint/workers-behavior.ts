@@ -22,6 +22,8 @@ import {
   updateWorker,
 } from "@/actions/workers";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
+import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { isPlanLimitError } from "@/lib/planLimits";
 import {
   WORKER_ROLES,
   WORKERS_SEED,
@@ -39,6 +41,13 @@ export type WorkersContentOptions = {
  *  ("That worker has already joined…", "Can't remove the last owner."). Surface
  *  that text; fall back to a generic line for anything unrecognisable. */
 function actionError(err: unknown): string {
+  // A seat-cap refusal throws the stable "Plan limit reached" string, which on
+  // its own tells a contractor nothing about what to do. Nothing in the
+  // blueprint shell renders the upgrade dialog (see advanced-ai-behavior.ts for
+  // the same call), so the way out is spelled out where they are looking.
+  if (isPlanLimitError(err)) {
+    return "Plan limit reached — your plan's worker seats are full. Upgrade under Settings → Billing to invite more.";
+  }
   const msg = err instanceof Error ? err.message.trim() : "";
   // A Next.js server-action transport failure has no useful message.
   if (!msg || /^\s*$/.test(msg) || msg.toLowerCase().includes("fetch failed")) {
@@ -54,6 +63,11 @@ function escapeAttr(v: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
+/** Text interpolated into an innerHTML string. The donor could inline its
+ *  fixture names raw; these are database rows a manager typed, so every
+ *  worker-supplied value goes through here. */
+const escapeText = escapeAttr;
 
 export function initWorkersContent(
   content: HTMLElement,
@@ -188,6 +202,22 @@ export function initWorkersContent(
     ];
     const host = $("#wkTiles");
     if (!host) return;
+    const existing = Array.from(host.querySelectorAll<HTMLElement>(".wk-tile"));
+    if (existing.length === tiles.length) {
+      // A REPAINT, not an arrival. The three tiles never change identity — only
+      // their number, their hint and which one is lit. Rebuilding the container
+      // would destroy the button the user just pressed (taking its focus with
+      // it) and replay the tile entrance on every keystroke in the search box.
+      existing.forEach((btn, i) => {
+        const t = tiles[i];
+        btn.classList.toggle("on", wk.filter === t.key);
+        const v = btn.querySelector(".wk-tile-v");
+        if (v && v.textContent !== String(t.value)) v.textContent = String(t.value);
+        const h = btn.querySelector(".wk-tile-h");
+        if (h && h.textContent !== t.hint) h.textContent = t.hint;
+      });
+      return;
+    }
     host.innerHTML = tiles.map(function (t) {
       return '<button class="wk-tile' + (wk.filter === t.key ? ' on' : '') + '" type="button" data-f="' + t.key + '">' +
         '<div class="kpi-lbl">' + t.label + '</div>' +
@@ -195,44 +225,39 @@ export function initWorkersContent(
         '<div class="wk-tile-h">' + t.hint + '</div></button>';
     }).join('');
   }
-  function renderList() {
+  /** The roster's "N on the books" / "N of M — clear" plate. Broken out so a
+   *  single-row change can refresh the totals without touching the rows. */
+  function renderCount() {
+    const count = $("#wkCount");
+    if (!count) return;
     const rows = filtered();
     const total = workersData.length;
-    const count = $("#wkCount");
-    const list = $("#wkList");
-    const empty = $("#wkEmpty");
-    if (!count || !list || !empty) return;
-
     count.innerHTML = (wk.filter === 'all' && !wk.query.trim())
       ? '<span class="wk-static">' + total + ' on the books</span>'
       : '<button class="wk-clear" type="button" id="wkClear">' + rows.length + ' of ' + total +
         ' <svg class="ic"><use href="#i-undo"/></svg>clear</button>';
+  }
 
-    list.innerHTML = rows.map(function (e) {
-      const load = e.jobs.length > 0
-        ? '<div class="wk-load"><b>' + e.jobs.length + '</b> <span>job' + (e.jobs.length === 1 ? '' : 's') + '</span></div>'
-        : '<div class="wk-load quiet">' + (e.invite === 'ACCEPTED' ? 'available' : e.invite === 'DECLINED' ? 'declined' : 'invited') + '</div>';
-      return '<li><button class="wk-row' + (wk.selected === e.id ? ' on' : '') + '" type="button" data-id="' + e.id + '">' +
-        '<span class="wk-folio">' + String(workersData.indexOf(e) + 1).padStart(2, '0') + '</span>' +
-        '<span class="wk-mono">' + monogram(e.name) + '</span>' +
-        '<span class="wk-main">' +
-          '<span class="wk-name">' + e.name +
-            (e.invite !== 'ACCEPTED' ? '<span class="pstatus inv--' + e.invite.toLowerCase() + '">' + e.invite.toLowerCase() + '</span>' : '') +
-          '</span>' +
-          '<span class="wk-contact" style="display:block">' +
-            (e.email ? e.email : '<i>no email</i>') +
-            (e.phone ? ' · <b>' + e.phone + '</b>' : '') +
-          '</span>' +
-        '</span>' +
-        '<span class="wk-role"><span class="pstatus role-pill">' + roleLabel(e.role).toLowerCase() + '</span></span>' +
-        load +
-        '<svg class="ic wk-go"><use href="#i-chev"/></svg>' +
-      '</button></li>';
-    }).join('');
+  /** Folio is a row's position in the roster, so every row after a removed one
+   *  renumbers. Patch the one span that changed rather than rebuilding rows. */
+  function repaintFolios() {
+    $$(".wk-row").forEach((row) => {
+      const idx = workersData.findIndex((x) => x.id === row.dataset.id);
+      const folio = row.querySelector(".wk-folio");
+      if (idx >= 0 && folio) folio.textContent = String(idx + 1).padStart(2, '0');
+    });
+  }
 
-    empty.classList.toggle('is-hidden', rows.length !== 0);
-    list.classList.toggle('is-hidden', rows.length === 0);
-    if (rows.length === 0) {
+  /** Swap the empty state in or out from the CURRENT row count. */
+  function renderEmptyState() {
+    const list = $("#wkList");
+    const empty = $("#wkEmpty");
+    if (!list || !empty) return;
+    const shown = list.querySelectorAll(".wk-row").length;
+    const total = workersData.length;
+    empty.classList.toggle('is-hidden', shown !== 0);
+    list.classList.toggle('is-hidden', shown === 0);
+    if (shown === 0) {
       empty.innerHTML = total === 0
         ? '<div class="kpi-lbl">Empty roster</div><h2>No workers on the books yet.</h2>' +
           '<p>Invite your first crew member. They get a token portal: no password, no account juggling. You stay in control of the link.</p>' +
@@ -240,6 +265,45 @@ export function initWorkersContent(
         : '<div class="kpi-lbl">No match</div><h2>No workers match this filter.</h2>' +
           '<p>Try a different filter or clear the search.</p>';
     }
+  }
+
+  /** One roster row. Also used on its own to patch a single edited worker. */
+  function rowHtml(e: WorkerEntry): string {
+      const load = e.jobs.length > 0
+        ? '<div class="wk-load"><b>' + e.jobs.length + '</b> <span>job' + (e.jobs.length === 1 ? '' : 's') + '</span></div>'
+        : '<div class="wk-load quiet">' + (e.invite === 'ACCEPTED' ? 'available' : e.invite === 'DECLINED' ? 'declined' : 'invited') + '</div>';
+      return '<li><button class="wk-row' + (wk.selected === e.id ? ' on' : '') + '" type="button" data-id="' + escapeAttr(e.id) + '">' +
+        '<span class="wk-folio">' + String(workersData.indexOf(e) + 1).padStart(2, '0') + '</span>' +
+        '<span class="wk-mono">' + escapeText(monogram(e.name)) + '</span>' +
+        '<span class="wk-main">' +
+          '<span class="wk-name">' + escapeText(e.name) +
+            (e.invite !== 'ACCEPTED' ? '<span class="pstatus inv--' + e.invite.toLowerCase() + '">' + e.invite.toLowerCase() + '</span>' : '') +
+          '</span>' +
+          '<span class="wk-contact" style="display:block">' +
+            (e.email ? escapeText(e.email) : '<i>no email</i>') +
+            (e.phone ? ' · <b>' + escapeText(e.phone) + '</b>' : '') +
+          '</span>' +
+        '</span>' +
+        '<span class="wk-role"><span class="pstatus role-pill">' + escapeText(roleLabel(e.role).toLowerCase()) + '</span></span>' +
+        load +
+        '<svg class="ic wk-go"><use href="#i-chev"/></svg>' +
+      '</button></li>';
+  }
+
+  /** Repaint the roster.
+   *
+   *  @param arriving true only when the list is genuinely ARRIVING — first
+   *    paint, or a filter the user just switched to. Typing in the search box
+   *    and selecting a row are NOT arrivals: they repaint silently. (The rule,
+   *    and the bug it fixes, are documented in blueprint-shell/list-motion.ts.)
+   */
+  function renderList(arriving = false) {
+    const list = $("#wkList");
+    if (!list) return;
+    renderCount();
+    list.innerHTML = filtered().map(rowHtml).join('');
+    if (arriving) staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".wk-row")));
+    renderEmptyState();
   }
   function renderInspector() {
     const insp = $("#wkInsp");
@@ -252,44 +316,64 @@ export function initWorkersContent(
     const link = portalLink(e.token);
     insp.innerHTML =
       '<div class="insp-head">' +
-        '<span class="wk-mono">' + monogram(e.name) + '</span>' +
-        '<span><span class="insp-name" style="display:block">' + e.name + '</span>' +
+        '<span class="wk-mono">' + escapeText(monogram(e.name)) + '</span>' +
+        '<span><span class="insp-name" style="display:block">' + escapeText(e.name) + '</span>' +
         '<span class="insp-folio" style="display:block">Folio ' + String(workersData.indexOf(e) + 1).padStart(2, '0') + '</span></span>' +
         '<button class="insp-x" type="button" data-act="close-insp" aria-label="Close inspector">×</button>' +
       '</div>' +
       '<div class="insp-body">' +
         '<div class="fld-row"><div class="kpi-lbl">Email</div>' +
-          (e.email ? '<div class="fld-v">' + e.email + '</div>' : '<div class="fld-v none">no email</div>') + '</div>' +
+          (e.email ? '<div class="fld-v">' + escapeText(e.email) + '</div>' : '<div class="fld-v none">no email</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Phone</div>' +
-          (e.phone ? '<div class="fld-v mono">' + e.phone + '</div>' : '<div class="fld-v none">no phone</div>') + '</div>' +
-        '<div class="fld-row"><div class="kpi-lbl">Role</div><div class="fld-v">' + roleLabel(e.role) + '</div></div>' +
+          (e.phone ? '<div class="fld-v mono">' + escapeText(e.phone) + '</div>' : '<div class="fld-v none">no phone</div>') + '</div>' +
+        '<div class="fld-row"><div class="kpi-lbl">Role</div><div class="fld-v">' + escapeText(roleLabel(e.role)) + '</div></div>' +
         '<div class="fld-row"><div class="kpi-lbl">Specialties</div>' +
           (e.specialties.length
-            ? '<div class="fld-v">' + e.specialties.join(' · ') + '</div>'
+            ? '<div class="fld-v">' + escapeText(e.specialties.join(' · ')) + '</div>'
             : '<div class="fld-v none">none set</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Hourly rate</div>' +
           (e.rate ? '<div class="fld-v mono">$' + e.rate + '/hr</div>' : '<div class="fld-v none">not set</div>') + '</div>' +
-        '<div class="fld-row"><div class="kpi-lbl">Joined</div><div class="fld-v mono">' + e.joined + '</div></div>' +
+        '<div class="fld-row"><div class="kpi-lbl">Joined</div><div class="fld-v mono">' + escapeText(e.joined) + '</div></div>' +
         '<div class="fld-row"><div class="kpi-lbl">Active jobs (' + e.jobs.length + ')</div>' +
           (e.jobs.length
+            // The donor's `href="#"` went nowhere. These are real job ids, and
+            // /dashboard/jobs/<id> is the live job page the classic roster
+            // linked to — same destination, same one-click reach from the crew
+            // sheet to the work.
             ? '<ul class="insp-jobs">' + e.jobs.map(function (j) {
-                return '<li><a href="#">' + j.title + '<svg class="ic"><use href="#i-arrow"/></svg></a></li>';
+                return '<li><a href="/dashboard/jobs/' + encodeURIComponent(j.id) + '">' +
+                  escapeText(j.title) + '<svg class="ic"><use href="#i-arrow"/></svg></a></li>';
               }).join('') + '</ul>'
             : '<div class="fld-v none">no live work</div>') + '</div>' +
         '<div class="link-box">' +
           '<div class="kpi-lbl">Worker dashboard link</div>' +
-          '<div class="link-row"><span class="link-url">' + link + '</span>' +
-            '<button class="link-btn" type="button" data-act="copy-link" data-link="' + link + '" aria-label="Copy link"><svg class="ic"><use href="#i-dup"/></svg></button>' +
-            '<button class="link-btn" type="button" data-flash-icon aria-label="Open portal"><svg class="ic"><use href="#i-ext"/></svg></button>' +
+          '<div class="link-row"><span class="link-url">' + escapeText(link) + '</span>' +
+            '<button class="link-btn" type="button" data-act="copy-link" data-link="' + escapeAttr(link) + '" aria-label="Copy link"><svg class="ic"><use href="#i-dup"/></svg></button>' +
+            // Was a `data-flash-icon` button: it lit a checkmark and opened
+            // nothing. The portal is a real route (/w/<token>) — an anchor to it
+            // in a new tab, as on the classic roster, so the manager keeps the
+            // roster they were reading.
+            '<a class="link-btn" href="/w/' + escapeAttr(e.token) + '" target="_blank" rel="noopener noreferrer" aria-label="Open portal in a new tab" title="Open portal in a new tab"><svg class="ic"><use href="#i-ext"/></svg></a>' +
           '</div>' +
         '</div>' +
+        // The classic roster's "Open full profile" — the detail page at
+        // /dashboard/workers/<id> still exists and still carries the token
+        // rotation ("Revoke & rotate") this sheet has no room for.
+        '<a class="insp-profile" href="/dashboard/workers/' + encodeURIComponent(e.id) + '">Open full profile' +
+          '<svg class="ic"><use href="#i-arrow"/></svg></a>' +
         '<div class="insp-act">' +
           '<button class="btn btn-ghost btn--sm" type="button" data-act="edit"><svg class="ic"><use href="#i-pen"/></svg>Edit</button>' +
           '<button class="btn btn-ghost btn--sm btn--danger" type="button" data-act="ask-remove"><svg class="ic"><use href="#i-trash"/></svg>Remove</button>' +
         '</div>' +
       '</div>';
   }
-  function renderWorkers() { renderCrumbs(); renderTiles(); renderList(); renderInspector(); }
+  function renderWorkers(arriving = false) { renderCrumbs(); renderTiles(); renderList(arriving); renderInspector(); }
+
+  /** Selecting a row changes ONE class on ONE node. Re-rendering the list for
+   *  it would replace the button under the user's finger mid-click. */
+  function paintSelection() {
+    $$(".wk-row").forEach((row) => row.classList.toggle("on", row.dataset.id === wk.selected));
+  }
 
   // ================= INVITE FORM =================
   /** Portal links are absolute in the real product; the roster only ever shows
@@ -400,14 +484,20 @@ export function initWorkersContent(
     on(tiles, "click", (ev) => {
       const t = asEl(ev.target)?.closest<HTMLElement>('.wk-tile');
       if (!t) return;
-      wk.filter = t.dataset.f || '';
-      renderWorkers();
+      const next = t.dataset.f || '';
+      if (next === wk.filter) return;
+      wk.filter = next;
+      // A filter switch IS an arrival: a different set of people is being put
+      // in front of the manager, so the rows come in.
+      renderWorkers(true);
     });
   }
   const search = $<HTMLInputElement>("#wkSearch");
   if (search) {
     on(search, "input", () => {
       wk.query = search.value;
+      // Silent repaint. Re-staggering once per keystroke is the exact bug
+      // list-motion.ts exists to stop.
       renderList();
     });
   }
@@ -423,13 +513,13 @@ export function initWorkersContent(
       wk.filter = 'all'; wk.query = '';
       const input = $<HTMLInputElement>("#wkSearch");
       if (input) input.value = '';
-      renderWorkers();
+      renderWorkers(true);
       return;
     }
     const row = target.closest<HTMLElement>('.wk-row');
     if (row) {
       wk.selected = wk.selected === row.dataset.id ? null : row.dataset.id || null;
-      renderList(); renderInspector();
+      paintSelection(); renderInspector();
       return;
     }
     const mdlClose = target.closest<HTMLElement>('[data-mdl]');
@@ -441,18 +531,14 @@ export function initWorkersContent(
       $$("#mfRoles .mf-role").forEach(function (b) { b.classList.toggle('on', b === roleBtn); });
       return;
     }
-    const iconFlash = target.closest<HTMLElement>('[data-flash-icon]');
-    if (iconFlash) {
-      iconFlash.classList.add('done');
-      after(1200, function () { iconFlash.classList.remove('done'); });
-      return;
-    }
+    // (The donor's `[data-flash-icon]` branch is gone with its only user: the
+    // inspector's "open portal" control is now a real anchor to /w/<token>.)
 
     const act = target.closest<HTMLElement>('[data-act]');
     if (!act) return;
     const kind = act.dataset.act;
 
-    if (kind === 'close-insp') { wk.selected = null; renderList(); renderInspector(); return; }
+    if (kind === 'close-insp') { wk.selected = null; paintSelection(); renderInspector(); return; }
     if (kind === 'invite') { openInvite(null); return; }
     if (kind === 'edit') {
       const entry = workersData.find(function (x) { return x.id === wk.selected; });
@@ -540,6 +626,9 @@ export function initWorkersContent(
     const role = (wk.inviteRole || 'INSTALLER') as WorkerRoleValue;
     const editingId = wk.editing;
 
+    /** Set to the new profile's id when an invite creates a row. */
+    let arrivedId: string | null = null;
+
     setSaving($("#inviteMdl"), true, editingId ? 'Saving…' : 'Sending…', '');
     try {
       if (editingId) {
@@ -583,10 +672,35 @@ export function initWorkersContent(
           joined: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
           jobs: [],
         });
+        arrivedId = created.id;
       }
       setSaving($("#inviteMdl"), false, '', editingId ? 'Save changes' : 'Send invite');
       closeWkMdl('invite');
-      renderWorkers();
+
+      renderCrumbs();
+      renderTiles();
+      renderCount();
+      if (editingId) {
+        // ONE worker changed. Swap that one row; the rest of the roster is
+        // untouched, so it must not blink or re-cascade behind the dialog.
+        const entry = workersData.find(function (x) { return x.id === editingId; });
+        const row = root.querySelector<HTMLElement>('.wk-row[data-id="' + CSS.escape(editingId) + '"]');
+        // …unless the rename dropped them out of the active search, in which
+        // case the row has to go and a full repaint is the honest answer.
+        const stillShown = !!entry && filtered().indexOf(entry) !== -1;
+        if (entry && stillShown && row?.parentElement) row.parentElement.outerHTML = rowHtml(entry);
+        else renderList();
+      } else {
+        // A person genuinely joined the roster. Repaint the list silently, then
+        // play the entrance on the ONE row that arrived.
+        renderList();
+        const fresh = arrivedId
+          ? root.querySelector<HTMLElement>('.wk-row[data-id="' + CSS.escape(arrivedId) + '"]')
+          : null;
+        if (fresh) staggerIn([fresh]);
+      }
+      renderEmptyState();
+      renderInspector();
     } catch (err) {
       setSaving($("#inviteMdl"), false, '', editingId ? 'Save changes' : 'Send invite');
       inviteError(actionError(err));
@@ -609,12 +723,26 @@ export function initWorkersContent(
     setSaving($("#removeMdl"), true, 'Removing…', '');
     try {
       await removeWorker(id);
-      workersData = workersData.filter(function (x) { return x.id !== id; });
-      if (wk.selected === id) wk.selected = null;
       wk.pendingRemove = null;
       setSaving($("#removeMdl"), false, '', 'Remove worker');
       closeWkMdl('remove');
-      renderWorkers();
+
+      // One row leaves and the rest close the gap. Re-rendering the list here
+      // would make the whole roster blink and hide the one thing that happened.
+      const row = root.querySelector<HTMLElement>('.wk-row[data-id="' + CSS.escape(id) + '"]');
+      const li = row?.parentElement;
+      const commit = () => {
+        workersData = workersData.filter(function (x) { return x.id !== id; });
+        if (wk.selected === id) wk.selected = null;
+        renderCrumbs();
+        renderTiles();
+        renderCount();
+        repaintFolios();
+        renderEmptyState();
+        renderInspector();
+      };
+      if (li) leaveRow(li, commit, after);
+      else commit();
     } catch (err) {
       setSaving($("#removeMdl"), false, '', 'Remove worker');
       // The action refuses on the last owner — say so instead of silently
@@ -635,7 +763,6 @@ export function initWorkersContent(
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: slow scroll — the full 420ms animation;
@@ -697,38 +824,19 @@ export function initWorkersContent(
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>('.wk-row, .wk-tile'));
-      rows.forEach((r, i) => {
-        r.style.opacity = '0';
-        r.style.transform = 'translateY(8px)';
-        r.style.transition = 'opacity 300ms ' + EASE + ' ' + (i * 45) + 'ms, transform 300ms ' + EASE + ' ' + (i * 45) + 'ms';
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = '1';
-            r.style.transform = 'none';
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on worker rows and tiles silently stops working.
-        r.addEventListener('transitionend', function te(e) {
-          if (e.propertyName !== 'transform') return;
-          r.style.opacity = '';
-          r.style.transform = '';
-          r.style.transition = '';
-          r.removeEventListener('transitionend', te);
-        });
-      });
-    }
+    // Row + tile stagger — FIRST PAINT ONLY.
+    //
+    // The donor drove this from a `MutationObserver({childList:true})` on both
+    // containers, which fires on every render: a keystroke in the search box, a
+    // row selection or a removal each wiped the roster to opacity 0 and crawled
+    // it back. That is the exact failure blueprint-shell/list-motion.ts was
+    // written to end, so the observer is gone and the callers that know a list
+    // is genuinely ARRIVING (filter switch, clear, a new invite) play it
+    // themselves via `staggerIn`.
     ['wkList', 'wkTiles'].forEach((id) => {
       const list = $("#" + id);
       if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
+      staggerIn(Array.from(list.querySelectorAll<HTMLElement>('.wk-row, .wk-tile')));
     });
 
     // Numeral count-up — Overview's `.kpi-val`; here the crew tiles' values,

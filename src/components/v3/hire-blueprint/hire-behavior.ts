@@ -17,10 +17,17 @@
 //   (and keeps a `display:none` element from being frozen at `opacity: 0`).
 
 import {
+  appendApplicantNote,
+  convertApplicantToWorker,
+  createApplicant,
+  deleteApplicant,
+  updateApplicantStatus,
+} from "@/actions/applicants";
+import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import {
   HK_COLUMNS,
   SOURCES,
   APPLICANTS_SEED,
-  AP_SEQ_START,
   HUB_DOORS,
   HUB_TALLY,
   HUB_LINKS,
@@ -28,7 +35,40 @@ import {
   type HireColumnKey,
 } from "./hire-data";
 
-export function initHireContent(content: HTMLElement): () => void {
+export type HireContentOptions = {
+  /** The org's real applicant pipeline, read server-side. Omit to fall back to
+   *  the donor fixture (the standalone mock routes have no session to read
+   *  from). */
+  applicants?: Applicant[];
+};
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("Manager access required", "Not found"). Surface that text; fall back to a
+ *  generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  // A Next.js server-action transport failure has no useful message.
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** Every card and every sheet field is built as an HTML STRING, and the values
+ *  are now real user input from the database rather than the donor's fixed
+ *  fixture. Text and attribute values are escaped on the way in. */
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function initHireContent(
+  content: HTMLElement,
+  options: HireContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -51,6 +91,10 @@ export function initHireContent(content: HTMLElement): () => void {
     }, ms);
     timers.add(id);
     return id;
+  };
+  /** `leaveRow`'s tracked-timeout contract is (ms, fn) — the mirror of `later`. */
+  const after = (ms: number, fn: () => void) => {
+    later(fn, ms);
   };
   const $ = (sel: string) => root.querySelector<HTMLElement>(sel);
   const $$ = (sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
@@ -92,10 +136,10 @@ export function initHireContent(content: HTMLElement): () => void {
   });
 
   // ================= HIRE: DATA =================
-  // Runtime mutations (drag, save, convert, delete, add) — clone the seed per
-  // mount so nothing leaks across navigations.
-  let apSeq = AP_SEQ_START;
-  let applicantsData: Applicant[] = APPLICANTS_SEED.map((a) => ({ ...a }));
+  // The org's real pipeline, read in src/app/dashboard/hire/page.tsx. Cloned
+  // per mount; every mutation below goes through a server action first and
+  // patches this array from the result, so a reload reads the same rows back.
+  let applicantsData: Applicant[] = (options.applicants ?? APPLICANTS_SEED).map((a) => ({ ...a }));
 
   const hire = {
     tab: "hub",
@@ -104,6 +148,10 @@ export function initHireContent(content: HTMLElement): () => void {
     sheet: null as string | null,
     editing: null as string | null,
     status: "APPLIED" as HireColumnKey,
+    /** A write is on the wire — block a second one and block the dismiss. */
+    saving: false,
+    /** Two-tap arming for the destructive actions in the sheet. */
+    armed: null as string | null,
   };
 
   function monogram(name: string) {
@@ -112,40 +160,95 @@ export function initHireContent(content: HTMLElement): () => void {
   }
 
   // ================= RENDER =================
-  function renderBoard() {
+  // `#hkBoard` itself is static markup that React owns; only its inside is
+  // built here, and only when the board GENUINELY ARRIVES (first paint, or the
+  // first card added to an empty pipeline). Every later change patches the one
+  // node that changed — see the patch helpers below. Rebuilding the board on a
+  // stage move would destroy the card the user is dragging, drop its focus and
+  // replay every entrance animation on it.
+  const board = $("#hkBoard");
+
+  function cardHTML(a: Applicant) {
+    return '<button class="hk-card' + (hire.picked === a.id ? ' picked' : '') + '" type="button" draggable="true" data-id="' + esc(a.id) + '">' +
+      '<span class="hk-top">' +
+        '<span class="hk-av">' + esc(monogram(a.name)) + '</span>' +
+        '<span style="min-width:0;flex:1">' +
+          '<span class="hk-name" style="display:block">' + esc(a.name) + '</span>' +
+          '<span class="hk-role" style="display:block">' + esc(a.role) + '</span>' +
+        '</span>' +
+        '<svg class="ic hk-grip"><use href="#i-dots"/></svg>' +
+      '</span>' +
+      '<span class="hk-foot">' +
+        '<span class="hk-meta">' +
+          (a.email ? '<svg class="ic"><use href="#i-msg"/></svg>' : '') +
+          (a.phone ? '<svg class="ic"><use href="#i-phone"/></svg>' : '') +
+          (a.source ? esc(a.source) : '') +
+        '</span>' +
+        '<span class="hk-age">' + esc(a.age) + '</span>' +
+      '</span>' +
+    '</button>';
+  }
+
+  function syncEmpty() {
     const empty = $("#hkEmpty");
-    const board = $("#hkBoard");
-    if (!empty || !board) return;
-    empty.classList.toggle("is-hidden", applicantsData.length !== 0);
-    board.classList.toggle("is-hidden", applicantsData.length === 0);
+    if (empty) empty.classList.toggle("is-hidden", applicantsData.length !== 0);
+    if (board) board.classList.toggle("is-hidden", applicantsData.length === 0);
+  }
+
+  function renderBoard() {
+    if (!board) return;
+    syncEmpty();
     board.innerHTML = HK_COLUMNS.map(function (col) {
       const list = applicantsData.filter(function (a) { return a.status === col.key; });
       return '<div class="hk-col" data-col="' + col.key + '">' +
         '<div class="hk-head"><span class="hk-lbl"><span class="hk-dot" style="background:' + col.tone + '"></span>' + col.label + '</span>' +
         '<span class="hk-n">' + list.length + '</span></div>' +
         '<div class="hk-body">' +
-          (list.length ? list.map(function (a) {
-            return '<button class="hk-card' + (hire.picked === a.id ? ' picked' : '') + '" type="button" draggable="true" data-id="' + a.id + '">' +
-              '<span class="hk-top">' +
-                '<span class="hk-av">' + monogram(a.name) + '</span>' +
-                '<span style="min-width:0;flex:1">' +
-                  '<span class="hk-name" style="display:block">' + a.name + '</span>' +
-                  '<span class="hk-role" style="display:block">' + a.role + '</span>' +
-                '</span>' +
-                '<svg class="ic hk-grip"><use href="#i-dots"/></svg>' +
-              '</span>' +
-              '<span class="hk-foot">' +
-                '<span class="hk-meta">' +
-                  (a.email ? '<svg class="ic"><use href="#i-msg"/></svg>' : '') +
-                  (a.phone ? '<svg class="ic"><use href="#i-phone"/></svg>' : '') +
-                  (a.source ? a.source : '') +
-                '</span>' +
-                '<span class="hk-age">' + a.age + '</span>' +
-              '</span>' +
-            '</button>';
-          }).join('') : '<div class="hk-drop">Drop here</div>') +
+          (list.length ? list.map(cardHTML).join('') : '<div class="hk-drop">Drop here</div>') +
         '</div></div>';
     }).join('');
+  }
+
+  // ---- patch helpers: one node at a time ----
+  function colBody(key: HireColumnKey) {
+    return board?.querySelector<HTMLElement>('.hk-col[data-col="' + key + '"] .hk-body') ?? null;
+  }
+  function cardNode(id: string) {
+    return board?.querySelector<HTMLElement>('.hk-card[data-id="' + id + '"]') ?? null;
+  }
+  /** Re-derive one column's counter and its "Drop here" placeholder. */
+  function syncCol(key: HireColumnKey) {
+    const body = colBody(key);
+    if (!body) return;
+    const n = body.parentElement?.querySelector<HTMLElement>(".hk-n");
+    const cards = body.querySelectorAll(".hk-card").length;
+    if (n) n.textContent = String(cards);
+    const drop = body.querySelector<HTMLElement>(".hk-drop");
+    if (cards === 0 && !drop) {
+      const d = document.createElement("div");
+      d.className = "hk-drop";
+      d.textContent = "Drop here";
+      body.appendChild(d);
+    } else if (cards > 0 && drop) {
+      drop.remove();
+    }
+  }
+  /** Move the card the user is holding into another column — the same node,
+   *  relocated, so its focus and its identity survive the move. */
+  function placeCard(id: string, from: HireColumnKey, to: HireColumnKey) {
+    const card = cardNode(id);
+    const target = colBody(to);
+    if (!card || !target) return;
+    target.appendChild(card);
+    syncCol(from);
+    syncCol(to);
+  }
+
+  function boardError(msg: string | null) {
+    const box = $("#hkErr");
+    if (!box) return;
+    box.textContent = msg || "";
+    box.classList.toggle("is-hidden", !msg);
   }
 
   function renderHub() {
@@ -194,39 +297,83 @@ export function initHireContent(content: HTMLElement): () => void {
     if (bg) bg.classList.add("open");
   }
   function closeSheet() {
+    // A dismiss must never interrupt a write that is already on the wire.
+    if (hire.saving) return;
     $("#sheet")?.classList.remove("open");
     $("#sheetBg")?.classList.remove("open");
     hire.sheet = null;
     hire.editing = null;
+    hire.armed = null;
   }
+  function sheetError(msg: string | null) {
+    const box = $("#sheetErr");
+    if (!box) return;
+    box.textContent = msg || "";
+    box.classList.toggle("is-hidden", !msg);
+  }
+  /** Button label + disabled state while an action is in flight. */
+  function setSaving(btn: HTMLElement | null, on: boolean, busyLabel: string, idleLabel: string) {
+    hire.saving = on;
+    if (!btn) return;
+    (btn as HTMLButtonElement).disabled = on;
+    btn.classList.toggle("is-busy", on);
+    const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    if (lbl) lbl.textContent = on ? busyLabel : idleLabel;
+  }
+
+  /** `appendApplicantNote` writes "YYYY-MM-DD HH:MM — text" blocks separated by
+   *  a blank line — the same format the classic detail page parses back out. */
+  function noteEntries(raw: string) {
+    if (!raw.trim()) return [] as Array<{ stamp: string; text: string }>;
+    return raw.split(/\n\n+/).map(function (block) {
+      const m = block.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) — ([\s\S]+)/);
+      return m ? { stamp: m[1], text: m[2] } : { stamp: "", text: block };
+    });
+  }
+
   function openApplicant(id: string) {
     const a = applicantsData.find(function (x) { return x.id === id; });
     if (!a) return;
-    hire.sheet = 'detail'; hire.editing = id; hire.status = a.status;
+    hire.sheet = 'detail'; hire.editing = id; hire.status = a.status; hire.armed = null;
+    const history = noteEntries(a.notes);
     openSheet(a.name,
       '<div class="sf-meta">' +
-        '<div class="sf-meta-row"><span class="kpi-lbl">Role</span><span>' + a.role + '</span></div>' +
-        '<div class="sf-meta-row"><span class="kpi-lbl">Email</span><span>' + (a.email || '—') + '</span></div>' +
-        '<div class="sf-meta-row"><span class="kpi-lbl">Phone</span><span>' + (a.phone || '—') + '</span></div>' +
-        '<div class="sf-meta-row"><span class="kpi-lbl">Source</span><span>' + (a.source || 'Other') + '</span></div>' +
-        '<div class="sf-meta-row"><span class="kpi-lbl">Applied</span><span>' + a.age + '</span></div>' +
+        '<div class="sf-meta-row"><span class="kpi-lbl">Role</span><span>' + esc(a.role) + '</span></div>' +
+        '<div class="sf-meta-row"><span class="kpi-lbl">Email</span><span>' + esc(a.email || '—') + '</span></div>' +
+        '<div class="sf-meta-row"><span class="kpi-lbl">Phone</span><span>' + esc(a.phone || '—') + '</span></div>' +
+        '<div class="sf-meta-row"><span class="kpi-lbl">Source</span><span>' + esc(a.source || 'Other') + '</span></div>' +
+        '<div class="sf-meta-row"><span class="kpi-lbl">Applied</span><span>' + esc(a.age) + '</span></div>' +
       '</div>' +
       '<div class="sf"><span class="sf-lbl">Pipeline status</span><div class="pipe" id="pipeBox">' +
         HK_COLUMNS.map(function (c) {
           return '<button class="pipe-btn' + (a.status === c.key ? ' on' : '') + '" type="button" data-st="' + c.key + '">' + c.label + '</button>';
         }).join('') +
       '</div></div>' +
-      '<label class="sf"><span class="sf-lbl">Notes</span><textarea class="sf-area" data-a="notes" placeholder="Interview observations, follow-ups, decisions.">' + (a.notes || '') + '</textarea></label>' +
+      // The note column is APPEND-ONLY on the server (`appendApplicantNote`
+      // stamps and appends), so the sheet shows the history read-only and takes
+      // a new entry — the classic detail page's contract, not a free-text
+      // overwrite that the data layer cannot honour.
+      (history.length
+        ? '<div class="sf"><span class="sf-lbl">Notes</span><ul class="sf-notes" id="sheetNotes">' +
+            history.map(function (n) {
+              return '<li class="sf-note">' +
+                (n.stamp ? '<span class="sf-note-stamp">' + esc(n.stamp) + '</span>' : '') +
+                '<span class="sf-note-txt">' + esc(n.text) + '</span></li>';
+            }).join('') +
+          '</ul></div>'
+        : '') +
+      '<label class="sf"><span class="sf-lbl">Add a note</span><textarea class="sf-area" data-a="notes" placeholder="Interview observations, follow-ups, decisions."></textarea></label>' +
+      '<div class="mf-err is-hidden" id="sheetErr" role="alert"></div>' +
       '<div class="sf-act">' +
-        '<button class="btn btn-primary btn--sm" type="button" data-act="save-applicant"><svg class="ic"><use href="#i-check"/></svg>Save</button>' +
-        '<button class="btn btn-ghost btn--sm" type="button" data-act="convert"><svg class="ic"><use href="#i-hardhat"/></svg>Convert to worker</button>' +
+        '<button class="btn btn-primary btn--sm" type="button" data-act="save-applicant"><svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Save</span></button>' +
+        '<button class="btn btn-ghost btn--sm" type="button" data-act="convert"><svg class="ic"><use href="#i-hardhat"/></svg><span data-save-lbl>Convert to worker</span></button>' +
       '</div>' +
       '<div class="sf-act" style="border:none;padding-top:0;margin-top:9px">' +
-        '<button class="btn btn-ghost btn--sm" type="button" data-act="delete-applicant"><svg class="ic"><use href="#i-trash"/></svg>Delete applicant</button>' +
+        '<button class="btn btn-ghost btn--sm" type="button" data-act="delete-applicant"><svg class="ic"><use href="#i-trash"/></svg><span data-save-lbl>Delete applicant</span></button>' +
       '</div>');
   }
   function openAddForm() {
-    hire.sheet = 'add'; hire.editing = null; hire.status = 'APPLIED';
+    hire.sheet = 'add'; hire.editing = null; hire.status = 'APPLIED'; hire.armed = null;
     openSheet('Add applicant',
       '<label class="sf"><span class="sf-lbl">Full name</span><input class="sf-in" data-a="name" placeholder="Casey Stone"></label>' +
       '<label class="sf"><span class="sf-lbl">Role</span><input class="sf-in" data-a="role" placeholder="Roofer, Estimator, Foreman…"></label>' +
@@ -234,20 +381,51 @@ export function initHireContent(content: HTMLElement): () => void {
         '<label><span class="sf-lbl">Email</span><input class="sf-in" type="email" data-a="email" placeholder="casey@example.com"></label>' +
         '<label><span class="sf-lbl">Phone</span><input class="sf-in" data-a="phone" placeholder="(425) 555-0199"></label>' +
       '</div>' +
-      '<label class="sf"><span class="sf-lbl">Source</span><select class="sf-sel" data-a="source">' +
+      // The shared blueprint select (blueprint-global.css): the `.bp-sel`
+      // wrapper draws the chevron a <select> cannot carry, `.bp-sel-in` owns
+      // the appearance reset. `.sf-sel` is retired rather
+      // than kept alongside it — at `.bp .content .sf-sel` (3 classes) it
+      // out-specified `.jf-blueprint .bp-sel-in` (2) and would have pulled the
+      // native font and box back. `data-a="source"` stays on the <select> —
+      // the create-applicant handler's val() helper reads `[data-a="source"]`
+      // and takes `.value` off whatever it finds, so the control must keep the
+      // attribute and the wrapper must not take it.
+      '<label class="sf"><span class="sf-lbl">Source</span>' +
+        '<span class="bp-sel"><select class="bp-sel-in" data-a="source">' +
         SOURCES.map(function (s2) { return '<option>' + s2 + '</option>'; }).join('') +
-      '</select></label>' +
+        '</select></span>' +
+      '</label>' +
       '<label class="sf"><span class="sf-lbl">Notes</span><textarea class="sf-area" data-a="notes" placeholder="Years of experience, specialties, schedule constraints…"></textarea></label>' +
+      '<div class="mf-err is-hidden" id="sheetErr" role="alert"></div>' +
       '<div class="sf-act">' +
-        '<button class="btn btn-primary btn--sm" type="button" data-act="create-applicant"><svg class="ic"><use href="#i-check"/></svg>Add applicant</button>' +
+        '<button class="btn btn-primary btn--sm" type="button" data-act="create-applicant"><svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Add applicant</span></button>' +
         '<button class="btn btn-ghost btn--sm" type="button" data-sheet="close">Cancel</button>' +
       '</div>');
   }
-  function moveCard(id: string, status: HireColumnKey) {
+
+  // ================= WRITES (real server actions) =================
+  // These are the live applicant actions from src/actions/applicants.ts — the
+  // same ones the classic pipeline used. They are org-scoped and manager-gated
+  // on the server and they revalidate /dashboard/hire. `applicantsData` is
+  // patched from the result so the board repaints immediately; a reload reads
+  // the same rows back from the database.
+
+  /** A stage move: optimistic on the node the user is holding, rolled back — to
+   *  the exact column it came from — if the server refuses. */
+  async function moveCard(id: string, status: HireColumnKey) {
     const a = applicantsData.find(function (x) { return x.id === id; });
     if (!a || a.status === status) return;
+    const prev = a.status;
     a.status = status;
-    renderBoard();
+    placeCard(id, prev, status);
+    boardError(null);
+    try {
+      await updateApplicantStatus(id, status);
+    } catch (err) {
+      a.status = prev;
+      placeCard(id, status, prev);
+      boardError(actionError(err));
+    }
   }
 
   // ================= EVENTS =================
@@ -261,7 +439,6 @@ export function initHireContent(content: HTMLElement): () => void {
   if (addBtn) on(addBtn, "click", () => openAddForm());
 
   // Card drag-and-drop between columns
-  const board = $("#hkBoard");
   if (board) {
     on(board, "dragstart", (ev) => {
       const e = ev as DragEvent;
@@ -290,7 +467,7 @@ export function initHireContent(content: HTMLElement): () => void {
       const col = (ev.target as HTMLElement | null)?.closest<HTMLElement>(".hk-col");
       if (!col || !hire.dragId) return;
       ev.preventDefault();
-      moveCard(hire.dragId, col.dataset.col as HireColumnKey);
+      void moveCard(hire.dragId, col.dataset.col as HireColumnKey);
       hire.dragId = null;
     });
     // Touch: tap a card -> tap a column header
@@ -301,8 +478,11 @@ export function initHireContent(content: HTMLElement): () => void {
         if (!id) return;
         if (window.innerWidth > 860) { openApplicant(id); return; }
         const same = hire.picked === id;
+        const prev = hire.picked ? cardNode(hire.picked) : null;
         hire.picked = same ? null : id;
-        renderBoard();
+        // Selection is a class on two nodes, not a board rebuild.
+        if (prev) prev.classList.remove("picked");
+        card.classList.toggle("picked", !same);
         if (same) openApplicant(id);
         return;
       }
@@ -310,9 +490,10 @@ export function initHireContent(content: HTMLElement): () => void {
       if (head && hire.picked) {
         const col = head.closest<HTMLElement>(".hk-col");
         if (!col) return;
-        moveCard(hire.picked, col.dataset.col as HireColumnKey);
+        const picked = hire.picked;
+        cardNode(picked)?.classList.remove("picked");
         hire.picked = null;
-        renderBoard();
+        void moveCard(picked, col.dataset.col as HireColumnKey);
       }
     });
   }
@@ -334,6 +515,9 @@ export function initHireContent(content: HTMLElement): () => void {
     }
     const st = target.closest<HTMLElement>("[data-st]");
     if (st) {
+      // Retargeting the status mid-save would commit a stage the user can no
+      // longer see selected by the time the in-flight write returns.
+      if (hire.saving) return;
       hire.status = st.dataset.st as HireColumnKey;
       $$("#pipeBox .pipe-btn").forEach(function (b) { b.classList.toggle("on", b === st); });
       return;
@@ -346,35 +530,195 @@ export function initHireContent(content: HTMLElement): () => void {
       return el ? el.value.trim() : "";
     };
 
+    if (hire.saving) return;
+
     if (kind === "add") { openAddForm(); return; }
-    if (kind === "save-applicant") {
-      const a = applicantsData.find(function (x) { return x.id === hire.editing; });
-      if (a) { a.status = hire.status; a.notes = val("notes"); }
-      closeSheet(); renderBoard(); return;
+    if (kind === "save-applicant") { void saveApplicant(act, val("notes")); return; }
+    if (kind === "convert") { void convertApplicant(act); return; }
+    if (kind === "delete-applicant") { void removeApplicant(act); return; }
+    if (kind === "create-applicant") { void submitApplicant(act, val); return; }
+  });
+
+  /** Save = the two things the data layer actually supports: a status move
+   *  (`updateApplicantStatus`) and a new stamped note (`appendApplicantNote`).
+   *  Both are skipped when nothing changed, so Save on an untouched sheet is
+   *  free rather than writing a duplicate row. */
+  async function saveApplicant(btn: HTMLElement, note: string) {
+    const id = hire.editing;
+    const a = applicantsData.find(function (x) { return x.id === id; });
+    if (!id || !a) return;
+    const nextStatus = hire.status;
+    const statusChanged = a.status !== nextStatus;
+    const text = note.trim();
+    if (!statusChanged && !text) { closeSheet(); return; }
+
+    sheetError(null);
+    setSaving(btn, true, "Saving…", "");
+    try {
+      if (statusChanged) await updateApplicantStatus(id, nextStatus);
+      if (text) await appendApplicantNote(id, text);
+      const prev = a.status;
+      if (statusChanged) {
+        a.status = nextStatus;
+        placeCard(id, prev, nextStatus);
+      }
+      if (text) {
+        const stamped = new Date().toISOString().slice(0, 16).replace("T", " ") + " — " + text;
+        a.notes = a.notes ? a.notes + "\n\n" + stamped : stamped;
+      }
+      setSaving(btn, false, "", "Save");
+      closeSheet();
+    } catch (err) {
+      setSaving(btn, false, "", "Save");
+      sheetError(actionError(err));
     }
-    if (kind === "convert") {
-      const a = applicantsData.find(function (x) { return x.id === hire.editing; });
-      if (a) { a.status = "HIRED"; }
-      act.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Converted';
-      later(function () { closeSheet(); renderBoard(); }, 900);
+  }
+
+  /** Conversion creates a worker invite and emails it — a two-tap arm keeps a
+   *  stray click from sending one. */
+  async function convertApplicant(btn: HTMLElement) {
+    const id = hire.editing;
+    const a = applicantsData.find(function (x) { return x.id === id; });
+    if (!id || !a) return;
+    const label = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    if (hire.armed !== "convert") {
+      hire.armed = "convert";
+      if (label) label.textContent = "Convert — tap to confirm";
+      later(function () {
+        if (hire.armed !== "convert") return;
+        hire.armed = null;
+        if (label) label.textContent = "Convert to worker";
+      }, 3000);
       return;
     }
-    if (kind === "delete-applicant") {
-      applicantsData = applicantsData.filter(function (x) { return x.id !== hire.editing; });
-      closeSheet(); renderBoard(); return;
+    hire.armed = null;
+    sheetError(null);
+    setSaving(btn, true, "Converting…", "");
+    try {
+      await convertApplicantToWorker(id);
+      const prev = a.status;
+      a.status = "HIRED";
+      placeCard(id, prev, "HIRED");
+      setSaving(btn, false, "", "Converted");
+      closeSheet();
+    } catch (err) {
+      setSaving(btn, false, "", "Convert to worker");
+      sheetError(actionError(err));
     }
-    if (kind === "create-applicant") {
-      const name = val("name");
-      if (!name) { root.querySelector<HTMLInputElement>('[data-a="name"]')?.focus(); return; }
-      apSeq += 1;
-      applicantsData.unshift({
-        id: "a" + apSeq, name: name, role: val("role") || "Crew",
-        email: val("email") || null, phone: val("phone") || null,
-        source: val("source") || "Other", status: "APPLIED", age: "now", notes: val("notes"),
+  }
+
+  /** Delete: two-tap arm, then the row leaves on its own and the rest of the
+   *  column closes the gap — the board is never rebuilt around it. */
+  async function removeApplicant(btn: HTMLElement) {
+    const id = hire.editing;
+    if (!id) return;
+    const label = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    if (hire.armed !== "delete") {
+      hire.armed = "delete";
+      if (label) label.textContent = "Delete — tap to confirm";
+      later(function () {
+        if (hire.armed !== "delete") return;
+        hire.armed = null;
+        if (label) label.textContent = "Delete applicant";
+      }, 3000);
+      return;
+    }
+    hire.armed = null;
+    sheetError(null);
+    setSaving(btn, true, "Deleting…", "");
+    try {
+      await deleteApplicant(id);
+      const gone = applicantsData.find(function (x) { return x.id === id; });
+      const col = gone ? gone.status : null;
+      applicantsData = applicantsData.filter(function (x) { return x.id !== id; });
+      if (hire.picked === id) hire.picked = null;
+      setSaving(btn, false, "", "Delete applicant");
+      closeSheet();
+      const row = cardNode(id);
+      if (row) {
+        leaveRow(row, function () { if (col) syncCol(col); syncEmpty(); }, after);
+      } else {
+        if (col) syncCol(col);
+        syncEmpty();
+      }
+    } catch (err) {
+      setSaving(btn, false, "", "Delete applicant");
+      sheetError(actionError(err));
+    }
+  }
+
+  /** Create: `createApplicant` returns the real database id, so the card that
+   *  lands on the board is the database row — not a placeholder that a reload
+   *  would erase. */
+  async function submitApplicant(btn: HTMLElement, val: (f: string) => string) {
+    const name = val("name");
+    if (!name) {
+      sheetError("Enter the applicant’s full name.");
+      root.querySelector<HTMLInputElement>('[data-a="name"]')?.focus();
+      return;
+    }
+    const role = val("role");
+    if (!role) {
+      sheetError("Enter the role they applied for.");
+      root.querySelector<HTMLInputElement>('[data-a="role"]')?.focus();
+      return;
+    }
+    const email = val("email");
+    // createApplicant requires a real address — it is the applicant's only
+    // identity on the record and the field the classic form also enforced.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      sheetError("A valid email is required.");
+      root.querySelector<HTMLInputElement>('[data-a="email"]')?.focus();
+      return;
+    }
+    const phone = val("phone");
+    const source = val("source") || "Other";
+    const notes = val("notes");
+
+    sheetError(null);
+    setSaving(btn, true, "Adding…", "");
+    try {
+      const created = await createApplicant({
+        fullName: name,
+        email,
+        phone: phone || null,
+        role,
+        source,
+        notes: notes || null,
       });
-      closeSheet(); renderBoard(); return;
+      const wasEmpty = applicantsData.length === 0;
+      const entry: Applicant = {
+        id: created.id,
+        name,
+        role,
+        email,
+        phone: phone || null,
+        source,
+        status: "APPLIED",
+        age: "just now",
+        notes,
+      };
+      applicantsData.unshift(entry);
+      setSaving(btn, false, "", "Add applicant");
+      closeSheet();
+      if (wasEmpty) {
+        // The board is genuinely arriving — build it and play the entrance.
+        renderBoard();
+        staggerIn(Array.from(board?.querySelectorAll<HTMLElement>(".hk-card") ?? []));
+      } else {
+        const body = colBody("APPLIED");
+        if (body) {
+          body.insertAdjacentHTML("afterbegin", cardHTML(entry));
+          syncCol("APPLIED");
+          const row = cardNode(entry.id);
+          if (row) staggerIn([row]);
+        }
+      }
+    } catch (err) {
+      setSaving(btn, false, "", "Add applicant");
+      sheetError(actionError(err));
     }
-  });
+  }
 
   // ================= INITIALIZATION =================
   safe("init", function () { renderHire(); });
@@ -385,7 +729,8 @@ export function initHireContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+    // (The donor's local EASE constant went with its hand-rolled row stagger —
+    // that now lives in blueprint-shell/list-motion, which owns the curve.)
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: slow scroll — the full 420ms animation;
@@ -451,29 +796,18 @@ export function initHireContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".hk-card, .door"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-      });
-    }
+    // Row stagger — ON ARRIVAL ONLY.
+    //
+    // The donor wired this to a MutationObserver on the list container, so every
+    // later change replayed the whole cascade: deleting one applicant made the
+    // survivors blink, and a stage move wiped and re-faded the entire board
+    // while the user was still holding the card. The lists here now ARRIVE once
+    // (this call) and are patched node-by-node afterwards; `staggerIn` from
+    // blueprint-shell/list-motion is the shared implementation.
     ["hkBoard", "hubList"].forEach((id) => {
       const list = $("#" + id);
       if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
+      staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".hk-card, .door")));
     });
 
     // KPI count-up

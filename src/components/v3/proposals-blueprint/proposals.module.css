@@ -59,6 +59,19 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --sidebar-w: 264px;
   --topbar-h: 62px;
+  /* Mark→wordmark spacing in the sidebar head — see the twin declaration in
+     dashboard-blueprint/blueprint.module.css. Both .bp classes land on the same
+     shell root, so this must be the identical value. */
+  --lockup-gap: clamp(2px, 0.7vw, 5px);
+  /* Mark geometry. --mark-size is the RENDER size of the square asset; the ink
+     inside it is only ~34.6% x 42.5% of that, so the box below derives its own
+     dimensions from the same token rather than repeating measured pixels.
+     --mark-top pins the ink's top edge, which is what makes the logo grow
+     downward when --mark-size changes. 116px is near the ceiling for a 64px
+     bar: the ink ends ~3.7px above the 2px bottom border. Going bigger means
+     raising --topbar-h first. */
+  --mark-size: 116px;
+  --mark-top: 5px;
 
   height: var(--app-h, 100vh);
   font-family: var(--font);
@@ -117,7 +130,7 @@
 .bp :global(.sb-head) {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: var(--lockup-gap);
   height: var(--topbar-h);
   padding: 0 18px;
   border-bottom: var(--border);
@@ -125,7 +138,37 @@
   color: var(--paper);
   flex-shrink: 0;
 }
+/* .sb-mark is the retired drawn "J" sketch. The live shell no longer renders
+   it, but /v3/proposals-v2 and /v3/proposals-v3 still do, so the rule stays. */
 .bp :global(.sb-mark) { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: square; flex-shrink: 0; }
+/* The real product mark — see the twin of this block in
+   dashboard-blueprint/blueprint.module.css for the full rationale. Both .bp
+   classes are always applied to the shell root, so these two must agree. */
+.bp :global(.sb-mark-box) {
+  position: relative;
+  /* Top-anchored, not centred: --mark-top IS where the ink's top edge sits,
+     measured from the bar's top. The -0.5px is the hair of clearance the box
+     carries so antialiasing is not clipped. */
+  align-self: flex-start;
+  margin-top: calc(var(--mark-top) - 0.5px);
+  width: calc(var(--mark-size) * 0.3462 + 1px);
+  height: calc(var(--mark-size) * 0.4253 + 1px);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.bp :global(.sb-mark-img) {
+  position: absolute;
+  left: 50%;
+  /* Pull the oversized square up by the asset's own top inset so the INK, not
+     the image, starts at the box top. Only translateX here — a translateY would
+     re-centre it and undo the anchoring. */
+  top: calc(var(--mark-size) * -0.2876 + 0.5px);
+  width: var(--mark-size);
+  height: var(--mark-size);
+  transform: translateX(-50%);
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
 .bp :global(.sb-head-txt) {
   display: flex; flex-direction: column; justify-content: center; gap: 3px;
 }
@@ -1310,3 +1353,115 @@
 /* @keyframes daySel2 / press2 live in proposals-global.css (global names). */
 .bp :global(.day.day-pressed) { animation: daySel2 0.28s cubic-bezier(0.22, 0.61, 0.36, 1); }
 .bp :global(.pressed) { animation: press2 0.18s ease-out; }
+
+
+/* ============================================================
+   PROPOSALS — SEARCH, DIALOGS, IN-FLIGHT STATES
+   ------------------------------------------------------------
+   NOT donor rules. The donor page rendered a fixture, so it needed
+   neither a search field nor a dialog; the live page needs both —
+   to find one proposal in a real book, and to confirm a send and a
+   delete against the real server actions.
+
+   WHY EVERY DIALOG RULE IS SCOPED THROUGH `.pmdl`
+   THIS MODULE IS ALWAYS ON: blueprint-shell.tsx applies
+   `proposalStyles.bp` on EVERY blueprint page (it also carries the
+   shell chrome's own rules), while every other page module is gated
+   through PAGE_STYLES. Ten of those modules already declare their
+   own `.content .mdl-box` — at 380 / 400 / 420 / 440 / 460px, with
+   different head paddings — all at the same 3-class specificity. A
+   bare `.bp :global(.content .mdl-box)` here would reach their pages
+   too and win or lose that tie by bundle order.
+   So the three dialogs carry `mdl pmdl`: `.mdl` keeps them on the
+   shared open/close motion contract published in
+   dashboard-blueprint/blueprint-global.css, and `.pmdl` is what every
+   rule below hangs off — one extra class, so these values cannot
+   escape this page and cannot be out-ordered on it.
+
+   Values are copied verbatim from workers.module.css, the published
+   shape for a blueprint dialog: same paddings, same hard 5px offset
+   shadow, same 1.5px hairlines.
+   ============================================================ */
+
+/* search field in the page head — the same control as the Workers roster.
+   Scoped under `.page-actions`, which is where only this page puts one. */
+.bp :global(.content .page-actions .lsearch) {
+  display: flex; align-items: center; gap: 9px;
+  width: 250px; height: 34px; padding: 0 11px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper);
+}
+.bp :global(.content .page-actions .lsearch:focus-within) { border-color: var(--ink); }
+.bp :global(.content .page-actions .lsearch .ic) { width: 14px; height: 14px; color: var(--muted-light); flex: 0 0 auto; }
+.bp :global(.content .page-actions .lsearch input) { flex: 1; min-width: 0; border: none; background: none; outline: none; font-family: var(--font); font-size: 12.5px; color: var(--ink); }
+.bp :global(.content .page-actions .lsearch input)::placeholder { color: var(--muted-faint); }
+/* the head row now mixes a 34px field with the donor's taller buttons */
+.bp :global(.content .page-head .page-actions) { align-items: center; }
+
+/* dialogs
+   `.content` is what receives z-index 1 in the shell, so an open dialog needs
+   the same escape hatch the create dialogs use, or the scrim renders beneath
+   the topbar. */
+.bp :global(.content .pmdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
+.bp :global(.content .pmdl.open) { display: flex; }
+.bp :global(.content:has(.pmdl.open)) { z-index: auto; }
+.bp :global(.content .pmdl .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
+.bp :global(.content .pmdl .mdl-box) { position: relative; width: min(380px, 100%); border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); }
+.bp :global(.content .pmdl .mdl-head) { padding: 15px 17px 0; font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
+/* Title left, dismiss right. The dismiss is optically pulled toward the corner
+   so it lines up with the box edge rather than with the title's text box. */
+.bp :global(.content .pmdl .mdl-head--row) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.bp :global(.content .pmdl .mdl-x) {
+  width: 26px; height: 26px; flex: 0 0 auto; margin: -3px -3px 0 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.bp :global(.content .pmdl .mdl-x:hover) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+.bp :global(.content .pmdl .mdl-x .ic) { width: 14px; height: 14px; }
+.bp :global(.content .pmdl .mdl-txt) { padding: 7px 17px 15px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .pmdl .mdl-body) { padding: 14px 17px 16px; overflow-y: auto; }
+.bp :global(.content .pmdl .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); }
+.bp :global(.content .pmdl .mdl-foot .btn) { flex: 1; justify-content: center; }
+
+/* dialog form field */
+.bp :global(.content .pmdl .mf) { margin-bottom: 12px; }
+.bp :global(.content .pmdl .mf-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+.bp :global(.content .pmdl .mf-in) {
+  width: 100%; height: 36px; padding: 0 11px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink);
+}
+.bp :global(.content .pmdl .mf-in:focus) { outline: none; border-color: var(--ink); }
+.bp :global(.content .pmdl .mf-in)::placeholder { color: var(--muted-faint); }
+/* sendProposal() mails the address on the CLIENT record, so the recipient box
+   is a readout, not an input — it has to LOOK inert, not just refuse typing. */
+.bp :global(.content .pmdl .mf-in:disabled) { background: var(--paper-deep); color: var(--muted); cursor: not-allowed; }
+
+/* What the send actually does, in the drawing-annotation voice. */
+.bp :global(.content .pmdl .mf-note) { margin: -2px 0 12px; font-family: var(--font-mono); font-size: 10px; font-weight: 500; line-height: 1.55; letter-spacing: 0.04em; color: var(--muted-light); }
+
+/* Server-action failures (send transport, a proposal that is no longer the
+   caller's). Sits where the eye already is — above the confirm button. */
+.bp :global(.content .pmdl .mf-err) { margin-bottom: 12px; font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .pmdl .mf-err--boxed) { margin: 0 17px 15px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+.bp :global(.content .pmdl .mf-err.is-hidden) { display: none; }
+
+/* In-flight write: the control stops accepting a second click and drops its
+   hover lift, so the pending state reads as pending rather than as broken. */
+.bp :global(.content .pmdl .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .pmdl .btn.is-busy:hover) { transform: none; box-shadow: none; }
+.bp :global(.content .pt-open.is-busy) { opacity: 0.45; pointer-events: none; }
+.bp :global(.content .pjob.is-busy), .bp :global(.content .psheet.is-busy) { opacity: 0.72; pointer-events: none; }
+
+/* A record on its way out — leaveRow fades and slides that one node while the
+   rows below close the gap. The wash says WHICH row is going while it does. */
+.bp :global(.content .prow.is-leaving) { background: var(--danger-soft); }
+.bp :global(.content .pjob.is-leaving), .bp :global(.content .psheet.is-leaving) { border-color: var(--muted-faint); }
+
+@media (max-width: 860px) {
+  .bp :global(.content .page-actions .lsearch) { width: 100%; height: 40px; }
+  /* 44px minimum touch target on handhelds. */
+  .bp :global(.content .pmdl .mdl-x) { width: 44px; height: 44px; margin: -8px -8px 0 0; }
+  .bp :global(.content .pmdl .mdl-x .ic) { width: 16px; height: 16px; }
+}

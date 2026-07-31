@@ -69,6 +69,21 @@
   --radius: 2px;
   --shadow: rgba(10,10,10,0.06);
 
+  /* Field row height. The donor repeated the literal `38px` on `.est-in` and on
+     `.rf-actions .btn`; naming it changes no computed value but makes "the
+     button is exactly as tall as the picker beside it" a property of the token
+     rather than of two literals that can drift apart. Everything that shares a
+     control row on this page — text input, styled select, small action button —
+     resolves its height from here. */
+  --field-h: 38px;
+
+  /* Height of the model window. The donor's drawing was a bare `<svg>` at
+     `height: auto`, so the card grew and shrank with whatever the viewBox
+     happened to be. The window now holds two live viewers — a pan/zoom plan and
+     a three.js scene that measures its own box — and both need a stable one to
+     render into, so the stage owns the height and the drawings fit inside it. */
+  --viewer-h: 460px;
+
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
 
@@ -88,8 +103,22 @@
 /* ============================================================
    RESET / BASE (donor `*`, button, a, ul/ol, input/select, svg.ic)
    html/body rules are document scaffolding — the shell owns them.
+
+   `:not(.rfx):not(.rfx *)` — THE MOUNTED ESTIMATOR IS EXEMPT.
+   (Written as two `:not()`s rather than one selector list so the CSS-modules
+   parser never has to read a comma inside `:global(…)`.)
+   The donor's blanket reset is authored against donor markup, where every
+   padding is restated by a class. RoofEstimatorForm is not donor markup: it is
+   Tailwind, and `.bp :global(.content *)` is (0,2,0) while `.p-6` / `.px-3` /
+   `.py-2.5` are (0,1,0) — Tailwind v3 emits its utilities UNLAYERED, so this
+   rule silently wins and every card, button and field inside the mount loses
+   its padding. Same for `button { background: none; border: none }`, which
+   erases a filled button, and `svg { display: inline }`, which un-aligns every
+   lucide icon. Tailwind preflight already zeroes what the donor relied on
+   (`box-sizing`, heading/list margins, the button reset), so the mount needs
+   none of this — it needs to be left alone.
    ============================================================ */
-.bp :global(.content *) {
+.bp :global(.content *:not(.rfx):not(.rfx *)) {
   margin: 0; padding: 0; box-sizing: border-box;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
   scrollbar-width: auto;
@@ -97,9 +126,9 @@
 }
 /* preflight sets svg{display:block;vertical-align:middle} — donor: browser
    defaults. */
-.bp :global(.content svg) { display: inline; vertical-align: baseline; }
-.bp :global(.content button) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
-.bp :global(.content a) { text-decoration: none; color: inherit; }
+.bp :global(.content svg:not(.rfx *)) { display: inline; vertical-align: baseline; }
+.bp :global(.content button:not(.rfx *)) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.bp :global(.content a:not(.rfx *)) { text-decoration: none; color: inherit; }
 .bp :global(.content ul), .bp :global(.content ol) { list-style: none; }
 .bp :global(.content input), .bp :global(.content select) { font-family: inherit; }
 .bp :global(.content svg.ic) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; shape-rendering: geometricPrecision; }
@@ -1323,11 +1352,19 @@
 .bp :global(.content .rf-body) { padding: 16px 18px 18px; }
 
 .bp :global(.content .samples) { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 11px; }
+/* `display: flex` where the donor had `block`: the sample tile is now the
+   mounted form's button, which leads with a status dot the donor's text-only
+   tile never had. Everything else is the donor's tile, verbatim. */
 .bp :global(.content .sample) {
-  display: block; text-align: left; padding: 12px 13px;
+  display: flex; align-items: center; gap: 10px;
+  text-align: left; padding: 12px 13px; box-shadow: none;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper);
   transition: border-color 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
+.bp :global(.content .sample:disabled) { opacity: 0.45; pointer-events: none; }
+/* The tiles carry a `space-y-2` stack for the classic route, whose margin would
+   land ON TOP of this grid's `gap`. One spacing source per axis. */
+.bp :global(.content .samples > * + *) { margin-top: 0; }
 .bp :global(.content .sample:hover) { border-color: var(--ink); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
 .bp :global(.content .sample-t) { display: block; font-size: 13px; font-weight: 700; line-height: 1.3; }
 .bp :global(.content .sample-d) { display: block; margin-top: 5px; font-family: var(--font-mono); font-size: 11px; line-height: 1.35; color: var(--muted); }
@@ -1340,11 +1377,35 @@
 .bp :global(.content .addr-wide) { grid-column: span 2; }
 .bp :global(.content .est-field) { display: block; }
 .bp :global(.content .est-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
-.bp :global(.content .est-in) { width: 100%; height: 38px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink); }
+.bp :global(.content .est-in) { width: 100%; height: var(--field-h); padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink); }
 .bp :global(.content .est-in:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .est-in)::placeholder { color: var(--muted-faint); }
+
+/* — Selects: the SHARED blueprint treatment, on this page's field metrics —
+   `.bp-sel` / `.bp-sel-in` are published once in
+   dashboard-blueprint/blueprint-global.css: they own the appearance reset, the
+   drawn ink chevron, the mono value type and the `data-empty` placeholder grey.
+   Re-deriving any of that here is exactly the parallel-style-set drift
+   decisions.md warns about, so this block sets ONLY what is page-local — the
+   field height, the side padding and the hairline weight — so a picker sits in
+   an .addr-grid / .build-ctl row at the same size as the .est-in text fields
+   next to it. The right padding is the shared rule's own 30px caret gutter,
+   restated because it ships as a `padding-right` longhand that this page's
+   `* { padding: 0 }` donor reset can tie with. The scope is `.rfx` because the
+   ONE select left on this page is the mounted form's waste-factor picker. */
+.bp :global(.content .rfx .bp-sel-in) {
+  height: var(--field-h);
+  padding: 0 30px 0 11px;
+  border-color: var(--hair-soft);
+}
+/* The resting border-color above out-specifies the shared hover/focus rules, so
+   the focus edge is restated at matching weight — same ink the text fields use,
+   not a second treatment. */
+.bp :global(.content .rfx .bp-sel-in:hover),
+.bp :global(.content .rfx .bp-sel-in:focus) { border-color: var(--ink); }
+
 .bp :global(.content .rf-actions) { display: flex; align-items: center; gap: 11px; margin-top: 16px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
-.bp :global(.content .rf-actions .btn) { height: 38px; padding: 0 15px; font-size: 12.5px; }
+.bp :global(.content .rf-actions .btn) { height: var(--field-h); padding: 0 15px; font-size: 12.5px; }
 .bp :global(.content .rf-actions .btn .ic) { width: 15px; height: 15px; }
 .bp :global(.content .rf-price) { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; color: var(--ink); }
 .bp :global(.content .rf-price b) { color: var(--blueprint); }
@@ -1379,7 +1440,229 @@
   linear-gradient(var(--grid-light) 1px, transparent 1px),
   linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
   background-size: 20px 20px; }
-.bp :global(.content .rf-canvas svg) { width: 100%; height: auto; display: block; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THE MOUNTED ESTIMATOR — `.rfx`
+   ════════════════════════════════════════════════════════════════════════════
+   `.rfx` wraps RoofEstimatorForm, the real address → EagleView measurement →
+   2D/3D model → facet table → estimate flow (previously live only at
+   /dashboard/advanced-ai/roof). It replaced the donor's own intake / measuring
+   / report / build markup and the demo fixture behind it — everything below
+   this line is the blueprint SKIN over that component, nothing re-implements
+   it.
+
+   Two kinds of hook are used, both deliberate:
+   (1) blueprint class names the component now carries (`sample`, `btn`,
+       `bp-sel`, `vsw`, `build-ctl`, `rfx-*`). They are inert anywhere outside
+       `.jf-blueprint .content`, so the classic route is untouched.
+   (2) attribute matches on the Tailwind utility that POSITIONS an overlay
+       (`[class*="top-3"]`) for markup this page does not author — the same
+       narrow coupling the previous island block used. If a viewer's overlay
+       changes, the rule stops matching and the overlay reverts to its own
+       look: visible, not broken.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Type: the component's headings/labels on blueprint metrics ───────────── */
+/* CardTitle renders an <h3>; these are the `.card-title` / `.card-sub` values
+   from the shared card block above, not a second scale. */
+.bp :global(.content .rfx h3) {
+  font-size: 15px; font-weight: 900;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink);
+}
+.bp :global(.content .rfx h3 + p) { margin-top: 4px; font-size: 12px; color: var(--muted-light); }
+/* `.quiet-caps` is the component's label class app-wide; on this page it takes
+   the drawing-annotation layer (mono caps) the donor used for `.est-lbl` /
+   `.kpi-lbl`, so a mounted label reads the same as a page-authored one. */
+.bp :global(.content .rfx .quiet-caps) {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+}
+.bp :global(.content .rfx .stat-numeric),
+.bp :global(.content .rfx .tabular) { font-variant-numeric: tabular-nums; }
+
+/* ── Fields: 0.5px inset hairline → the blueprint ink line ────────────────── */
+/* `.hairline` (globals.css) is a 0.5px inset box-shadow — the quiet treatment
+   of the previous system. Every bordered thing inside the mount that is not a
+   card wears it: the Input/Select wrappers, the EagleView deliverable links,
+   the viewer legend. One rule moves them all onto a real 1.5px ink edge. The
+   `:focus-within` shadow it replaces was a leftover SAGE-GREEN literal
+   (`rgba(31,122,82,.18)`) baked into the Input primitive. */
+.bp :global(.content .rfx .hairline) {
+  box-shadow: none;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: var(--paper);
+  transition: border-color 0.12s;
+}
+.bp :global(.content .rfx .hairline:focus-within),
+.bp :global(.content .rfx .hairline:hover) { border-color: var(--ink); box-shadow: none; }
+.bp :global(.content .rfx input) { font-family: var(--font); font-size: 13px; color: var(--ink); }
+.bp :global(.content .rfx input)::placeholder { color: var(--muted-faint); }
+
+/* ── The ONE select: the shared `.bp-sel` treatment ───────────────────────── */
+/* `.bp-sel` / `.bp-sel-in` come from dashboard-blueprint/blueprint-global.css
+   (appearance reset + drawn ink chevron + mono value type). The Select
+   primitive's own wrapper carries `.bp-sel` via its `wrapperClassName`, so the
+   only page-local work is stripping the primitive's box (its own 40px height
+   and hairline) and hiding its lucide chevron — the wrapper draws the caret,
+   and two carets is the drift this file exists to prevent. */
+.bp :global(.content .rfx .bp-sel) {
+  height: auto;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 0;
+}
+.bp :global(.content .rfx .bp-sel > svg) { display: none; }
+
+/* ── Segmented switches → the donor's `.vsw` ──────────────────────────────── */
+/* SegmentedControl floats a pill with a sliding motion.span. On blueprint it
+   becomes the boxed switch: a hairline frame, square segments divided by a
+   rule, and an INK fill for the segment you are on. The pill element is the
+   active button's first child (it renders only when active), so it is what
+   carries the fill — the slide stays, the pill shape does not.
+   Placed after the `.hairline` block on purpose: the switch root also carries
+   `hairline`, and this is the more specific treatment of the two. */
+.bp :global(.content .rfx .vsw) {
+  display: inline-flex;
+  padding: 0;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.bp :global(.content .rfx .vsw > button) {
+  height: 30px; padding: 0 11px;
+  border-right: 1.5px solid var(--hair-soft);
+  border-radius: 0;
+  font-size: 11.5px; font-weight: 700;
+  color: var(--muted);
+  transition: color 0.12s;
+}
+.bp :global(.content .rfx .vsw > button:last-child) { border-right: none; }
+.bp :global(.content .rfx .vsw > button:hover) { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.content .rfx .vsw > button[aria-checked="true"]) { color: var(--paper); }
+.bp :global(.content .rfx .vsw > button > span:first-child:not(:last-child)) {
+  background: var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ── The measurement masthead ─────────────────────────────────────────────── */
+/* The component floods this bar with `color-mix(…)` and lays a radial wash over
+   it, both as INLINE styles — the tone-flood of the system it was built in.
+   Blueprint has no gradients, so the bar goes flat ink and the wash is dropped.
+   `!important` is the only lever that outranks an inline style, and the inline
+   style has to stay: the classic route still renders this component. */
+.bp :global(.content .rfx .rfx-hero) { background: var(--ink) !important; }
+.bp :global(.content .rfx .rfx-hero-wash) { display: none; }
+.bp :global(.content .rfx .rfx-hero-title) {
+  font-size: 20px; font-weight: 900;
+  letter-spacing: 0.01em; text-transform: uppercase;
+}
+.bp :global(.content .rfx .rfx-viewer) {
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* ── The model window ─────────────────────────────────────────────────────── */
+/* The viewers are the originals (RoofWireframe / RoofModel3D) reading the
+   RoofModel that `evRoofModel(reportId)` returned — no adapter, no fixture. The
+   page owns only their frame: a fixed-height graph-paper stage. Both the flood
+   and the dot grid the component sets are inline, hence `!important`. */
+.bp :global(.content .rfx .rfx-canvas) {
+  height: var(--viewer-h);
+  border-top: 2px solid var(--ink);
+  background-color: var(--paper) !important;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px) !important;
+  background-size: 20px 20px !important;
+}
+
+/* Both viewers float hints and a legend over the drawing, styled for the system
+   they were built in (pill radii, white glass, backdrop blur). Addressed by the
+   utility that positions them — see note (2) at the top of this block. */
+.bp :global(.content .rfx-2d div[class*="bottom-3"]),
+.bp :global(.content .rfx-2d div[class*="top-3"]),
+.bp :global(.content .rfx-3d div[class*="bottom-3"] > span),
+.bp :global(.content .rfx-3d div[class*="top-3"] > span) {
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* The wireframe's own line-type key IS this page's legend strip now — the donor
+   printed a permanent `.rf-legend` under the canvas, which the mounted flow has
+   no equivalent for. Same swatch metrics the donor's `.lg i` used. */
+.bp :global(.content .rfx-2d div[class*="bottom-3"] > span) {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.bp :global(.content .rfx-2d div[class*="bottom-3"] > span > span) {
+  width: 14px; height: 3px; border-radius: 0;
+}
+/* Fly-through is a mode the user is IN, so its badge takes the active
+   treatment the `.vsw` segments use. */
+.bp :global(.content .rfx-3d div[class*="top-3"] > span) {
+  border-color: var(--blueprint);
+  background: var(--blueprint);
+  color: var(--paper);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+/* The component carries `btn btn-primary` / `btn btn-ghost`, so the donor's own
+   button block above already dresses them. This is the safety net for the
+   Button primitives inside the sub-components this page does not edit
+   (EstimatorSummary's convert/save): matched on the fill the primitive's
+   `primary` variant sets, so a filled action is never left un-framed next to a
+   framed one. */
+.bp :global(.content .rfx button[class*="bg-[color:var(--accent)]"]:not(.btn)) {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.bp :global(.content .rfx button[class*="bg-[color:var(--accent)]"]:not(.btn):hover) {
+  background: var(--blueprint-dark);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+/* ── The estimate row ─────────────────────────────────────────────────────── */
+/* "Generate estimate" and the waste picker share one control row, so they share
+   one height: `.rf-build .build-ctl .btn` (further up this file) already pins
+   the button to `--field-h`, and `.rfx .bp-sel-in` pins the picker to the same
+   token. The picker's own column width matches the donor's `.est-field--sm`. */
+.bp :global(.content .rfx .build-ctl > div:has(.bp-sel)) { width: 120px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .rf-pane) { transition: none; }
+}
+
+/* The donor drew the plan itself; these styled the polygons, edges and facet
+   captions of that generated SVG. Nothing emits these class names any more —
+   the viewers draw with their own inline attributes — so the block below is
+   retained for reference only and matches nothing at runtime. */
 .bp :global(.content .facet) { fill: rgba(24, 84, 160, 0.1); stroke: var(--ink); stroke-width: 1.2; transition: fill 0.16s; }
 .bp :global(.content .facet:hover) { fill: rgba(24, 84, 160, 0.2); }
 .bp :global(.content .facet.f2) { fill: rgba(24, 84, 160, 0.16); }
@@ -1417,6 +1700,15 @@
 .bp :global(.content .call.info) { border-left-color: var(--sky); background: rgba(74, 158, 255, 0.07); }
 
 .bp :global(.content .rf-build .build-ctl) { display: flex; align-items: flex-end; gap: 10px; }
+/* "Generate estimate" sits on the same row as the Waste factor picker, so it is
+   the same height. It was a bare `.btn--sm` — `height: auto` wrapped around an
+   18px icon, which measured 28px against the picker's 38px, and the row's
+   `align-items: flex-end` turned that 10px shortfall into a control that read as
+   misaligned rather than merely small. These are the metrics `.rf-actions .btn`
+   (the other 38px action row on this page) already uses, so both rows stay one
+   size. */
+.bp :global(.content .rf-build .build-ctl .btn) { height: var(--field-h); padding: 0 15px; font-size: 12.5px; }
+.bp :global(.content .rf-build .build-ctl .btn .ic) { width: 15px; height: 15px; }
 .bp :global(.content .est-field--sm) { width: 120px; }
 .bp :global(.content .build-out) { padding: 0; }
 .bp :global(.content .build-out.is-hidden) { display: none; }

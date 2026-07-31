@@ -1,8 +1,44 @@
-// Company blueprint — the donor's embedded demo data, hardcoded exactly as it
-// appears in jobflex-company-blueprint_3.html. Same order, same strings, same
-// inline <b> markup inside `summary` (the ported renderer writes it as HTML,
-// just like the donor). Kept in its own module so company-behavior.ts stays
-// pure behavior, matching proposals-blueprint/proposals-data.ts.
+// Company blueprint — the donor's embedded demo data plus the types and
+// mappers the live page uses. Kept in its own module so company-behavior.ts
+// stays pure behavior, matching proposals-blueprint/proposals-data.ts.
+//
+// The page is NOT a fixture any more: `CompanyOrgState` mirrors the
+// Organization columns the three company server actions write, and
+// `toActivityEntries` turns real ActivityEvent rows (loaded by
+// lib/teamActivity) into the donor's feed row shape using the SAME derivations
+// the classic feed uses (lib/teamActivityView) — so the two editions can't
+// drift apart. The donor's demo activity array and its private 12-item trade
+// list are gone: the trades come from the canonical taxonomy the server
+// validates against, and the feed comes from ActivityEvent.
+
+import {
+  VERB,
+  categoryOf,
+  dayLabel,
+  timeOfDay,
+  type TeamActivityRow,
+  type TeamMember,
+} from "@/lib/teamActivityView";
+
+export type { TeamActivityRow, TeamMember };
+
+/** The Organization fields this sheet reads and writes. Strings are never null
+ *  here — the inputs are uncontrolled text fields, so nulls arrive as "". */
+export type CompanyOrgState = {
+  name: string;
+  billingEmail: string;
+  phone: string;
+  website: string;
+  address: string;
+  primaryColor: string;
+  logoUrl: string | null;
+  /** Canonical trades (lib/tradeTypes) the org takes platform leads for. */
+  tradeTypes: string[];
+  leadOffersEnabled: boolean;
+  publicProfileEnabled: boolean;
+  landingHeroTitle: string;
+  landingHeroSubtitle: string;
+};
 
 export const COLOR_PRESETS = [
   "#1F7A52",
@@ -15,55 +51,86 @@ export const COLOR_PRESETS = [
   "#111113",
 ];
 
-export const TRADE_TYPES = [
-  "Flooring",
-  "Tile",
-  "Countertops",
-  "Plumbing",
-  "Electrical",
-  "Carpentry",
-  "Painting",
-  "Roofing",
-  "Fencing",
-  "Decking",
-  "Siding",
-  "Kitchen & Bath",
-];
+// The donor shipped a 12-item trade list of its own. The chips have to offer
+// the CANONICAL taxonomy instead: `updateLeadProfile` validates the array with
+// `z.enum(TRADE_TYPES)` from lib/tradeTypes, so anything outside that list is
+// rejected by the server, and the matcher only understands these names.
+export { TRADE_TYPES } from "@/lib/tradeTypes";
 
 export type ActCat = { key: string; label: string };
 
-export const ACT_CATS: ActCat[] = [
-  { key: "all", label: "All" },
-  { key: "proposals", label: "Proposals" },
-  { key: "leads", label: "Leads & clients" },
-  { key: "jobs", label: "Jobs" },
-  { key: "team", label: "Team" },
-];
-
-export const MEMBERS = ["Everyone", "Ivan", "Marcus B.", "Sofia R.", "Dan K."];
+// The donor's five chips ARE the classic feed's category lens, so both editions
+// take the list from one place.
+export { CATEGORIES as ACT_CATS } from "@/lib/teamActivityView";
 
 export type ActivityEntry = {
   day: string;
   actor: string;
+  /** Membership user id, or "" for a client-side / system event. The person
+   *  filter matches on this, not on the display name. */
+  actorId: string;
   cat: string;
-  /** Contains inline <b> markup — written into the feed as HTML, donor-exact. */
+  /** Contains inline <b> markup — written into the feed as HTML. Everything
+   *  interpolated from the database is escaped by `toActivityEntries`. */
   summary: string;
   meta: string;
   time: string;
   tone: string;
 };
 
-export const ACTIVITY_DATA: ActivityEntry[] = [
-  { day: "Today", actor: "Ivan", cat: "proposals", summary: "sent proposal <b>#2851</b> to M. Henderson", meta: "Proposal · $24,600", time: "25m", tone: "var(--blueprint)" },
-  { day: "Today", actor: "Marcus B.", cat: "jobs", summary: "started <b>Roof tear-off — 4812 Maple Ave</b>", meta: "Job · in progress", time: "2h", tone: "var(--warning)" },
-  { day: "Today", actor: "Sofia R.", cat: "leads", summary: "claimed lead <b>S. Rao</b>", meta: "Lead · Facebook", time: "5h", tone: "var(--blueprint)" },
-  { day: "Today", actor: "Ivan", cat: "leads", summary: "added client <b>R. Tran</b>", meta: "Client", time: "8h", tone: "" },
-  { day: "Yesterday", actor: "Dan K.", cat: "jobs", summary: "completed <b>Deck power wash — 55 Cedar Loop</b>", meta: "Job · completed", time: "1d", tone: "var(--success)" },
-  { day: "Yesterday", actor: "Ivan", cat: "proposals", summary: "marked <b>Cedar fence, 140 ft</b> accepted", meta: "Proposal · $12,400", time: "1d", tone: "var(--success)" },
-  { day: "Yesterday", actor: "Sofia R.", cat: "team", summary: "invited <b>Tyler Brooks</b> to the crew", meta: "Team · invite sent", time: "1d", tone: "" },
-  { day: "Jul 20", actor: "Marcus B.", cat: "jobs", summary: "scheduled <b>Fence repair — 1409 Fern St</b>", meta: "Job · Jul 23", time: "2d", tone: "var(--blueprint)" },
-  { day: "Jul 20", actor: "Ivan", cat: "proposals", summary: "recorded payment on <b>#2825</b>", meta: "Payment · $8,400", time: "2d", tone: "var(--success)" },
-  { day: "Jul 19", actor: "Sofia R.", cat: "leads", summary: "moved <b>P. Delgado</b> to lost", meta: "Lead · lost", time: "3d", tone: "var(--danger)" },
-  { day: "Jul 19", actor: "Dan K.", cat: "jobs", summary: "uploaded 6 photos to <b>Gutter guards — Redmond</b>", meta: "Job · photos", time: "3d", tone: "" },
-  { day: "Jul 18", actor: "Ivan", cat: "team", summary: "changed <b>Dan K.</b> role to installer", meta: "Team · role", time: "4d", tone: "" },
-];
+/** Status bead colour per event kind — blueprint tokens, statuses only. */
+const TONE: Record<string, string> = {
+  SENT: "var(--blueprint)",
+  ACCEPTED: "var(--success)",
+  PAID: "var(--success)",
+  COMPLETED: "var(--success)",
+  SCHEDULED: "var(--warning)",
+  DECLINED: "var(--danger)",
+};
+
+function escapeHtml(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const CAT_LABEL: Record<string, string> = {
+  proposals: "Proposal",
+  leads: "Lead",
+  jobs: "Job",
+  team: "Team",
+};
+
+/**
+ * Map real ActivityEvent rows onto the donor's feed row shape.
+ *
+ * Same sentence the classic feed builds: actor + verb, then the object it
+ * touched. When the event names no object (workspace created, password reset,
+ * invite sent) the event's own summary sentence carries the line and the meta
+ * falls back to the category.
+ */
+export function toActivityEntries(rows: TeamActivityRow[]): ActivityEntry[] {
+  return rows.map((row) => {
+    const verb = VERB[row.kind] ?? row.kind.toLowerCase().replace(/_/g, " ");
+    const cat = categoryOf(row);
+    const object = row.proposalTitle ?? row.leadName ?? row.clientName ?? null;
+    const meta = object
+      ? CAT_LABEL[cat] +
+        (row.proposalId && row.clientName ? " · " + row.clientName : "")
+      : CAT_LABEL[cat];
+    return {
+      day: dayLabel(row.createdAt),
+      actor: row.actorName ?? "Client",
+      actorId: row.actorId ?? "",
+      cat,
+      summary: object
+        ? escapeHtml(verb) + " <b>" + escapeHtml(object) + "</b>"
+        : escapeHtml(row.summary || verb),
+      meta: escapeHtml(meta),
+      time: timeOfDay(row.createdAt),
+      tone: TONE[row.kind] ?? "",
+    };
+  });
+}

@@ -11,10 +11,47 @@
 //   active-item indicator, the graph-paper parallax and press feedback on
 //   shell controls.
 
+import { createProject } from "@/actions/projects";
 import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
+import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { initDatePopovers } from "@/components/v3/shared/date-popover";
 import { PROJECTS_SEED, STATUSES, type Project } from "./projects-data";
 
-export function initProjectsContent(content: HTMLElement): () => void {
+export type ProjectsContentOptions = {
+  /** The org's real project book, read server-side. Omit to fall back to the
+   *  donor fixture (the standalone mock routes have no session to read from). */
+  projects?: Project[];
+};
+
+/** `createProject` rejects with an Error whose message is written for the user
+ *  (the plan-limit refusal, the role refusal). Surface that text; fall back to
+ *  a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  // A Next.js server-action transport failure has no useful message.
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** Project names and scope notes are user text and the grid is built from HTML
+ *  strings — everything interpolated has to be escaped. */
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** The date popover writes this exact shape into the two schedule fields. */
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export function initProjectsContent(
+  content: HTMLElement,
+  options: ProjectsContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -75,11 +112,11 @@ export function initProjectsContent(content: HTMLElement): () => void {
   });
 
   // ================= PROJECTS: DATA =================
-  // A per-mount COPY of the fixture. The create dialog below pushes into this
-  // array, and the seed is a module-level constant — mutating it directly would
-  // leak every created project into the next visit to the page (and into any
-  // other importer of PROJECTS_SEED).
-  const projectsData: Project[] = PROJECTS_SEED.map((p) => ({ ...p }));
+  // The org's real project book when the page supplied one (the normal path),
+  // otherwise a per-mount COPY of the donor fixture. The copy matters: the seed
+  // is a module-level constant, and mutating it directly would leak every
+  // created project into the next visit to the page.
+  const projectsData: Project[] = (options.projects ?? PROJECTS_SEED).map((p) => ({ ...p }));
 
   const pjstate = { filter: "ALL" };
 
@@ -97,123 +134,166 @@ export function initProjectsContent(content: HTMLElement): () => void {
   }
 
   // ================= PROJECTS: RENDER =================
-  function renderChips() {
-    let html =
-      '<button class="pchip' +
-      (pjstate.filter === "ALL" ? " active" : "") +
-      '" type="button" data-f="ALL">All <b>' +
-      projectsData.length +
-      "</b></button>";
-    STATUSES.forEach(function (st) {
-      const n = projectsData.filter(function (p) {
-        return p.status === st;
-      }).length;
-      html +=
-        '<button class="pchip' +
-        (pjstate.filter === st ? " active" : "") +
-        '" type="button" data-f="' +
-        st +
-        '">' +
-        statusLabel(st) +
-        " <b>" +
-        n +
-        "</b></button>";
-    });
-    const chips = $("#pjChips");
-    if (chips) chips.innerHTML = html;
+  function chipCount(f: string) {
+    return f === "ALL"
+      ? projectsData.length
+      : projectsData.filter(function (p) {
+          return p.status === f;
+        }).length;
   }
 
-  function renderGrid() {
-    const rows =
-      pjstate.filter === "ALL"
-        ? projectsData
-        : projectsData.filter(function (p) {
-            return p.status === pjstate.filter;
-          });
-    const grid = $("#pjGrid");
-    if (grid)
-      grid.innerHTML = rows
-        .map(function (p) {
-          const pct = progress(p);
-          const done = pct >= 100;
-          return (
-            '<a class="pjc" href="#" data-id="' +
-            p.id +
-            '" aria-label="Open ' +
-            p.name +
-            '">' +
-            '<div class="pjc-head">' +
-            '<div style="min-width:0">' +
-            '<div class="pjc-name">' +
-            p.name +
-            "</div>" +
-            (p.description ? '<p class="pjc-desc">' + p.description + "</p>" : "") +
-            "</div>" +
-            '<span class="pstatus pjs--' +
-            p.status.toLowerCase() +
-            '">' +
-            statusLabel(p.status) +
-            "</span>" +
-            "</div>" +
-            '<div class="pjc-stats">' +
-            '<div class="pjc-cell"><div class="kpi-lbl">Jobs</div>' +
-            '<div class="pjc-val"><svg class="ic"><use href="#i-jobs"/></svg>' +
-            p.jobCount +
-            "</div></div>" +
-            '<div class="pjc-cell"><div class="kpi-lbl">Budget</div>' +
-            '<div class="pjc-val">' +
-            money(p.budget) +
-            "</div></div>" +
-            '<div class="pjc-cell"><div class="kpi-lbl">Window</div>' +
-            '<div class="pjc-val date"><svg class="ic"><use href="#i-cal"/></svg>' +
-            (p.startsAt || "—") +
-            "</div></div>" +
-            "</div>" +
-            '<div class="pjc-prog">' +
-            '<div class="pjc-prog-top"><span class="pjc-prog-lbl">Progress</span>' +
-            '<span class="pjc-prog-val' +
-            (done ? " done" : "") +
-            '">' +
-            pct +
-            "%</span></div>" +
-            '<div class="pjc-track"><div class="pjc-fill' +
-            (done ? " done" : "") +
-            '" data-w="' +
-            pct +
-            '"></div></div>' +
-            '<div class="pjc-sub">' +
-            p.completedJobs +
-            " of " +
-            p.jobCount +
-            " jobs complete" +
-            (p.endsAt ? " · due " + p.endsAt : "") +
-            "</div>" +
-            "</div>" +
-            "</a>"
-          );
-        })
-        .join("");
-    const empty = $("#pjEmpty");
-    if (empty) empty.classList.toggle("is-hidden", rows.length !== 0);
-    // progress fill — animated from zero
-    const fills = $$(".pjc-fill");
-    if (rmOk()) {
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          fills.forEach(function (f) {
-            f.style.width = String(f.dataset.w) + "%";
-          });
-        });
-      });
-    } else {
+  /** Built ONCE. A filter click patches the four chips in place (see
+   *  `paintChips`) rather than rebuilding the row — rebuilding destroys the
+   *  very button the user just pressed, taking its focus and its press
+   *  animation with it, and drops the reveal cascade's `rv-cell` classes. */
+  function buildChips() {
+    const chips = $("#pjChips");
+    if (!chips) return;
+    chips.innerHTML = ["ALL"]
+      .concat(STATUSES)
+      .map(function (f) {
+        return (
+          '<button class="pchip' +
+          (pjstate.filter === f ? " active" : "") +
+          '" type="button" data-f="' +
+          f +
+          '">' +
+          (f === "ALL" ? "All" : statusLabel(f)) +
+          " <b>" +
+          chipCount(f) +
+          "</b></button>"
+        );
+      })
+      .join("");
+  }
+
+  function paintChips() {
+    $$("#pjChips .pchip").forEach(function (c) {
+      const f = c.dataset.f || "ALL";
+      c.classList.toggle("active", f === pjstate.filter);
+      const b = c.querySelector("b");
+      if (b) b.textContent = String(chipCount(f));
+    });
+  }
+
+  /** One card's markup. Shared by the full grid render and the single-card
+   *  insert the create dialog does, so both stay identical by construction.
+   *  The card is a real link into the classic project detail route — the grid
+   *  used to render `href="#"`, so opening a project was a no-op. */
+  function cardHTML(p: Project) {
+    const pct = progress(p);
+    const done = pct >= 100;
+    return (
+      '<a class="pjc" href="/dashboard/projects/' +
+      encodeURIComponent(p.id) +
+      '" data-id="' +
+      esc(p.id) +
+      '" aria-label="Open ' +
+      esc(p.name) +
+      '">' +
+      '<div class="pjc-head">' +
+      '<div style="min-width:0">' +
+      '<div class="pjc-name">' +
+      esc(p.name) +
+      "</div>" +
+      (p.description ? '<p class="pjc-desc">' + esc(p.description) + "</p>" : "") +
+      "</div>" +
+      '<span class="pstatus pjs--' +
+      esc(p.status.toLowerCase()) +
+      '">' +
+      esc(statusLabel(p.status)) +
+      "</span>" +
+      "</div>" +
+      '<div class="pjc-stats">' +
+      '<div class="pjc-cell"><div class="kpi-lbl">Jobs</div>' +
+      '<div class="pjc-val"><svg class="ic"><use href="#i-jobs"/></svg>' +
+      p.jobCount +
+      "</div></div>" +
+      '<div class="pjc-cell"><div class="kpi-lbl">Budget</div>' +
+      '<div class="pjc-val">' +
+      money(p.budget) +
+      "</div></div>" +
+      '<div class="pjc-cell"><div class="kpi-lbl">Window</div>' +
+      '<div class="pjc-val date"><svg class="ic"><use href="#i-cal"/></svg>' +
+      esc(p.startsAt || "—") +
+      "</div></div>" +
+      "</div>" +
+      '<div class="pjc-prog">' +
+      '<div class="pjc-prog-top"><span class="pjc-prog-lbl">Progress</span>' +
+      '<span class="pjc-prog-val' +
+      (done ? " done" : "") +
+      '">' +
+      pct +
+      "%</span></div>" +
+      '<div class="pjc-track"><div class="pjc-fill' +
+      (done ? " done" : "") +
+      '" data-w="' +
+      pct +
+      '"></div></div>' +
+      '<div class="pjc-sub">' +
+      p.completedJobs +
+      " of " +
+      p.jobCount +
+      " jobs complete" +
+      (p.endsAt ? " · due " + esc(p.endsAt) : "") +
+      "</div>" +
+      "</div>" +
+      "</a>"
+    );
+  }
+
+  /** Progress bars grow from zero on the frame after they land. */
+  function paintFills(scope: ParentNode) {
+    const fills = Array.from(scope.querySelectorAll<HTMLElement>(".pjc-fill"));
+    const set = function () {
       fills.forEach(function (f) {
         f.style.width = String(f.dataset.w) + "%";
       });
+    };
+    if (rmOk()) {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(set);
+      });
+    } else {
+      set();
     }
   }
 
+  function visibleRows() {
+    return pjstate.filter === "ALL"
+      ? projectsData
+      : projectsData.filter(function (p) {
+          return p.status === pjstate.filter;
+        });
+  }
+
+  function renderGrid() {
+    const rows = visibleRows();
+    const grid = $("#pjGrid");
+    if (grid) grid.innerHTML = rows.map(cardHTML).join("");
+    const empty = $("#pjEmpty");
+    if (empty) empty.classList.toggle("is-hidden", rows.length !== 0);
+    if (grid) paintFills(grid);
+  }
+
+  /** Add ONE card to the top of the grid without touching the others. A full
+   *  re-render would replay every card's entrance for a change that affects a
+   *  single row. */
+  function insertCard(p: Project) {
+    const grid = $("#pjGrid");
+    if (!grid) return;
+    const holder = document.createElement("div");
+    holder.innerHTML = cardHTML(p);
+    const node = holder.firstElementChild as HTMLElement | null;
+    if (!node) return;
+    grid.prepend(node);
+    $("#pjEmpty")?.classList.add("is-hidden");
+    paintFills(node);
+    staggerIn([node]);
+  }
+
   function renderProjects() {
-    renderChips();
+    buildChips();
     renderGrid();
   }
 
@@ -223,16 +303,23 @@ export function initProjectsContent(content: HTMLElement): () => void {
     chipsHost.addEventListener("click", function (e) {
       const chip = (e.target as HTMLElement).closest<HTMLElement>(".pchip");
       if (!chip) return;
-      pjstate.filter = chip.dataset.f || "ALL";
-      renderProjects();
+      const next = chip.dataset.f || "ALL";
+      if (next === pjstate.filter) return;
+      pjstate.filter = next;
+      // The chip row is patched, not rebuilt; the grid's set genuinely changed,
+      // so it repaints — silently. A filter toggle must NOT replay the row
+      // cascade (see blueprint-shell/list-motion for why).
+      paintChips();
+      renderGrid();
     });
 
   // ================= CREATE DIALOG (new project) =================
   // Replaces the donor's placeholder button (a 1.6s "New project form" flash)
   // with a real dialog. The frame is the one the Leads page uses for its delete
-  // confirmation (`.mdl`), extended with a form body; the record it creates
-  // lands in the in-memory fixture above, because wiring these pages to Prisma
-  // is a separate, out-of-scope decision.
+  // confirmation (`.mdl`), extended with a form body. Submitting calls the same
+  // `createProject` server action the classic /dashboard/projects/new form
+  // calls — org-scoped, plan-limit enforced, revalidating /dashboard/projects —
+  // so the row the grid gains is the database row, id included.
   const newProjectBtn = $("#newProjectBtn");
   const pjDlg = $("#pjNew");
   const pjForm = root.querySelector<HTMLFormElement>("#pjNewForm");
@@ -241,20 +328,57 @@ export function initProjectsContent(content: HTMLElement): () => void {
     const descEl = root.querySelector<HTMLTextAreaElement>("#pjfDesc");
     let draftStatus = STATUSES[0];
     let restoreFocus: HTMLElement | null = null;
-    let created = 0;
+    let saving = false;
 
-    /** "2026-08-04" → "Aug 04" — the fixture's own display format. Parsed field
+    /** "2026-08-04" → "Aug 04" — the grid's own display format. Parsed field
      *  by field on purpose: `new Date("2026-08-04")` is read as UTC midnight and
      *  renders as the previous day in every negative-offset timezone. */
     function shortDate(v: string): string | null {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+      const m = ISO_DATE.exec(v);
       if (!m) return null;
       const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
       return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
     }
 
+    // Schedule fields: the blueprint month-grid popover replaces the two native
+    // date inputs. Both used to draw the SAME grey browser calendar glyph, so
+    // Starts and Ends were indistinguishable at a glance; they now carry the
+    // calendar page's own pairing — a clock for the start, an hourglass for the
+    // end (DTP_ICON there) — and the same two icons mean the same two things on
+    // both surfaces. `shortDate` above still reads "YYYY-MM-DD" off `.value`.
+    disposers.push(
+      initDatePopovers(root, [
+        { sel: "#pjfStart", icon: "i-clock", label: "Starts" },
+        { sel: "#pjfEnd", icon: "i-hourglass", label: "Ends" },
+      ]),
+    );
+
     function markErr(on: boolean) {
       pjDlg!.querySelector<HTMLElement>('[data-fld="name"]')?.classList.toggle("is-err", on);
+    }
+
+    /** The server action's own refusal text — the plan-limit message and the
+     *  role refusal are both written for the user. */
+    function setDlgErr(msg: string | null) {
+      const box = $("#pjNewErr");
+      if (!box) return;
+      box.textContent = msg || "";
+      box.classList.toggle("is-hidden", !msg);
+    }
+
+    function setBusy(on: boolean) {
+      saving = on;
+      const btn = root.querySelector<HTMLButtonElement>("#pjNewOk");
+      if (btn) {
+        btn.disabled = on;
+        btn.classList.toggle("is-busy", on);
+        const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+        if (lbl) lbl.textContent = on ? "Creating…" : "Create project";
+      }
+      // A write on the wire must not be cancelled out from under itself.
+      pjDlg!.querySelectorAll<HTMLButtonElement>('[data-mdl="close"]').forEach((b) => {
+        b.disabled = on;
+      });
     }
 
     function paintStatus() {
@@ -276,6 +400,7 @@ export function initProjectsContent(content: HTMLElement): () => void {
       // The dialog animates out over MDL_EXIT_MS (see mdl-motion). Focus goes
       // back to the opener immediately — waiting for the exit would leave the
       // keyboard stranded inside a dialog that is already on its way out.
+      if (saving) return;
       if (!closeMdl(pjDlg!, after)) return;
       markErr(false);
       restoreFocus?.focus();
@@ -286,6 +411,7 @@ export function initProjectsContent(content: HTMLElement): () => void {
       draftStatus = STATUSES[0];
       paintStatus();
       markErr(false);
+      setDlgErr(null);
     }
 
     if (newProjectBtn) on(newProjectBtn, "click", openDlg);
@@ -296,6 +422,7 @@ export function initProjectsContent(content: HTMLElement): () => void {
         closeDlg();
         return;
       }
+      if (saving) return;
       const seg = t.closest<HTMLElement>("#pjfStatus .fseg-btn");
       if (seg) {
         draftStatus = seg.dataset.v || STATUSES[0];
@@ -333,6 +460,11 @@ export function initProjectsContent(content: HTMLElement): () => void {
 
     on(pjForm, "submit", (e) => {
       e.preventDefault();
+      void submitNew();
+    });
+
+    async function submitNew() {
+      if (saving) return;
       const nameEl = inp("#pjfName");
       const name = (nameEl?.value || "").trim();
       if (!name) {
@@ -340,28 +472,62 @@ export function initProjectsContent(content: HTMLElement): () => void {
         nameEl?.focus();
         return;
       }
-      created += 1;
-      projectsData.unshift({
-        id: "pn" + created,
-        name,
-        description: (descEl?.value || "").trim() || null,
-        status: draftStatus,
-        startsAt: shortDate(inp("#pjfStart")?.value || ""),
-        endsAt: shortDate(inp("#pjfEnd")?.value || ""),
-        budget: Math.round(Number((inp("#pjfBudget")?.value || "").replace(/[^\d.]/g, "")) || 0),
-        jobCount: 0,
-        completedJobs: 0,
-      });
-      // Drop back to All, so a project created while a status filter was active
-      // is actually visible — it lands first in the grid.
-      pjstate.filter = "ALL";
-      closeDlg();
-      // Clear the form only once the box has finished animating out — reset it
-      // on the same frame and you watch the fields blank while the dialog is
-      // still visible.
-      after(MDL_EXIT_MS, resetDlg);
-      renderProjects();
-    });
+      setDlgErr(null);
+
+      const startRaw = (inp("#pjfStart")?.value || "").trim();
+      const endRaw = (inp("#pjfEnd")?.value || "").trim();
+      const description = (descEl?.value || "").trim() || null;
+      const status = draftStatus;
+      const budget = Math.round(
+        Number((inp("#pjfBudget")?.value || "").replace(/[^\d.]/g, "")) || 0,
+      );
+
+      setBusy(true);
+      try {
+        // The action's schema coerces the dates; "YYYY-MM-DD" is read as UTC
+        // midnight, which is exactly what the page formats back for display.
+        const res = await createProject({
+          name,
+          description,
+          status,
+          startsAt: ISO_DATE.test(startRaw) ? startRaw : null,
+          endsAt: ISO_DATE.test(endRaw) ? endRaw : null,
+          budget,
+        });
+        projectsData.unshift({
+          id: res.id,
+          name,
+          description,
+          status,
+          startsAt: shortDate(startRaw),
+          endsAt: shortDate(endRaw),
+          budget,
+          jobCount: 0,
+          completedJobs: 0,
+        });
+        setBusy(false);
+        if (pjstate.filter === "ALL") {
+          // One row arrived — add that one card. Rebuilding the grid would
+          // replay every other card's entrance for a change none of them saw.
+          insertCard(projectsData[0]);
+        } else {
+          // Drop back to All, so a project created while a status filter was
+          // active is actually visible. The whole visible set changes here, so
+          // the grid does repaint — silently.
+          pjstate.filter = "ALL";
+          renderGrid();
+        }
+        paintChips();
+        closeDlg();
+        // Clear the form only once the box has finished animating out — reset it
+        // on the same frame and you watch the fields blank while the dialog is
+        // still visible.
+        after(MDL_EXIT_MS, resetDlg);
+      } catch (err) {
+        setBusy(false);
+        setDlgErr(actionError(err));
+      }
+    }
   }
 
   // ================= INITIALIZATION =================
@@ -375,7 +541,8 @@ export function initProjectsContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+    // (The Balanced ease itself now lives in blueprint-shell/list-motion, which
+    // owns the row stagger below.)
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: slow scroll — the full 420ms animation;
@@ -445,41 +612,16 @@ export function initProjectsContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".pjc"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule —
-        // which is what killed the lift on `.pjc:hover`: the card's shadow
-        // swapped but the card itself could not move.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["pjGrid"].forEach((id) => {
-      const list = $("#" + id);
-      if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
-    });
+    // Row stagger — played ONCE, when the grid first arrives.
+    //
+    // The donor drove this from a `MutationObserver` on `#pjGrid` with
+    // `{ childList: true }`, which fired on every render: toggling a status
+    // chip dropped all eight cards to `opacity: 0` and crawled them back, and
+    // creating a project replayed the entrance of every card that had not
+    // changed. `staggerIn` moves the decision to the caller — first paint here,
+    // and the single new card in `insertCard`.
+    const grid = $("#pjGrid");
+    if (grid) staggerIn(Array.from(grid.querySelectorAll<HTMLElement>(".pjc")));
 
     // Numeral count-up — Overview's `.kpi-val`, here the project cards' stats.
     // The donor rebuilt the text from digits alone, which is only safe for its

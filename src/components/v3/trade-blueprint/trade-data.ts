@@ -1,7 +1,8 @@
 // Trade board blueprint — demo fixture data, verbatim from the donor file
 // jobflex-trade-board-blueprint.html (script section). Values must not be
-// edited independently of the donor: the page is a pixel-identical port,
-// content included.
+// edited independently of the donor: the board is a pixel-identical port,
+// content included. The one sanctioned deletion is the influencer fixture set
+// (see the note at the foot of this file).
 //
 // Types are annotated widely (`string`, not string literals) so the donor's
 // comparisons (`p.status === 'CLOSED'`, `p.status === 'PAID'`) compile
@@ -22,22 +23,11 @@ export type TradePost = {
   when: string;
   replies: number;
   body: string;
-};
-
-export type InfluencerStatement = {
-  name: string;
-  handle: string;
-  clicks: number;
-  conv: number;
-  earn: number;
-};
-
-export type InfluencerPayout = {
-  name: string;
-  period: string;
-  method: string;
-  status: string;
-  amount: number;
+  /** True when the signed-in user wrote this post. closeTradePost /
+   *  deleteTradePost both refuse anyone else ("Only the author can …"), so the
+   *  row menu only offers those two items on the author's own threads. Absent
+   *  in fixture mode, where there is no session to compare against. */
+  mine?: boolean;
 };
 
 export const CATEGORIES: TradeCategory[] = [
@@ -68,20 +58,7 @@ export const POSTS_SEED: TradePost[] = [
     body: 'Our usual hauler keeps slipping the drop window. Looking for someone dependable north of Seattle.' }
 ];
 
-export const INF_PERIOD: string = '2026-07';
-
-export const STATEMENTS: InfluencerStatement[] = [
-  { name: 'Rooftop Ryan',    handle: '@rooftopryan',  clicks: 4820, conv: 61, earn: 3050 },
-  { name: 'Fence Life',      handle: '@fencelife',    clicks: 3110, conv: 38, earn: 1900 },
-  { name: 'Trade Talk Tess', handle: '@tradetalktess', clicks: 2240, conv: 19, earn: 950 },
-  { name: 'BuildSide Media', handle: '@buildside',    clicks: 1180, conv: 7,  earn: 350 }
-];
-
-export const PAYOUTS: InfluencerPayout[] = [
-  { name: 'Rooftop Ryan',    period: '2026-06', method: 'ACH',    status: 'PAID',    amount: 2740 },
-  { name: 'Fence Life',      period: '2026-06', method: 'ACH',    status: 'PAID',    amount: 1610 },
-  { name: 'Trade Talk Tess', period: '2026-06', method: 'PayPal', status: 'PAID',    amount: 880 },
-  { name: 'Rooftop Ryan',    period: '2026-05', method: 'ACH',    status: 'PAID',    amount: 2210 },
-  { name: 'BuildSide Media', period: '2026-06', method: 'PayPal', status: 'PENDING', amount: 420 },
-  { name: 'Fence Life',      period: '2026-05', method: 'ACH',    status: 'FAILED',  amount: 1340 }
-];
+// The donor's influencer fixtures (INF_PERIOD / STATEMENTS / PAYOUTS and their
+// types) are dropped. That program is no longer a tab on this board — it is
+// /influencer, gated by requireInfluencer(), reading each influencer's own
+// rows out of Prisma. Demo numbers there would be a lie, not a placeholder.

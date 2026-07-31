@@ -10,11 +10,28 @@
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initClientsContent } from "./clients-behavior";
+import type { Client } from "./clients-data";
 
-export function ClientsContent() {
-  useBlueprintContent(initClientsContent);
+/**
+ * @param entries the org's real client book, read in the page's server
+ *   component. The behavior module takes it as its starting state and then
+ *   keeps itself in step with the database through the client server actions.
+ */
+export function ClientsContent({ entries }: { entries?: Client[] }) {
+  // The seed reaches `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade — so the init has
+  // to stay referentially stable for the life of the mount. Same contract as
+  // workers-content.tsx.
+  const seedRef = useRef(entries);
+  const init = useCallback(
+    (content: HTMLElement) => initClientsContent(content, { entries: seedRef.current }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -64,17 +81,19 @@ export function ClientsContent() {
       <div className="pager" id="clientsPager"></div>
       <div className="pmenu" id="pMenu"></div>
 
-      {/* CREATE DIALOG — opened by #newClientBtn, wired in clients-behavior.
-          Static markup (not injected) so it is server-rendered like the rest of
-          the page and the ported script only toggles `.open`. The submit button
-          sits in the beige foot, OUTSIDE the scrolling body, and reaches the
-          form through `form="cNewForm"`. */}
+      {/* CREATE / EDIT DIALOG — opened by #newClientBtn and by the row menu's
+          "Edit client", wired in clients-behavior. Static markup (not injected)
+          so it is server-rendered like the rest of the page and the ported
+          script only toggles `.open`. The submit button sits in the beige foot,
+          OUTSIDE the scrolling body, and reaches the form through
+          `form="cNewForm"`. The kicker, title and button label are the only
+          things the two modes change. */}
       <div className="mdl" id="cNew" role="dialog" aria-modal="true" aria-labelledby="cNewTitle">
         <div className="mdl-bg" data-mdl="close"></div>
         <div className="mdl-box">
           <div className="mdl-head">
             <div>
-              <span className="mdl-kick">CRM / new record</span>
+              <span className="mdl-kick" id="cNewKick">CRM / new record</span>
               <div className="mdl-title" id="cNewTitle">New client</div>
             </div>
             <button className="mdl-x" type="button" data-mdl="close" aria-label="Close dialog">
@@ -112,33 +131,38 @@ export function ClientsContent() {
                   autoComplete="off"
                 />
               </div>
+              {/* Phone stands where the donor put a free-text Tags box. Tags are
+                  a separate org-scoped table (Tag / ClientTag) with no write
+                  path in src/actions/clients.ts, so that box could only ever
+                  swallow what was typed into it. Phone is a real Client column
+                  the classic form already wrote, so this input persists. */}
               <div className="fld">
-                <label className="fld-lbl" htmlFor="cfAddress">Location</label>
+                <label className="fld-lbl" htmlFor="cfPhone">Phone</label>
                 <input
                   className="pinput"
-                  id="cfAddress"
-                  name="address"
-                  type="text"
-                  placeholder="Kirkland, WA"
+                  id="cfPhone"
+                  name="phone"
+                  type="tel"
+                  placeholder="(425) 555-0134"
                   autoComplete="off"
                 />
               </div>
             </div>
 
             <div className="fld">
-              <label className="fld-lbl" htmlFor="cfTags">Tags</label>
+              <label className="fld-lbl" htmlFor="cfAddress">Location</label>
               <input
                 className="pinput"
-                id="cfTags"
-                name="tags"
+                id="cfAddress"
+                name="address"
                 type="text"
-                placeholder="Fencing, Repeat"
+                placeholder="Kirkland, WA"
                 autoComplete="off"
               />
-              <span className="fld-hint">Comma-separated — they become the page&apos;s filter chips.</span>
+              <span className="fld-hint">City, state — the Location column and the address on their proposals.</span>
             </div>
 
-            <div className="fld">
+            <div className="fld" id="cfVipFld">
               <span className="fld-lbl">Account</span>
               <button className="fchk" type="button" id="cfVip" aria-pressed="false">
                 <span className="fchk-box">
@@ -152,15 +176,20 @@ export function ClientsContent() {
             </div>
           </form>
 
+          {/* createClient / updateClient reject with messages written for the
+              user ("Name is required", "Client not found"). They land here
+              rather than the dialog closing on a write that never happened. */}
+          <div className="mf-err mf-err--boxed is-hidden" id="cNewErr" role="alert"></div>
+
           <div className="mdl-foot">
             <button className="btn btn-ghost" type="button" data-mdl="close">
               Cancel
             </button>
-            <button className="btn btn-primary" type="submit" form="cNewForm">
+            <button className="btn btn-primary" type="submit" form="cNewForm" id="cNewSave">
               <svg className="ic">
                 <use href="#i-check" />
               </svg>
-              Create client
+              <span data-save-lbl>Create client</span>
             </button>
           </div>
         </div>

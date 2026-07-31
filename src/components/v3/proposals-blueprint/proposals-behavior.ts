@@ -1,28 +1,107 @@
-// Proposals blueprint — runtime behaviors, ported verbatim from the donor
-// file's <script> (jobflex-proposals-blueprint.html). Every duration, easing,
-// stagger, page size and formula is the donor's exact value. Adaptations are
-// mechanical only:
+// Proposals blueprint — runtime behaviors, ported from the donor file's
+// <script> (jobflex-proposals-blueprint.html). Every duration, easing, stagger,
+// page size and formula is the donor's exact value. Adaptations:
+//
 // - queries are scoped to the mounted root;
-// - document/window listeners and observers are tracked for unmount cleanup;
+// - document/window listeners, timers and observers are tracked for unmount
+//   cleanup;
 // - FLUID SCALE zooms the page ROOT instead of document.documentElement (the
 //   root owns the full viewport, so the visual result is identical, and the
-//   zoom cannot leak into the rest of the app); the menu-positioning math
-//   reads the root's zoom accordingly;
-// - the donor's `typeof layoutSync === 'function'` guard in FLUID SCALE is
-//   inert in the donor too (no layoutSync exists on this page) and is
-//   therefore omitted.
+//   zoom cannot leak into the rest of the app); the menu-positioning math reads
+//   the root's zoom accordingly;
+// - the reveal cascade reads `.content > *:not(.mdl):not([data-island])`. The
+//   dialogs and the React-island host are not donor blocks; leaving them in
+//   would shift the donor's i*60ms stagger indices, and a `display:none`
+//   overlay that gets `.rv` never receives the IntersectionObserver callback
+//   that would clear `opacity: 0` — it would open invisible.
+//
+// THE REAL WORK
+//
+// The donor page was a fixture: a seed array paged and mutated in memory. It
+// is now the org's real proposal book, read in
+// src/app/dashboard/proposals/page.tsx and handed in through `options.rows`;
+// every row action calls the same server action the classic row menu called
+// (src/components/proposal/RowActions.tsx), so a write here is the write the
+// old design performed:
+//
+//   Edit proposal    → /dashboard/proposals/<id>            (the live editor)
+//   View public page → /portal/q/<publicId>                 (the client page)
+//   Duplicate        → duplicateProposal()
+//   Send to client   → sendProposal()
+//   Order materials  → the MaterialsSheet component, mounted as a React island
+//   View on Zillow   → zillowSearchUrl(), precomputed per row on the server
+//   Delete proposal  → bulkDeleteProposals([id])
+//
+// and the accepted / completed cards move through updateProposalStatus().
+//
+// Row motion follows the house rule: NO MutationObserver stagger. A list
+// staggers only when it genuinely ARRIVES (first paint, first reveal of a tab,
+// a page turn); a filter, a keystroke or a single-row change repaints silently,
+// and a row that LEAVES does so alone through leaveRow.
 
 import {
-  PROPOSALS_SEED,
-  PSTATUS,
-  PAGE_ALL,
+  bulkDeleteProposals,
+  duplicateProposal,
+  sendProposal,
+  updateProposalStatus,
+} from "@/actions/proposals";
+import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
+import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { MDL_EXIT_MS, closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
+import { mountIsland, type Island } from "@/components/v3/blueprint-shell/react-island";
+import {
   PAGE_ACC,
+  PAGE_ALL,
   PAGE_DONE,
-  type Proposal,
+  PROPOSALS_SEED,
+  cloneRows,
+  statusPlate,
   type Installment,
+  type ProposalRow,
 } from "./proposals-data";
 
-export function initProposalsContent(content: HTMLElement): () => void {
+export type ProposalsContentOptions = {
+  /** The org's real proposal book, read server-side. Omit to fall back to the
+   *  donor fixture (a mount with no session to read from). */
+  rows?: ProposalRow[];
+};
+
+type MaterialsSheetProps = Parameters<typeof MaterialsSheet>[0];
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("Not found", "Plan limit reached", the send-transport failure). Surface
+ *  that text; fall back to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  const code = (err as { code?: string } | null)?.code;
+  if (code === "PLAN_LIMIT_REACHED") {
+    return "Plan limit reached — this org has used its proposals for the period. Upgrade the plan to create more.";
+  }
+  if (msg === "Not found") {
+    return "That proposal is no longer available to you. Reload the page.";
+  }
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** Every row field below is operator-entered text that lands in an innerHTML
+ *  string. Escaping is not optional: a client called `Ben & Co <Roofing>` would
+ *  otherwise break the table, and a crafted title would inject markup. */
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function initProposalsContent(
+  content: HTMLElement,
+  options: ProposalsContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -37,14 +116,26 @@ export function initProposalsContent(content: HTMLElement): () => void {
     target.addEventListener(ev, fn, opts);
     disposers.push(() => target.removeEventListener(ev, fn, opts));
   };
-  const $ = (sel: string) => root.querySelector<HTMLElement>(sel);
+  const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel);
   const $$ = (sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
-  // Runtime mutations (duplicate/delete/done/unaccept) — clone the seed per mount.
-  const proposalsData: Proposal[] = PROPOSALS_SEED.map((p) => ({
-    ...p,
-    inst: p.inst ? p.inst.map((i) => ({ ...i })) : undefined,
-  }));
+  // Tracked `setTimeout`s, so an unmount mid-flight cannot fire into a
+  // detached tree. leaveRow and closeMdl both take this helper.
+  const timers = new Set<number>();
+  const after = (ms: number, fn: () => void) => {
+    const id = window.setTimeout(() => {
+      timers.delete(id);
+      fn();
+    }, ms);
+    timers.add(id);
+  };
+  disposers.push(() => {
+    timers.forEach((id) => window.clearTimeout(id));
+    timers.clear();
+  });
+
+  // Runtime state — cloned per mount so edits never leak between navigations.
+  let proposalsData: ProposalRow[] = cloneRows(options.rows ?? PROPOSALS_SEED);
 
   // Dismiss Lead Center banners (smooth height + gap collapse) — inert on this
   // page (no banner in the markup), kept for donor parity with shared shells.
@@ -78,32 +169,69 @@ export function initProposalsContent(content: HTMLElement): () => void {
     pageAll: 1,
     pageAcc: 1,
     pageDone: 1,
-    menuId: null as number | null,
+    menuId: null as string | null,
+    /** The ⋮ the open menu belongs to — it carries the in-flight busy state. */
+    menuBtn: null as HTMLElement | null,
+    /** Guards a second write while one is on the wire. */
+    writing: false,
+    /** A panel staggers its rows the first time it is actually on screen. */
+    revealed: { all: false, accepted: false, completed: false } as Record<string, boolean>,
   };
 
   function fmtMoney(n: number) {
-    return "$" + n.toLocaleString("en-US");
+    return "$" + Math.round(n).toLocaleString("en-US");
   }
-  function instDollars(p: Proposal, inst: Installment) {
+  function instDollars(p: ProposalRow, inst: Installment) {
     return inst.pct ? Math.round(p.total * (inst.amount / 100)) : inst.amount;
   }
-  function sumOf(list: Proposal[]) {
+  function sumOf(list: ProposalRow[]) {
     return list.reduce((a, p) => a + p.total, 0);
   }
+  function byId(id: string | null) {
+    return id ? proposalsData.find((p) => p.id === id) ?? null : null;
+  }
+  /** The row's second line — a client with no city must not print "Name · ". */
+  function subLine(p: ProposalRow) {
+    return [p.client, p.city].filter(Boolean).join(" · ");
+  }
+  /** Every proposal the tabs and chips then narrow. The page had a search box
+   *  filtering this list; it was removed with the box rather than left as a
+   *  filter nothing can set. */
+  function book() {
+    return proposalsData;
+  }
+  function filteredAll() {
+    const base = book();
+    return pstate.filter === "ALL" ? base : base.filter((p) => p.status === pstate.filter);
+  }
   function listAccepted() {
-    return proposalsData.filter((p) => p.status === "ACCEPTED");
+    return book().filter((p) => p.status === "ACCEPTED");
   }
   function listDone() {
-    return proposalsData.filter((p) => p.status === "PAID");
+    return book().filter((p) => p.status === "PAID");
   }
   function rmOk() {
     return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  function panelVisible(name: string) {
+    const pn = root.querySelector<HTMLElement>(`.ppanel[data-panel="${name}"]`);
+    return !!pn && !pn.classList.contains("is-hidden");
+  }
+  /** Find a rendered row by its proposal id without building a selector out of
+   *  operator data (a cuid is safe, but the rule should not depend on that). */
+  function findRow(container: HTMLElement | null, id: string): HTMLElement | null {
+    if (!container) return null;
+    return (
+      Array.from(container.querySelectorAll<HTMLElement>("[data-id]")).find(
+        (el) => el.dataset.id === id,
+      ) ?? null
+    );
   }
 
   // ================= PROPOSALS: RENDER =================
   // Masthead: one headline number per tab + exactly two annotations
   function mastData() {
-    const all = proposalsData,
+    const all = book(),
       acc = listAccepted(),
       done = listDone();
     if (pstate.tab === "accepted") {
@@ -178,7 +306,7 @@ export function initProposalsContent(content: HTMLElement): () => void {
   }
   function renderTabCounts() {
     const counts: Record<string, number> = {
-      all: proposalsData.length,
+      all: book().length,
       accepted: listAccepted().length,
       completed: listDone().length,
     };
@@ -187,12 +315,13 @@ export function initProposalsContent(content: HTMLElement): () => void {
     });
   }
   function renderChipCounts() {
-    const c: Record<string, number> = { ALL: proposalsData.length, DRAFT: 0, SENT: 0, VIEWED: 0, DECLINED: 0, EXPIRED: 0 };
-    proposalsData.forEach((p) => {
-      if (p.status in c) c[p.status] += 1;
+    const c: Record<string, number> = { ALL: 0, DRAFT: 0, SENT: 0, VIEWED: 0, DECLINED: 0, EXPIRED: 0 };
+    book().forEach((p) => {
+      c.ALL += 1;
+      if (p.status in c && p.status !== "ALL") c[p.status] += 1;
     });
     root.querySelectorAll<HTMLElement>("#pChips [data-cf]").forEach((el) => {
-      el.textContent = String(c[el.dataset.cf || ""]);
+      el.textContent = String(c[el.dataset.cf || ""] ?? 0);
     });
   }
   function renderPager(el: HTMLElement | null, page: number, pages: number, key: string) {
@@ -218,252 +347,376 @@ export function initProposalsContent(content: HTMLElement): () => void {
       (page >= pages ? " disabled" : "") +
       ' aria-label="Next page"><svg class="ic rot-r"><use href="#i-chev"/></svg></button>';
   }
-  function renderAll() {
-    const rows =
-      pstate.filter === "ALL" ? proposalsData : proposalsData.filter((p) => p.status === pstate.filter);
+
+  /** The rows the ALL table is currently showing, with the page clamped. */
+  function allSlice() {
+    const rows = filteredAll();
     const pages = Math.max(1, Math.ceil(rows.length / PAGE_ALL));
     if (pstate.pageAll > pages) pstate.pageAll = pages;
-    const slice = rows.slice((pstate.pageAll - 1) * PAGE_ALL, pstate.pageAll * PAGE_ALL);
-    const body = $("#propTableBody");
-    if (!body) return;
-    body.innerHTML = slice
-      .map((p) => {
-        const st = PSTATUS[p.status];
-        return (
-          '<tr class="prow">' +
-          '<td><div class="pt-title">' +
-          p.title +
-          '</div><div class="pt-sub">' +
-          p.client +
-          " · " +
-          p.city +
-          "</div></td>" +
-          '<td><span class="pstatus ' +
-          st.cls +
-          '">' +
-          st.label +
-          "</span></td>" +
-          '<td class="num"><span class="pt-money">' +
-          fmtMoney(p.total) +
-          "</span></td>" +
-          '<td><span class="pt-mono">' +
-          p.updated +
-          " ago</span></td>" +
-          '<td class="num"><span class="pt-mono">' +
-          p.views +
-          "</span></td>" +
-          '<td><span class="pt-mono">' +
-          p.owner +
-          "</span></td>" +
-          '<td class="num"><button class="pt-open" type="button" data-menu="' +
-          p.id +
-          '" aria-label="Actions for ' +
-          p.title +
-          '"><svg class="ic"><use href="#i-dots"/></svg></button></td>' +
-          "</tr>"
-        );
-      })
-      .join("");
+    return { rows, pages, slice: rows.slice((pstate.pageAll - 1) * PAGE_ALL, pstate.pageAll * PAGE_ALL) };
+  }
+  function allRowHtml(p: ProposalRow) {
+    const st = statusPlate(p.status);
+    return (
+      '<tr class="prow" data-id="' +
+      esc(p.id) +
+      '">' +
+      '<td><div class="pt-title">' +
+      esc(p.title) +
+      '</div><div class="pt-sub">' +
+      esc(subLine(p)) +
+      "</div></td>" +
+      '<td><span class="pstatus ' +
+      st.cls +
+      '">' +
+      esc(st.label) +
+      "</span></td>" +
+      '<td class="num"><span class="pt-money">' +
+      fmtMoney(p.total) +
+      "</span></td>" +
+      '<td><span class="pt-mono">' +
+      esc(p.updated) +
+      "</span></td>" +
+      '<td class="num"><span class="pt-mono">' +
+      p.views +
+      "</span></td>" +
+      '<td><span class="pt-mono">' +
+      esc(p.owner) +
+      "</span></td>" +
+      '<td class="num"><button class="pt-open" type="button" data-menu="' +
+      esc(p.id) +
+      '" aria-label="Actions for ' +
+      esc(p.title) +
+      '"><svg class="ic"><use href="#i-dots"/></svg></button></td>' +
+      "</tr>"
+    );
+  }
+  /** Chrome only — pager + empty state. Never touches the tbody, so it is safe
+   *  to call from inside a leaveRow commit. */
+  function syncAllChrome() {
+    const { rows, pages } = allSlice();
     $("#allCard")?.classList.toggle("is-hidden", rows.length === 0);
     $("#allEmpty")?.classList.toggle("is-hidden", rows.length !== 0);
     renderPager($("#allPager"), pstate.pageAll, pages, "all");
   }
-  function renderAccepted() {
+  function renderAll(stagger = false) {
+    const body = $("#propTableBody");
+    if (!body) return;
+    const { slice } = allSlice();
+    body.innerHTML = slice.map(allRowHtml).join("");
+    syncAllChrome();
+    if (stagger && panelVisible("all")) {
+      staggerIn(Array.from(body.querySelectorAll<HTMLElement>(".prow")));
+    }
+  }
+  function accSlice() {
     const rows = listAccepted();
     const pages = Math.max(1, Math.ceil(rows.length / PAGE_ACC));
     if (pstate.pageAcc > pages) pstate.pageAcc = pages;
-    const slice = rows.slice((pstate.pageAcc - 1) * PAGE_ACC, pstate.pageAcc * PAGE_ACC);
-    const stack = $("#propStack");
-    if (!stack) return;
-    stack.innerHTML = slice
-      .map((p) => {
-        const insts = p.inst || [];
-        // Payments: 1–5 items — columns; 6+ — a row table with dividers
-        let payBlock = "";
-        if (insts.length > 5) {
-          payBlock =
-            '<table class="psched psched--div"><tbody>' +
-            insts
-              .map(
-                (inst) =>
-                  "<tr>" +
-                  '<td class="psched-label">' +
-                  inst.label +
-                  "</td>" +
-                  '<td><span class="pt-mono">' +
-                  (inst.due ? "due " + inst.due : "no due date") +
-                  "</span></td>" +
-                  '<td class="td-price"><span class="pt-money">' +
-                  fmtMoney(instDollars(p, inst)) +
-                  "</span></td>" +
-                  '<td class="td-remind"><button class="btn btn-ghost btn--sm" type="button" data-flash="Sent"><svg class="ic"><use href="#i-bell"/></svg>Remind</button></td>' +
-                  "</tr>",
-              )
-              .join("") +
-            "</tbody></table>";
-        } else if (insts.length) {
-          payBlock =
-            '<div class="pcols">' +
-            insts
-              .map((inst) => {
-                const sub = inst.pct ? inst.amount + "% of total" : inst.due ? "due " + inst.due : "";
-                return (
-                  '<div class="pcol"><div class="kpi-lbl">' +
-                  inst.label +
-                  "</div>" +
-                  '<div class="pcol-val">' +
-                  fmtMoney(instDollars(p, inst)) +
-                  "</div>" +
-                  (sub ? '<div class="pcol-sub">' + sub + "</div>" : "") +
-                  "</div>"
-                );
-              })
-              .join("") +
-            "</div>";
-        }
-        return (
-          '<div class="pjob" data-id="' +
-          p.id +
-          '">' +
-          '<div class="pjob-head">' +
-          '<div><div class="pjob-title">' +
-          p.title +
-          "</div>" +
-          '<div class="pjob-sub">' +
-          p.client +
-          " · " +
-          p.city +
-          (p.accepted ? " · accepted " + p.accepted : "") +
-          "</div></div>" +
-          '<div class="pjob-total"><span class="pt-mono">Contract value</span><span class="pt-money">' +
-          fmtMoney(p.total) +
-          "</span></div>" +
-          "</div>" +
-          payBlock +
-          '<div class="pjob-foot">' +
-          '<div class="pjob-foot-l">' +
-          '<button class="btn btn-ghost btn--sm" type="button" data-flash="Scheduled"><svg class="ic"><use href="#i-cal"/></svg>Schedule</button>' +
-          '<button class="btn btn--accent btn--sm" type="button" data-flash="Requested"><svg class="ic"><use href="#i-msg"/></svg>Request payment</button>' +
-          '<button class="btn btn-ghost btn--sm" type="button" data-flash="Ordered"><svg class="ic"><use href="#i-box"/></svg>Materials · ' +
-          (p.mat || 0) +
-          "</button>" +
-          '<button class="btn btn-ghost btn--sm" type="button" data-flash="Drafted"><svg class="ic"><use href="#i-file"/></svg>Change order</button>' +
-          '<button class="btn btn-ghost btn--sm" type="button" data-flash="Opened"><svg class="ic"><use href="#i-ext"/></svg>View public</button>' +
-          "</div>" +
-          '<div class="pjob-foot-r">' +
-          '<button class="btn btn-ghost btn--sm" type="button" data-act="unaccept"><svg class="ic"><use href="#i-undo"/></svg>Un-accept</button>' +
-          '<button class="btn btn-primary btn--sm" type="button" data-act="done"><svg class="ic"><use href="#i-check"/></svg>Mark completed</button>' +
-          "</div>" +
-          "</div>" +
-          "</div>"
-        );
-      })
-      .join("");
+    return { rows, pages, slice: rows.slice((pstate.pageAcc - 1) * PAGE_ACC, pstate.pageAcc * PAGE_ACC) };
+  }
+  function syncAccChrome() {
+    const { rows, pages } = accSlice();
     $("#accEmpty")?.classList.toggle("is-hidden", rows.length !== 0);
     renderPager($("#accPager"), pstate.pageAcc, pages, "acc");
   }
-  function renderDone() {
+  function acceptedCardHtml(p: ProposalRow) {
+    const insts = p.inst || [];
+    // Payments: 1–5 items — columns; 6+ — a row table with dividers
+    let payBlock = "";
+    if (insts.length > 5) {
+      payBlock =
+        '<table class="psched psched--div"><tbody>' +
+        insts
+          .map(
+            (inst) =>
+              "<tr>" +
+              '<td class="psched-label">' +
+              esc(inst.label) +
+              "</td>" +
+              '<td><span class="pt-mono">' +
+              (inst.due ? "due " + esc(inst.due) : "no due date") +
+              "</span></td>" +
+              '<td class="td-price"><span class="pt-money">' +
+              fmtMoney(instDollars(p, inst)) +
+              "</span></td>" +
+              '<td class="td-remind"><button class="btn btn-ghost btn--sm" type="button" data-flash="Sent"><svg class="ic"><use href="#i-bell"/></svg>Remind</button></td>' +
+              "</tr>",
+          )
+          .join("") +
+        "</tbody></table>";
+    } else if (insts.length) {
+      payBlock =
+        '<div class="pcols">' +
+        insts
+          .map((inst) => {
+            const sub = inst.pct
+              ? inst.amount + "% of total"
+              : inst.due
+                ? "due " + esc(inst.due)
+                : "";
+            return (
+              '<div class="pcol"><div class="kpi-lbl">' +
+              esc(inst.label) +
+              "</div>" +
+              '<div class="pcol-val">' +
+              fmtMoney(instDollars(p, inst)) +
+              "</div>" +
+              (sub ? '<div class="pcol-sub">' + sub + "</div>" : "") +
+              "</div>"
+            );
+          })
+          .join("") +
+        "</div>";
+    }
+    return (
+      '<div class="pjob" data-id="' +
+      esc(p.id) +
+      '">' +
+      '<div class="pjob-head">' +
+      '<div><div class="pjob-title">' +
+      esc(p.title) +
+      "</div>" +
+      '<div class="pjob-sub">' +
+      esc(subLine(p)) +
+      (p.accepted ? " · accepted " + esc(p.accepted) : "") +
+      "</div></div>" +
+      '<div class="pjob-total"><span class="pt-mono">Contract value</span><span class="pt-money">' +
+      fmtMoney(p.total) +
+      "</span></div>" +
+      "</div>" +
+      payBlock +
+      '<div class="pjob-foot">' +
+      '<div class="pjob-foot-l">' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-flash="Scheduled"><svg class="ic"><use href="#i-cal"/></svg>Schedule</button>' +
+      '<button class="btn btn--accent btn--sm" type="button" data-flash="Requested"><svg class="ic"><use href="#i-msg"/></svg>Request payment</button>' +
+      // Real: opens the same materials sheet the row menu opens.
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="materials"><svg class="ic"><use href="#i-box"/></svg>Materials · ' +
+      (p.mat || 0) +
+      "</button>" +
+      '<button class="btn btn-ghost btn--sm" type="button" data-flash="Drafted"><svg class="ic"><use href="#i-file"/></svg>Change order</button>' +
+      // Real: the client-facing page for this proposal.
+      '<a class="btn btn-ghost btn--sm" href="/portal/q/' +
+      encodeURIComponent(p.publicId) +
+      '" target="_blank" rel="noopener noreferrer"><svg class="ic"><use href="#i-ext"/></svg>View public</a>' +
+      "</div>" +
+      '<div class="pjob-foot-r">' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="unaccept"><svg class="ic"><use href="#i-undo"/></svg>Un-accept</button>' +
+      '<button class="btn btn-primary btn--sm" type="button" data-act="done"><svg class="ic"><use href="#i-check"/></svg>Mark completed</button>' +
+      "</div>" +
+      "</div>" +
+      "</div>"
+    );
+  }
+  function renderAccepted(stagger = false) {
+    const stack = $("#propStack");
+    if (!stack) return;
+    const { slice } = accSlice();
+    stack.innerHTML = slice.map(acceptedCardHtml).join("");
+    syncAccChrome();
+    if (stagger && panelVisible("accepted")) {
+      staggerIn(Array.from(stack.querySelectorAll<HTMLElement>(".pjob")));
+    }
+  }
+  function doneSlice() {
     const rows = listDone();
     const pages = Math.max(1, Math.ceil(rows.length / PAGE_DONE));
     if (pstate.pageDone > pages) pstate.pageDone = pages;
-    const slice = rows.slice((pstate.pageDone - 1) * PAGE_DONE, pstate.pageDone * PAGE_DONE);
-    const stack = $("#doneStack");
-    if (!stack) return;
-    stack.innerHTML = slice
-      .map((p) => {
-        const insts = p.inst || [];
-        const dep = insts.length ? instDollars(p, insts[0]) : Math.round(p.total * 0.3);
-        const checks = insts
-          .map(
-            (inst) =>
-              '<div class="pchk"><span class="pchk-ic"><svg class="ic"><use href="#i-check"/></svg></span>' +
-              '<span class="pchk-lbl">' +
-              inst.label +
-              '</span><span class="pchk-lead"></span>' +
-              '<span class="pt-money">' +
-              fmtMoney(instDollars(p, inst)) +
-              "</span></div>",
-          )
-          .join("");
-        return (
-          '<div class="psheet" data-id="' +
-          p.id +
-          '">' +
-          '<div class="psheet-head">' +
-          '<div><div class="pjob-title">' +
-          p.title +
-          "</div>" +
-          '<div class="pjob-sub">' +
-          p.client +
-          " · " +
-          p.city +
-          "</div></div>" +
-          '<div><span class="psheet-banklbl">Banked</span><span class="pt-money banked big">' +
-          fmtMoney(p.total) +
-          "</span></div>" +
-          "</div>" +
-          '<div class="pcols pcols--sheet">' +
-          '<div class="pcol"><div class="kpi-lbl">Deposit</div><div class="pcol-val">' +
-          fmtMoney(dep) +
-          '</div><div class="pcol-sub">Locked in</div></div>' +
-          '<div class="pcol"><div class="kpi-lbl">Start</div><div class="pcol-val">' +
-          (p.accepted || "—") +
-          '</div><div class="pcol-sub">Work began</div></div>' +
-          '<div class="pcol"><div class="kpi-lbl">Completed</div><div class="pcol-val good">' +
-          p.paid +
-          '</div><div class="pcol-sub">Paid in full</div></div>' +
-          "</div>" +
-          '<div class="psheet-body">' +
-          '<div class="psheet-check">' +
-          checks +
-          "</div>" +
-          '<div class="psheet-photos">' +
-          '<div><div class="kpi-lbl">Before</div><button class="photo-box" type="button" data-flash="Added"><svg class="ic"><use href="#i-imgadd"/></svg>Add before</button></div>' +
-          '<div><div class="kpi-lbl">After</div><button class="photo-box" type="button" data-flash="Added"><svg class="ic"><use href="#i-imgadd"/></svg>Add after</button></div>' +
-          "</div>" +
-          "</div>" +
-          '<div class="psheet-foot">' +
-          '<div class="psheet-send">' +
-          '<span class="kpi-lbl">Send paid receipt to</span>' +
-          '<input class="pinput" type="email" placeholder="client@example.com">' +
-          '<button class="btn btn-primary btn--sm" type="button" data-act="receipt"><svg class="ic"><use href="#i-send"/></svg>Send receipt</button>' +
-          "</div>" +
-          '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Unmark as paid</button>' +
-          "</div>" +
-          "</div>"
-        );
-      })
-      .join("");
+    return { rows, pages, slice: rows.slice((pstate.pageDone - 1) * PAGE_DONE, pstate.pageDone * PAGE_DONE) };
+  }
+  function syncDoneChrome() {
+    const { rows, pages } = doneSlice();
     $("#doneEmpty")?.classList.toggle("is-hidden", rows.length !== 0);
     renderPager($("#donePager"), pstate.pageDone, pages, "done");
   }
-  function renderProposals() {
+  function doneCardHtml(p: ProposalRow) {
+    const insts = p.inst || [];
+    const dep = insts.length ? instDollars(p, insts[0]) : Math.round(p.total * 0.3);
+    const checks = insts
+      .map(
+        (inst) =>
+          '<div class="pchk"><span class="pchk-ic"><svg class="ic"><use href="#i-check"/></svg></span>' +
+          '<span class="pchk-lbl">' +
+          esc(inst.label) +
+          '</span><span class="pchk-lead"></span>' +
+          '<span class="pt-money">' +
+          fmtMoney(instDollars(p, inst)) +
+          "</span></div>",
+      )
+      .join("");
+    return (
+      '<div class="psheet" data-id="' +
+      esc(p.id) +
+      '">' +
+      '<div class="psheet-head">' +
+      '<div><div class="pjob-title">' +
+      esc(p.title) +
+      "</div>" +
+      '<div class="pjob-sub">' +
+      esc(subLine(p)) +
+      "</div></div>" +
+      '<div><span class="psheet-banklbl">Banked</span><span class="pt-money banked big">' +
+      fmtMoney(p.total) +
+      "</span></div>" +
+      "</div>" +
+      '<div class="pcols pcols--sheet">' +
+      '<div class="pcol"><div class="kpi-lbl">Deposit</div><div class="pcol-val">' +
+      fmtMoney(dep) +
+      '</div><div class="pcol-sub">Locked in</div></div>' +
+      '<div class="pcol"><div class="kpi-lbl">Start</div><div class="pcol-val">' +
+      esc(p.accepted || "—") +
+      '</div><div class="pcol-sub">Work began</div></div>' +
+      '<div class="pcol"><div class="kpi-lbl">Completed</div><div class="pcol-val good">' +
+      esc(p.paid || "—") +
+      '</div><div class="pcol-sub">Paid in full</div></div>' +
+      "</div>" +
+      '<div class="psheet-body">' +
+      '<div class="psheet-check">' +
+      checks +
+      "</div>" +
+      '<div class="psheet-photos">' +
+      '<div><div class="kpi-lbl">Before</div><button class="photo-box" type="button" data-flash="Added"><svg class="ic"><use href="#i-imgadd"/></svg>Add before</button></div>' +
+      '<div><div class="kpi-lbl">After</div><button class="photo-box" type="button" data-flash="Added"><svg class="ic"><use href="#i-imgadd"/></svg>Add after</button></div>' +
+      "</div>" +
+      "</div>" +
+      '<div class="psheet-foot">' +
+      '<div class="psheet-send">' +
+      '<span class="kpi-lbl">Send paid receipt to</span>' +
+      '<input class="pinput" type="email" placeholder="client@example.com">' +
+      '<button class="btn btn-primary btn--sm" type="button" data-act="receipt"><svg class="ic"><use href="#i-send"/></svg>Send receipt</button>' +
+      "</div>" +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Unmark as paid</button>' +
+      "</div>" +
+      "</div>"
+    );
+  }
+  function renderDone(stagger = false) {
+    const stack = $("#doneStack");
+    if (!stack) return;
+    const { slice } = doneSlice();
+    stack.innerHTML = slice.map(doneCardHtml).join("");
+    syncDoneChrome();
+    if (stagger && panelVisible("completed")) {
+      staggerIn(Array.from(stack.querySelectorAll<HTMLElement>(".psheet")));
+    }
+  }
+  function renderProposals(stagger = false) {
     renderKpis();
     renderTabCounts();
     renderChipCounts();
+    renderAll(stagger);
+    renderAccepted(stagger);
+    renderDone(stagger);
+  }
+
+  /**
+   * One record changed. Repaint the counts and the two lists the user was NOT
+   * looking at (silently — they are behind a hidden panel), and leave the acted
+   * list to its caller, which patches or removes exactly one node.
+   */
+  function repaintExcept(acted: "all" | "acc" | "done") {
+    renderKpis();
+    renderTabCounts();
+    renderChipCounts();
+    if (acted !== "all") renderAll();
+    if (acted !== "acc") renderAccepted();
+    if (acted !== "done") renderDone();
+  }
+
+  /** Patch a single ALL row in place — the cells that a write can change. */
+  function patchAllRow(tr: HTMLElement, p: ProposalRow) {
+    const st = statusPlate(p.status);
+    const plate = tr.querySelector<HTMLElement>(".pstatus");
+    if (plate) {
+      plate.className = "pstatus" + (st.cls ? " " + st.cls : "");
+      plate.textContent = st.label;
+    }
+    const money = tr.querySelector<HTMLElement>(".pt-money");
+    if (money) money.textContent = fmtMoney(p.total);
+    const monos = tr.querySelectorAll<HTMLElement>(".pt-mono");
+    if (monos[0]) monos[0].textContent = p.updated;
+  }
+
+  /**
+   * The one case a single-row exit cannot fix by itself: the row that left was
+   * the last one on its page, so the reader is looking at an empty table with
+   * records still in the book. Scheduled AFTER the exit (leave 180 + close 260)
+   * so it never replaces the nodes the FLIP is still moving. A whole new page
+   * of records genuinely arriving is one of the few things that earns a stagger.
+   */
+  function healAllPage() {
+    after(460, () => {
+      const body = $("#propTableBody");
+      if (!body) return;
+      const { slice } = allSlice();
+      if (body.querySelectorAll(".prow").length === 0 && slice.length > 0) renderAll(true);
+    });
+  }
+  /** Same repair for the two card stacks. */
+  function healStack(kind: "acc" | "done") {
+    after(460, () => {
+      if (kind === "acc") {
+        const stack = $("#propStack");
+        if (stack && stack.querySelectorAll(".pjob").length === 0 && accSlice().slice.length > 0) {
+          renderAccepted(true);
+        }
+        return;
+      }
+      const stack = $("#doneStack");
+      if (stack && stack.querySelectorAll(".psheet").length === 0 && doneSlice().slice.length > 0) {
+        renderDone(true);
+      }
+    });
+  }
+
+  /**
+   * Reflect a change to one record in the ALL table.
+   * - still on this page  → patch that row's cells, nothing else moves;
+   * - no longer on it     → that row alone leaves through leaveRow;
+   * - not currently drawn → a silent repaint (nothing on screen animates).
+   */
+  function syncAllAfterChange(id: string) {
+    const body = $("#propTableBody");
+    const tr = findRow(body, id);
+    const onPage = allSlice().slice.some((p) => p.id === id);
+    if (tr && !onPage) {
+      leaveRow(
+        tr,
+        () => {
+          syncAllChrome();
+          repaintExcept("all");
+          healAllPage();
+        },
+        after,
+        { leaveClass: "is-leaving" },
+      );
+      return;
+    }
+    if (tr) {
+      const p = byId(id);
+      if (p) patchAllRow(tr, p);
+      syncAllChrome();
+      repaintExcept("all");
+      return;
+    }
     renderAll();
-    renderAccepted();
-    renderDone();
+    repaintExcept("all");
   }
 
   // ================= PROPOSALS: ROW CONTEXT MENU =================
   const pMenu = $("#pMenu");
+  type MenuOpts = { href?: string; blank?: boolean; dis?: boolean; danger?: boolean };
   function menuItem(
     icon: string,
     tone: string,
     t: string,
     sub: string,
     act: string,
-    dis?: boolean,
-    danger?: boolean,
+    opts: MenuOpts = {},
   ) {
-    return (
-      '<button class="pmenu-item' +
-      (dis ? " is-disabled" : "") +
-      (danger ? " is-danger" : "") +
-      '" type="button" data-mact="' +
-      act +
-      '">' +
+    const cls =
+      "pmenu-item" + (opts.dis ? " is-disabled" : "") + (opts.danger ? " is-danger" : "");
+    const inner =
       '<span class="pmi-ic' +
       (tone ? " " + tone : "") +
       '"><svg class="ic"><use href="#' +
@@ -473,31 +726,76 @@ export function initProposalsContent(content: HTMLElement): () => void {
       t +
       '</span><span class="pmenu-item-s" style="display:block">' +
       sub +
-      "</span></span>" +
+      "</span></span>";
+    // Navigations are real links: middle-click, ⌘-click and "copy link
+    // address" all work, and they need no JavaScript to do their job.
+    if (opts.href && !opts.dis) {
+      return (
+        '<a class="' +
+        cls +
+        '" href="' +
+        opts.href +
+        '" data-mact="' +
+        act +
+        '"' +
+        (opts.blank ? ' target="_blank" rel="noopener noreferrer"' : "") +
+        ">" +
+        inner +
+        "</a>"
+      );
+    }
+    return (
+      '<button class="' +
+      cls +
+      '" type="button" data-mact="' +
+      act +
+      '"' +
+      (opts.dis ? " disabled" : "") +
+      ">" +
+      inner +
       "</button>"
     );
   }
-  function openMenu(id: number, btn: HTMLElement) {
-    const p = proposalsData.find((x) => x.id === id);
+  function openMenu(id: string, btn: HTMLElement) {
+    const p = byId(id);
     if (!p || !pMenu) return;
     pstate.menuId = id;
+    pstate.menuBtn = btn;
     pMenu.innerHTML =
       '<div class="pmenu-head"><div class="pmenu-title">' +
-      p.title +
+      esc(p.title) +
       '</div><div class="pmenu-sub">' +
-      p.client +
-      " · " +
-      p.city +
+      esc(subLine(p)) +
       "</div></div>" +
-      menuItem("i-pen", "pmi--bp", "Edit proposal", "Open editor", "edit") +
-      menuItem("i-ext", "pmi--sky", "View public page", "New tab", "view") +
-      menuItem("i-dup", "", "Duplicate", "Clone & edit", "dup") +
+      menuItem("i-pen", "pmi--bp", "Edit proposal", "Open editor", "edit", {
+        href: "/dashboard/proposals/" + encodeURIComponent(p.id),
+      }) +
+      menuItem("i-ext", "pmi--sky", "View public page", "New tab", "view", {
+        href: "/portal/q/" + encodeURIComponent(p.publicId),
+        blank: true,
+      }) +
+      menuItem("i-dup", "", "Duplicate", "Clone &amp; edit", "dup") +
       '<div class="pmenu-div"></div>' +
-      menuItem("i-send", "pmi--ok", "Send to client", "Add an email", "sendto") +
-      menuItem("i-box", "pmi--warn", "Order materials", (p.mat || 0) + " items", "materials") +
-      menuItem("i-building", "", "View on Zillow", p.addr ? "Open listing" : "No address on client", "zillow", !p.addr) +
+      menuItem(
+        "i-send",
+        "pmi--ok",
+        "Send to client",
+        p.clientEmail ? esc(p.clientEmail) : "No email on the client",
+        "sendto",
+      ) +
+      menuItem("i-box", "pmi--warn", "Order materials", (p.mat || 0) + " items", "materials", {
+        dis: p.mat === 0,
+      }) +
+      menuItem(
+        "i-building",
+        "",
+        "View on Zillow",
+        p.zillow ? "Open listing" : "No address on client",
+        "zillow",
+        { href: p.zillow ?? undefined, blank: true, dis: !p.zillow },
+      ) +
       '<div class="pmenu-div"></div>' +
-      menuItem("i-trash", "pmi--danger", "Delete proposal", "Permanent", "del", false, true);
+      menuItem("i-trash", "pmi--danger", "Delete proposal", "Permanent", "del", { danger: true });
     pMenu.classList.add("open");
     // The donor zooms document.documentElement; the port zooms the page root.
     const z = parseFloat(root.style.getPropertyValue("zoom")) || 1;
@@ -518,7 +816,83 @@ export function initProposalsContent(content: HTMLElement): () => void {
     pstate.menuId = null;
     pMenu?.classList.remove("open");
   }
-  main?.addEventListener("scroll", closeMenu, { passive: true });
+  // `.main` lives in the SHELL and survives navigation, so this listener has to
+  // be tracked — an untracked one would stack up a dead closure per visit.
+  if (main) on(main, "scroll", closeMenu, { passive: true });
+
+  // ================= DIALOGS =================
+  function openDlg(id: string) {
+    const el = $("#" + id);
+    if (el) openMdl(el);
+  }
+  function closeDlg(id: string) {
+    const el = $("#" + id);
+    if (el) closeMdl(el, after);
+  }
+  function setDlgError(sel: string, msg: string | null) {
+    const box = $(sel);
+    if (!box) return;
+    box.textContent = msg ?? "";
+    box.classList.toggle("is-hidden", !msg);
+  }
+  /** Busy state on a dialog's confirm button — same shape as Workers. */
+  function setSaving(btn: HTMLElement | null, busy: boolean, busyLbl: string, idleLbl: string) {
+    if (!btn) return;
+    pstate.writing = busy;
+    btn.classList.toggle("is-busy", busy);
+    (btn as HTMLButtonElement).disabled = busy;
+    const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    if (lbl) lbl.textContent = busy ? busyLbl : idleLbl;
+  }
+  function showAlert(title: string, msg: string) {
+    const t = $("#alertTitle");
+    const b = $("#alertTxt");
+    if (t) t.textContent = title;
+    if (b) b.textContent = msg;
+    openDlg("alertMdl");
+  }
+
+  // Materials sheet — the finished React component, mounted as an island over
+  // its own empty host. Props flow in; the only thing coming back is onClose.
+  let matIsland: Island<MaterialsSheetProps> | null = null;
+  let matProps: MaterialsSheetProps = {
+    open: false,
+    onClose: closeMaterials,
+    proposalTitle: "",
+    clientName: "",
+    items: [],
+  };
+  function closeMaterials() {
+    matProps = { ...matProps, open: false };
+    matIsland?.update(matProps);
+  }
+  function shoppable(p: ProposalRow) {
+    return p.materials.filter((m) => (m.materialCost ?? 0) > 0 && m.quantity > 0);
+  }
+  function openMaterials(p: ProposalRow) {
+    const host = $("#pMatHost");
+    if (!host) return;
+    if (shoppable(p).length === 0) {
+      showAlert(
+        "Nothing to order",
+        `"${p.title}" has no line item with a material cost, so there is nothing to shop for. Add materials in the editor first.`,
+      );
+      return;
+    }
+    matProps = {
+      open: true,
+      onClose: closeMaterials,
+      proposalTitle: p.title,
+      clientName: p.client,
+      items: p.materials,
+    };
+    if (!matIsland) matIsland = mountIsland(host, MaterialsSheet, matProps);
+    else matIsland.update(matProps);
+  }
+  disposers.push(() => {
+    matIsland?.destroy();
+    matIsland = null;
+  });
 
   // ================= PROPOSALS: EVENTS =================
   function flashBtn(btn: HTMLElement, label: string) {
@@ -527,11 +901,11 @@ export function initProposalsContent(content: HTMLElement): () => void {
     const old = btn.innerHTML;
     btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>' + label;
     btn.classList.add("is-flashed");
-    setTimeout(() => {
+    after(1600, () => {
       btn.innerHTML = old;
       btn.classList.remove("is-flashed");
       delete btn.dataset.busy;
-    }, 1600);
+    });
   }
   $("#pTabs")?.addEventListener("click", (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>(".ptab");
@@ -540,6 +914,15 @@ export function initProposalsContent(content: HTMLElement): () => void {
     root.querySelectorAll<HTMLElement>("#pTabs .ptab").forEach((t) => t.classList.toggle("active", t === btn));
     $$(".ppanel").forEach((pn) => pn.classList.toggle("is-hidden", pn.dataset.panel !== pstate.tab));
     renderKpis();
+    // A panel's rows arrive the first time it is actually on screen. Playing
+    // the cascade earlier — while the panel is display:none — would leave every
+    // row pinned at `transform: none`, which kills row hover for good.
+    if (!pstate.revealed[pstate.tab]) {
+      pstate.revealed[pstate.tab] = true;
+      const stack =
+        pstate.tab === "accepted" ? $("#propStack") : pstate.tab === "completed" ? $("#doneStack") : $("#propTableBody");
+      if (stack) staggerIn(Array.from(stack.querySelectorAll<HTMLElement>(".prow, .pjob, .psheet")));
+    }
   });
   $("#pChips")?.addEventListener("click", (e) => {
     const chip = (e.target as HTMLElement).closest<HTMLElement>(".pchip");
@@ -547,13 +930,27 @@ export function initProposalsContent(content: HTMLElement): () => void {
     pstate.filter = chip.dataset.f || "ALL";
     pstate.pageAll = 1;
     root.querySelectorAll<HTMLElement>("#pChips .pchip").forEach((c) => c.classList.toggle("active", c === chip));
+    // A filter toggle is NOT a list arriving — it repaints silently.
     renderAll();
   });
+
   on(document, "click", (e) => {
     const target = e.target as HTMLElement;
+
+    // Dialog dismissals (scrim, ×, Cancel, the alert's Close).
+    const dismiss = target.closest<HTMLElement>("[data-mdl]");
+    if (dismiss) {
+      if (pstate.writing) return; // never interrupt a write already on the wire
+      const which = dismiss.dataset.mdl;
+      if (which === "send") closeDlg("sendMdl");
+      if (which === "del") closeDlg("delMdl");
+      if (which === "alert") closeDlg("alertMdl");
+      return;
+    }
+
     const menuBtn = target.closest<HTMLElement>("[data-menu]");
     if (menuBtn) {
-      const id = Number(menuBtn.dataset.menu);
+      const id = String(menuBtn.dataset.menu);
       if (pstate.menuId === id) closeMenu();
       else openMenu(id, menuBtn);
       return;
@@ -561,27 +958,37 @@ export function initProposalsContent(content: HTMLElement): () => void {
     const mact = target.closest<HTMLElement>("[data-mact]");
     if (mact) {
       const id = pstate.menuId;
-      const idx = proposalsData.findIndex((x) => x.id === id);
+      const p = byId(id);
       const act = mact.dataset.mact;
+      if (mact.classList.contains("is-disabled")) {
+        e.preventDefault();
+        return;
+      }
+      // `edit`, `view` and `zillow` are real anchors — let the browser follow
+      // them. Closing the menu is deferred past the end of this dispatch:
+      // `display: none`-ing the anchor mid-click can cancel the navigation.
+      if (act === "edit" || act === "view" || act === "zillow") {
+        after(0, closeMenu);
+        return;
+      }
       closeMenu();
-      if (idx === -1) return;
+      if (!p || !id) return;
+      if (pstate.writing) return;
       if (act === "dup") {
-        const src = proposalsData[idx];
-        const copy: Proposal = Object.assign({}, src, {
-          id: Math.max.apply(null, proposalsData.map((x) => x.id)) + 1,
-          title: src.title + " (copy)",
-          status: "DRAFT",
-          updated: "now",
-          views: 0,
-          accepted: undefined,
-          paid: undefined,
-        });
-        proposalsData.splice(idx + 1, 0, copy);
-        renderProposals();
+        void runDuplicate(p, menuBtnFor(id));
+        return;
+      }
+      if (act === "sendto") {
+        promptSend(p);
+        return;
+      }
+      if (act === "materials") {
+        openMaterials(p);
+        return;
       }
       if (act === "del") {
-        proposalsData.splice(idx, 1);
-        renderProposals();
+        promptDelete(p);
+        return;
       }
       return;
     }
@@ -590,70 +997,256 @@ export function initProposalsContent(content: HTMLElement): () => void {
     const pg = target.closest<HTMLButtonElement>(".pager-btn");
     if (pg && !pg.disabled) {
       const d = pg.dataset.pg === "next" ? 1 : -1;
+      // A page turn IS a list arriving — a whole new set of records lands, and
+      // nothing the reader was using is destroyed.
       if (pg.dataset.key === "all") {
         pstate.pageAll += d;
-        renderAll();
+        renderAll(true);
       }
       if (pg.dataset.key === "acc") {
         pstate.pageAcc += d;
-        renderAccepted();
+        renderAccepted(true);
       }
       if (pg.dataset.key === "done") {
         pstate.pageDone += d;
-        renderDone();
+        renderDone(true);
       }
       return;
     }
+
+    const act = target.closest<HTMLElement>("[data-act]");
+    if (act) {
+      const kind = act.dataset.act;
+      const card = act.closest<HTMLElement>("[data-id]");
+      const p = byId(card?.dataset.id ?? null);
+      if (kind === "materials" && p) {
+        openMaterials(p);
+        return;
+      }
+      if (kind === "done" && p && card) {
+        void runStatus(p, "PAID", card, "acc");
+        return;
+      }
+      if (kind === "unaccept" && p && card) {
+        void runStatus(p, "DRAFT", card, "acc");
+        return;
+      }
+      if (kind === "unmark" && p && card) {
+        void runStatus(p, "ACCEPTED", card, "done");
+        return;
+      }
+      if (kind === "receipt") {
+        const input = act.closest<HTMLElement>(".psheet-send")?.querySelector<HTMLInputElement>(".pinput");
+        if (input && !input.value.trim()) {
+          input.focus();
+          return;
+        }
+        flashBtn(act, "Sent");
+        if (input) input.value = "";
+        return;
+      }
+    }
+
     const fl = target.closest<HTMLElement>("[data-flash]");
     if (fl) {
       flashBtn(fl, fl.dataset.flash || "");
-      return;
-    }
-    const act = target.closest<HTMLElement>("[data-act]");
-    if (!act) return;
-    if (act.dataset.act === "done") {
-      const id = Number(act.closest<HTMLElement>("[data-id]")?.dataset.id);
-      const p = proposalsData.find((x) => x.id === id);
-      if (p) {
-        p.status = "PAID";
-        p.paid = "JUL 22";
-        p.updated = "now";
-      }
-      renderProposals();
-    }
-    if (act.dataset.act === "unaccept") {
-      const id = Number(act.closest<HTMLElement>("[data-id]")?.dataset.id);
-      const p = proposalsData.find((x) => x.id === id);
-      if (p) {
-        p.status = "SENT";
-        p.accepted = undefined;
-        p.updated = "now";
-      }
-      renderProposals();
-    }
-    if (act.dataset.act === "unmark") {
-      const id = Number(act.closest<HTMLElement>("[data-id]")?.dataset.id);
-      const p = proposalsData.find((x) => x.id === id);
-      if (p) {
-        p.status = "ACCEPTED";
-        p.paid = undefined;
-        p.updated = "now";
-      }
-      renderProposals();
-    }
-    if (act.dataset.act === "receipt") {
-      const input = act.closest<HTMLElement>(".psheet-send")?.querySelector<HTMLInputElement>(".pinput");
-      if (input && !input.value.trim()) {
-        input.focus();
-        return;
-      }
-      flashBtn(act, "Sent");
-      if (input) input.value = "";
     }
   });
 
+  function menuBtnFor(id: string): HTMLElement | null {
+    const tr = findRow($("#propTableBody"), id);
+    return tr?.querySelector<HTMLElement>(".pt-open") ?? null;
+  }
+
+  // ================= WRITES (real server actions) =================
+  // These are the live proposal actions from src/actions/proposals.ts — the
+  // same ones the classic row menu called. They are org-scoped and
+  // owner-scoped on the server and they revalidate /dashboard/proposals.
+  // `proposalsData` is patched from the result so the book repaints
+  // immediately; a reload reads the same rows back from the database.
+
+  async function runDuplicate(p: ProposalRow, btn: HTMLElement | null) {
+    pstate.writing = true;
+    btn?.classList.add("is-busy");
+    try {
+      const res = await duplicateProposal(p.id);
+      // The copy's publicId is generated server-side and is not returned, so
+      // there is nothing honest to append to the list here. The classic menu
+      // opened the copy in the editor ("Clone & edit"); do the same — the copy
+      // exists in the database either way.
+      window.location.assign("/dashboard/proposals/" + encodeURIComponent(res.id));
+    } catch (err) {
+      pstate.writing = false;
+      btn?.classList.remove("is-busy");
+      showAlert("Couldn't duplicate", actionError(err));
+    }
+  }
+
+  let sendId: string | null = null;
+  function promptSend(p: ProposalRow) {
+    sendId = p.id;
+    const title = $("#sendTitle");
+    if (title) title.textContent = `Send "${p.title}"`;
+    const email = $<HTMLInputElement>("#sendEmail");
+    if (email) {
+      // Read-only on purpose. sendProposal() mails the address on the CLIENT
+      // record — an editable box here would look like it changed the recipient
+      // and would change nothing at all.
+      email.value = p.clientEmail ?? "";
+      email.placeholder = p.clientEmail ? "" : "No email on the client record";
+      email.disabled = true;
+    }
+    const note = $("#sendNote");
+    if (note) {
+      note.textContent = p.clientEmail
+        ? "A branded email with the proposal link goes to this address — the one on the client record. They can view, accept and pay from the public page."
+        : "This client has no email on file. The proposal will be marked Sent, but no email goes out until you add an address to the client record.";
+    }
+    setDlgError("#sendErr", null);
+    setSaving($("#sendOk"), false, "", "Send proposal");
+    pstate.writing = false;
+    openDlg("sendMdl");
+  }
+  const sendOk = $("#sendOk");
+  if (sendOk) {
+    on(sendOk, "click", () => {
+      if (pstate.writing) return;
+      void confirmSend();
+    });
+  }
+  async function confirmSend() {
+    const p = byId(sendId);
+    if (!p) return;
+    setDlgError("#sendErr", null);
+    setSaving($("#sendOk"), true, "Sending…", "");
+    try {
+      await sendProposal(p.id);
+      p.status = "SENT";
+      p.updated = "just now";
+      setSaving($("#sendOk"), false, "", "Send proposal");
+      closeDlg("sendMdl");
+      syncAllAfterChange(p.id);
+    } catch (err) {
+      setSaving($("#sendOk"), false, "", "Send proposal");
+      // sendProposal refuses BEFORE writing when the provider fails, so the
+      // proposal is genuinely still unsent — say so instead of closing.
+      setDlgError("#sendErr", actionError(err));
+    }
+  }
+
+  let delId: string | null = null;
+  function promptDelete(p: ProposalRow) {
+    delId = p.id;
+    const txt = $("#delTxt");
+    if (txt) {
+      txt.textContent = `"${p.title}" for ${p.client}. This removes the proposal, its line items, payment schedule and snapshots. Public links stop working, and it can't be undone.`;
+    }
+    setDlgError("#delErr", null);
+    setSaving($("#delOk"), false, "", "Delete forever");
+    pstate.writing = false;
+    openDlg("delMdl");
+  }
+  const delOk = $("#delOk");
+  if (delOk) {
+    on(delOk, "click", () => {
+      if (pstate.writing) return;
+      void confirmDelete();
+    });
+  }
+  async function confirmDelete() {
+    const id = delId;
+    const p = byId(id);
+    if (!id || !p) return;
+    setDlgError("#delErr", null);
+    setSaving($("#delOk"), true, "Deleting…", "");
+    try {
+      const res = await bulkDeleteProposals([id]);
+      if (res.deleted === 0) {
+        setSaving($("#delOk"), false, "", "Delete forever");
+        setDlgError("#delErr", "That proposal is no longer yours to delete. Reload the page.");
+        return;
+      }
+      proposalsData = proposalsData.filter((x) => x.id !== id);
+      setSaving($("#delOk"), false, "", "Delete forever");
+      closeDlg("delMdl");
+      delId = null;
+      // The row leaves alone, once the dialog is out of the way. Every other
+      // list repaints silently inside leaveRow's commit.
+      after(MDL_EXIT_MS, () => {
+        const tr = findRow($("#propTableBody"), id);
+        if (tr) {
+          leaveRow(
+            tr,
+            () => {
+              syncAllChrome();
+              repaintExcept("all");
+              healAllPage();
+            },
+            after,
+            { leaveClass: "is-leaving" },
+          );
+        } else {
+          renderProposals();
+        }
+      });
+    } catch (err) {
+      setSaving($("#delOk"), false, "", "Delete forever");
+      setDlgError("#delErr", actionError(err));
+    }
+  }
+
+  /**
+   * Mark completed / Un-accept / Unmark as paid. The card always leaves the
+   * stack it was in (its status no longer belongs there), so it exits through
+   * leaveRow and every other list repaints behind a hidden panel.
+   */
+  async function runStatus(
+    p: ProposalRow,
+    status: "PAID" | "DRAFT" | "ACCEPTED",
+    card: HTMLElement,
+    acted: "acc" | "done",
+  ) {
+    if (pstate.writing) return;
+    pstate.writing = true;
+    card.classList.add("is-busy");
+    try {
+      await updateProposalStatus(p.id, status);
+      p.status = status;
+      p.updated = "just now";
+      if (status === "PAID") p.paid = todayPlate();
+      if (status === "ACCEPTED") p.paid = undefined;
+      if (status === "DRAFT") {
+        p.accepted = undefined;
+        p.paid = undefined;
+      }
+      pstate.writing = false;
+      card.classList.remove("is-busy");
+      leaveRow(
+        card,
+        () => {
+          if (acted === "acc") syncAccChrome();
+          else syncDoneChrome();
+          repaintExcept(acted);
+          healStack(acted);
+        },
+        after,
+        { leaveClass: "is-leaving" },
+      );
+    } catch (err) {
+      pstate.writing = false;
+      card.classList.remove("is-busy");
+      showAlert("Couldn't update", actionError(err));
+    }
+  }
+  function todayPlate() {
+    return new Date()
+      .toLocaleDateString("en-US", { month: "short", day: "2-digit" })
+      .toUpperCase();
+  }
+
   // ================= INITIALIZATION =================
   renderProposals();
+  pstate.revealed.all = true;
 
   // The mobile nav drawer and FLUID SCALE belong to the persistent chrome and
   // now live in components/v3/blueprint-shell/shell-behavior.ts.
@@ -661,7 +1254,6 @@ export function initProposalsContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 
     // Reveal: load + scroll
     const vpH = window.innerHeight;
@@ -670,7 +1262,8 @@ export function initProposalsContent(content: HTMLElement): () => void {
     let velLastT = performance.now();
     let scrollVel = 0; // px/ms
     if (scrollHost)
-      scrollHost.addEventListener(
+      on(
+        scrollHost,
         "scroll",
         () => {
           const now = performance.now();
@@ -680,7 +1273,7 @@ export function initProposalsContent(content: HTMLElement): () => void {
         },
         { passive: true },
       );
-    const blocks = $$(".content > *");
+    const blocks = $$(".content > *:not(.mdl):not([data-island])");
     blocks.forEach((el, i) => {
       el.classList.add("rv");
       const initial = el.getBoundingClientRect().top < vpH;
@@ -719,40 +1312,13 @@ export function initProposalsContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".prow, .pjob, .psheet"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on rows and cards silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["propTableBody", "propStack", "doneStack"].forEach((id) => {
-      const list = $("#" + id);
-      if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
-    });
+    // Row stagger on the FIRST paint of the visible tab. The donor drove this
+    // from a MutationObserver on each list; that replayed the full cascade on
+    // every render — a filter, a keystroke, a delete — and read as the list
+    // wiping itself. `staggerIn` is called from the places where a list
+    // genuinely arrives instead (here, a tab's first reveal, a page turn).
+    const firstList = $("#propTableBody");
+    if (firstList) staggerIn(Array.from(firstList.querySelectorAll<HTMLElement>(".prow")));
 
     // KPI count-up
     $$(".kpi-val").forEach((el) => {

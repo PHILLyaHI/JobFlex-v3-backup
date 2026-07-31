@@ -1384,13 +1384,44 @@
 .bp :global(.content .sheet-body) { padding: 16px 18px 22px; overflow-y: auto; flex: 1; }
 .bp :global(.content .sf) { margin-bottom: 13px; }
 .bp :global(.content .sf-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
-.bp :global(.content .sf-in), .bp :global(.content .sf-sel), .bp :global(.content .sf-area) {
+.bp :global(.content .sf-in), .bp :global(.content .sf-area) {
   width: 100%; padding: 9px 11px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
   background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink);
 }
 .bp :global(.content .sf-area) { min-height: 86px; resize: vertical; }
-.bp :global(.content .sf-in:focus), .bp :global(.content .sf-sel:focus), .bp :global(.content .sf-area:focus) { outline: none; border-color: var(--ink); }
+.bp :global(.content .sf-in:focus), .bp :global(.content .sf-area:focus) { outline: none; border-color: var(--ink); }
+/* — Source picker: the SHARED select treatment on this sheet's metrics —
+   `.bp-sel` / `.bp-sel-in` (dashboard-blueprint/blueprint-global.css) own the
+   appearance reset and the drawn ink chevron. (The shared rule also publishes
+   a mono value type, but the donor reset above —
+   `.content select { font-family: inherit }`, 0-2-1 — out-specifies the shared
+   0-2-0, so the value renders in the page sans. Left alone deliberately:
+   restating the mono here would re-derive shared appearance AND make this page
+   the odd one out, since every already-converted page carries the same reset.)
+
+   The old `.sf-sel` rule is REMOVED from the group above rather than left
+   beside the shared one: at `.bp .content .sf-sel` (3 classes) it out-specified
+   `.jf-blueprint .bp-sel-in` (2) and would have pulled the native font, size
+   and border straight back — the parallel-style-set drift decisions.md warns
+   about.
+
+   Page-local is geometry only. These sheet fields carry no height; their box
+   is padding-derived, so the picker restates the SAME 9px/11px padding as the
+   `.sf-in` fields stacked above and below it rather than inventing a height
+   that could drift from them. The 30px right pad is the shared rule's own
+   caret gutter, restated because it ships as a `padding-right` longhand that
+   this page's `.content * { padding: 0 }` donor reset ties with on
+   specificity. Border colour is re-pointed at `--hair-soft` (the shared
+   `--ink-line` default is a far lighter hairline than the inputs beside it),
+   and that resting colour out-specifies the shared states, so the ink
+   hover/focus edge is restated. */
+.bp :global(.content .sf .bp-sel-in) {
+  padding: 9px 30px 9px 11px;
+  border-color: var(--hair-soft);
+}
+.bp :global(.content .sf .bp-sel-in:hover),
+.bp :global(.content .sf .bp-sel-in:focus) { border-color: var(--ink); }
 .bp :global(.content .sf-row) { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .bp :global(.content .sf-act) { display: flex; gap: 9px; margin-top: 18px; padding-top: 14px; border-top: 2px solid var(--hair-soft); }
 .bp :global(.content .sf-act .btn) { flex: 1; justify-content: center; }
@@ -1442,3 +1473,23 @@
 .bp :global(.content .hub-list li:last-child) { border-bottom: none; }
 
 .bp :global(.content .door.tapped), .bp :global(.content .hub-row.tapped), .bp :global(.content .hub-viewall.tapped) { background: rgba(24, 84, 160, 0.09); }
+
+
+/* --- Hire: live-data affordances --------------------------------
+   The pipeline writes through the real applicant server actions, so the page
+   needs the two states a fixture never had: an action's own error message, and
+   a button that is mid-flight. Both are the shapes already carried by the
+   workers roster (workers.module.css) — a CSS module is page-scoped, so the
+   rules are declared here rather than shared. Tokens only. */
+.bp :global(.content .mf-err) { margin-bottom: 12px; font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err--boxed) { margin: 0 0 15px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+.bp :global(.content .mf-err.is-hidden) { display: none; }
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
+
+/* Note history — `appendApplicantNote` stamps and appends, so the sheet reads
+   the column back as a dated ledger and takes new entries below it. */
+.bp :global(.content .sf-notes) { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bp :global(.content .sf-note) { padding: 10px 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper-deep); }
+.bp :global(.content .sf-note-stamp) { display: block; margin-bottom: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .sf-note-txt) { display: block; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); white-space: pre-line; }

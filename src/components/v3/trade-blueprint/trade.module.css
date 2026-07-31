@@ -9,7 +9,7 @@
      was authored against;
    - every donor CONTENT rule `SEL { … }` becomes
      `.bp :global(.content SEL) { … }`, so the class names the ported JS
-     injects (post, cat, prow, pstatus, inf-av, …) stay literal;
+     injects (post, cat, pstatus, …) stay literal;
    - donor rules that style the shell chrome or the document scaffolding
      (html/body resets, .layout, .main + its scrollbars and graph-paper
      ::before, .sb / .sb-* / .sb-overlay / .sb-indicator, .topbar /
@@ -72,6 +72,14 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --sidebar-w: 264px;
   --topbar-h: 62px;
+
+  /* Filter-row control height. The category chips and the "New post" button
+     share one line in `.td-bar`, so they share one height. Authored as a
+     token rather than repeated as a literal so the pair cannot drift apart
+     again — the button used to inherit `.btn--sm`'s `height: auto`, which
+     resolved a hair SHORTER than the chips (29px vs 30px) and two steps
+     lighter in type. */
+  --td-ctl-h: 30px;
 
   /* ── Environment restore ─────────────────────────────────────────
      Not donor value changes: the donor ran against virgin browser
@@ -1311,25 +1319,14 @@
 /* ============================================================
    TRADE BOARD
    ============================================================ */
-.bp :global(.content .td-tabs) { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 18px; }
-.bp :global(.content .td-tab) {
-  display: inline-flex; align-items: center; gap: 8px;
-  height: 34px; padding: 0 14px;
-  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper);
-  font-size: 12.5px; font-weight: 700; color: var(--muted);
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
-}
-.bp :global(.content .td-tab .ic) { width: 14px; height: 14px; }
-.bp :global(.content .td-tab:hover) { border-color: var(--ink); color: var(--ink); }
-.bp :global(.content .td-tab.active) { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.bp :global(.content .td-tab-n) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; opacity: 0.75; }
-
+/* The donor's `.td-tabs` / `.td-tab` / `.td-tab-n` strip is not ported: it
+   switched between Posts and Influencers, and the influencer program now has
+   its own logged-in page. One tab is not a tab strip. */
 .bp :global(.content .td-bar) { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .bp :global(.content .cats) { display: flex; flex-wrap: wrap; gap: 7px; }
 .bp :global(.content .cat) {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 30px; padding: 0 11px;
+  height: var(--td-ctl-h); padding: 0 11px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
   background: var(--paper);
   font-size: 12px; font-weight: 700; color: var(--muted);
@@ -1344,6 +1341,22 @@
    drawing surface, not chip legends.) */
 .bp :global(.content .cat-dot) { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; }
 .bp :global(.content .cat-n) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; opacity: 0.7; }
+
+/* "New post" sits on the same line as the category chips, so it is sized off
+   the same control-height token instead of the `.btn--sm` vocabulary it used
+   to carry. `.btn--sm` is `height: auto` + `padding: 4px 8px` + an 18px icon,
+   which resolved to 29px — one pixel SHORTER than the 30px chips beside it,
+   with 10.5px type against the chips' 12px and 8px side padding against their
+   11px. It read as the smallest control on a row it is meant to anchor.
+   Everything else (12px/800 caps, 2px ink border, hard offset shadow on hover)
+   is the base `.btn` treatment, which is the correct vocabulary for the page's
+   primary action. Placed after the `.btn--sm` block so it wins on source order
+   at equal specificity. */
+.bp :global(.content .td-bar .btn) {
+  height: var(--td-ctl-h);
+  padding: 0 13px;
+  gap: 7px;
+}
 
 .bp :global(.content .posts) { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; align-items: start; }
 .bp :global(.content .post) {
@@ -1371,6 +1384,33 @@
 .bp :global(.content .cat--question) { border-color: var(--hair-soft); color: var(--muted); background: var(--paper-deep); }
 .bp :global(.content .cat--closed) { border-color: var(--hair-soft); color: var(--muted-light); background: var(--paper-deep); }
 
+/* The card's title is the link to the thread at /dashboard/trade/<id>, so it
+   inherits the heading's own type and only earns a rule for the affordance and
+   the focus ring. */
+.bp :global(.content .post-t a) { color: inherit; text-decoration: none; }
+.bp :global(.content .post-t a:hover) { text-decoration: underline; text-underline-offset: 3px; }
+.bp :global(.content .post-t a:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 3px; border-radius: var(--radius); }
+
+/* Row-menu trigger, pushed to the end of the plate strip. `.pt-open` already
+   draws the button; this only places and sizes it against the plates. */
+.bp :global(.content .post-top .pt-open) { margin-left: auto; width: 26px; height: 26px; }
+.bp :global(.content .post-top .pt-open .ic) { width: 13px; height: 13px; }
+
+/* Error plates. `.mf-err` is the dialog-level plate the Clients and Workers
+   create dialogs use; `.pmenu-err` is the in-menu equivalent from Jobs. Both
+   carry a server action's own refusal text. */
+.bp :global(.content .mf-err) { margin-bottom: 12px; font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err--boxed) { margin: 0 17px 15px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+.bp :global(.content .mf-err.is-hidden) { display: none; }
+.bp :global(.content .pmenu-err) { margin: 6px 4px 2px; padding: 7px 9px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); font-size: 11.5px; font-weight: 700; line-height: 1.4; color: var(--danger); }
+.bp :global(.content .pmenu-err.is-hidden) { display: none; }
+/* In-flight menu: dimmed, but NOT pointer-events:none — that would let the
+   click land on the page behind and the outside-click handler would close the
+   menu mid-write. The `menuBusy` guard in trade-behavior.ts blocks the second
+   activation instead. */
+.bp :global(.content .pmenu.is-busy) { opacity: 0.72; }
+.bp :global(.content .btn.is-busy) { opacity: 0.7; }
+
 .bp :global(.content .td-empty) { padding: 46px 24px; text-align: center; display: flex; flex-direction: column; align-items: center;
   border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
 .bp :global(.content .td-empty.is-hidden) { display: none; }
@@ -1379,27 +1419,10 @@
 .bp :global(.content .td-empty span) { margin-top: 8px; max-width: 40ch; font-size: 13px; line-height: 1.55; color: var(--muted); }
 .bp :global(.content .td-empty .btn) { margin-top: 16px; }
 
-/* influencers */
-.bp :global(.content .stat-grid) { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 16px; }
-.bp :global(.content .stat) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); padding: 14px 16px 15px; }
-.bp :global(.content .stat-val) { margin-top: 8px; font-size: 28px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
-.bp :global(.content .stat-val.accent) { color: var(--blueprint); }
-.bp :global(.content .stat-hint) { margin-top: 8px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted); }
-
-.bp :global(.content .td-card) { padding: 0; overflow: hidden; margin-bottom: 16px; }
-.bp :global(.content .td-head) { padding: 14px 18px 13px; border-bottom: 1.5px solid var(--hair-soft); }
-.bp :global(.content .td-head .card-title) { font-size: 15px; font-weight: 900; }
-.bp :global(.content .td-head .card-sub) { margin-top: 5px; font-size: 12.5px; color: var(--muted); }
-.bp :global(.content .td-table th), .bp :global(.content .td-table td) { border-right: 1.5px solid var(--hair-soft); }
-.bp :global(.content .td-table th:last-child), .bp :global(.content .td-table td:last-child) { border-right: none; }
-.bp :global(.content .td-table tbody tr:nth-child(even)) { background: var(--paper-deep); }
-.bp :global(.content .inf-name) { display: flex; align-items: center; gap: 10px; }
-.bp :global(.content .inf-av) { width: 28px; height: 28px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep); font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; }
-.bp :global(.content .inf-n) { font-size: 13px; font-weight: 700; }
-.bp :global(.content .inf-h) { margin-top: 2px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
-.bp :global(.content .pay--paid) { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
-.bp :global(.content .pay--pending) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
-.bp :global(.content .pay--failed) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+/* The donor's influencer vocabulary (.stat-grid / .stat* tiles, .td-card /
+   .td-head / .td-table, .inf-* identity cells, .pay--* payout statuses) is not
+   ported: it only ever dressed the Influencers panel, which now lives at
+   /influencer behind its own login. */
 
 /* dialog */
 .bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
@@ -1436,10 +1459,34 @@
 .bp :global(.content .tf-area) { width: 100%; min-height: 96px; padding: 10px 11px; resize: vertical; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; line-height: 1.5; color: var(--ink); }
 .bp :global(.content .tf-in:focus), .bp :global(.content .tf-area:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .tf-in)::placeholder, .bp :global(.content .tf-area)::placeholder { color: var(--muted-faint); }
+/* — Category picker: the SHARED select treatment on this form's metrics —
+   `.bp-sel` / `.bp-sel-in` (dashboard-blueprint/blueprint-global.css) own the
+   appearance reset and the drawn ink chevron; none of that is re-derived here.
+   (The shared rule also publishes a mono value type, but the donor reset above
+   — `.content select { font-family: inherit }`, 0-2-1 — out-specifies the
+   shared 0-2-0, so the value renders in the page sans. That is left alone
+   deliberately: restating the mono here would re-derive shared appearance AND
+   make this page the odd one out, since every already-converted page carries
+   the same reset.)
+   What is page-local is geometry — the 38px row and
+   the 11px text inset that make the picker sit at the same size as the
+   `.tf-in` title field above it. The right pad is the shared rule's own 30px
+   caret gutter, restated because it ships as a `padding-right` longhand that
+   this page's `.content * { padding: 0 }` donor reset ties with on
+   specificity. Border colour is re-pointed at this form's `--hair-soft`
+   hairline; the shared default `--ink-line` is far lighter and would read as
+   a different weight of control from the fields beside it — which is also why
+   the focus/hover edge is restated below (the resting colour here
+   out-specifies the shared states). */
+.bp :global(.content .tf .bp-sel-in) {
+  height: 38px;
+  padding: 0 30px 0 11px;
+  border-color: var(--hair-soft);
+}
+.bp :global(.content .tf .bp-sel-in:hover),
+.bp :global(.content .tf .bp-sel-in:focus) { border-color: var(--ink); }
 
 @media (max-width: 860px) {
   .bp :global(.content .posts) { grid-template-columns: 1fr; }
-  .bp :global(.content .stat-grid) { grid-template-columns: repeat(2, 1fr); }
   .bp :global(.content .td-bar .btn) { width: 100%; justify-content: center; }
-  .bp :global(.content .td-table th:nth-child(3)), .bp :global(.content .td-table td:nth-child(3)) { display: none; }
 }

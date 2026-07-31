@@ -16,12 +16,57 @@
 // geometry changes; leads-behavior.ts skips it in the reveal cascade and
 // leads.module.css carries the matching stacking-context rule.
 
+import { useCallback, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
-import { initLeadsContent } from "./leads-behavior";
-import { STAGES } from "./leads-data";
+import { initLeadsContent, type LeadsHandle } from "./leads-behavior";
+import { STAGES, type Lead, type Offer } from "./leads-data";
 
-export function LeadsContent() {
-  useBlueprintContent(initLeadsContent);
+/**
+ * @param leads the org's real pipeline, read in the page's server component.
+ * @param offers live Lead Center offers (status OFFERED, window still open).
+ *
+ * The behavior module takes both as its starting state and then keeps itself in
+ * step with the database through the lead server actions.
+ */
+export function LeadsContent({ leads, offers }: { leads: Lead[]; offers: Offer[] }) {
+  // The seed reaches `init` through refs, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade — so the init has
+  // to stay referentially stable for the life of the mount.
+  const seedRef = useRef({ leads, offers });
+  const handleRef = useRef<LeadsHandle | null>(null);
+  const routerRef = useRef(useRouter());
+  // The identity of the last props the behavior module has already seen. It
+  // starts at the seed, so the first run of the sync effect below is a no-op.
+  const appliedRef = useRef({ leads, offers });
+
+  const init = useCallback((content: HTMLElement) => {
+    const dispose = initLeadsContent(content, {
+      leads: seedRef.current.leads,
+      offers: seedRef.current.offers,
+      refresh: () => routerRef.current.refresh(),
+      onReady: (handle) => {
+        handleRef.current = handle;
+      },
+    });
+    return () => {
+      handleRef.current = null;
+      dispose();
+    };
+  }, []);
+  useBlueprintContent(init);
+
+  // Every lead action calls `revalidatePath("/dashboard/leads")`, so the server
+  // component re-renders with fresh rows after each write. Hand them to the
+  // behavior module, which compares them against its own state and repaints
+  // ONLY when they actually differ — an optimistic update that the server then
+  // confirms leaves the DOM untouched.
+  useEffect(() => {
+    if (appliedRef.current.leads === leads && appliedRef.current.offers === offers) return;
+    appliedRef.current = { leads, offers };
+    handleRef.current?.sync(leads, offers);
+  }, [leads, offers]);
 
   return (
     <>
@@ -148,7 +193,15 @@ export function LeadsContent() {
         </div>
       </section>
 
-      {/* TAB: IMPORT */}
+      {/* TAB: IMPORT
+          The staging card is a permanent half of this row, not something the
+          first staged lead conjures into existence. The panel reads left to
+          right — enter a lead, watch it land in the queue, send the batch — so
+          the destination has to be on screen before there is anything in it.
+          While the queue is empty the card carries a dashed "note on a drawing"
+          instead of a blank interior, and Import is disabled rather than a live
+          button that does nothing. The pair collapses to one column at the
+          page's existing 860px handheld breakpoint. */}
       <section className="ppanel is-hidden" data-panel="import">
         <div className="imeth" id="iMeth">
           <button className="imeth-btn active" type="button" data-m="manual"><svg className="ic"><use href="#i-pen" /></svg>Manual entry</button>
@@ -156,36 +209,66 @@ export function LeadsContent() {
           <button className="imeth-btn" type="button" data-m="file"><svg className="ic"><use href="#i-file" /></svg>File</button>
         </div>
 
-        <div className="card imp-pane" data-m="manual">
-          <label className="fld"><span className="fld-lbl">Name</span><input className="fld-in" id="mName" placeholder="J. Whitfield" /></label>
-          <label className="fld"><span className="fld-lbl">Email</span><input className="fld-in" id="mEmail" placeholder="name@mail.com" /></label>
-          <label className="fld"><span className="fld-lbl">Phone</span><input className="fld-in" id="mPhone" placeholder="(425) 555-0112" /></label>
-          <label className="fld"><span className="fld-lbl">Project type</span><input className="fld-in" id="mProject" placeholder="Metal roof repair" /></label>
-          <div className="fld-act"><button className="btn btn-ghost btn--sm" type="button" id="mAdd"><svg className="ic"><use href="#i-plus" /></svg>Add to import list</button></div>
-        </div>
+        <div className="imp-grid">
+          {/* The three method panes share one column; only the active one is
+              displayed, so the wrapper — not display:none bookkeeping — is what
+              holds the left grid track. */}
+          <div className="imp-forms">
+            <div className="card imp-pane" data-m="manual">
+              <label className="fld"><span className="fld-lbl">Name</span><input className="fld-in" id="mName" placeholder="J. Whitfield" /></label>
+              <label className="fld"><span className="fld-lbl">Email</span><input className="fld-in" id="mEmail" placeholder="name@mail.com" /></label>
+              <label className="fld"><span className="fld-lbl">Phone</span><input className="fld-in" id="mPhone" placeholder="(425) 555-0112" /></label>
+              <label className="fld"><span className="fld-lbl">Project type</span><input className="fld-in" id="mProject" placeholder="Metal roof repair" /></label>
+              <div className="fld-act"><button className="btn btn-ghost btn--sm" type="button" id="mAdd"><svg className="ic"><use href="#i-plus" /></svg>Add to import list</button></div>
+            </div>
 
-        <div className="card imp-pane is-hidden" data-m="email">
-          <label className="fld"><span className="fld-lbl">Paste the email</span>
-            <textarea className="fld-area" id="pasteBox" placeholder="Paste the full email here — we'll pull out the name, email and phone we can find." />
-          </label>
-          <div className="fld-act"><button className="btn btn-ghost btn--sm" type="button" id="pasteAdd"><svg className="ic"><use href="#i-plus" /></svg>Add to import list</button></div>
-        </div>
+            <div className="card imp-pane is-hidden" data-m="email">
+              <label className="fld"><span className="fld-lbl">Paste the email</span>
+                <textarea className="fld-area" id="pasteBox" placeholder="Paste the full email here — we'll pull out the name, email and phone we can find." />
+              </label>
+              <div className="fld-act"><button className="btn btn-ghost btn--sm" type="button" id="pasteAdd"><svg className="ic"><use href="#i-plus" /></svg>Add to import list</button></div>
+            </div>
 
-        <div className="card imp-pane is-hidden" data-m="file">
-          <button className="dropzone" type="button" id="dropZone">
-            <svg className="ic">
-              <use href="#i-file" />
-            </svg>
-            <span>Drop a CSV here or tap to choose</span>
-          </button>
-        </div>
-
-        <div className="staged is-hidden" id="stagedWrap">
-          <div className="staged-head">
-            <span className="staged-title">Ready to import <b id="stagedCount">0</b></span>
-            <button className="btn btn-primary btn--sm" type="button" id="importBtn"><svg className="ic"><use href="#i-check" /></svg>Import leads</button>
+            <div className="card imp-pane is-hidden" data-m="file">
+              <button className="dropzone" type="button" id="dropZone">
+                <svg className="ic">
+                  <use href="#i-file" />
+                </svg>
+                <span id="dropZoneLbl">Drop a CSV here or tap to choose</span>
+              </button>
+              {/* The real picker behind the drawn dropzone — the donor's button
+                  staged three hardcoded demo rows; this reads the file. */}
+              <input
+                type="file"
+                id="dropInput"
+                className="is-hidden"
+                accept=".csv,.txt,text/csv,text/plain"
+              />
+              <div className="mf-err is-hidden" id="fileErr" role="alert"></div>
+            </div>
           </div>
-          <div id="stagedList"></div>
+
+          <div className="staged" id="stagedWrap">
+            <div className="staged-head">
+              <span className="staged-title">Ready to import <b id="stagedCount">0</b></span>
+              <button className="btn btn-primary btn--sm" type="button" id="importBtn" disabled>
+                <svg className="ic"><use href="#i-check" /></svg>
+                <span data-save-lbl>Import leads</span>
+              </button>
+            </div>
+            {/* importLeads refuses when the batch would blow the plan's lead
+                quota. The reason lands here rather than the queue silently
+                staying put. */}
+            <div className="mf-err mf-err--boxed is-hidden" id="impErr" role="alert"></div>
+            <div className="staged-body">
+              <div id="stagedList"></div>
+              <div className="staged-empty" id="stagedEmpty">
+                <svg className="ic"><use href="#i-userplus" /></svg>
+                <b>Nothing staged yet</b>
+                <span>Leads you add on the left queue up here. Nothing reaches the pipeline until you import the batch.</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -196,11 +279,31 @@ export function LeadsContent() {
         <div className="mdl-box">
           <div className="mdl-head">Delete lead?</div>
           <div className="mdl-txt" id="mdlText">{"This can't be undone."}</div>
+          {/* deleteLead is manager-gated on the server — a sales rep gets a
+              real refusal, and it belongs in the dialog that asked. */}
+          <div className="mf-err mf-err--boxed is-hidden" id="mdlErr" role="alert"></div>
           <div className="mdl-foot">
             <button className="btn btn-ghost btn--sm" type="button" data-mdl="close">Cancel</button>
-            <button className="btn btn-primary btn--sm" type="button" id="mdlOk"><svg className="ic"><use href="#i-trash" /></svg>Delete</button>
+            <button className="btn btn-primary btn--sm" type="button" id="mdlOk">
+              <svg className="ic"><use href="#i-trash" /></svg>
+              <span data-save-lbl>Delete</span>
+            </button>
           </div>
         </div>
+      </div>
+
+      {/* Failures that have no dialog to land in — a stage drag the server
+          refused, an accept/decline that lost a race. Fixed, so the message is
+          on screen wherever the board was scrolled to when it failed. The
+          reveal cascade skips it for the same reason it skips `.mdl`: a
+          display:none element never intersects, so it would be stranded at
+          opacity 0 the first time it was shown. */}
+      <div className="l-toast is-hidden" id="lToast" role="alert" aria-live="assertive">
+        <svg className="ic"><use href="#i-ban" /></svg>
+        <span id="lToastText"></span>
+        <button className="l-toast-x" type="button" data-toast="close" aria-label="Dismiss">
+          <svg className="ic"><use href="#i-x" /></svg>
+        </button>
       </div>
     </>
   );

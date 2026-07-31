@@ -15,12 +15,37 @@
 // brings its own complete chrome — it replaces the shell, it does not render
 // inside it.
 
+// The sidebar's account block used to print the donor's demo identity — the
+// literal strings "Ivan" / "Owner" — to every signed-in user. The real identity
+// is read HERE, in the server layout, because the blueprint tree has no
+// SessionProvider: `useSession()` inside the shell would return null. The read
+// is deliberately non-fatal — an unauthenticated visitor is redirected by the
+// PAGE, and a layout that threw would break that redirect before it ran.
+
+import { requireOrg } from "@/lib/orgContext";
 import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/responsive-dashboard-shell";
 
-export default function DashboardBlueprintLayout({
+/** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
+ *  sidebar shows it to a human, so title-case it. */
+function humanRole(role: string): string {
+  return role.charAt(0) + role.slice(1).toLowerCase();
+}
+
+export default async function DashboardBlueprintLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <ResponsiveDashboardShell>{children}</ResponsiveDashboardShell>;
+  let user: { name: string; role: string } | undefined;
+  try {
+    const ctx = await requireOrg();
+    user = {
+      name: ctx.user.name || ctx.user.email || "Account",
+      role: humanRole(ctx.role),
+    };
+  } catch {
+    // Signed out, or no membership yet. The page decides what happens next.
+  }
+
+  return <ResponsiveDashboardShell user={user}>{children}</ResponsiveDashboardShell>;
 }

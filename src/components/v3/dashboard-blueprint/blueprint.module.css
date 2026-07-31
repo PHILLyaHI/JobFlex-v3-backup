@@ -53,6 +53,26 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --sidebar-w: 264px;
   --topbar-h: 62px;
+  /* Mark→wordmark spacing in the sidebar head. Its own token, not the head's
+     old flat 13px: the mark and the type are one lockup and have to read as one
+     object. Shared with proposals.module.css (both .bp classes land on the same
+     root, so they must agree) and with the handheld shell's mobile-nav module,
+     where the same clamp bottoms out at 3px to hold the 320px bar budget. */
+  --lockup-gap: clamp(2px, 0.7vw, 5px);
+  /* Mark geometry. --mark-size is the RENDER size of the square asset; the ink
+     inside it is only ~34.6% x 42.5% of that, so the box derives its own
+     dimensions from the same token rather than repeating measured pixels.
+     --mark-top pins the ink's TOP edge, which is what makes the logo grow
+     downward when --mark-size changes (owner's call, 2026-07-30). It also
+     carries the optical lift that used to be a separate --lockup-rise: the mark
+     is geometrically centred but reads low, because the J's mass sits in its
+     lower bowl and the wordmark beside it is bottom-weighted by CONTRACTOR OS.
+     One number describing one thing beats two.
+     116px ends the ink ~5.7px above the head's 2px bottom border here; the
+     handheld bar is the tighter of the two at ~3.7px, and it sets the ceiling
+     for both since the shells share one size. */
+  --mark-size: 116px;
+  --mark-top: 5px;
 
   height: var(--app-h, 100vh);
   font-family: var(--font);
@@ -115,7 +135,7 @@
 .bp :global(.sb-head) {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: var(--lockup-gap);
   height: var(--topbar-h);
   padding: 0 18px;
   border-bottom: var(--border);
@@ -123,7 +143,53 @@
   color: var(--paper);
   flex-shrink: 0;
 }
+/* .sb-mark is the retired drawn "J" sketch. The live shell no longer renders
+   it, but /v3/proposals-v2 and /v3/proposals-v3 still do, so the rule stays. */
 .bp :global(.sb-mark) { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: square; flex-shrink: 0; }
+/* The real product mark, carried over from the handheld shell (owner's call,
+   2026-07-30) so desktop and mobile show the same logo. The .sb-head is an ink
+   plate on both, so the treatment transfers unchanged: an unframed crop window
+   over an oversized image, because only ~42.5% of /jobflex-mark.png is ink and
+   the rest is transparent margin that must stay out of the layout.
+   At --mark-size 116px the ink lands at ~40.2 x 49.3px against the 28.5px
+   JOBFLEX / CONTRACTOR OS block (16 + 3 + 9.5) — the mark leads the lockup
+   rather than matching the type. brightness(0) invert(1) makes the black asset
+   paper-white for the plate, so one asset serves both colourways.
+
+   The box no longer hardcodes pixels; it derives from --mark-size, and it is
+   TOP-ANCHORED so a size change extends the bottom only. Two earlier bugs this
+   shape prevents: the box once read 46 x 45 with the axes transposed (46 is the
+   ink HEIGHT, so as a WIDTH it left 8.6px of dead air while the 45 height
+   clipped the J), and any hand-kept pair of numbers drifts from the token the
+   moment the size changes.
+   Shared with components/v3/mobile-shell/mobile-nav.module.css and with the
+   same rule in proposals-blueprint/proposals.module.css — both .bp classes are
+   always applied to the shell root, so the two MUST agree. */
+.bp :global(.sb-mark-box) {
+  position: relative;
+  /* Top-anchored, not centred: --mark-top IS where the ink's top edge sits,
+     measured from the bar's top. The -0.5px is the hair of clearance the box
+     carries so antialiasing is not clipped. */
+  align-self: flex-start;
+  margin-top: calc(var(--mark-top) - 0.5px);
+  width: calc(var(--mark-size) * 0.3462 + 1px);
+  height: calc(var(--mark-size) * 0.4253 + 1px);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.bp :global(.sb-mark-img) {
+  position: absolute;
+  left: 50%;
+  /* Pull the oversized square up by the asset's own top inset so the INK, not
+     the image, starts at the box top. Only translateX here — a translateY would
+     re-centre it and undo the anchoring. */
+  top: calc(var(--mark-size) * -0.2876 + 0.5px);
+  width: var(--mark-size);
+  height: var(--mark-size);
+  transform: translateX(-50%);
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
 .bp :global(.sb-head-txt) {
   display: flex; flex-direction: column; justify-content: center; gap: 3px;
 }
@@ -834,6 +900,11 @@
 .bp :global(.lead-job) { margin-top: 7px; font-size: 11.5px; font-weight: 500; line-height: 1.35; color: var(--muted-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bp :global(.lead-meta) { margin-top: 11px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .bp :global(.lead-val) { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--blueprint); }
+/* The slot carries the lead's owner. "Unassigned" is the ABSENCE of one, so it
+   drops out of blueprint accent into muted text — same treatment the leads
+   board gives it (leads.module.css `.content .lead-val.none`), because it is
+   the same card. */
+.bp :global(.lead-val.none) { font-weight: 500; color: var(--muted-light); }
 .bp :global(.lead-age) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light); }
 .bp :global(.lead-empty) {
   border: 1.5px dashed var(--muted-faint);
@@ -963,3 +1034,26 @@
 /* @keyframes daySel2 / press2 live in blueprint-keyframes.css (global names). */
 .bp :global(.day.day-pressed) { animation: daySel2 0.28s cubic-bezier(0.22, 0.61, 0.36, 1); }
 .bp :global(.pressed) { animation: press2 0.18s ease-out; }
+
+/* A refused stage move on the Lead Flow board has no dialog of its own to
+   speak through. Fixed, so the reason is on screen wherever the board had been
+   scrolled to. The reduced-motion `*` rule above already stills the entrance.
+   Mirrors the leads board's `.l-toast` — same surface, same job. */
+.bp :global(.content .d-toast) {
+  position: fixed; z-index: 130; left: 50%; bottom: 22px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(460px, calc(100vw - 32px)); padding: 11px 12px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 4px 4px 0 var(--ink);
+  font-size: 12.5px; font-weight: 700; line-height: 1.4; color: var(--danger);
+  animation: dToastIn 220ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.bp :global(.content .d-toast.is-hidden) { display: none; }
+.bp :global(.content .d-toast > .ic) { flex: none; color: var(--danger); }
+.bp :global(.content .d-toast-x) {
+  flex: none; margin-left: 4px; width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius); color: var(--muted);
+}
+.bp :global(.content .d-toast-x:hover) { border-color: var(--ink); color: var(--ink); }
+@keyframes dToastIn { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }

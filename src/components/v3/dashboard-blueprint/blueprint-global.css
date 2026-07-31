@@ -56,6 +56,12 @@
 
 @keyframes mdlBoxOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px) scale(0.985); } }
 
+/* The manual builder's total-changed highlight. Declared here because
+   Lightning CSS rejects @keyframes inside a CSS module; the rule that uses it
+   lives in estimators-blueprint/estimators.module.css, which also disables it
+   under prefers-reduced-motion. */
+@keyframes mbTotalFlash { from { background: rgba(24, 84, 160, 0.16); } to { background: transparent; } }
+
 /* ── Dialog enter/exit, published for EVERY blueprint page ───────────
    Three page modules (Jobs / Clients / Projects) already carried the enter
    animation on their own `.mdl-bg` / `.mdl-box` rules; Workers and Leads
@@ -205,6 +211,174 @@ body:has(.jf-blueprint) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── Styled <select> — ONE treatment for every blueprint page ────────
+   A native <select> renders with the OS chevron and OS font metrics, so it is
+   the one control on a blueprint card that visibly does not belong to the
+   drawing. Ten of the eleven selects in the app were still native.
+
+   This is published here, once, on purpose. The alternative — each page
+   re-deriving `appearance: none` plus a caret — is exactly the drift
+   decisions.md warns about: "never create parallel style sets for identical
+   blocks — the main source of typography drift."
+
+   Usage: wrap the control and tag it.
+     <span class="bp-sel"><select class="bp-sel-in">…</select></span>
+   The WRAPPER draws the caret because a <select> cannot carry a pseudo-element.
+   Add `data-empty="1"` while nothing is picked to grey the placeholder.
+
+   Scoped under `.jf-blueprint` (unlike `.bp-sug`, which must live on <body>);
+   these are ordinary in-flow controls, so the shell root is the right scope. */
+
+.jf-blueprint .bp-sel { position: relative; display: block; }
+/* `.bp-sel .bp-sel-in`, not `.bp-sel-in` alone, and the extra class is
+   load-bearing. Every page module carries a donor reset —
+   `.bp :global(.content input), .bp :global(.content select) { font-family:
+   inherit }` — which is (0,2,1) and out-specifies a bare `.jf-blueprint
+   .bp-sel-in` at (0,2,0). The result was silent and easy to miss: the caret,
+   the border, the size and the weight all landed, but the FAMILY reverted to
+   the page sans, so a converted select was mono on the one page whose donor
+   lacks that reset (CRM) and sans on the seven that have it.
+   Qualifying with the wrapper takes this to (0,3,0), which wins everywhere
+   without touching eight page modules or restating font-family per page — the
+   two alternatives, both of which re-derive shared appearance locally. */
+.jf-blueprint .bp-sel .bp-sel-in {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding-right: 30px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.jf-blueprint .bp-sel .bp-sel-in:hover { border-color: var(--ink); }
+.jf-blueprint .bp-sel .bp-sel-in:focus { outline: none; border-color: var(--ink); }
+/* A drawn chevron: two strokes meeting at a point, matching the ink line weight
+   used everywhere else rather than a background-image glyph. */
+.jf-blueprint .bp-sel::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--ink-muted);
+  border-bottom: 1.5px solid var(--ink-muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+  transition: border-color 0.12s;
+}
+.jf-blueprint .bp-sel:hover::after,
+.jf-blueprint .bp-sel:focus-within::after { border-color: var(--ink); }
+/* Nothing picked yet is a placeholder, not a value. */
+.jf-blueprint .bp-sel .bp-sel-in[data-empty="1"] { color: var(--ink-faint); font-weight: 600; }
+/* The option list itself is drawn by the OS; only its text is ours to set. */
+.jf-blueprint .bp-sel .bp-sel-in option {
+  font-family: var(--font-sans), sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* ── Command palette (blueprint-shell/command-palette.tsx) ───────────
+   Lives in the shell, above the page, so it is scoped to `.jf-blueprint` and
+   not to `.content`. It sits high in the sheet: a palette centred in the
+   viewport makes the eye travel, and this one is answering a question the user
+   asked from the topbar. Enter and exit are both animated — the exit is what
+   `cmdk--closing` is for, since a palette that vanishes on keyup reads as a
+   crash rather than a dismissal. */
+
+@keyframes cmdkBgIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cmdkBoxIn { from { opacity: 0; transform: translateY(-10px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes cmdkBgOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes cmdkBoxOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px) scale(0.985); } }
+@keyframes cmdkRowIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+.jf-blueprint .cmdk {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 12vh 20px 20px;
+}
+.jf-blueprint .cmdk-bg { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); animation: cmdkBgIn 150ms linear; }
+.jf-blueprint .cmdk-box {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: calc(var(--app-h, 100vh) * 0.7);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 2px solid var(--ink); border-radius: var(--r-sm);
+  background: var(--paper);
+  box-shadow: 5px 5px 0 var(--ink);
+  animation: cmdkBoxIn 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.jf-blueprint .cmdk--closing .cmdk-bg { animation: cmdkBgOut 160ms linear forwards; }
+.jf-blueprint .cmdk--closing .cmdk-box { animation: cmdkBoxOut 160ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
+.jf-blueprint .cmdk--closing { pointer-events: none; }
+
+.jf-blueprint .cmdk-head {
+  display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  padding: 13px 15px;
+  border-bottom: 2px solid var(--ink);
+}
+.jf-blueprint .cmdk-head-ic { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--ink-faint); }
+.jf-blueprint .cmdk-in {
+  flex: 1; min-width: 0; border: none; background: none; outline: none;
+  font-family: var(--font-sans), sans-serif; font-size: 15px; font-weight: 600; color: var(--ink);
+}
+.jf-blueprint .cmdk-in::placeholder { color: var(--ink-faint); font-weight: 500; }
+.jf-blueprint .cmdk-esc {
+  flex: 0 0 auto; padding: 3px 7px;
+  border: 1.5px solid var(--ink-line); border-radius: var(--r-sm);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.14em; color: var(--ink-muted);
+}
+
+.jf-blueprint .cmdk-list { margin: 0; padding: 5px; list-style: none; overflow-y: auto; }
+/* The mono annotation layer names each band. */
+.jf-blueprint .cmdk-group {
+  padding: 9px 9px 5px;
+  font-family: var(--font-mono); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-faint);
+}
+.jf-blueprint .cmdk-item {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 9px 9px; border: none; border-radius: var(--r-sm);
+  background: none; text-align: left; cursor: pointer; color: var(--ink);
+  animation: cmdkRowIn 180ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  transition: background 0.12s;
+}
+.jf-blueprint .cmdk-item.on { background: var(--accent-soft); }
+.jf-blueprint .cmdk-item-ic { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--ink-muted); }
+.jf-blueprint .cmdk-item.on .cmdk-item-ic { color: var(--accent); }
+.jf-blueprint .cmdk-item-t { flex: 1; min-width: 0; }
+.jf-blueprint .cmdk-item-l { display: block; font-family: var(--font-sans), sans-serif; font-size: 13.5px; font-weight: 700; }
+.jf-blueprint .cmdk-item-h { display: block; margin-top: 1px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+/* GO vs CREATE, in the same mono register as the group headers. */
+.jf-blueprint .cmdk-tag {
+  flex: 0 0 auto;
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.16em; color: var(--ink-faint);
+}
+.jf-blueprint .cmdk-item.on .cmdk-tag { color: var(--accent); }
+.jf-blueprint .cmdk-empty {
+  padding: 22px 12px; text-align: center;
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted);
+}
+
+/* The topbar field is a button now — keep it looking like the field it was. */
+.jf-blueprint .search-ph { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-faint); }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .cmdk-bg, .jf-blueprint .cmdk-box,
+  .jf-blueprint .cmdk--closing .cmdk-bg, .jf-blueprint .cmdk--closing .cmdk-box,
+  .jf-blueprint .cmdk-item { animation: none; }
 }
 
 /* ── Scrollbar environment restore ───────────────────────────────── */

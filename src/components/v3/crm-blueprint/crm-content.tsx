@@ -14,11 +14,49 @@
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
 
+import { useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initCrmContent } from "./crm-behavior";
+import type { CrmContentData } from "./crm-data";
 
-export function CrmContent() {
-  useBlueprintContent(initCrmContent);
+/**
+ * @param data the org's real CRM rows, read in the page's server component.
+ *   The behavior module takes them as its starting state and then keeps itself
+ *   in step with the database through the follow-up server actions.
+ */
+export function CrmContent({ data }: { data?: CrmContentData }) {
+  const router = useRouter();
+
+  // The payload reaches `init` through refs, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade — so the init has
+  // to stay referentially stable for the life of the mount.
+  //
+  // Neither ref is written after creation, and neither needs to be: they are
+  // seeded on the first render, the layout effect that reads them runs against
+  // that same commit, and from then on the behavior module owns the rules and
+  // the queue and keeps itself in step with the database through the actions. A
+  // navigation away unmounts the component, so the next visit gets fresh refs
+  // holding freshly-queried rows.
+  const seedRef = useRef(data);
+  const routerRef = useRef(router);
+
+  const init = useCallback(
+    (content: HTMLElement) =>
+      initCrmContent(content, {
+        data: seedRef.current,
+        // Client-side navigation: the two overview rows that used to fake a
+        // "flash" now actually go where they say they go, and going through the
+        // router keeps the persistent shell mounted instead of reloading it.
+        // `typedRoutes` is on, so `push` wants a `Route`, not a bare string;
+        // the hrefs are literals owned by the behavior module.
+        navigate: (href: string) =>
+          routerRef.current.push(href as Parameters<typeof routerRef.current.push>[0]),
+      }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -136,6 +174,10 @@ export function CrmContent() {
             </button>
           </div>
           <div className="rule-form is-hidden" id="ruleForm"></div>
+          {/* Toggle / delete run straight against the database; when the action
+              refuses (rule CRUD is manager-only) the reason lands here rather
+              than the row silently snapping back. */}
+          <div className="mf-err mf-err--boxed is-hidden" id="rulesErr" role="alert"></div>
           <ul className="rules" id="rulesList"></ul>
           <div className="pempty is-hidden" id="rulesEmpty">
             <b>No rules yet</b>
@@ -167,6 +209,8 @@ export function CrmContent() {
             </span>
           </button>
         </div>
+        {/* Done / Send dispatch real follow-ups; a refusal is reported here. */}
+        <div className="mf-err mf-err--boxed mf-err--flush is-hidden" id="queueErr" role="alert"></div>
         <div className="card card--table" id="queueCard">
           <table className="ptable q-table">
             <thead>

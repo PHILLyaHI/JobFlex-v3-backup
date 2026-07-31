@@ -1,24 +1,88 @@
-// Jobs blueprint — runtime behaviors, ported verbatim from the donor file's
-// <script> (jobflex-jobs-blueprint.html). Every duration, easing, stagger,
-// page size and string is the donor's exact value. Adaptations are mechanical
-// only:
+// Jobs blueprint — runtime behaviors, ported from the donor file's <script>
+// (jobflex-jobs-blueprint.html). Every duration, easing, stagger, page size and
+// string is the donor's exact value. Adaptations are mechanical only:
 // - queries are scoped to the mounted `.content` root;
-// - every listener, timer and observer is tracked for unmount cleanup;
-// - the donor's demo fixture lives in jobs-data.ts (same split as the
-//   proposals port).
+// - every listener, timer and observer is tracked for unmount cleanup.
+//
+// NOT A FIXTURE ANY MORE. The board arrives from the database through
+// `initJobsContent(content, options)` (see src/app/dashboard/jobs/page.tsx) and
+// every write goes through the real job server actions:
+//   - the create dialog  → createJob   (@/actions/jobs)
+//   - the row menu       → updateJob   (@/actions/jobs)
+//   - the open affordance→ /dashboard/jobs/<id>, the classic detail page
+// Local state is updated optimistically after the action resolves, in the same
+// shape Workers uses: pending label on the button, the action's own error text
+// surfaced verbatim (those messages are written for users), no silent flash.
 //
 // SKIPPED — owned by components/v3/blueprint-shell/shell-behavior.ts, which
 // mounts once and survives navigation: the mobile nav drawer / burger /
 // overlay, FLUID SCALE (root zoom + --app-h + the eff-* breakpoint classes),
 // the sidebar entry cascade, the sliding active-item indicator, the
 // graph-paper parallax on `.main`, and press feedback on shell controls.
-// The donor's `window.matchMedia` polyfill is skipped too — it guards
-// file:// previewers, and every browser this app ships to has it.
 
+import { createJob, updateJob } from "@/actions/jobs";
 import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
-import { JOB_TABS, ACCENT, JOBS_SEED, PAGE_SIZE, type Job, type JobStatus } from "./jobs-data";
+import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { initDatePopovers } from "@/components/v3/shared/date-popover";
+import {
+  JOB_TABS,
+  ACCENT,
+  JOBS_SEED,
+  PAGE_SIZE,
+  parseDay,
+  rangeLabel,
+  relLabel,
+  type Job,
+  type JobClientOption,
+  type JobCrewOption,
+  type JobStatus,
+} from "./jobs-data";
 
-export function initJobsContent(content: HTMLElement): () => void {
+export type JobsContentOptions = {
+  /** The org's real board, read server-side. Omit to fall back to the donor
+   *  fixture (the standalone mock routes have no session to read from). */
+  entries?: Job[];
+  /** Clients the create dialog can link the job to. */
+  clients?: JobClientOption[];
+  /** Workers the create dialog can staff it with. */
+  crew?: JobCrewOption[];
+  /** Owner/manager — gates the row menu's status writes. `updateJob` calls
+   *  `requireManager`, so for anyone else the items are not offered at all. */
+  canManage?: boolean;
+};
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("You've hit the jobs limit on your plan.", "Your account isn't set up as a
+ *  worker yet…"). Surface that text; fall back to a generic line for anything
+ *  unrecognisable — a Next.js server-action transport failure has no useful
+ *  message. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** Row text comes from the database now, so it is escaped before it reaches
+ *  innerHTML. The donor's own demo strings never needed this. */
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** `[data-id="…"]` with a cuid is safe, but CSS.escape is free and correct. */
+function sel(v: string): string {
+  return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(v) : v.replace(/"/g, '\\"');
+}
+
+export function initJobsContent(
+  content: HTMLElement,
+  options: JobsContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -47,8 +111,14 @@ export function initJobsContent(content: HTMLElement): () => void {
     timers.forEach((id) => clearTimeout(id));
     timers.clear();
   });
-  const $ = (sel: string) => root.querySelector<HTMLElement>(sel);
-  const $$ = (sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
+  const $ = (s: string) => root.querySelector<HTMLElement>(s);
+  const $$ = (s: string) => Array.from(root.querySelectorAll<HTMLElement>(s));
+
+  // A late-resolving server action must not write into a torn-down tree.
+  let alive = true;
+  disposers.push(() => {
+    alive = false;
+  });
 
   // ================= SAFETY: module isolation =================
   // Each block is wrapped so a failure in one does not disable the rest
@@ -88,23 +158,22 @@ export function initJobsContent(content: HTMLElement): () => void {
   });
 
   // ================= JOBS: DATA =================
-  const jobsData: Job[] = JOBS_SEED.map((j) => ({ ...j, crew: [...j.crew] }));
+  const jobsData: Job[] = (options.entries ?? JOBS_SEED).map((j) => ({ ...j, crew: [...j.crew] }));
+  const clientOptions: JobClientOption[] = options.clients ?? [];
+  const crewOptions: JobCrewOption[] = options.crew ?? [];
+  const canManage = options.canManage ?? false;
 
-  const jstate = { tab: "ALL" as "ALL" | JobStatus, page: 1 };
+  const jstate = { tab: "ALL" as "ALL" | JobStatus, page: 1, menuId: null as string | null };
 
   function statusLabel(s: string) {
     return s.charAt(0) + s.slice(1).toLowerCase().replace("_", " ");
   }
   function initials(name: string) {
     const p = name.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
+    if (!p.length) return "?";
     return p.length === 1
       ? p[0].slice(0, 2).toUpperCase()
       : (p[0][0] + p[p.length - 1][0]).toUpperCase();
-  }
-  function rangeLabel(j: Job) {
-    if (!j.start) return null;
-    if (!j.end || j.end === j.start) return j.start;
-    return j.start.replace(", 2026", "") + " – " + j.end.replace(", 2026", "");
   }
   function crewStack(crew: string[]) {
     if (!crew.length) return '<span class="crew-none">—</span>';
@@ -113,7 +182,7 @@ export function initJobsContent(content: HTMLElement): () => void {
       '<span class="crew">' +
       shown
         .map(function (n) {
-          return '<span class="crew-av" title="' + n + '">' + initials(n) + "</span>";
+          return '<span class="crew-av" title="' + esc(n) + '">' + esc(initials(n)) + "</span>";
         })
         .join("") +
       (crew.length > shown.length
@@ -129,18 +198,18 @@ export function initJobsContent(content: HTMLElement): () => void {
           return j.status === jstate.tab;
         });
   }
+  function pageCount() {
+    return Math.max(1, Math.ceil(filtered().length / PAGE_SIZE));
+  }
+  function jobHref(id: string) {
+    return "/dashboard/jobs/" + encodeURIComponent(id);
+  }
 
   // ================= RENDER =================
   function renderTabs() {
     const tabs = $("#jTabs");
     if (!tabs) return;
     tabs.innerHTML = JOB_TABS.map(function (t) {
-      const n =
-        t.key === "ALL"
-          ? jobsData.length
-          : jobsData.filter(function (j) {
-              return j.status === t.key;
-            }).length;
       return (
         '<button class="jtab' +
         (jstate.tab === t.key ? " on" : "") +
@@ -151,96 +220,129 @@ export function initJobsContent(content: HTMLElement): () => void {
           ? ""
           : '<span class="jtab-dot" style="background:' + ACCENT[t.key] + '"></span>') +
         t.label +
-        '<span class="jtab-n">' +
-        n +
+        '<span class="jtab-n" data-n="' +
+        t.key +
+        '">' +
+        tabCount(t.key) +
         "</span></button>"
       );
     }).join("");
   }
-  function renderRows() {
-    const body = $("#jobsBody");
-    const cards = $("#jobsCards");
+  function tabCount(key: "ALL" | JobStatus) {
+    return key === "ALL"
+      ? jobsData.length
+      : jobsData.filter(function (j) {
+          return j.status === key;
+        }).length;
+  }
+  /** A status write changes five numbers and nothing else. Patch them — a
+   *  rebuilt #jTabs would drop the tab the user is standing on and replay the
+   *  count-up on every visit. */
+  function patchTabCounts() {
+    JOB_TABS.forEach((t) => {
+      const el = root.querySelector<HTMLElement>('.jtab-n[data-n="' + t.key + '"]');
+      if (el) el.textContent = String(tabCount(t.key));
+    });
+  }
+
+  function rowHtml(j: Job) {
+    return (
+      '<tr class="prow" data-id="' +
+      esc(j.id) +
+      '" style="--acc:' +
+      ACCENT[j.status] +
+      '">' +
+      '<td><div class="j-title">' +
+      esc(j.title) +
+      "</div>" +
+      '<div class="j-client">' +
+      esc(j.client || "No client") +
+      "</div></td>" +
+      '<td data-cell="status">' +
+      statusPill(j) +
+      "</td>" +
+      '<td data-cell="when">' +
+      whenHtml(j) +
+      "</td>" +
+      '<td class="num" data-cell="crew">' +
+      crewStack(j.crew) +
+      "</td>" +
+      '<td class="num"><a class="pt-open" href="' +
+      jobHref(j.id) +
+      '" aria-label="Open ' +
+      esc(j.title) +
+      '"><svg class="ic"><use href="#i-arrow"/></svg></a></td>' +
+      '<td class="num"><button class="pt-open" type="button" data-menu="' +
+      esc(j.id) +
+      '" aria-haspopup="menu" aria-label="Actions for ' +
+      esc(j.title) +
+      '"><svg class="ic"><use href="#i-dots"/></svg></button></td>' +
+      "</tr>"
+    );
+  }
+  function statusPill(j: Job) {
+    return (
+      '<span class="pstatus jst--' +
+      j.status.toLowerCase() +
+      '"><span class="jst-dot"></span>' +
+      statusLabel(j.status) +
+      "</span>"
+    );
+  }
+  function whenHtml(j: Job) {
+    const range = rangeLabel(j);
+    return range
+      ? '<div class="j-date">' + range + '</div><div class="j-rel">' + (relLabel(j.start) || "") + "</div>"
+      : '<span class="j-unsched">Unscheduled</span>';
+  }
+  function cardHtml(j: Job) {
+    const range = rangeLabel(j);
+    return (
+      '<li><a class="jcard" href="' +
+      jobHref(j.id) +
+      '" data-id="' +
+      esc(j.id) +
+      '" style="--acc:' +
+      ACCENT[j.status] +
+      '">' +
+      '<div class="jcard-top"><div style="min-width:0">' +
+      '<div class="jcard-t">' +
+      esc(j.title) +
+      "</div>" +
+      '<div class="jcard-c">' +
+      esc(j.client || "No client") +
+      "</div></div>" +
+      '<span class="pstatus jst--' +
+      j.status.toLowerCase() +
+      '" data-cell="status">' +
+      statusLabel(j.status) +
+      "</span></div>" +
+      '<div class="jcard-bot">' +
+      '<span class="jcard-when"><svg class="ic"><use href="#i-cal"/></svg>' +
+      (range || "Unscheduled") +
+      "</span>" +
+      (j.crew.length ? crewStack(j.crew) : "") +
+      "</div></a></li>"
+    );
+  }
+
+  /** Empty state + card visibility, driven by the CURRENT dom row count so it
+   *  stays honest after a single-row exit that did not re-render the list. */
+  function syncEmpty() {
     const card = $("#jobsCard");
+    const cards = $("#jobsCards");
     const empty = $("#jobsEmpty");
+    if (!card || !cards || !empty) return;
+    const none = filtered().length === 0;
+    card.classList.toggle("is-hidden", none);
+    cards.style.display = none ? "none" : "";
+    empty.classList.toggle("is-hidden", !none);
+  }
+
+  function renderPager() {
     const el = $("#jobsPager");
-    if (!body || !cards || !card || !empty || !el) return;
-
-    const rows = filtered();
-    const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-    if (jstate.page > pages) jstate.page = pages;
-    const slice = rows.slice((jstate.page - 1) * PAGE_SIZE, jstate.page * PAGE_SIZE);
-
-    body.innerHTML = slice
-      .map(function (j) {
-        const range = rangeLabel(j);
-        return (
-          '<tr class="prow" data-id="' +
-          j.id +
-          '" style="--acc:' +
-          ACCENT[j.status] +
-          '">' +
-          '<td><div class="j-title">' +
-          j.title +
-          "</div>" +
-          '<div class="j-client">' +
-          (j.client || "No client") +
-          "</div></td>" +
-          '<td><span class="pstatus jst--' +
-          j.status.toLowerCase() +
-          '"><span class="jst-dot"></span>' +
-          statusLabel(j.status) +
-          "</span></td>" +
-          "<td>" +
-          (range
-            ? '<div class="j-date">' + range + '</div><div class="j-rel">' + j.rel + "</div>"
-            : '<span class="j-unsched">Unscheduled</span>') +
-          "</td>" +
-          '<td class="num">' +
-          crewStack(j.crew) +
-          "</td>" +
-          '<td class="num"><a class="pt-open" href="#" aria-label="Open ' +
-          j.title +
-          '"><svg class="ic"><use href="#i-arrow"/></svg></a></td>' +
-          "</tr>"
-        );
-      })
-      .join("");
-
-    cards.innerHTML = slice
-      .map(function (j) {
-        const range = rangeLabel(j);
-        return (
-          '<li><a class="jcard" href="#" data-id="' +
-          j.id +
-          '" style="--acc:' +
-          ACCENT[j.status] +
-          '">' +
-          '<div class="jcard-top"><div style="min-width:0">' +
-          '<div class="jcard-t">' +
-          j.title +
-          "</div>" +
-          '<div class="jcard-c">' +
-          (j.client || "No client") +
-          "</div></div>" +
-          '<span class="pstatus jst--' +
-          j.status.toLowerCase() +
-          '">' +
-          statusLabel(j.status) +
-          "</span></div>" +
-          '<div class="jcard-bot">' +
-          '<span class="jcard-when"><svg class="ic"><use href="#i-cal"/></svg>' +
-          (range || "Unscheduled") +
-          "</span>" +
-          (j.crew.length ? crewStack(j.crew) : "") +
-          "</div></a></li>"
-        );
-      })
-      .join("");
-
-    card.classList.toggle("is-hidden", rows.length === 0);
-    cards.style.display = rows.length === 0 ? "none" : "";
-    empty.classList.toggle("is-hidden", rows.length !== 0);
-
+    if (!el) return;
+    const pages = pageCount();
     if (pages <= 1) {
       el.innerHTML = "";
       return;
@@ -258,20 +360,53 @@ export function initJobsContent(content: HTMLElement): () => void {
       (jstate.page >= pages ? " disabled" : "") +
       ' aria-label="Next"><svg class="ic rot-r"><use href="#i-chev"/></svg></button>';
   }
+
+  /**
+   * Rebuild both lists.
+   *
+   * `animate` is the caller's answer to "is this list ARRIVING?" — a tab
+   * switch, a page turn, first paint. It is NOT a MutationObserver, on purpose:
+   * see blueprint-shell/list-motion for the five pages that shipped that bug.
+   */
+  function renderRows(animate = true) {
+    const body = $("#jobsBody");
+    const cards = $("#jobsCards");
+    if (!body || !cards) return;
+
+    const rows = filtered();
+    const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (jstate.page > pages) jstate.page = pages;
+    const slice = rows.slice((jstate.page - 1) * PAGE_SIZE, jstate.page * PAGE_SIZE);
+
+    body.innerHTML = slice.map(rowHtml).join("");
+    cards.innerHTML = slice.map(cardHtml).join("");
+
+    syncEmpty();
+    renderPager();
+
+    if (animate) {
+      staggerIn(Array.from(body.querySelectorAll<HTMLElement>(".prow")));
+      staggerIn(Array.from(cards.querySelectorAll<HTMLElement>(".jcard")));
+    }
+  }
   function renderJobs() {
     renderTabs();
     renderRows();
   }
 
-  // ================= EVENTS =================
+  // ================= EVENTS: TABS + PAGER =================
   const tabsEl = $("#jTabs");
   if (tabsEl) {
     on(tabsEl, "click", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>(".jtab");
       if (!b) return;
-      jstate.tab = (b.dataset.t || "ALL") as "ALL" | JobStatus;
+      const next = (b.dataset.t || "ALL") as "ALL" | JobStatus;
+      if (next === jstate.tab) return;
+      jstate.tab = next;
       jstate.page = 1;
-      renderJobs();
+      closeMenu();
+      $$("#jTabs .jtab").forEach((t) => t.classList.toggle("on", t === b));
+      renderRows();
     });
   }
   const pagerEl = $("#jobsPager");
@@ -280,91 +415,348 @@ export function initJobsContent(content: HTMLElement): () => void {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>(".pager-btn");
       if (!b || b.disabled) return;
       jstate.page += b.dataset.pg === "next" ? 1 : -1;
+      closeMenu();
       renderRows();
     });
   }
+
+  // ================= ROW MENU =================
+  // The donor drew a bare arrow and nothing else. The actions behind it are the
+  // classic detail page's status control (`updateJob`), which is the only write
+  // this surface can make on an existing job — everything else (photos,
+  // expenses, crew changes) lives on /dashboard/jobs/<id> and is one click away
+  // through "Open job".
+  const pMenu = $("#pMenu");
+
+  function menuItem(
+    icon: string,
+    tone: string,
+    t: string,
+    sub: string,
+    act: string,
+    dis?: boolean,
+    danger?: boolean,
+  ) {
+    return (
+      '<button class="pmenu-item' +
+      (dis ? " is-disabled" : "") +
+      (danger ? " is-danger" : "") +
+      '" type="button" data-mact="' +
+      act +
+      '">' +
+      '<span class="pmi-ic' +
+      (tone ? " " + tone : "") +
+      '"><svg class="ic"><use href="#' +
+      icon +
+      '"/></svg></span>' +
+      '<span><span class="pmenu-item-t">' +
+      t +
+      '</span><span class="pmenu-item-s" style="display:block">' +
+      sub +
+      "</span></span>" +
+      "</button>"
+    );
+  }
+
+  function menuBody(j: Job) {
+    const done = j.status === "COMPLETED";
+    return (
+      '<div class="pmenu-head"><div class="pmenu-title">' +
+      esc(j.title) +
+      '</div><div class="pmenu-sub">' +
+      esc(j.client || "No client") +
+      " · " +
+      statusLabel(j.status) +
+      "</div></div>" +
+      menuItem("i-arrow", "pmi--bp", "Open job", "Schedule, crew, photos", "open") +
+      (canManage
+        ? '<div class="pmenu-div"></div>' +
+          menuItem(
+            "i-clock",
+            "pmi--warn",
+            "Mark in progress",
+            j.status === "IN_PROGRESS" ? "Already in progress" : "Crew is on site",
+            "st:IN_PROGRESS",
+            j.status === "IN_PROGRESS",
+          ) +
+          menuItem(
+            "i-check",
+            "pmi--ok",
+            "Mark completed",
+            done ? "Already completed" : "Also asks the client for a review",
+            "st:COMPLETED",
+            done,
+          ) +
+          menuItem(
+            "i-clock",
+            "",
+            "Back to scheduled",
+            j.status === "SCHEDULED" ? "Already scheduled" : "Not started yet",
+            "st:SCHEDULED",
+            j.status === "SCHEDULED",
+          ) +
+          '<div class="pmenu-div"></div>' +
+          menuItem(
+            "i-ban",
+            "pmi--danger",
+            "Cancel job",
+            j.status === "CANCELED" ? "Already canceled" : "Keeps the record",
+            "st:CANCELED",
+            j.status === "CANCELED",
+            true,
+          )
+        : "") +
+      '<div class="pmenu-err is-hidden" data-menu-err role="alert"></div>'
+    );
+  }
+
+  function openMenu(id: string, btn: HTMLElement) {
+    const j = jobsData.find((x) => x.id === id);
+    if (!j || !pMenu) return;
+    jstate.menuId = id;
+    pMenu.innerHTML = menuBody(j);
+    pMenu.classList.add("open");
+    // The donor zooms document.documentElement; the port zooms the page root.
+    const z = parseFloat(root.style.getPropertyValue("zoom")) || 1;
+    const vw = window.innerWidth / z;
+    const vh = window.innerHeight / z;
+    const r = btn.getBoundingClientRect();
+    const mw = 254;
+    let left = Math.min(r.right - mw, vw - mw - 12);
+    left = Math.max(12, left);
+    pMenu.style.left = left + "px";
+    pMenu.style.top = "0px";
+    const mh = pMenu.offsetHeight;
+    let top = r.bottom + 6;
+    if (top + mh > vh - 12) top = Math.max(12, r.top - mh - 6);
+    pMenu.style.top = top + "px";
+  }
+  function closeMenu() {
+    jstate.menuId = null;
+    pMenu?.classList.remove("open");
+  }
+  if (main) on(main, "scroll", closeMenu, { passive: true });
+
+  function menuError(msg: string) {
+    const box = pMenu?.querySelector<HTMLElement>("[data-menu-err]");
+    if (!box) return;
+    box.textContent = msg || "";
+    box.classList.toggle("is-hidden", !msg);
+  }
+
+  /** One job's status changed. Patch the two nodes that show it — a full
+   *  re-render would steal focus from the menu the user is standing in and
+   *  replay every row's entrance. If the row no longer belongs under the
+   *  active tab, it LEAVES, and the rows below close the gap. */
+  function applyStatus(j: Job, next: JobStatus) {
+    j.status = next;
+    patchTabCounts();
+
+    const rowEl = root.querySelector<HTMLElement>('#jobsBody .prow[data-id="' + sel(j.id) + '"]');
+    const cardEl = root.querySelector<HTMLElement>('#jobsCards .jcard[data-id="' + sel(j.id) + '"]');
+    const stillListed = jstate.tab === "ALL" || jstate.tab === next;
+
+    if (!stillListed) {
+      if (rowEl) {
+        leaveRow(
+          rowEl,
+          () => {
+            // Bookkeeping only — NOT a re-render, or the survivors the FLIP just
+            // measured are replaced and the gap snaps shut instead of closing.
+            jstate.page = Math.min(jstate.page, pageCount());
+            syncEmpty();
+            renderPager();
+          },
+          after,
+        );
+      }
+      if (cardEl?.parentElement) leaveRow(cardEl.parentElement, () => {}, after);
+      return;
+    }
+
+    if (rowEl) {
+      rowEl.style.setProperty("--acc", ACCENT[next]);
+      const cell = rowEl.querySelector<HTMLElement>('[data-cell="status"]');
+      if (cell) cell.innerHTML = statusPill(j);
+    }
+    if (cardEl) {
+      cardEl.style.setProperty("--acc", ACCENT[next]);
+      const pill = cardEl.querySelector<HTMLElement>('[data-cell="status"]');
+      if (pill) {
+        pill.className = "pstatus jst--" + next.toLowerCase();
+        pill.setAttribute("data-cell", "status");
+        pill.textContent = statusLabel(next);
+      }
+    }
+  }
+
+  let statusBusy = false;
+  async function runStatus(id: string, next: JobStatus, item: HTMLElement) {
+    if (statusBusy) return;
+    const j = jobsData.find((x) => x.id === id);
+    if (!j) return;
+    statusBusy = true;
+    menuError("");
+    const label = item.querySelector<HTMLElement>(".pmenu-item-t");
+    const idle = label?.textContent || "";
+    if (label) label.textContent = "Working…";
+    pMenu?.classList.add("is-busy");
+    try {
+      await updateJob(id, { status: next });
+      if (!alive) return;
+      applyStatus(j, next);
+      closeMenu();
+    } catch (err) {
+      if (!alive) return;
+      if (label) label.textContent = idle;
+      menuError(actionError(err));
+    } finally {
+      statusBusy = false;
+      pMenu?.classList.remove("is-busy");
+    }
+  }
+
+  on(document, "click", (e) => {
+    const target = e.target as HTMLElement;
+    if (!root.contains(target) && !pMenu?.contains(target)) {
+      closeMenu();
+      return;
+    }
+    const trigger = target.closest<HTMLElement>("[data-menu]");
+    if (trigger) {
+      const id = trigger.dataset.menu || "";
+      if (jstate.menuId === id) closeMenu();
+      else openMenu(id, trigger);
+      return;
+    }
+    const item = target.closest<HTMLElement>(".pmenu-item");
+    if (item && pMenu?.contains(item)) {
+      const act = item.dataset.mact || "";
+      const id = jstate.menuId;
+      if (!id) return;
+      if (act === "open") {
+        closeMenu();
+        window.location.assign(jobHref(id));
+        return;
+      }
+      if (act.startsWith("st:")) {
+        void runStatus(id, act.slice(3) as JobStatus, item);
+      }
+      return;
+    }
+    if (!pMenu?.contains(target)) closeMenu();
+  });
+  on(document, "keydown", (e) => {
+    if ((e as KeyboardEvent).key === "Escape" && jstate.menuId) closeMenu();
+  });
+
   // ================= CREATE DIALOG (new job) =================
-  // Replaces the donor's placeholder button (a 1.6s "New job form" flash) with
-  // a real dialog. The frame is the one the Leads page uses for its delete
-  // confirmation (`.mdl`), extended with a form body; the record it creates
-  // lands in the in-memory fixture above, because wiring these pages to Prisma
-  // is a separate, out-of-scope decision.
+  // The blueprint replacement for /dashboard/jobs/new. Same server action, same
+  // payload shape, same validation — only the frame is different.
   const newJobBtn = $("#newJobBtn");
   const jDlg = $("#jNew");
   const jForm = root.querySelector<HTMLFormElement>("#jNewForm");
   if (jDlg && jForm) {
-    const inp = (sel: string) => root.querySelector<HTMLInputElement>(sel);
+    const inp = (s: string) => root.querySelector<HTMLInputElement>(s);
     let draftStatus: JobStatus = "SCHEDULED";
+    let draftCrew: string[] = [];
     let restoreFocus: HTMLElement | null = null;
-    let created = 0;
+    let saving = false;
 
-    /** Parsed field by field on purpose: `new Date("2026-07-30")` is read as UTC
-     *  midnight and renders as the previous day in every negative-offset
-     *  timezone. */
-    function parseDay(v: string): Date | null {
-      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
-      return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
-    }
-    /** "2026-07-30" → "Jul 30, 2026" — the fixture's own display format. */
-    function longDate(v: string): string | null {
-      const d = parseDay(v);
-      return d
-        ? d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
-        : null;
-    }
-    /** The fixture's relative column, in its own vocabulary: today / in 1 day /
-     *  in 2 days / in 1 week / 2d ago / 2w ago. */
-    function relLabel(v: string): string | null {
+    /** A dated job with no clock on it: the classic form defaulted to a 9am–2pm
+     *  window, so a day picked here becomes 09:00 → 17:00 local rather than UTC
+     *  midnight (which reads as the previous day in every negative offset). */
+    function dayAt(v: string, hour: number): Date | null {
       const d = parseDay(v);
       if (!d) return null;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const days = Math.round((d.getTime() - today.getTime()) / 86400000);
-      if (days === 0) return "today";
-      if (days > 0) {
-        if (days === 1) return "in 1 day";
-        if (days < 7) return "in " + days + " days";
-        if (days < 14) return "in 1 week";
-        return "in " + Math.round(days / 7) + " weeks";
-      }
-      const ago = -days;
-      if (ago < 7) return ago + "d ago";
-      if (ago < 14) return "1w ago";
-      return Math.round(ago / 7) + "w ago";
+      d.setHours(hour, 0, 0, 0);
+      return d;
     }
 
-    function markErr(on: boolean) {
-      jDlg!.querySelector<HTMLElement>('[data-fld="title"]')?.classList.toggle("is-err", on);
+    // Schedule fields: the blueprint month-grid popover replaces the two native
+    // date inputs, whose OS panel no stylesheet can reach. The icon pairing is
+    // the calendar page's own (DTP_ICON) so a start and an end are named the
+    // same thing on both surfaces. Everything above still reads `.value` as
+    // "YYYY-MM-DD" — the picker writes through the input and fires the same
+    // input/change events a keystroke would.
+    disposers.push(
+      initDatePopovers(root, [
+        { sel: "#jfStart", icon: "i-clock", label: "Starts" },
+        { sel: "#jfEnd", icon: "i-hourglass", label: "Ends" },
+      ]),
+    );
+
+    function markErr(bad: boolean) {
+      jDlg!.querySelector<HTMLElement>('[data-fld="title"]')?.classList.toggle("is-err", bad);
+    }
+    function dlgError(msg: string) {
+      const box = $("#jNewErr");
+      if (!box) return;
+      box.textContent = msg || "";
+      box.classList.toggle("is-hidden", !msg);
+    }
+    function setSaving(on: boolean) {
+      saving = on;
+      const btn = root.querySelector<HTMLButtonElement>("#jNewOk");
+      if (!btn) return;
+      btn.disabled = on;
+      btn.classList.toggle("is-busy", on);
+      const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+      if (lbl) lbl.textContent = on ? "Creating…" : "Create job";
     }
 
     function paintStatus() {
       $$("#jfStatus .fseg-btn").forEach((b) => {
-        const on = b.dataset.v === draftStatus;
-        b.classList.toggle("on", on);
-        b.setAttribute("aria-pressed", on ? "true" : "false");
+        const isOn = b.dataset.v === draftStatus;
+        b.classList.toggle("on", isOn);
+        b.setAttribute("aria-pressed", isOn ? "true" : "false");
+      });
+    }
+    function paintCrew() {
+      $$("#jfCrew .fseg-btn").forEach((b) => {
+        const isOn = draftCrew.indexOf(b.dataset.w || "") !== -1;
+        b.classList.toggle("on", isOn);
+        b.setAttribute("aria-pressed", isOn ? "true" : "false");
       });
     }
 
-    /** The clients already on the page, offered as suggestions on the Client
-     *  field — the fixture is the only client list this page has. */
-    function fillClientList() {
-      const list = root.querySelector<HTMLDataListElement>("#jfClientList");
-      if (!list) return;
-      const names: string[] = [];
-      jobsData.forEach((j) => {
-        if (j.client && names.indexOf(j.client) === -1) names.push(j.client);
-      });
-      list.innerHTML = names
-        .sort()
-        .map(function (n) {
-          return '<option value="' + n + '"></option>';
-        })
+    /** The org's real clients, filled once — the select is the only place the
+     *  dialog can produce the `clientId` createJob links by. */
+    function fillClients() {
+      const box = root.querySelector<HTMLSelectElement>("#jfClient");
+      if (!box) return;
+      box.innerHTML =
+        '<option value="">— No client —</option>' +
+        clientOptions
+          .map((c) => '<option value="' + esc(c.id) + '">' + esc(c.name) + "</option>")
+          .join("");
+    }
+    /** The org's real roster as toggles. Installers get no list at all (the
+     *  server auto-assigns them and refuses anyone else), so the field goes. */
+    function fillCrew() {
+      const box = $("#jfCrew");
+      const fld = $("#jfCrewFld");
+      if (!box || !fld) return;
+      if (!crewOptions.length) {
+        fld.classList.add("is-hidden");
+        return;
+      }
+      fld.classList.remove("is-hidden");
+      box.innerHTML = crewOptions
+        .map(
+          (w) =>
+            '<button class="fseg-btn" type="button" data-w="' +
+            esc(w.id) +
+            '" aria-pressed="false">' +
+            esc(w.name) +
+            "</button>",
+        )
         .join("");
     }
 
     function openDlg() {
       restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      fillClientList();
+      dlgError("");
       openMdl(jDlg!);
       // land on the first field, not on the dialog frame
       requestAnimationFrame(() => inp("#jfTitle")?.focus());
@@ -382,15 +774,22 @@ export function initJobsContent(content: HTMLElement): () => void {
     function resetDlg() {
       jForm!.reset();
       draftStatus = "SCHEDULED";
+      draftCrew = [];
       paintStatus();
+      paintCrew();
       markErr(false);
+      dlgError("");
     }
+
+    fillClients();
+    fillCrew();
 
     if (newJobBtn) on(newJobBtn, "click", openDlg);
 
     on(jDlg, "click", (e) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-mdl="close"]')) {
+        if (saving) return;
         closeDlg();
         return;
       }
@@ -398,6 +797,15 @@ export function initJobsContent(content: HTMLElement): () => void {
       if (seg) {
         draftStatus = (seg.dataset.v || "SCHEDULED") as JobStatus;
         paintStatus();
+        return;
+      }
+      const who = t.closest<HTMLElement>("#jfCrew .fseg-btn");
+      if (who) {
+        const id = who.dataset.w || "";
+        const at = draftCrew.indexOf(id);
+        if (at === -1) draftCrew.push(id);
+        else draftCrew.splice(at, 1);
+        paintCrew();
       }
     });
 
@@ -406,7 +814,7 @@ export function initJobsContent(content: HTMLElement): () => void {
       if (!jDlg.classList.contains("open")) return;
       if (ev.key === "Escape") {
         ev.preventDefault();
-        closeDlg();
+        if (!saving) closeDlg();
         return;
       }
       // aria-modal: Tab must not walk out of the dialog and into the page behind
@@ -427,10 +835,14 @@ export function initJobsContent(content: HTMLElement): () => void {
       }
     });
 
-    on(jForm, "input", () => markErr(false));
+    on(jForm, "input", () => {
+      markErr(false);
+      dlgError("");
+    });
 
     on(jForm, "submit", (e) => {
       e.preventDefault();
+      if (saving) return;
       const titleEl = inp("#jfTitle");
       const title = (titleEl?.value || "").trim();
       if (!title) {
@@ -440,32 +852,62 @@ export function initJobsContent(content: HTMLElement): () => void {
       }
       const startRaw = inp("#jfStart")?.value || "";
       const endRaw = inp("#jfEnd")?.value || "";
-      created += 1;
-      jobsData.unshift({
-        id: "jn" + created,
-        title,
-        client: (inp("#jfClient")?.value || "").trim() || null,
-        status: draftStatus,
-        start: longDate(startRaw),
-        end: longDate(endRaw),
-        rel: relLabel(startRaw),
-        crew: (inp("#jfCrew")?.value || "")
-          .split(",")
-          .map(function (n) {
-            return n.trim();
-          })
-          .filter(Boolean),
-      });
-      // Drop back to All, so a job created while a status tab was active is
-      // actually visible — it lands in the first row.
-      jstate.tab = "ALL";
-      jstate.page = 1;
-      closeDlg();
-      // Clear the form only once the box has finished animating out — reset it
-      // on the same frame and you watch the fields blank while the dialog is
-      // still visible.
-      after(MDL_EXIT_MS, resetDlg);
-      renderJobs();
+      const clientSel = root.querySelector<HTMLSelectElement>("#jfClient");
+      const clientId = clientSel?.value || null;
+      const clientName = clientId
+        ? clientOptions.find((c) => c.id === clientId)?.name ?? null
+        : null;
+      const startsAt = dayAt(startRaw, 9);
+      const endsAt = dayAt(endRaw || startRaw, 17);
+      const workerIds = draftCrew.slice();
+
+      setSaving(true);
+      dlgError("");
+      void (async () => {
+        try {
+          const res = await createJob({
+            title,
+            clientId,
+            status: draftStatus,
+            startsAt,
+            endsAt: startsAt ? endsAt : null,
+            workerIds,
+          });
+          if (!alive) return;
+          // Optimistic insert with the id the server just minted, so the row's
+          // Open link points at the real record without a round trip.
+          jobsData.unshift({
+            id: res.id,
+            title,
+            client: clientName,
+            status: draftStatus,
+            start: startRaw || null,
+            end: endRaw && endRaw !== startRaw ? endRaw : null,
+            crew: workerIds
+              .map((id) => crewOptions.find((w) => w.id === id)?.name)
+              .filter((n): n is string => !!n),
+          });
+          // Drop back to All, so a job created while a status tab was active is
+          // actually visible — it lands in the first row.
+          jstate.tab = "ALL";
+          jstate.page = 1;
+          setSaving(false);
+          closeDlg();
+          // Clear the form only once the box has finished animating out — reset
+          // it on the same frame and you watch the fields blank while the dialog
+          // is still visible.
+          after(MDL_EXIT_MS, resetDlg);
+          // Counts and the active tab are patched, not rebuilt: #jTabs carries
+          // the reveal cascade's state and the tab the user was standing on.
+          patchTabCounts();
+          $$("#jTabs .jtab").forEach((t) => t.classList.toggle("on", t.dataset.t === "ALL"));
+          renderRows();
+        } catch (err) {
+          if (!alive) return;
+          setSaving(false);
+          dlgError(actionError(err));
+        }
+      })();
     });
   }
 
@@ -477,7 +919,6 @@ export function initJobsContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: slow scroll — the full 420ms animation;
@@ -547,41 +988,11 @@ export function initJobsContent(content: HTMLElement): () => void {
     disposers.push(() => io.disconnect());
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
-
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".prow, .jcard"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on rows and cards silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["jobsBody", "jobsCards"].forEach((id) => {
-      const list = $("#" + id);
-      if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
-    });
+    //
+    // Row stagger: the donor drove it from a MutationObserver on the two list
+    // containers, which replayed the whole cascade on every repaint — including
+    // a single status patch. It is now called by renderRows() only, when the
+    // list genuinely arrives. See blueprint-shell/list-motion.
 
     // Numeral count-up — Overview's `.kpi-val`; here the per-status tab counts.
     // The donor rebuilt the text from digits alone, safe only for its own plain
@@ -607,8 +1018,8 @@ export function initJobsContent(content: HTMLElement): () => void {
     });
 
     // Press effects
-    function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
+    function pressify(s: string, cls: string) {
+      $$(s).forEach((el) => {
         el.addEventListener("click", () => {
           el.classList.remove(cls);
           void el.offsetWidth;

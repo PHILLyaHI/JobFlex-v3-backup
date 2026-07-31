@@ -51,8 +51,13 @@
   --gap: clamp(14px, 4vw, 20px);
   --card-pad: clamp(14px, 4.2vw, 20px);
   --fs-h1: clamp(30px, 9.2vw, 44px);
-  --fs-mast: clamp(34px, 11vw, 52px);
-  --topbar-h: 56px;
+  /* The section title a card head carries — the agenda day, the crew name.
+     It has to out-weigh the action sitting beside it at every width. */
+  --fs-cardh: clamp(15.5px, 4.8vw, 19px);
+  /* 64px, up from 56px (owner, 2026-07-30). The bar carries 44px controls,
+     so 56px left only 6px of air above and below them; 64px gives 10px and
+     lets the enlarged mark breathe. Desktop equivalent is 62px. */
+  --topbar-h: 64px;
   --tbar-gap: clamp(6px, 1.8vw, 11px);
   --sidebar-w: min(84vw, 288px);
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -179,53 +184,11 @@
   flex-shrink: 0;
 }
 /* ============================================================
-   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations.
-   All three are computed from the fixture, so creating, deleting or
-   rescheduling an event moves them.
-   ============================================================ */
-.mast {
-  border: var(--border);
-  border-radius: var(--radius);
-  background: var(--paper);
-  box-shadow: 3px 3px 0 var(--shadow);
-  overflow: hidden;
-}
-.mastTop { padding: var(--card-pad); }
-.mastLbl {
-  display: flex; align-items: center; gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 11.5px; font-weight: 600;
-  letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 12px;
-}
-.mastRule { flex: 1; height: 1.5px; background: var(--hair); }
-/* Inter 900 tabular, never mono: mono is the drawing-annotation layer, not
-   the layer big figures live on. */
-.mastVal {
-  font-size: var(--fs-mast); font-weight: 900;
-  letter-spacing: -0.005em; line-height: 0.92;
-  color: var(--blueprint);
-  font-variant-numeric: tabular-nums;
-}
-.mastCnt {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1.5px solid var(--ink);
-  background: var(--paper-deep);
-}
-.mastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); min-width: 0; }
-.mastSub:last-child { border-right: none; }
-.mastSubL {
-  font-family: var(--font-mono);
-  font-size: 12px; font-weight: 600;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 7px;
-}
-.mastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
-/* ============================================================
-   VIEW TABS — Month / Week / Team
+   VIEW TABS — Month / Week / Team. The aggregate masthead that used
+   to sit above them (booked hours + two annotations) was removed
+   2026-07-30: it was a card of figures nobody acts on, parked between
+   the page title and the schedule. The per-tab counts carry range
+   size, and Team still carries per-crew load.
    ============================================================ */
 .tabs {
   position: relative;
@@ -439,6 +402,12 @@
 }
 .ddItem:nth-child(-n + 3) { border-top: none; }
 .ddItem:nth-child(3n + 1) { border-left: none; }
+/* An option count that is not a multiple of 3 would leave the final row ragged.
+   A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder instead, so the drawn table stays a complete rectangle at
+   any option count. Matches the announcements filter menu. */
+.ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
 .ddItem:active { background: var(--paper-deep); }
 .ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
 /* Absolute, so the tick cannot squeeze the label inside a ~87px cell. */
@@ -561,17 +530,23 @@
 }
 .agHead {
   display: flex; align-items: center; gap: 10px;
-  padding: 11px var(--card-pad) 12px;
+  padding: 12px var(--card-pad) 13px;
   background: var(--paper-deep);
   border-bottom: 1.5px solid var(--ink);
 }
+/* The DATE owns this row. It used to be an 11.5px mono tag beside an 11px/800
+   framed ADD button, so the loudest thing in the head was the action and the
+   eye reached the day second (fixed 2026-07-30). Inter 900 caps at --fs-cardh
+   is the heading layer; the mono annotation layer stays where it belongs, on
+   the rows below. */
 .agHeadT {
   flex: 1; min-width: 0;
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11.5px; font-weight: 600;
-  letter-spacing: 0.14em; text-transform: uppercase;
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 9px;
+  font-size: var(--fs-cardh); font-weight: 900;
+  letter-spacing: 0.01em; text-transform: uppercase;
+  line-height: 1.05;
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 .agToday {
   font-family: var(--font-mono);
@@ -581,21 +556,38 @@
   color: #fff;
   padding: 3px 6px;
   border-radius: var(--radius);
+  /* Baseline-aligned against a 900-weight title reads as a dropped tag; the
+     translate pulls the plate back onto the title's optical centre. */
+  transform: translateY(-1px);
 }
+/* Shrunk to a hairline chip so it reads as the SECOND thing in the head.
+   The drawn box is 30px; the touch target is pushed back out to 44px by the
+   ::after below, which paints nothing — chrome and hit area are separate
+   concerns and only one of them belongs in the visual hierarchy. */
 .agAdd {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  min-height: 44px; min-width: 44px;
-  padding: 0 12px;
-  margin: -6px -6px -6px 0;
-  border: var(--border-thin);
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px;
+  padding: 0 9px;
+  margin: -5px -3px -5px 0;
+  border: 1px solid var(--hair);
   border-radius: var(--radius);
-  font-size: 11px; font-weight: 800;
-  letter-spacing: 0.14em; text-transform: uppercase;
+  background: var(--paper);
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
   flex-shrink: 0;
-  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.agAdd:active { background: var(--paper); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
-.agAdd .ic { width: 15px; height: 15px; }
+.agAdd::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, 44px); height: 44px;
+}
+.agAdd:active { background: var(--paper-deep); border-color: var(--blueprint); color: var(--blueprint); }
+.agAdd .ic { width: 13px; height: 13px; }
 .agEmpty { padding: 16px var(--card-pad) 20px; }
 /* ============================================================
    EVENT ROW — the desktop event chip re-cut as a row card. A chip
@@ -604,6 +596,7 @@
    ============================================================ */
 .agList { display: block; }
 .erow {
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0 12px;
@@ -630,6 +623,17 @@
   background: var(--paper-deep);
   flex-shrink: 0;
 }
+/* Team rail only: a crew panel spans the whole week, so the plate has to name
+   the day. It rides ON the plate rather than beside the title — the one place
+   an extra tag can go without pushing the title off its left alignment. */
+.etimeD {
+  font-family: var(--font-mono);
+  font-size: 8.5px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1;
+  margin-bottom: 1px;
+}
 .etimeH {
   font-family: var(--font-mono);
   font-size: 12px; font-weight: 600;
@@ -647,40 +651,59 @@
 /* An event happening today takes the filled blueprint plate — the same rule
    the reference applies to the calendar's today cell. */
 .etime.isToday { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
-.etime.isToday .etimeM { color: rgba(255, 255, 255, 0.75); }
+.etime.isToday .etimeM,
+.etime.isToday .etimeD { color: rgba(255, 255, 255, 0.75); }
+/* The title is a real <button> and the row's only tap target for opening the
+   detail sheet. The ::after stretches it over the WHOLE card, so the card is
+   tappable end to end while the accessibility tree still sees one control
+   named after the event — no redundant second tab stop on the card itself. */
 .etitle {
   grid-column: 2;
   grid-row: 1;
   align-self: center;
-  display: flex; align-items: flex-start; gap: 8px;
+  display: block;
   min-width: 0;
+  padding: 0;
+  text-align: left;
 }
-.ekind { width: 15px; height: 15px; margin-top: 2px; color: var(--muted); }
+.etitle::after { content: ""; position: absolute; inset: 0; z-index: 0; }
 .etitleTxt {
+  display: -webkit-box;
   font-size: 15px; font-weight: 700;
   color: var(--ink);
   line-height: 1.3;
-  min-width: 0;
   overflow: hidden;
-  display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+/* Trimmed from a 44px 1.5px-ink box to a 30px hairline one (2026-07-30): at
+   full weight it framed the row's least important control and competed with
+   the time plate opposite it. Same ::after trick as .agAdd keeps the target at
+   44px, and z-index 1 keeps it clear of the title's stretched hit area. */
 .erowOpen {
+  position: relative;
+  z-index: 1;
   grid-column: 3;
   grid-row: 1;
   align-self: center;
-  width: 44px; height: 44px;
-  margin-right: -6px;
+  width: 30px; height: 30px;
+  margin-right: -2px;
   display: flex; align-items: center; justify-content: center;
-  border: 1.5px solid var(--ink);
+  border: 1px solid var(--hair);
   border-radius: var(--radius);
-  color: var(--ink);
+  color: var(--muted);
   flex-shrink: 0;
-  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.erowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
-.erowOpen .ic { width: 18px; height: 18px; }
+.erowOpen::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px; height: 44px;
+}
+.erowOpen:active { background: var(--paper-deep); border-color: var(--ink); color: var(--ink); }
+.erowOpen .ic { width: 17px; height: 17px; }
 /* Rows 2 and 3 are ONE group: who/where sits tight above the badge line, and
    the whole group is pushed well clear of the title. Reading top to bottom you
    get identity, then a gap, then the record's data — not three evenly spaced
@@ -742,37 +765,55 @@
    a zero. */
 .edur.isZero { color: var(--muted-faint); font-weight: 800; }
 /* ============================================================
-   WEEK — the desktop 8-column × 14-hour time grid, read vertically.
-   Seven day groups, each with its own head and its own events.
+   SWIPE RAIL — Week (one day per panel) and Team (one crew member
+   per panel). The desktop's 8-column week grid and crew × 7-day grid
+   both tried to survive as COLUMNS here and both failed the same way:
+   at 320px seven columns are ~40px of unreadable slivers. One rail,
+   one panel per swipe, full width, events as ROWS (2026-07-30).
    ============================================================ */
-.wstack { display: flex; flex-direction: column; gap: var(--gap); }
-.wgroup {
+.railWrap { position: relative; }
+.rail {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  /* The rail is ONE card with panels inside it, not a row of cards: a card per
+     panel would put a 2px frame plus a 3px drop shadow into the swipe gutter
+     on both sides of every transition. */
   border: var(--border);
   border-radius: var(--radius);
   background: var(--paper);
   box-shadow: 3px 3px 0 var(--shadow);
-  overflow: hidden;
+  overscroll-behavior-x: contain;
 }
-.wgHead {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px var(--card-pad) 11px;
-  background: var(--paper-deep);
-  border-bottom: 1.5px solid var(--ink);
+.rail::-webkit-scrollbar { height: 0; }
+/* Exactly 100% per panel — no neighbour peeking in at the edge. The tick rule
+   below the rail is the affordance that says there is more. */
+.railCol {
+  display: flex; flex-direction: column;
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: start;
+  border-right: 1.5px solid var(--ink);
 }
-.wgHeadT {
-  flex: 1; min-width: 0;
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11.5px; font-weight: 600;
-  letter-spacing: 0.14em; text-transform: uppercase;
+.railCol:last-child { border-right: none; }
+.railMeta {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 10px;
 }
-.wgHeadN {
+/* Ticks span the width — a measuring rule under the drawing, not a dot pager
+   parked in a corner. */
+.railTicks { display: flex; gap: 4px; flex: 1; min-width: 0; }
+.railTick { flex: 1; height: 3px; background: var(--hair); transition: background 0.2s; }
+.railTick.on { background: var(--blueprint); }
+.railNow {
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--muted-light);
-  flex-shrink: 0;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 /* A note on a drawing: dashed, quiet, and where it is a button it is the
    fastest way to book that day. */
@@ -793,16 +834,8 @@
 .note:is(button) { width: calc(100% - var(--card-pad) * 2); min-height: 48px; }
 .note:is(button):active { background: var(--paper-deep); }
 /* ============================================================
-   TEAM — the desktop crew × 7-day grid as one card per crew member.
+   TEAM PANEL HEAD — the crew member the rail is currently on.
    ============================================================ */
-.tstack { display: flex; flex-direction: column; gap: var(--gap); }
-.tcard {
-  border: var(--border);
-  border-radius: var(--radius);
-  background: var(--paper);
-  box-shadow: 3px 3px 0 var(--shadow);
-  overflow: hidden;
-}
 .tcardHead {
   display: flex; align-items: center; gap: 12px;
   padding: 12px var(--card-pad) 13px;
@@ -822,7 +855,14 @@
 }
 .tav.isOn { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
 .tWho { flex: 1; min-width: 0; }
-.tname { font-size: 15px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+/* Same heading weight the agenda day carries — the panel is ABOUT this person,
+   so the name owns the row and the hours figure is the datum beside it. */
+.tname {
+  font-size: var(--fs-cardh); font-weight: 900;
+  letter-spacing: 0.01em; text-transform: uppercase;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
 .trole {
   margin-top: 3px;
   font-family: var(--font-mono);
@@ -845,37 +885,9 @@
   letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--muted-light);
 }
-.tlist { display: block; }
-.trow {
-  display: flex; align-items: center; gap: 10px;
-  width: 100%;
-  min-height: 46px;
-  padding: 10px var(--card-pad);
-  border-bottom: 1.5px solid var(--ink);
-  text-align: left;
-  transition: background 0.12s;
-}
-.trow:last-child { border-bottom: none; }
-.trow:active { background: var(--paper-deep); }
-.trowTime {
-  font-family: var(--font-mono);
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--muted);
-  width: 74px;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-.trowTitle {
-  flex: 1; min-width: 0;
-  font-size: 14px; font-weight: 600;
-  line-height: 1.3;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-.trowDot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--muted-faint); }
+/* The cramped two-line mini-row this view used to carry (mono day + clamped
+   title + a 7px dot) is gone: with the full panel width available there is no
+   reason for Team to show a lesser card than Month and Week. It uses .erow. */
 /* ============================================================
    EMPTY STATES — never blank: what happened AND what to do. Two of
    them, because a filter that excludes everything is not the same
@@ -986,6 +998,30 @@
   letter-spacing: 0.14em; text-transform: uppercase;
   flex-shrink: 0;
 }
+/* ============================================================
+   EVENT DETAIL SHEET — everything the row card had to drop: the full
+   span, the phone, the whole crew, the scope and the notes. The read-
+   out itself is .metaBox, the same estimate-sheet block the edit form
+   opens with, built from the same metaRowsFor() list.
+   ============================================================ */
+.dBadges {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  padding: 14px var(--pad-x);
+  border-bottom: 1.5px solid var(--hair);
+}
+.dSec { padding: var(--card-pad) var(--pad-x); border-bottom: 1.5px solid var(--hair); }
+.dSec:last-child { border-bottom: none; }
+.dSecLbl {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.dNote { font-size: 14.5px; font-weight: 500; line-height: 1.55; overflow-wrap: anywhere; }
+/* Inside a sheet the dashed note has no card padding to sit in, so it drops the
+   agenda's side margins and fills the section it was given. */
+.dSec .note { margin: 0; }
 /* ============================================================
    QUEUE ROWS — the crew inbox and the unscheduled tray. Same shape
    both times: title, mono sub, then a status or estimate on the left
@@ -1316,12 +1352,6 @@
   to { opacity: 1; transform: none; }
 }
 .rowIn { animation: rowIn 300ms var(--ease-out) both; }
-/* The masthead slides in when the view changes — the reference's 320ms. */
-@keyframes mastSlide {
-  from { opacity: 0; transform: translateX(14px); }
-  to { opacity: 1; transform: none; }
-}
-.slide { animation: mastSlide 320ms var(--ease-out) both; }
 @keyframes press2 {
   0% { transform: scale(0.97); }
   100% { transform: scale(1); }
@@ -1371,12 +1401,11 @@
      ("Jul 26 – Aug 1, 2026") stops squeezing the two 46px nav boxes. */
   .rbarTitle { font-size: 14px; }
   .rbarBtn { letter-spacing: 0.06em; font-size: 11px; }
-  .trowTime { width: 66px; }
+  /* "Day 3 / 7" beside a 7-tick rule is the first thing to give at this width;
+     the ticks alone still answer where you are, and the panel head names it. */
+  .railNow { font-size: 10px; letter-spacing: 0.08em; }
 }
 @media (max-width: 360px) {
-  .mastCnt { grid-template-columns: 1fr; }
-  .mastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
-  .mastSub:last-child { border-bottom: none; }
   /* Three-letter day names do not fit seven ~41px columns. */
   .mgHeadLong { display: none; }
   .mgHeadShort { display: inline; }

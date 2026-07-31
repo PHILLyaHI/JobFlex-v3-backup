@@ -8,7 +8,23 @@
 export type CalKind = "job" | "appointment" | "blocked";
 
 export type CalEvent = {
+  /**
+   * DOM identity. On real data this carries a KIND PREFIX (`apt:…`, `block:…`,
+   * bare for a JobEvent) because the three tables have independent id spaces
+   * and one array holds all three — the same scheme the classic calendar page
+   * used. `rid` below is the un-prefixed database key the server actions want.
+   */
   id: string;
+  /** Database primary key. Absent on the donor fixture, which has no records —
+   *  every write path checks for it and refuses rather than pretending. */
+  rid?: string;
+  /** JobEvent only: the Job that owns the status and the crew roster. A jobless
+   *  event (the optional-job path in createJobEvent) has null here. */
+  jobId?: string | null;
+  /** JobAssignment row id per worker id. Removing crew needs the ASSIGNMENT id
+   *  (unassignWorker takes that, not the worker), so the mapping ships with the
+   *  event instead of being re-queried on save. */
+  assignmentIds?: Record<string, string>;
   kind: CalKind;
   title: string;
   start: Date;
@@ -24,6 +40,17 @@ export type CalEvent = {
   selfOnly?: boolean;
   /** Spans whole days: rendered in the week's all-day band, never in the time grid. */
   allDay?: boolean;
+  /**
+   * Lane this block last occupied in the week grid.
+   *
+   * A drop writes the lane its PREVIEW showed. Without it, `layoutDay` re-lays
+   * the whole day from scratch on the next render and assigns lanes greedily in
+   * start order — so dragging the right-hand card of a pair to an earlier time
+   * made the two swap sides the instant the drop committed, under the cursor.
+   * Ignored whenever the day no longer splits into that many lanes, which is
+   * what keeps a stale hint harmless.
+   */
+  lane?: number;
 };
 
 export type CalWorker = { id: string; name: string; role: string };
@@ -102,12 +129,52 @@ export const KIND_IC: Record<string, string> = { job: 'i-hardhat', appointment: 
  *  can use the shared `.pstatus--*` tones. */
 export type LinkKind = "job" | "proposal" | "lead" | "client";
 export type LinkOption = {
+  /** Prefixed on real data (`job:…`, `prop:…`) for the same reason `CalEvent.id`
+   *  is: four tables, one picker. */
   id: string;
+  /** Database primary key. Absent on the fixture, where `id` already is one. */
+  rid?: string;
   kind: LinkKind;
   title: string;
   client: string;
   status: string;
   meta: string;
+};
+
+/**
+ * Everything the page's server component reads for one mount. Passed straight
+ * into `initCalendarContent` and never replaced — the behavior module owns the
+ * state from then on and keeps itself in step with the database through the
+ * calendar server actions.
+ */
+export type CalendarSeed = {
+  /** The server's "today", ISO. The fixture's frozen 22 Jul 2026 is a fixture
+   *  detail; a live calendar has to open on the real month. */
+  today: string;
+  events: CalEvent[];
+  /** Team-view rows AND the crew picker — WorkerProfile ids, which is the id
+   *  space `assignWorker` / `syncAssignments` accept. */
+  workers: CalWorker[];
+  /** Unscheduled jobs. `id` is the Job id `scheduleJobFromTray` takes. */
+  tray: TrayJob[];
+  /** Pending JobAssignments. `id` is the assignment id `markAssignmentAccepted`
+   *  takes. */
+  inbox: InboxItem[];
+  links: LinkOption[];
+  /**
+   * Which kinds this role may actually create, in tab order. The three create
+   * actions have three different guards — `createJobEvent` refuses SALES and
+   * ESTIMATOR, `createAppointment` / `createBlockedTime` refuse INSTALLER and
+   * ESTIMATOR — so the tab strip is built from this rather than offering all
+   * three and letting two of them fail on submit.
+   */
+  createKinds: CalKind[];
+  /**
+   * Manager-level membership. The dispatch surfaces (tray, crew inbox, team
+   * re-assignment) go through `requireManager()` actions, so a sales rep or a
+   * field worker gets them read-only rather than a server rejection per click.
+   */
+  canManage: boolean;
 };
 
 /** Which tabs each event kind offers, in order. `all` is prepended by the UI. */

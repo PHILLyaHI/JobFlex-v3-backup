@@ -1414,8 +1414,10 @@
 .bp :global(.content .fld-lbl) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .fld-lbl .req) { margin-left: 4px; color: var(--blueprint); }
 .bp :global(.content .mdl .pinput) { width: 100%; height: 38px; }
-.bp :global(.content .mdl input[type="date"]) { font-family: var(--font-mono); font-size: 12px; }
-.bp :global(.content .mdl input[type="date"])::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+/* Starts / Ends are no longer `input[type="date"]`: the native control's panel
+   is an OS surface CSS cannot reach, so both are driven by the shared month-grid
+   popover (components/v3/shared/date-popover.ts + .css), which owns the mono
+   date type and the two icon gutters. The height above is still this page's. */
 .bp :global(.content .fld-hint) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--muted-light); }
 .bp :global(.content .fld-err) { display: none; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--danger); }
 .bp :global(.content .fld.is-err .pinput) { border-color: var(--danger); box-shadow: 2px 2px 0 rgba(168, 50, 50, 0.22); }
@@ -1463,3 +1465,26 @@
   .bp :global(.content .mdl-foot) { padding: 12px 14px calc(12px + var(--safe-bottom, 0px)); }
   .bp :global(.content .mdl-foot .btn) { height: 44px; }
 }
+
+/* ================= SERVER-ACTION FEEDBACK =================
+   The board writes through createJob / updateJob now, so two states the fixture
+   era never had need a look: an action in flight, and an action that refused.
+   Both are lifted verbatim from the Workers page, which shipped them first —
+   same tokens, same geometry, so a busy button and an error box read the same
+   on both surfaces. */
+
+/* Refusal text, in the create dialog and in the row menu. The server actions'
+   own message is written for the user; this is where it lands. */
+.bp :global(.content .mf-err) { margin-bottom: 12px; font-size: 12px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.bp :global(.content .mf-err--boxed) { margin: 0 17px 15px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
+
+/* In flight: the button keeps its size and its label slot (Create job →
+   Creating…), it just stops being pressable and stops lifting on hover. */
+.bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
+.bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
+.bp :global(.content .pmenu.is-busy .pmenu-item) { pointer-events: none; opacity: 0.55; }
+.bp :global(.content .pmenu-err) { margin: 6px 4px 2px; padding: 7px 9px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); font-size: 11.5px; font-weight: 700; line-height: 1.4; color: var(--danger); }
+
+/* The row's two affordances — open, and the actions menu — sit in their own
+   narrow columns so the dots never crowd the arrow. */
+.bp :global(.content .jtable th.th-open + th.th-open) { width: 44px; }

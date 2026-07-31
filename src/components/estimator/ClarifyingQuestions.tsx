@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Textarea";
 import { cn } from "@/lib/cn";
 import type { ClarifyQuestion } from "@/lib/estimatorSchema";
+import { lockScroll } from "@/lib/scrollLock";
 
 interface Props {
   open: boolean;
@@ -48,8 +49,7 @@ export function ClarifyingQuestions({ open, questions, onSubmit, onSkip }: Props
   React.useEffect(() => {
     if (!open) return;
     restoreRef.current = (document.activeElement as HTMLElement) ?? null;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     dialogRef.current?.focus();
 
     const SELECTOR =
@@ -77,7 +77,7 @@ export function ClarifyingQuestions({ open, questions, onSubmit, onSkip }: Props
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
       restoreRef.current?.focus?.();
     };
   }, [open]);

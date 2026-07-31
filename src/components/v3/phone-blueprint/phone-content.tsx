@@ -24,13 +24,53 @@
 // undone by the one escape-hatch rule in phone-global.css, and the reveal
 // cascade skips them in phone-behavior.ts — together those reproduce the
 // donor's paint order and motion exactly.
+//
+// The setup banner is the one block the donor rendered unconditionally: it
+// only appears when Twilio is genuinely unconfigured, which is what the
+// classic page did. The reveal cascade indexes `.content > *` at runtime, so
+// dropping it just shifts the remaining blocks up one step.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initPhoneContent } from "./phone-behavior";
+import type { Call, PhoneStats } from "./phone-data";
 import "./phone-global.css";
 
-export function PhoneContent() {
-  useBlueprintContent(initPhoneContent);
+export type PhoneContentProps = {
+  /** The org's 100 most recent calls, read in the page's server component. */
+  entries: Call[];
+  /** Whole-table counts, not counts over `entries`. */
+  stats: PhoneStats;
+  /** The Twilio "A call comes in" webhook this deployment answers on. */
+  webhookUrl: string;
+  twilioConfigured: boolean;
+};
+
+export function PhoneContent({
+  entries,
+  stats,
+  webhookUrl,
+  twilioConfigured,
+}: PhoneContentProps) {
+  // The seed reaches `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a
+  // re-run tears the page down and replays the whole reveal cascade — so the
+  // init has to stay referentially stable for the life of the mount. The ref
+  // is never written after creation: from the first commit on, the behavior
+  // module owns the log and keeps itself in step with the database through
+  // `createLeadFromCall`. Navigating away unmounts this component, so the next
+  // visit gets a fresh ref holding freshly-queried rows.
+  const seedRef = useRef({ entries, stats });
+
+  const init = useCallback(
+    (content: HTMLElement) =>
+      initPhoneContent(content, {
+        entries: seedRef.current.entries,
+        stats: seedRef.current.stats,
+      }),
+    [],
+  );
+  useBlueprintContent(init);
 
   return (
     <>
@@ -42,26 +82,28 @@ export function PhoneContent() {
       </div>
 
       {/* banner: provider not configured */}
-      <div className="cfg-banner" id="cfgBanner">
-        <span className="cfg-ic">
-          <svg className="ic">
-            <use href="#i-gear" />
-          </svg>
-        </span>
-        <div className="cfg-body">
-          <div className="cfg-t">Twilio isn&apos;t configured</div>
-          <div className="cfg-h">Add <code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code> and <code>TWILIO_PHONE_NUMBER</code>, then point the number&apos;s <b>A call comes in</b> webhook at this URL.</div>
-          <div className="cfg-hook">
-            <span className="hook-url" id="hookUrl">https://app.jobflex.com/api/twilio/voice</span>
-            <button className="hook-copy" type="button" id="hookCopy">
-              <svg className="ic">
-                <use href="#i-dup" />
-              </svg>
-              Copy
-            </button>
+      {!twilioConfigured && (
+        <div className="cfg-banner" id="cfgBanner">
+          <span className="cfg-ic">
+            <svg className="ic">
+              <use href="#i-gear" />
+            </svg>
+          </span>
+          <div className="cfg-body">
+            <div className="cfg-t">Twilio isn&apos;t configured</div>
+            <div className="cfg-h">Add <code>TWILIO_ACCOUNT_SID</code>, <code>TWILIO_AUTH_TOKEN</code> and <code>TWILIO_PHONE_NUMBER</code>, then point the number&apos;s <b>A call comes in</b> webhook at this URL.</div>
+            <div className="cfg-hook">
+              <span className="hook-url" id="hookUrl">{webhookUrl}</span>
+              <button className="hook-copy" type="button" id="hookCopy">
+                <svg className="ic">
+                  <use href="#i-dup" />
+                </svg>
+                Copy
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* stats */}
       <div className="stat-grid" id="statGrid"></div>
@@ -86,9 +128,14 @@ export function PhoneContent() {
           <tbody id="callBody"></tbody>
         </table>
       </div>
+      {/* The donor pointed this at "the webhook above" — which is only above it
+          while the setup banner is on the page. */}
       <div className="pempty is-hidden" id="callEmpty">
         <b>No calls yet</b>
-        <br />Wire up your number to the webhook above to start auto-capturing inbound calls as leads.
+        <br />
+        {twilioConfigured
+          ? "Your number is connected. The first inbound call will land here, transcribed and summarized."
+          : "Wire up your number to the webhook above to start auto-capturing inbound calls as leads."}
       </div>
       <div className="pmenu" id="pMenu"></div>
 

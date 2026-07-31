@@ -1348,7 +1348,20 @@
 .bp :global(.content .mo-hit) { fill: transparent; }
 .bp :global(.content .mo-g:hover .mo-hit) { fill: rgba(10, 10, 10, 0.05); }
 
-.bp :global(.content .rp-two) { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-items: start; }
+/* Revenue 70 / Conversion 30. `minmax(0, …)` on both tracks so the SVG chart
+   and the conversion rows shrink inside their column instead of forcing the
+   grid wider than `.content` (a bare `7fr` floors at min-content). The chart's
+   viewBox is retuned for this narrower column — see renderChart() in
+   reports-behavior.ts. */
+.bp :global(.content .rp-split) { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 3fr); gap: 16px; }
+/* Both cards run the full row height, so the conversion figures sit level with
+   the chart instead of leaving a ragged column. */
+.bp :global(.content .rp-split > .card) { display: flex; flex-direction: column; }
+.bp :global(.content .rp-split .conv-body) { flex: 1; display: flex; flex-direction: column; }
+.bp :global(.content .rp-split .conv-row) { flex: 1; }
+/* 30% is narrow: let the label column wrap instead of overflowing. The figure
+   itself never shrinks — see `.conv-v` below. */
+.bp :global(.content .conv-row > div:first-child) { min-width: 0; }
 .bp :global(.content .funnel) { padding: 14px 18px 18px; }
 .bp :global(.content .fn-row) { padding: 9px 0; }
 .bp :global(.content .fn-top) { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -1368,13 +1381,16 @@
 .bp :global(.content .conv-row:last-child) { border-bottom: none; }
 .bp :global(.content .conv-l) { font-size: 13px; color: var(--ink-soft); }
 .bp :global(.content .conv-s) { margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
-.bp :global(.content .conv-v) { font-size: 21px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.bp :global(.content .conv-v) { flex: 0 0 auto; font-size: 21px; font-weight: 900; font-variant-numeric: tabular-nums; }
 .bp :global(.content .conv-v.ok) { color: var(--success-dark); }
 .bp :global(.content .conv-v.warn) { color: var(--warning-dark); }
 
 .bp :global(.content .rp-table th), .bp :global(.content .rp-table td) { border-right: 1.5px solid var(--hair-soft); }
 .bp :global(.content .rp-table th:last-child), .bp :global(.content .rp-table td:last-child) { border-right: none; }
 .bp :global(.content .rp-table tbody tr:nth-child(even)) { background: var(--paper-deep); }
+/* No crew delivered anything in the selected range. The donor never had this
+   state — its crew table was a fixture that always had four rows. */
+.bp :global(.content .rp-empty-row td) { padding: 22px 14px; text-align: center; font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .crew-name) { display: flex; align-items: center; gap: 10px; }
 .bp :global(.content .crew-av) { width: 28px; height: 28px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep); font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; }
 .bp :global(.content .crew-n) { font-size: 13px; font-weight: 700; }
@@ -1409,6 +1425,10 @@
 .bp :global(.content .exp-mark) { width: 16px; height: 16px; flex: 0 0 auto; border: 1.5px solid var(--ink); border-radius: 50%; position: relative; }
 .bp :global(.content .exp-opt.on .exp-mark) { border-color: var(--blueprint); }
 .bp :global(.content .exp-opt.on .exp-mark)::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--blueprint); }
+/* PDF / Excel have no generator in this app yet; the dialog greys them rather
+   than offering a download that never arrives. */
+.bp :global(.content .exp-opt.is-soon) { opacity: 0.45; cursor: not-allowed; }
+.bp :global(.content .exp-opt.is-soon:hover) { border-color: var(--hair-soft); background: var(--paper); }
 .bp :global(.content .exp-t) { font-size: 13px; font-weight: 700; }
 .bp :global(.content .exp-h) { margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
 
@@ -1418,7 +1438,7 @@
   .bp :global(.content .range) { flex: 1; }
   .bp :global(.content .stat-grid) { grid-template-columns: repeat(2, 1fr); }
   .bp :global(.content .stat-val) { font-size: 21px; }
-  .bp :global(.content .rp-two) { grid-template-columns: 1fr; }
+  .bp :global(.content .rp-split) { grid-template-columns: minmax(0, 1fr); }
   .bp :global(.content .rp-table th:nth-child(3)), .bp :global(.content .rp-table td:nth-child(3)),
   .bp :global(.content .rp-table th:nth-child(5)), .bp :global(.content .rp-table td:nth-child(5)) { display: none; }
 }

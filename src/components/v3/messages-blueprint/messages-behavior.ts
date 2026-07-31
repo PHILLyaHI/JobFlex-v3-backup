@@ -12,16 +12,44 @@
 //   guarded are either shell-owned or replaced by strict null checks below.
 
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import {
-  CONV_SEED,
-  CONV_SEQ_START,
-  MSG_SEQ_START,
-  TEAM,
-  type Conv,
-  type Msg,
-} from "./messages-data";
+  clearConversation,
+  createConversation,
+  markConversationRead,
+  postMessage,
+} from "@/actions/messages";
+import type { Conv, MessagesSeed, Msg } from "./messages-data";
 
-export function initMessagesContent(content: HTMLElement): () => void {
+/** Server actions reject with an Error whose message is written for the user
+ *  ("You can only reply in your own threads.", the plan-limit copy). Surface
+ *  that text; fall back to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  // A Next.js server-action transport failure has no useful message.
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** Every string below is now real database content — a teammate's name, a
+ *  message body, a job title — and all of it is written into `innerHTML`. The
+ *  fixture never needed escaping; user-authored text always does. */
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const EMPTY_SEED: MessagesSeed = { conversations: [], team: [], meName: "You", activeId: null };
+
+export function initMessagesContent(
+  content: HTMLElement,
+  seed: MessagesSeed = EMPTY_SEED,
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -38,6 +66,13 @@ export function initMessagesContent(content: HTMLElement): () => void {
   };
   const $ = (sel: string) => root.querySelector<HTMLElement>(sel);
   const $$ = (sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
+  // Tracked timeouts, so an unmount mid-dialog-exit cannot fire into a detached
+  // tree. `closeMdl` takes this helper for exactly that reason.
+  const timers: number[] = [];
+  const after = (ms: number, fn: () => void) => {
+    timers.push(window.setTimeout(fn, ms));
+  };
+  disposers.push(() => timers.forEach((t) => window.clearTimeout(t)));
 
   // Dismiss Lead Center banners (smooth height + gap collapse) — inert on this
   // page (no banner in the markup), kept for donor parity with shared shells.
@@ -66,23 +101,75 @@ export function initMessagesContent(content: HTMLElement): () => void {
   });
 
   // ================= MESSAGES: DATA =================
-  // A per-mount COPY of the fixture. Sending, clearing and creating threads all
-  // mutate this array (and the nested `msgs`), and the seed is a module-level
-  // constant — mutating it directly would leak every sent message into the next
-  // visit to the page (and into any other importer of CONV_SEED).
-  const convData: Conv[] = CONV_SEED.map((c) => ({ ...c, msgs: c.msgs.map((m) => ({ ...m })) }));
-  let convSeq = CONV_SEQ_START;
-  let msgSeq = MSG_SEQ_START;
+  // The org's real threads, read in src/app/dashboard/messages/page.tsx. This
+  // array is the page's working copy: every write goes to the database through
+  // a server action first (or optimistically, and is rolled back if the action
+  // rejects), and the copy is patched to match so the rail repaints instantly.
+  // A reload reads the same rows back.
+  const convData: Conv[] = seed.conversations.map((c) => ({ ...c, msgs: c.msgs.map((m) => ({ ...m })) }));
+  const team = seed.team;
+  const meName = seed.meName;
 
-  const mx: { active: string; search: string; selected: string[]; memberSearch: string } = {
-    active: "k1",
+  /** The rail's relative timestamp — "now", "12m", "1h", "2d", "3w". */
+  function whenLabel(ts: number): string {
+    const d = Date.now() - ts;
+    if (d < 60000) return "now";
+    const m = Math.floor(d / 60000);
+    if (m < 60) return m + "m";
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + "h";
+    const days = Math.floor(h / 24);
+    if (days < 7) return days + "d";
+    return Math.floor(days / 7) + "w";
+  }
+  /** The thread's day divider — "Today", "Yesterday", then "Jul 20". */
+  function dayLabel(ts: number): string {
+    const d = new Date(ts);
+    const today = new Date();
+    const midnight = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((midnight(today) - midnight(d)) / 86400000);
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Yesterday";
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+  /** The per-message stamp — "7:42 AM". */
+  function timeLabel(ts: number): string {
+    const d = new Date(ts);
+    let h = d.getHours();
+    const ap = h >= 12 ? "PM" : "AM";
+    h = h % 12 || 12;
+    return h + ":" + String(d.getMinutes()).padStart(2, "0") + " " + ap;
+  }
+
+  /** Record activity on a thread and float it to the top of the rail. Called
+   *  wherever a message lands, whoever wrote it. */
+  function touchConv(c: Conv) {
+    c.ts = Date.now();
+  }
+
+  let tmpSeq = 0;
+
+  const mx: {
+    active: string;
+    search: string;
+    selected: string[];
+    memberSearch: string;
+    /** A write is on the wire — the composer and the dialog are inert. */
+    busy: boolean;
+  } = {
+    active: seed.activeId ?? "",
     search: "",
     selected: [],
     memberSearch: "",
+    busy: false,
   };
 
   function initials(n: string) {
     const p = n.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
+    // The fixture's names were always two latin words. Real ones are not: an
+    // email-only member ("dan@…") or a non-latin name can leave `p` empty, and
+    // the donor's `p[0][0]` threw on it.
+    if (p.length === 0) return (n.trim().slice(0, 2) || "?").toUpperCase();
     return p.length === 1
       ? p[0].slice(0, 2).toUpperCase()
       : (p[0][0] + p[p.length - 1][0]).toUpperCase();
@@ -96,29 +183,38 @@ export function initMessagesContent(content: HTMLElement): () => void {
     return c.msgs.length ? c.msgs[c.msgs.length - 1] : null;
   }
   /**
-   * Conversations in recency order — `convData`'s own order, newest first.
+   * Conversations by REAL recency — newest activity first, whoever wrote it.
    *
-   * Unread used to be the primary sort key, which made the list reorder itself
-   * as a DIRECT RESULT of reading it: opening a thread clears its unread count
-   * (see the `[data-conv]` handler), the thread instantly lost its float-to-top
-   * priority, and the row you had just clicked slid down past every thread you
-   * had not read yet. A list whose order depends on a value that the act of
-   * looking changes cannot hold still.
+   * `ts` is the sort key on purpose. Unread used to be the primary key, which
+   * made the list reorder itself as a direct result of reading it: opening a
+   * thread clears its unread count, the thread instantly lost its float-to-top
+   * priority, and the row just clicked slid down past everything still unread.
+   * A list whose order depends on a value that the act of LOOKING changes
+   * cannot hold still.
    *
-   * Unread threads are already unmistakable without moving them — the row
-   * carries `.unread` and a count badge — and every messaging app people
-   * already use orders by recency, not by read state.
+   * Recency gives the behaviour that was actually wanted without that feedback
+   * loop: a thread that receives a new message rises because it is newer, and
+   * reading it does not move it, because reading does not change when the
+   * message arrived. Unread stays visible through `.unread` and the count badge.
    */
   function sorted() {
     const q = mx.search.trim().toLowerCase();
-    return convData.filter(function (c) {
-      if (!q) return true;
-      const last = lastMsg(c);
-      return (
-        c.title.toLowerCase().indexOf(q) !== -1 ||
-        (last !== null && last.body.toLowerCase().indexOf(q) !== -1)
-      );
-    });
+    return convData
+      .filter(function (c) {
+        if (!q) return true;
+        const last = lastMsg(c);
+        return (
+          c.title.toLowerCase().indexOf(q) !== -1 ||
+          (last !== null && last.body.toLowerCase().indexOf(q) !== -1)
+        );
+      })
+      .slice()
+      .sort(function (a, b) {
+        const d = b.ts - a.ts;
+        // Stable tie-break on the server's own order, so two threads with the
+        // same last-activity time never shuffle between renders.
+        return d !== 0 ? d : convData.indexOf(a) - convData.indexOf(b);
+      });
   }
 
   // ================= RENDER =================
@@ -135,20 +231,20 @@ export function initMessagesContent(content: HTMLElement): () => void {
           (mx.active === c.id ? " on" : "") +
           (c.unread ? " unread" : "") +
           '" type="button" data-conv="' +
-          c.id +
+          esc(c.id) +
           '">' +
           '<span class="conv-av">' +
-          initials(c.title) +
+          esc(initials(c.title)) +
           "</span>" +
           '<span class="conv-main">' +
           '<span class="conv-top"><span class="conv-t">' +
-          c.title +
+          esc(c.title) +
           "</span>" +
           '<span class="conv-time">' +
-          c.when +
+          esc(whenLabel(c.ts)) +
           "</span></span>" +
           '<span class="conv-prev">' +
-          (last ? (last.me ? "You: " : "") + last.body : "No messages yet") +
+          (last ? (last.me ? "You: " : "") + esc(last.body) : "No messages yet") +
           "</span>" +
           "</span>" +
           (c.unread ? '<span class="conv-badge">' + c.unread + "</span>" : "") +
@@ -181,7 +277,7 @@ export function initMessagesContent(content: HTMLElement): () => void {
       const prev = btn.querySelector<HTMLElement>(".conv-prev");
       if (prev) prev.textContent = last ? (last.me ? "You: " : "") + last.body : "No messages yet";
       const when = btn.querySelector<HTMLElement>(".conv-time");
-      if (when) when.textContent = c.when;
+      if (when) when.textContent = whenLabel(c.ts);
 
       // The badge only exists while something is unread, so it has to be created
       // and destroyed rather than merely re-labelled.
@@ -209,22 +305,24 @@ export function initMessagesContent(content: HTMLElement): () => void {
     if (!c) {
       head.innerHTML = "";
       composer.style.display = "none";
-      body.innerHTML =
-        '<div class="th-empty"><b>Pick a conversation</b>' +
-        "<span>Choose a thread on the left to read and reply.</span></div>";
+      body.innerHTML = convData.length
+        ? '<div class="th-empty"><b>Pick a conversation</b>' +
+          "<span>Choose a thread on the left to read and reply.</span></div>"
+        : '<div class="th-empty"><b>No conversations yet</b>' +
+          "<span>Start one with anyone on the crew — “New message”, top right.</span></div>";
       return;
     }
     composer.style.display = "";
     head.innerHTML =
       '<div class="th-who"><span class="conv-av">' +
-      initials(c.title) +
+      esc(initials(c.title)) +
       "</span>" +
       '<span style="min-width:0"><span class="th-t" style="display:block">' +
-      c.title +
+      esc(c.title) +
       "</span>" +
       '<span class="th-s" style="display:block">' +
       (c.kind === "GROUP" ? "Group" : "Direct") +
-      (c.job ? " · job " + c.job : "") +
+      (c.job ? " · job " + esc(c.job) : "") +
       " · " +
       c.msgs.length +
       " message" +
@@ -235,24 +333,30 @@ export function initMessagesContent(content: HTMLElement): () => void {
     let html = "";
     let day: string | null = null;
     c.msgs.forEach(function (m, i) {
-      if (m.day !== day) {
-        html += '<div class="day-div"><span>' + m.day + "</span></div>";
-        day = m.day;
+      const mDay = dayLabel(m.ts);
+      if (mDay !== day) {
+        html += '<div class="day-div"><span>' + esc(mDay) + "</span></div>";
+        day = mDay;
       }
       const prev = c.msgs[i - 1];
-      const firstInRun = !prev || prev.who !== m.who || prev.day !== m.day;
+      const firstInRun = !prev || prev.who !== m.who || dayLabel(prev.ts) !== mDay;
       const isLast = i === c.msgs.length - 1;
+      // A `tmp-` id is an optimistic send still on the wire: the row reads
+      // "Sending…" until the server action resolves and it becomes "Delivered".
+      const pendingSend = m.id.indexOf("tmp-") === 0;
       html +=
         '<div class="msg' +
         (m.me ? " me" : "") +
         '">' +
-        (!m.me && c.kind === "GROUP" && firstInRun ? '<span class="msg-who">' + m.who + "</span>" : "") +
+        (!m.me && c.kind === "GROUP" && firstInRun
+          ? '<span class="msg-who">' + esc(m.who) + "</span>"
+          : "") +
         '<span class="bub">' +
-        m.body +
+        esc(m.body) +
         "</span>" +
         '<span class="msg-meta">' +
-        m.at +
-        (m.me && isLast ? " · Delivered" : "") +
+        esc(timeLabel(m.ts)) +
+        (m.me && isLast ? (pendingSend ? " · Sending…" : " · Delivered") : "") +
         "</span>" +
         "</div>";
     });
@@ -270,7 +374,7 @@ export function initMessagesContent(content: HTMLElement): () => void {
   // ================= NEW CONVERSATION DIALOG =================
   function renderMembers() {
     const q = mx.memberSearch.trim().toLowerCase();
-    const rows = TEAM.filter(function (m) {
+    const rows = team.filter(function (m) {
       return !q || m.name.toLowerCase().indexOf(q) !== -1;
     });
     const list = $("#memberList");
@@ -279,27 +383,31 @@ export function initMessagesContent(content: HTMLElement): () => void {
     const grpWrap = $("#grpTitleWrap");
     const startBtn = root.querySelector<HTMLButtonElement>("#startBtn");
     if (!list || !title || !sub || !grpWrap || !startBtn) return;
-    list.innerHTML = rows
-      .map(function (m) {
-        return (
-          '<li class="' +
-          (mx.selected.indexOf(m.id) !== -1 ? "on" : "") +
-          '" data-mem="' +
-          m.id +
-          '">' +
-          '<span class="mem-check"></span>' +
-          '<span class="mem-av">' +
-          initials(m.name) +
-          "</span>" +
-          '<span class="mem-main"><span class="mem-n" style="display:block">' +
-          m.name +
-          "</span>" +
-          '<span class="mem-r" style="display:block">' +
-          m.role +
-          "</span></span></li>"
-        );
-      })
-      .join("");
+    list.innerHTML = team.length === 0
+      ? '<li class="members-empty">No teammates yet. Add someone to your team first, then you can message them.</li>'
+      : rows.length === 0
+        ? '<li class="members-empty">No match.</li>'
+        : rows
+            .map(function (m) {
+              return (
+                '<li class="' +
+                (mx.selected.indexOf(m.id) !== -1 ? "on" : "") +
+                '" data-mem="' +
+                esc(m.id) +
+                '">' +
+                '<span class="mem-check"></span>' +
+                '<span class="mem-av">' +
+                esc(initials(m.name)) +
+                "</span>" +
+                '<span class="mem-main"><span class="mem-n" style="display:block">' +
+                esc(m.name) +
+                "</span>" +
+                '<span class="mem-r" style="display:block">' +
+                esc(m.role) +
+                "</span></span></li>"
+              );
+            })
+            .join("");
     const group = mx.selected.length > 1;
     title.textContent = group ? "New group" : "New conversation";
     sub.textContent = group ? "Group with " + mx.selected.length + " people." : "Pick someone on the crew.";
@@ -313,38 +421,153 @@ export function initMessagesContent(content: HTMLElement): () => void {
     const grpTitle = root.querySelector<HTMLInputElement>("#grpTitle");
     if (memberSearch) memberSearch.value = "";
     if (grpTitle) grpTitle.value = "";
+    convError(null);
     renderMembers();
-    $("#convMdl")?.classList.add("open");
+    const mdl = $("#convMdl");
+    if (mdl) openMdl(mdl);
   }
   function closeDialog() {
-    $("#convMdl")?.classList.remove("open");
+    const mdl = $("#convMdl");
+    if (mdl) closeMdl(mdl, after);
   }
 
-  function sendMessage() {
-    const box = root.querySelector<HTMLTextAreaElement>("#msgBox");
+  /** Show / clear the message a rejected server action wrote for the user. */
+  function showErr(sel: string, msg: string | null) {
+    const box = $(sel);
     if (!box) return;
+    box.textContent = msg ?? "";
+    box.classList.toggle("is-hidden", !msg);
+  }
+  const sendError = (msg: string | null) => showErr("#sendErr", msg);
+  const convError = (msg: string | null) => showErr("#convErr", msg);
+
+  /** Composer inert while a send / clear is on the wire. */
+  function setThreadBusy(on: boolean) {
+    mx.busy = on;
+    $("#thComposer")?.classList.toggle("is-busy", on);
+  }
+
+  // ================= WRITES (real server actions) =================
+  // These are the live actions from src/actions/messages.ts — the same ones the
+  // classic inbox used. They are org-scoped and participant-gated on the server
+  // and they revalidate /dashboard/messages. `convData` is patched so the rail
+  // repaints immediately; a reload reads the same rows back from the database.
+
+  async function sendMessage() {
+    const box = root.querySelector<HTMLTextAreaElement>("#msgBox");
+    if (!box || mx.busy) return;
     const text = box.value.trim();
     const c = conv(mx.active);
     if (!text || !c) return;
-    msgSeq += 1;
-    const now = new Date();
-    let h = now.getHours();
-    const ap = h >= 12 ? "PM" : "AM";
-    h = h % 12 || 12;
-    c.msgs.push({
-      id: "m" + msgSeq,
-      who: "Ivan",
-      me: true,
-      day: "Today",
-      at: h + ":" + String(now.getMinutes()).padStart(2, "0") + " " + ap,
-      body: text,
-    });
-    c.when = "now";
+
+    sendError(null);
+    // Optimistic: the bubble lands the instant Enter is pressed and reads
+    // "Sending…" until the action resolves. If it rejects, the bubble is taken
+    // back out and the text is returned to the composer — never a silent drop.
+    tmpSeq += 1;
+    const tmpId = "tmp-" + tmpSeq;
+    const prevTs = c.ts;
+    c.msgs.push({ id: tmpId, who: meName, me: true, ts: Date.now(), body: text });
+    touchConv(c);
     box.value = "";
     box.style.height = "";
-    // The rail's preview and timestamp change; its membership does not.
-    paintConvRows();
+    // A sent message changes the rail's ORDER (this thread is now the newest),
+    // so the rail is re-listed rather than patched — that IS the thread rising
+    // to the top. Deliberately without the entrance cascade: one row moving
+    // should not replay every row's arrival.
+    renderList();
     renderThread();
+    setThreadBusy(true);
+
+    try {
+      await postMessage(c.id, text);
+      const sent = c.msgs.find((m) => m.id === tmpId);
+      if (sent) sent.id = "sent-" + tmpId;
+      setThreadBusy(false);
+      renderThread();
+    } catch (err) {
+      c.msgs = c.msgs.filter((m) => m.id !== tmpId);
+      c.ts = prevTs;
+      box.value = text;
+      setThreadBusy(false);
+      renderList();
+      renderThread();
+      sendError(actionError(err));
+      box.focus();
+    }
+  }
+
+  async function clearThread() {
+    const c = conv(mx.active);
+    if (!c || mx.busy) return;
+    sendError(null);
+    const prevMsgs = c.msgs;
+    const prevTs = c.ts;
+    c.msgs = [];
+    touchConv(c);
+    renderList();
+    renderThread();
+    setThreadBusy(true);
+    try {
+      await clearConversation(c.id);
+      setThreadBusy(false);
+    } catch (err) {
+      c.msgs = prevMsgs;
+      c.ts = prevTs;
+      setThreadBusy(false);
+      renderList();
+      renderThread();
+      sendError(actionError(err));
+    }
+  }
+
+  async function startConversation() {
+    const chosen = team.filter(function (m) {
+      return mx.selected.indexOf(m.id) !== -1;
+    });
+    if (!chosen.length || mx.busy) return;
+    const group = chosen.length > 1;
+    const custom = (root.querySelector<HTMLInputElement>("#grpTitle")?.value || "").trim();
+    const title = group
+      ? custom || chosen.map((m) => m.name.split(" ")[0]).join(", ")
+      : chosen[0].name;
+
+    convError(null);
+    mx.busy = true;
+    const startBtn = root.querySelector<HTMLButtonElement>("#startBtn");
+    if (startBtn) startBtn.disabled = true;
+    try {
+      // The action returns the real conversation id, so the row appended below
+      // is the database row — every later send posts against it.
+      const created = await createConversation({
+        participantIds: chosen.map((m) => m.id),
+        kind: group ? "GROUP" : "DIRECT",
+        title,
+      });
+      const c: Conv = {
+        id: created.id,
+        kind: group ? "GROUP" : "DIRECT",
+        title,
+        job: null,
+        unread: 0,
+        // A brand-new thread is the newest thing on the rail.
+        ts: Date.now(),
+        msgs: [],
+      };
+      convData.unshift(c);
+      mx.active = c.id;
+      mx.busy = false;
+      closeDialog();
+      renderMessages();
+      // A new thread really does re-list the rail, so the cascade belongs here.
+      playStagger?.();
+      root.querySelector<HTMLTextAreaElement>("#msgBox")?.focus();
+    } catch (err) {
+      mx.busy = false;
+      if (startBtn) startBtn.disabled = mx.selected.length === 0;
+      // Plan limits ("You've hit your conversation limit…") land here too.
+      convError(actionError(err));
+    }
   }
 
   // ================= EVENTS =================
@@ -353,8 +576,15 @@ export function initMessagesContent(content: HTMLElement): () => void {
     const row = target.closest<HTMLElement>("[data-conv]");
     if (row) {
       mx.active = row.dataset.conv || "";
+      sendError(null);
       const c = conv(mx.active);
-      if (c) c.unread = 0;
+      if (c && c.unread > 0) {
+        c.unread = 0;
+        // Stamps lastReadAt for this viewer — the same call that clears the
+        // sidebar / tab-bar unread badge. Fire-and-forget: the badge is
+        // cosmetic and a failed stamp must not block opening the thread.
+        void markConversationRead(c.id).catch(() => {});
+      }
       // Patch the rail in place rather than rebuilding it. Selecting a thread
       // does not change WHICH conversations exist or their order, and a full
       // `renderList()` replaced every row's node — which made the whole rail
@@ -364,7 +594,7 @@ export function initMessagesContent(content: HTMLElement): () => void {
       return;
     }
     if (target.closest("#sendBtn")) {
-      sendMessage();
+      void sendMessage();
       return;
     }
     if (target.closest("#newConvBtn")) {
@@ -372,11 +602,13 @@ export function initMessagesContent(content: HTMLElement): () => void {
       return;
     }
     if (target.closest('[data-mdl="close"]')) {
-      closeDialog();
+      // A dismiss must never interrupt a create that is already on the wire.
+      if (!mx.busy) closeDialog();
       return;
     }
     const mem = target.closest<HTMLElement>("[data-mem]");
     if (mem) {
+      if (mx.busy) return;
       const id = mem.dataset.mem || "";
       const i = mx.selected.indexOf(id);
       if (i === -1) mx.selected.push(id);
@@ -385,47 +617,12 @@ export function initMessagesContent(content: HTMLElement): () => void {
       return;
     }
     if (target.closest("#startBtn")) {
-      const chosen = TEAM.filter(function (m) {
-        return mx.selected.indexOf(m.id) !== -1;
-      });
-      if (!chosen.length) return;
-      const group = chosen.length > 1;
-      const custom = (root.querySelector<HTMLInputElement>("#grpTitle")?.value || "").trim();
-      convSeq += 1;
-      const c: Conv = {
-        id: "k" + convSeq,
-        kind: group ? "GROUP" : "DIRECT",
-        title: group
-          ? custom ||
-            chosen
-              .map(function (m) {
-                return m.name.split(" ")[0];
-              })
-              .join(", ")
-          : chosen[0].name,
-        job: null,
-        unread: 0,
-        when: "now",
-        msgs: [],
-      };
-      convData.unshift(c);
-      mx.active = c.id;
-      closeDialog();
-      renderMessages();
-      // A new thread really does re-list the rail, so the cascade belongs here.
-      playStagger?.();
-      root.querySelector<HTMLTextAreaElement>("#msgBox")?.focus();
+      void startConversation();
       return;
     }
     const act = target.closest<HTMLElement>("[data-act]");
     if (act && act.dataset.act === "clear") {
-      const c = conv(mx.active);
-      if (c) {
-        c.msgs = [];
-        c.when = "now";
-      }
-      paintConvRows();
-      renderThread();
+      void clearThread();
     }
   });
   on(document, "input", function (e) {
@@ -451,7 +648,12 @@ export function initMessagesContent(content: HTMLElement): () => void {
     const target = ev.target as HTMLElement;
     if (target.id === "msgBox" && ev.key === "Enter" && !ev.shiftKey) {
       ev.preventDefault();
-      sendMessage();
+      void sendMessage();
+    }
+    // Escape closes the new-conversation dialog — the scrim and Cancel were the
+    // only ways out, and neither is where a keyboard reaches first.
+    if (ev.key === "Escape" && $("#convMdl")?.classList.contains("open") && !mx.busy) {
+      closeDialog();
     }
   });
 

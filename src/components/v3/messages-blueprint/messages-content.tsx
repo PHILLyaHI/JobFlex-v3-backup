@@ -20,11 +20,38 @@
 // sticky topbar. `position: fixed` keeps it out of the flex flow either way, so
 // layout and the `gap: 22px` rhythm are untouched.
 
+import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initMessagesContent } from "./messages-behavior";
+import type { Conv, Member } from "./messages-data";
 
-export function MessagesContent() {
-  useBlueprintContent(initMessagesContent);
+/**
+ * @param conversations the viewer's real threads, read in the page's server
+ *   component. The behavior module takes them as its starting state and then
+ *   keeps itself in step with the database through the message server actions.
+ */
+export function MessagesContent({
+  conversations,
+  team,
+  meName,
+  activeId,
+}: {
+  conversations: Conv[];
+  team: Member[];
+  meName: string;
+  activeId: string | null;
+}) {
+  // The seed reaches `init` through a ref, NOT through the callback's deps.
+  // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
+  // tears the page down and replays the whole reveal cascade — so the init has
+  // to stay referentially stable for the life of the mount. The ref is seeded on
+  // the first render and never written again: from then on the behavior module
+  // owns the inbox and keeps itself in step with the database. Navigating away
+  // unmounts this component, so the next visit gets freshly-queried rows.
+  const seedRef = useRef({ conversations, team, meName, activeId });
+
+  const init = useCallback((content: HTMLElement) => initMessagesContent(content, seedRef.current), []);
+  useBlueprintContent(init);
 
   return (
     <>
@@ -65,6 +92,10 @@ export function MessagesContent() {
         <div className="card mx-thread">
           <div className="th-head" id="thHead"></div>
           <div className="th-body" id="thBody"></div>
+          {/* Server actions reject with messages written for the user ("You can
+              only reply in your own threads.", the plan-limit copy). This is
+              where the thread's writes surface them instead of failing silent. */}
+          <div className="mx-err is-hidden" id="sendErr" role="alert"></div>
           <div className="th-composer" id="thComposer">
             <textarea
               id="msgBox"
@@ -107,6 +138,7 @@ export function MessagesContent() {
               <span className="est-lbl">Group name (optional)</span>
               <input className="est-in" id="grpTitle" placeholder="Maple Ave crew" />
             </label>
+            <div className="mx-err mx-err--mdl is-hidden" id="convErr" role="alert"></div>
           </div>
           <div className="mdl-foot">
             <button className="btn btn-ghost btn--sm" type="button" data-mdl="close">

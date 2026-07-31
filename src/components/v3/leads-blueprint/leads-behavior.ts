@@ -22,20 +22,77 @@
 // (the donor never applied `.rv` to it either). `leads.module.css` carries the
 // matching stacking-context escape hatch.
 
+import { claimLead, deleteLead, importLeads, updateLeadStatus } from "@/actions/leads";
+import { acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
+import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
+import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
   LEADS_SEED,
   OFFERS_SEED,
   STAGES,
   LEAD_STATUSES,
   SRC,
-  SEQ_START,
   PAGE_SIZE,
+  parseCsvRows,
   type Lead,
   type Offer,
   type StagedRow,
 } from "./leads-data";
 
-export function initLeadsContent(content: HTMLElement): () => void {
+export type LeadsContentOptions = {
+  /** The org's real pipeline, read server-side. Omit to fall back to the donor
+   *  fixture (the standalone mock routes have no session to read from). */
+  leads?: Lead[];
+  /** Live Lead Center offers. Same fallback rule as `leads`. */
+  offers?: Offer[];
+  /** `router.refresh()` — pulls rows the client cannot construct itself (an
+   *  import returns a count, an accepted offer materializes server-side). */
+  refresh?: () => void;
+  /** Handed the page's handle once it is live, so the React wrapper can push
+   *  freshly-revalidated server rows in without remounting the module. */
+  onReady?: (handle: LeadsHandle) => void;
+};
+
+/** The only way into a mounted leads sheet from React. */
+export type LeadsHandle = {
+  /** Adopt server rows. A no-op when they already match what is on screen —
+   *  which is the normal case, because every write updates locally first. */
+  sync: (leads: Lead[], offers: Offer[]) => void;
+};
+
+/** Lead server actions reject with an Error whose message is written for the
+ *  user ("You can only update your own leads", "That lead is already claimed by
+ *  someone else"). Surface that text; fall back to a generic line for anything
+ *  unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** Cheap identity of a row set — id, status and assignee are everything this
+ *  page paints that a write can change.
+ *
+ * SORTED, deliberately. A board move pushes the card to the end of the local
+ * array (that is where it lands in its new column), while the server returns
+ * the same rows in createdAt order — an order-sensitive signature would call
+ * that a difference and repaint the whole sheet after every single drag. */
+function leadsSig(rows: Lead[]): string {
+  return rows
+    .map((l) => l.id + "|" + l.status + "|" + (l.assignee || ""))
+    .sort()
+    .join(",");
+}
+function offersSig(rows: Offer[]): string {
+  return rows.map((o) => o.id).sort().join(",");
+}
+
+export function initLeadsContent(
+  content: HTMLElement,
+  options: LeadsContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -58,6 +115,8 @@ export function initLeadsContent(content: HTMLElement): () => void {
     }, ms);
     timers.add(id);
   };
+  /** `later` with the argument order the blueprint-shell helpers expect. */
+  const after = (ms: number, fn: () => void) => later(fn, ms);
   /**
    * `on` for a possibly-absent element. EVERY listener that outlives this call
    * must go through here or through `on` — nothing may use bare
@@ -83,11 +142,14 @@ export function initLeadsContent(content: HTMLElement): () => void {
   const $ = (sel: string) => root.querySelector<HTMLElement>(sel);
   const $$ = (sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
-  // Runtime mutations (import / accept / decline / delete / drag) — clone the
-  // seed per mount so a remount starts from the donor's state.
-  const leadsData: Lead[] = LEADS_SEED.map((l) => ({ ...l }));
-  const offersData: Offer[] = OFFERS_SEED.map((o) => ({ ...o }));
-  let seq = SEQ_START;
+  // The org's real pipeline when the page supplies one (src/app/dashboard/leads),
+  // the donor fixture otherwise. Either way it is CLONED, because import /
+  // accept / decline / delete / drag mutate it in place: the server actions are
+  // the source of truth, and this array mirrors them so the sheet repaints the
+  // moment one returns instead of waiting on a round trip through the router.
+  const leadsData: Lead[] = (options.leads ?? LEADS_SEED).map((l) => ({ ...l }));
+  const offersData: Offer[] = (options.offers ?? OFFERS_SEED).map((o) => ({ ...o }));
+  const refresh = options.refresh ?? (() => {});
 
   // Dismiss Lead Center banners (smooth height + gap collapse) — inert on this
   // page (no banner in the markup), kept for donor parity with shared shells.
@@ -124,10 +186,49 @@ export function initLeadsContent(content: HTMLElement): () => void {
     spec: null as string | null,
     query: "",
     page: 1,
-    picked: null as number | null,
-    pending: null as (() => void) | null,
+    picked: null as string | null,
+    /** The lead the delete dialog is currently asking about. */
+    pendingDelete: null as string | null,
+    /** Ids with a status write in flight — a second drag on the same card is
+     *  ignored rather than racing the first. */
+    busy: new Set<string>(),
+    saving: false,
   };
   const staged: StagedRow[] = [];
+
+  // ================= FAILURE SURFACES =================
+  /** Errors that have a dialog / panel of their own land in a boxed line. */
+  function setErr(sel: string, msg: string | null) {
+    const box = $(sel);
+    if (!box) return;
+    box.textContent = msg || "";
+    box.classList.toggle("is-hidden", !msg);
+  }
+  /** Everything else — a refused stage drag, a lost accept/decline race. */
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  function toast(msg: string) {
+    const el = $("#lToast");
+    const txt = $("#lToastText");
+    if (!el || !txt) return;
+    txt.textContent = msg;
+    el.classList.remove("is-hidden");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastTimer = null;
+      el.classList.add("is-hidden");
+    }, 6000);
+    timers.add(toastTimer);
+  }
+  /** Button label + disabled state while an action is in flight. */
+  function setBusy(sel: string, on: boolean, busyLabel: string, idleLabel: string) {
+    lstate.saving = on;
+    const btn = root.querySelector<HTMLButtonElement>(sel);
+    if (!btn) return;
+    btn.disabled = on;
+    btn.classList.toggle("is-busy", on);
+    const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    if (lbl) lbl.textContent = on ? busyLabel : idleLabel;
+  }
 
   function srcLabel(v: string | null) {
     return v ? SRC[v] || v : "Direct";
@@ -278,6 +379,36 @@ export function initLeadsContent(content: HTMLElement): () => void {
       return lstate.status === "ALL" || l.status === lstate.status;
     });
   }
+  /**
+   * The table's frame — empty state and pager. Split out of `renderTable` so a
+   * row that LEAVES can refresh the count and the pager without the table body
+   * being rebuilt underneath the exit animation.
+   */
+  function renderPagerAndEmpty() {
+    const rows = filtered();
+    const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (lstate.page > pages) lstate.page = pages;
+    $("#leadsCard")?.classList.toggle("is-hidden", rows.length === 0);
+    $("#allEmpty")?.classList.toggle("is-hidden", rows.length !== 0);
+    const el = $("#leadsPager");
+    if (!el) return;
+    if (pages <= 1) {
+      el.innerHTML = "";
+      return;
+    }
+    el.innerHTML =
+      '<span class="pager-info">Page ' +
+      lstate.page +
+      " / " +
+      pages +
+      "</span>" +
+      '<button class="pager-btn" type="button" data-pg="prev"' +
+      (lstate.page <= 1 ? " disabled" : "") +
+      ' aria-label="Previous"><svg class="ic rot-l"><use href="#i-chev"/></svg></button>' +
+      '<button class="pager-btn" type="button" data-pg="next"' +
+      (lstate.page >= pages ? " disabled" : "") +
+      ' aria-label="Next"><svg class="ic rot-r"><use href="#i-chev"/></svg></button>';
+  }
   function renderTable() {
     const rows = filtered();
     const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -334,26 +465,7 @@ export function initLeadsContent(content: HTMLElement): () => void {
         })
         .join("");
     }
-    $("#leadsCard")?.classList.toggle("is-hidden", rows.length === 0);
-    $("#allEmpty")?.classList.toggle("is-hidden", rows.length !== 0);
-    const el = $("#leadsPager");
-    if (!el) return;
-    if (pages <= 1) {
-      el.innerHTML = "";
-      return;
-    }
-    el.innerHTML =
-      '<span class="pager-info">Page ' +
-      lstate.page +
-      " / " +
-      pages +
-      "</span>" +
-      '<button class="pager-btn" type="button" data-pg="prev"' +
-      (lstate.page <= 1 ? " disabled" : "") +
-      ' aria-label="Previous"><svg class="ic rot-l"><use href="#i-chev"/></svg></button>' +
-      '<button class="pager-btn" type="button" data-pg="next"' +
-      (lstate.page >= pages ? " disabled" : "") +
-      ' aria-label="Next"><svg class="ic rot-r"><use href="#i-chev"/></svg></button>';
+    renderPagerAndEmpty();
   }
   // ================= BOARD: STAGE COLUMNS + DRAG & DROP =================
   // The dashboard's Lead Flow board, ported from
@@ -411,7 +523,7 @@ export function initLeadsContent(content: HTMLElement): () => void {
   }
   function renderStage(
     st: string,
-    opts?: { rows?: Lead[]; animateAll?: boolean; highlightId?: number | null },
+    opts?: { rows?: Lead[]; animateAll?: boolean; highlightId?: string | null },
   ) {
     const o = opts || {};
     const col = $('.stage-col[data-stage="' + st + '"]');
@@ -481,26 +593,47 @@ export function initLeadsContent(content: HTMLElement): () => void {
    * the preview slot sat — and only the two touched columns re-render, so the
    * rest of the board never flickers. The table, tab counts and filter chips
    * are refreshed alongside, since the status change is shared state.
+   *
+   * The move is OPTIMISTIC and then PERSISTED with `updateLeadStatus` — the
+   * same action the classic board used. The server is org-scoped and gates
+   * sales reps to their own slice, so a refusal is real and has to be honoured:
+   * the card goes back to the column it came from and the action's own message
+   * (written for the user) is shown.
    */
-  function moveLead(id: number, st: string) {
-    if (!st) return;
-    const idx = leadsData.findIndex(function (l) {
-      return l.id === id;
-    });
+  function applyMove(id: string, from: string, to: string, highlight: boolean) {
+    const idx = leadsData.findIndex((l) => l.id === id);
     if (idx === -1) return;
     const lead = leadsData[idx];
-    if (lead.status === st) return;
-    const from = lead.status;
     leadsData.splice(idx, 1);
-    lead.status = st;
+    lead.status = to;
     leadsData.push(lead);
-    lstate.picked = null;
     renderCounts();
     renderFilters();
     renderTable();
+    renderIncoming();
     const rows = filtered();
     renderStage(from, { rows: rows });
-    renderStage(st, { rows: rows, highlightId: lead.id });
+    renderStage(to, { rows: rows, highlightId: highlight ? lead.id : null });
+  }
+  async function moveLead(id: string, st: string) {
+    if (!st) return;
+    const lead = leadsData.find((l) => l.id === id);
+    if (!lead || lead.status === st) return;
+    // A second drop on a card whose first write is still in flight would race
+    // its own rollback — ignore it.
+    if (lstate.busy.has(id)) return;
+    const from = lead.status;
+    lstate.picked = null;
+    lstate.busy.add(id);
+    applyMove(id, from, st, true);
+    try {
+      await updateLeadStatus(id, st);
+      lstate.busy.delete(id);
+    } catch (err) {
+      lstate.busy.delete(id);
+      applyMove(id, st, from, false);
+      toast(actionError(err));
+    }
   }
   function renderIncoming() {
     const offers = offersData
@@ -619,7 +752,12 @@ export function initLeadsContent(content: HTMLElement): () => void {
   function renderStaged() {
     const count = $("#stagedCount");
     if (count) count.textContent = String(staged.length);
-    $("#stagedWrap")?.classList.toggle("is-hidden", staged.length === 0);
+    // The card is a permanent column of the import row, so "empty" is a state
+    // it renders — the dashed note plus a dead Import button — rather than a
+    // reason to pull the whole card out of the layout.
+    $("#stagedEmpty")?.classList.toggle("is-hidden", staged.length !== 0);
+    const importBtn = root.querySelector<HTMLButtonElement>("#importBtn");
+    if (importBtn) importBtn.disabled = staged.length === 0;
     const list = $("#stagedList");
     if (!list) return;
     list.innerHTML = staged
@@ -663,20 +801,76 @@ export function initLeadsContent(content: HTMLElement): () => void {
   disposers.push(() => clearInterval(clockTimer));
 
   // ================= ACTIONS =================
-  function setStatus(id: number, st: string, assignee?: string | null) {
+  function setStatus(id: string, st: string) {
     const l = leadsData.find(function (x) {
       return x.id === id;
     });
     if (!l) return;
     l.status = st;
-    if (assignee !== undefined) l.assignee = assignee;
     renderLeads();
+  }
+  /**
+   * Incoming triage. Accept is `claimLead` — it stamps CLAIMED plus who took it
+   * and when, which is why it is not just `updateLeadStatus(id,"CLAIMED")`.
+   * Decline is `updateLeadStatus(id,"LOST")`, exactly as the classic Incoming
+   * tab did. Both are optimistic; a refusal puts the card back.
+   */
+  async function triage(id: string, kind: "accept" | "decline") {
+    const lead = leadsData.find((l) => l.id === id);
+    if (!lead || lstate.busy.has(id)) return;
+    const from = lead.status;
+    lstate.busy.add(id);
+    setStatus(id, kind === "accept" ? "CLAIMED" : "LOST");
+    try {
+      if (kind === "accept") await claimLead(id);
+      else await updateLeadStatus(id, "LOST");
+      lstate.busy.delete(id);
+    } catch (err) {
+      lstate.busy.delete(id);
+      setStatus(id, from);
+      toast(actionError(err));
+    }
+  }
+  /**
+   * Lead Center offers. Accept materializes the org Lead server-side, so the
+   * new row can only come back from a refresh — the action returns its id, not
+   * the row. Pass advances the platform cascade to the next shop.
+   */
+  async function respondToOffer(offerId: string, kind: "accept" | "pass") {
+    const idx = offersData.findIndex((o) => o.id === offerId);
+    if (idx === -1 || lstate.busy.has(offerId)) return;
+    const offer = offersData[idx];
+    lstate.busy.add(offerId);
+    offersData.splice(idx, 1);
+    renderCounts();
+    renderIncoming();
+    try {
+      if (kind === "accept") await acceptLeadOffer(offerId);
+      else await declineLeadOffer(offerId);
+      lstate.busy.delete(offerId);
+      refresh();
+    } catch (err) {
+      lstate.busy.delete(offerId);
+      offersData.splice(idx, 0, offer);
+      renderCounts();
+      renderIncoming();
+      toast(actionError(err));
+    }
   }
   function fadeOut(el: HTMLElement, after: () => void) {
     el.classList.add("out");
     later(after, 220);
   }
+  /** The staggered entrance, played only when a list genuinely ARRIVES — first
+   *  paint and a tab switch onto it. Repaints after a filter keystroke, a drag
+   *  or a delete leave the surviving rows alone (blueprint-shell/list-motion). */
+  function staggerList(sel: string) {
+    const list = $(sel);
+    if (!list) return;
+    staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".prow, .icard")));
+  }
   function switchTab(name: string) {
+    const arriving = lstate.tab !== name;
     lstate.tab = name;
     root.querySelectorAll<HTMLElement>("#lTabs .ptab").forEach(function (t) {
       t.classList.toggle("active", t.dataset.tab === name);
@@ -684,6 +878,9 @@ export function initLeadsContent(content: HTMLElement): () => void {
     $$(".ppanel").forEach(function (p) {
       p.classList.toggle("is-hidden", p.dataset.panel !== name);
     });
+    if (!arriving) return;
+    if (name === "all" && lstate.view === "table") staggerList("#leadTableBody");
+    if (name === "incoming") staggerList("#inboxGrid");
   }
 
   // ================= EVENTS =================
@@ -816,6 +1013,7 @@ export function initLeadsContent(content: HTMLElement): () => void {
       email: root.querySelector<HTMLInputElement>("#mEmail")?.value.trim() || null,
       phone: root.querySelector<HTMLInputElement>("#mPhone")?.value.trim() || null,
       project: root.querySelector<HTMLInputElement>("#mProject")?.value.trim() || null,
+      description: null,
       source: "MANUAL",
     });
     ["mName", "mEmail", "mPhone", "mProject"].forEach(function (id) {
@@ -855,23 +1053,53 @@ export function initLeadsContent(content: HTMLElement): () => void {
           email: mail ? mail[0] : null,
           phone: tel ? tel[0] : null,
           project: parts[1] || null,
+          description: null,
           source: "EMAIL",
         });
       });
     box.value = "";
     renderStaged();
   });
+  // The file bench. The donor's dropzone staged three hardcoded demo names; it
+  // now reads the dropped/chosen file through the classic bench's own CSV
+  // parser (leads-data.ts) and stages whatever is actually in it. Nothing here
+  // touches the database — the batch still has to be sent with Import leads.
   const dz = $("#dropZone");
+  const dzInput = root.querySelector<HTMLInputElement>("#dropInput");
+  function readFile(file: File) {
+    setErr("#fileErr", null);
+    const reader = new FileReader();
+    reader.onload = function () {
+      const text = String(reader.result ?? "");
+      const rows = parseCsvRows(text);
+      if (!rows.length) {
+        setErr("#fileErr", "Couldn't find any rows in " + file.name + ".");
+        return;
+      }
+      rows.forEach((r) => staged.push(r));
+      const lbl = $("#dropZoneLbl");
+      if (lbl) {
+        lbl.textContent =
+          file.name + " · staged " + rows.length + " lead" + (rows.length === 1 ? "" : "s");
+      }
+      renderStaged();
+    };
+    reader.onerror = function () {
+      setErr("#fileErr", "That file couldn't be read.");
+    };
+    reader.readAsText(file);
+  }
+  if (dzInput) {
+    on(dzInput, "change", function () {
+      const file = dzInput.files && dzInput.files[0];
+      if (file) readFile(file);
+      // Let the same file be chosen twice in a row.
+      dzInput.value = "";
+    });
+  }
   if (dz) {
     on(dz, "click", function () {
-      [
-        ["N. Ivanov", "n.ivanov@mail.com", "Chain-link fence, 90 ft"],
-        ["C. Ferreira", "c.ferreira@mail.com", "Chain-link gate"],
-        ["D. Pham", "d.pham@mail.com", "Gutter guards"],
-      ].forEach(function (r) {
-        staged.push({ name: r[0], email: r[1], phone: null, project: r[2], source: "IMPORT" });
-      });
-      renderStaged();
+      dzInput?.click();
     });
     ["dragenter", "dragover"].forEach(function (ev) {
       on(dz, ev, function (e) {
@@ -879,48 +1107,105 @@ export function initLeadsContent(content: HTMLElement): () => void {
         dz.classList.add("over");
       });
     });
-    ["dragleave", "drop"].forEach(function (ev) {
-      on(dz, ev, function (e) {
-        e.preventDefault();
-        dz.classList.remove("over");
-      });
+    on(dz, "dragleave", function (e) {
+      e.preventDefault();
+      dz.classList.remove("over");
+    });
+    on(dz, "drop", function (e) {
+      e.preventDefault();
+      dz.classList.remove("over");
+      const file = (e as DragEvent).dataTransfer?.files?.[0];
+      if (file) readFile(file);
     });
   }
+  /**
+   * The import bench's one real write. `importLeads` is the classic page's
+   * action: it enforces the plan's lead quota across the WHOLE batch, creates
+   * every row as NEW, and notifies the owner per lead. It returns a count, not
+   * rows — the created ids can only come back from a refresh, and the pipeline
+   * must not be shown rows whose delete/drag would then fail.
+   */
+  async function runImport() {
+    if (!staged.length || lstate.saving) return;
+    setErr("#impErr", null);
+    setBusy("#importBtn", true, "Importing…", "");
+    try {
+      await importLeads(
+        staged.map((r) => ({
+          name: r.name,
+          email: r.email,
+          phone: r.phone,
+          projectType: r.project,
+          description: r.description,
+          source: r.source as "MANUAL" | "EMAIL" | "IMPORT",
+        })),
+      );
+      staged.length = 0;
+      setBusy("#importBtn", false, "", "Import leads");
+      renderStaged();
+      switchTab("all");
+      refresh();
+    } catch (err) {
+      setBusy("#importBtn", false, "", "Import leads");
+      setErr("#impErr", actionError(err));
+    }
+  }
   onEl($("#importBtn"), "click", function () {
-    if (!staged.length) return;
-    staged.forEach(function (r) {
-      seq += 1;
-      leadsData.unshift({
-        id: seq,
-        name: r.name,
-        email: r.email,
-        phone: r.phone,
-        city: "—",
-        project: r.project || "General inquiry",
-        spec: null,
-        conf: 0,
-        status: "NEW",
-        source: r.source,
-        assignee: null,
-        age: "now",
-        desc: "",
-      });
-    });
-    staged.length = 0;
-    switchTab("all");
-    renderLeads();
+    void runImport();
   });
+
+  /**
+   * The delete confirmation. `deleteLead` is manager-gated and org-scoped on the
+   * server, so a sales rep gets a refusal — which stays in the dialog instead of
+   * closing it on a write that never happened. On success the row LEAVES (only
+   * that row animates; the rest close the gap) rather than the table being
+   * rebuilt out from under the click.
+   */
+  async function confirmDelete() {
+    const id = lstate.pendingDelete;
+    if (!id || lstate.saving) return;
+    setErr("#mdlErr", null);
+    setBusy("#mdlOk", true, "Deleting…", "");
+    try {
+      await deleteLead(id);
+      setBusy("#mdlOk", false, "", "Delete");
+      lstate.pendingDelete = null;
+      const mdl = $("#mdl");
+      if (mdl) closeMdl(mdl, after);
+      const row = $('#leadTableBody .prow[data-id="' + id + '"]');
+      const commit = () => {
+        const i = leadsData.findIndex((x) => x.id === id);
+        if (i > -1) leadsData.splice(i, 1);
+        // Everything EXCEPT the table body — rebuilding it would replace the
+        // very nodes leaveRow is mid-flight animating.
+        renderCounts();
+        renderFilters();
+        renderBoard();
+        renderIncoming();
+        renderPagerAndEmpty();
+      };
+      if (row) leaveRow(row, commit, after);
+      else commit();
+    } catch (err) {
+      setBusy("#mdlOk", false, "", "Delete");
+      setErr("#mdlErr", actionError(err));
+    }
+  }
   onEl($("#mdlOk"), "click", function () {
-    if (lstate.pending) lstate.pending();
-    $("#mdl")?.classList.remove("open");
-    lstate.pending = null;
+    void confirmDelete();
   });
 
   on(document, "click", function (e) {
     const target = e.target as HTMLElement;
+    if (target.closest('[data-toast="close"]')) {
+      $("#lToast")?.classList.add("is-hidden");
+      return;
+    }
     if (target.closest('[data-mdl="close"]')) {
-      $("#mdl")?.classList.remove("open");
-      lstate.pending = null;
+      if (lstate.saving) return; // a delete is in flight — don't orphan it
+      const mdl = $("#mdl");
+      if (mdl) closeMdl(mdl, after);
+      lstate.pendingDelete = null;
       return;
     }
     const uns = target.closest<HTMLElement>("[data-unstage]");
@@ -943,62 +1228,40 @@ export function initLeadsContent(content: HTMLElement): () => void {
     if (kind === "offer-yes" || kind === "offer-no") {
       const card = act.closest<HTMLElement>("[data-offer]");
       if (!card) return;
-      const idx = offersData.findIndex(function (o) {
-        return o.id === card.dataset.offer;
-      });
-      if (idx === -1) return;
-      const o = offersData[idx];
+      const offerId = card.dataset.offer || "";
+      if (!offerId || lstate.busy.has(offerId)) return;
+      // The card leaves on the donor's fade; the write runs alongside it and
+      // puts the card back if the platform refuses (an offer can expire or be
+      // taken between the render and the click).
       fadeOut(card, function () {
-        offersData.splice(idx, 1);
-        if (kind === "offer-yes") {
-          seq += 1;
-          leadsData.unshift({
-            id: seq,
-            name: o.name,
-            email: o.email,
-            phone: o.phone,
-            city: o.city,
-            project: o.project,
-            spec: o.spec,
-            conf: o.conf,
-            status: "CLAIMED",
-            source: "LEAD_CENTER",
-            assignee: "Ivan",
-            age: "now",
-            desc: o.desc,
-          });
-        }
-        renderLeads();
+        void respondToOffer(offerId, kind === "offer-yes" ? "accept" : "pass");
       });
       return;
     }
     if (kind === "accept" || kind === "decline") {
       const card = act.closest<HTMLElement>(".icard[data-id]");
       if (!card) return;
-      const id = Number(card.dataset.id);
+      const id = card.dataset.id || "";
+      if (!id || lstate.busy.has(id)) return;
       fadeOut(card, function () {
-        setStatus(id, kind === "accept" ? "CLAIMED" : "LOST", kind === "accept" ? "Ivan" : undefined);
+        void triage(id, kind === "accept" ? "accept" : "decline");
       });
       return;
     }
     if (kind === "ask-delete") {
       const row = act.closest<HTMLElement>("[data-id]");
       if (!row) return;
-      const id = Number(row.dataset.id);
+      const id = row.dataset.id || "";
       const lead = leadsData.find(function (x) {
         return x.id === id;
       });
       if (!lead) return;
       const txt = $("#mdlText");
       if (txt) txt.textContent = "Remove " + lead.name + " from the pipeline? This can't be undone.";
-      $("#mdl")?.classList.add("open");
-      lstate.pending = function () {
-        const i = leadsData.findIndex(function (x) {
-          return x.id === id;
-        });
-        if (i > -1) leadsData.splice(i, 1);
-        renderLeads();
-      };
+      setErr("#mdlErr", null);
+      lstate.pendingDelete = id;
+      const mdl = $("#mdl");
+      if (mdl) openMdl(mdl);
     }
   });
 
@@ -1080,7 +1343,7 @@ export function initLeadsContent(content: HTMLElement): () => void {
         const dt = (e as DragEvent).dataTransfer;
         const id = dt ? dt.getData("text/plain") : "";
         if (!id) return;
-        moveLead(Number(id), col.dataset.stage || "");
+        void moveLead(id, col.dataset.stage || "");
       });
     });
 
@@ -1088,23 +1351,51 @@ export function initLeadsContent(content: HTMLElement): () => void {
       if (window.innerWidth > 860) return;
       const card = (e.target as HTMLElement).closest<HTMLElement>(".lead-card");
       if (card) {
-        const same = lstate.picked === Number(card.dataset.id);
+        const same = lstate.picked === card.dataset.id;
         board.querySelectorAll(".picked").forEach(function (c) {
           c.classList.remove("picked");
         });
-        lstate.picked = same ? null : Number(card.dataset.id);
+        lstate.picked = same ? null : card.dataset.id || null;
         if (!same) card.classList.add("picked");
         return;
       }
       const head = (e.target as HTMLElement).closest<HTMLElement>(".stage-col-head");
       if (head && lstate.picked != null) {
-        moveLead(lstate.picked, head.closest<HTMLElement>(".stage-col")?.dataset.stage || "");
+        void moveLead(lstate.picked, head.closest<HTMLElement>(".stage-col")?.dataset.stage || "");
       }
     });
   })();
 
+  // ================= SERVER SYNC =================
+  // Every lead action calls `revalidatePath("/dashboard/leads")`, so the page's
+  // server component re-renders after each write and React hands the fresh rows
+  // back here. They almost always describe what is already on screen (the write
+  // updated locally first), so the signature check makes that the silent case —
+  // repainting on every action would replay the board's entrance and yank focus
+  // out of the search box.
+  let appliedLeads = leadsSig(leadsData);
+  let appliedOffers = offersSig(offersData);
+  options.onReady?.({
+    sync(nextLeads, nextOffers) {
+      const ls = leadsSig(nextLeads);
+      const os = offersSig(nextOffers);
+      if (ls === appliedLeads && os === appliedOffers) return;
+      appliedLeads = ls;
+      appliedOffers = os;
+      leadsData.length = 0;
+      nextLeads.forEach((l) => leadsData.push({ ...l }));
+      offersData.length = 0;
+      nextOffers.forEach((o) => offersData.push({ ...o }));
+      renderLeads();
+    },
+  });
+
   // ================= INITIALIZATION =================
   renderLeads();
+  // The lists ARRIVE here and only here — later repaints are patches, not
+  // arrivals, so they do not re-stagger (blueprint-shell/list-motion).
+  staggerList("#leadTableBody");
+  staggerList("#inboxGrid");
 
   // The mobile nav drawer and FLUID SCALE belong to the persistent chrome and
   // live in components/v3/blueprint-shell/shell-behavior.ts.
@@ -1112,7 +1403,8 @@ export function initLeadsContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+    // (The donor's EASE constant lived here for the row stagger; that moved to
+    // blueprint-shell/list-motion, which carries the same curve.)
 
     // Reveal: load + scroll.
     // Reveal adapts to scroll speed: slow scrolling gets the full 420ms
@@ -1138,7 +1430,13 @@ export function initLeadsContent(content: HTMLElement): () => void {
     // `.mdl` is skipped: the donor rendered it outside `.content`, so it never
     // took `.rv`. Leaving it in would strand the fixed overlay at opacity 0
     // (a display:none element never intersects, so `.rv-in` would never land).
-    const blocks = $$(".content > *").filter((el) => !el.classList.contains("mdl"));
+    // `.l-toast` is skipped for the same reason as `.mdl`: both are fixed
+    // overlays that start `display: none`, so they never intersect and `.rv-in`
+    // would never land — the first failure would show a toast stuck at
+    // opacity 0.
+    const blocks = $$(".content > *").filter(
+      (el) => !el.classList.contains("mdl") && !el.classList.contains("l-toast"),
+    );
     blocks.forEach((el, i) => {
       el.classList.add("rv");
       const initial = el.getBoundingClientRect().top < vpH;
@@ -1183,40 +1481,11 @@ export function initLeadsContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".prow, .icard"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on rows and inbox cards silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["leadTableBody", "inboxGrid"].forEach((id) => {
-      const list = $("#" + id);
-      if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
-    });
+    // Row stagger — the donor wired a MutationObserver here, so EVERY repaint
+    // replayed the full cascade: a search keystroke, a filter chip, a delete.
+    // It now lives in `staggerList`, called from the two places a list really
+    // arrives (first paint, a tab switch onto it). See the long note in
+    // blueprint-shell/list-motion.ts.
 
     // Numeral count-up — Overview's `.kpi-val`; here the tab counts. The donor
     // rebuilt the text from digits alone, safe only for its own plain

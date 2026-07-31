@@ -32,6 +32,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-proposals.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { lockScroll } from "@/lib/scrollLock";
 import {
   FILTERS,
   OPEN_STATUSES,
@@ -188,13 +190,12 @@ export function MobileProposals() {
     apply();
     window.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("resize", apply);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScroll = lockScroll();
     return () => {
       window.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("resize", apply);
       document.documentElement.style.removeProperty("--app-h");
-      document.body.style.overflow = prevOverflow;
+      releaseScroll();
     };
   }, []);
 
@@ -388,6 +389,9 @@ export function MobileProposals() {
   };
 
   const sheetProposal = sheetId === null ? null : (data.find((p) => p.id === sheetId) ?? null);
+
+  // Swipe-down dismissal, on the same close path as Escape and the scrim.
+  const sheetDrag = useSheetDrag(sheetProposal !== null, () => setSheetId(null));
 
   const menuRows = useMemo<MenuRow[]>(() => {
     const p = sheetProposal;
@@ -722,9 +726,9 @@ export function MobileProposals() {
       {/* ============ ROW ACTIONS SHEET ============ */}
       <div className={`${styles.scrim} ${sheetProposal ? styles.on : ""}`} onClick={() => setSheetId(null)} aria-hidden="true" />
       <div className={`${styles.sheet} ${sheetProposal ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-label="Proposal actions" aria-hidden={!sheetProposal}>
-        <div className={styles.sheetGrab} />
-        <div className={styles.sheetHead}>
+        aria-label="Proposal actions" aria-hidden={!sheetProposal} {...sheetDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...sheetDrag.handleProps} />
+        <div className={styles.sheetHead} {...sheetDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {sheetProposal ? `#${sheetProposal.id} · ${money(sheetProposal.total)}` : "Proposal · —"}
           </div>

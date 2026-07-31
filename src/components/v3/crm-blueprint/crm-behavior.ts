@@ -13,29 +13,86 @@
 // - `pressify` keeps the donor's selector minus the shell-owned controls
 //   (.icon-btn, .sb-foot-ic, .sb-foot-acc), which the shell already presses.
 //
-// Like the donor, list markup is built with innerHTML from the local demo data
-// in crm-data.ts. Rule names typed into the workflow form are interpolated the
-// same way the donor interpolates them (no escaping) — kept for parity; the
-// data never leaves the browser.
+// Like the donor, list markup is built with innerHTML — but no longer from the
+// demo data. The page (src/app/dashboard/crm/page.tsx) reads the real rows out
+// of Prisma and hands them in through `options.data`; the fixture in
+// crm-data.ts survives only as the fallback for a render with no session.
+// Because the strings are now user-authored records rather than the donor's own
+// literals, everything interpolated into markup goes through `escapeAttr`.
+//
+// WRITES: the workflow rules and the follow-up queue call the live server
+// actions in src/actions/followUps.ts — the same ones the classic CRM pages
+// used (upsert / setEnabled / delete for rules, runNow / markDone for the
+// queue). They are org-scoped and role-gated on the server and they revalidate
+// the classic routes, so the two editions stay in step. Local state is patched
+// from the result, so the sheet repaints immediately instead of waiting on a
+// round trip; a reload reads the same rows back.
 
 import {
+  deleteFollowUpRule,
+  markFollowUpDone,
+  runFollowUpNow,
+  setFollowUpRuleEnabled,
+  upsertFollowUpRule,
+} from "@/actions/followUps";
+import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import {
   CRM_LEADS,
-  CONVERSATIONS_COUNT,
   ACTIVITY_FEED,
   CUSTOMERS_DATA,
   STATUS_ORDER,
   STATUS_CLS,
   TRIGGERS,
-  TEMPLATES,
-  RULE_SEQ_START,
+  SEED_STATS,
+  SEED_TEMPLATES,
   RULES_SEED,
   QUEUE_SEED,
   Q_PAGE,
+  type ActivityItem,
+  type CrmContentData,
+  type CrmLead,
+  type CrmStats,
+  type Customer,
   type FollowUpRule,
   type QueueItem,
+  type TemplateOption,
 } from "./crm-data";
 
-export function initCrmContent(content: HTMLElement): () => void {
+export type CrmContentOptions = {
+  /** The org's real CRM rows, read server-side. Omit to fall back to the donor
+   *  fixture (the standalone mock render has no session to read from). */
+  data?: CrmContentData;
+  /** Client-side navigation, supplied by the React wrapper (this module has no
+   *  router of its own). Omit and the overview's cross-links stay inert. */
+  navigate?: (href: string) => void;
+};
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("Not found", the role guard's refusal). Surface that text; fall back to a
+ *  generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  // A Next.js server-action transport failure has no useful message.
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** Every value interpolated into an innerHTML string is now a database record,
+ *  not a donor literal. */
+function escapeAttr(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export function initCrmContent(
+  content: HTMLElement,
+  options: CrmContentOptions = {},
+): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -99,13 +156,27 @@ export function initCrmContent(content: HTMLElement): () => void {
     });
   });
 
-  // ================= CRM: STATE =================
-  // Runtime mutations (rule add/edit/delete, queue done/send) — clone the seeds
-  // per mount so a remount starts from the donor's state.
-  const rulesData: FollowUpRule[] = RULES_SEED.map((r) => ({ ...r }));
-  let queueData: QueueItem[] = QUEUE_SEED.map((q) => ({ ...q }));
-  let ruleSeq = RULE_SEQ_START;
+  /** `leaveRow` wants `(ms, fn)`; the donor's helper is `(fn, ms)`. */
+  const after = (ms: number, fn: () => void) => {
+    later(fn, ms);
+  };
 
+  // ================= CRM: STATE =================
+  // The org's real rows when the page supplies them, the donor fixture
+  // otherwise. Either way they are CLONED, because rule create/edit/toggle/
+  // delete and queue done/send mutate them in place: the server actions are the
+  // source of truth, and these arrays mirror them so the sheet repaints the
+  // moment one returns instead of waiting on a round trip through the router.
+  const live = options.data;
+  const stats: CrmStats = { ...(live?.stats ?? SEED_STATS) };
+  const freshData: CrmLead[] = (live?.fresh ?? CRM_LEADS).map((l) => ({ ...l }));
+  const activityData: ActivityItem[] = (live?.activity ?? ACTIVITY_FEED).map((a) => ({ ...a }));
+  const customersData: Customer[] = (live?.customers ?? CUSTOMERS_DATA).map((c) => ({ ...c }));
+  const templatesData: TemplateOption[] = (live?.templates ?? SEED_TEMPLATES).map((t) => ({ ...t }));
+  let rulesData: FollowUpRule[] = (live?.rules ?? RULES_SEED).map((r) => ({ ...r }));
+  let queueData: QueueItem[] = (live?.queue ?? QUEUE_SEED).map((q) => ({ ...q }));
+
+  /** True while any write is in flight, so a double click cannot fire twice. */
   const crm = {
     tab: "overview",
     cbFilter: [] as string[],
@@ -113,7 +184,24 @@ export function initCrmContent(content: HTMLElement): () => void {
     qPage: 1,
     editing: null as string | null,
     creating: false,
+    savingRule: false,
+    busyRule: null as string | null,
+    busyQueue: null as string | null,
   };
+
+  /** `template` stores an EmailTemplate id; the row shows its NAME. */
+  function templateLabel(id: string | null): string | null {
+    if (!id) return null;
+    const t = templatesData.find((x) => x.id === id);
+    return t ? t.name : id;
+  }
+
+  function showErr(sel: string, msg: string | null) {
+    const box = $(sel);
+    if (!box) return;
+    box.textContent = msg || "";
+    box.classList.toggle("is-hidden", !msg);
+  }
 
   function money(n: number) {
     return "$" + n.toLocaleString("en-US");
@@ -139,15 +227,9 @@ export function initCrmContent(content: HTMLElement): () => void {
 
   // ================= OVERVIEW =================
   function renderStats() {
-    const won = CRM_LEADS.filter(function (l) {
-      return l.status === "WON";
-    }).length;
-    const lost = CRM_LEADS.filter(function (l) {
-      return l.status === "LOST";
-    }).length;
-    const active = CRM_LEADS.filter(function (l) {
-      return ["NEW", "ROUTED", "CLAIMED", "CONTACTED", "QUOTED"].indexOf(l.status) !== -1;
-    }).length;
+    const won = stats.won;
+    const lost = stats.lost;
+    const active = stats.active;
     const rate = won + lost > 0 ? (won / (won + lost)) * 100 : 0;
     const due = dueNow().length;
     const cards: Array<{
@@ -165,7 +247,7 @@ export function initCrmContent(content: HTMLElement): () => void {
       },
       { lbl: "Active leads", val: String(active) },
       { lbl: "Follow-ups due", val: String(due) },
-      { lbl: "Shared inbox", val: String(CONVERSATIONS_COUNT) },
+      { lbl: "Shared inbox", val: String(stats.conversations) },
     ];
     const grid = $("#statGrid");
     if (!grid) return;
@@ -194,9 +276,9 @@ export function initCrmContent(content: HTMLElement): () => void {
   }
 
   function renderFresh() {
-    const rows = CRM_LEADS.filter(function (l) {
-      return ["NEW", "ROUTED", "CLAIMED"].indexOf(l.status) !== -1;
-    }).slice(0, 5);
+    // The page already queried the five newest NEW/ROUTED/CLAIMED leads, in
+    // that order — the classic overview's query. Slice defensively only.
+    const rows = freshData.slice(0, 5);
     const list = $("#freshList");
     if (!list) return;
     list.innerHTML =
@@ -204,17 +286,17 @@ export function initCrmContent(content: HTMLElement): () => void {
         .map(function (l) {
           return (
             '<li><div style="min-width:0"><div class="fresh-name">' +
-            l.name +
+            escapeAttr(l.name) +
             "</div>" +
             '<div class="fresh-sub">' +
-            l.project +
-            (l.assignee ? " · " + l.assignee : "") +
+            escapeAttr(l.project) +
+            (l.assignee ? " · " + escapeAttr(l.assignee) : "") +
             "</div></div>" +
             '<div class="fresh-right"><span class="pstatus pstatus--sent">' +
-            l.status.toLowerCase() +
+            escapeAttr(l.status.toLowerCase()) +
             "</span>" +
             '<span class="fresh-age">' +
-            l.age +
+            escapeAttr(l.age) +
             "</span></div></li>"
           );
         })
@@ -223,9 +305,10 @@ export function initCrmContent(content: HTMLElement): () => void {
 
   function renderActions() {
     const due = dueNow().length;
-    const active = CRM_LEADS.filter(function (l) {
-      return ["NEW", "ROUTED", "CLAIMED", "CONTACTED", "QUOTED"].indexOf(l.status) !== -1;
-    }).length;
+    const active = stats.active;
+    // `go` switches a tab on this sheet; `nav` leaves for another page. The two
+    // middle rows used to carry `data-flash="Opened"` — a 1600ms label swap
+    // that opened nothing. They are the classic overview's links now.
     const rows: Array<{
       show: boolean;
       tone: string;
@@ -233,6 +316,7 @@ export function initCrmContent(content: HTMLElement): () => void {
       t: string;
       h: string;
       go: string | null;
+      nav?: string;
     }> = [
       {
         show: due > 0,
@@ -249,14 +333,16 @@ export function initCrmContent(content: HTMLElement): () => void {
         t: active + " lead" + (active === 1 ? "" : "s") + " still in motion",
         h: "Push them forward in the kanban",
         go: null,
+        nav: "/dashboard/leads",
       },
       {
-        show: CONVERSATIONS_COUNT > 0,
+        show: stats.conversations > 0,
         tone: "",
         ic: "i-msg",
-        t: CONVERSATIONS_COUNT + " conversation" + (CONVERSATIONS_COUNT === 1 ? "" : "s"),
+        t: stats.conversations + " conversation" + (stats.conversations === 1 ? "" : "s"),
         h: "Open the shared inbox",
         go: null,
+        nav: "/dashboard/messages",
       },
       {
         show: true,
@@ -278,7 +364,8 @@ export function initCrmContent(content: HTMLElement): () => void {
           '<li><button class="arow' +
           (r.tone ? " arow--" + r.tone : "") +
           '" type="button"' +
-          (r.go ? ' data-goto="' + r.go + '"' : ' data-flash="Opened"') +
+          (r.go ? ' data-goto="' + r.go + '"' : "") +
+          (r.nav ? ' data-nav="' + r.nav + '"' : "") +
           ">" +
           '<span class="arow-ic"><svg class="ic"><use href="#' +
           r.ic +
@@ -298,28 +385,34 @@ export function initCrmContent(content: HTMLElement): () => void {
   function renderRecent() {
     const list = $("#recentList");
     if (!list) return;
-    list.innerHTML = ACTIVITY_FEED.slice(0, 5)
-      .map(function (a) {
-        return (
-          "<li><span>" + a.summary + '</span><span class="recent-age">' + a.age + "</span></li>"
-        );
-      })
-      .join("");
+    list.innerHTML =
+      activityData
+        .slice(0, 5)
+        .map(function (a) {
+          return (
+            "<li><span>" +
+            escapeAttr(a.summary) +
+            '</span><span class="recent-age">' +
+            escapeAttr(a.age) +
+            "</span></li>"
+          );
+        })
+        .join("") || '<li><span class="recent-age">Nothing recorded yet.</span></li>';
   }
 
   // ================= CUSTOMER BOOK =================
   function renderCbTiles() {
-    const totalLtv = CUSTOMERS_DATA.reduce(function (a, c) {
+    const totalLtv = customersData.reduce(function (a, c) {
       return a + c.ltv;
     }, 0);
-    const totalQuotes = CUSTOMERS_DATA.reduce(function (a, c) {
+    const totalQuotes = customersData.reduce(function (a, c) {
       return a + c.quotes;
     }, 0);
     const tiles = $("#cbTiles");
     if (!tiles) return;
     tiles.innerHTML =
       '<div class="cb-tile"><div class="kpi-lbl">Customers</div><div class="cb-val">' +
-      CUSTOMERS_DATA.length +
+      customersData.length +
       '</div><div class="cb-hint">with ≥1 proposal</div></div>' +
       '<div class="cb-tile"><div class="kpi-lbl">Lifetime value</div><div class="cb-val">' +
       money(totalLtv) +
@@ -331,15 +424,15 @@ export function initCrmContent(content: HTMLElement): () => void {
 
   function cbFiltered() {
     return crm.cbFilter.length === 0
-      ? CUSTOMERS_DATA
-      : CUSTOMERS_DATA.filter(function (c) {
+      ? customersData
+      : customersData.filter(function (c) {
           return crm.cbFilter.indexOf(c.top) !== -1;
         });
   }
 
   function renderCbChips() {
     const counts: Record<string, number> = {};
-    CUSTOMERS_DATA.forEach(function (c) {
+    customersData.forEach(function (c) {
       counts[c.top] = (counts[c.top] || 0) + 1;
     });
     const present = STATUS_ORDER.filter(function (s) {
@@ -349,7 +442,7 @@ export function initCrmContent(content: HTMLElement): () => void {
       '<button class="cb-chip' +
       (crm.cbFilter.length === 0 ? " on" : "") +
       '" type="button" data-cb="ALL">All <span class="cb-n">' +
-      CUSTOMERS_DATA.length +
+      customersData.length +
       "</span></button>";
     present.forEach(function (s) {
       // No status dot: the chip itself carries the status color once active
@@ -373,8 +466,8 @@ export function initCrmContent(content: HTMLElement): () => void {
     if (caption) {
       caption.textContent =
         crm.cbFilter.length === 0
-          ? CUSTOMERS_DATA.length + " customer" + (CUSTOMERS_DATA.length === 1 ? "" : "s")
-          : shown + " of " + CUSTOMERS_DATA.length + " shown";
+          ? customersData.length + " customer" + (customersData.length === 1 ? "" : "s")
+          : shown + " of " + customersData.length + " shown";
     }
   }
 
@@ -388,12 +481,15 @@ export function initCrmContent(content: HTMLElement): () => void {
             return (
               '<tr class="prow">' +
               '<td><div class="cb-name">' +
-              c.name +
+              escapeAttr(c.name) +
               '</div><div class="cb-mail">' +
-              (c.email || "—") +
+              (c.email ? escapeAttr(c.email) : "—") +
               "</div></td>" +
+              // A status outside the donor's eight has no class; the bare
+              // `.pstatus` (draft treatment) is the right neutral fallback,
+              // where `undefined` would have printed into the class list.
               '<td><span class="pstatus ' +
-              STATUS_CLS[c.top] +
+              (STATUS_CLS[c.top] || "") +
               '">' +
               titleCase(c.top) +
               "</span></td>" +
@@ -433,33 +529,39 @@ export function initCrmContent(content: HTMLElement): () => void {
                 return t.value === r.triggerStatus;
               }) || ({} as { label?: string })
             ).label || r.triggerStatus;
+          const busy = crm.busyRule === r.id ? " disabled" : "";
+          const tpl = templateLabel(r.template);
           return (
             '<li data-rule="' +
-            r.id +
+            escapeAttr(r.id) +
             '">' +
             '<div style="min-width:0;flex:1">' +
             '<div class="rule-name">' +
-            r.name +
+            escapeAttr(r.name) +
             '<span class="pstatus ' +
             (r.enabled ? "rst--on" : "rst--off") +
             '">' +
             (r.enabled ? "active" : "off") +
             "</span></div>" +
             '<div class="rule-meta">Trigger: <b>' +
-            trig +
+            escapeAttr(trig) +
             "</b> · Delay: <b>" +
             humanDelay(r.delayMinutes) +
             "</b></div>" +
-            (r.template ? '<div class="rule-tpl">Template: <code>' + r.template + "</code></div>" : "") +
+            (tpl ? '<div class="rule-tpl">Template: <code>' + escapeAttr(tpl) + "</code></div>" : "") +
             "</div>" +
             '<div class="rule-act">' +
             '<button class="tgl' +
             (r.enabled ? " on" : "") +
             '" type="button" data-act="toggle" aria-pressed="' +
             (r.enabled ? "true" : "false") +
-            '" aria-label="Toggle rule"></button>' +
-            '<button class="btn btn-ghost btn--sm" type="button" data-act="edit">Edit</button>' +
-            '<button class="rule-del" type="button" data-act="del-rule" aria-label="Delete rule"><svg class="ic"><use href="#i-trash"/></svg></button>' +
+            '" aria-label="Toggle rule"' +
+            busy +
+            "></button>" +
+            '<button class="btn btn-ghost btn--sm" type="button" data-act="edit"' + busy + ">Edit</button>" +
+            '<button class="rule-del" type="button" data-act="del-rule" aria-label="Delete rule"' +
+            busy +
+            '><svg class="ic"><use href="#i-trash"/></svg></button>' +
             "</div></li>"
           );
         })
@@ -479,9 +581,14 @@ export function initCrmContent(content: HTMLElement): () => void {
       '">' +
       '<div class="rf-grid">' +
       '<label><span class="rf-lbl">Rule name</span><input class="rf-in" data-f="name" value="' +
-      (r ? r.name : "") +
+      (r ? escapeAttr(r.name) : "") +
       '" placeholder="Nudge after send"></label>' +
-      '<label><span class="rf-lbl">Trigger</span><select class="rf-sel" data-f="trigger">' +
+      // Both selects use the shared blueprint treatment published in
+      // blueprint-global.css: the WRAPPER `.bp-sel` draws the chevron (a
+      // <select> can carry no pseudo-element), `.bp-sel-in` kills the OS
+      // appearance. No `rf-sel` class any more — it out-specified the shared
+      // rule and dragged the native font/border back.
+      '<label><span class="rf-lbl">Trigger</span><span class="bp-sel"><select class="bp-sel-in" data-f="trigger">' +
       TRIGGERS.map(function (t) {
         return (
           '<option value="' +
@@ -493,19 +600,41 @@ export function initCrmContent(content: HTMLElement): () => void {
           "</option>"
         );
       }).join("") +
-      "</select></label>" +
+      "</select></span></label>" +
       '<label><span class="rf-lbl">Delay (days)</span><input class="rf-in" type="number" min="1" data-f="days" value="' +
       days +
       '"></label>' +
-      '<label><span class="rf-lbl">Template</span><select class="rf-sel" data-f="template">' +
+      // The template list is the org's real EmailTemplate rows. The option
+      // VALUE is the row id, because that is what `FollowUpRule.template`
+      // stores and what dispatchOne() looks the copy up by at send time —
+      // the classic RuleForm's contract, unchanged.
+      '<label><span class="rf-lbl">Template</span><span class="bp-sel"><select class="bp-sel-in" data-f="template"' +
+      (r && r.template ? "" : ' data-empty="1"') +
+      ">" +
       '<option value="">None</option>' +
-      TEMPLATES.map(function (t) {
-        return '<option value="' + t + '"' + (r && r.template === t ? " selected" : "") + ">" + t + "</option>";
-      }).join("") +
-      "</select></label>" +
+      templatesData
+        .map(function (t) {
+          return (
+            '<option value="' +
+            escapeAttr(t.id) +
+            '"' +
+            (r && r.template === t.id ? " selected" : "") +
+            ">" +
+            escapeAttr(t.name) +
+            "</option>"
+          );
+        })
+        .join("") +
+      "</select></span></label>" +
       "</div>" +
+      '<div class="rf-note">' +
+      (templatesData.length
+        ? "No template sends the default reminder copy."
+        : "No templates saved yet — this rule will send the default reminder copy.") +
+      "</div>" +
+      '<div class="mf-err is-hidden" data-rf-err role="alert"></div>' +
       '<div class="rf-act">' +
-      '<button class="btn btn-primary btn--sm" type="button" data-act="save-rule"><svg class="ic"><use href="#i-check"/></svg>Save rule</button>' +
+      '<button class="btn btn-primary btn--sm" type="button" data-act="save-rule"><svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Save rule</span></button>' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="cancel-rule">Cancel</button>' +
       "</div></div>"
     );
@@ -520,7 +649,11 @@ export function initCrmContent(content: HTMLElement): () => void {
     return { cls: "sev--soon", label: q.days + "d late" };
   }
 
-  function renderQueue() {
+  /** Everything about the queue EXCEPT the rows: the four counters, the empty
+   *  state and the pager. Split out so `leaveRow`'s commit can bring them up to
+   *  date without rebuilding `#queueBody` — a rebuild would replace the
+   *  surviving <tr>s the FLIP is measuring and the gap would snap shut. */
+  function renderQueueChrome() {
     const nAll = $('[data-qn="ALL"]');
     if (nAll) nAll.textContent = String(queueData.length);
     const nDue = $('[data-qn="DUE"]');
@@ -530,43 +663,8 @@ export function initCrmContent(content: HTMLElement): () => void {
     const tabN = $("#queueTabN");
     if (tabN) tabN.textContent = String(dueNow().length);
 
-    const rows =
-      crm.qTab === "DUE" ? dueNow() : crm.qTab === "SCHEDULED" ? scheduled() : queueData;
-    const pages = Math.max(1, Math.ceil(rows.length / Q_PAGE));
+    const pages = Math.max(1, Math.ceil(qRows().length / Q_PAGE));
     if (crm.qPage > pages) crm.qPage = pages;
-    const slice = rows.slice((crm.qPage - 1) * Q_PAGE, crm.qPage * Q_PAGE);
-    const body = $("#queueBody");
-    if (body) {
-      body.innerHTML = slice
-        .map(function (q) {
-          const sev = severity(q);
-          return (
-            '<tr class="prow q-row" data-q="' +
-            q.id +
-            '">' +
-            '<td><div class="q-who">' +
-            q.client +
-            '</div><div class="q-title">' +
-            (q.title || "Follow-up") +
-            "</div></td>" +
-            '<td><span class="sev ' +
-            sev.cls +
-            '">' +
-            sev.label +
-            "</span></td>" +
-            '<td><div class="q-date">' +
-            q.date +
-            '</div><div class="q-rel">' +
-            q.rel +
-            "</div></td>" +
-            '<td><div class="q-act">' +
-            '<button class="btn btn-ghost btn--sm" type="button" data-act="q-done"><svg class="ic"><use href="#i-check"/></svg>Done</button>' +
-            '<button class="btn btn-primary btn--sm" type="button" data-act="q-send"><svg class="ic"><use href="#i-send"/></svg>Send</button>' +
-            "</div></td></tr>"
-          );
-        })
-        .join("");
-    }
     const card = $("#queueCard");
     if (card) card.classList.toggle("is-hidden", queueData.length === 0);
     const qEmpty = $("#queueEmpty");
@@ -591,6 +689,52 @@ export function initCrmContent(content: HTMLElement): () => void {
       ' aria-label="Next"><svg class="ic rot-r"><use href="#i-chev"/></svg></button>';
   }
 
+  /** The rows the active queue tab shows. */
+  function qRows(): QueueItem[] {
+    return crm.qTab === "DUE" ? dueNow() : crm.qTab === "SCHEDULED" ? scheduled() : queueData;
+  }
+
+  function renderQueue() {
+    renderQueueChrome();
+    const slice = qRows().slice((crm.qPage - 1) * Q_PAGE, crm.qPage * Q_PAGE);
+    const body = $("#queueBody");
+    if (!body) return;
+    body.innerHTML = slice
+      .map(function (q) {
+        const sev = severity(q);
+        const busy = crm.busyQueue === q.id ? " disabled" : "";
+        return (
+          '<tr class="prow q-row" data-q="' +
+          escapeAttr(q.id) +
+          '">' +
+          '<td><div class="q-who">' +
+          escapeAttr(q.client) +
+          '</div><div class="q-title">' +
+          escapeAttr(q.title || "Follow-up") +
+          "</div></td>" +
+          '<td><span class="sev ' +
+          sev.cls +
+          '">' +
+          escapeAttr(sev.label) +
+          "</span></td>" +
+          '<td><div class="q-date">' +
+          escapeAttr(q.date) +
+          '</div><div class="q-rel">' +
+          escapeAttr(q.rel) +
+          "</div></td>" +
+          '<td><div class="q-act">' +
+          '<button class="btn btn-ghost btn--sm" type="button" data-act="q-done"' +
+          busy +
+          '><svg class="ic"><use href="#i-check"/></svg><span data-q-lbl>Done</span></button>' +
+          '<button class="btn btn-primary btn--sm" type="button" data-act="q-send"' +
+          busy +
+          '><svg class="ic"><use href="#i-send"/></svg><span data-q-lbl>Send</span></button>' +
+          "</div></td></tr>"
+        );
+      })
+      .join("");
+  }
+
   function renderCrm() {
     renderStats();
     renderFresh();
@@ -604,6 +748,23 @@ export function initCrmContent(content: HTMLElement): () => void {
   }
 
   // ================= EVENTS =================
+  /** A panel's row cascade plays once, the first time that panel is actually on
+   *  screen. Staggering inside a `display: none` subtree leaves the inline
+   *  `transform: none` pinned forever, which outranks every stylesheet `:hover`
+   *  rule — the rows silently stop lifting. */
+  const staggered: Record<string, boolean> = { overview: true };
+  function playPanelStagger(name: string) {
+    if (staggered[name]) return;
+    staggered[name] = true;
+    const ids =
+      name === "customers" ? ["#cbTiles", "#cbBody"] : name === "queue" ? ["#queueBody"] : [];
+    ids.forEach((id) => {
+      const host = $(id);
+      if (!host) return;
+      staggerIn(Array.from(host.querySelectorAll<HTMLElement>(".prow, .stat, .cb-tile")));
+    });
+  }
+
   function switchTab(name: string) {
     crm.tab = name;
     $$("#crmTabs .crm-tab").forEach(function (t) {
@@ -612,6 +773,7 @@ export function initCrmContent(content: HTMLElement): () => void {
     $$(".ppanel").forEach(function (p) {
       p.classList.toggle("is-hidden", p.dataset.panel !== name);
     });
+    playPanelStagger(name);
   }
 
   const crmTabs = $("#crmTabs");
@@ -669,15 +831,25 @@ export function initCrmContent(content: HTMLElement): () => void {
     });
   }
 
-  function flashBtn(btn: HTMLElement, label: string) {
-    if (btn.dataset.busy) return;
-    btn.dataset.busy = "1";
-    const old = btn.innerHTML;
-    btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>' + label;
-    later(function () {
-      btn.innerHTML = old;
-      delete btn.dataset.busy;
-    }, 1600);
+  // The shared select treatment greys a placeholder through `data-empty="1"`.
+  // Template is the one select here that can legitimately be empty (it ships a
+  // "None" option), so the flag has to be kept in sync or the value stays grey
+  // after the user picks one. Delegated on `root` so it also covers the edit
+  // form, which is re-rendered into a rules <li> rather than #ruleForm.
+  on(root, "change", function (e) {
+    const el = e.target;
+    if (!(el instanceof HTMLSelectElement) || !el.classList.contains("bp-sel-in")) return;
+    if (el.value) el.removeAttribute("data-empty");
+    else el.setAttribute("data-empty", "1");
+  });
+
+  /** Button label + disabled state while an action is in flight. */
+  function setBtnBusy(btn: HTMLElement | null, busy: boolean, label: string) {
+    if (!btn) return;
+    if (btn instanceof HTMLButtonElement) btn.disabled = busy;
+    btn.classList.toggle("is-busy", busy);
+    const lbl = btn.querySelector<HTMLElement>("[data-save-lbl], [data-q-lbl]");
+    if (lbl) lbl.textContent = label;
   }
 
   on(document, "click", function (e) {
@@ -695,9 +867,9 @@ export function initCrmContent(content: HTMLElement): () => void {
       renderQueue();
       return;
     }
-    const fl = target.closest<HTMLElement>("[data-flash]");
-    if (fl && root.contains(fl)) {
-      flashBtn(fl, fl.dataset.flash || "");
+    const nav = target.closest<HTMLElement>("[data-nav]");
+    if (nav && root.contains(nav) && nav.dataset.nav) {
+      options.navigate?.(nav.dataset.nav);
       return;
     }
 
@@ -707,101 +879,208 @@ export function initCrmContent(content: HTMLElement): () => void {
     const ruleLi = act.closest<HTMLElement>("[data-rule]");
 
     if (kind === "toggle" && ruleLi) {
+      if (crm.busyRule) return;
       const r = rulesData.find(function (x) {
         return x.id === ruleLi.dataset.rule;
       });
-      if (r) {
-        r.enabled = !r.enabled;
-        // Patch the row in place instead of re-rendering the list: a full
-        // innerHTML rebuild replaces the switch node, so the knob's slide and
-        // the badge's color crossfade never get a chance to run.
-        //
-        // The class flip is now the ONLY thing that moves the knob. The old
-        // code also removed/re-added a `tgl--kick` keyframe class around a
-        // forced reflow, which restarted the knob from its previous position
-        // mid-transition — one click, two visible movements. The press gesture
-        // lives on the track's `:active` rule instead, where it cannot compete
-        // for the same `transform`.
-        act.classList.toggle("on", r.enabled);
-        act.setAttribute("aria-pressed", r.enabled ? "true" : "false");
-        const badge = ruleLi.querySelector<HTMLElement>(".rule-name .pstatus");
-        if (badge) {
-          badge.classList.toggle("rst--on", r.enabled);
-          badge.classList.toggle("rst--off", !r.enabled);
-          badge.textContent = r.enabled ? "active" : "off";
-        }
-      }
+      if (r) void toggleRule(r, act, ruleLi);
       return;
     }
     if (kind === "edit" && ruleLi) {
       crm.editing = ruleLi.dataset.rule || null;
       crm.creating = false;
+      showErr("#rulesErr", null);
       renderRules();
       return;
     }
     if (kind === "del-rule" && ruleLi) {
-      const i = rulesData.findIndex(function (x) {
-        return x.id === ruleLi.dataset.rule;
-      });
-      if (i > -1) rulesData.splice(i, 1);
-      renderRules();
+      if (crm.busyRule) return;
+      void removeRule(ruleLi);
       return;
     }
     if (kind === "cancel-rule") {
+      if (crm.savingRule) return;
       crm.editing = null;
       crm.creating = false;
       renderRules();
       return;
     }
     if (kind === "save-rule") {
+      if (crm.savingRule) return;
       const body = act.closest<HTMLElement>("[data-form]");
-      if (!body) return;
-      const field = (f: string) => body.querySelector<HTMLInputElement | HTMLSelectElement>('[data-f="' + f + '"]');
-      const get = function (f: string) {
-        const el = field(f);
-        return el ? el.value : "";
-      };
-      const name = get("name").trim();
-      if (!name) {
-        field("name")?.focus();
-        return;
-      }
-      const payload = {
-        name: name,
-        triggerStatus: get("trigger"),
-        delayMinutes: Math.max(1, parseInt(get("days"), 10) || 1) * 60 * 24,
-        template: get("template") || null,
-      };
-      const id = body.dataset.form;
-      if (id === "new") {
-        ruleSeq += 1;
-        rulesData.push(Object.assign({ id: "r" + ruleSeq, enabled: true }, payload));
-        crm.creating = false;
-      } else {
-        const r = rulesData.find(function (x) {
-          return x.id === id;
-        });
-        if (r) Object.assign(r, payload);
-        crm.editing = null;
-      }
-      renderRules();
+      if (body) void saveRule(body, act);
       return;
     }
     if (kind === "q-done" || kind === "q-send") {
+      if (crm.busyQueue) return;
       const row = act.closest<HTMLElement>("[data-q]");
-      if (!row) return;
-      const id = row.dataset.q;
-      row.classList.add("gone");
-      later(function () {
-        queueData = queueData.filter(function (q) {
-          return q.id !== id;
-        });
-        renderQueue();
-        renderStats();
-        renderActions();
-      }, 240);
+      if (row) void workQueueRow(row, act, kind === "q-send");
+      return;
     }
   });
+
+  // ================= WRITES (real server actions) =================
+  // src/actions/followUps.ts — the same actions the classic CRM pages called.
+  // Rule CRUD is manager-gated; working the queue is allowed to sales too. All
+  // of them are org-scoped and they revalidate /dashboard/follow-ups and
+  // /dashboard/crm/queue, so the classic pages agree with this sheet.
+
+  /** Enable / disable. The switch is patched IN PLACE, never re-rendered: an
+   *  innerHTML rebuild replaces the switch node, so the knob's slide and the
+   *  badge's colour crossfade never get to run. The optimistic flip is reverted
+   *  on the same nodes if the action refuses. */
+  function paintToggle(r: FollowUpRule, tgl: HTMLElement, li: HTMLElement) {
+    tgl.classList.toggle("on", r.enabled);
+    tgl.setAttribute("aria-pressed", r.enabled ? "true" : "false");
+    const badge = li.querySelector<HTMLElement>(".rule-name .pstatus");
+    if (badge) {
+      badge.classList.toggle("rst--on", r.enabled);
+      badge.classList.toggle("rst--off", !r.enabled);
+      badge.textContent = r.enabled ? "active" : "off";
+    }
+  }
+
+  async function toggleRule(r: FollowUpRule, tgl: HTMLElement, li: HTMLElement) {
+    const next = !r.enabled;
+    crm.busyRule = r.id;
+    showErr("#rulesErr", null);
+    r.enabled = next;
+    paintToggle(r, tgl, li);
+    try {
+      await setFollowUpRuleEnabled(r.id, next);
+    } catch (err) {
+      r.enabled = !next;
+      paintToggle(r, tgl, li);
+      showErr("#rulesErr", actionError(err));
+    } finally {
+      crm.busyRule = null;
+    }
+  }
+
+  /** Delete. The row leaves alone and the rows below close the gap — the list
+   *  is NOT re-rendered, or the FLIP would have nothing left to move. */
+  async function removeRule(li: HTMLElement) {
+    const id = li.dataset.rule;
+    if (!id) return;
+    crm.busyRule = id;
+    showErr("#rulesErr", null);
+    try {
+      await deleteFollowUpRule(id);
+      leaveRow(
+        li,
+        () => {
+          rulesData = rulesData.filter((x) => x.id !== id);
+          const empty = $("#rulesEmpty");
+          if (empty) empty.classList.toggle("is-hidden", rulesData.length !== 0 || crm.creating);
+        },
+        after,
+      );
+    } catch (err) {
+      showErr("#rulesErr", actionError(err));
+    } finally {
+      crm.busyRule = null;
+    }
+  }
+
+  /** Create or update. `data-form` carries "new" or the rule's id — the same
+   *  discriminator `upsertFollowUpRule` uses on the server. */
+  async function saveRule(body: HTMLElement, btn: HTMLElement) {
+    const field = (f: string) =>
+      body.querySelector<HTMLInputElement | HTMLSelectElement>('[data-f="' + f + '"]');
+    const get = (f: string) => field(f)?.value ?? "";
+    const errBox = body.querySelector<HTMLElement>("[data-rf-err]");
+    const setFormErr = (msg: string | null) => {
+      if (!errBox) return;
+      errBox.textContent = msg || "";
+      errBox.classList.toggle("is-hidden", !msg);
+    };
+
+    const name = get("name").trim();
+    if (!name) {
+      setFormErr("Give the rule a name.");
+      field("name")?.focus();
+      return;
+    }
+    const id = body.dataset.form;
+    const editing = id && id !== "new" ? id : undefined;
+    const existing = editing ? rulesData.find((x) => x.id === editing) : undefined;
+    const payload = {
+      id: editing,
+      name,
+      triggerStatus: get("trigger"),
+      delayMinutes: Math.max(1, parseInt(get("days"), 10) || 1) * 60 * 24,
+      // A new rule starts active, exactly as the donor's form implied; an edit
+      // must not silently re-enable a rule the user switched off.
+      enabled: existing ? existing.enabled : true,
+      templateId: get("template") || null,
+    };
+
+    crm.savingRule = true;
+    setFormErr(null);
+    setBtnBusy(btn, true, "Saving…");
+    try {
+      const res = await upsertFollowUpRule(payload);
+      if (existing) {
+        Object.assign(existing, {
+          name: payload.name,
+          triggerStatus: payload.triggerStatus,
+          delayMinutes: payload.delayMinutes,
+          template: payload.templateId,
+        });
+        crm.editing = null;
+      } else {
+        rulesData.push({
+          id: res.id,
+          name: payload.name,
+          triggerStatus: payload.triggerStatus,
+          delayMinutes: payload.delayMinutes,
+          enabled: payload.enabled,
+          template: payload.templateId,
+        });
+        crm.creating = false;
+      }
+      // The page reads rules `orderBy: { name: "asc" }`; keep the live list in
+      // that order so a reload does not appear to shuffle the card.
+      rulesData.sort((a, b) => a.name.localeCompare(b.name));
+      crm.savingRule = false;
+      renderRules();
+    } catch (err) {
+      crm.savingRule = false;
+      setBtnBusy(btn, false, "Save rule");
+      setFormErr(actionError(err));
+    }
+  }
+
+  /** Queue: Send dispatches the follow-up email now, Done just closes it out.
+   *  Both complete the FollowUp server-side, so either way the row is gone. */
+  async function workQueueRow(row: HTMLElement, btn: HTMLElement, send: boolean) {
+    const id = row.dataset.q;
+    if (!id) return;
+    crm.busyQueue = id;
+    showErr("#queueErr", null);
+    setBtnBusy(btn, true, send ? "Sending…" : "Saving…");
+    try {
+      if (send) await runFollowUpNow(id);
+      else await markFollowUpDone(id);
+      leaveRow(
+        row,
+        () => {
+          queueData = queueData.filter((q) => q.id !== id);
+          // Chrome only — rebuilding #queueBody here would replace the very
+          // rows the FLIP is closing the gap with.
+          renderQueueChrome();
+          renderStats();
+          renderActions();
+        },
+        after,
+      );
+    } catch (err) {
+      setBtnBusy(btn, false, send ? "Send" : "Done");
+      showErr("#queueErr", actionError(err));
+    } finally {
+      crm.busyQueue = null;
+    }
+  }
 
   // ================= INITIALIZATION =================
   safe("init", function () {
@@ -814,7 +1093,8 @@ export function initCrmContent(content: HTMLElement): () => void {
   // ================= MOTION SYSTEM — BALANCED (package 02) =================
   (function () {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const EASE = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+    // (The donor's local EASE constant is gone with its row-stagger block —
+    // `staggerIn` / `leaveRow` carry the system curve now.)
 
     // Reveal: load + scroll. Reveal adapts to scroll speed: a slow scroll gets
     // the full 420ms animation; a fast one gets a shorter pass.
@@ -881,39 +1161,22 @@ export function initCrmContent(content: HTMLElement): () => void {
 
     // (Sidebar cascade lives in the shell — it plays once, on first load.)
 
-    // Row stagger on list (re)render
-    function animateRows(list: HTMLElement) {
-      const rows = Array.from(list.querySelectorAll<HTMLElement>(".prow, .stat, .cb-tile"));
-      rows.forEach((r, i) => {
-        r.style.opacity = "0";
-        r.style.transform = "translateY(8px)";
-        r.style.transition =
-          "opacity 300ms " + EASE + " " + i * 45 + "ms, transform 300ms " + EASE + " " + i * 45 + "ms";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            r.style.opacity = "1";
-            r.style.transform = "none";
-          }),
-        );
-        // Drop the inline styles once the stagger lands. Left in place, the
-        // inline `transform: none` outranks every stylesheet `:hover` rule,
-        // so hover lift on rows and tiles silently stops working.
-        r.addEventListener("transitionend", function te(e) {
-          if (e.propertyName !== "transform") return;
-          r.style.opacity = "";
-          r.style.transform = "";
-          r.style.transition = "";
-          r.removeEventListener("transitionend", te);
-        });
-      });
-    }
-    ["statGrid", "freshList", "cbBody", "queueBody"].forEach((id) => {
-      const list = $("#" + id);
+    // Row stagger — on ARRIVAL only.
+    //
+    // The donor wired this to `new MutationObserver(…, { childList: true })` on
+    // each list, so EVERY render replayed the full 45ms-per-row entrance: a
+    // chip filter, a queue tab, a pager step, one row leaving. The list dropped
+    // to opacity 0 and crawled back each time, which reads as "the list wiped
+    // itself" — and with the queue now doing real writes it would have fought
+    // `leaveRow` for the same nodes on every Done/Send. The observer is gone;
+    // the caller decides when a list genuinely arrives. Overview is the only
+    // panel visible on mount, so it is the only one staggered here — the other
+    // three play on first reveal, in `playPanelStagger`, because a stagger
+    // inside a `display: none` subtree pins `transform: none` and kills hover.
+    ["#statGrid", "#freshList"].forEach((sel) => {
+      const list = $(sel);
       if (!list) return;
-      animateRows(list);
-      const mo = new MutationObserver(() => animateRows(list));
-      mo.observe(list, { childList: true });
-      disposers.push(() => mo.disconnect());
+      staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".prow, .stat, .cb-tile")));
     });
 
     // Numeral count-up — Overview's `.kpi-val`; here the stat grid, the

@@ -71,6 +71,18 @@ export type PlacesSuggestOptions = {
   cityOnly?: boolean;
   /** Called on every pick, and (with `typed: true`) on free typing. */
   onPick: (place: PickedPlace) => void;
+  /**
+   * Class for the suggestion list, REPLACING the default "bp-sug".
+   *
+   * The handheld pages pass a CSS-module class here. The list is appended to
+   * <body>, outside any React tree, so a hashed module class is the only way it
+   * can be styled without colliding with the desktop rules in
+   * blueprint-global.css — which are sized for a mouse and load on these routes
+   * anyway, since the responsive shell imports BlueprintShell statically.
+   * Inner items keep their global bp-sug-* classes; a caller reaches them with
+   * a descendant selector, which outranks the desktop's single-class rules.
+   */
+  className?: string;
 };
 
 /**
@@ -100,7 +112,7 @@ export function attachPlacesSuggest(
   }
 
   const pop = document.createElement("ul");
-  pop.className = "bp-sug";
+  pop.className = opts.className ?? "bp-sug";
   pop.setAttribute("role", "listbox");
   document.body.appendChild(pop);
 
