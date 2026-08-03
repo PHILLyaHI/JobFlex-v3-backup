@@ -486,26 +486,36 @@
 
 /* ============================================================
    NARROW LAYOUT — the donor's `@media (max-width: 1080px)` block
-   (donor 1841-1851) keyed off the shell's effective-width class instead
-   of the raw viewport (see the header note), plus the F1 extension: the
-   three security columns stack and their dividers turn horizontal.
-   Last in the file so it wins at equal specificity.
+   (donor 1841-1851), at the donor's own breakpoint, plus the F1
+   extension: the three security columns stack and their dividers turn
+   horizontal. Last in the file so it wins at equal specificity.
+
+   This block was briefly keyed off `html.eff-1000` instead, on the
+   theory that the shell's FLUID SCALE module publishes effective-width
+   classes the way the donor's inline script did. It does not: this
+   repo's FluidScale (components/v3/fluid-scale.tsx) applies `zoom` and
+   `--app-h` but never toggles `eff-1280` / `eff-1000`, and it is not
+   mounted on the /dashboard fleet at all. Nothing in the repo sets
+   those classes, so the rules never matched and the narrow layout was
+   dead. The donor wrote a media query; a media query ships.
    ============================================================ */
-:global(html.eff-1000) .bp :global(.content .set) { grid-template-columns: 1fr; gap: 18px; }
-:global(html.eff-1000) .bp :global(.content .rail) { position: static; }
-:global(html.eff-1000) .bp :global(.content .rail-nav) { flex-direction: row; gap: 8px; overflow-x: auto; padding-bottom: 4px;
-  scrollbar-width: none; }
-/* The pseudo-element sits OUTSIDE `:global(...)` — the shape every other page
-   module uses, and the one Lightning CSS is known to accept. */
-:global(html.eff-1000) .bp :global(.content .rail-nav)::-webkit-scrollbar { display: none; }
-:global(html.eff-1000) .bp :global(.content .rail-a) { flex-shrink: 0; margin-bottom: 0; padding: 9px 12px; font-size: 12px; }
-:global(html.eff-1000) .bp :global(.content .rail-a .ic) { width: 15px; height: 15px; }
-:global(html.eff-1000) .bp :global(.content .rail-sep) { display: none; }
-:global(html.eff-1000) .bp :global(.content .fgrid) { grid-template-columns: 1fr; }
-/* F1 at narrow width: one column, bottom dividers, the donor `.prow` 14px
-   rhythm back between rows, and the first/last rows flush with the card body. */
-:global(html.eff-1000) .bp :global(.content .seccols) { grid-template-columns: 1fr; }
-:global(html.eff-1000) .bp :global(.content .seccol) { padding: 14px 0; border-right: none;
-  border-bottom: 1.5px solid var(--hair-soft); }
-:global(html.eff-1000) .bp :global(.content .seccol:first-child) { padding-top: 0; }
-:global(html.eff-1000) .bp :global(.content .seccol:last-child) { padding-bottom: 0; border-bottom: none; }
+@media (max-width: 1080px) {
+  .bp :global(.content .set) { grid-template-columns: 1fr; gap: 18px; }
+  .bp :global(.content .rail) { position: static; }
+  .bp :global(.content .rail-nav) { flex-direction: row; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+    scrollbar-width: none; }
+  /* The pseudo-element sits OUTSIDE `:global(...)` — the shape every other page
+     module uses, and the one Lightning CSS is known to accept. */
+  .bp :global(.content .rail-nav)::-webkit-scrollbar { display: none; }
+  .bp :global(.content .rail-a) { flex-shrink: 0; margin-bottom: 0; padding: 9px 12px; font-size: 12px; }
+  .bp :global(.content .rail-a .ic) { width: 15px; height: 15px; }
+  .bp :global(.content .rail-sep) { display: none; }
+  .bp :global(.content .fgrid) { grid-template-columns: 1fr; }
+  /* F1 at narrow width: one column, bottom dividers, the donor `.prow` 14px
+     rhythm back between rows, and the first/last rows flush with the card body. */
+  .bp :global(.content .seccols) { grid-template-columns: 1fr; }
+  .bp :global(.content .seccol) { padding: 14px 0; border-right: none;
+    border-bottom: 1.5px solid var(--hair-soft); }
+  .bp :global(.content .seccol:first-child) { padding-top: 0; }
+  .bp :global(.content .seccol:last-child) { padding-bottom: 0; border-bottom: none; }
+}
