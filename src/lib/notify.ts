@@ -18,6 +18,7 @@ import {
   formatUSD,
   isBareUrlParagraph,
 } from "@/lib/email/build/client";
+import { buildOwnerAccepted, buildNewLead, buildLeadOffer } from "@/lib/email/build/operator";
 import { parseGmailSettings } from "@/lib/settings";
 
 export { formatUSD };
@@ -210,18 +211,25 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
 
   // 2) Internal heads-up to the owner (system → no contractor reply-to).
   if (proposal.organization.billingEmail) {
-    const wrapped = wrapEmail({
-      subject: `Accepted — ${proposal.title}`,
-      body: `${proposal.client?.name ?? "A client"} just accepted "${proposal.title}" (${formatUSD(proposal.total)}).
-
-Time to schedule the work — open it in JobFlex:
-${appUrl}/dashboard/proposals/${proposal.id}`,
-      orgName: proposal.organization.name,
-    });
+    const { subject: ownerSubject, html: ownerHtml } = renderEmail(
+      buildOwnerAccepted({
+        org: {
+          name: proposal.organization.name,
+          logoUrl: proposal.organization.logoUrl,
+          phone: proposal.organization.phone,
+        },
+        clientName: proposal.client?.name ?? "A client",
+        title: proposal.title,
+        acceptedAt: new Date(),
+        total: proposal.total,
+        needsScheduling: true,
+        href: `${appUrl}/dashboard/proposals/${proposal.id}`,
+      }),
+    );
     await sendEmail({
       to: proposal.organization.billingEmail,
-      subject: wrapped.subject,
-      html: wrapped.html,
+      subject: ownerSubject,
+      html: ownerHtml,
     });
   }
 
@@ -232,25 +240,30 @@ export async function notifyLeadCreated(leadId: string) {
   const lead = await db.lead.findUnique({
     where: { id: leadId },
     include: {
-      organization: { select: { name: true, phone: true, billingEmail: true } },
+      organization: { select: { name: true, phone: true, billingEmail: true, logoUrl: true } },
     },
   });
   if (!lead || !lead.organization) return { skipped: true as const };
 
   const ownerEmail = lead.organization.billingEmail;
   if (ownerEmail) {
-    const bodyFilled = `A new lead came in: ${lead.name} (${lead.email ?? lead.phone ?? "no contact"}).
-
-Project: ${lead.projectType ?? "—"}
-${lead.description ? `Details: ${lead.description.slice(0, 400)}` : ""}
-
-Triage in JobFlex.`;
-    const wrapped = wrapEmail({
-      subject: `New lead — ${lead.name}`,
-      body: bodyFilled,
-      orgName: lead.organization.name,
-    });
-    await sendEmail({ to: ownerEmail, subject: wrapped.subject, html: wrapped.html });
+    const appUrl = await appBaseUrl();
+    const { subject: leadSubject, html: leadHtml } = renderEmail(
+      buildNewLead({
+        org: {
+          name: lead.organization.name,
+          logoUrl: lead.organization.logoUrl,
+          phone: lead.organization.phone,
+        },
+        leadName: lead.name,
+        phone: lead.email ?? lead.phone ?? null,
+        project: lead.projectType ?? null,
+        source: lead.source ?? "Website",
+        enquiry: lead.description ?? null,
+        href: `${appUrl}/dashboard/leads`,
+      }),
+    );
+    await sendEmail({ to: ownerEmail, subject: leadSubject, html: leadHtml });
   }
 
   // Optional SMS if owner phone is set
@@ -354,24 +367,20 @@ export async function notifyLeadOfferCreated(offerId: string) {
   const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "your area";
 
   if (offer.organization.billingEmail) {
-    const wrapped = wrapEmail({
-      subject: `New lead for you — ${pl.detectedTrade ?? pl.projectType ?? "project"} in ${where}`,
-      body: `A homeowner near you is looking for help:
-
-Project: ${pl.detectedTrade ?? pl.projectType ?? "—"}
-Where: ${where}
-${pl.description ? `Details: ${pl.description.slice(0, 400)}` : ""}
-
-This lead is reserved for you for 24 hours — accept it before it moves to the next shop.
-
-Review the lead:
-${appUrl}/dashboard/leads`,
-      orgName: offer.organization.name,
-    });
+    const { subject: offerSubject, html: offerHtml } = renderEmail(
+      buildLeadOffer({
+        trade: pl.detectedTrade ?? pl.projectType ?? "project",
+        where,
+        createdAt: offer.createdAt,
+        reservedHours: 24,
+        nextShop: "the next shop in line",
+        href: `${appUrl}/dashboard/leads`,
+      }),
+    );
     await sendEmail({
       to: offer.organization.billingEmail,
-      subject: wrapped.subject,
-      html: wrapped.html,
+      subject: offerSubject,
+      html: offerHtml,
     });
   }
 

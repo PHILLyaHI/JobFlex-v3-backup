@@ -5,7 +5,8 @@ import { requireManager, requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
-import { wrapEmail } from "@/lib/email/render";
+import { renderEmail } from "@/lib/email/renderEmail";
+import { buildSupportTicket } from "@/lib/email/build/operator";
 
 // Support taxonomy — kept in lockstep with the customer form's chips and the
 // admin triage tags. Not exported: a "use server" module may only export async
@@ -146,20 +147,18 @@ async function notifyAdminsOfTicket(t: {
     if (to.length === 0) return;
 
     const appUrl = await appBaseUrl();
-    const flag = t.priority === "high" ? "🔴 High priority — " : "";
-    const wrapped = wrapEmail({
-      subject: `${flag}New support ticket — ${t.subject}`,
-      body: `${t.orgName}${t.submitterEmail ? ` (${t.submitterEmail})` : ""} raised a ${t.priority}-priority ${t.category} ticket.
-
-Subject: ${t.subject}
-
-${t.body}
-
-Open the admin inbox to respond:
-${appUrl}/admin/support`,
-      orgName: "JobFlex",
-    });
-    await sendEmail({ to, subject: wrapped.subject, html: wrapped.html });
+    const { subject: ticketSubject, html: ticketHtml } = renderEmail(
+      buildSupportTicket({
+        subject: t.subject,
+        body: t.body,
+        category: t.category,
+        priority: t.priority,
+        orgName: t.orgName,
+        submitterEmail: t.submitterEmail,
+        href: `${appUrl}/admin/support`,
+      }),
+    );
+    await sendEmail({ to, subject: ticketSubject, html: ticketHtml });
   } catch {
     // Swallowed by design: support submission succeeds regardless of mail state.
   }

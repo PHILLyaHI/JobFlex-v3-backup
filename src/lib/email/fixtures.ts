@@ -7,6 +7,7 @@ import {
   buildPaymentReminder,
   buildReviewRequest,
 } from "./build/client";
+import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket } from "./build/operator";
 
 const ORG = { kind: "org" as const, name: "Cedar & Oak Builders", logoUrl: null };
 const FOOT = { name: "Cedar & Oak Builders", contact: "(503) 555-0142", ref: "Ref A-2481" };
@@ -297,6 +298,76 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
       clientName: "Jordan Rivera",
       jobTitle: "Backyard cedar fence",
       href: "https://example.com/review/demo",
+    }),
+  },
+  {
+    id: "b-owner-accepted",
+    label: "11 · buildOwnerAccepted()",
+    note: "Operator voice — no greeting, no sign-off. Link, not CTA (nothing to do but know it).",
+    doc: buildOwnerAccepted({
+      org: BRAND,
+      clientName: "Jordan Rivera",
+      title: "Backyard cedar fence",
+      acceptedAt: new Date(),
+      total: 5061,
+      needsScheduling: true,
+      href: "https://example.com/dashboard/proposals/demo",
+    }),
+  },
+  {
+    id: "b-new-lead",
+    label: "12 · buildNewLead()",
+    note: "Headline is the lead's name. Enquiry text quoted in `after`.",
+    doc: buildNewLead({
+      org: BRAND,
+      leadName: "Priya Anand",
+      phone: "(503) 555-0177",
+      project: "Kitchen remodel",
+      source: "Website",
+      enquiry: "Looking to redo our kitchen this fall — cabinets, counters, and a new layout for the island.",
+      href: "https://example.com/dashboard/leads",
+    }),
+  },
+  {
+    id: "b-lead-offer",
+    label: "13 · buildLeadOffer()",
+    note: "Platform lockup — marketplace mail, not the org's own. Countdown occupies the anchor slot.",
+    doc: buildLeadOffer({
+      trade: "Fencing",
+      where: "Beaverton, OR",
+      createdAt: new Date(Date.now() - 30 * 60_000),
+      reservedHours: 24,
+      nextShop: "the next shop in line",
+      href: "https://example.com/dashboard/leads",
+      ref: "Offer L-9042",
+    }),
+  },
+  {
+    id: "b-support-ticket-high",
+    label: "14 · buildSupportTicket() — high priority",
+    note: "Platform lockup, reaches admins only. Ticket body sits in `after`.",
+    doc: buildSupportTicket({
+      subject: "Payments not showing up",
+      body: "Two client payments cleared in Stripe yesterday but the job still shows as unpaid in JobFlex. Can someone take a look?",
+      category: "billing",
+      priority: "high",
+      orgName: "Cedar & Oak Builders",
+      submitterEmail: "rob@cedarandoak.com",
+      href: "https://example.com/admin/support",
+    }),
+  },
+  {
+    id: "b-support-ticket-normal",
+    label: "14b · buildSupportTicket() — normal priority",
+    note: "Kicker falls back to neutral 'Support' when priority isn't high.",
+    doc: buildSupportTicket({
+      subject: "Can I add a second phone number?",
+      body: "We're adding a second crew lead and want a shared line for after-hours calls. Is that possible on our current plan?",
+      category: "account",
+      priority: "normal",
+      orgName: "Precision Roofing",
+      submitterEmail: null,
+      href: "https://example.com/admin/support",
     }),
   },
 ];
