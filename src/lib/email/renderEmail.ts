@@ -3,7 +3,7 @@
 // inlined as literals because email clients don't resolve CSS custom
 // properties; keep them in sync with globals.css by hand.
 import { type BoxRow, type EmailDoc, type Lockup, TONE_COLOR } from "./doc";
-import { fitAnchor, fitHeadline, fitOrgName, type Size } from "./fit";
+import { fitAnchor, fitHeadline, fitOrgName } from "./fit";
 
 const C = {
   canvas: "#ebe8e1",
@@ -57,9 +57,32 @@ function esc(s: string): string {
     .replace(/'/g, "&#039;");
 }
 
-/** `font-size` plus the class the media query scales up on wide viewports. */
-function sized(cls: string, s: Size): string {
-  return `class="${cls}" style="font-size:${s.m}px;"`;
+/**
+ * Only http(s), mailto and tel schemes render as live links; everything else
+ * — javascript:, data:, vbscript:, and scheme spoofs hidden behind leading
+ * whitespace, control characters, or mixed case — collapses to a dead "#".
+ * Relative URLs (no scheme at all, e.g. /portal/q/abc) pass through
+ * untouched. Deliberately avoids `new URL()`: it throws on relative input.
+ */
+function safeHref(url: string): string {
+  // Browsers drop ASCII control characters (codes 0-31 and 127) from
+  // anywhere in a URL before parsing its scheme, so a stray control
+  // character hidden inside the word "javascript:" still reads as
+  // "javascript:" to a mail client's renderer even though the raw string
+  // never spells it that way. Stripped by char code below rather than a
+  // regex escape range, so no literal control byte has to live in this
+  // source file.
+  let stripped = "";
+  for (let i = 0; i < url.length; i++) {
+    const code = url.charCodeAt(i);
+    if (code > 31 && code !== 127) stripped += url[i];
+  }
+  const clean = stripped.trim();
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(clean)?.[1]?.toLowerCase();
+  if (!scheme) return url; // no scheme → relative URL, leave as authored
+  return scheme === "http" || scheme === "https" || scheme === "mailto" || scheme === "tel"
+    ? url
+    : "#";
 }
 
 /**
@@ -153,7 +176,7 @@ function lockupHtml(lockup: Lockup): string {
       )}</div>`;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
   <td valign="middle" style="width:1%;">${mark}</td>
-  <td valign="middle" style="padding-left:11px;font-family:${SANS};font-size:${s.m}px;font-weight:800;letter-spacing:-.015em;color:${C.ink};line-height:1.2;">${esc(name)}</td>
+  <td valign="middle" class="orgname" style="padding-left:11px;font-family:${SANS};font-size:${s.m}px;font-weight:800;letter-spacing:-.015em;color:${C.ink};line-height:1.2;">${esc(name)}</td>
 </tr></table>`;
 }
 
@@ -172,7 +195,7 @@ function ctaHtml(cta: { label: string; href: string }): string {
   // keeps the target above 44px (principle 14).
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 0;">
   <tr><td align="center" bgcolor="${C.accent}" style="border:2px solid ${C.ink};border-radius:2px;box-shadow:3px 3px 0 ${C.ink};">
-    <a href="${esc(cta.href)}" target="_blank" style="display:block;padding:18px 16px;font-family:${SANS};font-size:15px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#ffffff;text-decoration:none;">${esc(
+    <a href="${esc(safeHref(cta.href))}" target="_blank" style="display:block;padding:18px 16px;font-family:${SANS};font-size:15px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#ffffff;text-decoration:none;">${esc(
       cta.label,
     )}</a>
   </td></tr>
@@ -212,6 +235,11 @@ function plainText(doc: EmailDoc): string {
 export function renderEmail(doc: EmailDoc): { subject: string; html: string; text: string } {
   const h = fitHeadline(doc.headline);
   const kickerColor = doc.kicker?.tone ? TONE_COLOR[doc.kicker.tone] : C.accent;
+  const anchorRow = doc.box?.find(
+    (r): r is Extract<BoxRow, { type: "anchor" }> => r.type === "anchor",
+  );
+  const a = anchorRow ? fitAnchor(anchorRow.value) : null;
+  const o = fitOrgName(doc.lockup.kind === "org" ? doc.lockup.name : "JobFlex");
 
   const html = `<!doctype html>
 <html lang="en">
@@ -230,6 +258,8 @@ export function renderEmail(doc: EmailDoc): { subject: string; html: string; tex
   .body { font-size:16px !important; }
   .item { font-size:17px !important; }
   .anchorlbl { font-size:16px !important; }
+  ${a ? `.anchorval { font-size:${a.d}px !important; }` : ""}
+  .orgname { font-size:${o.d}px !important; }
   .rowpad { padding-left:${PAD_D}px !important; padding-right:${PAD_D}px !important; }
   .pad { padding-left:${PAD_D}px !important; padding-right:${PAD_D}px !important; }
   .mark { width:46px !important; height:46px !important; line-height:46px !important; font-size:23px !important; }
@@ -270,7 +300,7 @@ export function renderEmail(doc: EmailDoc): { subject: string; html: string; tex
   ${doc.cta ? `<tr><td class="pad" style="padding:20px ${PAD_M}px 0;">${ctaHtml(doc.cta)}</td></tr>` : ""}
   ${
     doc.link
-      ? `<tr><td class="pad" style="padding:16px ${PAD_M}px 0;"><a href="${esc(doc.link.href)}" style="font-family:${SANS};font-size:16px;font-weight:700;color:${C.accent};text-decoration:none;">${esc(
+      ? `<tr><td class="pad" style="padding:16px ${PAD_M}px 0;"><a href="${esc(safeHref(doc.link.href))}" style="font-family:${SANS};font-size:16px;font-weight:700;color:${C.accent};text-decoration:none;">${esc(
           doc.link.label,
         )} &rarr;</a></td></tr>`
       : ""
