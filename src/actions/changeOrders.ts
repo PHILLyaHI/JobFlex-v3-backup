@@ -164,9 +164,9 @@ async function emailChangeOrder(id: string) {
   const co = await db.changeOrder.findUnique({
     where: { id },
     include: {
-      organization: { select: { name: true } },
+      organization: { select: { name: true, logoUrl: true, phone: true } },
       job: { include: { client: true } },
-      proposal: { include: { client: true } },
+      proposal: { select: { title: true, total: true, client: true } },
     },
   });
   if (!co) return;
@@ -174,26 +174,21 @@ async function emailChangeOrder(id: string) {
   if (!client?.email) return;
 
   const contextTitle = co.proposal?.title ?? co.job?.title ?? "your project";
-  const orgName = co.organization.name;
   const { sendEmail } = await import("@/lib/sdk/resend");
-  const { wrapEmail } = await import("@/lib/email/render");
+  const { renderEmail } = await import("@/lib/email/renderEmail");
+  const { buildChangeOrder } = await import("@/lib/email/build/client");
   const appUrl = await appBaseUrl();
-  const wrapped = wrapEmail({
-    subject: `Change order for ${contextTitle}`,
-    body: `Hi ${client.name},
-
-We have a change to the contract on "${contextTitle}" that needs your sign-off:
-
-${co.title}
-${co.amount >= 0 ? "+" : "−"}$${Math.abs(co.amount).toLocaleString()}
-
-${co.description ?? ""}
-
-Review and approve here:
-${appUrl}/co/${co.publicToken}
-
-— ${orgName}`,
-    orgName,
-  });
-  await sendEmail({ to: client.email, subject: wrapped.subject, html: wrapped.html });
+  const { subject, html } = renderEmail(
+    buildChangeOrder({
+      org: { name: co.organization.name, logoUrl: co.organization.logoUrl, phone: co.organization.phone },
+      clientName: client.name,
+      contextTitle,
+      coTitle: co.title,
+      description: co.description,
+      amount: co.amount,
+      previousTotal: co.proposal?.total ?? 0,
+      href: `${appUrl}/co/${co.publicToken}`,
+    }),
+  );
+  await sendEmail({ to: client.email, subject, html });
 }

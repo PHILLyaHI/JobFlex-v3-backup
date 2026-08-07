@@ -1,7 +1,17 @@
 import type { EmailDoc } from "./doc";
+import {
+  buildProposalSent,
+  buildProposalAccepted,
+  buildFollowUp,
+  buildChangeOrder,
+  buildPaymentReminder,
+  buildReviewRequest,
+} from "./build/client";
 
 const ORG = { kind: "org" as const, name: "Cedar & Oak Builders", logoUrl: null };
 const FOOT = { name: "Cedar & Oak Builders", contact: "(503) 555-0142", ref: "Ref A-2481" };
+
+const BRAND = { name: "Cedar & Oak Builders", logoUrl: null, phone: "(503) 555-0142" };
 
 export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc }[] = [
   {
@@ -154,5 +164,112 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
       cta: { label: "Review and accept it here", href: "https://example.com/portal/q/demo" },
       footer: { name: "Cedar & Oak Builders" },
     },
+  },
+  {
+    id: "b-proposal-sent",
+    label: "5 · buildProposalSent()",
+    note: "Same builder the sender wires up — house copy fallback, tax row present, condition last.",
+    doc: buildProposalSent({
+      org: BRAND,
+      clientName: "Jordan Rivera",
+      title: "Backyard cedar fence",
+      lineItems: [
+        { name: "Cedar pickets & rails", total: 2340 },
+        { name: "Posts, concrete & hardware", total: 960 },
+        { name: "Labor", total: 1320 },
+        { name: "Haul-off & disposal", total: 200 },
+      ],
+      taxRate: 5,
+      taxTotal: 241,
+      total: 5061,
+      validUntil: new Date(Date.now() + 10 * 86_400_000),
+      href: "https://example.com/portal/q/demo",
+      ref: "Ref A-2481",
+    }),
+  },
+  {
+    id: "b-proposal-sent-capped",
+    label: "5b · buildProposalSent() — 14 raw items",
+    note: "The real capItems() runs here (not a hand-authored box): 14 items in → 12 shown + 1 rollup row summing the other 2.",
+    doc: buildProposalSent({
+      org: BRAND,
+      clientName: "Priya Anand",
+      title: "Full kitchen remodel",
+      lineItems: Array.from({ length: 14 }, (_, idx) => ({
+        name: `Remodel line item ${idx + 1}`,
+        total: 500,
+      })),
+      taxRate: 5,
+      taxTotal: 350,
+      total: 7350,
+      validUntil: new Date(Date.now() + 17 * 86_400_000),
+      href: "https://example.com/portal/q/demo-capped",
+    }),
+  },
+  {
+    id: "b-proposal-accepted",
+    label: "6 · buildProposalAccepted()",
+    note: "No CTA — nothing left for the client to do.",
+    doc: buildProposalAccepted({
+      org: BRAND,
+      clientName: "Jordan Rivera",
+      title: "Backyard cedar fence",
+      total: 5061,
+      callByDate: new Date(Date.now() + 2 * 86_400_000),
+    }),
+  },
+  {
+    id: "b-follow-up",
+    label: "7 · buildFollowUp()",
+    note: "Items dropped — client has already seen them. Anchor + expiring condition only.",
+    doc: buildFollowUp({
+      org: BRAND,
+      title: "Backyard cedar fence",
+      total: 5061,
+      validUntil: new Date(Date.now() + 2 * 86_400_000),
+      href: "https://example.com/portal/q/demo",
+    }),
+  },
+  {
+    id: "b-change-order",
+    label: "8 · buildChangeOrder()",
+    note: "Anchor: the delta. The + carries the sign, not colour (principle 22).",
+    doc: buildChangeOrder({
+      org: BRAND,
+      clientName: "Jordan Rivera",
+      contextTitle: "Backyard cedar fence",
+      coTitle: "Concrete removal, north run",
+      description: "we hit buried concrete along the north run. Removing it adds a day of labour and a skip.",
+      amount: 1240,
+      previousTotal: 5061,
+      href: "https://example.com/co/demo",
+    }),
+  },
+  {
+    id: "b-payment-reminder",
+    label: "9 · buildPaymentReminder()",
+    note: "\"Paid to date $0\" stays even at zero — the zero explains the balance (principle 03 bans empty rows, not zero values).",
+    doc: buildPaymentReminder({
+      org: BRAND,
+      clientName: "Jordan Rivera",
+      title: "Backyard cedar fence",
+      agreedTotal: 5061,
+      paidToDate: 0,
+      dueNow: 2530.5,
+      dueLabel: "Deposit",
+      dueDate: new Date(Date.now() + 5 * 86_400_000),
+      href: "https://example.com/portal/q/demo",
+    }),
+  },
+  {
+    id: "b-review-request",
+    label: "10 · buildReviewRequest()",
+    note: "No box at all — nothing worth anchoring (principle 12·a).",
+    doc: buildReviewRequest({
+      org: BRAND,
+      clientName: "Jordan Rivera",
+      jobTitle: "Backyard cedar fence",
+      href: "https://example.com/review/demo",
+    }),
   },
 ];

@@ -4,7 +4,6 @@ import { z } from "zod";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
-import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 export async function createReviewRequest(jobId: string) {
   const { organizationId } = await requireManager();
@@ -14,10 +13,6 @@ export async function createReviewRequest(jobId: string) {
   // Idempotent per job
   const existing = await db.reviewRequest.findFirst({ where: { jobId } });
   if (existing) return { id: existing.id, publicToken: existing.publicToken };
-
-  // Manual send — gated. The automatic job-completion ask
-  // (src/lib/reviewRequestInternal.ts) stays allow-but-count.
-  await enforcePlanLimit(organizationId, "reviewRequests");
 
   const req = await db.reviewRequest.create({
     data: {
@@ -33,27 +28,25 @@ export async function createReviewRequest(jobId: string) {
   try {
     if (job.client?.email) {
       const { sendEmail } = await import("@/lib/sdk/resend");
-      const { wrapEmail } = await import("@/lib/email/render");
+      const { renderEmail } = await import("@/lib/email/renderEmail");
+      const { buildReviewRequest } = await import("@/lib/email/build/client");
       const org = await db.organization.findUnique({
         where: { id: organizationId },
-        select: { name: true },
+        select: { name: true, logoUrl: true, phone: true },
       });
       const appUrl = await appBaseUrl();
-      const wrapped = wrapEmail({
-        subject: `How did we do? — ${org?.name ?? "JobFlex"}`,
-        body: `Hi ${job.client.name},
-
-Thanks for letting us work on "${job.title}". We'd love a quick review — it takes 30 seconds:
-
-${appUrl}/review/${req.publicToken}
-
-— ${org?.name ?? "Your team"}`,
-        orgName: org?.name ?? "JobFlex",
-      });
+      const { subject, html } = renderEmail(
+        buildReviewRequest({
+          org: { name: org?.name ?? "JobFlex", logoUrl: org?.logoUrl, phone: org?.phone },
+          clientName: job.client.name,
+          jobTitle: job.title,
+          href: `${appUrl}/review/${req.publicToken}`,
+        }),
+      );
       await sendEmail({
         to: job.client.email,
-        subject: wrapped.subject,
-        html: wrapped.html,
+        subject,
+        html,
       });
     }
   } catch (err) {

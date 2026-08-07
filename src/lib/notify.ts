@@ -11,7 +11,11 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
 import { renderTemplate, wrapEmail, type TemplateVars } from "@/lib/email/render";
+import { renderEmail } from "@/lib/email/renderEmail";
+import { buildProposalSent, buildProposalAccepted, formatUSD } from "@/lib/email/build/client";
 import { parseGmailSettings } from "@/lib/settings";
+
+export { formatUSD };
 
 // Customer-facing mail sends from the platform address but routes replies to the
 // contractor: their Gmail reply-to if set, else the org billing email.
@@ -80,8 +84,9 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
     where: { id: proposalId },
     include: {
       client: true,
+      lineItems: { orderBy: { position: "asc" }, take: 13 },
       organization: {
-        select: { name: true, billingEmail: true, gmailSettingsJson: true },
+        select: { name: true, billingEmail: true, gmailSettingsJson: true, logoUrl: true, phone: true },
       },
     },
   });
@@ -90,7 +95,6 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
 
   const tpl = await pickTemplate(proposal.organizationId, "proposal-send");
   const fallback = defaultBodyFor("proposal-send");
-  const subject = tpl?.subject ?? fallback.subject;
   const body = tpl?.body ?? fallback.body;
 
   const appUrl = await appBaseUrl();
@@ -102,16 +106,37 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
     title: proposal.title,
   };
 
-  const wrapped = wrapEmail({
-    subject: renderTemplate(subject, vars),
-    body: renderTemplate(body, vars),
-    orgName: proposal.organization.name,
-  });
+  // Contractor keeps their own words (from the template body) — the system
+  // supplies the structured box. Bare-URL-only paragraphs are dropped since
+  // the CTA already carries the link.
+  const prose = renderTemplate(body, vars)
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/\n/g, " ").trim())
+    .filter((p) => p && !/^https?:\/\/\S+$/i.test(p));
+
+  const { subject: subj, html } = renderEmail(
+    buildProposalSent({
+      org: {
+        name: proposal.organization.name,
+        logoUrl: proposal.organization.logoUrl,
+        phone: proposal.organization.phone,
+      },
+      clientName: proposal.client.name,
+      title: proposal.title,
+      lineItems: proposal.lineItems.map((li) => ({ name: li.name, total: li.total })),
+      taxRate: proposal.taxRate,
+      taxTotal: proposal.taxTotal,
+      total: proposal.total,
+      validUntil: proposal.validUntil,
+      href: `${appUrl}/portal/q/${proposal.publicId}`,
+      prose,
+    }),
+  );
 
   const res = await sendEmail({
     to: proposal.client.email,
-    subject: wrapped.subject,
-    html: wrapped.html,
+    subject: subj,
+    html,
     replyTo: replyToFor(proposal.organization),
   });
 
@@ -131,7 +156,7 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
     include: {
       client: true,
       organization: {
-        select: { name: true, billingEmail: true, gmailSettingsJson: true },
+        select: { name: true, billingEmail: true, gmailSettingsJson: true, logoUrl: true, phone: true },
       },
     },
   });
@@ -141,6 +166,8 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
   const replyTo = replyToFor(proposal.organization);
 
   // 1) Thank-you to the client (customer-facing → reply-to the contractor).
+  //    Client half only — the internal owner heads-up below is unchanged
+  //    (moves onto a builder in Task 6).
   if (proposal.client?.email) {
     const tpl = await pickTemplate(proposal.organizationId, "thank-you");
     const fallback = defaultBodyFor("thank-you");
@@ -151,15 +178,29 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
       org: proposal.organization.name,
       title: proposal.title,
     };
-    const wrapped = wrapEmail({
-      subject: renderTemplate(tpl?.subject ?? fallback.subject, vars),
-      body: renderTemplate(tpl?.body ?? fallback.body, vars),
-      orgName: proposal.organization.name,
-    });
+    const prose = renderTemplate(tpl?.body ?? fallback.body, vars)
+      .split(/\n{2,}/)
+      .map((p) => p.replace(/\n/g, " ").trim())
+      .filter((p) => p && !/^https?:\/\/\S+$/i.test(p));
+
+    const { subject: acceptedSubject, html: acceptedHtml } = renderEmail(
+      buildProposalAccepted({
+        org: {
+          name: proposal.organization.name,
+          logoUrl: proposal.organization.logoUrl,
+          phone: proposal.organization.phone,
+        },
+        clientName: proposal.client.name,
+        title: proposal.title,
+        total: proposal.total,
+        callByDate: null,
+        prose,
+      }),
+    );
     await sendEmail({
       to: proposal.client.email,
-      subject: wrapped.subject,
-      html: wrapped.html,
+      subject: acceptedSubject,
+      html: acceptedHtml,
       replyTo,
     });
   }
@@ -261,14 +302,6 @@ ${appUrl}/w/${a.worker.token}
   }
 
   return { skipped: false as const };
-}
-
-export function formatUSD(n: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: n % 1 === 0 ? 0 : 2,
-  }).format(n);
 }
 
 // ── Lead Center ──────────────────────────────────────────────────────────────

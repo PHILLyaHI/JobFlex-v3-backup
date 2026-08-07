@@ -5,7 +5,9 @@ import { requireManager, requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendOrgEmail } from "@/lib/email/orgSend";
-import { renderTemplate, wrapEmail } from "@/lib/email/render";
+import { renderTemplate } from "@/lib/email/render";
+import { renderEmail } from "@/lib/email/renderEmail";
+import { buildFollowUp } from "@/lib/email/build/client";
 
 const ruleInput = z.object({
   id: z.string().optional(),
@@ -154,6 +156,8 @@ async function dispatchOne(id: string): Promise<boolean> {
               gmailSettingsJson: true,
               gmailTokensJson: true,
               billingEmail: true,
+              logoUrl: true,
+              phone: true,
             },
           },
         },
@@ -170,7 +174,6 @@ async function dispatchOne(id: string): Promise<boolean> {
       : await db.emailTemplate.findFirst({
           where: { organizationId: fu.organizationId, category: "reminder" },
         });
-    const subject = tpl?.subject ?? "A quick nudge — {{title}}";
     const body =
       tpl?.body ??
       `Hi {{client_name}},\n\nCircling back on our recent proposal. Review and accept online:\n{{link}}\n\n— {{org}}`;
@@ -182,17 +185,31 @@ async function dispatchOne(id: string): Promise<boolean> {
       org: proposal.organization.name,
       title: proposal.title,
     };
-    const wrapped = wrapEmail({
-      subject: renderTemplate(subject, vars),
-      body: renderTemplate(body, vars),
-      orgName: proposal.organization.name,
-    });
+    const prose = renderTemplate(body, vars)
+      .split(/\n{2,}/)
+      .map((p) => p.replace(/\n/g, " ").trim())
+      .filter((p) => p && !/^https?:\/\/\S+$/i.test(p));
+
+    const { subject: subj, html } = renderEmail(
+      buildFollowUp({
+        org: {
+          name: proposal.organization.name,
+          logoUrl: proposal.organization.logoUrl,
+          phone: proposal.organization.phone,
+        },
+        title: proposal.title,
+        total: proposal.total,
+        validUntil: proposal.validUntil,
+        href: `${appUrl}/portal/q/${proposal.publicId}`,
+        prose,
+      }),
+    );
     // Sends via the org's connected Gmail when opted in, else Resend/SMTP with
     // the contractor as reply-to.
     await sendOrgEmail(proposal.organization, {
       to: proposal.client.email,
-      subject: wrapped.subject,
-      html: wrapped.html,
+      subject: subj,
+      html,
     });
   }
 
