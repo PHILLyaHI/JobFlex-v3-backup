@@ -58,7 +58,7 @@ export function wrapEmail({
         buffer.push(line);
       }
     }
-    if (buffer.length) prose.push(buffer.join(" "));
+    if (buffer.length) prose.push(buffer.join("\n"));
   }
 
   const { html, text } = renderEmail({

@@ -180,13 +180,29 @@ function lockupHtml(lockup: Lockup): string {
 </tr></table>`;
 }
 
+/**
+ * Turn a bare http(s) URL inside already-escaped text into a live link.
+ * Must run AFTER esc() (so `&` inside the URL reads as the safe `&amp;`
+ * entity, which browsers resolve fine in an href) and BEFORE the `\n` → `<br>`
+ * pass (so the injected `<a>` tags survive instead of getting escaped).
+ * Routes the href through safeHref() so a scheme other than http/https/
+ * mailto/tel can never become a live link even if it somehow matches.
+ */
+function linkify(escaped: string): string {
+  return escaped.replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+    const href = safeHref(url);
+    if (href === "#") return url; // neutralised scheme — render as dead text, not a link
+    return `<a href="${href}" style="color:${C.accent};text-decoration:underline;text-underline-offset:2px;">${url}</a>`;
+  });
+}
+
 function paras(list: string[] | undefined): string {
   if (!list?.length) return "";
   return list
-    .map(
-      (p) =>
-        `<p class="body" style="margin:0 0 12px;font-family:${SANS};font-size:16px;line-height:1.6;color:${C.inkSoft};">${esc(p)}</p>`,
-    )
+    .map((p) => {
+      const text = linkify(esc(p)).replace(/\n/g, "<br>");
+      return `<p class="body" style="margin:0 0 12px;font-family:${SANS};font-size:16px;line-height:1.6;color:${C.inkSoft};">${text}</p>`;
+    })
     .join("");
 }
 
