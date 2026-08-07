@@ -12,7 +12,12 @@ import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
 import { renderTemplate, wrapEmail, type TemplateVars } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
-import { buildProposalSent, buildProposalAccepted, formatUSD } from "@/lib/email/build/client";
+import {
+  buildProposalSent,
+  buildProposalAccepted,
+  formatUSD,
+  isBareUrlParagraph,
+} from "@/lib/email/build/client";
 import { parseGmailSettings } from "@/lib/settings";
 
 export { formatUSD };
@@ -42,14 +47,14 @@ async function pickTemplate(organizationId: string, category: string) {
 function defaultBodyFor(category: string): { subject: string; body: string } {
   switch (category) {
     case "proposal-send":
+      // No {{link}} line here on purpose — buildProposalSent's CTA button
+      // already carries the portal link. A prose line repeating it would
+      // render the same URL twice (Task 5 fix round 1, Finding A).
       return {
         subject: "Your proposal from {{org}}",
         body: `Hi {{client_name}},
 
 Thanks for meeting with us. Here is the proposal we put together for your project — {{total}} in total.
-
-View and accept online:
-{{link}}
 
 — {{org}}`,
       };
@@ -63,14 +68,12 @@ We just saw your acceptance on {{title}} — thank you! We'll be in touch shortl
 — {{org}}`,
       };
     case "reminder":
+      // No {{link}} line here either — same reasoning as proposal-send above.
       return {
         subject: "A quick nudge — {{title}}",
         body: `Hi {{client_name}},
 
-Circling back on the proposal we sent. It's ready to review here:
-{{link}}
-
-Any questions, just reply to this email.
+Circling back on the proposal we sent. Any questions, just reply to this email.
 
 — {{org}}`,
       };
@@ -112,7 +115,7 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
   const prose = renderTemplate(body, vars)
     .split(/\n{2,}/)
     .map((p) => p.replace(/\n/g, " ").trim())
-    .filter((p) => p && !/^https?:\/\/\S+$/i.test(p));
+    .filter((p) => p && !isBareUrlParagraph(p));
 
   const { subject: subj, html } = renderEmail(
     buildProposalSent({
@@ -181,7 +184,7 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
     const prose = renderTemplate(tpl?.body ?? fallback.body, vars)
       .split(/\n{2,}/)
       .map((p) => p.replace(/\n/g, " ").trim())
-      .filter((p) => p && !/^https?:\/\/\S+$/i.test(p));
+      .filter((p) => p && !isBareUrlParagraph(p));
 
     const { subject: acceptedSubject, html: acceptedHtml } = renderEmail(
       buildProposalAccepted({

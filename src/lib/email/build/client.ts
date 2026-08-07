@@ -8,6 +8,19 @@ const ITEM_CAP = 12;
 const ITEM_NAME_MAX = 140;
 const TITLE_MAX = 70;
 
+/**
+ * True when a rendered prose paragraph is nothing but a URL — optionally
+ * preceded by a short "Label:" lead-in (e.g. "View and accept online:
+ * https://…"). Senders use this to drop link-only paragraphs from
+ * contractor/house copy once a builder's CTA button already carries the
+ * same link, so the URL doesn't render twice in the email (Task 5 fix
+ * round 1, Finding A).
+ */
+export function isBareUrlParagraph(p: string): boolean {
+  const stripped = p.replace(/^[^:]{0,40}:\s*/, "").trim();
+  return /^https?:\/\/\S+$/i.test(stripped);
+}
+
 export interface OrgBrand {
   name: string;
   logoUrl?: string | null;
@@ -34,11 +47,25 @@ function shortDate(d: Date): string {
   return new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short" }).format(d);
 }
 
+/**
+ * `Proposal.taxRate` (and every caller of this builder) stores tax as a raw
+ * FRACTION 0–1 — see `src/actions/proposals.ts` (`z.number().min(0).max(1)`,
+ * `taxTotal = subtotal * input.taxRate`). This is the one place that
+ * multiplies by 100 for display. Do not pass an already-scaled percentage in,
+ * and do not re-multiply anywhere else. Strips trailing zeros so 0.05 → "5%"
+ * and 0.0825 → "8.25%", not "5.00%".
+ */
+function formatTaxRate(fraction: number): string {
+  const pct = Math.round(fraction * 100 * 100) / 100; // 2 decimal places, no float noise
+  return `${pct}%`;
+}
+
 export interface ProposalSentInput {
   org: OrgBrand;
   clientName: string;
   title: string;
   lineItems: { name: string; total: number }[];
+  /** Raw fraction 0–1, e.g. 0.05 for 5%. Never a whole percentage. */
   taxRate: number;
   taxTotal: number;
   total: number;
@@ -66,7 +93,7 @@ export function buildProposalSent(i: ProposalSentInput): EmailDoc {
     box.push({
       type: "rate",
       label: "Tax",
-      rate: `${Number(i.taxRate.toFixed(2))}%`,
+      rate: formatTaxRate(i.taxRate),
       amount: formatUSD(i.taxTotal),
     });
   }
@@ -135,13 +162,19 @@ export interface FollowUpInput {
 export function buildFollowUp(i: FollowUpInput): EmailDoc {
   const box: BoxRow[] = [{ type: "anchor", label: "Total", value: formatUSD(i.total) }];
   if (i.validUntil) {
-    const days = Math.max(0, Math.ceil((i.validUntil.getTime() - Date.now()) / 86_400_000));
-    box.push({
-      type: "cond",
-      label: "Expires in",
-      chip: days === 1 ? "1 day" : `${days} days`,
-      tone: days <= 3 ? "warn" : "neutral",
-    });
+    const days = Math.ceil((i.validUntil.getTime() - Date.now()) / 86_400_000);
+    // A follow-up rule can legitimately fire after validUntil has passed —
+    // "0 days" would misreport an already-expired quote as still live.
+    if (days <= 0) {
+      box.push({ type: "cond", label: "Expires in", chip: "Expired", tone: "bad" });
+    } else {
+      box.push({
+        type: "cond",
+        label: "Expires in",
+        chip: days === 1 ? "1 day" : `${days} days`,
+        tone: days <= 3 ? "warn" : "neutral",
+      });
+    }
   }
   return {
     subject: `Still holding your price — ${truncate(i.title, 40)}`,
@@ -162,12 +195,31 @@ export interface ChangeOrderInput {
   coTitle: string;
   description?: string | null;
   amount: number;
-  previousTotal: number;
+  /**
+   * The contract value the change order amends. `null`/`undefined` when
+   * neither the change order's own proposal nor its job's proposal resolved
+   * one — in that case the "Agreed contract" row (and the "New total" delta
+   * against it) is suppressed rather than printed as a lying $0.
+   */
+  previousTotal?: number | null;
   href: string;
 }
 
 export function buildChangeOrder(i: ChangeOrderInput): EmailDoc {
   const signed = `${i.amount >= 0 ? "+" : "−"}${formatUSD(Math.abs(i.amount))}`;
+  const hasPrevious = i.previousTotal != null;
+  const box: BoxRow[] = [];
+  if (hasPrevious) {
+    box.push({ type: "item", name: "Agreed contract", amount: formatUSD(i.previousTotal!) });
+  }
+  box.push({ type: "item", name: truncate(i.coTitle, ITEM_NAME_MAX), amount: signed });
+  box.push({
+    type: "anchor",
+    label: hasPrevious ? "New total" : "Change amount",
+    value: hasPrevious ? formatUSD(i.previousTotal! + i.amount) : signed,
+  });
+  box.push({ type: "cond", label: "Work paused until", chip: "Approved", tone: "bad" });
+
   return {
     subject: `Change order for ${i.contextTitle}`,
     lockup: orgLockup(i.org),
@@ -176,12 +228,7 @@ export function buildChangeOrder(i: ChangeOrderInput): EmailDoc {
     prose: [
       `Hi ${i.clientName.split(" ")[0]} — ${i.description?.trim() || `we have a change to the contract on "${i.contextTitle}".`}`,
     ],
-    box: [
-      { type: "item", name: "Agreed contract", amount: formatUSD(i.previousTotal) },
-      { type: "item", name: truncate(i.coTitle, ITEM_NAME_MAX), amount: signed },
-      { type: "anchor", label: "New total", value: formatUSD(i.previousTotal + i.amount) },
-      { type: "cond", label: "Work paused until", chip: "Approved", tone: "bad" },
-    ],
+    box,
     cta: { label: "Review & approve", href: i.href },
     footer: orgFooter(i.org),
   };

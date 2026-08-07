@@ -7,7 +7,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { renderTemplate } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
-import { buildFollowUp } from "@/lib/email/build/client";
+import { buildFollowUp, isBareUrlParagraph } from "@/lib/email/build/client";
 
 const ruleInput = z.object({
   id: z.string().optional(),
@@ -174,9 +174,11 @@ async function dispatchOne(id: string): Promise<boolean> {
       : await db.emailTemplate.findFirst({
           where: { organizationId: fu.organizationId, category: "reminder" },
         });
+    // No {{link}} line in the fallback — buildFollowUp's CTA button already
+    // carries the portal link (Task 5 fix round 1, Finding A).
     const body =
       tpl?.body ??
-      `Hi {{client_name}},\n\nCircling back on our recent proposal. Review and accept online:\n{{link}}\n\n— {{org}}`;
+      `Hi {{client_name}},\n\nCircling back on our recent proposal. Still ready to review whenever you are.\n\n— {{org}}`;
     const appUrl = await appBaseUrl();
     const vars = {
       client_name: proposal.client.name,
@@ -188,7 +190,7 @@ async function dispatchOne(id: string): Promise<boolean> {
     const prose = renderTemplate(body, vars)
       .split(/\n{2,}/)
       .map((p) => p.replace(/\n/g, " ").trim())
-      .filter((p) => p && !/^https?:\/\/\S+$/i.test(p));
+      .filter((p) => p && !isBareUrlParagraph(p));
 
     const { subject: subj, html } = renderEmail(
       buildFollowUp({

@@ -165,7 +165,7 @@ async function emailChangeOrder(id: string) {
     where: { id },
     include: {
       organization: { select: { name: true, logoUrl: true, phone: true } },
-      job: { include: { client: true } },
+      job: { include: { client: true, proposal: { select: { total: true } } } },
       proposal: { select: { title: true, total: true, client: true } },
     },
   });
@@ -178,6 +178,11 @@ async function emailChangeOrder(id: string) {
   const { renderEmail } = await import("@/lib/email/renderEmail");
   const { buildChangeOrder } = await import("@/lib/email/build/client");
   const appUrl = await appBaseUrl();
+  // Prefer the CO's own proposal total; fall back to the parent job's linked
+  // proposal. If neither resolves (e.g. a job with no proposal at all), leave
+  // it unset — buildChangeOrder suppresses the "Agreed contract" row rather
+  // than printing a lying $0 (Task 5 fix round 1, Finding B).
+  const previousTotal = co.proposal?.total ?? co.job?.proposal?.total ?? null;
   const { subject, html } = renderEmail(
     buildChangeOrder({
       org: { name: co.organization.name, logoUrl: co.organization.logoUrl, phone: co.organization.phone },
@@ -186,7 +191,7 @@ async function emailChangeOrder(id: string) {
       coTitle: co.title,
       description: co.description,
       amount: co.amount,
-      previousTotal: co.proposal?.total ?? 0,
+      previousTotal,
       href: `${appUrl}/co/${co.publicToken}`,
     }),
   );
