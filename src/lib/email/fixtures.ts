@@ -139,4 +139,20 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
       footer: FOOT,
     },
   },
+  {
+    id: "adapter-template",
+    label: "ADAPTER · contractor-authored template",
+    note: "Free text through wrapEmail(). No box — free text carries no structure. Bare URL becomes the CTA.",
+    doc: {
+      subject: "Any questions about your Backyard cedar fence quote?",
+      lockup: ORG,
+      headline: "Any questions about your Backyard cedar fence quote?",
+      prose: [
+        "Hi Jordan,",
+        "Just circling back on the proposal I sent over. Happy to walk you through anything or tweak the scope — no pressure either way.",
+      ],
+      cta: { label: "Review and accept it here", href: "https://example.com/portal/q/demo" },
+      footer: { name: "Cedar & Oak Builders" },
+    },
+  },
 ];
