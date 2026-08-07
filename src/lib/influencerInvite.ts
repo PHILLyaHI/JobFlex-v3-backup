@@ -38,24 +38,12 @@ export async function sendInfluencerInviteEmail(opts: {
   const { inviteUrl } = await mintInfluencerInvite(opts.email);
   try {
     const { sendEmail } = await import("@/lib/sdk/resend");
-    const { wrapEmail } = await import("@/lib/email/render");
-    const first = opts.displayName.trim().split(" ")[0] || "there";
-    const wrapped = wrapEmail({
-      subject: "Your JobFlex partner account",
-      // The "Label:" line + URL-only line render as the CTA button.
-      body: `Hi ${first},
-
-You've been set up as a JobFlex partner${opts.code ? ` — your promo code is ${opts.code}` : ""}. Share your link, watch your referrals convert, and request payouts from your partner dashboard.
-
-Set your password:
-${inviteUrl}
-
-This link expires in 7 days. If it lapses, ask your JobFlex contact to send a fresh one.
-
-— JobFlex Partners`,
-      orgName: "JobFlex",
-    });
-    await sendEmail({ to: opts.email, subject: wrapped.subject, html: wrapped.html });
+    const { renderEmail } = await import("@/lib/email/renderEmail");
+    const { buildPartnerInvite } = await import("@/lib/email/build/platform");
+    const { subject, html } = renderEmail(
+      buildPartnerInvite({ name: opts.displayName, code: opts.code, href: inviteUrl }),
+    );
+    await sendEmail({ to: opts.email, subject, html });
   } catch (err) {
     console.warn("[influencerInvite] email failed:", err);
   }

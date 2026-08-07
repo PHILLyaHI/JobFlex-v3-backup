@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
-import { renderTemplate, wrapEmail, type TemplateVars } from "@/lib/email/render";
+import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
 import {
   buildProposalSent,
@@ -19,6 +19,8 @@ import {
   isBareUrlParagraph,
 } from "@/lib/email/build/client";
 import { buildOwnerAccepted, buildNewLead, buildLeadOffer } from "@/lib/email/build/operator";
+import { buildJobAssignment } from "@/lib/email/build/worker";
+import { buildRequestReceived, buildHomeownerMatched } from "@/lib/email/build/platform";
 import { parseGmailSettings } from "@/lib/settings";
 
 export { formatUSD };
@@ -281,7 +283,22 @@ export async function notifyAssignmentCreated(assignmentId: string) {
     where: { id: assignmentId },
     include: {
       worker: { include: { user: { select: { email: true } } } },
-      job: { select: { title: true, organizationId: true, startsAt: true } },
+      job: {
+        select: {
+          title: true,
+          organizationId: true,
+          startsAt: true,
+          // Job itself has no address column — it lives on the client or,
+          // failing that, the proposal the job was created from.
+          client: { select: { address: true } },
+          proposal: { select: { address: true } },
+          // Sibling assignees for the Crew row; filtered to exclude this
+          // recipient below (workerId is unique per assignment, not per row).
+          assignments: {
+            select: { workerId: true, worker: { select: { displayName: true } } },
+          },
+        },
+      },
     },
   });
   if (!a) return { skipped: true as const };
@@ -291,23 +308,23 @@ export async function notifyAssignmentCreated(assignmentId: string) {
     const appUrl = await appBaseUrl();
     const org = await db.organization.findUnique({
       where: { id: a.job.organizationId },
-      select: { name: true },
+      select: { name: true, logoUrl: true, phone: true },
     });
-    const wrapped = wrapEmail({
-      subject: `New job assignment — ${a.job.title}`,
-      body: `Hi ${a.worker.displayName.split(" ")[0]},
-
-You have a new job assignment${a.job.startsAt ? ` on ${new Date(a.job.startsAt).toLocaleDateString()}` : ""}:
-
-${a.job.title}
-
-Open your portal to confirm or decline:
-${appUrl}/w/${a.worker.token}
-
-— ${org?.name ?? "Your team"}`,
-      orgName: org?.name ?? "JobFlex",
-    });
-    await sendEmail({ to: email, subject: wrapped.subject, html: wrapped.html });
+    const crew = a.job.assignments
+      .filter((x) => x.workerId !== a.workerId)
+      .map((x) => x.worker.displayName);
+    const { subject, html } = renderEmail(
+      buildJobAssignment({
+        org: { name: org?.name ?? "Your team", logoUrl: org?.logoUrl, phone: org?.phone },
+        workerName: a.worker.displayName,
+        title: a.job.title,
+        startsAt: a.job.startsAt,
+        address: a.job.client?.address ?? a.job.proposal?.address ?? null,
+        crew,
+        href: `${appUrl}/w/${a.worker.token}`,
+      }),
+    );
+    await sendEmail({ to: email, subject, html });
   }
 
   if (a.worker.phone && isTwilioEnabled()) {
@@ -329,18 +346,10 @@ export async function notifyHomeownerRequestReceived(platformLeadId: string) {
   const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
   if (!pl) return { skipped: true as const };
 
-  const wrapped = wrapEmail({
-    subject: "We got your request — matching you with a pro",
-    body: `Hi ${pl.name.split(" ")[0]},
-
-Thanks for telling us about your project${pl.projectType ? ` (${pl.projectType})` : ""}. We're matching you with a qualified local contractor now — expect to hear from one within 24 hours.
-
-No need to do anything else; we'll email you as soon as you're matched.
-
-— JobFlex`,
-    orgName: "JobFlex",
-  });
-  await sendEmail({ to: pl.email, subject: wrapped.subject, html: wrapped.html });
+  const { subject, html } = renderEmail(
+    buildRequestReceived({ name: pl.name, projectType: pl.projectType ?? null }),
+  );
+  await sendEmail({ to: pl.email, subject, html });
 
   if (pl.phone && isTwilioEnabled()) {
     await sendSMS(
@@ -404,20 +413,32 @@ export async function notifyHomeownerMatched(platformLeadId: string) {
   });
   if (!org) return { skipped: true as const };
 
-  const contactLine = [org.phone, org.billingEmail].filter(Boolean).join(" · ");
-  const wrapped = wrapEmail({
-    subject: `You're matched — ${org.name} will be in touch`,
-    body: `Hi ${pl.name.split(" ")[0]},
-
-Good news: ${org.name} has taken on your ${pl.detectedTrade ?? pl.projectType ?? "project"} request and will reach out shortly.
-${contactLine ? `\nYou can also reach them directly: ${contactLine}\n` : ""}
-— JobFlex`,
-    orgName: org.name,
+  // Same smoothing input Lead Center ranking reads (src/lib/leadCenter/matching.ts)
+  // collapsed to a display string — a shop with no completed reviews yet reads
+  // "New" rather than a misleadingly precise 0.0.
+  const ratingAgg = await db.reviewRequest.aggregate({
+    where: { organizationId: pl.matchedOrgId, rating: { not: null } },
+    _avg: { rating: true },
+    _count: { rating: true },
   });
+  const rating =
+    ratingAgg._count.rating > 0 && ratingAgg._avg.rating != null
+      ? ratingAgg._avg.rating.toFixed(1)
+      : "New";
+
+  const { subject, html } = renderEmail(
+    buildHomeownerMatched({
+      name: pl.name,
+      orgName: org.name,
+      phone: org.phone,
+      rating,
+      projectType: pl.detectedTrade ?? pl.projectType ?? null,
+    }),
+  );
   await sendEmail({
     to: pl.email,
-    subject: wrapped.subject,
-    html: wrapped.html,
+    subject,
+    html,
     replyTo: replyToFor({ gmailSettingsJson: org.gmailSettingsJson, billingEmail: org.billingEmail }),
   });
 

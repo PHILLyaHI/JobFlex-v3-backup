@@ -7,7 +7,6 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { Role } from "@/lib/prismaEnums";
 import { hashToken } from "@/lib/tokens";
-import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 // Emails an invite magic link. The RAW token goes in the URL; only its hash is
 // stored (see createInvite / resendInvite), so a DB leak yields no usable links.
@@ -20,21 +19,23 @@ async function sendInviteEmail(
 ) {
   try {
     const { sendEmail } = await import("@/lib/sdk/resend");
-    const { wrapEmail } = await import("@/lib/email/render");
+    const { renderEmail } = await import("@/lib/email/renderEmail");
+    const { buildTeamInvite } = await import("@/lib/email/build/worker");
     const org = await db.organization.findUnique({
       where: { id: organizationId },
-      select: { name: true },
+      select: { name: true, logoUrl: true, phone: true },
     });
     const appUrl = await appBaseUrl();
-    const wrapped = wrapEmail({
-      subject: `Invitation to ${org?.name ?? "JobFlex"}`,
-      body: `${inviterLabel} has invited you to join ${org?.name ?? "their team"} on JobFlex as ${role.toLowerCase()}.
-
-Accept here (link expires in 7 days):
-${appUrl}/auth/invite/${rawToken}`,
-      orgName: org?.name ?? "JobFlex",
-    });
-    await sendEmail({ to: email, subject: wrapped.subject, html: wrapped.html });
+    const orgName = org?.name ?? "JobFlex";
+    const { subject, html } = renderEmail(
+      buildTeamInvite({
+        org: { name: orgName, logoUrl: org?.logoUrl, phone: org?.phone },
+        inviterName: inviterLabel,
+        roleLabel: role.toLowerCase(),
+        href: `${appUrl}/auth/invite/${rawToken}`,
+      }),
+    );
+    await sendEmail({ to: email, subject, html });
   } catch (err) {
     console.warn("[invite] email failed:", err);
   }
@@ -63,12 +64,6 @@ export async function createInvite(raw: unknown) {
   if (data.role === "OWNER" && !isOwnerRole(actorRole)) {
     throw new UnauthorizedError("Only the owner can invite another owner");
   }
-
-  // Seat quota. Office roles consume "teamSeats" (members + pending invites, so
-  // this is the single enforcement point — acceptInvite never re-checks).
-  // INSTALLER invites sent through here are checked against the "workers" cap
-  // instead, so this path can't be an end-run around the worker seat limit.
-  await enforcePlanLimit(organizationId, data.role === "INSTALLER" ? "workers" : "teamSeats");
 
   const email = data.email.toLowerCase().trim();
 

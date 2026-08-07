@@ -185,26 +185,12 @@ export async function requestPasswordReset(raw: unknown): Promise<{ ok: true }> 
 
     try {
       const { sendEmail } = await import("@/lib/sdk/resend");
-      const { wrapEmail } = await import("@/lib/email/render");
+      const { renderEmail } = await import("@/lib/email/renderEmail");
+      const { buildPasswordReset } = await import("@/lib/email/build/platform");
       const link = `${await appBaseUrl()}/auth/reset?token=${rawToken}`;
-      const first = user.name?.split(" ")[0] ?? "there";
-      const wrapped = wrapEmail({
-        subject: "Reset your JobFlex password",
-        // The "Label:" line + URL line render as a Pressed-Sage CTA button.
-        body: `Hi ${first},
-
-We received a request to reset the password for your JobFlex account.
-
-Reset your password:
-${link}
-
-This link expires in 1 hour. If you didn't request it, you can safely ignore this email — your password won't change.
-
-— JobFlex`,
-        orgName: "JobFlex",
-      });
+      const { subject, html } = renderEmail(buildPasswordReset({ name: user.name, href: link }));
       // sendEmail retries transient provider failures internally (emailRetry.ts).
-      await sendEmail({ to: email, subject: wrapped.subject, html: wrapped.html });
+      await sendEmail({ to: email, subject, html });
     } catch (err) {
       // SECURITY: never leak send failures to the caller — the response stays the
       // same generic { ok: true } whether or not the account exists, so this can't

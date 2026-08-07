@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { parseGmailSettings } from "@/lib/settings";
-import { wrapEmail } from "@/lib/email/render";
+import { renderEmail } from "@/lib/email/renderEmail";
+import { buildTestEmail } from "@/lib/email/build/platform";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 
 // Org-level settings persistence. Each action validates its slice with zod and
@@ -105,18 +106,18 @@ export async function sendGmailTestEmail() {
     where: { id: organizationId },
     select: {
       name: true,
+      logoUrl: true,
+      phone: true,
       gmailSettingsJson: true,
       gmailTokensJson: true,
       billingEmail: true,
     },
   });
   if (!org) throw new Error("Organization not found.");
-  const wrapped = wrapEmail({
-    subject: "JobFlex test email",
-    body: `This is a test from your JobFlex email settings.\n\nIf you're reading this, sending works.\n\n— ${org.name}`,
-    orgName: org.name,
-  });
-  const res = await sendOrgEmail(org, { to, subject: wrapped.subject, html: wrapped.html });
+  const { subject, html } = renderEmail(
+    buildTestEmail({ org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone } }),
+  );
+  const res = await sendOrgEmail(org, { to, subject, html });
   return { ok: true, via: res.via, to };
 }
 

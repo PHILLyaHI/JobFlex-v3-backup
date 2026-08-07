@@ -8,6 +8,14 @@ import {
   buildReviewRequest,
 } from "./build/client";
 import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket } from "./build/operator";
+import { buildJobAssignment, buildWorkerInvite, buildTeamInvite } from "./build/worker";
+import {
+  buildPasswordReset,
+  buildRequestReceived,
+  buildHomeownerMatched,
+  buildPartnerInvite,
+  buildTestEmail,
+} from "./build/platform";
 
 const ORG = { kind: "org" as const, name: "Cedar & Oak Builders", logoUrl: null };
 const FOOT = { name: "Cedar & Oak Builders", contact: "(503) 555-0142", ref: "Ref A-2481" };
@@ -369,5 +377,124 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
       submitterEmail: null,
       href: "https://example.com/admin/support",
     }),
+  },
+  {
+    id: "b-job-assignment",
+    label: "15 · buildJobAssignment()",
+    note: "Contractor lockup. NO money anywhere — the start date is the anchor, not a total (principle 18).",
+    doc: buildJobAssignment({
+      org: BRAND,
+      workerName: "Marcus Boyd",
+      title: "Backyard cedar fence",
+      startsAt: new Date(Date.now() + 3 * 86_400_000),
+      address: "482 Alder St, Beaverton, OR",
+      crew: ["Priya Anand", "Sam Okafor"],
+      href: "https://example.com/w/demo-token",
+    }),
+  },
+  {
+    id: "b-job-assignment-solo",
+    label: "15b · buildJobAssignment() — no address, solo crew",
+    note: "Missing startsAt/address fall back to 'TBD' / 'See job for details'; an empty crew reads 'Just you' rather than an empty row (principle 03).",
+    doc: buildJobAssignment({
+      org: BRAND,
+      workerName: "Marcus Boyd",
+      title: "Emergency gutter repair",
+      startsAt: null,
+      address: null,
+      crew: [],
+      href: "https://example.com/w/demo-token-2",
+    }),
+  },
+  {
+    id: "b-worker-invite",
+    label: "16 · buildWorkerInvite()",
+    note: "One-row box holding only the condition — keeps 'the condition is part of the grid' true when there's no grid (principle 21).",
+    doc: buildWorkerInvite({
+      org: BRAND,
+      workerName: "Priya Anand",
+      inviterName: "Jordan Rivera",
+      roleLabel: "an installer",
+      href: "https://example.com/w/invite-demo",
+    }),
+  },
+  {
+    id: "b-team-invite",
+    label: "17 · buildTeamInvite()",
+    note: "Same one-row shape as buildWorkerInvite, office role wording.",
+    doc: buildTeamInvite({
+      org: BRAND,
+      inviterName: "Jordan Rivera",
+      roleLabel: "manager",
+      href: "https://example.com/auth/invite/demo",
+    }),
+  },
+  {
+    id: "b-password-reset",
+    label: "18 · buildPasswordReset()",
+    note: "Platform lockup. One-row box, tone warn. Fine print below a hairline.",
+    doc: buildPasswordReset({
+      name: "Jordan Rivera",
+      href: "https://example.com/auth/reset?token=demo",
+    }),
+  },
+  {
+    id: "b-request-received",
+    label: "19 · buildRequestReceived()",
+    note: "Platform lockup. Solo anchor, no CTA — nothing to click (principle 06·a).",
+    doc: buildRequestReceived({
+      name: "Dana Whitfield",
+      projectType: "Kitchen remodel",
+    }),
+  },
+  {
+    id: "b-homeowner-matched",
+    label: "20 · buildHomeownerMatched()",
+    note: "Platform lockup even though the copy names the matched shop — the mail is still from JobFlex, not the org (principle 20). No CTA.",
+    doc: buildHomeownerMatched({
+      name: "Dana Whitfield",
+      orgName: "Cedar & Oak Builders",
+      phone: "(503) 555-0142",
+      rating: "4.8",
+      projectType: "Kitchen remodel",
+    }),
+  },
+  {
+    id: "b-homeowner-matched-new",
+    label: "20b · buildHomeownerMatched() — shop with no reviews yet",
+    note: "Rating reads 'New' rather than a misleadingly precise 0.0 (mirrors the Bayesian prior in leadCenter/matching.ts).",
+    doc: buildHomeownerMatched({
+      name: "Dana Whitfield",
+      orgName: "Precision Roofing",
+      phone: null,
+      rating: "New",
+      projectType: null,
+    }),
+  },
+  {
+    id: "b-partner-invite",
+    label: "21 · buildPartnerInvite()",
+    note: "Platform lockup. Promo code becomes an extra field row above the one-row cond box.",
+    doc: buildPartnerInvite({
+      name: "Alex Chen",
+      code: "ALEX20",
+      href: "https://example.com/influencer/set-password?token=demo",
+    }),
+  },
+  {
+    id: "b-partner-invite-no-code",
+    label: "21b · buildPartnerInvite() — no promo code yet",
+    note: "Without a code the box collapses to the same one-row cond shape as buildWorkerInvite.",
+    doc: buildPartnerInvite({
+      name: "Alex Chen",
+      code: null,
+      href: "https://example.com/influencer/set-password?token=demo-2",
+    }),
+  },
+  {
+    id: "b-test-email",
+    label: "22 · buildTestEmail()",
+    note: "Smallest build in the system — lockup, one prose line, footer. No box, no CTA. Uses the CONTRACTOR lockup (not platform) to prove the org's own mark renders.",
+    doc: buildTestEmail({ org: BRAND }),
   },
 ];

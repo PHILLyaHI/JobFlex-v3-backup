@@ -8,7 +8,6 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { AssignmentStatus, Role, roleLabel } from "@/lib/prismaEnums";
 import { signIn } from "@/lib/auth";
-import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 const inviteInput = z.object({
   name: z.string().min(1),
@@ -44,7 +43,6 @@ export async function createWorkerInvite(raw: unknown) {
   if (alreadyAWorker?.inviteStatus === "ACCEPTED") {
     throw new Error("That worker has already joined. Use Edit or Remove instead.");
   }
-  if (!alreadyAWorker) await enforcePlanLimit(organizationId, "workers");
 
   // Upsert a lightweight User (no password yet). The worker sets a password when
   // they accept the invite (see acceptWorkerInvite).
@@ -94,31 +92,27 @@ export async function createWorkerInvite(raw: unknown) {
   // Best-effort invite email (link doubles as the manual shareable link).
   try {
     const { sendEmail } = await import("@/lib/sdk/resend");
-    const { wrapEmail } = await import("@/lib/email/render");
+    const { renderEmail } = await import("@/lib/email/renderEmail");
+    const { buildWorkerInvite } = await import("@/lib/email/build/worker");
     const org = await db.organization.findUnique({
       where: { id: organizationId },
-      select: { name: true },
+      select: { name: true, logoUrl: true, phone: true },
     });
     const appUrl = await appBaseUrl();
     const orgName = org?.name ?? "JobFlex";
     // Reflect the role the manager actually assigned (not a generic "crew member").
     const roleName = roleLabel(data.role).toLowerCase();
     const article = /^[aeiou]/i.test(roleName) ? "an" : "a";
-    const wrapped = wrapEmail({
-      subject: `${inviter.name ?? orgName} invited you to join ${orgName}`,
-      body: `Hi ${data.name.split(" ")[0]},
-
-${inviter.name ?? "Your team"} has invited you to join ${orgName} on JobFlex as ${article} ${roleName}.
-
-Open your invite to accept or decline:
-${appUrl}/w/${profile.token}
-
-If you accept, you'll set a password and get your own login to see the jobs assigned to you and your schedule.
-
-— ${orgName}`,
-      orgName,
-    });
-    await sendEmail({ to: data.email, subject: wrapped.subject, html: wrapped.html });
+    const { subject, html } = renderEmail(
+      buildWorkerInvite({
+        org: { name: orgName, logoUrl: org?.logoUrl, phone: org?.phone },
+        workerName: data.name,
+        inviterName: inviter.name ?? null,
+        roleLabel: `${article} ${roleName}`,
+        href: `${appUrl}/w/${profile.token}`,
+      }),
+    );
+    await sendEmail({ to: data.email, subject, html });
   } catch (err) {
     console.warn("[createWorkerInvite] invite email failed:", err);
   }
