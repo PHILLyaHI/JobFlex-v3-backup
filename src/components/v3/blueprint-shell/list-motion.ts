@@ -49,8 +49,13 @@ function reduced(): boolean {
  *
  * Walking up from the measured element rather than querying `.jf-blueprint`
  * globally keeps it correct if a page is ever rendered outside the shell.
+ *
+ * Exported because this trap is not specific to FLIP: ANY code that mixes
+ * `getBoundingClientRect()` (zoomed pixels) with a value it writes back into
+ * the zoomed subtree (unzoomed pixels) needs the same correction. The
+ * proposals row menu hit it independently — see its `openMenu`.
  */
-function currentZoom(from: Element): number {
+export function currentZoom(from: Element): number {
   const host = from.closest<HTMLElement>(".jf-blueprint") ?? document.documentElement;
   const z = parseFloat(getComputedStyle(host).zoom);
   return isFinite(z) && z > 0 ? z : 1;
