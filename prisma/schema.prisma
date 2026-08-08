@@ -1,4 +1,8 @@
-// JobFlex Prisma schema — Postgres (Neon), local dev uses an isolated Neon branch.
+// JobFlex Prisma schema — SQLite for local dev. Vercel builds swap this
+// datasource block to Neon Postgres via scripts/prisma-production-schema.js
+// (see vercel.json). Keep this block SQLite: flipping it to postgresql breaks
+// `prisma generate` locally (postinstall + build) and every runtime query,
+// because .env.local points DATABASE_URL at file:./dev.db.
 // Enums moved to src/lib/prismaEnums.ts; string[] stored as JSON-encoded strings.
 
 generator client {
@@ -6,9 +10,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ─────────────────────────────────────────────
