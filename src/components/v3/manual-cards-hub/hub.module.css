@@ -1,0 +1,401 @@
+/* ============================================================
+   MANUAL CARD LAB — HUB  (/dashboard/manual-cards)
+
+   Deliberately NOT the ported pages' `.bp :global(.content SEL)`
+   contract: that pattern exists so donor HTML class names stay
+   literal, and it only activates through PAGE_STYLES in
+   blueprint-shell.tsx. This page is React-authored, self-imports
+   its stylesheet, and uses hashed local classes — collision-proof
+   without a shell registration, which matters because five variant
+   folders are being polished in parallel against the same shell.
+
+   What the always-on shell modules still provide here:
+   - every design token (--ink, --paper, --blueprint, --font, …) is
+     declared on the `.bp` root and inherits down;
+   - the reveal vocabulary (.rv/.rv-in) is published globally by the
+     dashboard module, so use-reveal.ts works unmodified;
+   - the masthead vocabulary (.page-head/.kicker/.page-title) is
+     published the same way, so the head uses the fleet's global
+     markup and only the .stamp annotation is styled here;
+   - the `.content` box (flex column, 22px gap, 40/96px padding)
+     spaces this module's three top-level blocks.
+
+   No @keyframes here — Lightning CSS rejects them inside CSS
+   modules; nothing on this page needs one anyway.
+
+   Every top-level selector carries at least one local class, so the
+   module stays "pure" and the build cannot reject it.
+   ============================================================ */
+
+/* ── Page head ───────────────────────────────────────────────────
+   The masthead markup uses the GLOBAL fleet classes (.page-head /
+   .kicker / .page-title) published always-on by the dashboard
+   module — see the header comment above. Only the stamp is local. */
+
+/* Drawing-number stamp on the head's right — annotation, not a button. */
+.stamp {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+/* ── Lab note — a note on the drawing (dashed, like empty states) ── */
+
+.note {
+  border: 1.5px dashed var(--ink);
+  border-radius: var(--radius);
+  padding: 13px 16px;
+}
+
+.noteTxt {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  max-width: 88ch;
+}
+
+.noteKick {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+  margin-right: 10px;
+}
+
+/* ── Spec-card grid ──────────────────────────────────────────────
+   Intrinsic columns: two across at the 1728px reference, one when the
+   effective width can no longer hold two. The min() guard lets that single
+   column keep tracking the container below 460px — the sidebar plus the
+   content padding eat the viewport down past that well before the shell's
+   860px drawer breakpoint — instead of overflowing `.content`. No breakpoint
+   rules needed.
+
+   Five is an odd count, so the last card sits alone on its final row at two
+   columns. That is left as-is on purpose: stretching it full-width would make
+   variant 05 read as more important than the other four, and this page exists
+   to present five equals. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr));
+  gap: 18px;
+}
+
+/* The whole card is the link. Interactive, so it gets the imprint hover:
+   lift + hard solid-ink shadow, press flattens it back. */
+.card {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--shadow);
+  transition:
+    transform 0.13s var(--ease),
+    box-shadow 0.13s var(--ease);
+}
+.card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.card:active {
+  transform: translate(0, 0);
+  box-shadow: none;
+}
+.card:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 3px;
+}
+
+.cardBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 15px 15px 14px;
+}
+
+.cardTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+}
+
+/* min-width:0 so a long thesis wraps inside the flex item instead of
+   forcing the card wider than its grid track. */
+.nameWrap {
+  min-width: 0;
+}
+
+/* Station plate — inverse ink stamp with a mono number. */
+.plate {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  color: #fff;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.thesis {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ── Card-grammar schematic (aria-hidden, drawn with bordered spans) ──
+   White drawing paper with the fine graph grid and a 1.5px frame. Drawn as a
+   single column, because the design IS one. Blueprint blue marks the signature
+   element only — the live card — and everything else stays neutral, which is
+   the drawing's whole claim: the stood-down rows are quiet, not gone.
+
+   The four schematics for the variants that lost came out with them; the
+   sheet, the frame and the grid stay because the surviving card still uses
+   them. */
+
+.schem {
+  height: 104px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px),
+    #fff;
+  background-size: 13px 13px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+/* No display reset for the parts: every schematic <span> is a flex item
+   (of `.schem` or of a flex-container part), so it is blockified and takes
+   height/width automatically. A `.schem span` rule would outrank the parts'
+   own `display: flex` (0,1,1 beats 0,1,0) and collapse every sheet. */
+
+/* 01 · Focus Card — one card live at full ink and full height, the rest
+   stood down. The stood-down rows keep a visible content line: the thesis is
+   that nothing hides, so a drawing where they went blank would lie. */
+.fDim {
+  height: 13px;
+  border: 1px solid var(--muted-light);
+  border-radius: 1px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 5px;
+}
+.fDimLine {
+  height: 2px;
+  width: 62%;
+  background: var(--muted-faint);
+}
+.fDim:nth-of-type(3) .fDimLine {
+  width: 46%;
+}
+.fDim:nth-of-type(4) .fDimLine {
+  width: 55%;
+}
+.fLive {
+  flex: 1;
+  border: 1.5px solid var(--blueprint);
+  border-radius: 1px;
+  background: #fff;
+  box-shadow: 2px 2px 0 rgba(24, 84, 160, 0.18);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.fLiveLine {
+  height: 2px;
+  background: var(--ink);
+}
+.fLiveLine:nth-of-type(1) {
+  width: 84%;
+}
+.fLiveLine:nth-of-type(2) {
+  width: 66%;
+}
+.fLiveLine:nth-of-type(3) {
+  width: 48%;
+}
+
+/* ── Card foot — beige bar: route left, OPEN right ───────────── */
+
+.cardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper);
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 10px 15px;
+}
+
+.route {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+}
+
+/* Not the shell's `svg.ic` — self-contained so the hub depends on no other
+   module's globals. Arrow shifts on hover, the system's link move. */
+.openIc {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s var(--ease);
+}
+.card:hover .openIc {
+  transform: translate(2px, -2px);
+}
+
+/* ── Result block — the four bets that lost ──────────────────────
+   Deliberately quiet: this is a record, not an offer. It carries no white
+   card, no shadow and no hover, because none of these is reachable — the
+   routes are gone. Reading as a table of superseded revisions is exactly
+   right for a drawing sheet, and it keeps the one live card unambiguous as
+   the only thing on this page you can open. */
+
+.retired {
+  border-top: 2px solid var(--ink);
+  padding-top: 16px;
+}
+
+.retiredHead {
+  margin-bottom: 13px;
+}
+
+.retiredTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.retiredNote {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 78ch;
+}
+
+/* Same intrinsic-column rule as the spec-card grid, at a smaller minimum —
+   these entries are text-only, so they stay readable in a narrower track. */
+.retiredList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 10px 18px;
+}
+
+/* Dashed left rule, the system's "not a live object" marker — the same
+   vocabulary as the dashed lab note and the empty states. */
+.retiredItem {
+  border-left: 1.5px dashed var(--muted-light);
+  padding: 2px 0 2px 12px;
+}
+
+.retiredTop {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.retiredName {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.retiredRoute {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+  /* Struck through: the route existed and no longer resolves. Cheaper and
+     more honest than a dead link that 404s when someone tries it. */
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.retiredThesis {
+  margin: 3px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ── Reduced motion — kill the micro-moves; the reveal cascade is already
+      handled by use-reveal.ts. ─────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .openIc {
+    transition: none;
+  }
+  .card:hover {
+    transform: none;
+    box-shadow: 3px 3px 0 var(--shadow);
+  }
+  .card:hover .openIc {
+    transform: none;
+  }
+}
