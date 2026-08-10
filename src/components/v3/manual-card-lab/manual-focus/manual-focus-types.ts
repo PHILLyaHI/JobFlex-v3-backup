@@ -15,8 +15,34 @@
 // the whole page is component-local `useState` over the fixtures in
 // ./manual-focus-data.ts. Ids carry an `mc_` prefix for exactly that reason.
 
-/** The six measurement units the live builder offers, verbatim. */
-export type Unit = "SQFT" | "LINEAR_FT" | "CUBIC_FT" | "UNIT" | "HOUR" | "LUMP_SUM";
+/**
+ * The ten measurement units, matching the original Job-FLEX picker.
+ *
+ * Was six ("SQFT | LINEAR_FT | CUBIC_FT | UNIT | HOUR | LUMP_SUM"). CUBIC_FT
+ * and LUMP_SUM are gone because nothing in any fixture used them; LUMP_SUM's
+ * job is now FIXED, which is what the original calls it.
+ *
+ * LF and LINEAR_FT are BOTH here, and both mean linear feet. That is a
+ * duplicate in the original picker, carried over deliberately so the list
+ * matches what the owner is used to — it is a product decision to remove, not
+ * a bug to fix silently. If it goes, LF is the one to drop.
+ *
+ * NOT the Prisma `measurementType` enum. That is still the original six
+ * (see actions/proposals.ts), so whichever line-item design wins needs a
+ * mapping on the way to the database — the four new units have no column
+ * value yet. Flagged here rather than discovered later.
+ */
+export type Unit =
+  | "SQFT"
+  | "LF"
+  | "LINEAR_FT"
+  | "SQ_BOARDS"
+  | "CU_YARDS"
+  | "YARDS"
+  | "SQ_YARDS"
+  | "UNIT"
+  | "HOUR"
+  | "FIXED";
 
 /**
  * One priced line.
@@ -144,6 +170,16 @@ export type Draft = {
   overheadPct: number;
   profitPct: number;
 
+  /**
+   * A percentage off, applied to the pre-tax figure.
+   *
+   * It reduces the TAXABLE amount, so tax is charged on what the client
+   * actually owes rather than on a number nobody pays. Placing it the other way
+   * round — tax first, then discount — overstates the tax line and is the kind
+   * of error a client notices on the printed sheet.
+   */
+  discountPct: number;
+
   scopeOfWork: string;
   notes: string;
   terms: string;
@@ -194,6 +230,10 @@ export type Totals = {
   /** The ledger's "Grand total" AND the client's copy's "Subtotal" — one figure
    *  printed in two places, and it is the SUM OF THE PRINTED LINES. */
   preTax: number;
+  /** What `discountPct` is worth against `preTax`. 0 when there is no discount. */
+  discountAmount: number;
+  /** `preTax - discountAmount` — the figure tax is actually charged on. */
+  taxable: number;
   tax: number;
   /** Grand total with tax — the number in the sticky strip. */
   total: number;

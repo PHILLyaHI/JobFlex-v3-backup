@@ -1,0 +1,2428 @@
+/* ============================================================
+   MANUAL PROPOSAL — BLUEPRINT
+   /dashboard/manual-blueprint
+
+   WHAT THIS IS
+   Variant A ("Quiet") rebuilt in the house blueprint system, then
+   widened and stepped down a density notch. The COMPOSITION is
+   still A's — one column, every card open, one loud number, no
+   badges, no leaders, no card descriptions. The SKIN is the
+   fleet's: 2px ink frames, hard offset shadows with no blur,
+   near-square corners, caps 900 titles, JetBrains Mono confined
+   to the drawing-annotation layer.
+
+   TEN CARDS, AND TWO OF THEM LIVE ELSEWHERE.
+   "Markup & margin" (04) is the owner's reference layout — four
+   rate sliders and an ESTIMATE plate — and ships in
+   ./bp-markup.tsx with its own module. The line table (03) is
+   ../lines-v2, also with its own module. Neither has rules in
+   this file; the ones that used to be here are gone.
+
+   04 and 08 were briefly merged into one "Payment & pricing"
+   card and have been split again on request. The line between
+   them is by QUESTION, not by arithmetic: 04 answers "what am I
+   charging for this work?", 08 answers "what does the client owe
+   and when do they pay it?". Only the pre-tax total crosses it,
+   printed as 04's last row and 08's first.
+
+   THIS REVISION
+     · Cards go FULL WIDTH. The 980px cap and the centring are
+       gone, and with them the one anti-pattern this file was
+       knowingly breaking. Measure is now enforced per CONTROL —
+       prose caps at 92ch, the printed sheet at 76ch — instead of
+       by squeezing the whole page. Figures never needed a cap.
+     · Every card is WHITE, including the sticky total bar. The
+       three-tone surface trial is over; see the note on the
+       control well below, which had to invert to survive it.
+     · The station numeral is 18px, leading the card head rather
+       than annotating it.
+
+   THE DENSITY PASS (previous revision, still in force)
+   Everything came down about a fifth. The point of a wider block
+   is to fit MORE per screen, which only pays if the parts shrink
+   with it.
+
+     · card padding ......... 24px    (was 32)
+     · gap between cards .... 32px    (was 48)
+     · head → body .......... 18px    (was 24)
+     · block → block ........ 24px    (was 32)
+     · field → field ........ 12px    (was 16)
+     · label → control ...... 6px     (was 8)
+     · control height ....... 36px    (was 44)
+     · card title ........... 16px    (was 20)
+     · body / control text .. 13.5px  (was 15)
+     · label ................ 12px    (was 13)
+     · grand total .......... 24px    (was 30)
+
+   THE ONE RATIO THAT MUST SURVIVE ANY FUTURE PASS
+   external > internal. 32 between cards against 24 inside them.
+   If a later tightening ever takes the gap to or below the
+   padding, ten framed boxes stop reading as ten objects and
+   become one wall — which is the exact failure the build this
+   replaces was rejected for. Shrink both or neither.
+
+   36px CONTROLS ARE DELIBERATE, AND LEGAL
+   The ≥44px commitment in design-system.md is scoped to MOBILE
+   surfaces. This is a desktop dashboard route, and 36px is the
+   fleet's own documented control height (the Completed
+   tear-sheet's footer input and buttons). The row targets are
+   larger than the controls they contain anyway: a toggle's hit
+   area is the full 44px row, not the 18px plate.
+
+   WHAT CHANGED FROM THE DONOR, AND WHY
+     · Surfaces:  a card is --paper with `var(--border)` (2px ink)
+       and `3px 3px 0 var(--shadow)`. That IS the house's elevation
+       device; the soft blurred lift A used is forbidden outright
+       ("no soft blur shadows", Motion System / design-system.md).
+     · Card 10 (the printed sheet) takes the documented Completed
+       tear-sheet weight — a 4px offset shadow — so the column
+       still gets its terminal beat inside the rules.
+     · Titles: 900 UPPERCASE +0.02em, the Proposals-family card
+       title. Do not compress the tracking.
+     · Controls: the shared control treatment — 1.5px --hair at
+       rest, --ink on hover/focus, 2px radius — matching
+       `.bp-sel-in` in blueprint-global.css so a text field and a
+       select are visibly the same species.
+     · Switches are TOGGLES — a sliding knob, because each one
+       turns a behaviour on rather than asserting a fact — but
+       drawn as a 2px-ink RECTANGLE at the system's 2px radius
+       with a square plate. Sliding is what makes it a toggle; the
+       13px-radius capsule is the "soft modern SaaS" look the
+       aesthetic explicitly is not.
+     · Meter, seg control and add-buttons squared off; the dashed
+       1.5px add-button is the house's own empty-state device
+       ("a note on a drawing").
+     · Money: Inter 900 tabular, tracking -0.005em. Never mono —
+       mono is banned on large amounts. Small ledger figures ARE
+       mono, which is the estimate-sheet rule.
+     · Labels stay sentence-case and NOT mono — caps-mono on every
+       field is the single loudest thing in the build this
+       replaces. Their colour was raised from --muted to
+       --ink-soft at weight 600 by request; the de-emphasis they
+       carried now comes from SIZE alone (12px against a 13.5px
+       value). See the note on `.label`.
+
+   THE DEVIATION THAT USED TO BE HERE IS GONE
+   Earlier revisions capped the page at 720 then 980 and centred
+   it, knowingly breaking decisions.md's "max-width content
+   centering". Full width settles it: the page now takes the
+   shell's gutters like every other blueprint route, and the
+   legibility problem the cap was solving is handled by the two
+   `max-width` rules that belong to PROSE (`.textarea`, 92ch;
+   `.sheetProse`, 76ch). Do not reintroduce a cap on `.page` —
+   cap the control that has the reading problem.
+
+   ── SCOPING ────────────────────────────────────────────────
+   This route is deliberately NOT registered in blueprint-shell's
+   PAGE_STYLES (a lab variant must not edit shell files), so there
+   is no page-level `.bp` activation class to hang :global rules
+   from. Every rule here is this module's own hashed class under
+   the literal shell root — `:global(.jf-blueprint) .cls` ⇒ (0,2,0),
+   which beats the always-on modules':
+     · `.bp :global(button)` (0,1,1) — strips border/background/
+       cursor off every button, so every button here is a module
+       class, never a bare type selector;
+     · `.bp :global(svg.ic)` (0,2,1) — pins icons at 17px, so icon
+       resizes are written with THREE classes to win on count.
+   Tailwind preflight runs app-wide: inputs, selects and textareas
+   declare their own border / background / font-size / padding
+   rather than inheriting anything.
+
+   ── NO @keyframes ──────────────────────────────────────────
+   Lightning CSS rejects @keyframes inside a CSS module. The
+   entrance cascade is the fleet's `.rv` / `.rv-in`, published by
+   the always-on dashboard module and applied by ./use-reveal.ts.
+   Everything else here is a transition.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   - Light mode only. No .dark variants.
+   - WCAG 2.2 AA: --muted (#555) is the floor for meaningful text;
+     --muted-light (#888) is for rules and placeholders only. The
+     density pass moved sizes, never contrast — nothing meaningful
+     is lighter than --muted at any size.
+   - prefers-reduced-motion killed globally by the shell; the
+     block at the foot is belt-and-braces for transform.
+   ============================================================ */
+
+/* ============================================================
+   THE PAGE
+   Local tokens only where the fleet has no name for the thing.
+   Everything else is a shell token, so a theme swap reaches this
+   page for free.
+   ============================================================ */
+
+:global(.jf-blueprint) .page {
+  /* THE SURFACE TRIAL IS OVER: white won, everywhere, including the
+     sticky total bar. Cards are sheets laid ON the drawing — the
+     graph-paper ground stops dead at the ink frame, which is the
+     cleanest separation of the three tried and the only one where
+     the card never reads as receding. */
+  --mb-card: #ffffff;
+
+  /* THE CONSEQUENCE OF WHITE, AND THE ONE THING IT COST.
+     A white control well inside a white card is invisible — the
+     field would be defined by nothing but a 1.5px hairline, and
+     "where do I type" becomes a hunt. So the well INVERTED: it is
+     now a faint warm tint that recedes from the card instead of a
+     white one that stood out from paper. Same job, opposite
+     direction. Do not set this back to #ffffff without also
+     giving the fields a heavier resting border. */
+  --mb-well: #f7f5f1;
+  --mb-sunken: var(--paper-deep);
+
+  /* Line weights, house values. --rule is the internal structural
+     line; --line is a control's resting edge. Both fall back to
+     literals so the file survives outside the shell. */
+  --mb-rule: var(--hair-soft, rgba(10, 10, 10, 0.08));
+  --mb-line: var(--hair, rgba(10, 10, 10, 0.12));
+
+  /* The house elevation: hard offset, zero blur. */
+  --mb-lift: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+  --mb-lift-sheet: 4px 4px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+
+  /* The density pass, in two numbers. Every other dimension in the
+     file is derived from these by eye, but these two are the ones
+     a future tightening should touch first — and together, never
+     one without the other (see the ratio note in the header). */
+  --mb-pad: 24px;
+  --mb-gap: 32px;
+
+  /* FULL WIDTH. The cap and the centring are gone, which also
+     retires the one anti-pattern this file was knowingly breaking
+     ("max-width content centering", decisions.md): the page now
+     behaves like every other blueprint route — the shell's own
+     gutters set the margins and the content takes what is left.
+
+     Measure is handled where it actually matters instead of by
+     squeezing the whole page: PROSE controls cap themselves (see
+     `.textarea` and `.sheetProse`), and the line table spends the
+     new width on the item NAME. A number in a 96px column does not
+     care how wide the page is; a sentence does. */
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+/* ============================================================
+   MASTHEAD
+   The shell's own .page-head / .kicker / .page-title vocabulary,
+   reused rather than redrawn: the shell's 46px caps against a
+   16px card title is a ~2.9x ratio, which is what tells you the
+   page outranks every card without a rule line. The density pass
+   widened that gap rather than narrowing it — the masthead did
+   not shrink, so the cards receded further.
+   ============================================================ */
+
+:global(.jf-blueprint) .head {
+  margin-bottom: 32px;
+}
+
+:global(.jf-blueprint) .meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-bottom: 6px;
+}
+
+/* Drawing annotation: the sheet's own reference. Mono earns its
+   place here — this is a document number, not prose. */
+:global(.jf-blueprint) .metaMono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .metaOrg {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* The draft-state indicator lives up here, not in the sticky bar:
+   the bar carries the total and the actions and nothing else. A
+   second figure in there is the "same number in three places"
+   failure this build exists to avoid. */
+:global(.jf-blueprint) .state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .stateDot {
+  width: 6px;
+  height: 6px;
+  background: var(--muted-faint);
+}
+
+:global(.jf-blueprint) .stateDotLive {
+  background: var(--blueprint);
+}
+
+/* ============================================================
+   THE STACK
+   32px between cards against 24px inside them. Ten ink frames can
+   only read as ten objects if the air between them beats the air
+   within them — that ratio is doing the work the frames get
+   blamed for.
+   ============================================================ */
+
+:global(.jf-blueprint) .stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mb-gap);
+}
+
+:global(.jf-blueprint) .card {
+  background: var(--mb-card);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--mb-lift);
+  padding: var(--mb-pad);
+  scroll-margin-top: calc(var(--topbar-h) + 20px);
+}
+
+/* Card 10 is a DOCUMENT, not a form. Now that every card is white
+   its surface no longer distinguishes it, so the whole terminal
+   beat rests on the documented tear-sheet WEIGHT — a 4px offset
+   against everything else's 3px — plus the extra foot padding. */
+:global(.jf-blueprint) .cardSheet {
+  box-shadow: var(--mb-lift-sheet);
+  padding: var(--mb-pad) var(--mb-pad) 32px;
+}
+
+/* Number + title on ONE line. No badge slot, no description, no
+   "open" affordance — there is nothing to open. */
+:global(.jf-blueprint) .cardHead {
+  display: flex;
+  align-items: baseline;
+  gap: 11px;
+  margin-bottom: 18px;
+}
+
+/* The station numeral. The ONE ordering device on the page, and
+   now a real one: 18px against the title's 16px, so it leads the
+   head instead of annotating it — you find card 07 by its number,
+   not by reading nine titles.
+
+   It is BIGGER but LIGHTER (--muted, weight 600, mono). Size and
+   emphasis are separate levers; spending size on the numeral and
+   colour on the title lets the numeral lead the scan without
+   outranking the words. A numeral at 18px in full ink would make
+   every card head read as a chapter number. */
+:global(.jf-blueprint) .num {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .cardTitle {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+:global(.jf-blueprint) .group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* At 980px the inner measure is 932px, so a two-up row now has
+   ~460px per field — wide enough that these stay two columns
+   rather than needing a third. More columns would put unrelated
+   fields on one scan line, which proximity says is a grouping
+   claim the content does not support. */
+:global(.jf-blueprint) .grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* A sub-block heading — the annotation register, not a label
+   style. Six of these on the whole page. */
+:global(.jf-blueprint) .subHead {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+/* ============================================================
+   FIELDS
+   Sentence case, 12/500, muted. Deliberately NOT the house caps
+   kicker: caps belongs to headings, and a caps label on every one
+   of ~20 fields is precisely the noise this rebuild removes.
+   ============================================================ */
+
+:global(.jf-blueprint) .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* CONTRAST RAISED, by request: labels were --muted (#555) and are
+   now --ink-soft (#2a2a2a) at weight 600.
+
+   The de-emphasis they used to carry has not been abandoned, it
+   has MOVED — from colour to size. A 12px label against a 13.5px
+   value still reads as subordinate, and it now survives the
+   jobsite-sunlight case, which #555 at 12px was always marginal
+   for. Colour is the wrong lever for hierarchy when the text is
+   already small; size is the right one. */
+:global(.jf-blueprint) .label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink-soft);
+}
+
+:global(.jf-blueprint) .labelSm {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink-soft);
+}
+
+:global(.jf-blueprint) .hint {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* The shared control treatment, matching `.bp-sel-in`: 1.5px at
+   rest in the hair tone, full ink on hover and focus. A text field
+   and a select must read as the same species. */
+:global(.jf-blueprint) .input,
+:global(.jf-blueprint) .textarea {
+  width: 100%;
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--mb-well);
+  border: 1.5px solid var(--mb-line);
+  border-radius: var(--radius);
+  box-shadow: none;
+  transition: border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .input {
+  height: 36px;
+  padding: 0 10px;
+  line-height: 36px;
+}
+
+/* FULL WIDTH, by request. There was a 92ch cap here on reading-
+   rhythm grounds, and it was wrong for these fields specifically:
+   Overview, Scope of work, Internal notes and Terms are the only
+   controls on the page whose content has no natural width, so a
+   cap made them the ONLY things that failed to reach the card's
+   right edge. One short field ending early reads as deliberate;
+   four long ones ending early reads as broken.
+
+   The measure argument survives where it is actually about
+   READING rather than typing — `.sheetProse`, the client's copy,
+   still caps. */
+:global(.jf-blueprint) .textarea {
+  padding: 10px;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 72px;
+}
+
+:global(.jf-blueprint) .input:hover,
+:global(.jf-blueprint) .textarea:hover,
+:global(.jf-blueprint) .input:focus,
+:global(.jf-blueprint) .textarea:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .input::placeholder,
+:global(.jf-blueprint) .textarea::placeholder {
+  color: var(--muted-light);
+}
+
+/* SELECTS are the shared `.bp-sel` / `.bp-sel-in` control from
+   blueprint-global.css — see bp-ui.tsx. There is exactly one
+   styled select in this codebase and re-deriving `appearance:
+   none` plus a caret here would be the tenth page inventing its
+   own. The rule below only fits the shared control to this page's
+   36px row; the caret, family, weight and border are inherited.
+
+   FOUR classes on purpose. blueprint-global.css publishes
+   `.jf-blueprint .bp-sel .bp-sel-in` at (0,3,0); a three-class
+   rule here would tie it and be decided by stylesheet order,
+   which is not something a page gets to control. `.page` in the
+   chain takes this to (0,4,0) and it wins outright — the same
+   fix the CRM module documents for the same collision. */
+:global(.jf-blueprint) .page .selWrap :global(.bp-sel-in) {
+  height: 36px;
+  padding: 0 26px 0 10px;
+  font-size: 11px;
+}
+
+:global(.jf-blueprint) .selWrap {
+  min-width: 0;
+}
+
+/* Numeric entry. The affix sits INSIDE the box so digits stay on
+   the same optical line as every other value in the card. */
+:global(.jf-blueprint) .numWrap {
+  position: relative;
+  display: block;
+}
+
+:global(.jf-blueprint) .numWrap .input {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+:global(.jf-blueprint) .hasPre .input {
+  padding-left: 22px;
+}
+
+:global(.jf-blueprint) .hasSuf .input {
+  padding-right: 24px;
+}
+
+:global(.jf-blueprint) .affix {
+  position: absolute;
+  top: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-light);
+  pointer-events: none;
+}
+
+:global(.jf-blueprint) .affixPre {
+  left: 10px;
+}
+
+:global(.jf-blueprint) .affixSuf {
+  right: 10px;
+}
+
+/* ============================================================
+   BUTTONS
+   The house stamp: 1.5px ink + a 2px hard offset, hover lifts the
+   plate by a pixel and deepens the offset to 3px. `background-clip:
+   padding-box` is not optional — without it the hover paints a
+   light AA fringe along the border.
+
+   36px, the fleet's documented compact control height. `height:
+   auto` is load-bearing: the shell's base `.btn` pins 40px, and a
+   compact variant that forgets this silently stays 40 and inflates
+   every bar it sits in.
+   ============================================================ */
+
+:global(.jf-blueprint) .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  height: auto;
+  padding: 0 14px;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--paper);
+  background-clip: padding-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  transition:
+    transform 0.14s var(--ease-out),
+    box-shadow 0.14s var(--ease-out),
+    background 0.14s var(--ease),
+    color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+:global(.jf-blueprint) .btn:active {
+  transform: translate(0, 0);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+/* INK BORDER, by request. The primary used to tint its border to
+   match its own fill, which is the standard way to make a solid
+   button read as one shape — and it is the wrong way round in this
+   system. Every other stamped control on the page (Save, Add a
+   line, Attach a file, the segmented control) is drawn as ink
+   outline + hard ink offset with the fill inside it, so a primary
+   with no visible edge was the one button that was NOT drawn. It
+   now wears the same edge as the shadow it already casts, and the
+   blueprint fill is what marks it primary. */
+:global(.jf-blueprint) .btnPrimary {
+  color: #fff;
+  background: var(--blueprint);
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .btnPrimary:hover {
+  background: var(--blueprint-dark);
+  border-color: var(--ink);
+}
+
+/* Quiet bar action: no plate at rest, the ink outline appears on
+   hover. Documented pattern — a quiet action must not carry a
+   stamp shadow competing with the primary. */
+:global(.jf-blueprint) .btnQuiet {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  padding: 0 11px;
+}
+
+:global(.jf-blueprint) .btnQuiet:hover {
+  transform: none;
+  box-shadow: none;
+  background: var(--paper);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .btnQuiet:active {
+  transform: none;
+  box-shadow: none;
+}
+
+/* "Add another" — the house empty-state device, a 1.5px dashed
+   rule like a note pencilled on a drawing. Deliberately the
+   lightest thing in its card: adding a row is not the headline. */
+:global(.jf-blueprint) .btnAdd {
+  width: 100%;
+  color: var(--muted);
+  background: transparent;
+  border: 1.5px dashed var(--muted-faint);
+  box-shadow: none;
+}
+
+:global(.jf-blueprint) .btnAdd:hover {
+  transform: none;
+  box-shadow: none;
+  color: var(--ink);
+  background: var(--paper);
+  border-color: var(--ink);
+  border-style: dashed;
+}
+
+:global(.jf-blueprint) .btnAdd:active {
+  transform: none;
+  box-shadow: none;
+}
+
+:global(.jf-blueprint) .btnDanger {
+  color: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 2px 2px 0 var(--danger);
+}
+
+:global(.jf-blueprint) .btnDanger:hover {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 3px 3px 0 var(--danger);
+}
+
+/* Three classes, to beat `.bp :global(svg.ic)` (0,2,1) on count. */
+:global(.jf-blueprint) .btn :global(.ic) {
+  width: 14px;
+  height: 14px;
+}
+
+:global(.jf-blueprint) .iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: var(--muted-light);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: color 0.14s var(--ease), border-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .iconBtn:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+:global(.jf-blueprint) .iconBtn :global(.ic) {
+  width: 14px;
+  height: 14px;
+}
+
+/* ============================================================
+   PICKER — hand-rolled popover (this codebase has no Radix)
+   ============================================================ */
+
+:global(.jf-blueprint) .picker {
+  position: relative;
+}
+
+:global(.jf-blueprint) .pickTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--ink);
+  background: var(--mb-well);
+  border: 1.5px solid var(--mb-line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .pickTrigger:hover {
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .pickEmpty {
+  color: var(--muted-light);
+}
+
+:global(.jf-blueprint) .picker :global(.ic) {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+/* The menu is a drawn plate: 2px ink and a 4px hard offset, the
+   documented weight for a floating layer. Options keep a 40px row
+   — a menu is a pointing target, so it stays roomier than the
+   fields behind it. */
+:global(.jf-blueprint) .pickPanel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 4px 4px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+}
+
+:global(.jf-blueprint) .pickOpt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 7px 10px;
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .pickOpt:hover {
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .pickOptOn {
+  color: var(--blueprint);
+  font-weight: 700;
+}
+
+:global(.jf-blueprint) .pickSub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* The option's own text column. It has to be a flex CHILD with
+   `min-width: 0` now that an icon can sit ahead of it, or a long
+   city sub-line pushes the check mark off the panel's right edge
+   instead of wrapping. */
+:global(.jf-blueprint) .pickOptBody {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The two action options at the foot of the client list carry a
+   symbol; the records above them carry the person mark. The icon
+   is the same 13px the trigger's chevron uses (declared once on
+   `.picker :global(.ic)`), so nothing new enters the icon scale —
+   only the fixed 16px box, which keeps every label on one x no
+   matter which symbol is drawn. */
+:global(.jf-blueprint) .pickOptIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+}
+
+:global(.jf-blueprint) .pickDiv {
+  height: 1.5px;
+  margin: 4px 0;
+  background: var(--mb-rule);
+}
+
+/* ── FREE TEXT — the client field as a plain typed name ──────
+   Not a second field under a dead trigger: picking "Type a name
+   instead" REPLACES the picker with this input, so the control
+   that was clicked is the control that takes the caret. The row
+   under it does the two jobs the old placeholder word failed at —
+   it says what this mode means, and it offers the way back. */
+:global(.jf-blueprint) .freeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+:global(.jf-blueprint) .freeTag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* A quiet text action, not a stamped button: it is an escape
+   hatch, and a plate here would outrank the field above it. */
+:global(.jf-blueprint) .freeBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--blueprint);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .freeBack:hover {
+  color: var(--blueprint-dark);
+}
+
+:global(.jf-blueprint) .freeBack :global(.ic) {
+  width: 12px;
+  height: 12px;
+}
+
+/* ============================================================
+   LINE ITEMS — the estimate table
+   The one table on the page, and therefore the one place a rule
+   line earns its keep. House rule: an estimate's numerals are
+   MONO and right-aligned, and its dividers are the dense-ledger
+   1.5px, not the 2px structural weight.
+
+   The wider measure is spent on the NAME column (the `1fr`), not
+   on the figures: the fixed numeric cluster came down with
+   everything else, so a long line item now gets ~430px instead of
+   ~180px before it truncates. That is what widening was for.
+   ============================================================ */
+
+/* The header already draws the line above the first row. */
+
+/* (The donor carried a `.lineName` rule here. The row's name is an
+   INPUT, not a static span, so nothing ever wore it — dropped
+   rather than ported.) */
+
+/* Mono, right-aligned — the estimate-sheet rule. Small figures
+   only; the grand total is Inter 900, never mono. */
+
+/* The unnamed-line state. Amber, because it changes what prints —
+   one of exactly two status colours on the page.
+   46px = the 36px caret plus the 10px grid gap, so this hangs off
+   the name's left edge rather than the row's. */
+
+/* A single short control has no business spanning the measure. */
+
+:global(.jf-blueprint) .rowActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ============================================================
+   DERIVED FIGURES (markup card, payment card, the sheet)
+   Label left and quiet, figure right and tabular. No leader dots:
+   two ends of a wide row do not need joining, they need the label
+   to stop shouting.
+   ============================================================ */
+
+:global(.jf-blueprint) .derived {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+:global(.jf-blueprint) .dRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 20px;
+}
+
+:global(.jf-blueprint) .dLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .dValue {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE GRAND TOTAL — the one figure per block allowed to outrank its
+   neighbours, and the only one on the card that is an ANSWER rather
+   than a working.
+
+   BIGGER AND DARKER, by request, and the two moves are the same
+   move. It closes a chain that lost its first row (see the pricing
+   ledger note), so it now has to carry the terminal weight on its
+   own instead of borrowing it from a bracket above. 18 -> 24px, and
+   the rule that carries it goes from --mb-rule (an 8% hairline,
+   which read as a faint underline rather than a ledger's closing
+   line) to full ink at 2px — the same weight the client's copy uses
+   to close its own total, so the two agree.
+
+   The label goes darker with it: `.dLabel` is --muted, which is
+   correct for a working row and wrong for the one row a contractor
+   reads out loud. */
+:global(.jf-blueprint) .dRowLead {
+  padding-top: 12px;
+  border-top: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .dRowLead .dLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .dValueLead {
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+/* ============================================================
+   TOGGLES — square check plates
+   A pill switch with a 13px radius is the soft-SaaS look this
+   aesthetic is defined against. The house device is a drawn
+   square that fills blueprint and takes a check.
+   The whole ROW is the button: an 18px plate still gets a 44px
+   target, which is where the shrunk control stays honest.
+   ============================================================ */
+
+:global(.jf-blueprint) .toggles {
+  display: flex;
+  flex-direction: column;
+}
+
+/* RULED ROWS, by request. Four print switches stacked with only
+   whitespace between them read as one paragraph of options; a
+   hairline per row makes each a separate decision and gives the
+   eye a track from the label on the left to the control on the
+   right across a full-width card. This is the second place on the
+   page a rule earns its keep — the first is the line table, and
+   for the same reason: a row that spans the measure needs
+   connecting, not just separating.
+
+   Applied to BOTH row types (switch rows and the segmented quote-
+   style row) so the four sit on one ladder, with the top rule
+   suppressed — the card head already closes that edge.
+
+   The rule is declared INSIDE `.toggleRow`, immediately after its
+   own `border: none`. As a separate earlier block it was silently
+   dead: `border: none` is a shorthand and resets all four edges,
+   so an equal-specificity rule above it loses every time. */
+:global(.jf-blueprint) .toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 0;
+  font-family: var(--font);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-top: 1.5px solid var(--mb-rule);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+/* (0,3,0) thanks to `:first-child`, so it beats both row rules on
+   specificity and does not depend on where it sits in the file.
+   The segmented quote-style row is the FIRST child of `.toggles`
+   — see PrintOptions in bp-blocks.tsx — so this is the rule that
+   keeps the ladder from drawing a line against the card head. */
+:global(.jf-blueprint) .toggles > *:first-child {
+  border-top: none;
+}
+
+:global(.jf-blueprint) .toggleText {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+:global(.jf-blueprint) .toggleRow:hover .toggleText {
+  color: var(--ink);
+}
+
+/* ── THE THREE PRINT SWITCHES, AS ONE ROW ────────────────────
+   Three independent yes/no facts about the same sheet, so they get
+   three equal cells instead of three rungs of a ladder — see the
+   note in bp-blocks.tsx. The verticals are the same 1.5px rule the
+   ladder used horizontally; nothing new is introduced, the axis
+   just rotated.
+
+   The row keeps ONE top rule, so the segmented quote-style control
+   above it is still separated from the switches below by exactly
+   the line that separated them before.
+
+   NAMED `.switchRow`, not `.printRow`. It was `.printRow`, which is
+   also the class the client's copy gives its printed line items
+   400 lines below — and a CSS module hashes by NAME, so the two
+   rules landed on each other's elements. The sheet's `display:
+   flex` won (it is declared later) and quietly took the grid off
+   these three cells. Two unrelated things called the same word is
+   not a collision the module system can warn about; it just picks
+   one. */
+:global(.jf-blueprint) .switchRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1.5px solid var(--mb-rule);
+}
+
+/* Declares its own box: `.bp button` strips border, background and
+   cursor app-wide. The 44px minimum is met several times over by
+   the padding — the whole cell is the target, not the 40px plate. */
+:global(.jf-blueprint) .toggleCell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 18px 18px 16px;
+  font-family: var(--font);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-left: 1.5px solid var(--mb-rule);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+/* The outer cells lose their outer padding so the first switch and
+   the last label sit on the card's own content edges. A cell inset
+   from the frame would make the row read as a floating box rather
+   than as part of the card. */
+:global(.jf-blueprint) .switchRow > .toggleCell:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+:global(.jf-blueprint) .switchRow > .toggleCell:last-child {
+  padding-right: 0;
+}
+
+/* One step down from `.toggleText` (13.5px): a label with a third
+   of the measure wraps, and 13px keeps a two-line wrap tight. */
+:global(.jf-blueprint) .cellText {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+:global(.jf-blueprint) .toggleCell:hover .cellText {
+  color: var(--ink);
+}
+
+/* TOGGLES, by request — back from the square check plate.
+   A checkbox says "is this true?"; a toggle says "is this ON?",
+   and every one of these four switches a behaviour on the printed
+   sheet. The owner asked for toggles and the semantics agree.
+
+   It is NOT the consumer capsule, though: the track is a 2px-ink
+   RECTANGLE at the system's 2px radius and the knob is a square
+   plate that slides. A 13px-radius pill with a round knob is the
+   soft-SaaS shape this aesthetic is defined against — sliding is
+   what makes it a toggle, not roundness.
+
+   Track 40x22 with a 2px border ⇒ 18px of inner height for a 16px
+   knob at 1px inset; travel is 40 − 2(2) − 16 − 2(1) = 18px. */
+:global(.jf-blueprint) .switch {
+  flex-shrink: 0;
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: var(--mb-well);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  transition: background 0.16s var(--ease);
+}
+
+:global(.jf-blueprint) .switchOn {
+  background: var(--blueprint);
+  border-color: var(--blueprint);
+}
+
+:global(.jf-blueprint) .knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  background: var(--mb-card);
+  border-radius: 1px;
+  transition: transform 0.16s var(--ease-out);
+}
+
+/* OFF, the knob is paper on paper and needs its own edge to read
+   as an object; ON, the blueprint track supplies the contrast. */
+:global(.jf-blueprint) .switch .knob {
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+:global(.jf-blueprint) .switchOn .knob {
+  box-shadow: none;
+  transform: translateX(18px);
+}
+
+/* Segmented control: one drawn box with internal 1.5px verticals,
+   not three floating pills. */
+:global(.jf-blueprint) .segRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 44px;
+  padding: 6px 0;
+  /* Same ladder rule as `.toggleRow` — see the RULED ROWS note. */
+  border-top: 1.5px solid var(--mb-rule);
+}
+
+:global(.jf-blueprint) .seg {
+  flex-shrink: 0;
+  display: inline-flex;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+:global(.jf-blueprint) .segBtn {
+  min-width: 76px;
+  min-height: 32px;
+  padding: 0 12px;
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--paper);
+  border: none;
+  border-left: 1.5px solid var(--ink);
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .seg .segBtn:first-child {
+  border-left: none;
+}
+
+:global(.jf-blueprint) .segBtn:hover {
+  color: var(--ink);
+  background: var(--paper-deep);
+}
+
+:global(.jf-blueprint) .segBtnOn {
+  color: #fff;
+  background: var(--blueprint);
+}
+
+:global(.jf-blueprint) .segBtnOn:hover {
+  color: #fff;
+  background: var(--blueprint-dark);
+}
+
+/* ============================================================
+   THE PRICING LEDGER (card 08)
+   Two adjustments and the amount owed. The rate that causes a
+   figure sits beside the figure, because "8.25% → +$971.30" is one
+   fact; the design this replaced split the rates into a matrix and
+   their effects into a summary below, which made the reader join
+   them up by hand.
+
+   THE CHAIN IS SHORTER THAN IT WAS. The "Pre-tax total" handover
+   row and the "What the client pays" subhead are gone, by request:
+   the row printed card 04's own last figure a second time, which is
+   the one-number-one-home rule broken in the file that exists to
+   enforce it. What is left is the two operations and the answer.
+   ============================================================ */
+
+/* ── THE TWO ADJUSTMENTS, SIDE BY SIDE ───────────────────────
+   Discount and tax are PEERS. Neither is applied to the other's
+   output — both are applied to the pre-tax figure — so the vertical
+   bracket that used to hold them (a 2px rule down the left edge,
+   rows indented off it) was asserting a sequence that the
+   arithmetic does not have. Two equal columns say "two adjustments"
+   in the layout itself, and the grand total under them says what
+   they come to.
+
+   It also buys back a screenful: each cell is now three short lines
+   instead of a full-measure row with a sentence stranded under it.
+
+   32px between the columns against 8px inside a cell — the same
+   external > internal ratio the rest of the page runs on. */
+:global(.jf-blueprint) .adjust {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1.5px solid var(--mb-rule);
+}
+
+/* One adjustment: label, then rate and effect on one line, then the
+   sentence. The note is INSIDE the cell rather than after it —
+   that was the whole point of the rewrite this inherits; a note
+   between two rows belongs to neither. */
+:global(.jf-blueprint) .adjCell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The pairing. The control keeps its 92px and the amount takes what
+   is left, right-aligned — so the two cells' figures land on their
+   own column's right edge and the grand total below still closes a
+   column of money rather than floating free. */
+:global(.jf-blueprint) .adjLine {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+/* 13.5/700 ink, up from 12/600 ink-soft. These two words are what
+   the reader was failing to identify, so they are the loudest thing
+   in the bracket — louder than the figure they produce, which the
+   money column is already carrying. */
+:global(.jf-blueprint) .adjLabel {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .adjCtl {
+  min-width: 0;
+}
+
+/* Same size, weight and family as `.dValue`, NOT the 12.5px mono
+   the rate rows used. The four figures in this chain have to be one
+   column of arithmetic; two of them set in a different face at a
+   different size read as annotations on the other two. Mono is
+   still right for the markup card's rate ledger, which is a matrix
+   of contributions rather than a running sum — `.rateAmt` keeps it. */
+:global(.jf-blueprint) .adjAmt {
+  text-align: right;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A row contributing nothing recedes. --muted, never opacity: a
+   faded figure is a contrast failure wearing hierarchy's clothes. */
+:global(.jf-blueprint) .adjAmtZero {
+  color: var(--muted);
+}
+
+/* The sentence, under its own cell's control. It starts at the
+   label's x rather than being indented — it is that cell's last
+   line, not a nested aside. No measure cap any more: half a card
+   is already narrower than the 68ch that cap was defending. */
+:global(.jf-blueprint) .adjNote {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Mono and right-aligned: these are ledger figures, not display
+   amounts. `--muted` when the row contributes nothing, so four
+   zero rates recede instead of shouting four em dashes. */
+:global(.jf-blueprint) .rateAmt {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   PAYMENT SCHEDULE + COVERAGE METER
+   ============================================================ */
+
+:global(.jf-blueprint) .instRow {
+  display: grid;
+  grid-template-columns: 1fr 96px 76px 108px 34px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1.5px solid var(--mb-rule);
+}
+
+:global(.jf-blueprint) .instFirst {
+  border-top: none;
+}
+
+:global(.jf-blueprint) .instValue {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The %/$ unit toggle — a technical annotation, so mono is right. */
+:global(.jf-blueprint) .unitToggle {
+  min-height: 36px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1.5px solid var(--mb-line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: color 0.14s var(--ease), border-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .unitToggle:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .meterTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+:global(.jf-blueprint) .meterFig {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A drawn gauge: ink outline, square ends, status fill. No radius
+   — a rounded capsule is the one shape this system never draws. */
+:global(.jf-blueprint) .meterTrack {
+  height: 8px;
+  background: var(--mb-well);
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+:global(.jf-blueprint) .meterFill {
+  height: 100%;
+  background: var(--muted-faint);
+  transition: width 0.24s var(--ease-out), background 0.2s var(--ease);
+}
+
+:global(.jf-blueprint) .fillUnder {
+  background: var(--warning);
+}
+
+:global(.jf-blueprint) .fillExact {
+  background: var(--success);
+}
+
+:global(.jf-blueprint) .fillOver {
+  background: var(--danger);
+}
+
+:global(.jf-blueprint) .meterNote {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .noteUnder {
+  color: var(--warning-dark);
+  font-weight: 600;
+}
+
+:global(.jf-blueprint) .noteExact {
+  color: var(--success-dark);
+  font-weight: 600;
+}
+
+:global(.jf-blueprint) .noteOver {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ============================================================
+   FILES
+   ============================================================ */
+
+:global(.jf-blueprint) .fileRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1.5px solid var(--mb-rule);
+}
+
+:global(.jf-blueprint) .fileFirst {
+  border-top: none;
+}
+
+:global(.jf-blueprint) .fileRow :global(.ic) {
+  width: 15px;
+  height: 15px;
+  color: var(--muted-light);
+}
+
+:global(.jf-blueprint) .fileName {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.jf-blueprint) .fileSize {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .hiddenInput {
+  display: none;
+}
+
+/* Empty state — the house's dashed note on a drawing. */
+:global(.jf-blueprint) .empty {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 11px 13px;
+  margin-bottom: 10px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+}
+
+/* ============================================================
+   THEIR COPY — the printed sheet
+   ============================================================ */
+
+:global(.jf-blueprint) .printCaption {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 18px;
+}
+
+:global(.jf-blueprint) .sheetHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .sheetOrg {
+  font-size: 13.5px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .sheetFor {
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .sheetRef {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* SPACING FIXED, by request: the job title and the overview under
+   it were 10px apart while the title sat 18px below the rule
+   above — so the description read as belonging to whatever came
+   before rather than to its own heading. Proximity decides
+   grouping, and it was pointing the wrong way. Now 26px above the
+   title and 14px below it: the pair is unmistakably one unit. */
+:global(.jf-blueprint) .sheetTitle {
+  margin-top: 26px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* FULL WIDTH, by request — the 76ch cap is gone.
+   It was the last measure cap on the page, defended on reading
+   rhythm: the client's copy is read, not typed into, so a long
+   line costs more here than anywhere else. What the argument
+   missed is that this prose sits inside a DOCUMENT whose every
+   other element — the head rule, the line items, the totals, the
+   signature lines — runs the full width of the sheet. A capped
+   paragraph in that company does not read as a considered measure,
+   it reads as text that failed to reach the edge, which is the
+   same failure the form textareas were uncapped for. */
+:global(.jf-blueprint) .sheetProse {
+  margin-top: 14px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+}
+
+:global(.jf-blueprint) .printRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 11px 0;
+  border-top: 1.5px solid var(--mb-rule);
+}
+
+:global(.jf-blueprint) .printFirst {
+  border-top: none;
+}
+
+/* BLOCK, not inline, by request — and this is a bug fix rather than
+   a spacing preference. A line's name and its description are two
+   <span>s in one cell, so with no display set they laid out INLINE:
+   "Tear off existing three-tab roofing, one layer24.00 SQ · $... "
+   ran on as a single paragraph, and `.printSub`'s margin-top did
+   nothing at all, because vertical margins do not apply to an
+   inline box. Both are block now, which is what makes the margin
+   real; 5px is the gap between a heading and the two annotation
+   lines it heads. */
+:global(.jf-blueprint) .printName {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .printSub {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Two annotation lines under one name (a description AND the
+   quantity breakdown) are one group, so they sit closer to each
+   other than to the name above them. */
+:global(.jf-blueprint) .printSub + .printSub {
+  margin-top: 2px;
+}
+
+:global(.jf-blueprint) .printAmt {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .sumRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 6px 0;
+}
+
+:global(.jf-blueprint) .sumLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .sumValue {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .sumTotal {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .sumTotalLabel {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .sumTotalValue {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .signRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 28px;
+}
+
+:global(.jf-blueprint) .signLine {
+  padding-top: 8px;
+  border-top: 1.5px solid var(--ink);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ============================================================
+   THE PDF — card 11
+   Card 10 is the client's copy as a screen. This is the same
+   proposal as PAPER, at true trim size, and the two share every
+   row class they can (`.printRow`, `.sumRow`, `.signRow`) so a
+   figure cannot read one way on the screen and another on the
+   sheet.
+
+   ── THE ONE IDEA ─────────────────────────────────────────────
+   There is ONE document, in two media. Nothing below is a
+   "print version" of a screen element; the screen preview and
+   the printed page are the same DOM, and the @media print layer
+   at the foot of this file changes only the page furniture
+   (static bands become fixed bands, so Chrome repeats them) and
+   removes the app around it. A second markup tree for paper is
+   two documents to keep in agreement, and they never stay in
+   agreement.
+
+   ── TRUE TRIM ────────────────────────────────────────────────
+   `--pdf-w` is set inline from the paper control: 816px for
+   Letter, 794px for A4, both at 96/in. The preview sheet is
+   therefore the real width of the paper, not a proportional
+   impression of it — which is the only way the measure of a
+   paragraph on screen is the measure it prints at, and the only
+   way the page-count estimate means anything.
+   ============================================================ */
+
+:global(.jf-blueprint) .pdfBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* THE TITLE BLOCK. A drawing's corner block: the four facts about
+   the sheet, ruled into four cells, before any control. Mono
+   throughout — every value in here is an annotation about the
+   drawing, which is exactly what the mono layer is for. */
+:global(.jf-blueprint) .pdfSpec {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--mb-well);
+}
+
+:global(.jf-blueprint) .pdfSpecCell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  border-left: 1.5px solid var(--mb-line);
+}
+
+:global(.jf-blueprint) .pdfSpecCell:first-child {
+  border-left: none;
+}
+
+:global(.jf-blueprint) .pdfSpecLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .pdfSpecValue {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .pdfActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The honest note. --muted at 11.5px with a 1.6 line height: it is
+   read once, when the card is new, and never again. */
+:global(.jf-blueprint) .pdfNote {
+  max-width: 92ch;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* ── THE VAULT ────────────────────────────────────────────────
+   Closed, the sheet is CLIPPED, not unmounted and not
+   `display: none`. Two things need it laid out at all times: the
+   page-count estimate measures the real flow, and the print layer
+   prints the document whether or not the preview happens to be
+   open. `visibility: hidden` keeps it out of the tab order and
+   off the accessibility tree while it still has a height to
+   measure. The print layer restores all three properties. */
+:global(.jf-blueprint) .pdfVault {
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+:global(.jf-blueprint) .pdfVaultOpen {
+  height: auto;
+  overflow: visible;
+  visibility: visible;
+}
+
+/* The ground the paper lies on. Deep paper, inset, so the white
+   sheet reads as a physical object placed on the drawing —
+   the same separation the cards get from the graph-paper page. */
+:global(.jf-blueprint) .pdfStage {
+  display: flex;
+  justify-content: center;
+  padding: 26px;
+  background: var(--mb-sunken);
+  border: var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+:global(.jf-blueprint) .pdfSheet {
+  flex-shrink: 0;
+  width: var(--pdf-w, 816px);
+  max-width: 100%;
+  padding: 56px 60px;
+  background: #ffffff;
+  border: var(--border);
+  box-shadow: var(--mb-lift-sheet);
+  color: var(--ink);
+}
+
+/* ── PAGE FURNITURE ───────────────────────────────────────────
+   Static here, `position: fixed` under print — which is what makes
+   Chrome repeat them on every sheet. */
+:global(.jf-blueprint) .pdfRunHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .pdfHeadOrg {
+  font-size: 13.5px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .pdfHeadLine {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .pdfHeadRef {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .pdfRunFoot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 30px;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--mb-line);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The flow's own clearance from the fixed bands. Zero on screen —
+   the bands are in the flow there — and given real values by the
+   print layer, where they are not. */
+:global(.jf-blueprint) .pdfFlow {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+:global(.jf-blueprint) .pdfBody {
+  display: flow-root;
+}
+
+/* ── THE COVER ────────────────────────────────────────────────
+   One page, four facts, and a hard page break after it. The title
+   is the largest thing in the document by a clear margin because
+   it is the only thing on its page — rank, not absolute size. */
+:global(.jf-blueprint) .pdfCover {
+  display: flex;
+  flex-direction: column;
+  min-height: 620px;
+  padding: 60px 0 40px;
+}
+
+:global(.jf-blueprint) .pdfCoverKicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .pdfCoverTitle {
+  margin-top: 18px;
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .pdfCoverFor {
+  margin-top: 22px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* Pushed to the foot of the cover by `margin-top: auto`: the total
+   is the last thing read on the page, which is where a number you
+   want considered rather than reacted to belongs. */
+:global(.jf-blueprint) .pdfCoverTotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .pdfCoverTotalLabel {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .pdfCoverTotalValue {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .pdfCoverMeta {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── THE DOCUMENT HEAD ────────────────────────────────────────
+   Page one's own title, under the letterhead. It repeats what the
+   cover says by design: the cover is optional, and the sheet that
+   opens the agreement has to name the agreement whether or not a
+   cover was printed. */
+:global(.jf-blueprint) .pdfDocHead {
+  padding: 26px 0 0;
+}
+
+:global(.jf-blueprint) .pdfDocTitle {
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .pdfDocSub {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── SECTIONS ─────────────────────────────────────────────────
+   The atomic unit of pagination. `break-inside: avoid` keeps a
+   heading with its body; a long section is allowed to break at a
+   ROW instead, which is what the row rules below say. */
+:global(.jf-blueprint) .pdfSection {
+  margin-top: 26px;
+  break-inside: avoid;
+}
+
+:global(.jf-blueprint) .pdfSecHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 7px;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+/* The same numeral device as the card heads, one step down. The
+   sheet's sections and the builder's cards are two different
+   orderings of the same proposal, so they share a vocabulary
+   without sharing a scale. */
+:global(.jf-blueprint) .pdfSecNum {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .pdfSecTitle {
+  font-size: 11.5px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+/* Two columns of label/value. A contract's parties block is read
+   by LOOKING FOR one field, never by reading all six, so the
+   labels stay in a fixed left column the eye can run down. */
+:global(.jf-blueprint) .pdfMeta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px 28px;
+}
+
+:global(.jf-blueprint) .pdfMetaPair {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
+:global(.jf-blueprint) .pdfMetaLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .pdfMetaValue {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+:global(.jf-blueprint) .pdfProse {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+}
+
+/* Name · basis · amount. The middle column exists because "25%"
+   and "$4,000.00" answer different questions, and a schedule that
+   prints only the money hides the rule the money came from. */
+:global(.jf-blueprint) .pdfPayRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 16px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-top: 1.5px solid var(--mb-rule);
+  break-inside: avoid;
+}
+
+:global(.jf-blueprint) .pdfPayShare {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .pdfFileRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 9px 0;
+  border-top: 1.5px solid var(--mb-rule);
+  break-inside: avoid;
+}
+
+/* The sentence under a section that qualifies it. Smaller than the
+   prose and muted, because it is a footnote, not a term. */
+:global(.jf-blueprint) .pdfFine {
+  margin-top: 10px;
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ============================================================
+   THE STICKY BAR — the ONE persistent device
+   Total + three actions. Nothing else, ever. Sticky to the BOTTOM
+   of the scrollport rather than under the topbar, so the head of
+   the page stays a head and not a third band of chrome.
+
+   The total came down with everything else (30 → 24) but it is
+   still the largest figure on the page by a clear margin — the
+   next biggest is 18px. Relative rank is what makes it read as
+   the answer, not absolute size.
+   ============================================================ */
+
+:global(.jf-blueprint) .bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: var(--mb-gap);
+  padding: 11px 18px;
+  background: var(--mb-card);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--mb-lift);
+}
+
+:global(.jf-blueprint) .barLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+/* Inter 900 tabular at -0.005em: the documented ceiling for large
+   numerals, because compressing further sticks the digits
+   together. Never mono — mono is banned on large amounts. */
+:global(.jf-blueprint) .barMoney {
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1.05;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .barActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ============================================================
+   NARROW
+   The column is 980px, so it stops filling the content area at
+   roughly a 1440px viewport (1440 − 264 sidebar − gutters). Below
+   that it shrinks with `width: 100%`, and only the two FIXED
+   numeric clusters need help — everything else is intrinsic.
+   ============================================================ */
+
+@media (max-width: 1180px) {
+
+  /* The caret column narrowed to 32 + an 8px gap, so the two blocks
+     that hang off the NAME's left edge follow it to 40. Leaving
+     these at 46 is the kind of 6px drift nobody reports and
+     everybody feels. */
+
+  :global(.jf-blueprint) .instRow {
+    grid-template-columns: 1fr 84px 68px 96px 34px;
+    gap: 8px;
+  }
+
+  :global(.jf-blueprint) .grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .btn,
+  :global(.jf-blueprint) .btn:hover,
+  :global(.jf-blueprint) .btn:active,
+  :global(.jf-blueprint) .caret :global(.ic),
+  :global(.jf-blueprint) .knob,
+  :global(.jf-blueprint) .meterFill {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ============================================================
+   PRINT — the PDF the client receives
+   LAST IN THE FILE, and it has to stay last: every rule in here
+   is undoing something declared above it, and at equal
+   specificity the later rule wins. This is the same reasoning the
+   handheld fleet's mobile layer is pinned to the foot of its
+   stylesheet for.
+
+   THE MEDIUM IS THE SAME DOCUMENT. Nothing below draws anything;
+   it removes the application from around card 11's sheet and
+   changes the page furniture from two static bands into two
+   FIXED ones — which is what makes Chrome repeat them at the head
+   and foot of every page. That is the whole mechanism.
+
+   `!important` throughout, deliberately. Every declaration here
+   overrides a screen rule of equal or higher specificity, and one
+   of them (the root zoom) has to beat an inline style the shell's
+   FLUID SCALE module writes on <html> — a stylesheet !important
+   is the only thing that does.
+   ============================================================ */
+
+@media print {
+
+  /* The shell scales the whole app with `zoom` on <html> at
+     anything other than a 1728px viewport. Printing through that
+     would put the client's proposal on the paper at whatever
+     fraction of full size the contractor's monitor happened to
+     imply. */
+  :global(html) {
+    zoom: 1 !important;
+  }
+
+  /* THE APPLICATION, REMOVED. Chrome would otherwise print the
+     sidebar down the left of page one. */
+  :global(.jf-blueprint) :global(.sb),
+  :global(.jf-blueprint) :global(.sb-overlay),
+  :global(.jf-blueprint) :global(.topbar) {
+    display: none !important;
+  }
+
+  :global(.jf-blueprint) :global(.layout) {
+    display: block !important;
+  }
+
+  :global(.jf-blueprint) :global(.main),
+  :global(.jf-blueprint) :global(.content) {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+
+  /* THE BUILDER, REMOVED. The masthead, the sticky bar and the ten
+     form cards are the contractor's instrument; none of them is
+     part of what the client agreed to. Card 11 is identified by
+     what it CONTAINS rather than by its id or its position, so
+     inserting a card 12 tomorrow cannot silently print it. */
+  :global(.jf-blueprint) .head,
+  :global(.jf-blueprint) .bar,
+  :global(.jf-blueprint) .stack > .card:not(:has(.pdfBlock)) {
+    display: none !important;
+  }
+
+  :global(.jf-blueprint) .stack {
+    gap: 0 !important;
+  }
+
+  /* The card stops being a card: no frame, no shadow, no padding.
+     The @page margin is the sheet's margin now. */
+  :global(.jf-blueprint) .card:has(.pdfBlock) {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    background: none !important;
+  }
+
+  :global(.jf-blueprint) .card:has(.pdfBlock) .cardHead,
+  :global(.jf-blueprint) .pdfSpec,
+  :global(.jf-blueprint) .pdfBlock > .toggles,
+  :global(.jf-blueprint) .pdfBlock > .printCaption,
+  :global(.jf-blueprint) .pdfActions,
+  :global(.jf-blueprint) .pdfNote {
+    display: none !important;
+  }
+
+  :global(.jf-blueprint) .body,
+  :global(.jf-blueprint) .pdfBlock {
+    display: block !important;
+    gap: 0 !important;
+  }
+
+  /* THE VAULT OPENS FOR PRINT, whether or not the preview is open
+     on screen. Downloading the file must not depend on having
+     pressed Preview first. */
+  :global(.jf-blueprint) .pdfVault {
+    height: auto !important;
+    overflow: visible !important;
+    visibility: visible !important;
+  }
+
+  :global(.jf-blueprint) .pdfStage {
+    display: block !important;
+    padding: 0 !important;
+    background: none !important;
+    border: none !important;
+    overflow: visible !important;
+  }
+
+  :global(.jf-blueprint) .pdfSheet {
+    width: auto !important;
+    max-width: none !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* THE TRAP THIS AVOIDS: a `transform` on any ancestor makes that
+     ancestor the containing block for a fixed child, and the two
+     running bands stop repeating — they print once, halfway down
+     page one, with no symptom on screen to explain it. The
+     entrance cascade puts a transform on every `[data-rv]` card,
+     so it is cleared here rather than trusted to have finished. */
+  :global(.jf-blueprint) .card:has(.pdfBlock),
+  :global(.jf-blueprint) .pdfBlock,
+  :global(.jf-blueprint) .pdfVault,
+  :global(.jf-blueprint) .pdfStage,
+  :global(.jf-blueprint) .pdfSheet {
+    transform: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+    will-change: auto !important;
+  }
+
+  /* THE PAGE FURNITURE. Fixed boxes are laid out against the page
+     box in paged media and are painted on every page — this is the
+     mechanism that gives a multi-page proposal a letterhead and an
+     identifying foot on sheet three as well as sheet one. The flow
+     is padded by hand to clear them, because a fixed box is out of
+     flow and will otherwise print straight through the text. */
+  :global(.jf-blueprint) .pdfRunHead {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+
+  :global(.jf-blueprint) .pdfRunFoot {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    margin-top: 0 !important;
+  }
+
+  :global(.jf-blueprint) .pdfFlowHead {
+    padding-top: 16mm !important;
+  }
+
+  :global(.jf-blueprint) .pdfFlowFoot {
+    padding-bottom: 11mm !important;
+  }
+
+  /* The cover is a PAGE, not a tall block: its screen min-height
+     is what makes it read as a full sheet in the preview, and the
+     break is what makes it one in the file. */
+  :global(.jf-blueprint) .pdfCover {
+    min-height: 0 !important;
+    padding-top: 30mm !important;
+    break-after: page;
+  }
+
+  :global(.jf-blueprint) .pdfDocHead {
+    padding-top: 0 !important;
+  }
+
+  /* Rows are the fallback break point inside a section that is too
+     long to hold together — never mid-row, which would put a line
+     item's name on one page and its price on the next. */
+  :global(.jf-blueprint) .printRow,
+  :global(.jf-blueprint) .sumRow,
+  :global(.jf-blueprint) .pdfPayRow,
+  :global(.jf-blueprint) .pdfFileRow,
+  :global(.jf-blueprint) .pdfSecHead,
+  :global(.jf-blueprint) .signRow {
+    break-inside: avoid;
+  }
+
+  /* An orphaned heading at the foot of a page is the one break the
+     section rule cannot catch on its own. */
+  :global(.jf-blueprint) .pdfSecHead {
+    break-after: avoid;
+  }
+
+  :global(.jf-blueprint) .pdfProse {
+    orphans: 3;
+    widows: 3;
+  }
+}

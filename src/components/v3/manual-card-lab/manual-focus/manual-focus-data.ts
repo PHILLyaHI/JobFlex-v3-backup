@@ -295,6 +295,10 @@ export function makeSeedDraft(): Draft {
     taxState: "TX",
 
     ...DEFAULT_MARKUPS,
+    // NOT part of DEFAULT_MARKUPS: a discount is a decision about ONE job, not
+    // an org default. "Save these as company defaults" must never carry it, or
+    // every future proposal quietly opens pre-discounted.
+    discountPct: 0,
 
     scopeOfWork:
       "Remove existing shingles and underlayment down to the deck. Replace any decking found to be soft or delaminated, billed at the allowance rate. Install synthetic underlayment across the field and ice-and-water membrane in both valleys and at every penetration. Install starter, field shingle, hip and ridge cap per manufacturer specification. Replace all pipe boots and step flashing. Haul off all debris and magnet-sweep the property daily.",

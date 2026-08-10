@@ -1,0 +1,783 @@
+/* ============================================================
+   LINE ITEMS — VARIANT B, "DROPDOWN"
+   src/components/v3/manual-card-lab/lines-lab/variant-drawer/
+
+   ONE GRID, FIVE PLACES
+   The header row, every closed row, the unnamed warning, both
+   halves of the ratio ledger and the foot all lay out on the SAME
+   seven columns, published once as `--ld-cols`. That is the whole
+   structural idea: the panel is not a box bolted under a row, it
+   is the row's own columns continued downward, so the material
+   and labor figures land underneath `Unit price` and `Line total`
+   and read as those two figures being decomposed in place.
+
+     24px   #            the printed sheet's row number
+     1fr    Work         the name — every leftover pixel
+     92px   Qty
+     116px  Unit
+     116px  Unit price
+     132px  Line total
+     36px   the chevron
+
+   At ~1150px of usable card width the name gets ~560px; at 1000px
+   it still gets ~410px. The fixed columns are sized to the widest
+   figure they will ever hold at 12.5px mono ($999,999.00 is 118px)
+   and not one step wider.
+
+   SPACING, 8pt, INTERNAL < EXTERNAL
+   A row's own padding is 10px top and bottom; two rows are
+   therefore 20px apart across their divider. 10 inside, 20
+   between — the ratio the whole page is built on. Panel blocks
+   are 24px apart, label to control is 8px.
+
+   HIERARCHY WITHOUT BORDERS
+   Size, weight and colour only. The name is the one 600-weight
+   thing on a closed row; labels are 12px/500 --muted; column heads
+   are 9.5px mono caps --muted. The only rules drawn are the two
+   1.5px --ink lines that bracket the ledger (under the head, over
+   the foot) and the 1.5px --hair-soft hairlines between rows.
+
+   FIGURES
+   JetBrains Mono, tabular, right-aligned — including inside the
+   numeric inputs, because the closed rows ARE the estimate table
+   and a column of money has to stack. The one exception is the
+   foot total: Inter 900 at -0.005em, never mono.
+
+   COLOUR
+   ~85 neutral. --blueprint appears only as a focus ring, which is
+   an ON state and nothing else. Status colour appears exactly
+   once, on the unnamed row (amber, --warning-dark).
+
+   ── SCOPING ────────────────────────────────────────────────
+   This lab route is not in blueprint-shell's PAGE_STYLES, so
+   there is no page activation class to hang :global rules from.
+   Every rule is this module's own hashed class under the literal
+   shell root — `:global(.jf-blueprint) .cls` ⇒ (0,2,0) — which
+   beats the always-on modules':
+     · `.bp :global(button)` (0,1,1), which strips border,
+       background and cursor off every button;
+     · `.bp :global(svg.ic)` (0,2,1), which pins icons at 17px, so
+       every icon resize here is written with THREE classes to win
+       on count.
+   Tailwind preflight runs app-wide: inputs, selects, textareas and
+   the range control declare their own border, background,
+   font-size and padding rather than inheriting anything.
+
+   ── NO @keyframes ──────────────────────────────────────────
+   Lightning CSS rejects @keyframes inside a CSS module. There are
+   none here and none are wanted: the panel's GEOMETRY is never
+   animated, only its ink.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   Light mode only, no .dark. No blurred shadow anywhere. Radius
+   2px. WCAG 2.2 AA — --muted (#555) is the floor for meaningful
+   text; --muted-light is for rules and placeholders only.
+   ============================================================ */
+
+:global(.jf-blueprint) .wrap {
+  /* THE seven columns. Declared once; five grids read it. */
+  --ld-cols: 24px minmax(0, 1fr) 92px 116px 116px 132px 36px;
+  --ld-gap: 12px;
+
+  /* A control well is lighter than any ground it sits on, which is how a
+     field reads as enterable without a heavier border. */
+  --ld-well: #ffffff;
+  --ld-line: var(--hair);
+
+  /* The shell defines --ease but not --ease-out; carry a local decelerating
+     curve rather than referencing a token that resolves to nothing. */
+  --ld-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ============================================================
+   THE SHARED GRID
+   ============================================================ */
+
+:global(.jf-blueprint) .grid {
+  display: grid;
+  grid-template-columns: var(--ld-cols);
+  gap: 0 var(--ld-gap);
+  align-items: center;
+}
+
+:global(.jf-blueprint) .gridTop {
+  align-items: start;
+}
+
+:global(.jf-blueprint) .c2 {
+  grid-column: 2;
+}
+
+:global(.jf-blueprint) .c5 {
+  grid-column: 5;
+}
+
+:global(.jf-blueprint) .c6 {
+  grid-column: 6;
+}
+
+/* ============================================================
+   COLUMN HEADS
+   Short nouns, once, at the top — instead of a label on every
+   field in every row. That single substitution is most of what
+   makes the closed list quiet.
+   ============================================================ */
+
+:global(.jf-blueprint) .head {
+  padding-bottom: 10px;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+:global(.jf-blueprint) .colHead {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .colHeadEnd {
+  text-align: right;
+}
+
+/* ============================================================
+   THE ROW
+   ============================================================ */
+
+:global(.jf-blueprint) .list {
+  display: flex;
+  flex-direction: column;
+}
+
+:global(.jf-blueprint) .row {
+  transition: background-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .rowGrid {
+  padding: 10px 0;
+  border-top: 1.5px solid var(--hair-soft);
+}
+
+/* The head already draws the line above the first row. */
+:global(.jf-blueprint) .list .row:first-of-type .rowGrid {
+  border-top: none;
+}
+
+/* An open row is one object: a deep ground and a 2px ink edge bracketing the
+   row and its panel together. The negative margins are cancelled exactly by
+   the padding and the border, so the ground bleeds 12px into the card's own
+   padding on both sides and NOT ONE COLUMN MOVES when a row opens. */
+:global(.jf-blueprint) .rowOpen {
+  margin: 0 -12px;
+  padding: 0 12px 0 10px;
+  border-left: 2px solid var(--ink);
+  background: var(--paper-deep);
+}
+
+/* The printed sheet's row number. Right-aligned so 01 and 12 stack. */
+:global(.jf-blueprint) .idx {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .idxOut {
+  color: var(--warning-dark);
+}
+
+/* ============================================================
+   CONTROLS
+   36px, 1.5px --hair at rest, --ink on hover and focus, white
+   well. The row's hit target is the full 56px band, so a control
+   may shrink where a click target may not.
+   ============================================================ */
+
+:global(.jf-blueprint) .nameIn {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  font-family: var(--font);
+  font-size: 13.5px;
+  /* The one 600 on a closed row. The name is what the row is. */
+  font-weight: 600;
+  line-height: 36px;
+  color: var(--ink);
+  background: var(--ld-well);
+  border: 1.5px solid var(--ld-line);
+  border-radius: var(--radius);
+  box-shadow: none;
+  transition: border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .nameIn::placeholder {
+  color: var(--muted-light);
+  font-weight: 500;
+}
+
+:global(.jf-blueprint) .nameIn:hover,
+:global(.jf-blueprint) .nameIn:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .nameIn:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
+}
+
+/* A well holds an affix and the figure. Flex rather than absolute affixes so
+   the number keeps its right edge no matter how wide the "$" is. */
+:global(.jf-blueprint) .well {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 36px;
+  padding: 0 8px;
+  background: var(--ld-well);
+  border: 1.5px solid var(--ld-line);
+  border-radius: var(--radius);
+  transition: border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .well:hover,
+:global(.jf-blueprint) .well:focus-within {
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .well:focus-within {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
+}
+
+:global(.jf-blueprint) .numIn {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  /* Right-aligned inside the well: this is the estimate table, and a column
+     of figures that does not stack is not a column. */
+  text-align: right;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .numIn:focus {
+  outline: none;
+}
+
+:global(.jf-blueprint) .affix {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  flex: none;
+}
+
+:global(.jf-blueprint) .affixEnd {
+  padding-left: 2px;
+}
+
+/* The unit picker. Words, not figures — so Inter, not mono. */
+:global(.jf-blueprint) .selWell {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+:global(.jf-blueprint) .sel {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 36px;
+  padding: 0 28px 0 10px;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--ld-well);
+  border: 1.5px solid var(--ld-line);
+  border-radius: var(--radius);
+  box-shadow: none;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .sel:hover,
+:global(.jf-blueprint) .sel:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .sel:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
+}
+
+:global(.jf-blueprint) .selCaret {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  display: flex;
+  margin-top: -6px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+:global(.jf-blueprint) .selWell .selCaret :global(.ic) {
+  width: 12px;
+  height: 12px;
+}
+
+/* The scan column. Printed, never a control — the row's terminal beat. */
+:global(.jf-blueprint) .total {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Excluded from every total, so it stops being primary. Colour and weight,
+   never a strikethrough and never a badge. */
+:global(.jf-blueprint) .totalOut {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ============================================================
+   THE DISCLOSURE
+   ============================================================ */
+
+:global(.jf-blueprint) .chev {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--muted);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    color 0.14s var(--ease),
+    border-color 0.14s var(--ease),
+    background-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .chev:hover {
+  color: var(--ink);
+  border-color: var(--ld-line);
+  background: var(--ld-well);
+}
+
+:global(.jf-blueprint) .chev:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+
+:global(.jf-blueprint) .row .chev :global(.ic) {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.16s var(--ld-out);
+}
+
+:global(.jf-blueprint) .row .chevOpen :global(.ic) {
+  transform: rotate(180deg);
+}
+
+:global(.jf-blueprint) .chevOpen {
+  color: var(--ink);
+}
+
+/* Hiding content means saying that content is hidden. One 4px ink square,
+   drawn only when the row carries a description. */
+:global(.jf-blueprint) .noteDot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 4px;
+  height: 4px;
+  background: var(--ink);
+}
+
+/* ============================================================
+   THE UNNAMED ROW
+   Priced, excluded, and it says so — in the only status colour on
+   the block. A second line appears for this state ALONE, which is
+   why the general case keeps its single scan line.
+   ============================================================ */
+
+:global(.jf-blueprint) .warnGrid {
+  margin-top: -2px;
+  padding-bottom: 10px;
+}
+
+:global(.jf-blueprint) .warn {
+  grid-column: 2 / 6;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--warning-dark);
+}
+
+/* ============================================================
+   THE PANEL
+   Mounts at full height in one frame — the list geometry never
+   eases. Only the panel's own ink moves, 160ms of opacity and 3px
+   of travel, so the change reads as caused by the click rather
+   than as the page deciding something.
+   ============================================================ */
+
+:global(.jf-blueprint) .panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 6px 0 16px;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition:
+    opacity 0.16s var(--ld-out),
+    transform 0.16s var(--ld-out);
+}
+
+:global(.jf-blueprint) .panelIn {
+  opacity: 1;
+  transform: none;
+}
+
+:global(.jf-blueprint) .label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* The description prints under the name, so it is laid out under the name. */
+:global(.jf-blueprint) .descCell {
+  grid-column: 2 / 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:global(.jf-blueprint) .area {
+  width: 100%;
+  min-height: 60px;
+  padding: 9px 10px;
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--ld-well);
+  border: 1.5px solid var(--ld-line);
+  border-radius: var(--radius);
+  box-shadow: none;
+  resize: vertical;
+  transition: border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .area::placeholder {
+  color: var(--muted-light);
+}
+
+:global(.jf-blueprint) .area:hover,
+:global(.jf-blueprint) .area:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .area:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
+}
+
+/* ============================================================
+   THE RATIO CONTROL — what the panel is for
+   A dimension line across the measure, with the two halves
+   annotated underneath in the columns they belong to.
+   ============================================================ */
+
+:global(.jf-blueprint) .mix {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:global(.jf-blueprint) .barRow {
+  margin: 8px 0;
+}
+
+/* The track runs the full measure — from the name's left edge to the line
+   total's right edge — because 1% of 1000px is a pixel a hand can find. */
+:global(.jf-blueprint) .slider {
+  -webkit-appearance: none;
+  appearance: none;
+  grid-column: 2 / 7;
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: ew-resize;
+}
+
+/* WebKit and Firefox refuse to share a rule for these — a selector either
+   engine cannot parse takes the whole block down with it. */
+:global(.jf-blueprint) .slider::-webkit-slider-runnable-track {
+  height: 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: linear-gradient(
+    to right,
+    var(--ink) 0 var(--ld-mix),
+    var(--ld-well) var(--ld-mix) 100%
+  );
+}
+
+:global(.jf-blueprint) .slider::-moz-range-track {
+  height: 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: linear-gradient(
+    to right,
+    var(--ink) 0 var(--ld-mix),
+    var(--ld-well) var(--ld-mix) 100%
+  );
+}
+
+/* A drawn handle: a white plate with a 2px ink edge. Never a knob, never a
+   circle — a capsule is the shape this aesthetic is defined against. */
+:global(.jf-blueprint) .slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 26px;
+  margin-top: -5.5px;
+  background: var(--ld-well);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+}
+
+:global(.jf-blueprint) .slider::-moz-range-thumb {
+  width: 10px;
+  height: 26px;
+  background: var(--ld-well);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-sizing: border-box;
+}
+
+:global(.jf-blueprint) .slider:focus {
+  outline: none;
+}
+
+:global(.jf-blueprint) .slider:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 3px;
+  border-radius: var(--radius);
+}
+
+:global(.jf-blueprint) .mixRow {
+  min-height: 22px;
+}
+
+:global(.jf-blueprint) .mixName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .mixPct {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* These land under `Unit price` and `Line total` on purpose — the two rows
+   add up to the two figures above them, which is the whole proof that moving
+   the mix has not moved the price. */
+:global(.jf-blueprint) .fig {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .figOut {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ============================================================
+   ROW ACTION
+   Destructive, so it lives at the bottom of the panel and nowhere
+   near the chevron that opened it.
+   ============================================================ */
+
+:global(.jf-blueprint) .remove {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 7px;
+  height: 32px;
+  padding: 0 8px 0 0;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .remove:hover {
+  color: var(--danger);
+}
+
+:global(.jf-blueprint) .remove:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+
+:global(.jf-blueprint) .panel .remove :global(.ic) {
+  width: 14px;
+  height: 14px;
+}
+
+/* ============================================================
+   THE FOOT
+   The ledger's second ink rule, and the one loud number on the
+   block — aligned in the Line total column it totals.
+   ============================================================ */
+
+:global(.jf-blueprint) .foot {
+  padding-top: 12px;
+  border-top: 1.5px solid var(--ink);
+}
+
+:global(.jf-blueprint) .footNote {
+  grid-column: 2 / 6;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .footValue {
+  grid-column: 6;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   ADD — the house's dashed "note on a drawing"
+   Full measure, and its text starts at the name column, so it
+   reads as the next empty row rather than as a toolbar.
+   ============================================================ */
+
+:global(.jf-blueprint) .addRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 44px;
+  margin-top: 16px;
+  padding: 0 12px 0 36px;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1.5px dashed var(--ld-line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    color 0.14s var(--ease),
+    border-color 0.14s var(--ease),
+    background-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .addRow:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+  background: var(--ld-well);
+}
+
+:global(.jf-blueprint) .addRow:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+
+:global(.jf-blueprint) .wrap .addRow :global(.ic) {
+  width: 14px;
+  height: 14px;
+}
+
+/* ============================================================
+   TAX
+   A short numeric field has no business spanning the measure.
+   ============================================================ */
+
+:global(.jf-blueprint) .tax {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 200px;
+  margin-top: 24px;
+}
+
+:global(.jf-blueprint) .tax .well {
+  width: 120px;
+}
+
+:global(.jf-blueprint) .hint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ============================================================
+   REDUCED MOTION
+   The shell kills motion globally; this is belt and braces for
+   the two transitions this block owns.
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .row,
+  :global(.jf-blueprint) .panel,
+  :global(.jf-blueprint) .chev,
+  :global(.jf-blueprint) .row .chev :global(.ic),
+  :global(.jf-blueprint) .addRow,
+  :global(.jf-blueprint) .remove,
+  :global(.jf-blueprint) .well,
+  :global(.jf-blueprint) .nameIn,
+  :global(.jf-blueprint) .area,
+  :global(.jf-blueprint) .sel {
+    transition: none;
+  }
+}

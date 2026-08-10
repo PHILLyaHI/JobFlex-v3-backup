@@ -231,11 +231,20 @@ export function computeTotals(draft: Draft): Totals {
   const preTax =
     printed.length > 0 ? round2(printed.reduce((sum, r) => sum + r.amount, 0)) : chainPreTax;
 
-  const tax = round2(preTax * (safe(draft.taxPct) / 100));
-  const total = round2(preTax + tax);
+  // Discount comes off BEFORE tax, so tax is charged on what the client owes
+  // rather than on a figure nobody pays. The other order overstates the tax
+  // line, and it is the kind of error a client notices on the printed sheet.
+  const discountAmount = round2(preTax * (safe(draft.discountPct) / 100));
+  const taxable = round2(preTax - discountAmount);
+
+  const tax = round2(taxable * (safe(draft.taxPct) / 100));
+  const total = round2(taxable + tax);
 
   const baseTotal = round2(baseMaterials + baseLabor);
-  const margin = preTax > 0 ? ((preTax - baseTotal) / preTax) * 100 : 0;
+  // Margin is measured against the DISCOUNTED revenue: money given away is not
+  // margin. Quoting a headline margin that a discount has already spent is the
+  // single most flattering way to get this wrong.
+  const margin = taxable > 0 ? ((taxable - baseTotal) / taxable) * 100 : 0;
 
   return {
     baseMaterials,
@@ -248,6 +257,8 @@ export function computeTotals(draft: Draft): Totals {
     subtotalWithOverhead,
     profitAmount,
     preTax,
+    discountAmount,
+    taxable,
     tax,
     total,
     margin,
@@ -357,25 +368,81 @@ export function firstLine(text: string, max = 64): string {
    UNITS
    ============================================================ */
 
-/** The unit picker's options, in the live builder's order and wording. */
+/** The unit picker's options, in the original Job-FLEX order and wording. */
 export const UNITS: { value: Unit; label: string }[] = [
-  { value: "SQFT", label: "Sq ft" },
-  { value: "LINEAR_FT", label: "Linear ft" },
-  { value: "CUBIC_FT", label: "Cubic ft" },
-  { value: "UNIT", label: "Unit" },
-  { value: "HOUR", label: "Hour" },
-  { value: "LUMP_SUM", label: "Lump sum" },
+  { value: "SQFT", label: "sqft" },
+  { value: "LF", label: "lf" },
+  { value: "LINEAR_FT", label: "linear ft" },
+  { value: "SQ_BOARDS", label: "sq boards" },
+  { value: "CU_YARDS", label: "cu yards" },
+  { value: "YARDS", label: "yards" },
+  { value: "SQ_YARDS", label: "sq yards" },
+  { value: "UNIT", label: "unit" },
+  { value: "HOUR", label: "hr" },
+  { value: "FIXED", label: "fixed" },
 ];
 
 /** Lower-case wording for the client's copy — "2,400 sq ft", not "SQFT". */
 export const UNIT_LABEL: Record<Unit, string> = {
   SQFT: "sq ft",
+  LF: "linear ft",
   LINEAR_FT: "linear ft",
-  CUBIC_FT: "cubic ft",
+  SQ_BOARDS: "sq boards",
+  CU_YARDS: "cu yards",
+  YARDS: "yards",
+  SQ_YARDS: "sq yards",
   UNIT: "unit",
   HOUR: "hour",
-  LUMP_SUM: "lump sum",
+  FIXED: "fixed",
 };
+
+/* ── UNIT BEHAVIOUR ─────────────────────────────────────────
+   Picking a unit is not only a label change — three of the ten
+   change what the row MEANS, and the row has to follow. Kept
+   here rather than in a component so every line-item design
+   answers the question identically.
+
+   FIXED    a lump sum. "How many?" has no answer, so quantity is
+            pinned at 1 and the line total IS the unit price. A
+            fixed line showing "× 3" is a bug the user has to
+            notice; pinning it is the fix.
+   HOUR     time. Labor by default — a fresh hourly line that
+            splits its price 50/50 into materials is wrong more
+            often than it is right. The user can still move the
+            ratio afterwards; this only seeds it.
+   the rest measured quantities, no special behaviour.
+*/
+
+/** Quantity is meaningless for this unit and must stay at 1. */
+export function isFixedUnit(u: Unit): boolean {
+  return u === "FIXED";
+}
+
+/** Time, so a new line's cost seeds entirely into labor. */
+export function isTimeUnit(u: Unit): boolean {
+  return u === "HOUR";
+}
+
+/**
+ * The patch to apply when a row's unit changes.
+ *
+ * Returns the unit plus whatever else that unit forces, so a caller does one
+ * `onPatch` and cannot half-apply the rule. Deliberately does NOT touch the
+ * price: switching to FIXED should collapse the quantity into the line total
+ * conceptually, not silently re-price the work — so the quantity it folds away
+ * is multiplied into the unit price first, keeping the line total unchanged.
+ */
+export function applyUnitChange(line: Line, next: Unit): Partial<Line> {
+  if (!isFixedUnit(next)) return { unit: next };
+  if (line.quantity === 1) return { unit: next, quantity: 1 };
+  const scale = line.quantity;
+  return {
+    unit: next,
+    quantity: 1,
+    materialCost: round2(line.materialCost * scale),
+    laborCost: round2(line.laborCost * scale),
+  };
+}
 
 /* ============================================================
    IDS AND ENVIRONMENT

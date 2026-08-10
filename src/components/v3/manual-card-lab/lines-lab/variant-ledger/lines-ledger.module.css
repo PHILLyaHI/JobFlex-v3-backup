@@ -1,0 +1,744 @@
+/* ============================================================
+   LINE ITEMS — VARIANT C, "LEDGER"
+   src/components/v3/manual-card-lab/lines-lab/variant-ledger/
+
+   THE THESIS
+   An estimate sheet, not a form. Nothing collapses and nothing
+   hides — name, quantity, unit, rate, amount, description AND the
+   material/labor mix are all on screen for every row, always. What
+   is removed is the CHROME. The block this replaces drew ~20 visible
+   control outlines per screen; the row read as a strip of input
+   boxes and the boxes, not the density, were the mess. Here a field
+   draws no box at all: it is a value typed onto a ruled line, and it
+   only borrows an edge when you touch it.
+
+   Structure therefore comes from two things and nothing else:
+   ALIGNMENT (one grid, shared by the head, every row and the foot,
+   so a column's right edge is the same x from the head rule down to
+   the foot total) and ONE HAIRLINE PER ROW (1.5px --hair-soft).
+
+   ── HOW A BORDERLESS FIELD STAYS DISCOVERABLE ───────────────
+   Three tiers, and the reason they are enough:
+
+     1. RESTING RULE. Every editable value in the ENTRY register
+        carries a permanent 1.5px --hair rule along its bottom edge.
+        A computed figure (the line amount, the foot total) carries
+        none — ever. So the block teaches one rule in one glance:
+        a value sitting ON a line is typed, a value floating free is
+        derived. That is a positive signal, not an absence, and it
+        is present with zero interaction.
+     2. ROW REVEAL. Hovering anywhere in a row — or focusing
+        anything in it — darkens every rule in THAT row at once
+        (--hair to --muted-faint), reveals the unit caret, and
+        brings up the annotation register's rules and placeholder.
+        One pass of the pointer exposes the row's whole editable
+        set, so nothing has to be probed field by field.
+     3. FIELD STATE. Hovering a specific field adds a --paper wash
+        and takes its rule to full --ink; focusing it draws the
+        complete 1.5px --ink frame on a white well. Ink on white is
+        19:1, so the focused field is unmistakable and only ever one
+        exists.
+
+     Why the ANNOTATION register (description, mix) has no resting
+     rule: giving it one would put two long parallel hairlines 12px
+     apart on every row and stripe the block — the exact noise this
+     variant exists to remove. It is revealed by tier 2, reached by
+     Tab like anything else, and its space is reserved on every row
+     whether or not it holds text, so nothing ever moves.
+
+   ── THE DENSITY NUMBERS, PROVEN ─────────────────────────────
+     entry field ......... 32px   (13.5px name / 12.5px mono figures)
+     register gap ......... 4px   <- INTERNAL
+     annotation field .... 24px   (12px description / 10.5px mono mix)
+     row content ......... 60px
+     row padding ......... 12px top + 12px bottom
+     ROW ................. 84px,  divider 1.5px  =>  85.5px pitch
+
+     internal (entry -> its own annotation) ............. 4px
+     external (row N's annotation -> row N+1's entry) ... 25.5px
+                                                          (12 + 1.5 + 12)
+     ratio 6.4 : 1 box-to-box, and ~10 : 1 optically once each
+     field's own internal air is counted (a 12px glyph in a 24px box
+     sits ~6px off its bottom edge; a 13.5px glyph in a 32px box
+     sits ~9px off its top). A 4px gap against 25px cannot read as
+     two rows of equal weight — which is the failure of the design
+     being replaced, where the two halves sat 10px apart and both
+     wore full 36px control boxes.
+
+     Density is bought back, not spent: the block it replaces was
+     107.5px per row with the description and the split HIDDEN, and
+     ~277px with them open. 85.5px with everything visible is 20%
+     tighter than the closed row and 69% tighter than the open one.
+
+   ── THE WIDTH GOES TO THE NAME ──────────────────────────────
+     At ~1180px of usable card width:
+       gutter 12 + 5 gaps x 16 (80) + qty 96 + unit 116 + rate 112
+       + amount 132 + kill 34  =  582px of structure
+       => ITEM = 598px.
+     The old build gave the name ~430px inside a 980px measure. The
+     longest thing in every row is the name; that is what the wider
+     card is for.
+
+   ── THE 12px LEFT GUTTER ────────────────────────────────────
+   Head, rows, add-line and foot share a 12px left inset. It is a
+   margin, in the drafting sense: the only thing that ever appears
+   in it is a 2px --blueprint mark on the row you are editing. That
+   is the block's ONE blueprint accent and the only legal use of it
+   here — an ON state, one at a time, well under the 5% budget.
+
+   ── CONTRACTS ───────────────────────────────────────────────
+   - This route is NOT in blueprint-shell's PAGE_STYLES, so every
+     rule is scoped under the literal shell root:
+     `:global(.jf-blueprint) .cls` => (0,2,0), which beats the
+     always-on modules' `.bp :global(button)` (0,1,1). Icon sizing
+     uses three classes to beat `.bp :global(svg.ic)` (0,2,1) on
+     count. Tailwind preflight runs app-wide, so every input and
+     select declares its own border, background, font-size and
+     padding rather than inheriting.
+   - State rules are written with a `.row` / `.taxLine` ancestor so
+     they all land at (0,4,0) and the cascade is decided by SOURCE
+     ORDER alone: row-reveal, then field hover, then field focus.
+     Reordering those three blocks changes behaviour.
+   - No @keyframes (Lightning CSS rejects them in a module).
+     Transitions only, and none of them move anything.
+   - No box-shadow anywhere in this file. Nothing here is elevated;
+     a ledger lies flat on the card.
+   - Light mode only. No .dark rules.
+   - WCAG 2.2 AA: --muted (#555, 7.4:1 on white) is the floor for
+     meaningful text, including the muted amount on an excluded row.
+     --muted-light (#888, 3.5:1) is used only for placeholders, the
+     unit caret and the remove glyph — non-text UI, where 1.4.11's
+     3:1 applies.
+   ============================================================ */
+
+:global(.jf-blueprint) .ledger {
+  /* The two numbers a future density pass should touch first, and
+     together: the column set and the gap between columns. */
+  --lg-cols: minmax(240px, 1fr) 96px 116px 112px 132px 34px;
+  --lg-gap: 16px;
+
+  /* The drafting margin (see header) and the inset that keeps a
+     column head sitting exactly over its own values. */
+  --lg-gutter: 12px;
+  --lg-pad: 6px;
+
+  /* House line weights, with literal fallbacks so the file survives
+     outside the shell. */
+  --lg-rule: var(--hair, rgba(10, 10, 10, 0.12));
+  --lg-rule-soft: var(--hair-soft, rgba(10, 10, 10, 0.08));
+
+  /* The only literal in the file: a focused field's well. */
+  --lg-well: #ffffff;
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+/* ============================================================
+   THE ONE GRID
+   Head, row and foot all read `--lg-cols`, so the amount column's
+   right edge is one x from the head rule to the foot total. That
+   shared edge is what carries the structure in place of borders.
+   ============================================================ */
+
+:global(.jf-blueprint) .head,
+:global(.jf-blueprint) .row,
+:global(.jf-blueprint) .foot {
+  display: grid;
+  grid-template-columns: var(--lg-cols);
+  column-gap: var(--lg-gap);
+  padding-left: var(--lg-gutter);
+}
+
+/* The structural line: 1.5px full ink, the heaviest rule in the
+   block and one of only two (the other closes it at the foot). */
+:global(.jf-blueprint) .head {
+  align-items: end;
+  padding-bottom: 8px;
+  border-bottom: 1.5px solid var(--ink);
+}
+
+/* The drawing-annotation register. Short nouns, and the currency
+   mark is declared ONCE here ("$ / UNIT") instead of being repeated
+   as a floating affix on every rate field. */
+:global(.jf-blueprint) .colHead {
+  padding: 0 var(--lg-pad);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .colHeadEnd {
+  text-align: right;
+}
+
+/* ============================================================
+   THE ROW — two registers, one hairline
+   ============================================================ */
+
+:global(.jf-blueprint) .row {
+  position: relative;
+  grid-template-rows: 32px 24px;
+  row-gap: 4px;
+  align-items: center;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  border-top: 1.5px solid var(--lg-rule-soft);
+}
+
+/* The head already drew the line above the first row. */
+:global(.jf-blueprint) .rowFirst {
+  border-top: none;
+}
+
+/* The margin mark: "you are writing on this line". The block's only
+   blueprint, and never more than one at a time. */
+:global(.jf-blueprint) .row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .row:focus-within::before {
+  background: var(--blueprint);
+}
+
+/* Cell placement. Everything is placed explicitly rather than by
+   source order, because the annotation register spans three of the
+   entry register's columns and auto-placement cannot express that. */
+:global(.jf-blueprint) .cName {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cQty {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cUnit {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cRate {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cAmt {
+  grid-column: 5;
+  grid-row: 1;
+  padding-right: var(--lg-pad);
+  text-align: right;
+}
+
+/* Spans both registers so the control centres on the whole 60px
+   entry rather than on the primary line. */
+:global(.jf-blueprint) .cKill {
+  grid-column: 6;
+  grid-row: 1 / 3;
+  justify-self: center;
+}
+
+:global(.jf-blueprint) .cDesc {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+/* The mix sits under qty+unit+rate and is right-aligned to the RATE
+   column's edge, because the rate is the figure it decomposes.
+   Alignment is the whole label; there is no word "material cost"
+   anywhere in the row. */
+:global(.jf-blueprint) .cMix {
+  grid-column: 2 / 5;
+  grid-row: 2;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+  padding-right: var(--lg-pad);
+}
+
+/* Directly under the muted amount it disqualifies. */
+:global(.jf-blueprint) .cFlag {
+  grid-column: 5;
+  grid-row: 2;
+  padding-right: var(--lg-pad);
+  text-align: right;
+}
+
+/* ============================================================
+   FIELDS — the entry register
+   A transparent 1.5px frame at rest so hover and focus can colour
+   it without ever changing the box: a border that appears must not
+   move a single glyph.
+   ============================================================ */
+
+:global(.jf-blueprint) .f {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--lg-pad);
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-bottom-color: var(--lg-rule);
+  border-radius: var(--radius);
+  transition:
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .f::placeholder {
+  color: var(--muted-light);
+  font-weight: 500;
+}
+
+/* Estimate-sheet rule: figures are mono, right-aligned, tabular. */
+:global(.jf-blueprint) .fNum {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A unit is a word, not a numeral, so it stays Inter — and it is
+   secondary to the name, so it steps down a weight. */
+:global(.jf-blueprint) .fSel {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 20px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+:global(.jf-blueprint) .selWrap {
+  display: block;
+  position: relative;
+  min-width: 0;
+}
+
+/* Drawn chevron — two borders of a box, rotated, the same device
+   the house uses for a check plate. Hidden at rest (a caret on
+   every row is chrome), revealed with the row. */
+:global(.jf-blueprint) .selWrap::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  top: 12px;
+  width: 5px;
+  height: 5px;
+  border: solid var(--muted-light);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s var(--ease);
+}
+
+/* ============================================================
+   FIELDS — the annotation register
+   Six discriminators keep this a note UNDER the entry rather than a
+   second row: 24px against 32px, 12px against 13.5px, weight 400
+   against 600, --muted against --ink, no resting rule against a
+   permanent one, and 4px of coupling against 25.5px of separation.
+   ============================================================ */
+
+:global(.jf-blueprint) .fSub {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 var(--lg-pad);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  transition:
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+
+/* Silent until the row is touched — see tier 2 in the header. */
+:global(.jf-blueprint) .fSub::placeholder {
+  color: transparent;
+}
+
+/* ============================================================
+   THE MATERIAL / LABOR MIX
+   It is not a slider and not a disclosure. It is a ledger
+   ANNOTATION that happens to be typed into: a 2px drawn split rule,
+   then the material share as a value, then the sentence that reads
+   it back. Scanning a column of these tells you which lines are
+   material-heavy without reading a single digit, and the whole
+   assembly is quieter than one 36px control box.
+
+   The `<label>` wrapping it is the accessibility answer to a 32px
+   input: the readout and the rule are all part of the click target,
+   so the effective hit area is ~250 x 24 rather than 32 x 24.
+   ============================================================ */
+
+:global(.jf-blueprint) .mix {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  cursor: text;
+}
+
+:global(.jf-blueprint) .mixBar {
+  display: block;
+  flex: none;
+  width: 88px;
+  height: 2px;
+  margin-right: 10px;
+  background: var(--muted-faint);
+}
+
+:global(.jf-blueprint) .mixMat {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+  transition:
+    width 0.16s var(--ease-out),
+    background 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .mixNum {
+  width: 32px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: right;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .mixText {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   COMPUTED FIGURES — never a rule, ever
+   The absence of the underline is the signal that this figure is
+   the row's answer rather than one of its inputs.
+   ============================================================ */
+
+:global(.jf-blueprint) .amt {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An excluded row keeps its real price and loses its claim on the
+   total. --muted, not --muted-light: this is meaningful text. */
+:global(.jf-blueprint) .amtOff {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* The one status colour in the block, on the one state that changes
+   what prints. Not a badge: no plate, no border, no fill — a word
+   in the annotation register, directly under the figure it voids. */
+:global(.jf-blueprint) .flag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--warning-dark);
+}
+
+/* ============================================================
+   STATE — order is load-bearing (see the CONTRACTS note)
+   1. the row wakes its whole editable set
+   2. the field under the pointer takes ink and a wash
+   3. the focused field takes the full frame
+   ============================================================ */
+
+/* 1 — ROW REVEAL */
+:global(.jf-blueprint) .row:hover .f,
+:global(.jf-blueprint) .row:focus-within .f {
+  border-bottom-color: var(--muted-faint);
+}
+
+:global(.jf-blueprint) .row:hover .fSub,
+:global(.jf-blueprint) .row:focus-within .fSub,
+:global(.jf-blueprint) .row:hover .mixNum,
+:global(.jf-blueprint) .row:focus-within .mixNum {
+  border-bottom-color: var(--lg-rule);
+}
+
+:global(.jf-blueprint) .row:hover .fSub::placeholder,
+:global(.jf-blueprint) .row:focus-within .fSub::placeholder {
+  color: var(--muted-light);
+}
+
+:global(.jf-blueprint) .row:hover .selWrap::after,
+:global(.jf-blueprint) .row:focus-within .selWrap::after {
+  opacity: 1;
+}
+
+:global(.jf-blueprint) .row:hover .mixMat,
+:global(.jf-blueprint) .row:focus-within .mixMat {
+  background: var(--ink);
+}
+
+/* 2 — FIELD HOVER */
+:global(.jf-blueprint) .row .f:hover,
+:global(.jf-blueprint) .row .fSub:hover,
+:global(.jf-blueprint) .row .mixNum:hover,
+:global(.jf-blueprint) .taxLine .f:hover {
+  background: var(--paper);
+  border-bottom-color: var(--ink);
+}
+
+/* 3 — FIELD FOCUS */
+:global(.jf-blueprint) .row .f:focus,
+:global(.jf-blueprint) .row .fSub:focus,
+:global(.jf-blueprint) .row .mixNum:focus,
+:global(.jf-blueprint) .taxLine .f:focus {
+  outline: none;
+  background: var(--lg-well);
+  border-color: var(--ink);
+}
+
+/* ============================================================
+   REMOVE
+   Quiet at rest but never hidden, and never smaller than a
+   comfortable target: a 14px glyph in a 34 x 36 button.
+   ============================================================ */
+
+:global(.jf-blueprint) .kill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 36px;
+  color: var(--muted-light);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    color 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .kill:hover,
+:global(.jf-blueprint) .kill:focus-visible {
+  outline: none;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Three classes, to beat `.bp :global(svg.ic)` (0,2,1) on count. */
+:global(.jf-blueprint) .kill :global(.ic) {
+  width: 14px;
+  height: 14px;
+}
+
+/* ============================================================
+   ADD A LINE — the next ruled line, not a button under the table
+   A dashed 1.5px rule where the solid hairlines were: the house's
+   own "note pencilled on a drawing" device, used as the ledger's
+   own provisional divider. Its label starts at the same x as ITEM.
+   ============================================================ */
+
+:global(.jf-blueprint) .add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding-left: calc(var(--lg-gutter) + var(--lg-pad));
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-top: 1.5px dashed var(--muted-faint);
+  border-radius: 0;
+  cursor: pointer;
+  transition:
+    color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .add:hover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+:global(.jf-blueprint) .add:focus-visible {
+  outline: 1.5px solid var(--ink);
+  outline-offset: -2px;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .add :global(.ic) {
+  width: 13px;
+  height: 13px;
+}
+
+/* ============================================================
+   FOOT
+   The base total carries NO label. It sits on the same grid,
+   right-aligned to the amount column, one 1.5px ink rule below the
+   last figure in that column — which is the only sentence a ledger
+   ever needs for a sum. Inter 900 tabular; mono is banned on a
+   display amount.
+   ============================================================ */
+
+:global(.jf-blueprint) .foot {
+  align-items: baseline;
+  padding-top: 12px;
+  border-top: 1.5px solid var(--ink);
+}
+
+:global(.jf-blueprint) .footNote {
+  grid-column: 1 / 5;
+  padding: 0 var(--lg-pad);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .footAmt {
+  grid-column: 5;
+  padding-right: var(--lg-pad);
+  text-align: right;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   TAX RATE
+   One short control, so it is sized to its content and pinned to
+   the start of the flex column — it never spans the measure. Label
+   and hint are both secondary; the rate is the only ink in the line.
+   ============================================================ */
+
+:global(.jf-blueprint) .taxLine {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  margin-left: var(--lg-gutter);
+}
+
+:global(.jf-blueprint) .taxLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .taxWrap {
+  display: block;
+  position: relative;
+  width: 76px;
+}
+
+/* Four classes so the affix's room is reserved without fighting
+   `.f`'s own padding shorthand. */
+:global(.jf-blueprint) .ledger .taxWrap .f {
+  padding-right: 18px;
+}
+
+:global(.jf-blueprint) .taxSuffix {
+  position: absolute;
+  top: 0;
+  right: var(--lg-pad);
+  height: 32px;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-light);
+  pointer-events: none;
+}
+
+:global(.jf-blueprint) .taxHint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ============================================================
+   NARROW
+   Only the fixed numeric tracks need help; ITEM is intrinsic and
+   absorbs the rest. The gap comes down with them — shrinking the
+   columns and leaving 16px between them would make the block read
+   looser, not tighter.
+   ============================================================ */
+
+@media (max-width: 1180px) {
+  :global(.jf-blueprint) .ledger {
+    --lg-cols: minmax(180px, 1fr) 84px 104px 100px 116px 32px;
+    --lg-gap: 12px;
+  }
+
+  :global(.jf-blueprint) .mixBar {
+    width: 64px;
+    margin-right: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .f,
+  :global(.jf-blueprint) .fSub,
+  :global(.jf-blueprint) .mixNum,
+  :global(.jf-blueprint) .mixMat,
+  :global(.jf-blueprint) .selWrap::after,
+  :global(.jf-blueprint) .kill,
+  :global(.jf-blueprint) .add,
+  :global(.jf-blueprint) .row::before {
+    transition: none;
+  }
+}

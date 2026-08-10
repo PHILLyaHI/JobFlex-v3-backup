@@ -1,0 +1,1074 @@
+/* ============================================================
+   LINE ITEMS — "V2"
+   src/components/v3/manual-card-lab/lines-v2/
+
+   THE THESIS
+   Reproduce a layout the owner already trusts — his previous
+   app's line-item block — and change only two things: the skin,
+   and the arithmetic. Structure is copied exactly; nothing else
+   is. The component header records what was reproduced, what was
+   not, and why.
+
+   THE SHAPE
+     one HEAD row, then per line a repeating unit of TWO BANDS:
+       band 1  the entry row, on the head's own column grid
+       band 2  the split, full width beneath it
+     and the head's three money columns each carry their own
+     RUNNING COLUMN TOTAL directly beneath the column name — the
+     reference's one genuinely good idea, and the reason the three
+     amount columns are line-level rather than per-unit: they have
+     to add up to each other, and they do.
+
+   ── NO FRAME OF ITS OWN ─────────────────────────────────────
+   This block draws NO outer border. The page's card already draws
+   a 2px ink frame around it, and a second frame 24px inside the
+   first is a box in a box: two competing edges, neither of which
+   is the real one. The block is now edge-to-edge in the card's
+   own padding, so the head's rule, every row divider and the foot
+   rule all run the full width of the card's content — which is
+   what a ledger looks like.
+
+   Consequence: the RULES are the only structure left, so they had
+   to get heavier. See THE RULE LADDER.
+
+   ── THE RULE LADDER ─────────────────────────────────────────
+   Three tiers, and nothing else in the block is a line.
+
+     1  BOOKENDS      2px SOLID full --ink
+                      head bottom, foot top. The block opens and
+                      closes on ink; these are the only two.
+     2  DIVIDERS      2px SOLID full --ink (--v2-rule-strong)
+                      between one line item and the next.
+     3  PROVISIONAL   2px DASHED --muted-faint
+                      "add a line": the next divider, pencilled.
+
+   Why the dividers are FULL INK, by request. This value walked up
+   the scale three times and every step was reported as still too
+   faint on a real screen at a real distance. --hair-soft (8%) is
+   ~#ebebeb on white, 1.15:1. --hair (12%, ~#e0e0e0) is 1.2:1. 30%
+   reached ~#b7b7b7 (~1.9:1) and 45% ~#9d9d9d (~2.9:1) — the last
+   only just clearing 1.4.11's 3:1 floor for non-text UI, and still
+   reading as grey beside the ink bookends that frame it.
+
+   So tiers 1 and 2 now share a colour and are separated by ROLE
+   rather than by tone: a bookend opens or closes the block, a
+   divider parts two records inside it, and the head's own caps
+   register plus the foot's display figure make which is which
+   unmistakable without a tonal step. This is exactly how a ruled
+   paper ledger does it — every rule is the same ink, and position
+   says what each one means.
+
+   What the ladder still separates by tone is tier 2 against a
+   FIELD's resting edge (--v2-rule, 12%): structure is ink, an
+   affordance is a hairline that goes to full ink the moment you
+   touch it. That was always the distinction worth drawing.
+
+   --v2-rule-strong stays a token pointing at --ink rather than a
+   grey literal, so a theme swap still moves it.
+
+   ── THE COLUMN GRID ─────────────────────────────────────────
+   Eight tracks. Seven carry the head's names; the eighth is the
+   remove button, deliberately OUTSIDE the total column so the
+   money column's right edge is one clean x from the head's sum
+   down through every row to the foot total.
+
+     description  minmax(220px, 1fr)   <- takes every spare pixel
+     qty           76px
+     unit         108px
+     $ / unit     100px
+     material     112px
+     labor        112px
+     total        140px                <- widest fixed track: the
+                                          only cell that prints a
+                                          grouped, $-marked figure,
+                                          and now the only one that
+                                          prints it at 20px
+     remove        32px
+     gap           12px x 7  =  84px
+
+   Fixed structure = 680 + 84 = 764px. At the ~1180px the card
+   gives this block, DESCRIPTION lands at ~416px — roughly 35% of
+   the measure, and by a wide margin the widest column, which is
+   correct because the longest thing in every row is the name of
+   the work.
+
+   TOTAL went 124 -> 140px when the foot total went 16 -> 20px:
+   "$12,345.67" in Inter 900 at 20px measures ~106px, and 124px
+   minus the 6px cell inset left 118px, which is not enough margin
+   for a six-figure job. The 16px came out of DESCRIPTION, which
+   has ~416px and does not miss it.
+
+   ── ROW HEIGHTS ─────────────────────────────────────────────
+     head names ........  14px  (11.5px mono caps)
+     head sums .........  13px  (10.5px mono)
+     head ..............  30px + 8px pad + 1.5px ink rule
+
+     band 1 (entry) ....  36px   <- house control height
+     internal gap ......  16px   <- band 1 to its own band 2
+     band 2 (split) ....  56px   = legend 16 + 4 + slider 22
+                                   + 2 + percentages 12
+     row padding .......  22px top + 22px bottom
+     ROW ............... 152px, divider 2px => 154px pitch
+
+     internal (entry -> its own split) ............... 16px
+     external (row N's split -> row N+1's entry) ..... 46px
+
+   The internal gap DOUBLED at an earlier pass, from 8px to 16px,
+   because at 8px the entry and its split read as one crowded band
+   rather than as a statement and its breakdown.
+
+   The row padding then went 16 -> 22px, which takes the
+   internal:external ratio from 2.1x to 2.9x — back within sight of
+   the 3.2x this layout started at, but now WITH a divider as well
+   as the space. The two work together and neither is spare: at
+   2.1x with a pale rule the lines ran together, and space alone at
+   3.2x was what the divider was introduced to stop needing. If a
+   future density pass wants the height back, take it from the
+   padding and darken the rule further — do not close the internal
+   gap, which is the only thing pairing an entry with its own
+   split.
+
+   ── COLOUR ──────────────────────────────────────────────────
+   The reference is a purple/blue consumer palette. None of it is
+   here. Colour appears in exactly two places and both are the
+   same fact said twice: the two 8px swatches, and the two halves
+   of the slider rail — --blueprint for material, --sky for
+   labor. Everything else is ink, paper and the greys, plus
+   --warning-dark on the one status that changes what prints.
+
+   --sky on white is ~2.7:1, so it is never allowed to carry
+   information on its own: the split point is marked by a 2px INK
+   handle, and the two percentages are printed beneath the rail's
+   own ends. The rail's colour is reinforcement, not the signal.
+
+   ── CONTRACTS ───────────────────────────────────────────────
+   - This route is not in blueprint-shell's PAGE_STYLES, so every
+     rule is scoped under the literal shell root:
+     `:global(.jf-blueprint) .cls` => (0,2,0), which beats the
+     always-on modules' `.bp :global(button)` (0,1,1). Tailwind
+     preflight runs app-wide, so every input, select and button
+     declares its own border, background, font-size and padding
+     rather than inheriting one.
+   - No @keyframes: Lightning CSS rejects them inside a module.
+     Transitions only, and none of them move a glyph.
+   - No box-shadow at all. Nothing here is elevated; a ledger
+     lies flat on the card it sits in.
+   - Light mode only. No .dark rules.
+   - WCAG 2.2 AA: --muted (#555, 7.4:1 on white) is the floor for
+     meaningful text, including the muted total on an excluded
+     row. --muted-light (#888) is used only for placeholders and
+     the remove glyph — non-text UI, where 1.4.11's 3:1 applies.
+   - The unit picker is the SHARED select from blueprint-global.css
+     (`.bp-sel` wrapper + `.bp-sel-in` control). This file used to
+     re-derive `appearance: none` and draw its own caret, which is
+     precisely the drift decisions.md names. Only the FIT to a 36px
+     row is set here.
+   ============================================================ */
+
+:global(.jf-blueprint) .block {
+  /* The two numbers a future density pass should touch first, and
+     together: the column set and the gap between columns. */
+  --v2-cols: minmax(220px, 1fr) 76px 108px 100px 112px 112px 140px 32px;
+  --v2-gap: 12px;
+
+  /* The inset that keeps a column head sitting exactly over its own
+     values — it is the fields' own horizontal padding. */
+  --v2-pad: 6px;
+
+  /* A field's resting rule: house --hair, with a literal fallback so
+     the file survives outside the shell. */
+  --v2-rule: var(--hair, rgba(10, 10, 10, 0.12));
+
+  /* Tier 2 of THE RULE LADDER — the divider between line items, and
+     since the block lost its frame, the only structure it has.
+     FULL INK, by request: 45% was the last step of a ladder that
+     kept being asked to go darker, and at 2px on white it still
+     read as grey against the head and foot rules that bookend it.
+     The ladder now separates the divider from a FIELD's resting
+     edge (`--v2-rule`) by weight and colour together rather than by
+     colour alone — which is the distinction that was actually
+     wanted: a line item is a record boundary, a field rule is not.
+     Kept as a token so a theme swap still moves it. */
+  --v2-rule-strong: var(--ink, #0a0a0a);
+
+  /* The only literal in the file: a control's well. */
+  --v2-well: #ffffff;
+
+  /* How far the split rail is pulled in off the line's own measure,
+     at both ends. Read by `.slider` and `.pcts` together — they are
+     one control and one caption of it, so a change here has to move
+     both or the two percentages stop sitting under the rail's
+     ends. See the note above `.slider`. */
+  --v2-rail-inset: 28px;
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: var(--font);
+  color: var(--ink);
+  background: transparent;
+}
+
+/* ============================================================
+   THE ONE GRID
+   Head, line and foot all read `--v2-cols`, so the TOTAL column's
+   right edge is a single x from the head's running sum down to
+   the foot figure. That shared edge is what carries the block's
+   structure; there are no vertical rules anywhere.
+   ============================================================ */
+
+:global(.jf-blueprint) .head,
+:global(.jf-blueprint) .line,
+:global(.jf-blueprint) .foot {
+  display: grid;
+  grid-template-columns: var(--v2-cols);
+  column-gap: var(--v2-gap);
+}
+
+/* The structural line: 2px full ink, and one of only two in the
+   block (the other closes it above the foot total). It moved 1.5 ->
+   2px with the dividers, so the bookends are never outweighed by
+   the rules they contain. */
+/* HEADS SIT ON THE RULE, by request. `align-items: start` hung
+   DESCRIPTION, QTY, UNIT and $ / UNIT at the top of the row while
+   MATERIAL, LABOR and TOTAL — the only three columns with a second
+   line under them — reached all the way down to the border. Four
+   labels floating half a row above the line they head, three
+   sitting on it: the head read as two staggered rows rather than
+   one. Bottom-aligned, every column lands on the same 8px above
+   the 2px rule, and whether a column carries a running sum stops
+   changing where its NAME is drawn. */
+:global(.jf-blueprint) .head {
+  align-items: end;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .colHead {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 var(--v2-pad);
+}
+
+:global(.jf-blueprint) .colHeadEnd {
+  align-items: flex-end;
+}
+
+/* The drawing-annotation register, promoted to an actual header.
+   9.5px / 600 / --muted was an annotation on the columns; 11.5px /
+   700 / --ink-soft is a header OF them, which is what a block with
+   no frame needs at the top of it.
+
+   STILL MONO, and that was measured rather than assumed. The worry
+   with growing a mono face is the widest head outrunning its own
+   track. JetBrains Mono advances 0.6em, so at 11.5px with 0.08em
+   tracking a character is 7.82px:
+     DESCRIPTION  11ch = 86px  in >=150px  (narrow) — fits
+     $ / UNIT      8ch = 63px  in  90px    (narrow) — fits
+     MATERIAL      8ch = 63px  in 100px    (narrow) — fits
+   Every head clears its narrowest track with room, so there is no
+   reason to move this register to Inter caps and break the pairing
+   with the other annotation type in the block (the status flag and
+   the foot's two component labels).
+
+   Tracking comes DOWN, 0.1em -> 0.08em: letter-spacing exists to
+   keep caps legible at small sizes, and 11.5px needs less of it
+   than 9.5px did.
+
+   It must not out-shout the figures, and it does not: the entry
+   fields below are 12.5-13.5px in full --ink, so the head is both
+   smaller and lighter in colour. Caps + tracking is what marks it
+   as a label rather than a value.
+
+   The currency mark is still declared ONCE, on the rate column,
+   which is also the only column that names a unit — that pairing
+   is what makes the three amount columns unambiguously
+   line-level. */
+:global(.jf-blueprint) .colName {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-soft);
+}
+
+/* The running column total, in the column it sums. Quieter than
+   every figure below it, because it is a tally rather than an
+   answer — the block's answer is the foot. It is now also quieter
+   than its own column NAME, which reversed with this pass and is
+   correct: the name is the header, the sum is a note under it. */
+:global(.jf-blueprint) .colSum {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   THE LINE — two bands, one divider
+
+   `row-gap` is the gap INSIDE a line; the two paddings plus the
+   divider are the gap BETWEEN lines. 16px against 33.5px. Both
+   numbers moved this pass and neither moves alone — see ROW
+   HEIGHTS in the header for why 2.1x holds where 3.2x used to be
+   needed.
+   ============================================================ */
+
+:global(.jf-blueprint) .line {
+  position: relative;
+  grid-template-rows: 36px 56px;
+  row-gap: 16px;
+  align-items: center;
+  padding-top: 22px;
+  padding-bottom: 22px;
+  border-top: 2px solid var(--v2-rule-strong);
+}
+
+/* The head already drew the rule above the first line. */
+:global(.jf-blueprint) .lineFirst {
+  border-top: none;
+}
+
+/* Cell placement is explicit rather than by source order, because
+   the split band spans every track and auto-placement cannot say
+   so without reordering the markup away from the reading order. */
+:global(.jf-blueprint) .cName {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cQty {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cUnit {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cPer {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cMat {
+  grid-column: 5;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cLab {
+  grid-column: 6;
+  grid-row: 1;
+}
+
+:global(.jf-blueprint) .cTotal {
+  grid-column: 7;
+  grid-row: 1;
+  padding-right: var(--v2-pad);
+  text-align: right;
+}
+
+:global(.jf-blueprint) .cKill {
+  grid-column: 8;
+  grid-row: 1;
+  justify-self: center;
+}
+
+:global(.jf-blueprint) .cSplit {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+}
+
+/* ============================================================
+   FIELDS
+   36px, a 1.5px --hair rule at rest on a white well, going to
+   full --ink on hover and focus. The frame is 1.5px in every
+   state so colouring it can never move a glyph.
+   ============================================================ */
+
+:global(.jf-blueprint) .f {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--v2-pad);
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--v2-well);
+  border: 1.5px solid var(--v2-rule);
+  border-radius: var(--radius);
+  transition: border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .f::placeholder {
+  color: var(--muted-light);
+  font-weight: 500;
+}
+
+:global(.jf-blueprint) .f:hover {
+  border-color: var(--ink);
+}
+
+/* Focus takes the same ink frame plus a drawn outer rule — two
+   parallel lines, the house's own "this one is live" device, and
+   no colour is spent on it. */
+:global(.jf-blueprint) .f:focus {
+  outline: 1.5px solid var(--ink);
+  outline-offset: 1px;
+  border-color: var(--ink);
+}
+
+/* Estimate-sheet rule: figures are mono, right-aligned, tabular. */
+:global(.jf-blueprint) .fNum {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .fText {
+  font-size: 13.5px;
+}
+
+/* A quantity that has been PINNED, not disabled by accident: the
+   solid rule becomes dashed — the house's "pencilled, provisional"
+   weight — and the figure steps back to --muted. A FIXED line is a
+   lump sum, so it can never show "x 3". */
+:global(.jf-blueprint) .f:disabled {
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--v2-rule);
+  cursor: not-allowed;
+}
+
+:global(.jf-blueprint) .f:disabled:hover {
+  border-color: var(--v2-rule);
+}
+
+/* ── THE UNIT PICKER ─────────────────────────────────────────
+   The shared control. `.bp-sel` (wrapper, draws the caret) and
+   `.bp-sel-in` (the select) come from blueprint-global.css and own
+   the appearance reset, the caret, the border, the family, the
+   weight and the tracking. This file previously re-derived all of
+   that locally, which is the "parallel style set for an identical
+   block" decisions.md calls the main source of typography drift.
+
+   FOUR classes. blueprint-global.css publishes
+   `.jf-blueprint .bp-sel .bp-sel-in` at (0,3,0); a three-class rule
+   would only TIE it and be decided by import order, which is not a
+   thing to leave to chance across a route boundary. */
+:global(.jf-blueprint) .block .sel :global(.bp-sel-in) {
+  /* Fit, and only fit. The shared control declares no height and no
+     left inset, so a row that runs 36px controls has to say so.
+     11px: the longest option is "sq boards" / "linear ft" at 9
+     characters — 9 x (6.6 + 0.44 tracking) = 63px, plus the 6px
+     text inset and 24px of caret room = 93px, inside the 96px this
+     track narrows to. At the shared 12px it would not clear. The
+     caret sits at right:12px and is 6px wide, so 24px of reserved
+     room leaves it 6px of air. */
+  height: 36px;
+  padding: 0 24px 0 var(--v2-pad);
+  font-size: 11px;
+
+  /* The one surface override, and it is fit rather than style: the
+     shared control rests on --paper because it is normally on a
+     paper card, and the other six controls in this row are white
+     wells. A beige select among white fields reads as the disabled
+     one. Everything that makes it the shared control — caret,
+     border, radius, family, weight, tracking — is untouched. */
+  background: var(--v2-well);
+}
+
+:global(.jf-blueprint) .sel {
+  min-width: 0;
+}
+
+/* ============================================================
+   THE COMPUTED TOTAL — never a field rule, ever
+   The absence of the box is the signal that this figure is the
+   row's answer rather than one of its inputs.
+   ============================================================ */
+
+:global(.jf-blueprint) .total {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An excluded row keeps its real price and loses its claim on the
+   total. --muted, not --muted-light: this is meaningful text. */
+:global(.jf-blueprint) .totalOff {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ============================================================
+   BAND 2 — THE SPLIT
+   Legend, rail, percentages. 56px total, and it is present on
+   every line at every moment: the mix is the second thing a
+   contractor changes and it has never deserved a disclosure.
+   ============================================================ */
+
+:global(.jf-blueprint) .split {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 16px;
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .legendSide {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+:global(.jf-blueprint) .legendSideEnd {
+  justify-content: flex-end;
+}
+
+/* Empty on a good row. It is where an excluded line says so —
+   centred, directly under the entry it disqualifies. */
+:global(.jf-blueprint) .legendMid {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* The key. The same two colours carry the same two meanings in
+   the rail 4px below, so the rail needs no labels of its own. */
+:global(.jf-blueprint) .swatch {
+  display: block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+}
+
+:global(.jf-blueprint) .swatchMat {
+  background: var(--blueprint);
+}
+
+:global(.jf-blueprint) .swatchLab {
+  background: var(--sky);
+}
+
+/* Sentence-case, Inter. A label is never caps-mono in this house;
+   caps-mono is the drawing-annotation register and belongs to
+   column heads and status tags only. */
+:global(.jf-blueprint) .legendWord {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .legendAmt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one status colour in the block, on the one state that
+   changes what prints. Not a badge: no plate, no border, no fill
+   — a tag in the annotation register. */
+:global(.jf-blueprint) .flag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--warning-dark);
+}
+
+/* ── the rail ────────────────────────────────────────────────
+   A drawn track with square ends, filled at the ratio, and a
+   square ink plate sitting on the split point. No capsule, no
+   radius, no gradient, no track shadow. The 22px box around it is
+   the pointer target; the ink outline is 1.5px, a control's edge
+   rather than the block's structural 2px. */
+
+/* ── LESS WIDE, AND A DRAWN TRACK, by request ────────────────
+   Two changes, one intent: the split stops being a hairline that
+   runs the full width of a now-full-width page and becomes the
+   same GAUGE the Markup & margin card draws.
+
+   WIDTH. `--v2-rail-inset` pulls both ends in off the line's own
+   measure. The rail was edge-to-edge on a table that grew to the
+   whole page, which made a 2px rule ~1150px long — a proportion at
+   which the control read as a divider between the two legend
+   figures rather than as a thing you grab. The inset is padding on
+   the SLIDER, so `railRef.getBoundingClientRect()` still measures
+   the rail itself and the pointer math needs no offset term. `.pcts`
+   carries the identical inset, which is what keeps each percentage
+   under its own end of the rail.
+
+   THICKNESS. 2px -> 10px with a 1.5px ink outline, matching
+   bp-markup.module.css's `.track` exactly. That card and this band
+   are the same species of control — a proportion you drag — and
+   they were drawn as two different objects. A 2px rule also had
+   nowhere to put the two hues except AS the rule, so the value was
+   carried entirely by a colour change on a line thin enough to
+   alias; at 10px the fill is an area and the plate sits ON
+   something. */
+:global(.jf-blueprint) .slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  margin-top: 4px;
+  padding: 0 var(--v2-rail-inset);
+  cursor: ew-resize;
+  touch-action: none;
+  /* A drag that sweeps past the rail's ends would otherwise start
+     selecting the legend's words on either side of it. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:global(.jf-blueprint) .slider:focus-visible {
+  outline: 1.5px solid var(--ink);
+  outline-offset: 2px;
+}
+
+:global(.jf-blueprint) .rail {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  background: var(--sky);
+}
+
+:global(.jf-blueprint) .railMat {
+  display: block;
+  height: 100%;
+  border-radius: 0;
+  background: var(--blueprint);
+}
+
+/* ── WHY THE FILL AND THE PLATE EASE, AND WHEN ───────────────
+   The earlier build eased NEITHER, on the argument that easing a
+   directly manipulated value puts the fill behind the pointer and
+   reads as lag. That argument is right, and it is only right
+   DURING A DRAG. A keyboard step is not directly manipulated: an
+   arrow key moves the plate ~11px in one frame, which reads as a
+   redraw rather than as a move, and easing is the only thing that
+   makes it legible as the same object arriving somewhere new.
+
+   So both are true and the component says which is in force:
+   `.eased` is on at every moment EXCEPT the length of a pointer
+   drag. Arrows, Home/End, and a split that changes because the
+   unit price was re-typed all ease; a drag does not.
+
+   120ms is the house's short transition, the same one the fields
+   and the remove button use. It moves a geometry, never a glyph.
+
+   NOTE: the drag's own smoothness is NOT this rule's doing, and
+   never was. Two component bugs produced it and both are fixed in
+   SplitBand, not here:
+     1  GRANULARITY. The fill and the plate were drawn from the
+        ROUNDED share, so they snapped in 1% steps — ~11.5px at
+        this measure, wider than the 14px plate. They are drawn
+        from the continuous share now; see `pos` / `pct`.
+     2  LATENCY. Every pointermove committed to the page's single
+        draft object and waited for a full ten-card re-render
+        before the rail could move. The drag now holds its own
+        position and coalesces the commit to one per frame; see
+        `dragPos` / `trackTo`. */
+:global(.jf-blueprint) .slider.eased .railMat {
+  transition: width 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .slider.eased .handle {
+  transition: left 0.12s var(--ease);
+}
+
+/* The plate. It is what actually marks the split point at AA —
+   ink on white, 19:1 — so the rail's two colours never have to
+   carry the value on their own. Centred on its own position with
+   a negative margin rather than a transform, so a 0% or 100%
+   split overhangs into `--v2-rail-inset` instead of being clipped
+   — which is a second reason the rail stopped running edge to
+   edge. 14px against a 10px track, the same proportion the Markup
+   & margin gauge uses. */
+:global(.jf-blueprint) .handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  margin-left: -7px;
+  background: var(--v2-well);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  pointer-events: none;
+}
+
+/* A line with no price has no ratio to move. Inert AND visibly
+   muted — a control that silently ignores input is worse than one
+   that says it is not ready. */
+:global(.jf-blueprint) .splitOff .rail {
+  background: var(--v2-rule);
+  /* The drawn outline has to recede with the rest of it, or an
+     inert control keeps the loudest edge on the band. */
+  border-color: var(--muted-faint);
+}
+
+:global(.jf-blueprint) .splitOff .railMat {
+  background: var(--muted-faint);
+}
+
+:global(.jf-blueprint) .splitOff .handle {
+  background: var(--paper);
+  border-color: var(--muted-faint);
+}
+
+:global(.jf-blueprint) .splitOff .slider {
+  cursor: default;
+  pointer-events: none;
+}
+
+:global(.jf-blueprint) .splitOff .swatchMat,
+:global(.jf-blueprint) .splitOff .swatchLab {
+  background: var(--muted-faint);
+}
+
+:global(.jf-blueprint) .splitOff .legendAmt,
+:global(.jf-blueprint) .splitOff .legendWord,
+:global(.jf-blueprint) .splitOff .pctMat,
+:global(.jf-blueprint) .splitOff .pctLab {
+  color: var(--muted-light);
+}
+
+/* ── the two percentages ─────────────────────────────────────
+   Under the rail's own two ends. Both are --muted rather than
+   tinted: --sky is not a legible text colour on white, and the
+   swatch directly above each figure has already said which half
+   it belongs to. Alignment is the label. */
+
+:global(.jf-blueprint) .pcts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 12px;
+  margin-top: 2px;
+  /* The same inset the slider carries — this row is the rail's own
+     caption and has to end where the rail ends. */
+  padding: 0 var(--v2-rail-inset);
+}
+
+:global(.jf-blueprint) .pctMat,
+:global(.jf-blueprint) .pctLab {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   REMOVE
+   Quiet at rest but never hidden, and never smaller than a
+   comfortable target: a 16px glyph in a 32 x 36 button. The
+   glyph is a real multiplication sign, so the block carries no
+   dependency on a sibling's icon sprite.
+   ============================================================ */
+
+:global(.jf-blueprint) .kill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--muted-light);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    color 0.12s var(--ease),
+    border-color 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .kill:hover,
+:global(.jf-blueprint) .kill:focus-visible {
+  outline: none;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ============================================================
+   ADD A LINE — the next ruled line, not a button under the table
+   A dashed 1.5px rule where the solid hairlines were: the house's
+   "pencilled on the drawing" device, used as this block's own
+   provisional divider. Its label starts at the same x as
+   DESCRIPTION.
+   ============================================================ */
+
+:global(.jf-blueprint) .add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding-left: var(--v2-pad);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  /* Tier 3 — the next divider, pencilled. It tracks tier 2's weight
+     so the row it is standing in for arrives at the same thickness
+     it was promised. */
+  border-top: 2px dashed var(--muted-faint);
+  border-radius: 0;
+  cursor: pointer;
+  transition:
+    color 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+
+:global(.jf-blueprint) .addMark {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+:global(.jf-blueprint) .add:hover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+:global(.jf-blueprint) .add:focus-visible {
+  outline: 1.5px solid var(--ink);
+  outline-offset: -2px;
+  color: var(--ink);
+}
+
+/* ============================================================
+   FOOT — three figures, one grid, one arithmetic
+
+   The foot now CLOSES all three money columns, each in the column
+   it belongs to: material under MATERIAL, labor under LABOR, the
+   answer under TOTAL. The head opened those three columns with the
+   same three sums; the foot closes them. Between the two, every
+   row's own material + labor = total. The block proves itself
+   twice and never has to be taken on trust.
+
+   All three read the SAME `sums` reduction the head prints — the
+   component no longer prints the `baseTotal` prop here. Two
+   arithmetics in one row is a row that can disagree with itself,
+   and the loudest type in the block is the worst place for that.
+
+   THE HIERARCHY IN THE FOOT
+     components  10px mono caps label + 12.5px mono figure, ink-soft
+     answer      20px Inter 900 tabular, full ink, no label at all
+   The two components are in the drawing-annotation register — they
+   are working, and they are checkable. The answer is in the
+   display register: Inter 900 at -0.005em, mono banned on a large
+   amount, and no label because it sits under the word TOTAL and is
+   twice the size of anything near it.
+
+   It was 16px. 20px is the "visibly larger" step: a 25% jump reads
+   instantly next to the 12.5px figures it sits beside, and it is
+   what forced the TOTAL track from 124px to 140px (see the grid).
+   ============================================================ */
+
+:global(.jf-blueprint) .foot {
+  /* `end`, not `baseline`: the two components are two-line stacks
+     and their first baseline is a 10px label, so baseline-aligning
+     would hang the big total off a micro-label's baseline. Bottoms
+     are what should line up under a rule. */
+  align-items: end;
+  padding-top: 16px;
+  border-top: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .footNote {
+  grid-column: 1 / 5;
+  padding: 0 var(--v2-pad);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* A component of the answer. Stacked label-over-figure, right
+   aligned — the same shape as a column head, one rule lower, so
+   the foot visibly rhymes with the head it closes. */
+:global(.jf-blueprint) .footPart {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 var(--v2-pad);
+}
+
+:global(.jf-blueprint) .footMat {
+  grid-column: 5;
+}
+
+:global(.jf-blueprint) .footLab {
+  grid-column: 6;
+}
+
+:global(.jf-blueprint) .footPartName {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* --ink-soft, not --ink: these are the answer's working, and the
+   answer itself is the only full-ink figure in this row. */
+:global(.jf-blueprint) .footPartAmt {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .footAmt {
+  grid-column: 7;
+  padding-right: var(--v2-pad);
+  text-align: right;
+  white-space: nowrap;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1.15;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   TAX RATE
+   One short control, sized to its content and pinned to the start
+   of the column — it never spans the measure. Label and hint are
+   both secondary; the rate is the only ink in the line.
+   ============================================================ */
+
+:global(.jf-blueprint) .taxLine {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding-left: var(--v2-pad);
+}
+
+:global(.jf-blueprint) .taxLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .taxWrap {
+  display: block;
+  position: relative;
+  width: 84px;
+}
+
+/* Four classes, so the affix's room is reserved without fighting
+   `.f`'s own padding shorthand. */
+:global(.jf-blueprint) .block .taxWrap .f {
+  padding-right: 20px;
+}
+
+:global(.jf-blueprint) .taxSuffix {
+  position: absolute;
+  top: 0;
+  right: var(--v2-pad);
+  height: 36px;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-light);
+  pointer-events: none;
+}
+
+:global(.jf-blueprint) .taxHint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ============================================================
+   NARROW
+   Only the fixed tracks need help; DESCRIPTION is intrinsic and
+   absorbs whatever is left. The gap comes down with them —
+   shrinking the columns and leaving 12px between them would make
+   the block read looser, not tighter.
+   ============================================================ */
+
+@media (max-width: 1180px) {
+  :global(.jf-blueprint) .block {
+    /* TOTAL keeps the extra room it was given for the 20px answer:
+       "$12,345.67" is ~106px and 124px minus the 6px inset leaves
+       118px. Every other track is unchanged. */
+    --v2-cols: minmax(150px, 1fr) 66px 96px 90px 100px 100px 124px 30px;
+    --v2-gap: 9px;
+  }
+
+  :global(.jf-blueprint) .legendWord {
+    font-size: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .f,
+  :global(.jf-blueprint) .kill,
+  :global(.jf-blueprint) .add,
+  :global(.jf-blueprint) .slider.eased .railMat,
+  :global(.jf-blueprint) .slider.eased .handle {
+    transition: none;
+  }
+}

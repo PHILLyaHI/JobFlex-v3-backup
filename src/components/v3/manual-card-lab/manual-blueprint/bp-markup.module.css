@@ -1,0 +1,533 @@
+/* ============================================================
+   MANUAL PROPOSAL — BLUEPRINT / "MARKUP & MARGIN" CARD BODY
+   Companion to ./bp-markup.tsx. Sits INSIDE an existing <Card>,
+   which already draws the 2px ink frame, the 24px padding, the
+   station numeral and the title. Nothing here draws a second
+   frame around any of it.
+
+   ── SCOPING ────────────────────────────────────────────────
+   This route is deliberately NOT registered in blueprint-shell's
+   PAGE_STYLES, so there is no page-level `.bp` activation class
+   to hang :global rules from. Every rule below is this module's
+   own hashed class under the literal shell root —
+   `:global(.jf-blueprint) .cls` ⇒ (0,2,0) — which beats the
+   always-on modules':
+     · `.bp :global(button)` (0,1,1) — strips border / background
+       / cursor off every button, so the save action declares its
+       own;
+     · `.bp :global(svg.ic)` (0,2,1) — pins icons at 17px, so the
+       one icon resize here is written with THREE classes plus an
+       element to win on count.
+   Tailwind preflight runs app-wide: the button and the <h3>
+   declare their own font, size, weight, margin and background
+   rather than inheriting anything.
+
+   ── NO @keyframes ──────────────────────────────────────────
+   Lightning CSS rejects @keyframes inside a CSS module. Every
+   motion here is a transition, and none of them touches the
+   slider's POSITION — a transition on `left` or `width` turns a
+   drag into a rubber band. Keyboard steps land instantly, which
+   is the correct behaviour for a slider anyway.
+
+   ── THE SPACING LADDER, borrowed from the card module ───────
+     block → block ......... 24px
+     control → footer ...... 8px
+     column → column ....... 32px
+     panel padding ......... 16px
+   The one ratio that must survive: EXTERNAL > INTERNAL. 32
+   between the columns and 24 between the rate controls, against
+   16 inside the panel and 8 inside a control.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   - Light mode only. No .dark variants.
+   - Radius is 2px (var(--radius)) or 0. Nothing is a capsule.
+   - Shadows are hard offsets with ZERO blur, or absent.
+   - --muted (#555) is the floor for meaningful text. The warning
+     badge uses --warning-dark (4.9:1), not --warning (3.4:1),
+     because 10px caps has no contrast to spare.
+   - Local tokens are read with literal fallbacks so the file
+     still renders if it is ever mounted outside the card
+     module's `.page` (which is where --mb-* are declared).
+   ============================================================ */
+
+/* ============================================================
+   ROOT
+   ============================================================ */
+
+:global(.jf-blueprint) .wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+/* ============================================================
+   MARGIN BADGE
+   The card's one real STATUS reading, so it is the one place the
+   3-tone pattern is spent: 1.5px border in the base tone, the
+   documented soft fill, base-tone text, caps 10/800 letterspaced.
+   Tone comes from the VALUE (see marginTone in the tsx) because a
+   fixed colour would tell you nothing you cannot already read.
+   ============================================================ */
+
+:global(.jf-blueprint) .badgeRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The resting state is IDLE — neutral, no status claim. An empty
+   sheet is 0% margin, and grading that red is a false alarm. */
+:global(.jf-blueprint) .badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 9px;
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: transparent;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius, 2px);
+}
+
+:global(.jf-blueprint) .badgeOk {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+
+:global(.jf-blueprint) .badgeWarn {
+  color: var(--warning-dark);
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+
+:global(.jf-blueprint) .badgeRisk {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* ============================================================
+   THE TWO COLUMNS
+   The controls take the flexible column and the plate is capped:
+   a ledger is nine short rows and a wide one just moves the two
+   ends further apart. `align-items: start` keeps the plate its
+   own height instead of stretching to the sliders'.
+   ============================================================ */
+
+:global(.jf-blueprint) .cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(288px, 352px);
+  gap: 32px;
+  align-items: start;
+}
+
+/* ============================================================
+   LEFT — THE FOUR RATE CONTROLS
+   No boxes and no rules between them. 24px of air against 8px
+   inside one control is the whole grouping mechanism; four more
+   frames inside a framed card is the wall this build avoids.
+   ============================================================ */
+
+:global(.jf-blueprint) .rates {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .rate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .rateTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+:global(.jf-blueprint) .rateId {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* THE MARK — a square, never a dot, and one of only two hues.
+   An empty inline-flex item takes its bottom margin edge as its
+   baseline, so a baseline-aligned square sits its bottom edge ON
+   the text baseline, which is exactly how a drawn bullet reads.
+   Redundant with the label beside it, so it is not carrying
+   meaning alone and 1.4.11 does not bind it. */
+:global(.jf-blueprint) .mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 0;
+  flex: none;
+}
+
+/* Line-level: multiplies the base cost of every line. */
+:global(.jf-blueprint) .markCost {
+  background: var(--blueprint);
+}
+
+/* Sheet-level: compounds on the running subtotal. */
+:global(.jf-blueprint) .markSheet {
+  background: var(--sky);
+}
+
+:global(.jf-blueprint) .rateName {
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* The qualifier is the quiet half of the line — sentence case,
+   never caps, and small enough that it cannot compete with the
+   name it modifies. --muted is 7.4:1 on white. */
+:global(.jf-blueprint) .rateQual {
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* The figure the eye lands on. Noticeably larger than the name,
+   Inter and tabular — mono is confined to the ledger register. */
+:global(.jf-blueprint) .ratePct {
+  flex: none;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   THE SLIDER
+   A drawn gauge with a plate on it. `touch-action: none` is what
+   makes pointer capture work on touch — without it the browser
+   claims the gesture for scrolling and the drag dies on the
+   first move.
+   ============================================================ */
+
+:global(.jf-blueprint) .slider {
+  padding: 7px 0;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:global(.jf-blueprint) .slider:focus-visible {
+  outline: none;
+}
+
+/* Square ends, ink outline, status-free fill. A rounded capsule
+   is the one shape this system never draws. */
+:global(.jf-blueprint) .track {
+  position: relative;
+  height: 10px;
+  background: var(--mb-well, #f7f5f1);
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+}
+
+:global(.jf-blueprint) .fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 0;
+}
+
+/* The fills repeat the mark hues, so the two groups are stated by
+   the same device twice rather than by four decorations once. */
+:global(.jf-blueprint) .fillCost {
+  background: var(--blueprint);
+}
+
+:global(.jf-blueprint) .fillSheet {
+  background: var(--sky);
+}
+
+/* A SQUARE PLATE, not a round handle: 2px ink edge, 2px radius, a
+   hard offset with zero blur, and paper rather than white so it
+   reads as a chip lying ON the card instead of a hole in it. */
+:global(.jf-blueprint) .handle {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  background: var(--paper, #f2f0eb);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius, 2px);
+  box-shadow: 2px 2px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+  transition: box-shadow 0.14s var(--ease), background 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .slider:hover .handle,
+:global(.jf-blueprint) .sliderOn .handle {
+  background: #ffffff;
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+}
+
+/* The ring goes on the plate, not the row: focus should land where
+   the action is. An outline, not a shadow, so the no-blur rule is
+   never even in question. */
+:global(.jf-blueprint) .slider:focus-visible .handle {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+
+/* What the rate is worth. Mono, small, right under the value it
+   annotates — the drawing-annotation register, which is where
+   mono is allowed. */
+:global(.jf-blueprint) .rateAmt {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   RIGHT — THE ESTIMATE PLATE
+   A drawn plate: 2px ink, radius 2, one hard offset. No inner
+   rule under the heading — the border is the frame and 12px of
+   air is the separation.
+   ============================================================ */
+
+:global(.jf-blueprint) .panel {
+  padding: 16px;
+  background: var(--mb-card, #ffffff);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius, 2px);
+  box-shadow: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+  min-width: 0;
+}
+
+/* Caps here and on GRAND TOTAL and the badge, nowhere else. The
+   annotation register: mono, 10px, letterspaced, muted. Preflight
+   flattens h3, so size / weight / margin are all declared. */
+:global(.jf-blueprint) .panelHead {
+  margin: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:global(.jf-blueprint) .lRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 16px;
+}
+
+:global(.jf-blueprint) .lLabel {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--muted);
+  min-width: 0;
+}
+
+/* The panel's marks are 8px against the control's 10px: the same
+   symbol at the register of the row it is annotating. */
+:global(.jf-blueprint) .markSm {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  flex: none;
+}
+
+/* Small ledger figures ARE mono — that is the estimate-sheet rule.
+   The ban is on LARGE amounts (see .valueTotal). */
+:global(.jf-blueprint) .lValue {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two rules in the whole plate, and they are DIFFERENT weights on
+   purpose: a hairline closes the cost block, 2px of ink closes the
+   sheet. Same device, ranked. */
+:global(.jf-blueprint) .rowSub {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--hair, rgba(10, 10, 10, 0.12));
+}
+
+:global(.jf-blueprint) .labelSub {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .valueSub {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+:global(.jf-blueprint) .rowTotal {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .labelTotal {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* The largest figure in the card, and Inter 900 — NEVER mono. It
+   is deliberately smaller than the page's own grand total (24px)
+   so a card figure cannot outrank the sheet's. */
+:global(.jf-blueprint) .valueTotal {
+  flex: none;
+  font-family: var(--font);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   THE QUIET ACTION
+   Preflight plus `.bp button` between them strip the border, the
+   background, the font and the cursor, so all four are declared.
+   ============================================================ */
+
+:global(.jf-blueprint) .saveWrap {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+:global(.jf-blueprint) .saveBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 24px;
+  padding: 0;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+  transition: color 0.14s var(--ease), border-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .saveBtn:hover {
+  color: var(--blueprint);
+  border-bottom-color: var(--blueprint);
+}
+
+:global(.jf-blueprint) .saveBtn:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 3px;
+}
+
+/* THREE classes plus the element to beat `.bp :global(svg.ic)`
+   (0,2,1) — this is (0,3,1). Two would tie and lose on order. */
+:global(.jf-blueprint) .saveBtn :global(svg.ic) {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* A live region that is mounted empty and collapses until it has
+   something honest to say. */
+:global(.jf-blueprint) .saveNote {
+  margin: 0;
+  max-width: 44ch;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .saveNote:empty {
+  display: none;
+}
+
+/* ============================================================
+   NARROW
+   Matches the card module's own 1180px step. Below it the plate
+   stops being a column and becomes a block, capped so a nine-row
+   ledger never spreads its two ends across the full card.
+   ============================================================ */
+
+@media (max-width: 1180px) {
+  :global(.jf-blueprint) .cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  :global(.jf-blueprint) .panel {
+    max-width: 480px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .handle,
+  :global(.jf-blueprint) .slider:hover .handle,
+  :global(.jf-blueprint) .sliderOn .handle,
+  :global(.jf-blueprint) .saveBtn,
+  :global(.jf-blueprint) .saveBtn:hover {
+    transition: none;
+  }
+}

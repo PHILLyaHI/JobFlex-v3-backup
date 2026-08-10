@@ -1,0 +1,134 @@
+/* ============================================================
+   LINE-ITEM LAB — /dashboard/manual-lines
+
+   Three competing designs of card 03 (the priced work), stacked
+   and driven by ONE piece of state. Typing in any block changes
+   all three, because the only honest comparison is of the same
+   content at the same moment.
+
+   THIS FILE OWNS ALMOST NOTHING. Each variant ships its own
+   module and draws itself; everything here is the frame around
+   them — the card each one sits in, its label, and the note under
+   it. If a rule here starts describing a line item, it is in the
+   wrong file.
+
+   The frame is deliberately identical for all three, in the house
+   card vocabulary (2px ink, 3px 3px 0, white stock, 24px padding,
+   32px between): a variant must win on its own merits, not
+   because it was given a nicer box.
+
+   ── SCOPING ────────────────────────────────────────────────
+   Not registered in blueprint-shell's PAGE_STYLES, so every rule
+   is a module class under the literal shell root —
+   `:global(.jf-blueprint) .cls` ⇒ (0,2,0), which beats the
+   always-on modules' `.bp :global(button)` (0,1,1).
+
+   No @keyframes: Lightning CSS rejects them inside a CSS module.
+   ============================================================ */
+
+:global(.jf-blueprint) .page {
+  --ll-card: #ffffff;
+  --ll-lift: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .head {
+  margin-bottom: 32px;
+}
+
+:global(.jf-blueprint) .meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-bottom: 6px;
+}
+
+:global(.jf-blueprint) .metaMono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+/* The live figure, so it is obvious the three blocks share state:
+   edit any of them and this moves. */
+:global(.jf-blueprint) .metaTotal {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .stack {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+:global(.jf-blueprint) .card {
+  background: var(--ll-card);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--ll-lift);
+  padding: 24px;
+  scroll-margin-top: calc(var(--topbar-h) + 20px);
+}
+
+/* Number + name + one line of thesis. The letter is the ordering
+   device, at the same 18px the builder's card heads use. */
+:global(.jf-blueprint) .cardHead {
+  display: flex;
+  align-items: baseline;
+  gap: 11px;
+  margin-bottom: 6px;
+}
+
+:global(.jf-blueprint) .num {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .cardTitle {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+/* The one sentence of prose per block. It exists because this is
+   a lab and the blocks have to be told apart by what they CLAIM,
+   not only by how they look — the builder itself carries no such
+   text and must not gain any. */
+:global(.jf-blueprint) .thesis {
+  max-width: 92ch;
+  margin-bottom: 24px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .foot {
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1.5px solid var(--hair, rgba(10, 10, 10, 0.12));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--muted);
+  max-width: 92ch;
+}
