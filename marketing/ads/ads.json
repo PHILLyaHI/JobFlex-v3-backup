@@ -1,0 +1,241 @@
+{
+  "campaign": "JobFlex — contractor acquisition",
+  "platform": "Meta (Facebook + Instagram) — Feed 1:1 + Reels 9:16",
+  "audience": "Owner-operators of 1–10 person contractor shops (roofing, fencing, remodel, general trade), US, 28–58",
+  "offer": "14-day free trial, no card required, plans from $29/mo",
+  "voice_rules": [
+    "Plain, confident, never breathless. No marketing buzzwords.",
+    "Never say 'AI'. The feature is 'Smart Proposal'.",
+    "Specific, slightly-imperfect numbers over round marketing numbers.",
+    "No hi-vis yellow, hardhat icons, hammer mascots, or orange CTAs.",
+    "No purple gradients, sparkles, glassmorphism, mascots, or pastels."
+  ],
+  "ads": [
+    {
+      "id": "01",
+      "slug": "first-quote-wins",
+      "angle": "Pain point — speed to quote",
+      "hook_archetype": "Direct statement",
+      "kicker": "SPEED TO QUOTE",
+      "headline_visual": "THE FIRST QUOTE USUALLY WINS",
+      "subline": "Build it in the truck. Send it before you pull out of the driveway.",
+      "stat_value": "4:12 PM",
+      "stat_label": "QUOTE SENT — 9 MIN AFTER WALKTHROUGH",
+      "template": "stat-stamp",
+      "primary_text": "The first contractor to send the quote usually wins the job. JobFlex builds it on your phone before you leave the driveway.",
+      "headline": "Quote It Before You Leave",
+      "description": "Free 14 days. No card.",
+      "cta": "Start free trial",
+      "video_prompt": "Handheld iPhone-style vertical video, shot from the passenger seat of a work pickup truck parked in a suburban driveway. A contractor in his 40s in a plain navy work shirt sits in the driver's seat, thumb-typing quickly on his phone, then taps once and exhales. Natural late-afternoon light through the windshield, dust on the dashboard, a tape measure and clipboard on the passenger seat. Documentary realism, slight handheld shake, no music. Ambient audio: truck cab tone, a single soft notification chime when he taps send. No text overlays, no logos, no hi-vis clothing, no hard hats.",
+      "video_caption_beats": [
+        "0.0-2.5s  THE FIRST QUOTE USUALLY WINS",
+        "2.5-5.5s  Built in the truck. Sent in 9 minutes.",
+        "5.5-8.0s  JOBFLEX — Start free, no card"
+      ]
+    },
+    {
+      "id": "02",
+      "slug": "your-quote-vs-theirs",
+      "angle": "Comparison — before/after split",
+      "hook_archetype": "Result-first / visual contrast",
+      "kicker": "SAME JOB. SAME PRICE.",
+      "headline_visual": "ONE OF THESE GOT SIGNED",
+      "subline": "Homeowners pick the contractor who looks like they have done this before.",
+      "template": "split-compare",
+      "left_label": "THEIR ESTIMATE",
+      "right_label": "YOUR PROPOSAL",
+      "primary_text": "Same job. Same price. One of these got signed. Homeowners pick the contractor who looks like they've done it before.",
+      "headline": "Look Like The Pro You Are",
+      "description": "Proposals in 4 minutes",
+      "cta": "Start free trial",
+      "video_prompt": "Vertical video, locked-off overhead shot of a plain kitchen table in warm afternoon light. On the left, a crumpled yellow legal pad with a handwritten estimate, a coffee ring stain, and a chewed pen. On the right, a clean modern smartphone displaying a crisp structured document. A homeowner's hands enter frame, glance at the legal pad, then pick up the phone and hold it. Documentary realism, shallow depth of field, no music, ambient kitchen room tone. No text overlays, no logos.",
+      "video_caption_beats": [
+        "0.0-2.5s  SAME JOB. SAME PRICE.",
+        "2.5-5.5s  One of these got signed.",
+        "5.5-8.0s  JOBFLEX — Proposals in 4 minutes"
+      ]
+    },
+    {
+      "id": "03",
+      "slug": "price-comparison",
+      "angle": "Comparison — price against category leaders",
+      "hook_archetype": "Number stack / pattern interrupt",
+      "kicker": "WHAT YOU ACTUALLY PAY",
+      "headline_visual": "SAME WORK. LESS MONEY.",
+      "subline": "Scheduling, quoting, invoicing and payments. Priced for a shop your size.",
+      "template": "price-ladder",
+      "price_rows": [
+        { "label": "ENTERPRISE FIELD SOFTWARE", "value": "QUOTE ONLY", "muted": true },
+        { "label": "CATEGORY LEADER — MID TIER", "value": "$149/MO", "muted": true },
+        { "label": "JOBFLEX", "value": "$29/MO", "muted": false }
+      ],
+      "primary_text": "Mid-tier field software runs $149/mo. Enterprise won't show a price. JobFlex is $29 — same quoting, scheduling, invoicing.",
+      "headline": "Same Work. $120 Less/Mo.",
+      "description": "Plans start at $29/mo",
+      "cta": "See pricing",
+      "compliance_note": "Competitor pricing is generalized on purpose (no brand named in-creative) to stay clear of Meta's comparative-claims policy. Verify the $149 tier is still current before launch.",
+      "video_prompt": "Vertical video, close-up of a contractor's hands at a cluttered home-office desk at night, single desk lamp, going through a stack of paper software invoices and subscription statements, pushing them aside one by one with visible frustration, then stopping and looking at a laptop screen. Cool desk lamp light against a dark room. Documentary realism, handheld, no music, ambient audio of paper shuffling and a quiet house. No text overlays, no readable brand names, no logos.",
+      "video_caption_beats": [
+        "0.0-2.5s  $149/mo. $299/mo. For a 4-man shop?",
+        "2.5-5.5s  JobFlex starts at $29.",
+        "5.5-8.0s  JOBFLEX — Same work. Less money."
+      ]
+    },
+    {
+      "id": "04",
+      "slug": "signed-on-their-phone",
+      "angle": "Product demo — UI does the talking",
+      "hook_archetype": "Show the thing",
+      "kicker": "THE WHOLE PROPOSAL SCREEN",
+      "headline_visual": "THEY SIGN IT ON THEIR PHONE",
+      "subline": "Line items, live material prices, signature, deposit. One screen, one link.",
+      "template": "device-demo",
+      "primary_text": "This is the entire proposal screen. Line items, materials, signature, deposit. Your customer opens the link and signs.",
+      "headline": "Signed On Their Phone",
+      "description": "Deposit collected too",
+      "cta": "See how it works",
+      "video_prompt": "Vertical screen-recording-style video: a smartphone held in one hand in natural daylight on a residential porch. The other hand scrolls slowly down a clean structured document on screen, then a finger signs a signature line with a fingertip. Shot over the shoulder, slightly handheld, realistic screen glare. Documentary realism, no music, ambient outdoor audio with distant birds. No text overlays, no logos.",
+      "video_caption_beats": [
+        "0.0-2.5s  This is the whole proposal screen.",
+        "2.5-5.5s  They open the link. They sign. Deposit lands.",
+        "5.5-8.0s  JOBFLEX — See it in 2 minutes"
+      ]
+    },
+    {
+      "id": "05",
+      "slug": "fence-from-satellite",
+      "angle": "Curiosity — unique capability",
+      "hook_archetype": "Curiosity gap",
+      "kicker": "3D FENCE STUDIO",
+      "headline_visual": "MEASURE THE FENCE FROM YOUR TRUCK",
+      "subline": "Drop the line on the satellite view. It pulls property lines, counts panels, prices gates.",
+      "stat_value": "212 LF",
+      "stat_label": "PERIMETER — 27 PANELS, 2 GATES",
+      "template": "aerial-overlay",
+      "primary_text": "Drop a line on the satellite view. JobFlex pulls property lines, counts panels, prices gates. Fence quote in six minutes.",
+      "headline": "Measure Fence By Satellite",
+      "description": "3D Fence Studio",
+      "cta": "Try Fence Studio",
+      "video_prompt": "Vertical video, slow aerial drone descent over a suburban backyard with a wooden privacy fence running along the property boundary, late golden-hour light, long shadows across the grass. Smooth controlled descent, then a slow push along the fence line. Cinematic but restrained, realistic drone footage. No music, ambient outdoor audio with faint wind. No text overlays, no graphics, no logos, no people.",
+      "video_caption_beats": [
+        "0.0-2.5s  You don't need to walk the fence line.",
+        "2.5-5.5s  212 linear feet. 27 panels. 2 gates. Priced.",
+        "5.5-8.0s  JOBFLEX — 3D Fence Studio"
+      ]
+    },
+    {
+      "id": "06",
+      "slug": "real-material-prices",
+      "angle": "Pain point — margin leak",
+      "hook_archetype": "Contrarian reframe",
+      "kicker": "MARGIN",
+      "headline_visual": "YOU DIDN'T LOSE THE JOB. YOU LOST THE MARGIN.",
+      "subline": "Guessing lumber costs more than losing bids. JobFlex prices materials live.",
+      "template": "line-items",
+      "line_items": [
+        { "sku": "PT 4×4×8 POST", "qty": "27", "price": "$14.38", "total": "$388.26" },
+        { "sku": "CEDAR PICKET 1×6×6", "qty": "318", "price": "$4.62", "total": "$1,469.16" },
+        { "sku": "GATE HARDWARE KIT", "qty": "2", "price": "$63.90", "total": "$127.80" },
+        { "sku": "CONCRETE 50LB", "qty": "27", "price": "$7.85", "total": "$211.95" }
+      ],
+      "primary_text": "Guessing lumber prices costs more than losing bids. JobFlex prices every material live and links to the supplier.",
+      "headline": "Real Prices. Real Margin.",
+      "description": "Live material pricing",
+      "cta": "Start free trial",
+      "video_prompt": "Vertical video, close-up handheld shot inside a lumber yard aisle, stacks of dimensional lumber and cedar pickets. A contractor's weathered hand runs along the edge of a board, then pulls one out and checks the printed price tag on the rack, pausing. Overcast natural daylight, realistic dust in the air. Documentary realism, no music, ambient warehouse audio with a distant forklift. No text overlays, no readable store branding, no logos.",
+      "video_caption_beats": [
+        "0.0-2.5s  Lumber moved again this week.",
+        "2.5-5.5s  Your quote from Tuesday is already wrong.",
+        "5.5-8.0s  JOBFLEX — Live material pricing"
+      ]
+    },
+    {
+      "id": "07",
+      "slug": "three-hour-estimate",
+      "angle": "Contrarian — stop doing X",
+      "hook_archetype": "Stop doing X",
+      "kicker": "UNPAID HOURS",
+      "headline_visual": "STOP GIVING AWAY 3-HOUR ESTIMATES",
+      "subline": "Drive out. Measure. Drive back. Rebuild it in a spreadsheet. Email it Thursday.",
+      "stat_value": "3.2 HRS",
+      "stat_label": "AVERAGE UNPAID TIME PER ESTIMATE",
+      "template": "stat-stamp",
+      "primary_text": "Drive out, measure, drive back, rebuild it in a spreadsheet, email it Thursday. Three unpaid hours per lead you may lose.",
+      "headline": "Estimates In 4 Min, Not 3 Hrs",
+      "description": "Free for 14 days",
+      "cta": "Start free trial",
+      "video_prompt": "Vertical video, a contractor sitting alone in a parked truck at dusk with a laptop balanced on the steering wheel, typing slowly and squinting at the screen, visibly tired. Blue evening light outside, warm laptop glow on his face, empty coffee cup on the dash. Documentary realism, handheld, static composition. No music, ambient audio of a quiet street and occasional distant traffic. No text overlays, no logos, no hi-vis clothing.",
+      "video_caption_beats": [
+        "0.0-2.5s  Third estimate this week. Still not paid for one.",
+        "2.5-5.5s  3.2 unpaid hours each.",
+        "5.5-8.0s  JOBFLEX — Estimates in 4 minutes"
+      ]
+    },
+    {
+      "id": "08",
+      "slug": "not-forty-trucks",
+      "angle": "Identity — built for your size",
+      "hook_archetype": "Identity call-out",
+      "kicker": "WHO THIS IS FOR",
+      "headline_visual": "BUILT FOR SHOPS WITH 1–10 PEOPLE",
+      "subline": "You are not running forty trucks. You should not need an onboarding call.",
+      "template": "manifest",
+      "manifest_yes": ["You and a crew", "Quoting from the truck", "Sign up and quote today"],
+      "manifest_no": ["40-truck fleets", "Mandatory demo calls", "Annual contracts"],
+      "primary_text": "You're not running forty trucks. You shouldn't need an implementation consultant. Sign up, quote a job the same afternoon.",
+      "headline": "Not Built For 40 Trucks",
+      "description": "For 1–10 person shops",
+      "cta": "Start free trial",
+      "video_prompt": "Vertical video, wide static shot of a single work pickup truck with a ladder rack parked in a modest residential driveway in early morning light. One contractor loads a toolbag into the bed, closes the tailgate, and pauses to check his phone. Quiet suburban street, realistic natural light. Documentary realism, no music, ambient morning audio with birds and a distant car. No text overlays, no company signage, no logos, no hard hats.",
+      "video_caption_beats": [
+        "0.0-2.5s  One truck. Maybe three guys.",
+        "2.5-5.5s  You don't need enterprise software.",
+        "5.5-8.0s  JOBFLEX — Built for shops your size"
+      ]
+    },
+    {
+      "id": "09",
+      "slug": "paid-before-you-leave",
+      "angle": "Outcome — cash flow",
+      "hook_archetype": "Result-first",
+      "kicker": "CASH FLOW",
+      "headline_visual": "GET PAID BEFORE YOU PACK UP",
+      "subline": "Card, ACH or deposit on signature. The invoice goes out when the job closes.",
+      "stat_value": "0 DAYS",
+      "stat_label": "TIME SPENT CHASING THE CHECK",
+      "template": "stat-stamp",
+      "primary_text": "Card, ACH, or a deposit on signature. The invoice goes out the moment the job closes — not whenever you get around to it.",
+      "headline": "Get Paid Before You Leave",
+      "description": "Card, ACH, deposits",
+      "cta": "Start free trial",
+      "video_prompt": "Vertical video, close-up of a homeowner's hands tapping a credit card against a smartphone held by a contractor, on a residential front porch in warm afternoon light. Both people are visible only from the chest down. A brief natural pause, then the contractor lowers the phone. Documentary realism, shallow depth of field, handheld. Ambient porch audio, a single soft confirmation tone. No text overlays, no logos, no readable card details.",
+      "video_caption_beats": [
+        "0.0-2.5s  Job's done. Now you wait 30 days?",
+        "2.5-5.5s  Or they pay on the porch.",
+        "5.5-8.0s  JOBFLEX — Card, ACH, deposits"
+      ]
+    },
+    {
+      "id": "10",
+      "slug": "get-saturday-back",
+      "angle": "Emotional — time cost",
+      "hook_archetype": "Question / emotional",
+      "kicker": "THE REAL COST",
+      "headline_visual": "SATURDAY IS NOT AN ADMIN DAY",
+      "subline": "Quotes, invoices and scheduling ran your weekend. They should run themselves.",
+      "stat_value": "SAT",
+      "stat_label": "RECLAIMED — PAPERWORK RUNS ITSELF",
+      "template": "stat-stamp",
+      "primary_text": "Invoicing, quoting and scheduling ate another Saturday. JobFlex runs them while you're on the job. Take the weekend back.",
+      "headline": "Get Your Saturday Back",
+      "description": "Admin runs itself",
+      "cta": "Start free trial",
+      "video_prompt": "Vertical video, a contractor in a plain t-shirt sitting at a kitchen table on a bright Saturday morning surrounded by paperwork and a laptop, while out of focus in the background through a doorway two kids play in a living room. He looks up toward them, then back down at the paperwork. Warm natural window light, home interior. Documentary realism, static handheld shot, shallow depth of field. No music, ambient home audio with faint children's voices. No text overlays, no logos.",
+      "video_caption_beats": [
+        "0.0-2.5s  Saturday. Again.",
+        "2.5-5.5s  Quotes, invoices, scheduling. All of it.",
+        "5.5-8.0s  JOBFLEX — Take the weekend back"
+      ]
+    }
+  ]
+}

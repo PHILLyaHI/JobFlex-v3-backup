@@ -1,0 +1,172 @@
+[
+  {
+    "id": "01",
+    "slug": "first-quote-wins",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\01-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\01-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\01-end.png"
+  },
+  {
+    "id": "02",
+    "slug": "your-quote-vs-theirs",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\02-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\02-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\02-end.png"
+  },
+  {
+    "id": "03",
+    "slug": "price-comparison",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\03-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\03-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\03-end.png"
+  },
+  {
+    "id": "04",
+    "slug": "signed-on-their-phone",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\04-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\04-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\04-end.png"
+  },
+  {
+    "id": "05",
+    "slug": "fence-from-satellite",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\05-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\05-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\05-end.png"
+  },
+  {
+    "id": "06",
+    "slug": "real-material-prices",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\06-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\06-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\06-end.png"
+  },
+  {
+    "id": "07",
+    "slug": "three-hour-estimate",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\07-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\07-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\07-end.png"
+  },
+  {
+    "id": "08",
+    "slug": "not-forty-trucks",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\08-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\08-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\08-end.png"
+  },
+  {
+    "id": "09",
+    "slug": "paid-before-you-leave",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\09-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\09-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\09-end.png"
+  },
+  {
+    "id": "10",
+    "slug": "get-saturday-back",
+    "caps": [
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\10-cap1.png",
+        "from": 0,
+        "to": 2.5
+      },
+      {
+        "file": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\10-cap2.png",
+        "from": 2.5,
+        "to": 5.5
+      }
+    ],
+    "end": "c:\\joblfex-v3\\marketing\\ads\\video\\_overlays\\10-end.png"
+  }
+]
