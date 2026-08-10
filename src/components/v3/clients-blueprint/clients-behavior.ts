@@ -21,6 +21,22 @@ export type ClientsContentOptions = {
   /** The org's real client book, read server-side. Omit to fall back to the
    *  donor fixture (the standalone mock route has no session to read from). */
   entries?: Client[];
+  /** Next's client-side router push, handed down from clients-content.tsx.
+   *
+   *  This page opened the client record with `window.location.assign()`, which
+   *  is a HARD document load, and the destination is a blueprint page whose
+   *  entrance cascade is armed from a LAYOUT EFFECT (see
+   *  blueprint-shell/use-blueprint-content.ts). That timing only beats the
+   *  paint on a CLIENT-SIDE navigation — React commits and the effect runs in
+   *  the same frame. On a hard load the server HTML paints in full long before
+   *  hydration, so the record appeared finished, then dropped to opacity 0 and
+   *  replayed its entrance: the "it shows one version, then the real one"
+   *  double take. A hard load also tears the shell down and rebuilds the
+   *  sidebar, which is the flicker the shared shell exists to prevent.
+   *
+   *  Optional: the standalone mock route mounts this module with no router, and
+   *  falls back to the assign() below. */
+  navigate?: (href: string) => void;
 };
 
 /** Server actions reject with an Error whose message is written for the user
@@ -261,6 +277,30 @@ export function initClientsContent(
       (page >= pages ? " disabled" : "") +
       ' aria-label="Next page"><svg class="ic rot-r"><use href="#i-chev"/></svg></button>';
   }
+  /** Where a client row opens. ONE definition, because the list has two doors
+   *  into the record — the row's arrow and the row menu's "Open" — and two
+   *  string literals is how they drift apart.
+   *
+   *  The destination is now the blueprint record at /dashboard/client-detail,
+   *  not the classic (dashboard)/dashboard/clients/[id] page. That route has no
+   *  [id] segment yet and renders a fixture regardless of what it is handed, so
+   *  the id travels as a query param: the link stays addressable and whoever
+   *  wires the record to the database inherits the id already in the URL,
+   *  rather than having to re-plumb both call sites. */
+  function recordHref(id: string) {
+    return "/dashboard/client-detail?client=" + encodeURIComponent(id);
+  }
+
+  /** ONE door out of this page, for the same reason recordHref is one string:
+   *  three call sites (arrow, row menu, whole-row click) that must all navigate
+   *  the same WAY, not just to the same place. See `navigate` on
+   *  ClientsContentOptions for why the way matters. */
+  function openRecord(id: string) {
+    const href = recordHref(id);
+    if (options.navigate) options.navigate(href);
+    else window.location.assign(href);
+  }
+
   /** One row's markup. Kept separate from renderTable so a single edited client
    *  can be patched in place: rebuilding the whole tbody would destroy the row
    *  the user just acted on, steal focus and replay every entrance inside it. */
@@ -304,8 +344,7 @@ export function initClientsContent(
       '<td><span class="pt-mono">' +
       esc(c.updated) +
       "</span></td>" +
-      // The arrow is a REAL link to the client's record — the classic list's
-      // destination, still served by (dashboard)/dashboard/clients/[id]. The
+      // The arrow is a REAL link to the client's record — see recordHref. The
       // dots open the row menu.
       '<td class="num"><span class="pt-acts">' +
       '<button class="pt-open" type="button" data-menu="' +
@@ -313,8 +352,8 @@ export function initClientsContent(
       '" aria-haspopup="menu" aria-label="Actions for ' +
       esc(c.name) +
       '"><svg class="ic"><use href="#i-dots"/></svg></button>' +
-      '<a class="pt-open" href="/dashboard/clients/' +
-      encodeURIComponent(c.id) +
+      '<a class="pt-open" href="' +
+      esc(recordHref(c.id)) +
       '" aria-label="Open ' +
       esc(c.name) +
       '"><svg class="ic"><use href="#i-arrow"/></svg></a>' +
@@ -763,13 +802,49 @@ export function initClientsContent(
         closeMenu();
         if (!c) return;
         if (act === "open") {
-          window.location.assign("/dashboard/clients/" + encodeURIComponent(c.id));
+          openRecord(c.id);
         } else if (act === "edit") {
           openDlg(c);
         } else if (act === "mail" && c.email) {
           window.location.href = "mailto:" + encodeURIComponent(c.email);
         }
         return;
+      }
+      // A plain left-click on the arrow is claimed here so it goes through
+      // openRecord like the other two doors. The element stays a real <a> with
+      // a real href — that is what keeps middle-click, ⌘/ctrl-click and "copy
+      // link address" working, and those paths are deliberately NOT intercepted
+      // below: a new tab IS a hard load, correctly.
+      const ev = e as MouseEvent;
+      const plainClick =
+        ev.button === 0 && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey;
+      const arrow = target.closest<HTMLElement>("#clientTableBody a.pt-open");
+      if (arrow && plainClick) {
+        const id = arrow.closest<HTMLElement>(".prow")?.dataset.id;
+        if (id) {
+          e.preventDefault();
+          closeMenu();
+          openRecord(id);
+          return;
+        }
+      }
+      // The WHOLE ROW is a door into the record, not just the 15px arrow at the
+      // far right. The row already lifts to --paper-deep on hover, so it has
+      // been advertising itself as a target since the port; a row that looks
+      // clickable and is not is worse than one that looks inert.
+      //
+      // Excluded: anything that already owns its click (the dots trigger, the
+      // arrow anchor), and modified / non-primary clicks — ctrl, meta, shift and
+      // middle-click belong to the browser, and swallowing them here would
+      // break "open in a new tab" on the arrow sitting inside the same row.
+      const row = target.closest<HTMLElement>("#clientTableBody .prow");
+      if (row && !target.closest("a, button") && plainClick) {
+        const id = row.dataset.id;
+        if (id) {
+          closeMenu();
+          openRecord(id);
+          return;
+        }
       }
       if (!target.closest(".pmenu")) closeMenu();
     });

@@ -1,0 +1,1048 @@
+/* ============================================================
+   SUBSCRIPTION — BLUEPRINT
+   /dashboard/subscription-blueprint
+
+   WHAT THIS IS
+   A verbatim port of the approved single-file mockup
+   "jobflex-subscription-blueprint (8).html". Not a redesign: every
+   declaration below is the source's, in the source's order. Duplicate
+   selectors are DELIBERATE — the "MOTION SYSTEM — BALANCED" block at
+   the foot re-declares .dd-menu, .btn .ic and .day on purpose and wins
+   by source order. Do not merge, sort, dedupe or reflow anything here.
+
+   /dashboard/subscription (the live surface) is untouched. This is a
+   second route standing beside it until the owner picks one — the same
+   standing convention /dashboard/manual-blueprint records.
+
+   ── SCOPING ────────────────────────────────────────────────
+   A CSS MODULE, unlike the two marketing ports that shipped alongside
+   it: this page mounts inside blueprint-shell like every other
+   dashboard surface and contains no `[class^=]` attribute-prefix
+   selector, so hashing breaks nothing here.
+
+   Every rule is this module's own hashed class under the literal shell
+   root — `:global(.jf-blueprint) .cls` ⇒ (0,2,0) — the pattern
+   manual-card-lab/manual-blueprint/manual-blueprint.module.css
+   established. Hashing is also what keeps this page ISOLATED: the
+   always-on dashboard + proposals modules publish the same donor class
+   names globally (`.bp :global(.card)`, `.bp :global(.kpi)`,
+   `.bp :global(.banner)` …), and because nothing here carries a literal
+   `card` / `kpi` / `banner` class those rules can never reach it. The
+   one literal class the markup does carry is `rv` — see below.
+
+   This route is deliberately NOT registered in blueprint-shell's
+   PAGE_STYLES (a port must not edit shell files), so there is no
+   page-level `.bp` activation class to hang :global rules from.
+
+   ── TOKENS ─────────────────────────────────────────────────
+   The source's `:root` block is re-declared on
+   `.jf-blueprint[data-page="subscription-blueprint"]` — the shell root,
+   gated on the key blueprint-shell's pageKey() writes for this route.
+   It shadows the app's tokens inside this subtree and leaks nothing
+   outward; globals.css is untouched. Two adaptations, both mandated:
+     · --sidebar-w / --topbar-h go with the chrome they measured;
+     · --font / --font-mono resolve through the root layout's next/font
+       variables (same families), and both Google-CDN <link>s are gone.
+   The stack ORDER is the source's — Inter first here, unlike the two
+   marketing pages, which lead with Helvetica Neue. That difference is
+   per-page and deliberate; it is not normalised.
+
+   NOTE, unfixed: the source uses `var(--ease-out)` in `.us-fill` but
+   never declares it, so the usage bars do not animate when the mockup
+   is opened standalone. Ported verbatim. In the app the token resolves
+   through globals.css `:root`, so the bars DO animate here — which is
+   plainly the authored intent (an IntersectionObserver exists for no
+   other purpose). Flagged rather than "fixed": declaring a value would
+   be inventing one.
+
+   ── WHAT WAS DISCARDED, AND WHO SUPPLIES IT NOW ────────────
+   The mockup carries the whole app shell. The shell already exists in
+   this repo, so every chrome rule is dropped rather than forked; each
+   drop is recorded in place as a `[chrome / shell-supplied — dropped]`
+   comment so this file stays diffable against the source. Dropped:
+     · .layout, .sb / .sb-*, .main / .main::before, .topbar / .topbar-*,
+       .nav-burger (+ its .nav-backdrop partner, an element created only
+       by the discarded drawer() script) — supplied by
+       blueprint-shell/sidebar.tsx, topbar.tsx and blueprint.module.css;
+     · html/body and the body declarations — carried verbatim by `.bp`
+       on the shell root, which is this page's scroll host;
+     · .content — the shell's own element; its rule there is
+       byte-identical to the source's;
+     · .rv / .rv-in / .rv-cell / .rv-cell.rv-in — published
+       byte-identically by the always-on dashboard module as
+       `.bp :global(.rv)`. The markup keeps the LITERAL `rv` class and
+       draws on that one definition; porting a second, hashed copy is
+       exactly the "two competing definitions" trap.
+   Kept even though this page never uses them: .search*, .icon-btn,
+   .bell-dot, and the whole dashboard-donor block (.dd*, .ch*, .act-*,
+   .day, .week-strip, .job-*, .sched-*, .stage-*, .lead-*). They are in
+   the source, they are not on the brief's discard list, and hashed
+   classes that match no element cost nothing.
+
+   ── @keyframes ─────────────────────────────────────────────
+   leadLand / daySel2 / press2 also exist GLOBALLY, in
+   dashboard-blueprint/blueprint-global.css, which the shell loads. The
+   copies below sit inside a module, so their names are hashed and the
+   two sets cannot collide; `.pressed` and `.day-pressed` here are hashed
+   too and drive the hashed copies. The shell's press feedback on its own
+   controls keeps using the global set, untouched.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   - Light mode only. No .dark variants.
+   - All eight @media queries are the source's, unchanged, including the
+     two whose contents were entirely (1080) or almost entirely (680)
+     chrome. They are max-width / desktop-down by authorship; CLAUDE.md's
+     mobile-first rule governs new mobile work, not a desktop port.
+   - The prefers-reduced-motion guard is the source's and is load-bearing
+     (DESIGN.md). Its JS half lives in subscription-behavior.ts.
+   - CSS comments, including the Russian section markers, are the
+     source's. Nothing is deleted.
+   ============================================================ */
+
+
+/* ============================================================
+   DESIGN TOKENS — JobFlex Blueprint System
+   ============================================================ */
+:global(.jf-blueprint[data-page="subscription-blueprint"]) {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Три тона: основной / тёмный / soft-заливка */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger:  #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0,0,0,0.035);
+  --hair: rgba(10,10,10,0.12);
+  --hair-soft: rgba(10,10,10,0.08);
+
+  --chart-minor: rgba(24,84,160,0.08);
+  --chart-major: rgba(10,10,10,0.12);
+  --chart-fill: rgba(24,84,160,0.07);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10,10,10,0.06);
+
+  --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+/* ============================================================
+   RESET / BASE
+   ============================================================ */
+:global(.jf-blueprint) * { margin: 0; padding: 0; box-sizing: border-box; }
+/* [chrome / shell-supplied — dropped in the port: html, body, body] */
+:global(.jf-blueprint) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:global(.jf-blueprint) a { text-decoration: none; color: inherit; }
+:global(.jf-blueprint) ul,
+:global(.jf-blueprint) ol { list-style: none; }
+:global(.jf-blueprint) input,
+:global(.jf-blueprint) select { font-family: inherit; }
+:global(.jf-blueprint) svg.ic { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+:global(.jf-blueprint) ::selection { background: var(--blueprint); color: #fff; }
+
+/* ── ENVIRONMENT RESTORE (not in the source) ─────────────────────
+   The source ran against virgin browser defaults. Inside the app Tailwind
+   preflight is live and resets h1–h6 to `font-size: inherit; font-weight:
+   inherit`. Three card heads on this page use a BARE <h2> — "Usage",
+   "Billing history", "Refer & earn" — with no .card-title class, so under
+   preflight they would render at body size and weight 400 instead of the UA's
+   1.5em/bold the source is drawn against. Restore exactly the two declarations
+   preflight took, scoped to this page's card heads and nothing else.
+   Same device and same reasoning as the "Environment restore" block on `.bp`
+   in dashboard-blueprint/blueprint.module.css. */
+:global(.jf-blueprint) .card-head h2 { font-size: 1.5em; font-weight: bold; }
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+
+/* [chrome / shell-supplied — dropped in the port: .layout] */
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+
+
+
+
+
+/* [chrome / shell-supplied — dropped in the port: .sb, .sb-head, .sb-mark, .sb-head-txt, .sb-head-name, .sb-head-sub, .sb-scroll, .sb-scroll::-webkit-scrollbar, .sb-scroll::-webkit-scrollbar-track, .sb-scroll::-webkit-scrollbar-thumb, .sb-scroll::-webkit-scrollbar-thumb:hover, .sb-sec-label, .sb-link, .sb-link .ic, .sb-link:hover:not(.active), .sb-link:hover, .sb-link.active, .sb-link.active .ic, .sb-indicator, .sb-indicator.ready, .sb-foot, .sb-foot-acc, .sb-foot-acc:hover, .sb-foot-av, .sb-foot-txt, .sb-foot-name, .sb-foot-role, .sb-foot-ic, .sb-foot-ic:hover, .sb-foot-ic:active, .sb-foot-ic .ic] */
+/* ============================================================
+   MAIN
+   ============================================================ */
+
+/* [chrome / shell-supplied — dropped in the port: .main, .main::before, .main::-webkit-scrollbar, .main::-webkit-scrollbar-track, .main::-webkit-scrollbar-thumb, .main::-webkit-scrollbar-thumb:hover] */
+/* ============================================================
+   TOPBAR
+   ============================================================ */
+/* [chrome / shell-supplied — dropped in the port: .topbar] */
+:global(.jf-blueprint) .search {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; max-width: 400px;
+  height: 40px;
+  padding: 0 12px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  transition: background 0.12s;
+}
+:global(.jf-blueprint) .search:focus-within { background: var(--paper-deep); }
+:global(.jf-blueprint) .search .ic { width: 16px; height: 16px; color: var(--muted); }
+:global(.jf-blueprint) .search input {
+  flex: 1;
+  border: none; outline: none; background: transparent;
+  font-size: 13.5px; font-weight: 500;
+  color: var(--ink);
+  min-width: 0;
+}
+:global(.jf-blueprint) .search input::placeholder { color: var(--muted-light); }
+:global(.jf-blueprint) .search kbd {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+
+/* [chrome / shell-supplied — dropped in the port: .topbar-right] */
+:global(.jf-blueprint) .icon-btn {
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  position: relative;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint) .icon-btn:hover {
+  background: var(--paper-deep);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+:global(.jf-blueprint) .icon-btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint) .icon-btn .ic { width: 17px; height: 17px; }
+
+:global(.jf-blueprint) .bell-dot {
+  position: absolute;
+  top: -4px; right: -4px;
+  width: 10px; height: 10px;
+  background: var(--sky);
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+}
+
+:global(.jf-blueprint) .btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 0 16px;
+  height: 40px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint) .btn .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint) .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint) .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint) .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint) .btn-ghost { background: var(--paper); color: var(--ink); }
+:global(.jf-blueprint) .btn-ghost:hover { background: var(--paper-deep); }
+
+/* ============================================================
+   CONTENT
+   ============================================================ */
+
+/* [chrome / shell-supplied — dropped in the port: .content] */
+/* ============================================================
+   LEAD CENTER BANNER
+   ============================================================ */
+:global(.jf-blueprint) .banner {
+  display: flex; align-items: center; gap: 16px;
+  border: 2px solid var(--warning);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: linear-gradient(var(--warning-soft), var(--warning-soft)), var(--paper);
+  padding: 14px 18px;
+}
+:global(.jf-blueprint) .banner.hidden { display: none; }
+:global(.jf-blueprint) .banner.closing {
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  margin-bottom: -22px;
+  overflow: hidden;
+  transition: height 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease, padding 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), margin-bottom 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), border-width 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+:global(.jf-blueprint) svg.ic.banner-pin { width: 26px; height: 26px; color: var(--warning); }
+:global(.jf-blueprint) .banner-body { min-width: 0; }
+:global(.jf-blueprint) .banner-kicker {
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--warning);
+  margin-bottom: 4px;
+}
+:global(.jf-blueprint) .banner-txt {
+  font-size: 13.5px; font-weight: 500;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+:global(.jf-blueprint) .banner-link {
+  font-weight: 800;
+  color: var(--warning);
+  border-bottom: 1.5px solid var(--warning);
+  padding-bottom: 1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+:global(.jf-blueprint) .banner-link:hover { color: var(--warning-dark); border-bottom-color: var(--warning-dark); }
+:global(.jf-blueprint) .banner-close {
+  margin-left: auto;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+:global(.jf-blueprint) .banner-close:hover { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+:global(.jf-blueprint) .banner-close .ic { width: 15px; height: 15px; }
+
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+:global(.jf-blueprint) .page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  margin-bottom: 14px;
+}
+:global(.jf-blueprint) .kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+:global(.jf-blueprint) .kicker::before {
+  content: '';
+  width: 7px; height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+}
+:global(.jf-blueprint) .page-title {
+  font-size: 46px; font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+:global(.jf-blueprint) .page-actions { display: flex; gap: 12px; flex-shrink: 0; padding-bottom: 4px; }
+:global(.jf-blueprint) .page-actions .btn .ic { width: 20px; height: 20px; }
+
+/* ============================================================
+   KPI STRIP
+   ============================================================ */
+:global(.jf-blueprint) .kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+:global(.jf-blueprint) .kpi {
+  padding: 20px 24px 22px;
+  border-right: 1.5px solid var(--ink);
+  transition: background 0.12s;
+}
+:global(.jf-blueprint) .kpi:last-child { border-right: none; }
+:global(.jf-blueprint) .kpi:hover { background: var(--paper-deep); }
+:global(.jf-blueprint) .kpi-lbl {
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+:global(.jf-blueprint) .kpi-val {
+  font-size: 38px; font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+:global(.jf-blueprint) .kpi-val.accent { color: var(--blueprint); }
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+:global(.jf-blueprint) .card {
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px 24px;
+  position: relative;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+:global(.jf-blueprint) .card-head {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 18px;
+}
+:global(.jf-blueprint) .card-titles { min-width: 0; }
+:global(.jf-blueprint) .card-title {
+  font-size: 15px; font-weight: 900;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+:global(.jf-blueprint) .card-sub {
+  margin-top: 4px;
+  font-size: 12px; font-weight: 500;
+  color: var(--muted-light);
+}
+:global(.jf-blueprint) .card-sub b { color: var(--ink-soft); font-weight: 700; }
+:global(.jf-blueprint) .card-link {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--blueprint);
+  border-bottom: 1.5px solid var(--blueprint);
+  padding-bottom: 1px;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+:global(.jf-blueprint) .card-link:hover { color: var(--blueprint-dark); border-bottom-color: var(--blueprint-dark); }
+:global(.jf-blueprint) .card-link .ic { width: 13px; height: 13px; }
+:global(.jf-blueprint) .card-rule { border: none; border-top: 1.5px solid var(--hair-soft); margin: 0 0 4px; }
+
+:global(.jf-blueprint) .grid-23 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 22px;
+  align-items: start;
+}
+:global(.jf-blueprint) .card--flex { display: flex; flex-direction: column; }
+:global(.jf-blueprint) .card--flex .card-head { flex-shrink: 0; }
+:global(.jf-blueprint) .grid-11 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  align-items: start;
+}
+:global(.jf-blueprint) .grid-11 .card { padding-bottom: 18px; display: flex; flex-direction: column; }
+:global(.jf-blueprint) .list--fill { flex: 1; min-height: 0; }
+
+/* ============================================================
+   REVENUE TREND — миллиметровка
+   ============================================================ */
+:global(.jf-blueprint) .dd { position: relative; margin-left: auto; flex-shrink: 0; }
+:global(.jf-blueprint) .dd-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+:global(.jf-blueprint) .dd-btn:hover { background: var(--paper-deep); }
+:global(.jf-blueprint) .dd.open .dd-btn { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .dd-btn .ic { width: 13px; height: 13px; color: var(--muted); transition: transform 0.2s var(--ease); }
+:global(.jf-blueprint) .dd.open .dd-btn .ic { transform: rotate(180deg); }
+:global(.jf-blueprint) .dd-menu {
+  position: absolute;
+  top: calc(100% + 6px); right: 0;
+  min-width: 100%;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--ink);
+  padding: 4px;
+  z-index: 40;
+  display: none;
+}
+:global(.jf-blueprint) .dd.open .dd-menu { display: block; }
+:global(.jf-blueprint) .dd-item {
+  display: block; width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-soft);
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+:global(.jf-blueprint) .dd-item:hover { background: var(--paper-deep); color: var(--ink); }
+:global(.jf-blueprint) .dd-item.active { color: var(--blueprint); font-weight: 800; }
+
+/* Ховер графика: выноска, квадратные точки, тултип */
+:global(.jf-blueprint) .ch-overlay { cursor: crosshair; }
+:global(.jf-blueprint) .ch-guide { stroke: var(--blueprint); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.15s ease; }
+:global(.jf-blueprint) .ch-tipg { opacity: 0; pointer-events: none; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.15s ease; }
+:global(.jf-blueprint) .ch-tip-box { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+:global(.jf-blueprint) .ch-tip-text { font-family: var(--font-mono); font-size: 13px; font-weight: 700; fill: var(--ink); pointer-events: none; }
+:global(.jf-blueprint) .chart-wrap { width: 100%; }
+:global(.jf-blueprint) .chart-wrap svg { width: 100%; height: auto; display: block; }
+:global(.jf-blueprint) .card--chart { display: flex; flex-direction: column; }
+:global(.jf-blueprint) .card--chart .card-head { flex-shrink: 0; }
+:global(.jf-blueprint) .card--chart .chart-wrap { flex: 1; display: flex; align-items: center; }
+:global(.jf-blueprint) .card--bare { border-color: transparent; box-shadow: none; background: transparent; }
+:global(.jf-blueprint) .ch-minor { stroke: var(--chart-minor); stroke-width: 1; }
+:global(.jf-blueprint) .ch-major { stroke: var(--chart-major); stroke-width: 1; }
+:global(.jf-blueprint) .ch-axis { stroke: var(--ink); stroke-width: 1.5; }
+:global(.jf-blueprint) .ch-area { fill: var(--chart-fill); }
+:global(.jf-blueprint) .ch-line { stroke: var(--blueprint); stroke-width: 2.5; fill: none; }
+:global(.jf-blueprint) .ch-dot { fill: var(--paper); stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
+:global(.jf-blueprint) .ch-dot.on { fill: var(--blueprint); }
+:global(.jf-blueprint) .ch-lbl {
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 700;
+  fill: var(--muted);
+  letter-spacing: 0.05em;
+}
+:global(.jf-blueprint) .ch-note {
+  font-family: var(--font-mono);
+  font-size: 18px; font-weight: 700;
+  fill: var(--blueprint);
+  letter-spacing: 0.04em;
+  transition: opacity 0.2s ease;
+}
+
+/* ============================================================
+   RECENT ACTIVITY
+   ============================================================ */
+:global(.jf-blueprint) .act-row {
+  display: flex; align-items: flex-start; gap: 13px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--hair-soft);
+}
+:global(.jf-blueprint) .act-row:last-child { border-bottom: none; padding-bottom: 2px; }
+:global(.jf-blueprint) .act-ic {
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  color: var(--ink);
+  flex-shrink: 0;
+}
+:global(.jf-blueprint) .act-ic .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint) .act-title {
+  font-size: 13.5px; font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+}
+:global(.jf-blueprint) .act-meta {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+
+/* ============================================================
+   THIS WEEK
+   ============================================================ */
+:global(.jf-blueprint) .week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+:global(.jf-blueprint) .day {
+  padding: 10px 4px 9px;
+  text-align: center;
+  border-right: 1px solid var(--hair);
+  background: var(--paper);
+  transition: background 0.12s, box-shadow 0.12s;
+  cursor: pointer;
+  user-select: none;
+}
+:global(.jf-blueprint) .day:last-child { border-right: none; }
+:global(.jf-blueprint) .day:hover { background: var(--paper-deep); }
+:global(.jf-blueprint) .day-lbl {
+  font-size: 9.5px; font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--muted-light);
+  margin-bottom: 6px;
+}
+:global(.jf-blueprint) .day-num {
+  font-size: 15px; font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+:global(.jf-blueprint) .day-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--blueprint);
+  margin: 6px auto 0;
+}
+:global(.jf-blueprint) .day-dot.off { opacity: 0; }
+:global(.jf-blueprint) .day.selected:not(.today) { box-shadow: inset 0 0 0 2px var(--blueprint); border-right-color: transparent; }
+:global(.jf-blueprint) .day.selected:not(.today) .day-num { color: var(--blueprint); }
+:global(.jf-blueprint) .day:has(+ .day.selected:not(.today)) { border-right-color: transparent; }
+:global(.jf-blueprint) .day.today { background: var(--blueprint); border-right-color: var(--blueprint); }
+:global(.jf-blueprint) .day.today:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint) .day.today .day-lbl { color: rgba(255,255,255,0.65); }
+:global(.jf-blueprint) .day.today .day-num { color: #fff; }
+:global(.jf-blueprint) .day.today .day-dot { background: #fff; }
+:global(.jf-blueprint) .day:has(+ .day.today) { border-right-color: var(--blueprint); }
+
+:global(.jf-blueprint) .sched-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair-soft);
+  font-size: 13.5px; font-weight: 600;
+  color: var(--ink);
+}
+:global(.jf-blueprint) .sched-row:last-child { border-bottom: none; padding-bottom: 2px; }
+:global(.jf-blueprint) .tag {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+:global(.jf-blueprint) .sched-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint) .sched-time {
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+:global(.jf-blueprint) .empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 22px 16px;
+  text-align: center;
+  font-size: 13px; font-weight: 500;
+  color: var(--muted);
+}
+
+/* ============================================================
+   UPCOMING JOBS
+   ============================================================ */
+:global(.jf-blueprint) .job-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--hair-soft);
+}
+:global(.jf-blueprint) .job-row:last-child { border-bottom: none; padding-bottom: 2px; }
+:global(.jf-blueprint) .job-date {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+:global(.jf-blueprint) .job-date.today { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint) .job-info { flex: 1; min-width: 0; }
+:global(.jf-blueprint) .job-title {
+  font-size: 13.5px; font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+:global(.jf-blueprint) .job-sub {
+  margin-top: 3px;
+  font-size: 12px; font-weight: 500;
+  color: var(--muted-light);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+:global(.jf-blueprint) .chip {
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1.5px solid currentColor;
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+:global(.jf-blueprint) .chip.ok { color: var(--success); background: var(--success-soft); }
+:global(.jf-blueprint) .chip.wait { color: var(--warning); background: var(--warning-soft); }
+
+/* Списки с лимитом: <=4 полностью, 5-10 скролл, >10 усечение + кнопка */
+:global(.jf-blueprint) .list { position: relative; }
+:global(.jf-blueprint) .list.scrollable { overflow-y: auto; padding-right: 8px; }
+:global(.jf-blueprint) .list.scrollable::-webkit-scrollbar { width: 6px; }
+:global(.jf-blueprint) .list.scrollable::-webkit-scrollbar-track { background: transparent; }
+:global(.jf-blueprint) .list.scrollable::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 0; }
+:global(.jf-blueprint) .list.scrollable::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
+
+:global(.jf-blueprint) .card-foot-btn {
+  margin-top: 14px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+:global(.jf-blueprint) .card-foot-btn:hover { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .card-foot-btn .ic { width: 13px; height: 13px; }
+:global(.jf-blueprint) .list .card-foot-btn { display: none; margin-top: 10px; }
+:global(.jf-blueprint) .list.has-more .card-foot-btn { display: flex; }
+
+/* ============================================================
+   PIPELINE / LEAD FLOW
+   ============================================================ */
+:global(.jf-blueprint) .section-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+}
+:global(.jf-blueprint) .section-title {
+  font-size: 26px; font-weight: 900;
+  letter-spacing: -0.02em; text-transform: uppercase;
+  line-height: 1;
+}
+:global(.jf-blueprint) .stage-board {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+:global(.jf-blueprint) .stage-col {
+  display: flex; flex-direction: column;
+  border-right: 1.5px solid var(--ink);
+  min-width: 0;
+}
+:global(.jf-blueprint) .stage-col:last-child { border-right: none; }
+:global(.jf-blueprint) .stage-col-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 14px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+:global(.jf-blueprint) .stage-cards {
+  flex: 1;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px;
+  min-height: 96px;
+  transition: background 0.15s;
+}
+:global(.jf-blueprint) .lead-card {
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 9px 11px 10px;
+  cursor: grab;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, opacity 0.15s;
+}
+:global(.jf-blueprint) .lead-card:hover { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .lead-card:active { cursor: grabbing; }
+:global(.jf-blueprint) .lead-card.dragging { opacity: 0.35; border-style: dashed; transform: none; box-shadow: none; }
+:global(.jf-blueprint) .lead-name { font-size: 12.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:global(.jf-blueprint) .lead-job { margin-top: 3px; font-size: 11px; font-weight: 500; color: var(--muted-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:global(.jf-blueprint) .lead-meta { margin-top: 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+:global(.jf-blueprint) .lead-val { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--blueprint); }
+:global(.jf-blueprint) .lead-age { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light); }
+:global(.jf-blueprint) .lead-empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 14px 8px;
+  text-align: center;
+  font-size: 11.5px; font-weight: 500;
+  color: var(--muted-light);
+}
+:global(.jf-blueprint) .drop-slot {
+  height: 0;
+  opacity: 0;
+  border: 1.5px dashed var(--blueprint);
+  border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.05);
+  transition: height 0.2s var(--ease), opacity 0.15s ease;
+  overflow: hidden;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+:global(.jf-blueprint) .drop-slot.open { opacity: 1; }
+:global(.jf-blueprint) .stage-cards.previewing .lead-empty { display: none; }
+@keyframes leadLand {
+  0%   { opacity: 0; transform: translateY(4px); background: rgba(24, 84, 160, 0.08); }
+  60%  { opacity: 1; transform: none; background: rgba(24, 84, 160, 0.08); }
+  100% { background: var(--paper); }
+}
+:global(.jf-blueprint) .lead-card.landed { animation: leadLand 0.45s cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint) .stage-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--sky);
+  flex-shrink: 0;
+}
+:global(.jf-blueprint) .stage-lbl {
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+:global(.jf-blueprint) .stage-count {
+  margin-left: auto;
+  font-size: 16px; font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 1280px) {
+  :global(.jf-blueprint) .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  :global(.jf-blueprint) .kpi:nth-child(2) { border-right: none; }
+  :global(.jf-blueprint) .kpi:nth-child(-n+2) { border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint) .grid-23 { grid-template-columns: 1fr; }
+  :global(.jf-blueprint) .grid-11 { grid-template-columns: 1fr; }
+  :global(.jf-blueprint) .stage-board { grid-template-columns: repeat(2, 1fr); }
+  :global(.jf-blueprint) .stage-col { border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint) .stage-col:nth-child(2n) { border-right: none; }
+  :global(.jf-blueprint) .stage-col:nth-child(5) { border-bottom: none; }
+}
+@media (max-width: 1000px) {
+  :global(.jf-blueprint) .grid-11 { grid-template-columns: 1fr; }
+  :global(.jf-blueprint) .page-title { font-size: 38px; }
+  :global(.jf-blueprint) .search { max-width: 240px; }
+}
+@media (max-width: 860px) {
+          /* [chrome / shell-supplied — dropped in the port: .layout, .sb, .main::before] */
+  :global(.jf-blueprint) .kpi-grid { grid-template-columns: 1fr; }
+  :global(.jf-blueprint) .kpi { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint) .kpi:last-child { border-bottom: none; }
+  :global(.jf-blueprint) .stage-board { grid-template-columns: 1fr; }
+  :global(.jf-blueprint) .stage-col { border-right: none; }
+  :global(.jf-blueprint) .stage-col:nth-child(5) { border-bottom: none; }
+  :global(.jf-blueprint) .search kbd { display: none; }
+}
+
+
+/* ═══════ SUBSCRIPTION ═══════ */
+:global(.jf-blueprint) .card--flush { padding: 0; overflow: hidden; }
+:global(.jf-blueprint) :global(#usageCard) .card-head { display: flex; align-items: center; justify-content: space-between; }
+:global(.jf-blueprint) .card-head-ic { width: 17px; height: 17px; color: var(--muted); }
+:global(.jf-blueprint) .ta-r { text-align: right; }
+
+:global(.jf-blueprint) .sub-hero { position: relative; overflow: hidden; display: flex; align-items: flex-end;
+  justify-content: space-between; gap: 32px; padding: 30px 34px 32px;
+  border: var(--border); border-radius: var(--radius); background: var(--ink);
+  color: var(--paper);
+  background-image: linear-gradient(rgba(242,240,235,.08) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(242,240,235,.08) 1px, transparent 1px);
+  background-size: 44px 44px; }
+:global(.jf-blueprint) .sub-hero-meta { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase; color: rgba(242,240,235,.6); }
+:global(.jf-blueprint) .sub-hero-name { margin-top: 10px; font-size: 64px; font-weight: 900; line-height: .95;
+  letter-spacing: -.03em; text-transform: uppercase; }
+:global(.jf-blueprint) .sub-hero-row { display: flex; align-items: baseline; gap: 14px 16px; margin-top: 16px;
+  flex-wrap: wrap; }
+:global(.jf-blueprint) .sub-hero-price { font-size: 30px; font-weight: 900; letter-spacing: -.005em;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+:global(.jf-blueprint) .sub-hero-price i { font-style: normal; margin-left: 6px; font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(242,240,235,.6); }
+:global(.jf-blueprint) .sub-hero-sep { width: 1.5px; height: 16px; background: rgba(242,240,235,.25); }
+:global(.jf-blueprint) .sub-hero-note { font-size: 13px; color: rgba(242,240,235,.75); }
+:global(.jf-blueprint) .sub-hero-r { align-self: stretch; display: flex; flex-direction: column;
+  align-items: center; }
+:global(.jf-blueprint) .sub-stamp-zone { flex: 1; width: 100%; display: grid; place-items: center;
+  margin-top: -30px; }
+:global(.jf-blueprint) .sub-stamp { padding: 12px 32px; border: 3px solid #58b368;
+  color: #58b368; background: rgba(58,125,68,.16);
+  font-size: 18px; font-weight: 900; letter-spacing: .3em; text-transform: uppercase;
+  transform: rotate(-3deg); }
+:global(.jf-blueprint) .sub-hero-facts { display: flex; flex-wrap: wrap; gap: 14px 26px; }
+:global(.jf-blueprint) .sub-hero-facts span { display: block; white-space: nowrap; font-family: var(--font-mono); font-size: 10px;
+  font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+  color: rgba(242,240,235,.55); margin-bottom: 5px; }
+:global(.jf-blueprint) .sub-hero-facts b { font-size: 14px; font-weight: 800; letter-spacing: .02em;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+:global(.jf-blueprint) .spec { display: grid; grid-template-columns: repeat(5, 1fr); }
+:global(.jf-blueprint) .spec-cell { position: relative; padding: 20px 22px 22px; border-right: 1.5px solid var(--ink); }
+:global(.jf-blueprint) .spec-cell:last-child { border-right: none; }
+:global(.jf-blueprint) .spec-name { font-size: 14px; font-weight: 900; letter-spacing: .08em;
+  text-transform: uppercase; }
+:global(.jf-blueprint) .spec-price { display: flex; align-items: baseline; gap: 7px; margin-top: 9px; }
+:global(.jf-blueprint) .spec-price b { font-size: 26px; font-weight: 900; letter-spacing: -.005em;
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint) .spec-price i { font-style: normal; font-family: var(--font-mono); font-size: 10px;
+  font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint) .spec-foot { margin-top: 16px; min-height: 34px; display: flex; align-items: center; }
+:global(.jf-blueprint) .spec-cur { font-size: 10px; font-weight: 800; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--ink); }
+:global(.jf-blueprint) .spec-cell .btn { width: 100%; justify-content: center; }
+:global(.jf-blueprint) .spec-cell.is-cur { background: rgba(24,84,160,.05); }
+
+:global(.jf-blueprint) .row-ub { display: grid; grid-template-columns: 7fr 5fr; gap: 22px; align-items: start; }
+
+:global(.jf-blueprint) .us-row { margin-bottom: 18px; }
+:global(.jf-blueprint) .us-row:last-child { margin-bottom: 0; }
+:global(.jf-blueprint) .us-top { display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+  margin-bottom: 8px; }
+:global(.jf-blueprint) .us-lbl { font-size: 13.5px; font-weight: 600; }
+:global(.jf-blueprint) .us-num { font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--muted); }
+:global(.jf-blueprint) .us-bar { height: 10px; border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: var(--paper); overflow: hidden; }
+:global(.jf-blueprint) .us-fill { display: block; height: 100%; width: 0; background: var(--blueprint);
+  transition: width .8s var(--ease-out); }
+:global(.jf-blueprint) .us-fill.warn { background: var(--warning); }
+:global(.jf-blueprint) .us-fill.hot { background: var(--danger); }
+:global(.jf-blueprint) .us-note { margin-top: 18px; padding-top: 14px; border-top: 1.5px solid rgba(10,10,10,.12);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); }
+
+:global(.jf-blueprint) .inv-head { display: grid; grid-template-columns: 1.3fr 1fr .9fr .9fr; gap: 12px;
+  padding: 0 2px 10px; border-bottom: 1.5px solid var(--ink);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint) .inv-row { display: grid; grid-template-columns: 1.3fr 1fr .9fr .9fr; gap: 12px;
+  align-items: center; padding: 12px 2px; border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint) .inv-row:last-child { border-bottom: none; }
+:global(.jf-blueprint) .inv-no { font-size: 13px; font-weight: 700; }
+:global(.jf-blueprint) .inv-date { font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--muted); font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint) .inv-amt { font-size: 14px; font-weight: 800; text-align: right;
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint) .st-badge { display: inline-flex; align-items: center; padding: 3px 9px;
+  border: 1.5px solid var(--success); border-radius: var(--radius);
+  background: rgba(58,125,68,.07); color: var(--success);
+  font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+:global(.jf-blueprint) .st-badge.warn { border-color: var(--warning); background: rgba(184,132,32,.08);
+  color: var(--warning); }
+
+:global(.jf-blueprint) .ref-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 26px; align-items: center; }
+:global(.jf-blueprint) .ref-code-row { display: flex; align-items: center; gap: 12px; }
+:global(.jf-blueprint) .ref-code { padding: 12px 18px; background: var(--ink); color: var(--paper);
+  border-radius: var(--radius); font-family: var(--font-mono); font-size: 17px;
+  font-weight: 600; letter-spacing: .14em; }
+:global(.jf-blueprint) .ref-reward { margin-top: 14px; font-size: 13.5px; color: var(--ink); }
+:global(.jf-blueprint) .ref-url { margin-top: 8px; font-family: var(--font-mono); font-size: 12px;
+  font-weight: 600; color: var(--muted); }
+:global(.jf-blueprint) .ref-url b { color: var(--ink); font-weight: 600; }
+:global(.jf-blueprint) .kpi-grid--3 { grid-template-columns: repeat(3, 1fr); }
+:global(.jf-blueprint) .kpi-grid--3 .kpi:last-child { border-right: none; }
+
+:global(.jf-blueprint) .mx-wrap { overflow-x: auto; }
+:global(.jf-blueprint) .mx { width: 100%; min-width: 1000px; border-collapse: collapse; }
+:global(.jf-blueprint) .mx th,
+:global(.jf-blueprint) .mx td { padding: 13px 20px; border-right: 1.5px solid rgba(10,10,10,.16);
+  text-align: left; }
+:global(.jf-blueprint) .mx th:last-child,
+:global(.jf-blueprint) .mx td:last-child { border-right: none; }
+:global(.jf-blueprint) .mx thead th { border-bottom: 2px solid var(--ink); vertical-align: top; }
+:global(.jf-blueprint) .mx tbody tr + tr td,
+:global(.jf-blueprint) .mx tbody tr + tr th { border-top: 1px dashed rgba(10,10,10,.14); }
+:global(.jf-blueprint) .mx-feature { font-size: 13px; font-weight: 600; white-space: nowrap; }
+:global(.jf-blueprint) .mx-plan { font-size: 14px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+:global(.jf-blueprint) .mx-price { display: flex; align-items: baseline; gap: 6px; margin-top: 6px; }
+:global(.jf-blueprint) .mx-price b { font-size: 17px; font-weight: 900; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint) .mx-price i { font-style: normal; font-family: var(--font-mono); font-size: 9.5px;
+  font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint) .mx-cur { margin-top: 7px; font-size: 9.5px; font-weight: 800; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--blueprint); }
+:global(.jf-blueprint) .mx col.cur,
+:global(.jf-blueprint) .mx .col-cur { background: rgba(24,84,160,.05); }
+:global(.jf-blueprint) .mx-yes { display: inline-grid; place-items: center; width: 16px; height: 16px;
+  background: var(--blueprint); color: var(--paper); border-radius: var(--radius);
+  font-size: 10px; font-weight: 900; }
+:global(.jf-blueprint) .mx-no { color: var(--muted-faint, #aaa); font-weight: 700; }
+:global(.jf-blueprint) .mx-opt { display: inline-block; width: 16px; height: 16px;
+  border: 1.5px dashed var(--blueprint); border-radius: var(--radius); }
+:global(.jf-blueprint) .mx-foot { padding: 12px 20px 14px; border-top: 1.5px solid rgba(10,10,10,.14);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+
+@media (max-width: 1220px) {
+  :global(.jf-blueprint) .spec { grid-template-columns: repeat(2, 1fr); }
+  :global(.jf-blueprint) .spec-cell:nth-child(2n) { border-right: none; }
+  :global(.jf-blueprint) .spec-cell:nth-child(-n+4) { border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint) .row-ub { grid-template-columns: 1fr; }
+}
+@media (max-width: 820px) {
+  :global(.jf-blueprint) .sub-hero { flex-direction: column; align-items: flex-start; }
+  :global(.jf-blueprint) .sub-hero-r { align-items: flex-start; }
+  :global(.jf-blueprint) .sub-hero-name { font-size: 48px; }
+  :global(.jf-blueprint) .ref-grid { grid-template-columns: 1fr; }
+  :global(.jf-blueprint) .spec { grid-template-columns: 1fr; }
+  :global(.jf-blueprint) .spec-cell,
+  :global(.jf-blueprint) .spec-cell:nth-child(2n) { border-right: none;
+    border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint) .spec-cell:last-child { border-bottom: none; }
+}
+
+
+/* [chrome / shell-supplied — dropped in the port: .nav-burger, .nav-burger .ic, .nav-backdrop, .nav-backdrop.on] */
+@media (max-width: 1080px) {
+        /* [chrome / shell-supplied — dropped in the port: .nav-burger, aside.sb, aside.sb.open] */
+}
+@media (max-width: 680px) {
+      /* [chrome / shell-supplied — dropped in the port: .topbar-right .btn-primary] */
+  :global(.jf-blueprint) .search kbd { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) *,
+  :global(.jf-blueprint) *::before,
+  :global(.jf-blueprint) *::after { transition: none !important; animation: none !important; }
+}
+:global(.jf-blueprint) :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+/* ============================================================
+   MOTION SYSTEM — BALANCED (пакет 02, стандарт)
+   ============================================================ */
+/* [chrome / shell-supplied — dropped in the port: .rv, .rv-in, .rv-cell, .rv-cell.rv-in, .main::before, .sb-indicator.ready] */
+:global(.jf-blueprint) .dd-menu { display: block; visibility: hidden; opacity: 0; transform: translateY(-6px); transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), visibility 0.18s; }
+:global(.jf-blueprint) .dd.open .dd-menu { visibility: visible; opacity: 1; transform: none; }
+:global(.jf-blueprint) .card-link .ic,
+:global(.jf-blueprint) .card-foot-btn .ic { transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint) .card-link:hover .ic,
+:global(.jf-blueprint) .card-foot-btn:hover .ic { transform: translate(2px, -2px); }
+:global(.jf-blueprint) .btn .ic { transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint) .btn:hover .ic { transform: scale(1.12); }
+:global(.jf-blueprint) .day { transition: background 0.15s, box-shadow 0.15s, transform 0.12s; }
+@keyframes daySel2 { 0% { transform: scale(0.94); } 60% { transform: scale(1.02); } 100% { transform: scale(1); } }
+:global(.jf-blueprint) .day.day-pressed { animation: daySel2 0.28s cubic-bezier(0.22, 0.61, 0.36, 1); }
+@keyframes press2 { 0% { transform: scale(0.97); } 100% { transform: scale(1); } }
+:global(.jf-blueprint) .pressed { animation: press2 0.18s ease-out; }

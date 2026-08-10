@@ -11,6 +11,8 @@
 // which the donor's reveal cascade (`.content > *`) depends on.
 
 import { useCallback, useRef } from "react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initClientsContent } from "./clients-behavior";
 import type { Client } from "./clients-data";
@@ -27,8 +29,21 @@ export function ClientsContent({ entries }: { entries?: Client[] }) {
   // to stay referentially stable for the life of the mount. Same contract as
   // workers-content.tsx.
   const seedRef = useRef(entries);
+  // Same contract as the seed, and for the same reason: it reaches `init`
+  // through a ref rather than through the dependency array. `useRouter` returns
+  // the same object for the life of the mount, so seeding the ref once is
+  // enough — and writing to a ref during render is not allowed. Identical to
+  // advanced-ai-content.tsx. The behavior module opens the client record with
+  // it — see `navigate` in clients-behavior.ts for why a client-side push and
+  // not a document load.
+  const router = useRouter();
+  const routerRef = useRef(router);
   const init = useCallback(
-    (content: HTMLElement) => initClientsContent(content, { entries: seedRef.current }),
+    (content: HTMLElement) =>
+      initClientsContent(content, {
+        entries: seedRef.current,
+        navigate: (href) => routerRef.current.push(href as Route),
+      }),
     [],
   );
   useBlueprintContent(init);

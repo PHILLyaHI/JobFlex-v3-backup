@@ -771,6 +771,9 @@
 .bp :global(.content .ptable td) { padding: 11px 16px; border-bottom: 1.5px solid var(--hair-soft); vertical-align: middle; }
 .bp :global(.content .ptable tbody tr) { transition: background 0.12s; }
 .bp :global(.content .ptable tbody tr:hover) { background: var(--paper-deep); }
+/* The row opens the client's record (see clients-behavior.ts). The hover tint
+   was already promising a target; this is the cursor that keeps the promise. */
+.bp :global(.content .ptable tbody tr.prow) { cursor: pointer; }
 .bp :global(.content .ptable tbody tr:last-child td) { border-bottom: none; }
 
 .bp :global(.content .pt-title) { font-size: 13.5px; font-weight: 700; color: var(--ink); line-height: 1.25; }

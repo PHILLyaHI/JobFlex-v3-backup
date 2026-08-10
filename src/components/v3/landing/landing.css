@@ -1,0 +1,527 @@
+/* JobFlex landing — PORT of the approved single-file mockup
+   `jobflex-landing (21).html` (design of record, 2026-08). Every value,
+   every selector and every comment below is the donor's; only the scoping
+   prefix and the keyframe names were changed.
+
+   PLAIN stylesheet, not a CSS module, and that is deliberate. Three donor
+   constructs break under CSS-Modules hashing:
+
+   1. `.k-svg [class^="k-"]` — an attribute PREFIX selector. Hashing turns
+      `k-wall` into `landing_k-wall__x7f2q`, so `[class^="k-"]` matches
+      nothing and the hero floor plan silently loses every stroke weight,
+      poche fill, dimension line and title block. No error, just a
+      wrong-looking drawing.
+   2. `* { margin:0; padding:0; box-sizing:border-box }` — a universal reset.
+      `*` is not a class, so a module would NOT scope it; dropped into the
+      modules pipeline it leaks app-wide and flattens every other page.
+   3. use-landing-behavior.ts queries `.rv` `.on` `.fh-sec` `.nav` `.sprog`
+      `.hero-r-inner` `.fh-card` `.stat b` by literal string.
+
+   So every donor selector is reproduced verbatim, in donor order, with one
+   literal `.jf-landing` prefix in front of it. The prefix is uniform, so
+   relative specificity — and therefore which of two duplicate rules wins —
+   is unchanged. That is what makes the transform safe. The donor
+   deliberately re-declares 11 selectors in its
+   "WOW-PACKAGE (Motion System «Balanced»)" block near the bottom; those
+   duplicates layer on top of the base rules and win by SOURCE ORDER. Do not
+   merge, sort, dedupe or reflow them. Same precedent and reasoning as
+   src/components/v3/dashboard-blueprint/blueprint-global.css.
+
+   @keyframes cannot nest under a class, so the donor's six names carry a
+   `lp_` prefix (blink -> lp_blink, rise -> lp_rise, fh-slide-in,
+   fh-blink, mq, fh-stamp) — the convention already used by `hire_sheetIn`,
+   `calendar_scrimIn`, `settings_setIn`. Every `animation:` shorthand that
+   referenced them was updated to match.
+
+   Donor tokens are re-declared on `.jf-landing`, never on `:root`. Several
+   collide with globals.css at DIFFERENT values or a different meaning
+   (`--paper-deep` #e8e6e1 vs #ebe8e1; `--ease-out` a different curve;
+   `--shadow` is a bare colour here, not a full shadow value). Declaring them
+   on the page root shadows the app's tokens inside this subtree and leaks
+   nothing outward. `--blueprint: #1854a0` is the same value the app calls
+   `--accent`; it keeps the donor's name because renaming is a refactor, not
+   a port.
+
+   The donor's Russian section comments are kept verbatim — they mark section
+   boundaries and record design decisions. English glosses were added
+   alongside a few of them; none were deleted. */
+
+.jf-landing {
+  --paper: #f2f0eb; --paper-deep: #e8e6e1;
+  --ink: #0a0a0a;
+  --blueprint: #1854a0; --blueprint-dark: #0e3d7a; --sky: #4a9eff;
+  --muted: #555; --muted-light: #aaa;
+  --grid-light: rgba(0,0,0,0.028);
+  --grid-dark: rgba(255,255,255,0.08);
+  --grid-dark-lg: rgba(255,255,255,0.14);
+  --font: 'Helvetica Neue', Helvetica, Inter, Arial, sans-serif;
+  /* Donor stack kept exactly as authored — Helvetica Neue first, Inter third.
+     That is deliberate and per-page; it is NOT the app's Inter-first stack.
+     --font-mono is the one edit: the donor pulled JetBrains Mono from the
+     Google CDN via a <link>, which is deleted because src/app/layout.tsx
+     already loads it with next/font/google as --font-jbmono. Keeping the
+     <link> would double-load the family and add a render-blocking
+     third-party request. The rest of the stack is the donor's. */
+  --font-mono: var(--font-jbmono), 'SF Mono', ui-monospace, monospace;
+  --border: 2px solid var(--ink);
+  --border-paper: 2px solid var(--paper);
+  --radius: 2px;
+  --shadow: rgba(10,10,10,0.09);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+.jf-landing * { margin: 0; padding: 0; box-sizing: border-box; }
+/* ── Donor `html` / `body` rules — hazard-4 decisions ──────────────────
+   Two of the donor's page-level declarations genuinely need the real
+   elements. `scroll-behavior: smooth` is only honoured on the scrolling
+   element, and `overflow-x: hidden` has to sit on `body`: moved onto
+   `.jf-landing` it would compute `overflow-y: auto` on that div, making it a
+   scroll container and breaking the sticky `.nav`. But a route-scoped CSS
+   import in the App Router is injected once and PERSISTS across client-side
+   navigation, so a bare `html`/`body` rule would follow the user to
+   /dashboard.
+
+   DECISION 1 (html/body scoping): gate both on `:has(.jf-landing)`. The
+   selector is live, so the rules switch themselves off the moment this page
+   unmounts — no JS teardown, nothing to forget. Every other donor `body`
+   declaration moves onto the page root class instead.
+
+   DECISION 2 (the app's own grid): globals.css already paints a 40px
+   drafting grid on `body` (fixed attachment) plus a paper-grain
+   `body::before`. The donor paints its OWN 40px grid via `.hero-l::before`,
+   `.hero-r::before`, `.feat::before` and `.ft::before`, so ported naively you
+   get two grids at slightly different opacities showing through each other.
+   Switch the app grid and the grain OFF for the document containing this
+   page — explicitly, rather than relying on `.jf-landing`'s opaque
+   background to cover them, which would be implicit and would break the
+   moment a section went transparent. `body:has(.jf-landing)` is (0,1,1) and
+   `body:has(.jf-landing)::before` is (0,1,2), so both outrank globals.css's
+   `body` / `body::before` regardless of stylesheet injection order.
+   Both are undone automatically on navigate-away, so /dashboard and
+   /pricing keep their grid. */
+html:has(.jf-landing) { scroll-behavior: smooth; }
+body:has(.jf-landing) { overflow-x: hidden; background-image: none; }
+body:has(.jf-landing)::before { content: none; }
+.jf-landing { font-family: var(--font); background: var(--paper); color: var(--ink);
+  -webkit-font-smoothing: antialiased; overflow-wrap: break-word; }
+.jf-landing a { text-decoration: none; color: inherit; }
+.jf-landing button { font-family: inherit; color: inherit; border: none; background: none; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: rgba(24,84,160,.12); }
+.jf-landing svg.ic { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+/* иконка = примерно треть высоты своего поля */
+.jf-landing .nav-cta .ic { width: 15px; height: 15px; }        /* поля 76px, кегль 11.5 */
+.jf-landing .cta-a .ic, .jf-landing .cta-b .ic { width: 18px; height: 18px; }  /* кнопки 56px */
+.jf-landing .ft-btn .ic { width: 17px; height: 17px; }         /* кнопка футера 54px */
+
+@keyframes lp_blink { 50% { opacity: .28 } }
+@keyframes lp_rise { from { opacity: 0; transform: translateY(18px) } to { opacity: 1; transform: none } }
+@keyframes lp_fh-slide-in { from { opacity: 0; transform: translateY(9px) } to { opacity: 1; transform: none } }
+@keyframes lp_fh-blink { 50% { opacity: .25 } }
+.jf-landing .an { opacity: 0; animation: lp_rise .8s var(--ease-out) forwards; }
+.jf-landing .a1 { animation-delay: .06s } .jf-landing .a2 { animation-delay: .16s } .jf-landing .a3 { animation-delay: .26s }
+.jf-landing .a4 { animation-delay: .36s } .jf-landing .a5 { animation-delay: .46s }
+.jf-landing .rv { opacity: 0; transform: translateY(20px);
+  transition: opacity .7s var(--ease-out), transform .7s var(--ease-out); }
+.jf-landing .rv.on { opacity: 1; transform: none; }
+
+.jf-landing .wrap { max-width: 1240px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 48px); }
+.jf-landing .kicker { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 20px;
+  font-size: 10px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase;
+  color: var(--blueprint); }
+.jf-landing .kicker::before { content: ''; width: 7px; height: 7px; background: currentColor;
+  animation: lp_blink 2s infinite; }
+.jf-landing .kicker-sky { color: var(--sky); }
+.jf-landing .h2 { font-size: clamp(30px, 5.4vw, 56px); font-weight: 900; letter-spacing: -.04em;
+  line-height: 1; text-transform: uppercase; }
+.jf-landing .inv { display: inline-block; padding: .05em .24em .1em; margin-top: .13em; letter-spacing: -.015em; border-radius: var(--radius);
+  background: var(--ink); color: var(--paper); }
+
+/* ══════ NAV ══════ */
+.jf-landing .nav { --nav-h: 66px;
+  display: flex; align-items: stretch; height: var(--nav-h);
+  border-bottom: var(--border); background: var(--paper);
+  position: sticky; top: 0; z-index: 100; }
+.jf-landing .nav-brand { --mark-size: 60.4px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 27px; padding: 0 40px 0 27px;
+  border-right: var(--border); background: var(--ink); color: var(--paper); }
+.jf-landing .nav-links { flex: 1; display: flex; align-items: stretch; justify-content: flex-end; }
+.jf-landing .nav-links a { position: relative; display: flex; align-items: center; padding: 0 24px;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); transition: color .16s var(--ease); }
+.jf-landing .nav-links a::after { content: ''; position: absolute; left: 22px; right: 22px; bottom: 0;
+  height: 3px; background: var(--blueprint); transform: scaleX(0);
+  transition: transform .22s var(--ease-out); }
+.jf-landing .nav-links a:hover { color: var(--ink); }
+.jf-landing .nav-links a:hover::after { transform: scaleX(1); }
+.jf-landing .nav-sign { flex-shrink: 0; display: flex; align-items: center; padding: 0 28px;
+  border-left: var(--border);
+  font-size: 11.5px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+  transition: background .16s var(--ease); }
+.jf-landing .nav-sign:hover { background: var(--paper-deep); }
+.jf-landing .nav-cta { flex-shrink: 0; display: flex; align-items: center; gap: 11px; padding: 0 30px;
+  border-left: var(--border); background: var(--blueprint); color: #fff;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+  transition: background .16s var(--ease); }
+.jf-landing .nav-cta:hover { background: var(--blueprint-dark); }
+.jf-landing .burger { display: none; }
+
+/* ══════ HERO ══════ */
+.jf-landing .hero { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.02fr);
+  min-height: calc(100vh - 66px); min-height: calc(100svh - 66px);
+  border-bottom: var(--border); align-items: stretch; }
+.jf-landing .hero-l { position: relative; display: flex; align-items: center;
+  padding: clamp(40px, 6vh, 76px) clamp(20px, 3.4vw, 56px); overflow: hidden; }
+.jf-landing .hero-l::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px; }
+.jf-landing .hero-in { position: relative; z-index: 1; }
+.jf-landing .h1 { font-size: clamp(36px, 5.8vw, 84px); font-weight: 900; letter-spacing: -.05em;
+  line-height: .9; text-transform: uppercase; }
+.jf-landing .h1 em { font-style: normal; color: var(--blueprint); }
+.jf-landing .tagline { margin-top: 24px; max-width: 42ch; font-size: 16px; line-height: 1.6; color: var(--muted); }
+.jf-landing .tagline strong { color: var(--ink); font-weight: 700; }
+.jf-landing .cta-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 36px; }
+.jf-landing .cta-a { display: inline-flex; align-items: center; gap: 11px; height: 56px; padding: 0 30px;
+  border: var(--border); border-radius: var(--radius); background: var(--ink); color: var(--paper);
+  font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  text-indent: .14em; transition: background .16s var(--ease); }
+.jf-landing .cta-a:hover { background: var(--blueprint); }
+.jf-landing .cta-b { display: inline-flex; align-items: center; gap: 11px; height: 56px; padding: 0 26px;
+  border: var(--border); border-radius: var(--radius); background: transparent; color: var(--ink);
+  font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  text-indent: .14em; transition: background .16s var(--ease); }
+.jf-landing .cta-b:hover { background: var(--paper-deep); }
+.jf-landing .hero-note { margin-top: 20px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--muted-light); }
+
+/* панель «эта неделя» — синий чертёжный лист */
+.jf-landing .hero-r { position: relative; display: flex; align-items: center; justify-content: center;
+  padding: clamp(24px, 3.4vh, 38px) clamp(16px, 1.6vw, 26px);
+  border-left: var(--border); background: var(--paper-deep); overflow: hidden; }
+.jf-landing .hero-r::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px; }
+
+/* ══════ FEATURES — чернильная полоса ══════ */
+.jf-landing .feat { position: relative; overflow: hidden; padding: clamp(56px, 9vh, 112px) 0;
+  border-bottom: var(--border); background: var(--ink); color: var(--paper); }
+.jf-landing .feat::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(var(--grid-dark) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+  background-size: 40px 40px; }
+.jf-landing .feat::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(var(--grid-dark-lg) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-dark-lg) 1px, transparent 1px);
+  background-size: 200px 200px; }
+.jf-landing .feat .wrap { position: relative; z-index: 2; }
+.jf-landing .feat-head { max-width: 720px; margin-bottom: clamp(30px, 5vh, 52px); }
+.jf-landing .feat-head .h2 { color: var(--paper); }
+.jf-landing .feat-head .h2 em { font-style: normal; color: transparent; letter-spacing: .03em;
+  -webkit-text-stroke: 1.2px rgba(242,240,235,.75); }
+.jf-landing .grid4 { display: grid; grid-template-columns: repeat(4, 1fr);
+  border: var(--border-paper); border-radius: var(--radius); }
+.jf-landing .f { position: relative; padding: 28px 24px 30px; border-right: var(--border-paper);
+  transition: background .2s var(--ease); }
+.jf-landing .f:last-child { border-right: none; }
+.jf-landing .f::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: var(--sky); transform: scaleX(0); transform-origin: left;
+  transition: transform .35s var(--ease-out); }
+.jf-landing .f:hover { background: rgba(242,240,235,.05); }
+.jf-landing .f:hover::before { transform: scaleX(1); }
+.jf-landing .f-n { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .2em;
+  color: var(--sky); }
+.jf-landing .f-ic { margin-top: 16px; width: 42px; height: 42px; display: grid; place-items: center;
+  border: var(--border-paper); border-radius: var(--radius); }
+.jf-landing .f-ic .ic { width: 20px; height: 20px; }
+.jf-landing .f-t { margin-top: 16px; font-size: 17px; font-weight: 900; letter-spacing: -.02em;
+  line-height: 1.18; text-transform: uppercase; }
+.jf-landing .f-b { margin-top: 10px; font-size: 12.5px; line-height: 1.6; color: rgba(242,240,235,.78); }
+
+/* ══════ EDGE — цитата и цифры ══════ */
+.jf-landing .edge { padding: clamp(56px, 9vh, 112px) 0; border-bottom: var(--border); }
+.jf-landing .edge-box { display: grid; grid-template-columns: 1.5fr 1fr; align-items: stretch;
+  border: var(--border); border-radius: var(--radius); background: var(--paper);
+  box-shadow: 5px 5px 0 var(--shadow); }
+.jf-landing .edge-l { display: flex; align-items: center; padding: clamp(30px, 4vw, 52px); }
+.jf-landing .edge-q { font-size: clamp(24px, 3.2vw, 40px); font-weight: 900; letter-spacing: -.035em;
+  line-height: 1.06; text-transform: uppercase; }
+.jf-landing .edge-q em { font-style: normal; color: var(--blueprint); }
+.jf-landing .edge-r { display: flex; flex-direction: column; justify-content: center; gap: 22px;
+  padding: clamp(30px, 4vw, 52px); border-left: var(--border); background: var(--paper-deep); }
+.jf-landing .stat b { display: block; font-size: clamp(26px, 2.8vw, 36px); font-weight: 900;
+  letter-spacing: -.035em; line-height: 1; font-variant-numeric: tabular-nums; }
+.jf-landing .stat span { display: block; margin-top: 7px; font-family: var(--font-mono); font-size: 9.5px;
+  font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+
+/* ══════ FOOTER ══════ */
+.jf-landing .ft { position: relative; overflow: hidden; padding: clamp(48px, 7vh, 88px) 0 0;
+  background: var(--ink); color: var(--paper); }
+.jf-landing .ft::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(var(--grid-dark) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+  background-size: 40px 40px; }
+.jf-landing .ft .wrap { position: relative; z-index: 2; }
+.jf-landing .ft-cta { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 26px; padding-bottom: clamp(38px, 6vh, 64px); }
+.jf-landing .ft-h { font-size: clamp(26px, 4vw, 46px); font-weight: 900; letter-spacing: -.04em;
+  line-height: 1.02; text-transform: uppercase; }
+.jf-landing .ft-h em { font-style: normal; color: transparent; letter-spacing: .03em; -webkit-text-stroke: 1.2px rgba(242,240,235,.75); }
+.jf-landing .ft-btn { display: inline-flex; align-items: center; gap: 10px; padding: 17px 28px;
+  border: var(--border-paper); border-radius: var(--radius); background: var(--paper); color: var(--ink);
+  font-size: 12px; font-weight: 900; letter-spacing: .16em; text-transform: uppercase;
+  box-shadow: 4px 4px 0 rgba(242,240,235,.2);
+  transition: transform .14s var(--ease), box-shadow .14s var(--ease); }
+.jf-landing .ft-btn:hover { transform: translate(-1px,-1px); box-shadow: 6px 6px 0 rgba(242,240,235,.2); }
+.jf-landing .ft-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 18px; padding: 22px 0 30px; border-top: 1px solid rgba(242,240,235,.24);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: rgba(242,240,235,.6); }
+.jf-landing .ft-bar a:hover { color: var(--paper); }
+.jf-landing .ft-links { display: flex; flex-wrap: wrap; gap: 22px; }
+
+/* ══════ ЛОГОТИП: настоящий знак продукта (public/jobflex-mark.png) ══════
+   Ассет — квадрат с прозрачными полями, окно кадрирует чернила.
+   Доли по альфа-каналу: ширина .3472, высота .4258, верхний отступ .2871.
+   Чернила = 85.5% высоты текстовой пары, центр знака совпадает с центром пары. */
+/* Окно — обычный flex-элемент: align-items: center у .nav-brand центрирует его
+   вместе с текстовой парой. Ручной margin-top не нужен и ломался при смене размера. */
+.jf-landing .sb-mark-box { position: relative;
+  width: calc(var(--mark-size) * 0.3472 + 1px);
+  height: calc(var(--mark-size) * 0.4258 + 1px);
+  overflow: hidden; flex-shrink: 0; }
+.jf-landing .sb-mark-img { position: absolute; left: 50%;
+  top: calc(var(--mark-size) * -0.2871 + 0.5px);
+  width: var(--mark-size); height: var(--mark-size);
+  transform: translateX(-50%); object-fit: contain;
+  filter: brightness(0) invert(1); }
+.jf-landing .sb-head-txt { display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.jf-landing .sb-head-name { font-size: 17.5px; font-weight: 900; letter-spacing: 0.01em; line-height: 1;
+  white-space: nowrap; }
+.jf-landing .sb-head-sub { font-size: 9.5px; font-weight: 800; letter-spacing: 0.26em; text-transform: uppercase;
+  color: var(--sky); line-height: 1; white-space: nowrap; }
+/* тот же знак в шапке карточки — на бумаге, поэтому чернильный */
+.jf-landing .mini-mark { --mark-size: 42px; position: relative; display: block;
+  width: calc(var(--mark-size) * 0.3472 + 1px);
+  height: calc(var(--mark-size) * 0.4258 + 1px);
+  overflow: hidden; flex-shrink: 0; }
+.jf-landing .mini-mark-img { position: absolute; left: 50%;
+  top: calc(var(--mark-size) * -0.2871 + 0.5px);
+  width: var(--mark-size); height: var(--mark-size);
+  transform: translateX(-50%); object-fit: contain; filter: brightness(0); }
+
+/* ══════ ПРАВАЯ ПАНЕЛЬ ГЕРОЯ: чертёж кухни ══════ */
+.jf-landing .hero-r-inner { position: relative; z-index: 1; width: 100%;
+  /* ширина ограничена и высотой окна: карточка ~1.05 своей ширины по высоте,
+     поэтому на низких лаптопах она сжимается, а не обрезается */
+  max-width: clamp(560px, calc((100svh - 66px - 76px - 410px) / 0.469 + 52px), 760px); }
+.jf-landing .fh-schematic-wrap { padding: 22px 22px 16px; border-bottom: var(--border-paper); position: relative; }
+.jf-landing .k-svg { display: block; width: 100%; height: auto; }
+.jf-landing .k-svg [class^="k-"] { vector-effect: non-scaling-stroke; }
+/* стена: заливка poche между внешней и внутренней линией — как на настоящем плане */
+.jf-landing .k-poche { fill: rgba(242,240,235,.88); stroke: none; }
+.jf-landing .k-cut { fill: var(--blueprint); stroke: none; }
+.jf-landing .k-wall { fill: none; stroke: var(--paper); stroke-width: 1.6; }
+.jf-landing .k-glass { stroke: var(--paper); stroke-width: 1; }
+.jf-landing .k-jamb { stroke: var(--paper); stroke-width: 1.6; }
+.jf-landing .k-leaf { stroke: var(--paper); stroke-width: 2.4; }
+.jf-landing .k-swing { fill: none; stroke: rgba(242,240,235,.55); stroke-width: 1; stroke-dasharray: 4 3; }
+.jf-landing .k-cab { fill: url(#khatch); stroke: var(--paper); stroke-width: 1.2; }
+.jf-landing .k-isl { fill: rgba(242,240,235,.07); stroke: var(--paper); stroke-width: 1.2; }
+.jf-landing .k-app { fill: var(--blueprint); stroke: var(--paper); stroke-width: 1.2; }
+.jf-landing .k-lead { fill: none; stroke: rgba(242,240,235,.55); stroke-width: 1; stroke-dasharray: 3 3; }
+.jf-landing .k-mk { fill: var(--blueprint); stroke: var(--paper); stroke-width: 1.2; }
+.jf-landing .k-mk-t { fill: var(--paper); font-family: var(--font-mono); font-size: 8px; font-weight: 700; letter-spacing: .06em; }
+.jf-landing .k-lab { fill: rgba(242,240,235,.85); font-family: var(--font-mono); font-size: 7.5px; font-weight: 600; letter-spacing: .1em; }
+.jf-landing .k-tb { stroke: rgba(242,240,235,.55); stroke-width: 1.1; }
+.jf-landing .k-tb-h { fill: var(--paper); font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .14em; }
+.jf-landing .k-tb-l { fill: rgba(242,240,235,.55); font-family: var(--font-mono); font-size: 8.5px; font-weight: 600; letter-spacing: .12em; }
+.jf-landing .k-tb-v { fill: var(--paper); font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: .06em; }
+.jf-landing .k-north { fill: var(--paper); }
+.jf-landing .k-hair { fill: none; stroke: rgba(242,240,235,.6); stroke-width: .9; }
+.jf-landing .k-dim { stroke: rgba(242,240,235,.8); stroke-width: 1; }
+.jf-landing .k-ext { stroke: rgba(242,240,235,.45); stroke-width: .8; }
+.jf-landing .k-tick { stroke: var(--paper); stroke-width: 1.4; }
+.jf-landing .k-dim-bg { fill: var(--blueprint); stroke: none; }
+.jf-landing .k-dim-t { fill: var(--paper); font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: .04em; }
+.jf-landing .k-room-t { fill: var(--paper); font-family: var(--font); font-size: 12.5px; font-weight: 900;
+  letter-spacing: .1em; }
+
+.jf-landing .fh-card-label { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--blueprint); margin-bottom: 14px; display: flex; align-items: center; gap: 12px; font-weight: 700; }
+.jf-landing .fh-card-label-line { width: 28px; height: 2px; background: var(--blueprint); }
+.jf-landing .fh-card-label-dot { width: 6px; height: 6px; background: var(--blueprint); border-radius: 50%; animation: lp_blink 2s infinite; }
+.jf-landing .fh-card-head-l { display: flex; align-items: center; gap: 10px; }
+.jf-landing .fh-card-head-logo { width: 22px; height: 22px; flex-shrink: 0; }
+.jf-landing .fh-card-head-l em { color: var(--blueprint); font-style: normal; font-weight: 800; }
+.jf-landing .fh-card-head-r { display: inline-flex; align-items: center; gap: 8px; }
+.jf-landing .fh-card-dot { width: 7px; height: 7px; background: var(--blueprint); border-radius: 50%; animation: lp_fh-blink 1.8s infinite; }
+.jf-landing .fh-sec { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
+.jf-landing .fh-footer-check { width: 16px; height: 16px; background: var(--blueprint); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--paper); font-size: 10px; font-weight: 900; }
+.jf-landing .fh-footer-left { display: flex; align-items: center; gap: 10px; font-size: 10px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(242,240,235,0.7); font-weight: 700; }
+.jf-landing .fh-footer-stamp { font-size: 10px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--ink); padding: 5px 12px; background: var(--paper); border: 1.5px solid var(--paper); font-weight: 900; position: relative; transform: rotate(-2deg); }
+.jf-landing .fh-l1 { animation-delay: 0.4s; }
+.jf-landing .fh-l2 { animation-delay: 0.7s; }
+.jf-landing .fh-l3 { animation-delay: 1.0s; }
+.jf-landing .fh-l4 { animation-delay: 1.3s; }
+.jf-landing .fh-line-label { font-size: 10px; color: rgba(242,240,235,0.65); letter-spacing: 0.26em; text-transform: uppercase; margin-bottom: 10px; display: flex; justify-content: space-between; font-weight: 700; }
+.jf-landing .fh-line { display: grid; grid-template-columns: 20px 1fr auto; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px dashed rgba(242,240,235,0.22); opacity: 0; animation: lp_fh-slide-in 0.5s ease forwards; }
+.jf-landing .fh-line:last-of-type { border-bottom: none; }
+.jf-landing .fh-line-num { font-size: 10px; color: rgba(242,240,235,0.65); letter-spacing: 0.1em; font-weight: 700; }
+.jf-landing .fh-line-name { font-size: 12px; color: var(--paper); font-weight: 500; }
+.jf-landing .fh-line-price { font-size: 12px; font-weight: 700; color: var(--paper); font-variant-numeric: tabular-nums; }
+.jf-landing .fh-total { display: flex; justify-content: space-between; align-items: center; padding: 14px 22px; background: var(--paper); color: var(--ink); border-bottom: var(--border-paper); }
+.jf-landing .fh-total-lbl { font-size: 11px; color: var(--ink); letter-spacing: 0.24em; text-transform: uppercase; font-weight: 800; }
+.jf-landing .fh-total-val { font-size: 30px; font-weight: 900; letter-spacing: -0.03em; color: var(--blueprint); font-variant-numeric: tabular-nums; }
+.jf-landing .fh-card { border: var(--border-paper); background: var(--blueprint); position: relative;
+  overflow: hidden; }
+/* чертёжная сетка на синем — тот же приём, что в чернильных полосах */
+.jf-landing .fh-card::after { content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image: linear-gradient(var(--grid-dark) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+  background-size: 28px 28px; }
+.jf-landing .fh-card > * { position: relative; z-index: 1; }
+
+.jf-landing .fh-card-head { padding: 12px 20px; border-bottom: var(--border-paper); display: flex; justify-content: space-between; align-items: center; font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; background: var(--paper); color: var(--ink); font-weight: 700; }
+.jf-landing .fh-card-lines { padding: 18px 26px 10px; border-bottom: var(--border-paper); }
+.jf-landing .fh-card-footer { display: flex; justify-content: space-between; align-items: center; padding: 17px 22px; background: var(--ink); color: var(--paper); }
+
+@media (max-width: 1080px) {
+  .jf-landing .hero { grid-template-columns: 1fr; }
+  .jf-landing .hero-r { border-left: none; border-top: var(--border); }
+  .jf-landing .grid4 { grid-template-columns: repeat(2, 1fr); }
+  .jf-landing .f:nth-child(2n) { border-right: none; }
+  .jf-landing .f:nth-child(-n+2) { border-bottom: var(--border-paper); }
+  .jf-landing .edge-box { grid-template-columns: 1fr; }
+  .jf-landing .edge-r { border-left: none; border-top: var(--border); flex-direction: row; flex-wrap: wrap; gap: 30px; }
+}
+@media (max-width: 820px) {
+  .jf-landing .nav-links, .jf-landing .nav-sign { display: none; }
+  .jf-landing .nav-cta { margin-left: auto; }
+  .jf-landing .burger { display: flex; align-items: center; padding: 0 18px; border-left: var(--border); }
+  .jf-landing .nav-brand { padding: 11px 14px 11px 12px; gap: 11px; --mark-size: 52px; }
+  .jf-landing .sb-head-name { font-size: 15px; }
+  .jf-landing .sb-head-sub { font-size: 8.5px; letter-spacing: .2em; }
+  .jf-landing .hero-r-inner { max-width: 100%; }
+  .jf-landing .fh-schematic-wrap { padding: 14px 14px 10px; }
+  .jf-landing .fh-card-lines { padding: 12px 16px 6px; }
+  .jf-landing .fh-card-head, .jf-landing .fh-card-footer { padding-left: 16px; padding-right: 16px; }
+  .jf-landing .fh-card-head { flex-wrap: wrap; gap: 4px 12px; letter-spacing: .18em; }
+  .jf-landing .fh-card-head-r { margin-left: auto; }
+  .jf-landing .fh-total { padding: 12px 16px; }
+  .jf-landing .fh-total-val { font-size: 26px; }
+  .jf-landing .nav-cta { padding: 0 16px; font-size: 10px; letter-spacing: .1em; }
+  .jf-landing .grid4 { grid-template-columns: 1fr; }
+  .jf-landing .f { border-right: none; border-bottom: var(--border-paper); }
+  .jf-landing .f:last-child { border-bottom: none; }
+  .jf-landing .cta-row { flex-direction: column; }
+
+  .jf-landing .ft-cta { flex-direction: column; align-items: stretch; }
+  .jf-landing .ft-btn { justify-content: center; }
+}
+
+/* ══════ WOW-ПАКЕТ (Motion System «Balanced») ══════ */
+.jf-landing ::selection { background: var(--blueprint); color: var(--paper); }
+.jf-landing .sprog { position: absolute; left: 0; bottom: -2px; width: 100%; height: 3px;
+  background: var(--blueprint); transform: scaleX(0); transform-origin: left;
+  pointer-events: none; z-index: 5; }
+.jf-landing .nav { transition: box-shadow .22s var(--ease); }
+.jf-landing .nav.sc { box-shadow: 0 5px 0 var(--shadow); }
+.jf-landing .hero-l::before, .jf-landing .hero-r::before, .jf-landing .feat::before, .jf-landing .ft::before {
+  background-position: 0 var(--par, 0px); }
+.jf-landing .feat::after { background-position: 0 calc(var(--par, 0px) * .5); }
+/* бегущая строка */
+.jf-landing .mq { overflow: hidden; padding: 15px 0; border-bottom: var(--border);
+  background: var(--blueprint); color: var(--paper); }
+.jf-landing .mq-track { display: flex; gap: 36px; width: max-content;
+  animation: lp_mq 28s linear infinite; }
+.jf-landing .mq:hover .mq-track { animation-play-state: paused; }
+.jf-landing .mq-in { display: flex; align-items: center; gap: 36px; flex-shrink: 0; white-space: nowrap;
+  font-size: 12.5px; font-weight: 900; letter-spacing: .24em; text-transform: uppercase; }
+.jf-landing .mq-dot { width: 7px; height: 7px; flex-shrink: 0; background: var(--sky); }
+@keyframes lp_mq { to { transform: translateX(calc(-50% - 18px)); } }
+/* карточки фич: оттиск иконки */
+.jf-landing .f-ic { transition: background .18s var(--ease), border-color .18s var(--ease),
+  color .18s var(--ease), transform .18s var(--ease); }
+.jf-landing .f-ic .ic { transition: transform .18s var(--ease); }
+.jf-landing .f:hover .f-ic { background: var(--sky); border-color: var(--sky); color: var(--ink);
+  transform: translate(-1px,-1px); }
+.jf-landing .f:hover .f-ic .ic { transform: scale(1.12); }
+.jf-landing .f-n { transition: color .18s var(--ease); }
+.jf-landing .f:hover .f-n { color: var(--paper); }
+/* стрелки и пресс кнопок */
+.jf-landing .cta-a .ic, .jf-landing .cta-b .ic, .jf-landing .ft-btn .ic, .jf-landing .nav-cta .ic { transition: transform .16s var(--ease); }
+.jf-landing .cta-b:hover .ic, .jf-landing .ft-btn:hover .ic, .jf-landing .nav-cta:hover .ic { transform: translate(2px,-2px); }
+.jf-landing .cta-a:hover .ic { transform: scale(1.12); }
+.jf-landing .cta-a:active, .jf-landing .cta-b:active, .jf-landing .ft-btn:active, .jf-landing .nav-cta:active { transform: scale(.97); }
+/* штамп APPROVED пропечатывается после строк сметы */
+.jf-landing .fh-footer-stamp { animation: lp_fh-stamp .45s var(--ease-out) 1.75s backwards; }
+@keyframes lp_fh-stamp {
+  from { opacity: 0; transform: rotate(-9deg) scale(1.7); }
+  70%  { opacity: 1; transform: rotate(-1deg) scale(.96); }
+  to   { opacity: 1; transform: rotate(-2deg) scale(1); } }
+/* тилт чертёжной карточки */
+.jf-landing .hero-r-inner { perspective: 1100px; }
+.jf-landing .fh-card { transition: transform .16s var(--ease); will-change: transform; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-landing *, .jf-landing *::before, .jf-landing *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; }
+  .jf-landing .rv { opacity: 1; transform: none; } .jf-landing .an { opacity: 1; animation: none; }
+  .jf-landing .fh-line, .jf-landing .fh-footer-stamp { animation-delay: 0s !important; }
+  .jf-landing .mq-track { animation: none; }
+}
+
+/* ══════ PORT ADDENDUM ══════════════════════════════════════════════════
+   Everything above this line is the donor stylesheet. Everything below it is
+   not, and each rule says why it has to exist.
+
+   ── 1. Restore the donor's inherited baseline ──────────────────────────
+   The donor was a standalone file: no Tailwind preflight, no globals.css.
+   This app has both, and three of their declarations INHERIT into the page
+   and quietly change it. None of these are design choices — each one sets a
+   property back to the value it computed to in the donor, measured against
+   the source in Chromium:
+
+   * `line-height` — Tailwind preflight sets `html { line-height: 1.5 }`. The
+     donor inherited the initial `normal`. Every element that does not set its
+     own line-height (the kicker, .hero-note, .f-n, the marquee, the whole
+     schematic card) grew: .hero-r-inner 718.8px -> 746.8px, the feature strip
+     596.05 -> 603.05, document scrollHeight 2342 -> 2362. Restoring `normal`
+     puts all of them back to the source's values exactly.
+   * `font-feature-settings` / `text-rendering` — globals.css sets
+     `'cv11','ss01','ss03'` and `optimizeLegibility` on `html, body` for the
+     app's Inter. The donor computed `normal` / `auto`. optimizeLegibility
+     turns on kerning and shifted the nav's flexible column by 1.4px.
+   * `max-width` — preflight's `img, video { max-width: 100% }`. Both marks
+     are absolutely positioned inside a crop window NARROWER than the image
+     (that crop is how the logo lockup works), so 100% of the containing block
+     clamped the 60.39px mark to 21.97px while its height stayed 60.39px —
+     the logo rendered squashed to a sliver. The donor computed `none`.
+     Only `max-width` is reset: preflight's `height: auto` is already
+     outranked by the donor's own `.sb-mark-img` / `.mini-mark-img` rules, and
+     re-declaring it here would beat them and break the crop.
+
+   NOT restored, deliberately: globals.css also styles scrollbars globally
+   (`* { scrollbar-width: thin; scrollbar-color: … }` plus a 10px
+   `::-webkit-scrollbar`). The donor styled scrollbars not at all, so there is
+   nothing to port — but the app's 10px bar is narrower than the platform
+   default the donor got, which makes this page's content a few px wider than
+   the source file in a real browser. That is app chrome, not page content, so
+   it is flagged in the port report rather than fought here. */
+.jf-landing { line-height: normal; font-feature-settings: normal; text-rendering: auto; }
+.jf-landing img { max-width: none; }
+
+/* ── 2. The mobile menu's open state ────────────────────────────────────
+   The donor's `nav` script opened the menu by writing seven inline styles
+   onto `.nav-links` and closing it with removeAttribute('style'). Inline
+   style mutation is not how React drives a component, so the burger is React
+   state now and the open state is this class instead. The declarations are
+   exactly the seven the script wrote, so the rendered result is
+   indistinguishable. Specificity (0,3,0) beats the 820px query's
+   `.jf-landing .nav-links, .jf-landing .nav-sign { display: none }` (0,2,0),
+   which is what the inline styles used to do. */
+.jf-landing .nav-links.open { display: flex; position: absolute; top: 100%; left: 0; right: 0;
+  flex-direction: column; background: var(--paper); border-bottom: var(--border); }

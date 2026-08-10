@@ -1,0 +1,1081 @@
+/* ============================================================
+   CLIENT DETAIL — BLUEPRINT
+   /dashboard/client-detail
+
+   WHAT THIS IS
+   The client record rebuilt in the house blueprint system, sibling
+   to /dashboard/manual-blueprint and built the same way: fixture
+   data, one self-scoped CSS module, the fleet's entrance cascade,
+   and nothing borrowed from the old page but the CONTENT list.
+
+   THE COMPOSITION, AND WHY IT IS NOT FOUR CARDS
+   The old page was a 3-column card grid: identity, proposals,
+   payments, activity, all the same weight, all the same shape,
+   read in whatever order the eye landed. That is the "generic
+   SaaS-cream" failure design-system.md names outright — an
+   identical-tile grid where nothing outranks anything.
+
+   This page is FOUR DIFFERENT SHAPES, stacked, decaying in weight
+   from the top:
+
+     1  MASTHEAD      the client's NAME at the shell's 46px/900, so
+                      the page is titled by who it is about. The
+                      record number, the org and the fixture notice
+                      annotate it from the right.
+     2  PARTICULARS   a wide two-part band — an ink monogram stamp
+                      and the company on the left, the reachable
+                      facts (email, phone, address, dates) on the
+                      right, split by one 2px structural rule. Not
+                      a card grid: one object, two zones.
+     3  FIGURES       the house KPI strip — ONE block, internal
+                      1.5px ink dividers, four cells, no labels
+                      UNDER the numerals. This is the only place on
+                      the page with 38px type, which is what makes
+                      it the second thing you read.
+     4  THE LEDGER    proposals, full width, the page's primary
+                      content and its tallest object. Rows are real
+                      targets; the status chips filter in place.
+     5  THE TAIL      payments and activity side by side, the
+                      lightest beat, both with scrolling bodies at
+                      the SAME fixed height — card-height
+                      synchronisation achieved by construction, so
+                      the JS-measured version decisions.md warns
+                      about (it broke twice) is never needed.
+
+   Nothing here is collapsible. Every fact is showing, and the
+   hierarchy is carried by SIZE and SHAPE rather than by hiding.
+
+   ── THE SPACING LADDER ─────────────────────────────────────
+   The house scale is 4px-based, stepping in 8s once it is doing
+   structural work (design-system.md: 4 / 8 / 16 / 24 / 32 / 48).
+
+     · gap BETWEEN cards ...... 32px   (--cd-gap)
+     · padding INSIDE cards ... 24px   (--cd-pad)
+     · card head → body ....... 16px
+     · block → block .......... 24px
+     · label → value .......... 4px
+     · icon → text ............ 8px
+     · ledger row padding ..... 12px vertical (≈52px rows)
+     · two-up column gap ...... 32px   (an inter-card gap too)
+
+   THE ONE RATIO THAT MUST SURVIVE ANY FUTURE PASS
+   external > internal. 32 between cards against 24 inside them.
+   The moment the gap reaches the padding, five framed boxes stop
+   reading as five objects and become one wall. Shrink both or
+   neither — including the two-up gap, which is an inter-card gap
+   wearing a grid's clothes.
+
+   ── THE TYPE SCALE ─────────────────────────────────────────
+     · page title ....... 46 / 900 caps, −0.03em   (shell)
+     · card title ....... 16 / 900 caps, +0.02em
+     · KPI numeral ...... 38 / 900 tabular, −0.005em
+     · ledger amount .... 17 / 900 tabular, −0.005em
+     · payment amount ... 15.5 / 900 tabular, −0.005em
+     · row title ........ 14 / 700
+     · body value ....... 13 / 600
+     · label ............ 11 / 500, --muted, SENTENCE CASE
+     · badge ............ 10 / 800 caps, +0.12em
+     · annotation ....... 10.5 / 600 mono caps, +0.1em
+
+   Large numerals are Inter 900 with tabular figures at −0.005em
+   and are NEVER mono — mono on an amount is the rule this system
+   states twice. Mono is confined to the drawing-annotation layer:
+   the record number, dates, refs and the small counts in card
+   heads. Labels are sentence case and muted; caps belongs to
+   headings and badges, and a caps-mono label on every field is the
+   single loudest thing a blueprint page can do wrong.
+
+   ── SCOPING ────────────────────────────────────────────────
+   This route is deliberately NOT registered in blueprint-shell's
+   PAGE_STYLES (a page must not edit shell files), so there is no
+   page-level `.bp` activation class to hang :global rules from.
+   Every rule here is this module's own hashed class under the
+   literal shell root — `:global(.jf-blueprint) .cls` ⇒ (0,2,0),
+   which beats the always-on modules':
+     · `.bp :global(button)` (0,1,1) — strips border, background
+       and cursor off every button, so every control here is a
+       module class that declares its own box, never a bare type
+       selector;
+     · `.bp :global(svg.ic)` (0,2,1) — pins icons at 17px, so every
+       icon resize is written with THREE classes and wins on count
+       ((0,3,0) beats (0,2,1)).
+   Tailwind preflight runs app-wide, so controls declare their own
+   border / background / font-family / font-size rather than
+   inheriting anything.
+
+   ── NO @keyframes ──────────────────────────────────────────
+   Lightning CSS rejects @keyframes inside a CSS module. The
+   entrance cascade is the fleet's `.rv` / `.rv-in` / `.rv-cell`,
+   published by the always-on dashboard module and applied by
+   ./use-reveal.ts. Everything else here is a transition.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   - Light mode only. No .dark variants, ever.
+   - Full width. No max-width on `.page` — measure is enforced per
+     CONTROL (`.aText`, `.lTitle`) where a sentence actually has a
+     reading problem. A figure in a 120px column does not care how
+     wide the page is.
+   - Status colour is for STATUS ONLY. The three-tone tokens dress
+     proposal and payment states and the filter chip that selects
+     them; nothing decorative is ever tinted. Distribution holds at
+     ~80% neutral / ~15% blueprint / ~5% sky and status.
+   - WCAG 2.2 AA: --muted (#555) is the floor for meaningful text;
+     --muted-light (#888) is for rules, placeholders and glyphs
+     that repeat an adjacent word.
+   - Elevation is a hard offset with ZERO blur. A blurred shadow
+     is forbidden outright by the Motion System.
+   - prefers-reduced-motion is killed globally by the shell; the
+     block at the foot is belt-and-braces for transform.
+   ============================================================ */
+
+/* ============================================================
+   THE PAGE
+   Local tokens only where the fleet has no name for the thing.
+   Everything else is a shell token, so a theme swap reaches this
+   page for free.
+   ============================================================ */
+
+:global(.jf-blueprint) .page {
+  /* Cards are sheets laid ON the drawing: the graph-paper ground
+     stops dead at the ink frame. Settled on the sibling route —
+     white never reads as receding. */
+  --cd-card: #ffffff;
+
+  /* The service surface. A zone inside a white card cannot also be
+     white or it is defined by nothing, so it recedes into a faint
+     warm tint instead of standing out from paper. */
+  --cd-well: #f7f5f1;
+
+  /* Line weights, house values. --cd-rule is the internal
+     structural line; --cd-line is a resting edge. Both fall back
+     to literals so the file survives outside the shell. */
+  --cd-rule: var(--hair-soft, rgba(10, 10, 10, 0.08));
+  --cd-line: var(--hair, rgba(10, 10, 10, 0.12));
+
+  /* The house elevation: hard offset, zero blur. */
+  --cd-lift: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+
+  /* Outstanding balance. The house yellow, not a local literal:
+     money owed is a WARNING state and --warning is the token this
+     system already spends on that reading, so a theme swap carries
+     the figure with it. See .kpiValDue. */
+  --cd-due: var(--warning, #b88420);
+
+  /* The two numbers a future density pass should touch first —
+     and together, never one without the other. */
+  --cd-pad: 24px;
+  --cd-gap: 32px;
+
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+/* ============================================================
+   MASTHEAD
+   The shell's own .page-head / .kicker / .page-title vocabulary,
+   reused rather than redrawn. 46px caps against a 16px card title
+   is a ~2.9x ratio: the page outranks every card without needing a
+   rule to say so.
+   ============================================================ */
+
+:global(.jf-blueprint) .head {
+  margin-bottom: var(--cd-gap);
+}
+
+/* Actions only. The record number and the fixture disclaimer that
+   used to sit above them are gone: a page titled by a PERSON should
+   not be annotated by a filing code, and a caveat pinned beside the
+   buttons reads as part of the buttons. "Client since" survives as
+   a field in the band below, where it belongs. */
+:global(.jf-blueprint) .headRight {
+  display: flex;
+  align-items: center;
+}
+
+:global(.jf-blueprint) .actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ============================================================
+   THE STACK
+   32px between bands against 24px inside them.
+   ============================================================ */
+
+:global(.jf-blueprint) .stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cd-gap);
+}
+
+:global(.jf-blueprint) .card {
+  background: var(--cd-card);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--cd-lift);
+  padding: var(--cd-pad);
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .cardHead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+:global(.jf-blueprint) .cardTitle {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+/* The count beside a title is an annotation, not a subtitle. It
+   says something the title cannot ("6 on file"); a subtitle that
+   restated the title would be deleted on sight. */
+:global(.jf-blueprint) .cardNote {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .cardTools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ============================================================
+   BAND 2 — PARTICULARS
+   One object, two zones, one structural rule between them. The
+   rule is 2px in the hair-soft tone: internal structural lines
+   carry the same WEIGHT as the frame and a lighter TONE, which is
+   the proposals-family rule. 1.5px is reserved for dense ledger
+   rows and the KPI dividers.
+   ============================================================ */
+
+:global(.jf-blueprint) .bandGrid {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) 1fr;
+  align-items: start;
+}
+
+:global(.jf-blueprint) .bandId {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: var(--cd-pad);
+}
+
+:global(.jf-blueprint) .bandFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 32px;
+  padding-left: var(--cd-pad);
+  border-left: 2px solid var(--cd-rule);
+}
+
+:global(.jf-blueprint) .lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* The monogram is a STAMP — a flat ink plate with white letters,
+   the house's inverse device at the smallest size it works at. It
+   is the page's one piece of solid ink, which is why the band
+   reads as the identity band without a heading saying so. */
+:global(.jf-blueprint) .stamp {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+:global(.jf-blueprint) .company {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .companySub {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Tags are CONTENT, not status, so they get no status tone — a
+   neutral ink outline and sentence case. Tinting them would spend
+   the status palette on decoration, which is the one thing the
+   colour rule forbids. */
+:global(.jf-blueprint) .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+:global(.jf-blueprint) .tag {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--cd-well);
+  border: 1.5px solid var(--cd-line);
+  border-radius: var(--radius);
+}
+
+:global(.jf-blueprint) .fact {
+  min-width: 0;
+}
+
+/* The one that spans, because an address is a sentence and the
+   other three are tokens. */
+:global(.jf-blueprint) .factWide {
+  grid-column: 1 / -1;
+}
+
+:global(.jf-blueprint) .label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .factVal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/* The glyph repeats a word that is already there, so it stays in
+   the faint tone — it is a scan aid, not information. */
+:global(.jf-blueprint) .page .factVal :global(.ic) {
+  width: 15px;
+  height: 15px;
+  color: var(--muted-light);
+}
+
+:global(.jf-blueprint) .factText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   BAND 3 — THE FIGURE STRIP
+   One block, four cells, 1.5px INK dividers. Labels sit ABOVE the
+   numerals and there is nothing underneath them: a caption under a
+   KPI is the "cognitive noise" decisions.md deletes on sight.
+   ============================================================ */
+
+:global(.jf-blueprint) .kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--cd-card);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--cd-lift);
+  overflow: hidden;
+}
+
+:global(.jf-blueprint) .kpi {
+  padding: 20px var(--cd-pad) 24px;
+  border-right: 1.5px solid var(--ink);
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .kpi:last-child {
+  border-right: none;
+}
+
+/* These four labels are the only thing that says what the four
+   numerals MEAN, so they are not the page's 11px muted field label.
+   12.5/700 in --ink-soft (#2a2a2a, 14.7:1 on white) keeps the
+   numeral obviously dominant — 38 against 12.5 is still a 3x
+   ratio — while the caption stops reading as fine print. */
+:global(.jf-blueprint) .kpiLbl {
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink-soft);
+}
+
+:global(.jf-blueprint) .kpiVal {
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ONE accent numeral on the page. Lifetime value is the figure the
+   whole record exists to produce, and the masthead pattern already
+   sanctions a single accented lead numeral per surface. */
+:global(.jf-blueprint) .kpiValAccent {
+  color: var(--blueprint);
+}
+
+/* Outstanding money is a real STATUS (awaiting payment), so a
+   warning tone is legal here — and the balance is money OWED, not
+   a failure, which is why it is the yellow and not --danger. The
+   token is the house --warning (#b88420): a lighter, brighter
+   yellow would drop this 38px numeral under 4.5:1 on the white
+   card, and the outdoor-sun-readability commitment in DESIGN.md is
+   not tradeable against a shade. */
+:global(.jf-blueprint) .kpiValDue {
+  color: var(--cd-due);
+}
+
+/* ============================================================
+   BAND 4 — THE PROPOSAL LEDGER
+   Full width and the page's tallest object. Rows are buttons: the
+   whole 52px row is the target, which is how a 14px title gets a
+   comfortable hit area without drawing a big box around it.
+   ============================================================ */
+
+:global(.jf-blueprint) .chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Declares its own box — `.bp button` strips border, background
+   and cursor app-wide. */
+:global(.jf-blueprint) .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: transparent;
+  background-clip: padding-box;
+  border: 1.5px solid var(--cd-line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    color 0.14s var(--ease),
+    background 0.14s var(--ease),
+    border-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .chip:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+/* The count is real information, so it is separated from the word
+   by FAMILY and SIZE (mono, one step down) and never by opacity —
+   a faded number is a contrast failure dressed as hierarchy. */
+:global(.jf-blueprint) .chipCount {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The active chip inherits the TONE of the badge it selects — pure
+   CSS off `data-f`, the documented pattern. The chip and the rows
+   it reveals are then obviously the same idea. */
+:global(.jf-blueprint) .chipOn {
+  color: var(--ink);
+  background: var(--paper-deep);
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .chipOn[data-f="open"] {
+  color: var(--blueprint);
+  background: rgba(74, 158, 255, 0.13);
+  border-color: var(--sky);
+}
+
+:global(.jf-blueprint) .chipOn[data-f="won"] {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+
+:global(.jf-blueprint) .chipOn[data-f="lost"] {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+:global(.jf-blueprint) .ledger {
+  display: flex;
+  flex-direction: column;
+}
+
+:global(.jf-blueprint) .lRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 52px;
+
+  /* Vertical only. This used to carry a stray 8px on the right, which pushed
+     the arrow — and with it the whole amount column — 8px inboard of the
+     card's inner edge while the titles stayed flush left. One edge indented
+     and the other not is the kind of asymmetry you see before you can name,
+     and it also put these amounts on a different right margin from the
+     payment amounts in the card below. Both stacks now end on the same line. */
+  padding: 12px 0;
+  text-align: left;
+  font-family: var(--font);
+  background: transparent;
+  border: none;
+  border-top: 1.5px solid var(--cd-rule);
+  border-radius: 0;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+
+/* The first row abuts the head's 16px gap, not a rule: a divider
+   there would read as a second frame edge. */
+:global(.jf-blueprint) .lRow:first-child {
+  border-top: none;
+}
+
+:global(.jf-blueprint) .lRow:hover {
+  background: var(--cd-well);
+}
+
+:global(.jf-blueprint) .lMain {
+  min-width: 0;
+}
+
+/* Prose caps itself. A proposal title in a 1400px column has no
+   reading rhythm; 76ch is the printed-sheet measure this system
+   already uses for scope text. */
+:global(.jf-blueprint) .lTitle {
+  display: block;
+  max-width: 76ch;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .lMeta {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fixed column so six amounts form one digit stack, tabular-nums
+   doing the rest. This is the estimate-sheet rule. */
+:global(.jf-blueprint) .lAmount {
+  display: block;
+  min-width: 120px;
+  text-align: right;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* NO hover glyph in the fourth column, and no fourth column. The
+   row already lifts to --cd-well on hover and the cursor is a
+   pointer, so the arrow was a third way of saying the same thing —
+   and it was the only mark on the page that appeared out of
+   nothing under the pointer. Its 20px track went with it: left
+   behind it would have held the amounts 36px inboard of the card's
+   inner edge while the payment amounts below stayed flush, which
+   is the exact asymmetry .lRow's padding comment was written to
+   stop. Three columns now, amounts flush right in both cards. */
+
+/* ============================================================
+   BAND 5 — THE TAIL
+   Two cards, one gap, equal heights BY CONSTRUCTION: both bodies
+   are the same fixed scroll height, so nothing measures anything.
+   The gap is 32 — an inter-card gap wearing a grid's clothes, and
+   it obeys the same external > internal rule as the stack.
+   ============================================================ */
+
+:global(.jf-blueprint) .duo {
+  display: grid;
+  grid-template-columns: 1.45fr 1fr;
+  gap: var(--cd-gap);
+  align-items: start;
+}
+
+/* Five or more records get an internal scroll showing about four,
+   which is the house list rule. The height is fixed rather than
+   measured: the rows here have a known box, so the JS height
+   synchronisation decisions.md warns about (it broke twice) buys
+   nothing. */
+:global(.jf-blueprint) .scroll {
+  height: 232px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  /* The 8px is the house rule and it is not decoration: without it
+     the bar sits ON the amount column and the digit stack shifts by
+     6px the moment a list gets long enough to scroll. */
+  padding-right: 8px;
+
+  /* NO `scrollbar-width` / `scrollbar-color` HERE, and that is the
+     whole point. The app's globals.css sets
+     `* { scrollbar-width: thin; scrollbar-color: … }`, and Chrome
+     drops ALL ::-webkit-scrollbar styling on any element where the
+     standard properties are set — so the shell resets them to
+     `auto` on .jf-blueprint (blueprint-global.css) and every
+     blueprint list then draws the house bar through the pseudos.
+     This card re-declared `thin` locally, which put the two tail
+     lists back on the browser's own rounded hairline while the
+     sidebar and the page scrolled with the house bar: the ONE
+     mismatched scrollbar in the shell. Restating them is the bug. */
+}
+
+/* The house bar, identical to the sidebar's .sb-scroll, the page's
+   .main and every other blueprint list (jobs, crm, financials,
+   workers …): 6px, no track, a SQUARE thumb in --muted-faint that
+   darkens to --muted-light on hover. Square is the point — a
+   rounded thumb on a 2px-radius page is the one soft edge in the
+   whole system. */
+:global(.jf-blueprint) .scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+:global(.jf-blueprint) .scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:global(.jf-blueprint) .scroll::-webkit-scrollbar-thumb {
+  background: var(--muted-faint);
+  border-radius: 0;
+
+  /* `border: none` is an environment restore, not a style choice —
+     the same one .sb-scroll and .list.scrollable carry in
+     blueprint-global.css. globals.css puts
+     `border: 2px solid var(--paper)` on EVERY
+     *::-webkit-scrollbar-thumb, which eats 4 of these 6 pixels and
+     leaves a 2px sliver. */
+  border: none;
+}
+
+:global(.jf-blueprint) .scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-light);
+}
+
+/* ---- payments ---------------------------------------------- */
+
+:global(.jf-blueprint) .pRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding: 12px 0;
+  border-top: 1.5px solid var(--cd-rule);
+}
+
+:global(.jf-blueprint) .pRow:first-child {
+  border-top: none;
+}
+
+:global(.jf-blueprint) .pMethod {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .pMeta {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .pAmount {
+  display: block;
+  min-width: 104px;
+  text-align: right;
+  font-size: 15.5px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- activity ---------------------------------------------- */
+
+:global(.jf-blueprint) .aRow {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1.5px solid var(--cd-rule);
+}
+
+:global(.jf-blueprint) .aRow:first-child {
+  border-top: none;
+}
+
+/* A 26px tonal box, the house's own list-icon device (the row menu
+   uses the same size). It stays NEUTRAL for every kind: colouring
+   by activity type would be colour carrying decoration, and the
+   glyph already says which kind it is. */
+:global(.jf-blueprint) .aIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: var(--cd-well);
+  border: 1.5px solid var(--cd-line);
+  border-radius: var(--radius);
+
+  /* Full ink, not --muted. At 13px inside a 26px box a muted glyph
+     is a grey smudge in jobsite sun; the box already carries the
+     "quiet" reading, so the mark inside it can be black. */
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .page .aIcon :global(.ic) {
+  width: 13px;
+  height: 13px;
+}
+
+/* Ink, matched to the icon beside it. The timestamp under it stays
+   --muted, so the row still has two levels — they are just carried
+   by the STAMP receding rather than by the sentence being greyed. */
+:global(.jf-blueprint) .aText {
+  display: block;
+  max-width: 62ch;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .aStamp {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   STATUS BADGES
+   1.5px border in the base tone + the soft fill + caps text in the
+   base tone. Sent is the SKY palette and Viewed is deep blueprint
+   — both blue, instantly told apart, which is the documented pair.
+   ============================================================ */
+
+:global(.jf-blueprint) .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  color: var(--muted);
+  background: transparent;
+}
+
+:global(.jf-blueprint) .bgSent {
+  color: var(--blueprint);
+  background: rgba(74, 158, 255, 0.13);
+  border-color: var(--sky);
+}
+
+:global(.jf-blueprint) .bgViewed {
+  color: var(--blueprint);
+  background: rgba(24, 84, 160, 0.09);
+  border-color: var(--blueprint);
+}
+
+:global(.jf-blueprint) .bgOk {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+
+:global(.jf-blueprint) .bgWarn {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+
+:global(.jf-blueprint) .bgBad {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* ============================================================
+   EMPTY STATE
+   "A note on a drawing" — 1.5px dashed, no fill, no illustration.
+   Reachable in the ledger: the Draft chip legitimately selects
+   nothing, because this client is past the drafting stage.
+   ============================================================ */
+
+:global(.jf-blueprint) .empty {
+  padding: 24px;
+  text-align: center;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+}
+
+:global(.jf-blueprint) .emptyKicker {
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .emptyText {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ============================================================
+   BUTTONS
+   The house stamp: 1.5px ink + a 2px hard offset; hover lifts the
+   plate a pixel and deepens the offset to 3px. `background-clip:
+   padding-box` is not optional — without it the hover paints a
+   light AA fringe along the border.
+
+   36px is the fleet's documented compact control height and the
+   ≥44px commitment is scoped to MOBILE surfaces; this is a desktop
+   dashboard route. `height: auto` is load-bearing anyway: the
+   shell's base `.btn` pins 40px, and a compact variant that
+   forgets it silently stays 40 and inflates every bar it sits in.
+   ============================================================ */
+
+:global(.jf-blueprint) .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  height: auto;
+  padding: 0 14px;
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--paper);
+  background-clip: padding-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  transition:
+    transform 0.14s var(--ease-out),
+    box-shadow 0.14s var(--ease-out),
+    background 0.14s var(--ease),
+    color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+:global(.jf-blueprint) .btn:active {
+  transform: translate(0, 0);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+/* The primary keeps the INK frame the other two carry rather than
+   dissolving its edge into its own fill. Blueprint-on-blueprint made
+   the page's most important control the only borderless one on it,
+   which read as softer than the quiet button beside it; the ink
+   outline is what makes it a stamped plate. */
+:global(.jf-blueprint) .btnPrimary {
+  color: #fff;
+  background: var(--blueprint);
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .btnPrimary:hover {
+  background: var(--blueprint-dark);
+  border-color: var(--ink);
+}
+
+/* A quiet action must not carry a stamp shadow competing with the
+   primary: no plate at rest, the ink outline arrives on hover. */
+:global(.jf-blueprint) .btnQuiet {
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  padding: 0 12px;
+}
+
+:global(.jf-blueprint) .btnQuiet:hover {
+  transform: none;
+  box-shadow: none;
+  color: var(--ink);
+  background: var(--paper);
+  border-color: var(--ink);
+}
+
+:global(.jf-blueprint) .btnQuiet:active {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Three classes, to beat `.bp :global(svg.ic)` (0,2,1) on count. */
+:global(.jf-blueprint) .btn :global(.ic) {
+  width: 15px;
+  height: 15px;
+  transition: transform 0.18s var(--ease-out);
+}
+
+:global(.jf-blueprint) .btn:hover :global(.ic) {
+  transform: scale(1.12);
+}
+
+/* ============================================================
+   FOCUS
+   Keyboard focus is a real 2px ink ring, never the browser's blue
+   halo — that halo is the one glow on a page defined by hard
+   edges.
+   ============================================================ */
+
+:global(.jf-blueprint) .btn:focus-visible,
+:global(.jf-blueprint) .chip:focus-visible,
+:global(.jf-blueprint) .lRow:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   NARROW
+   The shell keeps a 264px sidebar and 96px gutters, so the content
+   box gets tight well before the viewport does. Only the fixed
+   multi-column clusters need help; everything else is intrinsic.
+   ============================================================ */
+
+@media (max-width: 1280px) {
+  :global(.jf-blueprint) .duo {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1100px) {
+  :global(.jf-blueprint) .bandGrid {
+    grid-template-columns: 1fr;
+    gap: var(--cd-pad);
+  }
+
+  :global(.jf-blueprint) .bandId {
+    padding-right: 0;
+  }
+
+  /* The rule moves from the left edge to the top edge with it —
+     the zones are still two, the axis just rotated. */
+  :global(.jf-blueprint) .bandFacts {
+    padding-left: 0;
+    padding-top: var(--cd-pad);
+    border-left: none;
+    border-top: 2px solid var(--cd-rule);
+  }
+
+  :global(.jf-blueprint) .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Two-up means the first two cells now have a row below them, so
+     the dividers have to be re-cut: verticals on the odd cells,
+     one horizontal under the top row. */
+  :global(.jf-blueprint) .kpi {
+    border-right: none;
+    border-bottom: 1.5px solid var(--ink);
+  }
+
+  :global(.jf-blueprint) .kpi:nth-child(odd) {
+    border-right: 1.5px solid var(--ink);
+  }
+
+  :global(.jf-blueprint) .kpi:nth-child(n + 3) {
+    border-bottom: none;
+  }
+
+  :global(.jf-blueprint) .kpiVal {
+    font-size: 30px;
+  }
+}
+
+/* No reduced-motion block for the ledger any more: the row's only
+   hover response is a background swap, which is a colour change
+   and not motion. It went out with the arrow it was written for. */

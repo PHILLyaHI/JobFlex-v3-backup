@@ -45,7 +45,15 @@ export const ENGINES: Engine[] = [
     method: "line items",
     diagram: "sheet",
     status: "active",
-    href: "/dashboard/estimators/manual",
+    // POINTED AT THE REDESIGN WHILE IT IS UNDER REVIEW.
+    // The shipped builder is untouched and still reachable directly at
+    // /dashboard/estimators/manual — only this card's destination moved, so
+    // reverting is restoring that one string.
+    //
+    // Worth knowing before using it for real work: the redesign is a FIXTURE.
+    // Save and Save & send write nothing and say so on the page. Anything typed
+    // there is gone on reload.
+    href: "/dashboard/manual-blueprint",
     spec: { input: "typed rows", output: "cost sheet", time: "~9 min" },
   },
   {

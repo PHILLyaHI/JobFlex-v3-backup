@@ -26,12 +26,16 @@ export function Topbar() {
           <use href="#i-menu" />
         </svg>
       </button>
+      {/* The ⌘K chip is gone by request. It came from the dashboard donor and
+          decisions.md lists it under the mono annotation layer, so this is a
+          deliberate departure rather than a slip: the shortcut still works and
+          is still advertised, in the accessible name instead of as a plate in
+          the bar. */}
       <button className="search" type="button" onClick={openPalette} aria-label="Search — ⌘K">
         <svg className="ic">
           <use href="#i-search" />
         </svg>
         <span className="search-ph">Search clients, proposals, leads…</span>
-        <kbd>⌘K</kbd>
       </button>
 
       <div className="topbar-right">

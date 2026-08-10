@@ -41,7 +41,20 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Money",
-    items: [{ label: "Financials", icon: "i-bank", href: "/dashboard/financials" }],
+    items: [
+      { label: "Financials", icon: "i-bank", href: "/dashboard/financials" },
+      // Points at the LIVE subscription page, not the blueprint port of it —
+      // /dashboard/subscription-blueprint does not exist yet, and `typedRoutes`
+      // makes a link to a missing route a compile error. Repoint when the port
+      // lands and the owner promotes it.
+      //
+      // NOT role-gated here, and that is a known gap rather than a decision:
+      // the production sidebar (components/layout/Sidebar.tsx) hides this item
+      // from every role except OWNER, but the blueprint shell filters NAV_SECTIONS
+      // by nothing at all — Financials sits one line above under the same rule.
+      // Whoever brings RBAC to this shell owns both.
+      { label: "Subscription", icon: "i-card", href: "/dashboard/subscription" },
+    ],
   },
   {
     label: "Automation",
