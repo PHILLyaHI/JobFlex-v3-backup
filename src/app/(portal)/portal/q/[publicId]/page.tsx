@@ -1,20 +1,54 @@
+// PUBLIC PROPOSAL PORTAL — the page a homeowner opens from a proposal link.
+// Route: /portal/q/[publicId].
+//
+// A verbatim port of the approved mockup
+// `jobflex-proposal-client-blueprint (3).html`. The editorial sage-era
+// treatment that lived here before is REPLACED IN PLACE — same route, same
+// three files — not forked into a parallel `-blueprint` route. (That reverses
+// the side-by-side convention some earlier ports recorded in their headers,
+// e.g. /dashboard/subscription-blueprint. Replacement is the instruction now.)
+//
+// THE CHROME IS THE DONOR'S OWN, ALL OF IT. This surface is standalone by
+// definition — the reader is a homeowner, not a signed-in contractor — and the
+// `(portal)` route group has no layout.tsx, so the only thing above this page
+// is the root layout's <html>/<body>. Nothing is doubled: there is no
+// blueprint-shell here, no sidebar, no topbar. What the donor draws as its
+// whole document (`div.pv` and its seven blocks) is what ships, wrapped in one
+// `.jf-proposal-portal` div that carries the donor's token block and universal
+// reset. See the header of ./proposal-portal.css for why that wrapper exists
+// and how the donor's <body> rule was split across it and <body>.
+//
+// THIS FILE STAYS A SERVER COMPONENT so the proposal read, the VIEWED
+// side-effect and the donor's <title> all run on the server. The two client
+// pieces are surgical: ./portal-actions.tsx (the accept/decline block) and
+// ./portal-reveal.tsx (the entrance observer).
+//
+// NO DATA-LAYER CHANGE. Same Prisma read, same includes, same view-tracking
+// write, same /api/public-quote/[publicId]/{accept,decline,pdf} and
+// /api/checkout/[provider] contracts as the page this replaces.
+
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { money, longDate } from "@/lib/format";
-import { cn } from "@/lib/cn";
 import { PortalActions } from "./portal-actions";
-import { PortalSectionReveal } from "./portal-reveal";
+import { PortalReveal } from "./portal-reveal";
+import "./proposal-portal.css";
 
 export const dynamic = "force-dynamic";
 
-// Editorial document treatment for the public proposal portal. Quiet, flat,
-// paper-and-ink. The accent (Pressed Sage) is reserved for the total numeral,
-// the primary action, and the accepted state. Nothing else.
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="quiet-caps mb-4 text-[color:var(--ink-muted)]">{children}</h2>
-  );
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ publicId: string }>;
+}): Promise<Metadata> {
+  const { publicId } = await params;
+  const proposal = await db.proposal.findUnique({
+    where: { publicId },
+    select: { organization: { select: { name: true } } },
+  });
+  // The donor's own <title>: "Reyes & Sons Roofing · Proposal".
+  return { title: proposal ? `${proposal.organization.name} · Proposal` : "Proposal" };
 }
 
 function measurementLabel(t: string | null | undefined) {
@@ -64,314 +98,170 @@ export default async function PublicProposalPortal({
     });
   }
 
-  const accepted = proposal.status === "ACCEPTED" || proposal.status === "PAID";
-  const declined = proposal.status === "DECLINED";
   const org = proposal.organization;
   const monogram = (org.name?.trim()?.[0] ?? "J").toUpperCase();
   const clientName = proposal.client?.name?.trim() || "you";
 
-  const hasLineItems = proposal.lineItems.length > 0;
-  const hasInstallments = proposal.installments.length > 0;
+  // The donor stamps "Proposal № 2851". There is NO proposal-number column on
+  // the Proposal model and adding one is a schema change, which is out of
+  // scope — so this is the last four characters of the row's publicId (a v4
+  // UUID), uppercased. Stable, unique in practice, and a real reference the
+  // contractor can search on. Flagged in the port report.
+  const refCode = publicId.replace(/-/g, "").slice(-4).toUpperCase();
+
   const hasScope = Boolean(proposal.scopeOfWork && proposal.scopeOfWork.trim());
+  const hasDescription = Boolean(proposal.description && proposal.description.trim());
+  const hasInstallments = proposal.installments.length > 0;
   const telHref = org.phone ? `tel:${org.phone.replace(/\s+/g, "")}` : null;
 
   return (
-    <main className="min-h-screen bg-[color:var(--paper)] text-[color:var(--ink)]">
-      <div className="mx-auto w-full max-w-[42rem] px-5 pb-24 pt-8">
-        {/* ── Header ───────────────────────────────────── */}
-        <header className="flex items-start justify-between gap-4 pb-6">
-          <div className="flex min-w-0 items-center gap-3">
-            {org.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={org.logoUrl}
-                alt={`${org.name} logo`}
-                className="h-11 w-11 shrink-0 rounded-[var(--r-md)] object-cover"
-              />
-            ) : (
-              <span
-                aria-hidden
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--r-md)] bg-[color:var(--paper-deep)] text-[15px] font-semibold text-[color:var(--ink-soft)]"
-              >
-                {monogram}
-              </span>
-            )}
-            <div className="min-w-0">
-              <p className="truncate text-[15px] font-semibold leading-tight text-[color:var(--ink)]">
-                {org.name}
-              </p>
-              <p className="mt-0.5 text-[13px] leading-tight text-[color:var(--ink-muted)] tabular">
-                {longDate(proposal.createdAt)}
-              </p>
-            </div>
-          </div>
+    <div className="jf-proposal-portal">
+      <div className="pv">
 
+        {/* ШАПКА */}
+        {/* (RU: "Header") */}
+        <header className="pv-head rv">
+          <span className="pv-mono">{monogram}</span>
+          <div className="pv-org">
+            <b>{org.name}</b>
+            <span>{`Proposal № ${refCode} · ${longDate(proposal.createdAt)}`}</span>
+          </div>
           <a
+            className="pv-pdf"
             href={`/api/public-quote/${publicId}/pdf`}
             target="_blank"
             rel="noopener noreferrer"
-            className="focus-ring shrink-0 rounded-[var(--r-md)] px-3 py-2 text-[13px] font-medium text-[color:var(--ink-soft)] transition-colors hover:bg-black/[0.04]"
           >
             Download PDF
           </a>
         </header>
 
-        <div className="divider-ink" role="presentation" />
+        {/* ИНТРО */}
+        {/* (RU: "Intro") */}
+        <section className="pv-intro rv">
+          <div className="pv-intro-card">
+            <div className="pv-kicker">{`Prepared for ${clientName}`}</div>
+            <h1 className="pv-h1">{proposal.title}</h1>
+            <div className="pv-facts">
+              <div className="total"><span>Total</span><b>{money(proposal.total)}</b></div>
+              <div><span>Valid until</span><b>{longDate(proposal.validUntil)}</b></div>
+            </div>
 
-        {/* ── Intro ────────────────────────────────────── */}
-        <PortalSectionReveal>
-          <section className="pt-10">
-            <p className="quiet-caps text-[color:var(--ink-muted)]">
-              Prepared for {clientName}
-            </p>
-            <h1 className="font-display mt-3 text-[2rem] font-semibold leading-[1.08] tracking-[-0.02em] text-[color:var(--ink)]">
-              {proposal.title}
-            </h1>
+            <PortalActions
+              publicId={publicId}
+              status={proposal.status}
+              total={proposal.total}
+            />
+          </div>
 
-            {proposal.description ? (
-              <p className="mt-4 max-w-[68ch] text-[15px] leading-[1.6] text-[color:var(--ink-soft)]">
-                {proposal.description}
-              </p>
-            ) : null}
+        </section>
 
-            {/* Total + validity — the two facts a homeowner reads first. */}
-            <dl className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-5">
-              <div>
-                <dt className="quiet-caps text-[color:var(--ink-muted)]">
-                  Total
-                </dt>
-                <dd className="stat-numeric mt-1.5 text-[2.25rem] leading-none text-[color:var(--accent)]">
-                  {money(proposal.total)}
-                </dd>
+        {/* OVERVIEW — not a donor section. `proposal.description` is
+            contractor-authored copy that the page this replaces rendered under
+            the H1; the mockup's intro card has no slot for it. Rather than
+            drop customer content or invent a treatment, it reuses the donor's
+            own `.pv-sec` / `.pv-scope` pair. Flagged in the port report. */}
+        {hasDescription ? (
+          <section className="pv-sec rv">
+            <h2 className="pv-sec-h">Overview</h2>
+            <p className="pv-scope">{proposal.description}</p>
+          </section>
+        ) : null}
+
+        {/* ESTIMATE DETAIL */}
+        <section className="pv-sec rv">
+          <h2 className="pv-sec-h">Estimate detail</h2>
+          <div className="pv-ledger">
+            {proposal.lineItems.map((item) => {
+              const measure = measurementLabel(item.measurementType);
+              // The donor's meta line reads "24 sq · 24 × $310" — the quantity
+              // leads the measurement, then repeats against the unit price.
+              const meta = [
+                measure ? (item.quantity ? `${item.quantity} ${measure}` : measure) : null,
+                item.quantity ? `${item.quantity} × ${money(item.unitPrice)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <div className="pv-li" key={item.id}>
+                  <div>
+                    <div className="pv-li-n">{item.name}</div>
+                    {item.description ? (
+                      <div className="pv-li-d">{item.description}</div>
+                    ) : null}
+                    {meta ? <div className="pv-li-m">{meta}</div> : null}
+                  </div>
+                  <div className="pv-li-v">{money(item.total)}</div>
+                </div>
+              );
+            })}
+            <div className="pv-tot">
+              <div className="pv-tot-r"><span>Subtotal</span><b>{money(proposal.subtotal)}</b></div>
+              {/* Always show the tax line — at 0% it reads "Tax · 0.0%" / $0. */}
+              <div className="pv-tot-r">
+                <span>{`Tax · ${(proposal.taxRate * 100).toFixed(1)}%`}</span>
+                <b>{money(proposal.taxTotal)}</b>
               </div>
-              <div>
-                <dt className="quiet-caps text-[color:var(--ink-muted)]">
-                  Valid until
-                </dt>
-                <dd className="mt-1.5 text-[15px] font-medium text-[color:var(--ink)] tabular">
-                  {longDate(proposal.validUntil)}
-                </dd>
-              </div>
-            </dl>
+              <div className="pv-tot-due"><span>Total due</span><b>{money(proposal.total)}</b></div>
+            </div>
+          </div>
+        </section>
 
-            <div className="mt-8">
-              <PortalActions
-                publicId={publicId}
-                status={proposal.status}
-                total={proposal.total}
-              />
+        {/* SCOPE */}
+        {hasScope ? (
+          <section className="pv-sec rv">
+            <h2 className="pv-sec-h">Scope of work</h2>
+            <p className="pv-scope">{proposal.scopeOfWork}</p>
+          </section>
+        ) : null}
+
+        {/* PAYMENT SCHEDULE */}
+        {hasInstallments ? (
+          <section className="pv-sec rv">
+            <h2 className="pv-sec-h">Payment schedule</h2>
+            <div className="pv-pay">
+              {proposal.installments.map((inst, i) => (
+                <div className="pv-pay-r" key={inst.id}>
+                  <span className="pv-pay-no">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="pv-pay-n">{inst.label}</span>
+                  {/* Kept even when empty: `margin-left: auto` on this span is
+                      what pushes the amount to the right edge. */}
+                  <span className="pv-pay-pct">{inst.isPercent ? `${inst.amount}%` : ""}</span>
+                  <span className="pv-pay-v">
+                    {money(
+                      inst.isPercent ? proposal.total * (inst.amount / 100) : inst.amount,
+                    )}
+                  </span>
+                </div>
+              ))}
             </div>
           </section>
-        </PortalSectionReveal>
-
-        {/* ── Line items ───────────────────────────────── */}
-        <PortalSectionReveal delay={0.05}>
-          <section className="pt-14">
-            <SectionLabel>Estimate detail</SectionLabel>
-
-            {hasLineItems ? (
-              <div className="paper-card overflow-hidden">
-                <ul className="divide-y divide-[color:var(--ink-line)]">
-                  {proposal.lineItems.map((item, i) => {
-                    const measure = measurementLabel(item.measurementType);
-                    const meta = [
-                      measure,
-                      item.quantity ? `${item.quantity} × ${money(item.unitPrice)}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ");
-                    return (
-                      <li
-                        key={i}
-                        className="flex items-start justify-between gap-4 px-5 py-4"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-[14px] font-medium leading-snug text-[color:var(--ink)]">
-                            {item.name}
-                          </p>
-                          {item.description ? (
-                            <p className="mt-1 text-[13px] leading-snug text-[color:var(--ink-muted)]">
-                              {item.description}
-                            </p>
-                          ) : null}
-                          {meta ? (
-                            <p className="mt-1.5 text-[12px] text-[color:var(--ink-faint)] tabular">
-                              {meta}
-                            </p>
-                          ) : null}
-                        </div>
-                        <p className="shrink-0 pt-0.5 text-[14px] font-semibold text-[color:var(--ink)] tabular">
-                          {money(item.total)}
-                        </p>
-                      </li>
-                    );
-                  })}
-                </ul>
-
-                {/* Totals ledger */}
-                <div className="border-t border-[color:var(--ink-line)] bg-[color:var(--paper-deep)] px-5 py-4">
-                  <dl className="space-y-2 text-[13px]">
-                    <div className="flex items-center justify-between">
-                      <dt className="text-[color:var(--ink-muted)]">Subtotal</dt>
-                      <dd className="font-medium text-[color:var(--ink-soft)] tabular">
-                        {money(proposal.subtotal)}
-                      </dd>
-                    </div>
-                    {/* Always show the tax line — at 0% it reads "Tax · 0.0%" / $0. */}
-                    <div className="flex items-center justify-between">
-                      <dt className="text-[color:var(--ink-muted)]">
-                        Tax · {(proposal.taxRate * 100).toFixed(1)}%
-                      </dt>
-                      <dd className="font-medium text-[color:var(--ink-soft)] tabular">
-                        {money(proposal.taxTotal)}
-                      </dd>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-[color:var(--ink-line)] pt-3">
-                      <dt className="text-[14px] font-semibold text-[color:var(--ink)]">
-                        Total due
-                      </dt>
-                      <dd className="stat-numeric text-[15px] text-[color:var(--ink)]">
-                        {money(proposal.total)}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </div>
-            ) : (
-              <div className="paper-card px-5 py-6">
-                <p className="text-[13px] leading-relaxed text-[color:var(--ink-muted)]">
-                  No itemized breakdown was included with this proposal. The
-                  total below reflects the full agreed amount.
-                </p>
-                <div className="mt-4 flex items-center justify-between border-t border-[color:var(--ink-line)] pt-4">
-                  <span className="text-[14px] font-semibold text-[color:var(--ink)]">
-                    Total due
-                  </span>
-                  <span className="stat-numeric text-[15px] text-[color:var(--ink)]">
-                    {money(proposal.total)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </section>
-        </PortalSectionReveal>
-
-        {/* ── Scope of work ────────────────────────────── */}
-        {hasScope ? (
-          <PortalSectionReveal delay={0.05}>
-            <section className="pt-14">
-              <SectionLabel>Scope of work</SectionLabel>
-              <p className="max-w-[68ch] whitespace-pre-wrap text-[14px] leading-[1.7] text-[color:var(--ink-soft)]">
-                {proposal.scopeOfWork}
-              </p>
-            </section>
-          </PortalSectionReveal>
         ) : null}
 
-        {/* ── Payment schedule ─────────────────────────── */}
-        {hasInstallments ? (
-          <PortalSectionReveal delay={0.05}>
-            <section className="pt-14">
-              <SectionLabel>Payment schedule</SectionLabel>
-              <div className="paper-card overflow-hidden">
-                <ul className="divide-y divide-[color:var(--ink-line)]">
-                  {proposal.installments.map((inst, i) => {
-                    const computed = proposal.total * (inst.amount / 100);
-                    return (
-                      <li
-                        key={i}
-                        className="flex items-center justify-between gap-4 px-5 py-3.5"
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <span
-                            aria-hidden
-                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[color:var(--paper-deep)] text-[11px] font-semibold text-[color:var(--ink-muted)] tabular"
-                          >
-                            {i + 1}
-                          </span>
-                          <span className="truncate text-[14px] font-medium text-[color:var(--ink)]">
-                            {inst.label}
-                          </span>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <span className="text-[14px] font-semibold text-[color:var(--ink)] tabular">
-                            {inst.isPercent
-                              ? money(computed)
-                              : money(inst.amount)}
-                          </span>
-                          {inst.isPercent ? (
-                            <span className="ml-2 text-[12px] text-[color:var(--ink-faint)] tabular">
-                              {inst.amount}%
-                            </span>
-                          ) : null}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </section>
-          </PortalSectionReveal>
+        {/* ВОПРОСЫ */}
+        {/* (RU: "Questions") — the donor's call-out is entirely about phoning
+            the contractor, so it stands down when the org has no phone on
+            file. Flagged in the port report. */}
+        {telHref ? (
+          <section className="pv-call rv">
+            <div className="pv-call-t">Questions in the meantime? Just call.</div>
+            <div className="pv-call-p"><a href={telHref}>{org.phone}</a></div>
+          </section>
         ) : null}
 
-        {/* ── Closing / contact ────────────────────────── */}
-        <PortalSectionReveal delay={0.05}>
-          <section className="mt-16 rounded-[var(--r-lg)] bg-[color:var(--paper-deep)] px-6 py-7">
-            <h2 className="font-display text-[1.25rem] font-semibold tracking-[-0.015em] text-[color:var(--ink)]">
-              {accepted
-                ? "Thank you. We're on it."
-                : declined
-                  ? "Thanks for letting us know."
-                  : "Ready to move forward?"}
-            </h2>
-            <p className="mt-2 max-w-[60ch] text-[14px] leading-[1.6] text-[color:var(--ink-soft)]">
-              {accepted ? (
-                <>
-                  This proposal is confirmed. {org.name} has the details and
-                  will be in touch about next steps.
-                  {telHref ? " Questions in the meantime? Just call." : ""}
-                </>
-              ) : declined ? (
-                <>
-                  You&apos;ve declined this proposal. If anything changes or
-                  you&apos;d like to revisit it, reach out to {org.name}
-                  {telHref ? " — we're happy to talk it through." : "."}
-                </>
-              ) : (
-                <>
-                  Review the details above, then accept when you&apos;re ready.
-                  {telHref
-                    ? " Have a question first? Reach out, we're happy to talk it through."
-                    : " Have a question first? Reply to the message that brought you here."}
-                </>
-              )}
-            </p>
-
-            {telHref ? (
-              <a
-                href={telHref}
-                className={cn(
-                  "focus-ring mt-4 inline-flex items-center gap-2 rounded-[var(--r-md)] bg-white px-4 py-2.5 text-[14px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--paper)]",
-                  "hairline",
-                )}
-              >
-                Call {org.name}
-                <span className="text-[color:var(--ink-muted)] tabular">
-                  {org.phone}
-                </span>
-              </a>
-            ) : null}
-          </section>
-        </PortalSectionReveal>
-
-        {/* ── Footer ───────────────────────────────────── */}
-        <footer className="mt-12 border-t border-[color:var(--ink-line)] pt-6">
-          <p className="text-[12px] leading-relaxed text-[color:var(--ink-faint)]">
-            Prepared by {org.name}.
-            {org.address ? ` ${org.address}.` : ""} Powered by JobFlex.
-          </p>
+        <footer className="pv-foot rv">
+          <i>JF</i>{`Prepared by ${org.name} on JobFlex`}
         </footer>
+
       </div>
-    </main>
+
+      <PortalReveal />
+      {/* The donor's own <noscript> fallback, verbatim. */}
+      <noscript
+        dangerouslySetInnerHTML={{
+          __html: "<style>.rv{opacity:1!important;transform:none!important}</style>",
+        }}
+      />
+    </div>
   );
 }

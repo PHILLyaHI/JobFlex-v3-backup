@@ -1,0 +1,315 @@
+/* PUBLIC PROPOSAL PORTAL (/portal/q/[publicId]) — a verbatim port of the
+   approved mockup `jobflex-proposal-client-blueprint (3).html`. Plain
+   stylesheet, NOT a CSS module.
+
+   WHY NOT A MODULE. Two constructs in the donor break under class hashing:
+     · `* { margin: 0; padding: 0; box-sizing: border-box }` — a universal
+       reset. `*` is not a class, so a module would not scope it; it would leak
+       app-wide and flatten every other page in JobFlex.
+     · `[hidden] { display: none !important }` — an attribute selector, and a
+       load-bearing one: `.pv-btnrow`/`.pv-state` set `display: flex` and would
+       otherwise beat Tailwind preflight's `[hidden] { display: none }` on
+       source order.
+   So instead: every donor selector is prefixed with the single literal root
+   class `.jf-proposal-portal`, uniformly. Relative specificity — and therefore
+   which rule wins — is unchanged, which is what makes the transform safe. Same
+   precedent (and same reasoning) as
+   `src/components/v3/homeowner-landing/homeowner.css`.
+
+   ROOT CLASS. `.jf-proposal-portal` is a NEW literal, checked against every
+   other `.jf-*` root in the repo (`jf-blueprint`, `jf-homeowner`,
+   `jf-homeowner-landing`, `jf-landing`). It wraps — and is not the same
+   element as — the donor's `.pv` container, so `.jf-proposal-portal .pv`
+   matches exactly as the donor's bare `.pv` does.
+
+   ORDER IS LOAD-BEARING and nothing here is merged, sorted, deduped or
+   reflowed. The donor's rules appear in the donor's order.
+
+   THE `--ease-out` BUG IS PRESERVED ON PURPOSE. The donor declares `--ease`
+   but never `--ease-out`, then references `var(--ease-out)` in three
+   `transition` shorthands (`.pv-pdf`, `.pv-btn`, `.rv`). In the donor's bare
+   HTML that makes each of those declarations invalid-at-computed-value-time,
+   so the whole shorthand drops and NOTHING transitions — hover snaps, and the
+   reveal appears instantly rather than fading. This app's globals.css DOES
+   declare `--ease-out` on `:root`, which would silently "fix" the donor and
+   change how the page moves. `--ease-out: initial` in the neutralizer block
+   below restores the donor's guaranteed-invalid value for this subtree, so the
+   three shorthands fail here exactly as they fail there. See the port report.
+
+   TOKENS stay on the page root and are never promoted to `:root`. `--font` and
+   `--font-mono` gain the next/font family variables in front of the donor's own
+   stacks (the root layout already loads Inter and JetBrains Mono, so the
+   donor's Google Fonts <link> was dropped) — the repo convention used by every
+   other blueprint port.
+
+   Russian section comments are the donor's own and are kept verbatim; English
+   translations are added alongside, never in place of them. */
+
+/* donor: `:root` */
+.jf-proposal-portal {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — statuses ONLY. Три тона: основной / тёмный / soft-заливка */
+  /* (RU: "Three tones: base / dark / soft fill") */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger:  #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0,0,0,0.035);
+  --hair: rgba(10,10,10,0.12);
+  --hair-soft: rgba(10,10,10,0.08);
+
+  --chart-minor: rgba(24,84,160,0.08);
+  --chart-major: rgba(10,10,10,0.12);
+  --chart-fill: rgba(24,84,160,0.07);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10,10,10,0.06);
+
+  --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --sidebar-w: 264px;
+  --topbar-h: 62px;
+}
+
+.jf-proposal-portal * { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* donor: the `body` rule, split in two.
+
+   The PAINT stays on <body>. In the donor the body background propagates to
+   the canvas and fills the viewport however short the proposal is; painting it
+   on the page root instead would leave a gridless band under a one-line
+   proposal. `var(--paper)` resolves from globals.css's `:root` at the
+   byte-identical value the donor declares (#f2f0eb), and the `background`
+   shorthand resets `background-attachment` to `scroll` — globals.css pins the
+   app's own grid `fixed`, and the donor's scrolls.
+
+   The TYPE lands on the page root, where the donor's tokens are in scope. */
+body:has(.jf-proposal-portal) {
+  background: var(--paper);
+  background-image: linear-gradient(rgba(10,10,10,.05) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(10,10,10,.05) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+.jf-proposal-portal { font-family: var(--font); color: var(--ink);
+  -webkit-font-smoothing: antialiased; }
+
+.jf-proposal-portal [hidden] { display: none !important; }
+
+/* ══════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS — not donor rules. Everything below this block is.
+   ══════════════════════════════════════════════════════════════════
+
+   1. The app's own background layers. globals.css paints a 40px drafting grid
+      on <body> and a `body::before` paper-grain overlay. The donor paints its
+      own 34px grid and has no grain. The grid is replaced outright by the
+      `body:has()` rule above (higher specificity than globals' bare `body`);
+      the grain has to be switched off explicitly. `:has()` gates it, so it
+      comes back by itself the moment the page unmounts.
+
+   2. Tailwind preflight + globals.css reaching inside the page:
+        · `html { line-height: 1.5 }` — the donor computes `normal` in all but
+          four places (`.pv-h1` 1.05, `.pv-li-d` 1.55, `.pv-scope` 1.75), so
+          every other box on the page — the header, the kicker, both facts,
+          every button, every ledger row, both totals, the payment rows, the
+          call-out and the footer — would grow.
+        · `font-feature-settings: 'cv11','ss01','ss03'` and
+          `text-rendering: optimizeLegibility` on html+body, which inherit in
+          and change Inter's glyph shapes and kerning. The donor sets neither.
+        · `::placeholder { color: #9ca3af }` on the decline note. The donor
+          declares no placeholder colour and therefore renders the UA's;
+          `revert` restores exactly that without inventing a value.
+
+   3. `--ease-out`. See the header note — this restores the donor's undefined
+      variable so its three broken `transition` shorthands stay broken.
+
+   NOT neutralized, deliberately: globals.css's `* { scrollbar-width: thin }`
+   and its `::-webkit-scrollbar` rules. That is browser chrome outside the page
+   box and fighting it costs more than it returns — the same call
+   homeowner-landing made. */
+body:has(.jf-proposal-portal)::before { content: none; }
+.jf-proposal-portal {
+  line-height: normal;
+  font-feature-settings: normal;
+  text-rendering: auto;
+  --ease-out: initial;
+}
+.jf-proposal-portal textarea::placeholder { color: revert; opacity: revert; }
+
+.jf-proposal-portal .pv { max-width: 760px; margin: 0 auto; padding: 40px 22px 90px; }
+
+/* Шапка */
+/* (RU: "Header") */
+.jf-proposal-portal .pv-head { display: flex; align-items: center; gap: 14px; padding-bottom: 22px;
+  border-bottom: var(--border); }
+.jf-proposal-portal .pv-mono { width: 42px; height: 42px; flex-shrink: 0; display: grid; place-items: center;
+  background: var(--ink); color: var(--paper); border-radius: var(--radius);
+  font-size: 17px; font-weight: 900; }
+.jf-proposal-portal .pv-org { min-width: 0; }
+.jf-proposal-portal .pv-org b { display: block; font-size: 15.5px; font-weight: 900; letter-spacing: -.01em; }
+.jf-proposal-portal .pv-org span { display: block; margin-top: 2px; font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--muted); }
+.jf-proposal-portal .pv-pdf { margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 16px; border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: none; cursor: pointer;
+  font-family: var(--font); font-size: 11px; font-weight: 800; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink); text-decoration: none;
+  transition: transform .12s var(--ease-out), box-shadow .12s var(--ease-out); }
+.jf-proposal-portal .pv-pdf:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 var(--ink); }
+
+/* Интро */
+/* (RU: "Intro") */
+.jf-proposal-portal .pv-intro { padding-top: 30px; }
+.jf-proposal-portal .pv-intro-card { border: var(--border); border-radius: var(--radius);
+  background: #ffffff; padding: 28px 30px 26px; }
+.jf-proposal-portal .pv-kicker { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--blueprint);
+  display: flex; align-items: center; gap: 9px; }
+.jf-proposal-portal .pv-kicker::before { content: ''; width: 7px; height: 7px; background: var(--blueprint); }
+.jf-proposal-portal .pv-h1 { margin-top: 12px; font-size: clamp(26px, 4.4vw, 36px); font-weight: 900;
+  line-height: 1.05; letter-spacing: -.03em; text-transform: uppercase; }
+.jf-proposal-portal .pv-facts { display: flex; gap: 34px; margin-top: 20px; }
+.jf-proposal-portal .pv-facts span { display: block; font-family: var(--font-mono); font-size: 10px;
+  font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 5px; }
+.jf-proposal-portal .pv-facts b { font-size: 24px; font-weight: 900; letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums; }
+.jf-proposal-portal .pv-facts .total b { color: var(--blueprint); }
+
+/* Действия */
+/* (RU: "Actions") */
+.jf-proposal-portal .pv-actions { margin-top: 26px; }
+.jf-proposal-portal .pv-btnrow { display: flex; gap: 12px; flex-wrap: wrap; }
+.jf-proposal-portal .pv-btn { appearance: none; cursor: pointer; display: inline-flex; align-items: center;
+  gap: 9px; padding: 13px 26px; border: var(--border); border-radius: var(--radius);
+  font-family: var(--font); font-size: 12px; font-weight: 800; letter-spacing: .14em;
+  text-transform: uppercase; box-shadow: none;
+  transition: transform .12s var(--ease-out), box-shadow .12s var(--ease-out); }
+.jf-proposal-portal .pv-btn:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 var(--ink); }
+.jf-proposal-portal .pv-btn:active { transform: translate(0,0); box-shadow: 1px 1px 0 var(--ink); }
+.jf-proposal-portal .pv-btn--primary { background: var(--blueprint); color: var(--paper); }
+.jf-proposal-portal .pv-btn--ghost { background: var(--paper); color: var(--ink); }
+.jf-proposal-portal .pv-decline { margin-top: 14px; border: 1.5px dashed rgba(10,10,10,.45);
+  border-radius: var(--radius); padding: 16px 18px; max-width: 520px; }
+.jf-proposal-portal .pv-decline-l { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--muted);
+  margin-bottom: 8px; display: block; }
+.jf-proposal-portal .pv-decline textarea { width: 100%; min-height: 64px; resize: vertical;
+  border: var(--border); border-radius: var(--radius); background: #fff;
+  padding: 10px 12px; font-family: var(--font); font-size: 13.5px; font-weight: 600;
+  color: var(--ink); }
+.jf-proposal-portal .pv-decline textarea:focus { outline: none; border-color: var(--blueprint); }
+.jf-proposal-portal .pv-decline-err { margin-top: 8px; font-size: 12px; font-weight: 700;
+  color: var(--danger); }
+.jf-proposal-portal .pv-decline-row { display: flex; gap: 10px; margin-top: 12px; }
+.jf-proposal-portal .pv-state { display: inline-flex; align-items: center; gap: 10px; padding: 13px 22px;
+  border: 2px solid var(--success); border-radius: var(--radius);
+  background: rgba(58,125,68,.08); color: var(--success);
+  font-size: 13px; font-weight: 800; letter-spacing: .06em; }
+.jf-proposal-portal .pv-state--declined { border-color: rgba(10,10,10,.5); background: rgba(10,10,10,.05);
+  color: var(--muted); }
+
+/* Секции */
+/* (RU: "Sections") */
+.jf-proposal-portal .pv-sec { padding-top: 52px; }
+.jf-proposal-portal .pv-sec-h { font-size: 11.5px; font-weight: 800; letter-spacing: .2em;
+  text-transform: uppercase; margin-bottom: 16px; display: flex;
+  align-items: center; gap: 12px; }
+.jf-proposal-portal .pv-sec-h::after { content: ''; flex: 1; height: 1.5px; background: rgba(10,10,10,.2); }
+
+/* Леджер */
+/* (RU: "Ledger") */
+.jf-proposal-portal .pv-ledger { border: var(--border); border-radius: var(--radius); background: #fff;
+  overflow: hidden; }
+.jf-proposal-portal .pv-li { display: flex; justify-content: space-between; gap: 18px;
+  padding: 15px 20px; border-bottom: 1px dashed rgba(10,10,10,.2); }
+.jf-proposal-portal .pv-li:last-of-type { border-bottom: none; }
+.jf-proposal-portal .pv-li-n { font-size: 14px; font-weight: 800; }
+.jf-proposal-portal .pv-li-d { margin-top: 3px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.jf-proposal-portal .pv-li-m { margin-top: 5px; font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600; letter-spacing: .04em; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+.jf-proposal-portal .pv-li-v { flex-shrink: 0; font-family: var(--font-mono); font-size: 13.5px;
+  font-weight: 600; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.jf-proposal-portal .pv-tot { border-top: 1.5px solid var(--ink); background: var(--paper);
+  padding: 14px 20px 16px; }
+.jf-proposal-portal .pv-tot-r { display: flex; justify-content: space-between; padding: 4px 0;
+  font-size: 13px; color: var(--muted); }
+.jf-proposal-portal .pv-tot-r b { font-family: var(--font-mono); font-weight: 600; color: var(--ink);
+  font-variant-numeric: tabular-nums; }
+.jf-proposal-portal .pv-tot-due { display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: 10px; padding-top: 12px; border-top: 1.5px solid rgba(10,10,10,.5); }
+.jf-proposal-portal .pv-tot-due span { font-size: 12px; font-weight: 800; letter-spacing: .18em;
+  text-transform: uppercase; }
+.jf-proposal-portal .pv-tot-due b { font-size: 26px; font-weight: 900; letter-spacing: -.01em;
+  color: var(--blueprint); font-variant-numeric: tabular-nums; }
+
+/* Scope */
+.jf-proposal-portal .pv-scope { font-size: 14.5px; line-height: 1.75; white-space: pre-line;
+  border: var(--border); border-radius: var(--radius); background: #ffffff;
+  padding: 22px 26px; box-shadow: inset 4px 0 0 var(--blueprint); }
+
+/* Payment schedule */
+.jf-proposal-portal .pv-pay { border: var(--border); border-radius: var(--radius); background: #fff;
+  overflow: hidden; }
+.jf-proposal-portal .pv-pay-r { display: flex; align-items: baseline; gap: 16px; padding: 14px 20px;
+  border-bottom: 1px dashed rgba(10,10,10,.2); }
+.jf-proposal-portal .pv-pay-r:last-child { border-bottom: none; }
+.jf-proposal-portal .pv-pay-no { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--blueprint); }
+.jf-proposal-portal .pv-pay-n { font-size: 13.5px; font-weight: 800; }
+.jf-proposal-portal .pv-pay-pct { margin-left: auto; font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600; color: var(--muted); }
+.jf-proposal-portal .pv-pay-v { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; }
+
+/* Вопросы */
+/* (RU: "Questions") */
+.jf-proposal-portal .pv-call { margin-top: 56px; border: var(--border); border-radius: var(--radius);
+  background: var(--ink); color: var(--paper); padding: 26px 28px; }
+.jf-proposal-portal .pv-call-t { font-size: 19px; font-weight: 900; letter-spacing: -.015em; }
+.jf-proposal-portal .pv-call-p { margin-top: 14px; }
+.jf-proposal-portal .pv-call-p a { display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono); font-size: 16px; font-weight: 600;
+  letter-spacing: .04em; color: var(--paper); text-decoration: none;
+  border-bottom: 2px solid rgba(242,240,235,.4); padding-bottom: 3px; }
+.jf-proposal-portal .pv-call-p a:hover { border-color: var(--paper); }
+
+.jf-proposal-portal .pv-foot { margin-top: 46px; padding-top: 20px; border-top: 1.5px solid rgba(10,10,10,.2);
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.jf-proposal-portal .pv-foot i { width: 20px; height: 20px; display: grid; place-items: center;
+  background: var(--ink); color: var(--paper); border-radius: var(--radius);
+  font-style: normal; font-size: 9px; font-weight: 900; }
+
+.jf-proposal-portal .rv { opacity: 0; transform: translateY(12px);
+  transition: opacity .55s var(--ease-out), transform .55s var(--ease-out); }
+.jf-proposal-portal .rv.on { opacity: 1; transform: none; }
+
+@media (max-width: 720px) {
+  .jf-proposal-portal .pv { padding-top: 26px; }
+  .jf-proposal-portal .pv-facts { gap: 24px; flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-proposal-portal .rv { opacity: 1 !important; transform: none !important; transition: none !important; }
+}

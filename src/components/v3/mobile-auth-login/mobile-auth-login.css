@@ -1,0 +1,569 @@
+/* ============================================================================
+   MOBILE AUTH · SIGN IN  —  /mobile-v1/auth/login
+   ============================================================================
+
+   A handheld-first Blueprint design for the login surface. It ships BESIDE the
+   desktop /auth/login (which is untouched), per the mobile route strategy in
+   CLAUDE.md. Design language is translated from the approved desktop port
+   (src/app/(auth)/auth/login/*): same palette, same 2px ink frames, same 2px
+   radii, same hard offset shadows with no blur, same Inter 800/900 caps +
+   JetBrains Mono annotation layer, same button colour treatment (blueprint
+   fill, white label, ink frame, hard ink shadow).
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate) ────────────────────────
+   The desktop page uses login.module.css and that choice is exactly what this
+   file exists to avoid. CSS Modules hash CLASS names but leave bare element
+   selectors (`button`, `input`, `a`, `svg`) and the `*` universal reset
+   unscoped — each needs an explicit `:global()` escape, and one missed escape
+   silently drops the design's own reset and control styling so that Tailwind
+   preflight and globals.css fill the vacuum.
+
+   Instead, the house pattern that demonstrably works
+   (auth-forgot-blueprint/auth-forgot.css, auth-reset-blueprint/auth-reset.css,
+   homeowner-landing/homeowner.css, (portal) proposal-portal.css): a plain .css
+   file where EVERY selector carries the single literal root class
+   `.jf-mobile-auth-login`. The prefix is uniform, so relative specificity
+   between this file's own rules is exactly what it would be unprefixed, and
+   nothing leaks outward.
+
+   Two selectors deliberately do not start with the root class — the host
+   neutralizers, which have to reach <body>. Both are gated on `:has()` so they
+   self-restore the moment the page unmounts (App Router keeps a route's
+   stylesheet in the document across client navigations).
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   @keyframes names are document-global exactly like SVG <symbol> ids, so the
+   one keyframe here is namespaced `jf-mal-rise`. This page renders no SVG
+   sprite at all — its four icons are inline <svg> elements with no `id`, so
+   there is no `<use href="#…">` id to collide with the desktop login's
+   `#i-eye` / `#i-eye-off` / `#i-check` / `#i-google` sheet if the two ever
+   co-mounted.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark` variants. globals.css was NOT touched.
+   blueprint-shell was NOT touched. No `md:` / `lg:` desktop breakpoints — the
+   page is fluid from 320px to 768px on clamp() and a max-width column, with no
+   layout media query at all.
+   ========================================================================= */
+
+/* ── TOKENS ────────────────────────────────────────────────────────────────
+   Page-scoped, never promoted to :root. Values are the desktop port's, with
+   two documented deviations, both driven by DESIGN.md's hard accessibility
+   constraints (outdoor-sunlight readability, WCAG 2.2 AA):
+
+   · --muted-faint  #aaa → #6b6b6b. #aaa on paper is 2.07:1; the placeholder
+     is unreadable in glare. #6b6b6b measures 4.75:1.
+   · --muted-on-ink is NEW. The desktop's --muted (#555) never sits on ink;
+     here the hero band is ink, and #555 on #0a0a0a is 2.81:1. #b9b6ae is
+     9.8:1 and keeps the drafting-annotation grey character.               */
+.jf-mobile-auth-login {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --muted: #555555;
+  --muted-light: #888888;
+  --muted-faint: #6b6b6b;
+  --muted-on-ink: #b9b6ae;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+  --danger: #a83232;
+  --danger-soft: #f7e9e9;
+  --hair-soft: #d5d1c8;
+
+  --font: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --radius: 2px;
+  --border: 2px solid var(--ink);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Gutter honours the landscape notch without ever falling below 16px. */
+  --gutter: max(16px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+}
+
+/* Scoped universal reset. `*` alone would flatten the rest of the app — this
+   is the construct a CSS Module cannot express and the reason for a plain
+   stylesheet. */
+.jf-mobile-auth-login,
+.jf-mobile-auth-login * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS — the only rules here that are not this design's own.
+   ══════════════════════════════════════════════════════════════════════════
+
+   1. globals.css paints a 40px drafting grid on <body> (fixed attachment) and
+      a `body::before` paper-grain overlay with mix-blend-mode: multiply. This
+      page paints its own ink band and its own flat paper, and the grain's
+      multiply blend would tint both. Switched off for this page's lifetime;
+      `:has()` restores them on unmount.
+
+   2. Tailwind preflight + globals.css reach inside the page and move values
+      this design assumes it inherits:
+        · preflight `html { line-height: 1.5 }` — every box here that sets no
+          line-height of its own (the mono labels, the brand name, the input,
+          the buttons, the kicker) would grow 2–5px and shift the composition.
+        · globals.css `font-feature-settings: 'cv11','ss01','ss03'` on
+          html+body — Inter's single-storey `a`, alternate digits and round
+          quotes. The proof card's curly quotes and every `a` in the copy show
+          the difference plainly.
+        · globals.css `text-rendering: optimizeLegibility` on html+body.
+
+   NOT neutralized, deliberately:
+   · globals' `* { scrollbar-width: thin }` + the 10px `::-webkit-scrollbar`.
+     Browser chrome outside the page box; every sibling port made the same
+     call, and diverging here would be the odd one out.
+   · preflight's `img, video { max-width: 100% }` — this page renders no <img>
+     or <video>, so there is nothing for it to act on. Checked, not copied
+     blindly.
+   · preflight's `svg { display: block; vertical-align: middle }` — rather than
+     restore the bare-browser `display: inline`, `.jf-mobile-auth-login .ic`
+     declares `display: block` explicitly below. That is deterministic whether
+     or not preflight is present, and every icon here is a flex item inside an
+     inline-flex control, where display is blockified either way.            */
+body:has(.jf-mobile-auth-login) { background-image: none; }
+body:has(.jf-mobile-auth-login)::before { content: none; }
+
+.jf-mobile-auth-login {
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  line-height: normal;
+  font-feature-settings: normal;
+  text-rendering: auto;
+
+  min-height: 100dvh;
+}
+
+/* ── BARE ELEMENTS, SCOPED ─────────────────────────────────────────────── */
+.jf-mobile-auth-login button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+.jf-mobile-auth-login a { color: inherit; text-decoration: none; }
+.jf-mobile-auth-login input { font-family: inherit; }
+.jf-mobile-auth-login h1,
+.jf-mobile-auth-login p,
+.jf-mobile-auth-login blockquote,
+.jf-mobile-auth-login figure,
+.jf-mobile-auth-login figcaption { font-size: inherit; font-weight: inherit; }
+
+/* Keyboard focus. Two ring colours because one cannot clear 3:1 on both
+   grounds: blueprint is 6.3:1 on paper but 2.66:1 on ink; sky is 7.2:1 on ink
+   but 2.46:1 on paper. Each surface gets the one that passes. */
+.jf-mobile-auth-login :focus-visible {
+  outline: 3px solid var(--blueprint);
+  outline-offset: 2px;
+}
+.jf-mobile-auth-login .hero :focus-visible { outline-color: var(--sky); }
+
+/* Drafting-annotation layer — JetBrains Mono, caps, wide tracking. */
+.jf-mobile-auth-login .kpi-lbl {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.jf-mobile-auth-login .ic {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: 0 0 auto;
+}
+/* The Google mark carries its own per-path fills. */
+.jf-mobile-auth-login .ic--brand { stroke: none; fill: none; width: 18px; height: 18px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HERO — the ink band.
+   The desktop composition is a split screen: paper form left, ink drafting
+   sheet right. Below 1000px the desktop port drops the ink half entirely and
+   the page becomes an all-cream form. Rebuilt here as a full-bleed ink band
+   above the form, so the mobile page keeps the design's colour blocking, its
+   graph-paper signature and its blueprint wash instead of flattening.
+   ═══════════════════════════════════════════════════════════════════════ */
+.jf-mobile-auth-login .hero {
+  position: relative;
+  overflow: hidden;
+  padding:
+    calc(clamp(22px, 5vh, 38px) + env(safe-area-inset-top, 0px))
+    var(--gutter)
+    clamp(38px, 7vh, 56px);
+  border-bottom: var(--border);
+  background:
+    linear-gradient(rgba(242, 240, 235, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(242, 240, 235, 0.13) 1px, transparent 1px),
+    var(--ink);
+  background-size: 28px 28px, 28px 28px, auto;
+  color: var(--paper);
+}
+.jf-mobile-auth-login .hero-wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 90% 60% at 82% 8%, rgba(24, 84, 160, 0.34), transparent 62%);
+}
+.jf-mobile-auth-login .hero-inner {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* Brand lockup. The desktop mark is an ink plate on paper; on the ink band it
+   inverts to a paper plate on ink — the design system's "inverse plate". */
+.jf-mobile-auth-login .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 44px;
+  margin-bottom: clamp(20px, 4vh, 34px);
+}
+.jf-mobile-auth-login .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--paper);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1;
+}
+.jf-mobile-auth-login .brand-name {
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--paper);
+}
+
+.jf-mobile-auth-login .kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+  color: var(--muted-on-ink);
+}
+.jf-mobile-auth-login .kicker::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky);
+}
+.jf-mobile-auth-login .kicker .kpi-lbl { color: inherit; }
+
+.jf-mobile-auth-login .h1 {
+  font-size: clamp(30px, 9vw, 44px);
+  font-weight: 900;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  color: var(--paper);
+}
+.jf-mobile-auth-login .lede {
+  margin-top: 12px;
+  max-width: 34ch;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted-on-ink);
+}
+
+/* The one drawing annotation on the page, and it carries real information:
+   where ?next= will land the user after sign-in. Nothing decorative. */
+.jf-mobile-auth-login .hero-note {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1.5px solid rgba(242, 240, 235, 0.22);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--muted-on-ink);
+}
+.jf-mobile-auth-login .hero-note b {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--sky);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BODY
+   ═══════════════════════════════════════════════════════════════════════ */
+.jf-mobile-auth-login .body {
+  padding: 0 var(--gutter) calc(clamp(28px, 5vh, 44px) + env(safe-area-inset-bottom, 0px));
+}
+
+/* The form sheet, clipped over the drawing. -24px lifts it onto the ink band;
+   the 5px hard ink shadow is the elevation the owner asked to keep — no blur,
+   no soft card. Column caps at 480px so the 600–768px range stays a readable
+   measure instead of a stretched form. */
+.jf-mobile-auth-login .card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  margin: -24px auto 0;
+  padding: clamp(18px, 5vw, 24px) clamp(16px, 4.5vw, 22px) clamp(20px, 5vw, 26px);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.jf-mobile-auth-login .fld { display: block; margin-bottom: 14px; }
+.jf-mobile-auth-login .fld-lbl {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* 16px is not the desktop's 14.5px: below 16px iOS Safari zooms the viewport
+   on focus and the user is left panned off-centre mid-form. */
+.jf-mobile-auth-login .fld-in {
+  width: 100%;
+  height: 52px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: normal;
+  color: var(--ink);
+  box-shadow: none;
+  transition: box-shadow 0.14s var(--ease);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.jf-mobile-auth-login .fld-in:focus { outline: none; box-shadow: 4px 4px 0 var(--ink); }
+.jf-mobile-auth-login .fld-in:focus-visible {
+  outline: 3px solid var(--blueprint);
+  outline-offset: 2px;
+}
+.jf-mobile-auth-login .fld-in::placeholder { color: var(--muted-faint); opacity: 1; }
+
+.jf-mobile-auth-login .pw-wrap { display: block; position: relative; }
+.jf-mobile-auth-login .pw-wrap .fld-in { padding-right: 52px; }
+/* 44×44 — the desktop port's toggle is 32×32 and a 34×34 close button was
+   flagged on an earlier mobile page. 4px inset inside a 52px field. */
+.jf-mobile-auth-login .pw-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+.jf-mobile-auth-login .pw-toggle .ic { width: 20px; height: 20px; }
+.jf-mobile-auth-login .pw-toggle[aria-pressed='true'] { color: var(--ink); }
+
+.jf-mobile-auth-login .row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 0 0 12px;
+}
+/* min-height 44 gives the tap target; the underline rides the text rather than
+   the 44px box, so the link still reads as a link. */
+.jf-mobile-auth-login .link-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 2px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--hair-soft);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+.jf-mobile-auth-login .link-quiet:active { color: var(--ink); text-decoration-color: var(--ink); }
+
+.jf-mobile-auth-login .link-ink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 2px;
+  font-weight: 800;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--ink);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+/* ── BUTTONS ───────────────────────────────────────────────────────────────
+   The colour treatment is the desktop port's and is kept on purpose: the
+   primary is a blueprint-blue block with a white label, a 2px ink frame and a
+   hard ink offset shadow. It is NOT softened into another near-white card. The
+   shadow is 5px here against the desktop's 3px — at phone scale the button is
+   a much larger share of the screen and 3px reads as a printing artefact
+   rather than elevation. Press is a stamp: the box travels down-right by
+   exactly the amount the shadow loses, so the bottom-right edge stays put and
+   only the top-left moves.
+   The secondary keeps the same ink frame and its own hard shadow, one step
+   shallower — a ghost in fill only, never a flat unframed control.        */
+.jf-mobile-auth-login .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: clamp(11.5px, 3.4vw, 13px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.jf-mobile-auth-login .btn--primary {
+  background: var(--blueprint);
+  color: #ffffff;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+.jf-mobile-auth-login .btn--primary:active {
+  transform: translate(4px, 4px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.jf-mobile-auth-login .btn--ghost {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-auth-login .btn--ghost:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.jf-mobile-auth-login .btn[disabled] { opacity: 0.55; pointer-events: none; }
+.jf-mobile-auth-login .btn .ic { width: 16px; height: 16px; }
+
+.jf-mobile-auth-login .err {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 2px solid var(--danger);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+.jf-mobile-auth-login .err.is-hidden { display: none; }
+
+.jf-mobile-auth-login .divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 20px 0;
+}
+.jf-mobile-auth-login .divider::before,
+.jf-mobile-auth-login .divider::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--hair-soft);
+}
+
+.jf-mobile-auth-login .foot {
+  max-width: 480px;
+  margin: 6px auto 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Bottom of the page is the last impression: the desktop's proof quote, kept
+   verbatim, re-cut as a drafting title block. Below the fold on every tested
+   width, so it never pushes the CTA out of thumb reach. */
+.jf-mobile-auth-login .proof {
+  max-width: 480px;
+  margin: clamp(22px, 4vh, 32px) auto 0;
+  padding: 18px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-auth-login .proof-q {
+  margin-top: 10px;
+  font-size: clamp(16px, 4.6vw, 19px);
+  font-weight: 900;
+  line-height: 1.32;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.jf-mobile-auth-login .proof-n {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ── MOTION — Balanced: content blocks cascade in, 420ms, 60ms stagger. ─── */
+@keyframes jf-mal-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+.jf-mobile-auth-login .rv { animation: jf-mal-rise 420ms var(--ease-out) both; }
+.jf-mobile-auth-login .rv-1 { animation-delay: 0ms; }
+.jf-mobile-auth-login .rv-2 { animation-delay: 60ms; }
+.jf-mobile-auth-login .rv-3 { animation-delay: 120ms; }
+.jf-mobile-auth-login .rv-4 { animation-delay: 180ms; }
+.jf-mobile-auth-login .rv-5 { animation-delay: 240ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-auth-login .rv,
+  .jf-mobile-auth-login *,
+  .jf-mobile-auth-login *::before,
+  .jf-mobile-auth-login *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

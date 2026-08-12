@@ -37,10 +37,19 @@
      1  BOOKENDS      2px SOLID full --ink
                       head bottom, foot top. The block opens and
                       closes on ink; these are the only two.
-     2  DIVIDERS      2px SOLID full --ink (--v2-rule-strong)
+     2  DIVIDERS      1.5px SOLID full --ink (--v2-rule-strong)
                       between one line item and the next.
      3  PROVISIONAL   2px DASHED --muted-faint
                       "add a line": the next divider, pencilled.
+
+   THE LADDER IS CARRIED BY WEIGHT AGAIN, NOT ONLY BY ROLE. Tiers 1
+   and 2 are both full ink — the dividers were asked for in black
+   and they stay black — but a divider at the SAME 2px as the rule
+   closing the header made "end of the head" and "between two rows"
+   the identical mark, so the head stopped reading as a head. 1.5px
+   against 2px is the house's own control-edge-vs-structure step,
+   and it restores the distinction without touching the colour that
+   was asked for.
 
    Why the dividers are FULL INK, by request. This value walked up
    the scale three times and every step was reported as still too
@@ -168,16 +177,30 @@
 :global(.jf-blueprint) .block {
   /* The two numbers a future density pass should touch first, and
      together: the column set and the gap between columns. */
-  --v2-cols: minmax(220px, 1fr) 76px 108px 100px 112px 112px 140px 32px;
+  /* UNIT narrowed 108 -> 96px. The track held a 9-character option in a
+     11px mono face — ~46px of word — behind 24px of reserved caret room
+     and 6px of inset, so ~30px of the track was dead air with a chevron
+     floating at the far end of it. 96px is what the fit note below
+     `.bp-sel-in` computes as the real minimum, which is what the track
+     should have been all along. The 12px goes to DESCRIPTION, which is
+     the only column whose content has no natural width. */
+  --v2-cols: minmax(220px, 1fr) 76px 96px 100px 112px 112px 140px 32px;
   --v2-gap: 12px;
 
   /* The inset that keeps a column head sitting exactly over its own
      values — it is the fields' own horizontal padding. */
   --v2-pad: 6px;
 
-  /* A field's resting rule: house --hair, with a literal fallback so
-     the file survives outside the shell. */
-  --v2-rule: var(--hair, rgba(10, 10, 10, 0.12));
+  /* A field's resting rule.
+     12% (~#e0e0e0, 1.2:1) was invisible at a metre, and the cost was
+     not decoration — it was that MATERIAL and LABOR (editable) and
+     TOTAL (computed, deliberately unboxed) looked identical from any
+     distance, so the row gave no clue which of its figures you could
+     change. 50% lands at ~#949494, 3.16:1 on white, which clears
+     1.4.11's 3:1 floor for a UI component boundary with the box
+     actually visible. It still sits a clear step under the ink
+     dividers: 50% ink at 1.5px against 100% ink at 1.5px. */
+  --v2-rule: color-mix(in srgb, var(--ink, #0a0a0a) 50%, transparent);
 
   /* Tier 2 of THE RULE LADDER — the divider between line items, and
      since the block lost its frame, the only structure it has.
@@ -195,11 +218,23 @@
   --v2-well: #ffffff;
 
   /* How far the split rail is pulled in off the line's own measure,
-     at both ends. Read by `.slider` and `.pcts` together — they are
-     one control and one caption of it, so a change here has to move
-     both or the two percentages stop sitting under the rail's
-     ends. See the note above `.slider`. */
-  --v2-rail-inset: 28px;
+     at both ends. Read by `.slider` and `.legend` together — the
+     control and its key — so a change here has to move both or the
+     swatches stop sitting over the track's ends.
+
+     28px -> 8px, by request: WIDER, but never past the item line.
+     8px is not a taste value, it is the containment budget. The
+     plate is 14px and is centred on its value, so at 0% it reaches
+     7px left of the track's inner edge; the track's own 1.5px ink
+     border pays 1.5 of that and this token pays the rest. At 8px
+     the plate's outer edge lands 1.5px inside the line at 0% and
+     1.5px inside it at 100% — full width to the eye, and provably
+     never overhanging.
+
+     DO NOT reduce this below 7px without also making the plate
+     narrower: the plate would start clipping at the extremes, which
+     is the bug the previous pass traded real drift to avoid. */
+  --v2-rail-inset: 8px;
 
   display: flex;
   flex-direction: column;
@@ -282,10 +317,15 @@
    smaller and lighter in colour. Caps + tracking is what marks it
    as a label rather than a value.
 
-   The currency mark is still declared ONCE, on the rate column,
-   which is also the only column that names a unit — that pairing
-   is what makes the three amount columns unambiguously
-   line-level. */
+   THE CURRENCY MARK IS NOW ON ALL FOUR MONEY HEADS, not just the
+   rate column. Declaring it once on `$ / UNIT` left MATERIAL, LABOR
+   and TOTAL unmarked while their cells disagreed with each other —
+   bare "3312.00" in the two editable fields, "$1,488.00" in the
+   computed total beside them — with no rule a reader could infer.
+   The rule is now stated by the layout: the HEAD carries the mark,
+   the FIELDS under it are bare because they are typed into, and the
+   figures that are read rather than typed (the row's total, the
+   foot's sums) carry it. */
 :global(.jf-blueprint) .colName {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -297,20 +337,12 @@
   color: var(--ink-soft);
 }
 
-/* The running column total, in the column it sums. Quieter than
-   every figure below it, because it is a tally rather than an
-   answer — the block's answer is the foot. It is now also quieter
-   than its own column NAME, which reversed with this pass and is
-   correct: the name is the header, the sum is a note under it. */
-:global(.jf-blueprint) .colSum {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
+/* `.colSum` — the running column total that used to sit under three
+   of the seven heads — is GONE. It made the head a two-tier row
+   pretending to be one line, and it printed the block's grand total
+   ABOVE the rows it sums, in 10.5px muted mono, while the foot
+   printed the same three figures properly. See the head's note in
+   lines-v2.tsx for the full argument. */
 
 /* ============================================================
    THE LINE — two bands, one divider
@@ -322,14 +354,41 @@
    needed.
    ============================================================ */
 
+/* ── DENSITY, AND WHICH SIDE OF THE RULE THE AIR IS ON ───────
+   The row was 22px of air, a 36px entry row, 16px, a 56px split
+   band and 22px again — 152px of pitch of which 36px was the line
+   item. Roughly three quarters of every row was a secondary
+   control, so a twenty-line roof estimate could not be scanned
+   down its description or total column without paging.
+
+   The split band lost its separate percentage row (the figures
+   moved into the legend beside the words they belong to), which is
+   14px off the band. 136px now, and the entry row's share of the
+   pitch went from 24% to 26%.
+
+   THE AIR IS NO LONGER SYMMETRICAL, and that is the more important
+   half. 22px above and 22px below meant a divider sat exactly
+   between two rows, touching neither: it SEPARATED without
+   GROUPING, so the eye could not tell which row a rule belonged
+   to. 24px below the rule against 12px above it — a 2:1 split —
+   attaches each rule to the row it introduces, which is what makes
+   a ruled table read as a stack of records rather than as content
+   interrupted by lines. */
 :global(.jf-blueprint) .line {
   position: relative;
-  grid-template-rows: 36px 56px;
-  row-gap: 16px;
+  grid-template-rows: 36px 40px;
+  row-gap: 12px;
   align-items: center;
-  padding-top: 22px;
-  padding-bottom: 22px;
-  border-top: 2px solid var(--v2-rule-strong);
+  /* MORE SEPARATION BETWEEN ITEMS, by request: 24/12 -> 32/16. The
+     2:1 ratio is held deliberately — it is what attaches each rule
+     to the row it introduces rather than leaving it stranded
+     between two — so both numbers moved together. 48px of air now
+     sits across a divider against 12px inside a line, which is the
+     external > internal margin the whole page runs on and the
+     reason a run of items reads as separate records. */
+  padding-top: 32px;
+  padding-bottom: 16px;
+  border-top: 1.5px solid var(--v2-rule-strong);
 }
 
 /* The head already drew the rule above the first line. */
@@ -370,10 +429,16 @@
   grid-row: 1;
 }
 
+/* 18px of right padding, not the columns' shared 6px. The total is
+   where the eye rests at the end of a row and the remove button is
+   the next thing along, so the two were a misclick apart. The extra
+   12px is the only gutter in the row besides the one before TOTAL
+   itself, and it is spent on the same principle: put air where a
+   mistake would be expensive. */
 :global(.jf-blueprint) .cTotal {
   grid-column: 7;
   grid-row: 1;
-  padding-right: var(--v2-pad);
+  padding-right: 18px;
   text-align: right;
 }
 
@@ -447,16 +512,21 @@
    solid rule becomes dashed — the house's "pencilled, provisional"
    weight — and the figure steps back to --muted. A FIXED line is a
    lump sum, so it can never show "x 3". */
+/* Explicitly LIGHTER than `--v2-rule`, which went to 50% ink so a
+   live field would read as a field. A pinned cell must not inherit
+   that — it is the one box in the row you cannot type in, so it
+   keeps the old hairline weight and says "provisional" with the
+   dash rather than "editable" with the edge. */
 :global(.jf-blueprint) .f:disabled {
   color: var(--muted);
   background: transparent;
   border-style: dashed;
-  border-color: var(--v2-rule);
+  border-color: var(--hair, rgba(10, 10, 10, 0.12));
   cursor: not-allowed;
 }
 
 :global(.jf-blueprint) .f:disabled:hover {
-  border-color: var(--v2-rule);
+  border-color: var(--hair, rgba(10, 10, 10, 0.12));
 }
 
 /* ── THE UNIT PICKER ─────────────────────────────────────────
@@ -520,9 +590,11 @@
 
 /* ============================================================
    BAND 2 — THE SPLIT
-   Legend, rail, percentages. 56px total, and it is present on
-   every line at every moment: the mix is the second thing a
-   contractor changes and it has never deserved a disclosure.
+   Legend and rail — 40px, down from 56. The separate percentage
+   row is gone; its two figures live in the legend now, beside the
+   words they modify. Still present on every line at every moment:
+   the mix is the second thing a contractor changes and it has
+   never deserved a disclosure.
    ============================================================ */
 
 :global(.jf-blueprint) .split {
@@ -531,6 +603,11 @@
   min-width: 0;
 }
 
+/* INSET TO THE RAIL'S OWN ENDS. The legend used to span the whole
+   line while the rail beneath it stopped 28px short at each end, so
+   the two swatches — which exist to say "this colour is that end of
+   the track" — sat outside the track they were keying. A key has to
+   line up with the thing it keys or it is just decoration. */
 :global(.jf-blueprint) .legend {
   display: flex;
   align-items: center;
@@ -538,6 +615,7 @@
   gap: 12px;
   height: 16px;
   min-width: 0;
+  padding: 0 var(--v2-rail-inset);
 }
 
 :global(.jf-blueprint) .legendSide {
@@ -588,11 +666,17 @@
   color: var(--muted);
 }
 
-:global(.jf-blueprint) .legendAmt {
+/* The mix, beside the word it applies to. This replaced `.legendAmt`
+   — a mono reprint of the MATERIAL / LABOR field directly above it —
+   and it is deliberately QUIETER than that was: --muted rather than
+   --ink-soft. The band is an adjustment of a figure stated elsewhere,
+   and the previous build let it print at nearly the weight of the
+   row's own total two columns to the right. */
+:global(.jf-blueprint) .legendPct {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
-  color: var(--ink-soft);
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -616,20 +700,21 @@
    the pointer target; the ink outline is 1.5px, a control's edge
    rather than the block's structural 2px. */
 
-/* ── LESS WIDE, AND A DRAWN TRACK, by request ────────────────
-   Two changes, one intent: the split stops being a hairline that
-   runs the full width of a now-full-width page and becomes the
-   same GAUGE the Markup & margin card draws.
+/* ── A DRAWN TRACK, NEARLY THE FULL LINE ─────────────────────
+   The split is no longer a hairline: it is the same GAUGE the
+   Markup & margin card draws.
 
    WIDTH. `--v2-rail-inset` pulls both ends in off the line's own
-   measure. The rail was edge-to-edge on a table that grew to the
-   whole page, which made a 2px rule ~1150px long — a proportion at
-   which the control read as a divider between the two legend
-   figures rather than as a thing you grab. The inset is padding on
-   the SLIDER, so `railRef.getBoundingClientRect()` still measures
-   the rail itself and the pointer math needs no offset term. `.pcts`
-   carries the identical inset, which is what keeps each percentage
-   under its own end of the rail.
+   measure by 8px — enough to contain the plate at the extremes and
+   nothing more, so the track reads as running the width of the item
+   it belongs to without ever crossing it. An earlier pass set this
+   to 28px on the argument that a full-bleed rule read as a divider
+   between the two legend figures rather than as a thing you grab;
+   that was answered by making the track 10px and drawn, not by
+   shortening it. The inset is padding on the SLIDER, so the rail
+   element itself is still what gets measured. `.legend` carries the
+   identical inset, which is what puts each swatch over its own end
+   of the track.
 
    THICKNESS. 2px -> 10px with a 1.5px ink outline, matching
    bp-markup.module.css's `.track` exactly. That card and this band
@@ -727,6 +812,13 @@
   width: 14px;
   height: 14px;
   margin-top: -7px;
+  /* HALF THE PLATE, pulled back — this is what centres it on its own
+     `left`. Together with `left: pos%` in the component it puts the
+     plate's centre exactly on the fill's edge at every position.
+     The range-thumb inset that briefly replaced this is gone: it
+     contained the plate but drifted it off the boundary by up to
+     7px, which is the offset that was reported. Containment is
+     `--v2-rail-inset`'s job now. */
   margin-left: -7px;
   background: var(--v2-well);
   border: 2px solid var(--ink);
@@ -736,9 +828,15 @@
 
 /* A line with no price has no ratio to move. Inert AND visibly
    muted — a control that silently ignores input is worse than one
-   that says it is not ready. */
+   that says it is not ready.
+
+   An inert track is a TINT, not a rule — it used to borrow
+   `--v2-rule`, which was a hairline colour and is now a 50%-ink
+   field edge. Reused as a 10px fill that would be a dark grey bar
+   on a line with no price, which is the loudest thing the block
+   could possibly say about its emptiest row. */
 :global(.jf-blueprint) .splitOff .rail {
-  background: var(--v2-rule);
+  background: var(--muted-faint);
   /* The drawn outline has to recede with the rest of it, or an
      inert control keeps the loudest edge on the band. */
   border-color: var(--muted-faint);
@@ -763,39 +861,18 @@
   background: var(--muted-faint);
 }
 
-:global(.jf-blueprint) .splitOff .legendAmt,
-:global(.jf-blueprint) .splitOff .legendWord,
-:global(.jf-blueprint) .splitOff .pctMat,
-:global(.jf-blueprint) .splitOff .pctLab {
+:global(.jf-blueprint) .splitOff .legendPct,
+:global(.jf-blueprint) .splitOff .legendWord {
   color: var(--muted-light);
 }
 
-/* ── the two percentages ─────────────────────────────────────
-   Under the rail's own two ends. Both are --muted rather than
-   tinted: --sky is not a legible text colour on white, and the
-   swatch directly above each figure has already said which half
-   it belongs to. Alignment is the label. */
-
-:global(.jf-blueprint) .pcts {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 12px;
-  margin-top: 2px;
-  /* The same inset the slider carries — this row is the rail's own
-     caption and has to end where the rail ends. */
-  padding: 0 var(--v2-rail-inset);
-}
-
-:global(.jf-blueprint) .pctMat,
-:global(.jf-blueprint) .pctLab {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
+/* `.pcts` / `.pctMat` / `.pctLab` are GONE. They were a 14px row
+   under the rail carrying two figures — and set alone beneath the
+   ends of a track, "0%" and "100%" read as the slider's RANGE
+   rather than its value. The figures moved up into the legend
+   beside the words they modify, where "Material 0%" cannot be
+   misread, and the row they occupied came off the line's height.
+   See `.legendPct`. */
 
 /* ============================================================
    REMOVE

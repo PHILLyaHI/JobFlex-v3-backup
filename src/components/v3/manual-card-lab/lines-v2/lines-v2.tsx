@@ -13,8 +13,15 @@
 //     band 2 — the split, full width beneath it: a swatch + "Material" + amount
 //              at the far left, the mirror at the far right, a slider spanning
 //              between them, and the two percentages beneath its ends.
-//   and, the one genuinely good idea in the reference: the RUNNING COLUMN TOTAL
-//   lives in the column it sums, directly under the head, in a quieter register.
+//
+// WHAT WAS REPRODUCED AND THEN DROPPED
+//   the reference's RUNNING COLUMN TOTAL under each money head. It was carried
+//   for several passes as "the one genuinely good idea in the reference" and it
+//   does not survive contact with a seven-column head: three columns grew a
+//   second line and four did not, so the head became a two-tier row that reads
+//   as one, and the block's grand total ended up printed above the rows it
+//   sums in the quietest type on the page. The foot already closes all three
+//   money columns properly. See the head in `LinesV2` for the full argument.
 //
 // WHAT IS NOT REPRODUCED
 //   · the palette. The reference is a purple/blue consumer skin. Here the two
@@ -166,6 +173,7 @@ function NumField({
   ariaLabel,
   max,
   format,
+  placeholder,
 }: {
   id?: string;
   className: string;
@@ -174,6 +182,9 @@ function NumField({
   ariaLabel: string;
   max?: number;
   format?: (n: number) => string;
+  /** What an empty field shows. The money cells pass an em dash — see
+   *  `cents`. */
+  placeholder?: string;
 }) {
   const [buf, setBuf] = useState<string | null>(null);
   const rest = format ? format(value) : String(value);
@@ -185,6 +196,7 @@ function NumField({
       inputMode="decimal"
       className={className}
       value={buf ?? rest}
+      placeholder={placeholder}
       aria-label={ariaLabel}
       onChange={(e) => {
         const raw = e.target.value;
@@ -201,9 +213,21 @@ function NumField({
   );
 }
 
-/** Money fields rest with cents so a row's three amounts read as one column. */
+/**
+ * Money fields rest with cents so a row's three amounts read as one column —
+ * EXCEPT at zero, where they rest empty and let the placeholder em dash stand.
+ *
+ * "0.00" in the MATERIAL cell of a labor-only line is noise: it is four
+ * characters and a decimal point saying "nothing here", set in the same weight
+ * and column as the figures that do say something, so the eye has to read it
+ * before it can discard it. A dash is discarded at a glance. It is the
+ * PLACEHOLDER rather than the value because these are inputs — a field
+ * containing a literal "—" would have to be cleared before it could be typed
+ * into, which trades a reading cost for an editing one.
+ */
 function cents(n: number): string {
-  return num(n).toFixed(2);
+  const v = num(n);
+  return v > 0 ? v.toFixed(2) : "";
 }
 
 /* ============================================================
@@ -227,12 +251,10 @@ function cents(n: number): string {
  */
 function SplitBand({
   line,
-  fig,
   named,
   onPatch,
 }: {
   line: Line;
-  fig: Figures;
   named: boolean;
   onPatch: (patch: Partial<Line>) => void;
 }) {
@@ -300,14 +322,52 @@ function SplitBand({
     onPatch(patch);
   }
 
-  /** The share under the pointer, or null if the rail has no width to measure
-   *  against (not mounted, or hidden). */
+  /**
+   * The share under the pointer, or null if the rail has no width to measure
+   * against (not mounted, or hidden).
+   *
+   * ── WHY THIS MEASURES THE INNER BOX, NOT THE RECT ────────────
+   * The plate used to drift off the fill, worst near the ends and worst of all
+   * at the left. TWO separate errors stacked, and both are geometry rather than
+   * anything to do with dragging:
+   *
+   *   1  THE BORDER. `.rail` carries a 1.5px ink outline under
+   *      `box-sizing: border-box`, so `getBoundingClientRect()` returns a box
+   *      3px wider than the one `.railMat`'s `width: N%` is a percentage of,
+   *      starting 1.5px further left. Every reading was therefore shifted by
+   *      1.5px and scaled by 3/W against the fill it was supposed to produce.
+   *   2  THE HALF-PLATE INSET. The plate was positioned with the native
+   *      range-thumb trick — `pos * (100% - 14px) + 7px` — which keeps a thumb
+   *      inside its track but deliberately makes the thumb's CENTRE lag its
+   *      value by `7 - pos*0.14` px. On a range input nothing marks the value
+   *      but the thumb, so the lag is invisible. Here the fill's edge marks it
+   *      too, so the trick put the plate up to 7px away from the boundary it
+   *      exists to point at — +7px at 0%, 0 at 50%, -7px at 100%. That is
+   *      exactly the reported "worse the closer it is to the left".
+   *
+   * Error 2 is fixed in the CSS (the plate is centred on its value again, and
+   * `--v2-rail-inset` is what now keeps it inside the line). This is error 1:
+   * `clientLeft` is the left border width and `clientWidth` is the padding box,
+   * so together they name precisely the box the fill fills.
+   *
+   * `scale` carries that layout measurement into viewport space. `clientLeft`
+   * and `clientWidth` are unscaled layout pixels while `clientX` and the rect
+   * are visual, so under any CSS transform on an ancestor — this page's
+   * entrance cascade animates one — mixing the two would reintroduce a scaling
+   * error of exactly the kind being removed.
+   */
   function shareAt(clientX: number): number | null {
     const el = railRef.current;
     if (!el) return null;
-    const box = el.getBoundingClientRect();
-    if (box.width <= 0) return null;
-    return Math.min(100, Math.max(0, ((clientX - box.left) / box.width) * 100));
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || el.offsetWidth <= 0) return null;
+
+    const scale = rect.width / el.offsetWidth;
+    const innerWidth = el.clientWidth * scale;
+    if (innerWidth <= 0) return null;
+
+    const originX = rect.left + el.clientLeft * scale;
+    return Math.min(100, Math.max(0, ((clientX - originX) / innerWidth) * 100));
   }
 
   /** Draw now, commit on the next frame. Repeated calls inside one frame
@@ -392,15 +452,35 @@ function SplitBand({
 
   return (
     <div className={cx(s.split, !priced && s.splitOff)}>
-      {/* Legend. The swatch is the whole key: the same two colours carry the
-          same two meanings in the rail directly beneath it, so the rail needs
-          no labels of its own. The middle is empty by design — it is where an
-          excluded row says so, directly under the entry it disqualifies. */}
+      {/* ── LEGEND — ONE ENCODING, NOT THREE ───────────────────────────
+          The same pair of numbers used to be stated three times per line:
+          as dollars in the MATERIAL and LABOR fields, again as dollars in
+          this legend, and again as percentages in a row of their own under
+          the rail. Row one read "$0.00 / $1,488.00 / 0% / 100%" — four
+          labels for one fact.
+
+          Two of the three are gone. The legend's DOLLARS went, because
+          they were a verbatim reprint of the two fields sitting directly
+          above them in the same columns — the shortest possible distance
+          for a duplicate to travel. The separate percentage row went too,
+          and its figures moved in here beside the words they belong to.
+
+          That also fixes what those percentages actually said. Alone under
+          the ends of a track, "0%" and "100%" read as the SLIDER'S RANGE,
+          not its value — you only learned otherwise on a row that happened
+          to sit at 44/56. Attached to the word, "Material 0%" and
+          "100% Labor" cannot be misread.
+
+          So: fields carry the money, the legend and rail carry the mix,
+          and neither says the other's half.
+
+          The middle stays empty by design — it is where an excluded row
+          says so, directly under the entry it disqualifies. */}
       <div className={s.legend}>
         <span className={s.legendSide}>
           <span className={cx(s.swatch, s.swatchMat)} aria-hidden="true" />
           <span className={s.legendWord}>Material</span>
-          <span className={s.legendAmt}>{money(fig.material)}</span>
+          <span className={s.legendPct}>{pct}%</span>
         </span>
 
         <span className={s.legendMid}>
@@ -408,7 +488,7 @@ function SplitBand({
         </span>
 
         <span className={cx(s.legendSide, s.legendSideEnd)}>
-          <span className={s.legendAmt}>{money(fig.labor)}</span>
+          <span className={s.legendPct}>{100 - pct}%</span>
           <span className={s.legendWord}>Labor</span>
           <span className={cx(s.swatch, s.swatchLab)} aria-hidden="true" />
         </span>
@@ -463,19 +543,22 @@ function SplitBand({
             slider's own box (see `--v2-rail-inset`). Its `left` is a percentage
             of its offset parent, so with the rail no longer full-bleed a plate
             parented to the SLIDER would drift off the fill by the width of the
-            inset — worst at the ends, where the value is least forgiving. */}
+            inset — worst at the ends, where the value is least forgiving.
+
+            CENTRED ON ITS VALUE — `left: pos%` against the same containing
+            block `.railMat` is a percentage of, so the plate's centre IS the
+            fill's edge at every position, exactly, with no arithmetic between
+            them that could disagree. The previous pass inset it by half a plate
+            (the native range-thumb trick) to stop it hanging off the ends; that
+            bought the containment at the price of up to 7px of drift from the
+            boundary it marks. Containment is now bought with geometry instead —
+            `--v2-rail-inset` is half a plate wide, so the rail starts far
+            enough into the line that a plate centred on 0% still lands inside
+            it. See `shareAt` for the other half of this fix. */}
         <span className={s.rail} ref={railRef} aria-hidden="true">
           <span className={s.railMat} style={{ width: `${pos.toFixed(3)}%` }} />
           <span className={s.handle} style={{ left: `${pos.toFixed(3)}%` }} />
         </span>
-      </div>
-
-      {/* The two ends of the rail, read back as numbers. aria-hidden: the
-          slider's own valuetext already says the whole sentence, and hearing
-          it twice is worse than not drawing it. */}
-      <div className={s.pcts} aria-hidden="true">
-        <span className={s.pctMat}>{pct}%</span>
-        <span className={s.pctLab}>{100 - pct}%</span>
       </div>
     </div>
   );
@@ -595,6 +678,7 @@ function LineBlock({
         value={cost}
         onCommit={commitUnitPrice}
         format={cents}
+        placeholder="—"
         ariaLabel={`Price per ${UNIT_LABEL[line.unit]}`}
       />
 
@@ -603,6 +687,7 @@ function LineBlock({
         value={fig.material}
         onCommit={(n) => commitExtended("materialCost", n)}
         format={cents}
+        placeholder="—"
         ariaLabel="Material amount for this line"
       />
 
@@ -611,6 +696,7 @@ function LineBlock({
         value={fig.labor}
         onCommit={(n) => commitExtended("laborCost", n)}
         format={cents}
+        placeholder="—"
         ariaLabel="Labor amount for this line"
       />
 
@@ -629,7 +715,7 @@ function LineBlock({
 
       {/* BAND 2 — the split, full width beneath the entry row. */}
       <div className={s.cSplit}>
-        <SplitBand line={line} fig={fig} named={named} onPatch={onPatch} />
+        <SplitBand line={line} named={named} onPatch={onPatch} />
       </div>
     </div>
   );
@@ -695,10 +781,34 @@ export function LinesV2(props: LinesV2Props) {
 
   return (
     <div className={s.block}>
-      {/* The head is NOT aria-hidden: its three sums are real information, and
-          read aloud it says "Material, $333.31, Labor, $217.45, Total, $550.76",
-          which is exactly what it says on screen. The controls below carry their
-          own labels, so the column names are the only thing said twice. */}
+      {/* ── THE HEAD IS LABELS ONLY ────────────────────────────────────
+          The running column totals are GONE from here, and this is the
+          single change that fixed the most in one move.
+
+          They were the reference's one genuinely good idea and they cost
+          more than they paid. Three of the seven columns carried a second
+          line and four did not, so the head was a two-tier row pretending
+          to be one: bottom-aligned, its baseline read
+          "DESCRIPTION QTY UNIT $/UNIT $3,852.00 $6,432.20 $10,284.20" —
+          four labels and three values on one visual line. Top-aligned, the
+          four bare labels floated half a row above the rule they head.
+          There was no alignment that made a mixed row of labels and values
+          read as one thing, because it is not one thing.
+
+          Worse, it put the document's most important figure — the grand
+          total — at the TOP of the table in 10.5px muted mono, above the
+          rows it sums. A total belongs after its parts. The foot already
+          prints all three sums, in the columns they belong to, at the
+          weight they deserve; the head was a quieter second printing of
+          the foot, which is the one-number-one-home rule broken inside the
+          block that documents it.
+
+          The currency mark now sits in every money head — `$ / UNIT`,
+          `$ MATERIAL`, `$ LABOR`, `$ TOTAL`. That is the stated rule the
+          column set was missing: a head declares its unit once, the fields
+          under it are bare digits because they are typed into, and the two
+          figures that are READ rather than typed (the row's total and the
+          foot's sums) carry the mark. */}
       <div className={s.head}>
         <span className={s.colHead}>
           <span className={s.colName}>Description</span>
@@ -713,16 +823,13 @@ export function LinesV2(props: LinesV2Props) {
           <span className={s.colName}>$ / unit</span>
         </span>
         <span className={cx(s.colHead, s.colHeadEnd)}>
-          <span className={s.colName}>Material</span>
-          <span className={s.colSum}>{money(sums.material)}</span>
+          <span className={s.colName}>$ Material</span>
         </span>
         <span className={cx(s.colHead, s.colHeadEnd)}>
-          <span className={s.colName}>Labor</span>
-          <span className={s.colSum}>{money(sums.labor)}</span>
+          <span className={s.colName}>$ Labor</span>
         </span>
         <span className={cx(s.colHead, s.colHeadEnd)}>
-          <span className={s.colName}>Total</span>
-          <span className={s.colSum}>{money(sums.total)}</span>
+          <span className={s.colName}>$ Total</span>
         </span>
         <span />
       </div>

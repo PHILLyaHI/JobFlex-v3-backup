@@ -1,0 +1,324 @@
+/* ============================================================
+   PROJECT DETAIL — BLUEPRINT
+   /dashboard/projects/[id]
+
+   WHAT THIS IS
+   A verbatim port of the donor
+   `jobflex-projectdetail-blueprint (14).html`. Every size, colour,
+   spacing, weight, radius, shadow, transition and keyframe below is
+   the donor's literal value — nothing rounded, substituted or
+   re-derived. Donor comments (including the Russian section
+   headings) are preserved as written.
+
+   ── WHAT IS *NOT* HERE, AND WHY ────────────────────────────
+   The donor ships the whole dashboard chrome: :root tokens, the
+   reset, `.layout`, the sidebar, `.main`, the topbar and `.content`.
+   ALL of it is dropped — blueprint-shell already renders that
+   furniture and the always-on modules already publish those rules
+   verbatim (verified rule-by-rule; the shell's `--sidebar-w: 264px`,
+   `--topbar-h: 62px` and `.content { padding: 40px 96px 80px;
+   gap: 22px }` are identical to the donor's). See the drop notes at
+   each site in ./project-detail-content.tsx.
+
+   The donor's OTHER dashboard blocks — banner, chart, activity,
+   week strip, upcoming jobs, pipeline board, dropdown, list limits —
+   are also absent: this page's markup contains none of them, and
+   the always-on dashboard module publishes every one of those rules
+   verbatim anyway. Only the rules THIS page's markup actually uses
+   are restated here.
+
+   ── SCOPING ────────────────────────────────────────────────
+   This route's pageKey is "projects" (blueprint-shell's pageKey()
+   reads the first segment after /dashboard), so projects.module.css
+   is ALSO active on this page — and it disagrees with the donor in
+   four places that matter here:
+
+     · `.content .kpi-grid` is `repeat(auto-fit, minmax(190px, 1fr))`;
+       the donor is `repeat(4, 1fr)`.
+     · at ≤860px it is `repeat(2, 1fr)`; the donor is `1fr`.
+     · at ≤860px its `.kpi` never clears `border-right`.
+     · at ≤860px it has no `.kpi:last-child { border-bottom: none }`.
+
+   So NOTHING here relies on an inherited global rule. Every class is
+   this module's own hashed name, and the whole file is scoped
+   `:global(.jf-blueprint .content) .cls` ⇒ (0,3,0). That number is
+   load-bearing: projects.module.css scopes its donor reset under
+   `.content` — `.bp :global(.content button)` is (0,2,1) and
+   `.bp :global(.content *)` is (0,2,0) — so the client-detail
+   precedent's (0,2,0) prefix would LOSE the border, background and
+   cursor off every control on this page. (0,3,0) wins both.
+
+   Icons carry this module's `.ic`, not the literal one, so
+   `.content svg.ic` (which adds a `shape-rendering` the donor never
+   wrote) cannot reach them.
+
+   The three literal-global classes the markup does use — `rv`,
+   `rv-in`, `rv-cell`, `pressed` — are the fleet's entrance cascade
+   and press feedback. Both the always-on dashboard module and
+   projects.module.css publish them at exactly the donor's values.
+
+   ── NO @keyframes ──────────────────────────────────────────
+   Lightning CSS rejects @keyframes inside a CSS module. The donor's
+   `press2` (used by `.pressed`) already lives in
+   dashboard-blueprint/blueprint-global.css, verbatim. This page's
+   own motion is transitions only.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   - Light mode only. No .dark variants.
+   ============================================================ */
+
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+:global(.jf-blueprint .content) .page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  margin-bottom: 14px;
+}
+:global(.jf-blueprint .content) .kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+:global(.jf-blueprint .content) .kicker::before {
+  content: '';
+  width: 7px; height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+}
+:global(.jf-blueprint .content) .page-title {
+  font-size: 46px; font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+
+/* ============================================================
+   KPI STRIP
+   ============================================================ */
+:global(.jf-blueprint .content) .kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+:global(.jf-blueprint .content) .kpi {
+  padding: 20px 24px 22px;
+  border-right: 1.5px solid var(--ink);
+  transition: background 0.12s;
+}
+:global(.jf-blueprint .content) .kpi:last-child { border-right: none; }
+:global(.jf-blueprint .content) .kpi:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .kpi-lbl {
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+:global(.jf-blueprint .content) .kpi-val {
+  font-size: 38px; font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+:global(.jf-blueprint .content) .card {
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px 24px;
+  position: relative;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* ============================================================
+   BUTTONS + ICONS
+   (donor base rules — dropped from the chrome block above only for
+   the topbar's own controls; the page's Attach controls use them)
+   ============================================================ */
+:global(.jf-blueprint .content) svg.ic { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+:global(.jf-blueprint .content) .btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 0 16px;
+  height: 40px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint .content) .btn .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint .content) .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btn-ghost { background: var(--paper); color: var(--ink); }
+:global(.jf-blueprint .content) .btn-ghost:hover { background: var(--paper-deep); }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 1280px) {
+  :global(.jf-blueprint .content) .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  :global(.jf-blueprint .content) .kpi:nth-child(2) { border-right: none; }
+  :global(.jf-blueprint .content) .kpi:nth-child(-n+2) { border-bottom: 1.5px solid var(--ink); }
+}
+@media (max-width: 1000px) {
+  :global(.jf-blueprint .content) .page-title { font-size: 38px; }
+}
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .kpi-grid { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .kpi { border-right: none; border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content) .kpi:last-child { border-bottom: none; }
+}
+
+
+/* ═══════ PROJECT DETAIL ═══════ */
+:global(.jf-blueprint .content) [hidden] { display: none !important; }
+:global(.jf-blueprint .content) .kpi-grid--pd { grid-template-columns: repeat(4, 1fr); }
+:global(.jf-blueprint .content) .kpi-grid--pd .kpi:last-child { border-right: none; }
+
+:global(.jf-blueprint .content) .pd-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .pd-tabs { display: inline-flex; border: var(--border); border-radius: var(--radius);
+  background: var(--paper); overflow: hidden; }
+:global(.jf-blueprint .content) .pd-tab { appearance: none; cursor: pointer; border: none; background: transparent;
+  padding: 10px 22px; font-family: var(--font); font-size: 12.5px; font-weight: 800;
+  letter-spacing: .04em; color: var(--ink); border-right: 1.5px solid var(--ink);
+  transition: background .14s var(--ease), color .14s var(--ease); }
+:global(.jf-blueprint .content) .pd-tab:last-child { border-right: none; }
+:global(.jf-blueprint .content) .pd-tab:hover:not(.on) { background: rgba(10,10,10,.05); }
+:global(.jf-blueprint .content) .pd-tab.on { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .pd-bar .btn { margin-left: auto; }
+
+:global(.jf-blueprint .content) .pd-attach { border: 1.5px dashed var(--blueprint); border-radius: var(--radius);
+  padding: 16px 18px; }
+:global(.jf-blueprint .content) .pd-attach-h { margin-bottom: 10px; }
+:global(.jf-blueprint .content) .pd-attach-t { font-size: 12.5px; font-weight: 800; }
+:global(.jf-blueprint .content) .pd-av { display: flex; align-items: center; gap: 12px; padding: 9px 2px;
+  border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .pd-av:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .pd-av-n { font-size: 12.5px; font-weight: 800; flex: 1; min-width: 0; }
+:global(.jf-blueprint .content) .pd-av-m { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+:global(.jf-blueprint .content) .pd-av .btn { padding: 6px 13px; font-size: 10.5px; }
+:global(.jf-blueprint .content) .pd-empty { padding: 12px 2px; font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); }
+
+/* Фильтры видов */
+:global(.jf-blueprint .content) .pd-fbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 14px;
+  padding-bottom: 14px; border-bottom: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .pd-f { appearance: none; cursor: pointer; padding: 6px 13px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper);
+  font-family: var(--font); font-size: 11px; font-weight: 800; letter-spacing: .06em;
+  color: var(--ink); display: inline-flex; align-items: center; gap: 7px;
+  transition: background .13s var(--ease), color .13s var(--ease); }
+:global(.jf-blueprint .content) .pd-f:hover:not(.on) { background: rgba(10,10,10,.05); }
+:global(.jf-blueprint .content) .pd-f.on { border-width: 2px; padding: 5.5px 12.5px; background: rgba(10,10,10,.06); }
+:global(.jf-blueprint .content) .pd-f i { font-style: normal; font-family: var(--font-mono); font-size: 10px;
+  font-weight: 600; opacity: .65; }
+:global(.jf-blueprint .content) .pd-f--prog.on { border-color: var(--blueprint); color: var(--blueprint);
+  background: rgba(24,84,160,.07); }
+:global(.jf-blueprint .content) .pd-f--done.on { border-color: var(--success); color: var(--success);
+  background: rgba(58,125,68,.08); }
+:global(.jf-blueprint .content) .pd-f--sch.on { border-color: rgba(10,10,10,.5); color: var(--muted);
+  background: rgba(10,10,10,.05); }
+
+/* Список */
+:global(.jf-blueprint .content) .pd-jobs-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+:global(.jf-blueprint .content) .pd-jobs-t { font-size: 16px; font-weight: 900; letter-spacing: -.01em; }
+:global(.jf-blueprint .content) .pd-jobs-s { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px;
+  font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .pd-row { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .pd-row:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .pd-row-n { font-size: 13.5px; font-weight: 800; }
+:global(.jf-blueprint .content) .pd-row-m { margin-top: 3px; font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600; letter-spacing: .04em; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .pd-b { flex-shrink: 0; padding: 3px 10px; border: 1.5px solid; border-radius: var(--radius);
+  font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .pd-b--done { border-color: var(--success); color: var(--success);
+  background: rgba(58,125,68,.07); }
+:global(.jf-blueprint .content) .pd-b--prog { border-color: var(--blueprint); color: var(--blueprint);
+  background: rgba(24,84,160,.06); }
+:global(.jf-blueprint .content) .pd-b--sch { border-color: rgba(10,10,10,.45); color: var(--muted); }
+
+/* Календарь-агенда */
+:global(.jf-blueprint .content) .pd-cal-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+:global(.jf-blueprint .content) .pd-cal-t { font-size: 16px; font-weight: 900; letter-spacing: -.01em; }
+:global(.jf-blueprint .content) .pd-cal-s { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px;
+  font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .pd-ag-mo { margin-top: 18px; padding-bottom: 8px; border-bottom: 1.5px solid var(--ink);
+  font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .pd-agrow { display: grid; grid-template-columns: 168px 1fr auto; align-items: center;
+  gap: 16px; padding: 12px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .pd-agrow:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .pd-ag-d { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .04em; color: var(--blueprint); font-variant-numeric: tabular-nums;
+  white-space: nowrap; }
+
+/* Гант */
+:global(.jf-blueprint .content) .pd-g-axis { display: grid; grid-template-columns: 200px 1fr; margin-bottom: 10px; }
+:global(.jf-blueprint .content) .pd-g-months { position: relative; height: 18px; }
+:global(.jf-blueprint .content) .pd-g-month { position: absolute; top: 0; font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); border-left: 1.5px solid rgba(10,10,10,.35); padding-left: 6px; }
+:global(.jf-blueprint .content) .pd-g-row { display: grid; grid-template-columns: 200px 1fr; align-items: center;
+  gap: 0; padding: 8px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .pd-g-axis + .pd-g-row { border-top: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .pd-g-row:last-child { border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .pd-g-name { font-size: 12.5px; font-weight: 800; padding-right: 16px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:global(.jf-blueprint .content) .pd-g-track { position: relative; height: 32px;
+  background-image: linear-gradient(90deg, rgba(10,10,10,.08) 1px, transparent 1px);
+  background-size: 8.333% 100%; }
+/* PORTED VERBATIM — `--ease-out` IS A DONOR BUG.
+   The donor's :root defines --ease and never --ease-out, so in a browser
+   opening the donor file this `transition` is invalid at computed-value time
+   and the bar simply appears at full width. globals.css DOES define
+   --ease-out (cubic-bezier(0.22, 0.61, 0.36, 1)), so here the bar grows over
+   500ms. Left exactly as authored rather than silently substituted — see the
+   flag in the port report. */
+:global(.jf-blueprint .content) .pd-g-bar { position: absolute; top: 1px; bottom: 1px; border-radius: var(--radius);
+  display: flex; align-items: center; padding: 0 8px; overflow: hidden;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .04em; white-space: nowrap;
+  transform: scaleX(0); transform-origin: left center;
+  transition: transform .5s var(--ease-out); }
+:global(.jf-blueprint .content) .pd-g-bar.in { transform: scaleX(1); }
+:global(.jf-blueprint .content) .pd-g-bar--done { background: rgba(58,125,68,.16); color: var(--success);
+  border: 1.5px solid var(--success); }
+:global(.jf-blueprint .content) .pd-g-bar--prog { background: rgba(24,84,160,.14); color: var(--blueprint);
+  border: 1.5px solid var(--blueprint); }
+:global(.jf-blueprint .content) .pd-g-bar--sch { background: var(--paper); color: var(--ink);
+  border: 1.5px solid var(--ink); }
+
+@media (max-width: 900px) {
+  :global(.jf-blueprint .content) .kpi-grid--pd { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content) .kpi-grid--pd .kpi:nth-child(2) { border-right: none; }
+  :global(.jf-blueprint .content) .pd-agrow { grid-template-columns: 1fr auto; }
+  :global(.jf-blueprint .content) .pd-agrow .pd-ag-d { grid-column: 1 / -1; }
+  :global(.jf-blueprint .content) .pd-g-axis,
+  :global(.jf-blueprint .content) .pd-g-row { grid-template-columns: 120px 1fr; }
+}
+
+/* ============================================================
+   MOTION SYSTEM — BALANCED (пакет 02, стандарт)
+   Only the two rules this page's markup can trigger. `.rv`, `.rv-in`,
+   `.rv-cell` and `.pressed` are the fleet's literal globals and are
+   published verbatim by the always-on modules.
+   ============================================================ */
+:global(.jf-blueprint .content) .btn .ic { transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint .content) .btn:hover .ic { transform: scale(1.12); }

@@ -3,8 +3,11 @@
 //
 // The sidebar, topbar and sprite come from the shared shell mounted in
 // ../layout.tsx, so this page renders only the donor's `.content` children.
-// Child routes (/new, /[id]) live under the (dashboard) route group and keep
-// the classic layout.
+// /[id] is now a blueprint page too and sits right here in ./[id] — it
+// REPLACED the classic record page rather than standing beside it, which
+// reverses the side-by-side convention the earlier ports recorded. Only /new
+// still lives under the (dashboard) route group on the classic layout; a
+// static segment outranks a dynamic one, so it is unaffected by ./[id].
 //
 // The grid is NOT a fixture: the project book is read from the database here
 // and the create dialog calls the real `createProject` server action (see

@@ -1,8 +1,45 @@
-import Link from "next/link";
+// JobFlex team invite — PORT of the approved mockup
+// `jobflex-auth-invite-blueprint.html` (route: /auth/invite/[token]).
+//
+// This REPLACES the previous surface in place. It is not a side-by-side
+// `-blueprint` twin: the standing "donor and successor live side by side"
+// convention recorded in the headers of src/app/(marketing)/landing/page.tsx
+// and src/app/dashboard/manual-blueprint/page.tsx was REVERSED for this pass
+// — ports now overwrite the surface they replace, same route, same files. The
+// old paper-card layout and its src/components/billing/InviteAcceptCard.tsx
+// are gone with it.
+//
+// The data layer is untouched. Same query, same hashed-token lookup, same
+// notFound() on a missing or already-accepted invite, same expiry test. Only
+// the markup and styles changed; accept/decline still call the pre-existing
+// acceptInvite / declineInvite server actions.
+//
+// Metadata is the donor's <title>, verbatim.
+
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { hashToken } from "@/lib/tokens";
-import { InviteAcceptCard } from "@/components/billing/InviteAcceptCard";
+import { AuthInviteContent } from "@/components/v3/auth-invite-blueprint/auth-invite-content";
+
+export const metadata: Metadata = {
+  title: "JobFlex · Team invite",
+};
+
+// The mockup's Expires row reads "in 6 days" — a relative string, not the
+// absolute date the old card showed. Rendered on the SERVER so the markup the
+// client hydrates against is identical. src/lib/format.ts `relative()` only
+// handles times in the past, so this is its forward-looking counterpart and
+// stays local to the one row that needs it.
+function expiresIn(d: Date) {
+  const ms = d.getTime() - Date.now();
+  if (ms <= 0) return "expired";
+  const days = Math.floor(ms / 86_400_000);
+  if (days >= 1) return `in ${days} ${days === 1 ? "day" : "days"}`;
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours >= 1) return `in ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  return "in under an hour";
+}
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -18,44 +55,14 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const expired = invite.expiresAt < new Date();
 
   return (
-    <main className="min-h-dvh flex items-center justify-center p-6 relative">
-      <div
-        aria-hidden
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          backgroundImage:
-            "radial-gradient(ellipse 60% 40% at 70% 10%, rgba(31,122,82,0.07), transparent 60%)",
-        }}
-      />
-      <div className="relative z-10 w-full">
-        <Link
-          href="/"
-          className="flex items-center justify-center gap-2 mb-6 text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
-        >
-          <div className="h-7 w-7 rounded-[6px] bg-[color:var(--ink)] text-[color:var(--paper)] grid place-items-center font-display text-[13px]">
-            J
-          </div>
-          <span className="font-display text-[16px] tracking-[-0.015em]">JobFlex</span>
-        </Link>
-        {expired ? (
-          <div className="max-w-md mx-auto paper-card p-10 text-center">
-            <div className="quiet-caps mb-3">Expired</div>
-            <h1 className="font-display text-[28px] tracking-[-0.02em]">This invite has expired.</h1>
-            <p className="mt-3 text-[13px] text-[color:var(--ink-muted)]">
-              Ask {invite.invitedBy?.name ?? "your teammate"} for a fresh link.
-            </p>
-          </div>
-        ) : (
-          <InviteAcceptCard
-            token={token}
-            orgName={invite.organization.name}
-            role={invite.role}
-            inviterName={invite.invitedBy?.name ?? invite.invitedBy?.email ?? null}
-            expiresAt={invite.expiresAt}
-            invitedEmail={invite.email}
-          />
-        )}
-      </div>
-    </main>
+    <AuthInviteContent
+      token={token}
+      orgName={invite.organization.name}
+      role={invite.role}
+      inviterName={invite.invitedBy?.name ?? invite.invitedBy?.email ?? "your teammate"}
+      invitedEmail={invite.email}
+      expiresIn={expiresIn(invite.expiresAt)}
+      expired={expired}
+    />
   );
 }

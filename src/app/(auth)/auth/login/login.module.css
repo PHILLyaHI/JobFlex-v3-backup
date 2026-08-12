@@ -1,0 +1,368 @@
+/* ============================================================
+   SIGN IN — BLUEPRINT
+   /auth/login
+
+   A VERBATIM port of the approved single-file mockup
+   `jobflex-auth-login-blueprint.html`. Every declaration below is the
+   source's, in the source's order, with the source's comments (including
+   the Russian section markers) kept intact. Nothing was rounded,
+   substituted or "improved".
+
+   ── REPLACEMENT, NOT A FORK ────────────────────────────────
+   This REPLACES the old /auth/login markup in place. It does NOT ship
+   beside it as `/auth/login-blueprint`. That reverses the earlier
+   side-by-side convention recorded in the header of
+   /dashboard/subscription-blueprint/page.tsx ("a donor surface is never
+   overwritten by its successor"); for the auth family the instruction is
+   replacement.
+
+   ── SCOPING ────────────────────────────────────────────────
+   The page is standalone chrome — it is NOT mounted inside
+   blueprint-shell, so there is no `.jf-blueprint` root to hang off. It
+   carries its own: the wrapper <div> in page.tsx wears the LITERAL global
+   class `jf-auth-login`, and EVERY rule in this file is prefixed with
+   `:global(.jf-auth-login) `. Everything else stays a hashed local class,
+   reached through the `cx()` helper by the source's literal names.
+
+   The prefix is UNIFORM — every selector gains exactly (0,1,0) — so all
+   relative specificity comparisons inside the sheet are identical to the
+   source's. `svg.ic` still loses to `.btn .ic`, `.chip.on` still beats
+   `.chip`, and the two `.pw-toggle` / `.pw-wrap` / `.auth-form`
+   declarations still resolve by source order.
+
+   `jf-auth-login` is page-unique on purpose. The four sibling auth pages
+   are ported from the same donor stylesheet; a shared root name plus
+   Next's habit of keeping route CSS in the document across client
+   navigation would let one page's token block answer for another's.
+
+   ── ENVIRONMENT RESTORES (marked inline, two of them) ───────
+   The source ran against virgin browser defaults. This app ships Tailwind
+   preflight and a themed globals.css, both of which move values the
+   source depends on inheriting. Each restore below puts back EXACTLY what
+   the environment took, and nothing more. They are the only declarations
+   in this file that are not in the source.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   - Light mode only. No .dark variants.
+   - globals.css was NOT touched. blueprint-shell was NOT touched.
+   - The source's two `html, body` rules are the only dropped rules; both
+     are chrome owned by the root layout (see the drop notes in place).
+   - The desktop media queries are the source's and are kept verbatim,
+     including the two whose bodies the cascade renders dead (flagged in
+     place). CLAUDE.md's mobile-first rule governs NEW mobile work, not a
+     verbatim port of an authored desktop surface.
+   ============================================================ */
+
+:global(.jf-auth-login) {
+    --paper: #f2f0eb; --paper-deep: #ebe8e1;
+    --ink: #0a0a0a; --ink-soft: #2a2a2a;
+    --muted: #555; --muted-light: #888; --muted-faint: #aaa;
+    --blueprint: #1854a0; --blueprint-dark: #0e3d7a; --sky: #4a9eff;
+    --success: #3a7d44; --success-dark: #2c5f34; --success-soft: #e8f0e9;
+    --warning: #b8860b; --warning-dark: #8a650a; --warning-soft: #faf3e0;
+    --danger: #a83232; --danger-soft: #f7e9e9;
+    --hair-soft: #d5d1c8; --shadow: rgba(10, 10, 10, 0.09);
+    --grid-light: rgba(0, 0, 0, 0.035);
+    /* PORT: the two family stacks are the source's, with the app's
+       next/font handles spliced in front. The source loaded 'Inter' and
+       'JetBrains Mono' from the Google Fonts CDN under those literal
+       names; next/font ships the same two variable faces under generated
+       family names exposed as --font-inter / --font-jbmono (root
+       layout.tsx). Same fonts, same weights (Inter 100–900 covers the
+       800/900 this page uses), same fallbacks after them. */
+    --font: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: var(--font-jbmono), 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --radius: 2px; --border: 2px solid var(--ink);
+    --ease: cubic-bezier(0.4, 0, 0.2, 1); --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  :global(.jf-auth-login) * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* [chrome / root-layout-owned — dropped in the port: `html, body { min-height: 100% }`.
+     html and body belong to src/app/layout.tsx + globals.css; a route module must not
+     reach up and restyle them. Nothing is lost: `.auth` sizes itself with an explicit
+     `height: 100dvh` (and `min-height: 100dvh` under the low/narrow query), and the
+     root layout's <body> already carries `min-h-dvh`. ] */
+  :global(.jf-auth-login) {
+    font-family: var(--font); background: var(--paper); color: var(--ink);
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+
+    /* ── ENVIRONMENT RESTORE 1 of 2 (not in the source) ──────────────
+       Tailwind preflight sets `html { line-height: 1.5 }`. The source
+       declares no line-height anywhere on html/body/*, so every element
+       that does not set its own inherits `normal` (~1.21 for Inter).
+       Roughly a dozen elements here rely on that inheritance —
+       .auth-kicker, .fld-lbl, .brand-name, .link-quiet, .foot, the
+       .divider label, .meta-v — and at 1.5 each grows 2–5px, shifting
+       everything below it. Put back the source's inherited value. */
+    line-height: normal;
+
+    /* ── ENVIRONMENT RESTORE 2 of 2 (not in the source) ──────────────
+       globals.css sets `font-feature-settings: 'cv11','ss01','ss03'` on
+       html/body — Inter's single-storey `a`, alternate digits and round
+       quotes. The source renders default Inter, and this page shows the
+       difference plainly: the side card's curly quotes and every `a` in
+       the copy. Back to the source's glyphs. */
+    font-feature-settings: normal;
+  }
+  :global(.jf-auth-login) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+  :global(.jf-auth-login) a { color: inherit; text-decoration: none; }
+  :global(.jf-auth-login) input, :global(.jf-auth-login) select { font-family: inherit; }
+  :global(.jf-auth-login) svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9;
+    stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+  :global(.jf-auth-login) .kpi-lbl, :global(.jf-auth-login) .caps {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+  }
+
+  /* ── раскладка ── */
+  :global(.jf-auth-login) .auth { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100dvh; }
+  :global(.jf-auth-login) .auth-form {
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 48px 56px; max-width: 620px; width: 100%; margin: 0 auto;
+  }
+  :global(.jf-auth-login) .brand { display: inline-flex; align-items: center; gap: 11px; margin-bottom: 44px; }
+  :global(.jf-auth-login) .brand-mark {
+    width: 34px; height: 34px; display: grid; place-items: center;
+    border: var(--border); border-radius: var(--radius);
+    background: var(--ink); color: var(--paper);
+    font-size: 16px; font-weight: 900;
+  }
+  :global(.jf-auth-login) .brand-name { font-size: 19px; font-weight: 900; letter-spacing: -0.01em; }
+  :global(.jf-auth-login) .auth-kicker { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+  :global(.jf-auth-login) .auth-kicker::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--sky); }
+  :global(.jf-auth-login) .auth-h1 { font-size: 40px; font-weight: 900; line-height: 1.04; letter-spacing: -0.025em; }
+  :global(.jf-auth-login) .auth-lede { margin-top: 12px; max-width: 46ch; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+  :global(.jf-auth-login) form { margin-top: 30px; }
+  :global(.jf-auth-login) .fld { display: block; margin-bottom: 16px; }
+  :global(.jf-auth-login) .fld-lbl { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  :global(.jf-auth-login) .fld-in {
+    width: 100%; height: 46px; padding: 0 13px;
+    border: var(--border); border-radius: var(--radius);
+    background: var(--paper); font-size: 14.5px; color: var(--ink);
+    box-shadow: none;
+    transition: box-shadow 0.14s var(--ease);
+  }
+  :global(.jf-auth-login) .fld-in:focus { outline: none; box-shadow: 4px 4px 0 var(--ink); }
+  :global(.jf-auth-login) .fld-in::placeholder { color: var(--muted-faint); }
+  :global(.jf-auth-login) .fld-note { margin-top: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+  :global(.jf-auth-login) .pw-wrap { position: relative; }
+  :global(.jf-auth-login) .pw-toggle {
+    position: absolute; right: 6px; top: 6px; width: 34px; height: 34px;
+    display: grid; place-items: center; border-radius: var(--radius); color: var(--muted);
+  }
+  :global(.jf-auth-login) .pw-toggle:hover { background: var(--paper-deep); color: var(--ink); }
+  :global(.jf-auth-login) .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -6px 0 20px; }
+  :global(.jf-auth-login) .link-quiet { font-size: 12.5px; color: var(--muted); border-bottom: 1.5px solid var(--hair-soft); }
+  :global(.jf-auth-login) .link-quiet:hover { color: var(--ink); border-color: var(--ink); }
+  :global(.jf-auth-login) .link-ink { font-weight: 700; color: var(--ink); border-bottom: 1.5px solid var(--ink); }
+
+  :global(.jf-auth-login) .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    height: 48px; padding: 0 20px; width: 100%;
+    border: var(--border); border-radius: var(--radius);
+    background: var(--blueprint); color: #fff;
+    font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+    box-shadow: 3px 3px 0 var(--ink);
+    transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+  }
+  :global(.jf-auth-login) .btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+  :global(.jf-auth-login) .btn:active { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+  :global(.jf-auth-login) .btn[disabled] { opacity: 0.55; pointer-events: none; }
+  :global(.jf-auth-login) .btn--ghost { background: var(--paper); color: var(--ink); }
+  :global(.jf-auth-login) .btn--ghost:hover { background: var(--paper-deep); }
+
+  :global(.jf-auth-login) .err {
+    margin-top: 16px; padding: 12px 14px;
+    border: 1.5px solid var(--danger); border-left-width: 5px; border-radius: var(--radius);
+    background: var(--danger-soft); font-size: 12.5px; line-height: 1.5; color: var(--danger);
+  }
+  :global(.jf-auth-login) .err.is-hidden { display: none; }
+  :global(.jf-auth-login) .divider { display: flex; align-items: center; gap: 14px; margin: 26px 0; }
+  :global(.jf-auth-login) .divider::before, :global(.jf-auth-login) .divider::after { content: ''; flex: 1; height: 1.5px; background: var(--hair-soft); }
+  :global(.jf-auth-login) .foot { margin-top: 32px; font-size: 13px; color: var(--muted); }
+  :global(.jf-auth-login) .foot-note { margin-top: 18px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; color: var(--muted-faint); }
+
+  /* ── правая панель ── */
+
+  /* ── чипы (виды работ) ── */
+  :global(.jf-auth-login) .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+  :global(.jf-auth-login) .chip {
+    height: 34px; padding: 0 12px;
+    border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+    background: var(--paper); font-size: 12.5px; font-weight: 600; color: var(--muted);
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
+  }
+  :global(.jf-auth-login) .chip:hover { border-color: var(--ink); color: var(--ink); }
+  :global(.jf-auth-login) .chip.on { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07); font-weight: 700; }
+
+  :global(.jf-auth-login) .section-split { margin: 26px 0 18px; padding-top: 20px; border-top: 2px solid var(--hair-soft); }
+  :global(.jf-auth-login) .section-split p { margin-top: 6px; max-width: 52ch; font-size: 12px; line-height: 1.55; color: var(--muted); }
+  :global(.jf-auth-login) .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* ── баннер реферала ── */
+  :global(.jf-auth-login) .ref-banner {
+    display: flex; align-items: center; gap: 11px; margin-bottom: 22px;
+    padding: 11px 13px;
+    border: 1.5px solid var(--success); border-radius: var(--radius);
+    background: var(--success-soft);
+  }
+  :global(.jf-auth-login) .ref-banner .ic { width: 15px; height: 15px; color: var(--success-dark); }
+  :global(.jf-auth-login) .ref-t { font-size: 12.5px; font-weight: 700; color: var(--success-dark); }
+  :global(.jf-auth-login) .ref-c { margin-top: 2px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+
+  /* ── сводка приглашения ── */
+  :global(.jf-auth-login) .meta { margin-top: 24px; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+  :global(.jf-auth-login) .meta-row { display: flex; align-items: center; gap: 14px; padding: 12px 15px; border-bottom: 1.5px solid var(--hair-soft); }
+  :global(.jf-auth-login) .meta-row:last-child { border-bottom: none; }
+  :global(.jf-auth-login) .meta-row .caps { flex: 0 0 88px; }
+  :global(.jf-auth-login) .meta-v { font-size: 13.5px; font-weight: 600; }
+  :global(.jf-auth-login) .badge {
+    display: inline-flex; align-items: center; padding: 3px 9px;
+    border: 1.5px solid var(--blueprint); border-radius: var(--radius);
+    background: rgba(24, 84, 160, 0.07);
+    font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint);
+  }
+  :global(.jf-auth-login) .btn-pair { display: flex; gap: 10px; margin-top: 22px; }
+
+  /* ── состояние «готово» ── */
+  :global(.jf-auth-login) .done-mark {
+    width: 46px; height: 46px; display: grid; place-items: center;
+    border: var(--border); border-radius: var(--radius);
+    background: var(--success-soft); color: var(--success-dark);
+    margin-bottom: 18px;
+  }
+  :global(.jf-auth-login) .done-mark .ic { width: 21px; height: 21px; }
+  :global(.jf-auth-login) .state.is-hidden { display: none; }
+
+  @media (max-width: 1000px) {
+    :global(.jf-auth-login) .auth { grid-template-columns: minmax(0, 1fr); }
+    /* [SOURCE BUG — ported verbatim] This `padding` and the one in the 560px
+       query below are DEAD. The unconditional `.auth-form` rule in the
+       "правки" block further down re-declares padding at equal specificity
+       and later in the sheet, so it wins at every width; `max-width: 520px`
+       is the only declaration here that survives. Reproduced as authored. */
+    :global(.jf-auth-login) .auth-form { padding: 40px 28px; max-width: 520px; }
+  }
+  @media (max-width: 560px) {
+    :global(.jf-auth-login) .auth-form { padding: 30px 20px; }
+    /* [SOURCE BUG — ported verbatim] Also dead: `.auth-h1` is re-declared
+       unconditionally below as `clamp(25px, 3.7vh, 40px)`. */
+    :global(.jf-auth-login) .auth-h1 { font-size: 31px; }
+    :global(.jf-auth-login) .grid2 { grid-template-columns: 1fr; }
+  }
+
+  /* ── правки: позиционирование иконок ── */
+  :global(.jf-auth-login) svg.ic { vertical-align: middle; }
+  :global(.jf-auth-login) .ic--brand { stroke: none; fill: none; }
+  :global(.jf-auth-login) .pw-wrap { display: block; position: relative; }
+  :global(.jf-auth-login) .pw-wrap .fld-in { padding-right: 46px; }
+  :global(.jf-auth-login) .pw-toggle {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  :global(.jf-auth-login) .link-back { display: inline-flex; align-items: center; gap: 7px; }
+  :global(.jf-auth-login) .link-back .ic { width: 13px; height: 13px; }
+  :global(.jf-auth-login) .btn .ic { width: 16px; height: 16px; }
+  :global(.jf-auth-login) .ref-banner .ic { margin-top: 1px; }
+  :global(.jf-auth-login) .done-mark { display: grid; place-items: center; }
+
+  /* ── правки: страница помещается в экран, без прокрутки ── */
+  /* [chrome / root-layout-owned — dropped in the port: `html, body { height: 100% }`.
+     Same reason as the first drop. `.auth` takes an explicit `height: 100dvh`
+     on the next line, which is what this rule existed to make resolvable. ] */
+  :global(.jf-auth-login) .auth { height: 100dvh; overflow: hidden; }
+  :global(.jf-auth-login) .auth-form {
+    padding: clamp(14px, 3.4vh, 44px) 56px;
+    max-height: 100dvh; overflow: hidden;
+  }
+  :global(.jf-auth-login) .brand { margin-bottom: clamp(10px, 2.6vh, 40px); }
+  :global(.jf-auth-login) .brand-mark { width: clamp(28px, 3.6vh, 34px); height: clamp(28px, 3.6vh, 34px); }
+  :global(.jf-auth-login) .auth-kicker { margin-bottom: clamp(6px, 1.2vh, 12px); }
+  :global(.jf-auth-login) .auth-h1 { font-size: clamp(25px, 3.7vh, 40px); }
+  :global(.jf-auth-login) .auth-lede { margin-top: clamp(5px, 1.1vh, 12px); font-size: clamp(12.5px, 1.5vh, 14px); }
+  :global(.jf-auth-login) form { margin-top: clamp(12px, 2.4vh, 30px); }
+  :global(.jf-auth-login) .fld { margin-bottom: clamp(7px, 1.4vh, 16px); }
+  :global(.jf-auth-login) .fld-in { height: clamp(36px, 4.7vh, 46px); font-size: clamp(13px, 1.6vh, 14.5px); }
+  :global(.jf-auth-login) .fld-lbl { margin-bottom: clamp(3px, 0.6vh, 6px); }
+  :global(.jf-auth-login) .row { margin: clamp(-6px, -0.6vh, -2px) 0 clamp(10px, 2vh, 20px); }
+  :global(.jf-auth-login) .btn { height: clamp(38px, 5vh, 48px); }
+  :global(.jf-auth-login) .divider { margin: clamp(10px, 2.2vh, 26px) 0; }
+  :global(.jf-auth-login) .foot { margin-top: clamp(12px, 2.4vh, 32px); }
+  :global(.jf-auth-login) .foot-note { margin-top: clamp(8px, 1.6vh, 18px); }
+  :global(.jf-auth-login) .section-split { margin: clamp(12px, 2.4vh, 26px) 0 clamp(10px, 1.8vh, 18px); padding-top: clamp(10px, 2vh, 20px); }
+  :global(.jf-auth-login) .chips { margin-top: clamp(5px, 1vh, 9px); }
+  :global(.jf-auth-login) .chip { height: clamp(28px, 3.6vh, 34px); }
+  :global(.jf-auth-login) .grid2 { gap: clamp(9px, 1.4vh, 14px); }
+  :global(.jf-auth-login) .meta { margin-top: clamp(12px, 2.2vh, 24px); }
+  :global(.jf-auth-login) .meta-row { padding: clamp(7px, 1.4vh, 12px) 15px; }
+  :global(.jf-auth-login) .btn-pair { margin-top: clamp(12px, 2.2vh, 22px); }
+  :global(.jf-auth-login) .done-mark { width: clamp(38px, 5vh, 46px); height: clamp(38px, 5vh, 46px); margin-bottom: clamp(10px, 1.8vh, 18px); }
+
+  /* низкие или узкие экраны — прокрутка разрешена */
+  @media (max-height: 620px), (max-width: 1000px) {
+    :global(.jf-auth-login) .auth { height: auto; min-height: 100dvh; overflow: visible; }
+    :global(.jf-auth-login) .auth-form { max-height: none; overflow: visible; }
+  }
+
+/* ============================================================
+   ПРАВАЯ ПАНЕЛЬ — чертёжный лист: штамп, фокусная карточка,
+   титульный блок. Единая композиция на все auth-страницы.
+   ============================================================ */
+
+/* верхний штамп */
+
+/* центр: одна фокусная карточка */
+
+/* нижний титульный блок */
+
+/* карточка выгоды (только регистрация) — та же ширина сетки, но выше */
+
+/* ============================================================
+   ПРАВАЯ ПАНЕЛЬ — структура оригинала: тонированное поле,
+   радиальное свечение и одна карточка в правом нижнем углу.
+   ============================================================ */
+:global(.jf-auth-login) .auth-side {
+  position: relative; overflow: hidden;
+  border-left: var(--border);
+  background:
+    linear-gradient(rgba(242,240,235,.116) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(242,240,235,.116) 1px, transparent 1px),
+    var(--ink);
+  background-size: 34px 34px, 34px 34px, auto;
+}
+:global(.jf-auth-login) .side-wash {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 70% 50% at 80% 20%, rgba(24, 84, 160, 0.12), transparent 60%);
+}
+:global(.jf-auth-login) .side-card {
+  position: absolute; right: clamp(20px, 2.6vw, 40px); bottom: clamp(20px, 3vh, 40px);
+  width: min(384px, calc(100% - clamp(40px, 5.2vw, 80px)));
+  margin: 0; padding: clamp(18px, 2.6vh, 24px);
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 6px 6px 0 var(--ink);
+}
+:global(.jf-auth-login) .side-card.is-hidden { display: none; }
+:global(.jf-auth-login) .side-q {
+  margin: clamp(8px, 1.4vh, 12px) 0 0;
+  font-size: clamp(17px, 2.4vh, 22px); font-weight: 900;
+  line-height: 1.32; letter-spacing: -0.015em;
+}
+:global(.jf-auth-login) .side-n {
+  margin: clamp(11px, 1.8vh, 16px) 0 0;
+  font-size: 11.5px; line-height: 1.55; color: var(--muted);
+}
+
+  /* ── парные кнопки: иконка вынесена влево, подпись строго по центру ── */
+  :global(.jf-auth-login) .btn-pair .btn { position: relative; padding-left: 36px; padding-right: 36px; }
+  :global(.jf-auth-login) .btn-pair .btn > .ic:first-child {
+    position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+  }
+
+/* ── PREFLIGHT NOTE (no restore needed) ─────────────────────────────
+   Tailwind preflight sets `img, svg, video, ... { display: block }`,
+   which makes the source's `svg.ic { vertical-align: middle }` inert.
+   Checked, and it costs this page nothing: every `.ic` rendered here
+   sits inside `.btn` or `.pw-toggle`, both `inline-flex`, so the icon is
+   a flex item and is blockified in the source too. No declaration was
+   invented to "fix" it. */

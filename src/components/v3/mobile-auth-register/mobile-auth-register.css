@@ -1,0 +1,957 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE · CREATE ACCOUNT  (/mobile-v1/auth/register)
+   Blueprint system, handheld composition. 320 → 768px. Light only.
+
+   WHY THIS IS A PLAIN .css FILE AND NOT A .module.css
+   ───────────────────────────────────────────────────
+   CSS Modules hash CLASS names and leave everything else alone. This page's
+   vocabulary is not only classes:
+     · a scoped reset (`* { box-sizing … }`),
+     · bare element selectors — `button`, `a`, `input`, `svg`,
+     · two rules that must reach <body> (`body:has(…)`).
+   Under a module each of those needs an explicit `:global()` escape, and the
+   one you forget silently stops applying: Tailwind preflight and globals.css
+   then fill the vacuum and the controls lose their borders, backgrounds,
+   padding and line-heights. That is exactly how the desktop port's module
+   ended up needing a 20-line "environment restore" block.
+
+   The house answer instead (precedent: auth-forgot-blueprint/auth-forgot.css,
+   auth-reset-blueprint/auth-reset.css, auth-invite-blueprint/auth-invite.css,
+   homeowner-landing/homeowner.css, v3/landing/landing.css): a plain stylesheet
+   in which EVERY selector is prefixed with the single literal root class
+   `.jf-mobile-auth-register`. Uniform prefixing adds the same (0,1,0) to every
+   selector, so relative specificity inside this file — and therefore which of
+   MY rules wins — is unchanged, while nothing here can match outside the page.
+
+   The one asymmetry to keep in mind is the scoped element reset:
+   `.jf-mobile-auth-register button` scores (0,1,1) and every single-class rule
+   here scores (0,2,0) — the classes still win, which is what a reset wants.
+   (The handheld fleet's modules hit the inverse of this and had to reach for
+   `:where()`; see jobflex-page-styler/references/handheld.md §1.)
+
+   SPECIFICITY CHECK against the always-on modules: projects.module.css ships
+   `.bp :global(.content button)` at (0,2,1), which strips border/background/
+   cursor off any control it can reach. It cannot reach here — nothing in this
+   page carries the class `bp` or `content`, and a stylesheet left loaded by a
+   previous route can only match elements, not routes. No class name below is
+   used anywhere else in the app: every one is `mr-*` under the page root.
+
+   TOKENS stay on the page root and are never promoted to `:root`. Values are
+   the desktop register port's, unchanged, with two documented exceptions noted
+   at their declarations.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.jf-mobile-auth-register {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --muted: #555;
+  --muted-light: #888;
+  /* DEVIATION 1 — donor `--muted-faint: #aaa`. That is 2.2:1 on paper; the
+     product's accessibility floor is WCAG 2.2 AA *plus* jobsite sunlight, and
+     placeholders here carry format examples ("you@yourshop.com"). #6b6b6b is
+     the lightest value that clears 4.5:1 on #f2f0eb. */
+  --muted-faint: #6b6b6b;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+  --success: #3a7d44;
+  --success-dark: #2c5f34;
+  --success-soft: #e8f0e9;
+  --warning: #b8860b;
+  --warning-dark: #8a650a;
+  --warning-soft: #faf3e0;
+  --danger: #a83232;
+  --danger-soft: #f7e9e9;
+  --hair-soft: #d5d1c8;
+  --shadow: rgba(10, 10, 10, 0.09);
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --grid-dark: rgba(242, 240, 235, 0.116);
+  --font: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --radius: 2px;
+  --border: 2px solid var(--ink);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* handheld geometry */
+  --pad-x: clamp(14px, 4.4vw, 26px);
+  --sheet-max: 560px;          /* an intrinsic cap, not a desktop breakpoint:
+                                  a 768px-wide form column reads as broken */
+  --tap: 44px;                 /* the accessibility floor */
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+
+/* ── scoped reset ─────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register,
+.jf-mobile-auth-register * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ══ HOST NEUTRALIZERS — everything above and below is this page's own ══════
+   1. globals.css paints a 40px drafting grid on <body> (fixed attachment) and
+      a paper-grain overlay in `body::before`. This sheet paints its OWN grid at
+      a 24px module (a 40px module reads as a coarse checker at 320px), so the
+      app's would show through underneath it as a second, offset grid.
+      `:has()` gates both so they restore themselves the instant this page
+      unmounts — App Router keeps a route's stylesheet loaded across client-side
+      navigations, so an ungated rule would follow the user.
+   2. Tailwind preflight sets `html { line-height: 1.5 }` and globals.css sets
+      `font-feature-settings: 'cv11','ss01','ss03'` + `text-rendering:
+      optimizeLegibility` on html+body. All three INHERIT into this page, which
+      was authored against browser defaults: every box that sets no line-height
+      would grow, and the alternate glyph sets change the shapes of the mono
+      annotation layer. Restored on the root, where they re-inherit downward.
+
+   NOT neutralized, deliberately:
+   · `svg { display: block; vertical-align: middle }` (preflight). Every icon
+     here is a `.ic` in a flex row and this sheet sets `display` on `.ic`
+     explicitly, so there is nothing left for a blanket restore to fix; adding
+     one would only create a rule the page does not depend on.
+   · `img { max-width: 100% }` (preflight). This page renders no <img>.
+   · globals.css `* { scrollbar-width: thin }` + the 10px `::-webkit-scrollbar`.
+     Browser chrome outside the page box; same call every sibling port made. */
+body:has(.jf-mobile-auth-register) { background-image: none; }
+body:has(.jf-mobile-auth-register)::before { content: none; }
+.jf-mobile-auth-register {
+  line-height: normal;
+  font-feature-settings: normal;
+  text-rendering: auto;
+}
+/* ══ end host neutralizers ═════════════════════════════════════════════════ */
+
+.jf-mobile-auth-register button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.jf-mobile-auth-register a {
+  color: inherit;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.jf-mobile-auth-register input,
+.jf-mobile-auth-register select,
+.jf-mobile-auth-register textarea {
+  font-family: inherit;
+}
+.jf-mobile-auth-register svg.ic {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: 0 0 auto;
+}
+.jf-mobile-auth-register .ic--brand { stroke: none; fill: none; }
+
+/* keyboard focus — the drawing's own emphasis, not a UA ring */
+.jf-mobile-auth-register button:focus-visible,
+.jf-mobile-auth-register a:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+
+/* ── page frame ───────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register {
+  font-family: var(--font);
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 24px 24px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: clip;            /* a hard shadow can never open a scroll axis */
+}
+
+/* ── masthead: the inverse plate ──────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-top {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* the plate spans edge to edge, but its CONTENT tracks the sheet's 560px
+     column — otherwise at 768px the lockup and the stamp drift out to the
+     window edges while the form sits centred, and the two read as separate
+     pages. max() keeps the phone case at the plain --pad-x. */
+  padding: 10px max(var(--pad-x), calc((100% - var(--sheet-max)) / 2));
+  padding-top: calc(10px + var(--safe-t));
+  border-bottom: var(--border);
+  color: var(--paper);
+  background-color: var(--ink);
+  background-image:
+    linear-gradient(var(--grid-dark) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.jf-mobile-auth-register .mr-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  min-width: 0;
+}
+.jf-mobile-auth-register .mr-mark {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--paper);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 900;
+}
+.jf-mobile-auth-register .mr-word { min-width: 0; }
+.jf-mobile-auth-register .mr-word-n {
+  display: block;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-mobile-auth-register .mr-word-s {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: clamp(7.6px, 2.3vw, 9px);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.62);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-mobile-auth-register .mr-stamp {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1.5px solid var(--sky);
+  border-radius: var(--radius);
+  background: rgba(74, 158, 255, 0.12);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sky);
+  white-space: nowrap;
+}
+
+/* ── sheet ────────────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-sheet {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--sheet-max);
+  margin: 0 auto;
+  padding: 20px var(--pad-x) 28px;
+}
+
+/* ── progress: two drawing cells, always 1fr each — cannot wrap or spill ──── */
+.jf-mobile-auth-register .mr-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.jf-mobile-auth-register .mr-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: var(--paper);
+  opacity: 0.62;
+  transition: opacity 0.18s var(--ease);
+}
+.jf-mobile-auth-register .mr-cell.is-on {
+  border: var(--border);
+  box-shadow: 3px 3px 0 var(--ink);
+  opacity: 1;
+}
+.jf-mobile-auth-register .mr-cell.is-done { opacity: 0.9; }
+.jf-mobile-auth-register .mr-cell-n {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.jf-mobile-auth-register .mr-cell.is-on .mr-cell-n {
+  border-color: var(--blueprint-dark);
+  background: var(--blueprint);
+  color: #fff;
+}
+.jf-mobile-auth-register .mr-cell.is-done .mr-cell-n {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success-dark);
+}
+.jf-mobile-auth-register .mr-cell-tx { min-width: 0; }
+.jf-mobile-auth-register .mr-cell-t {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-mobile-auth-register .mr-cell-h {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── step container + entrance ────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-step { animation: mr-rise 320ms var(--ease-out) both; }
+/* the terminal state is short — centre it in the sheet rather than leaving a
+   screen of void between the message and the action bar */
+.jf-mobile-auth-register .mr-step--center {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.jf-mobile-auth-register .mr-step.is-hidden { display: none; }
+@keyframes mr-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── type ─────────────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-caps {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-kicker::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--sky);
+}
+.jf-mobile-auth-register .mr-h1 {
+  font-size: clamp(28px, 8.2vw, 40px);
+  font-weight: 900;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.jf-mobile-auth-register .mr-lede {
+  margin-top: 12px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* ── fields ───────────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register form { margin-top: 22px; }
+.jf-mobile-auth-register .mr-fld {
+  display: block;
+  margin-bottom: 16px;
+}
+.jf-mobile-auth-register .mr-lbl {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-in {
+  width: 100%;
+  height: 52px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  /* DEVIATION 2 — donor `.fld-in { font-size: 14.5px }`. iOS Safari zooms the
+     viewport whenever a focused control's text is under 16px, which on a
+     mobile-only page means every tap on a field re-scales the layout. 16px is
+     the floor that keeps the page still. */
+  font-size: 16px;
+  line-height: normal;
+  box-shadow: none;
+  transition: box-shadow 0.14s var(--ease);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.jf-mobile-auth-register .mr-in:focus {
+  outline: none;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.jf-mobile-auth-register .mr-in::placeholder { color: var(--muted-faint); }
+.jf-mobile-auth-register .mr-note {
+  display: block;
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-pw {
+  display: block;
+  position: relative;
+}
+.jf-mobile-auth-register .mr-pw .mr-in { padding-right: 54px; }
+.jf-mobile-auth-register .mr-pw-btn {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--tap);
+  height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-pw-btn:active { background: var(--paper-deep); color: var(--ink); }
+
+/* ── error plate ──────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-err {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--danger);
+  border-left-width: 5px;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+.jf-mobile-auth-register .mr-err.is-hidden { display: none; }
+
+/* ── divider ──────────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-div {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 24px 0;
+}
+.jf-mobile-auth-register .mr-div::before,
+.jf-mobile-auth-register .mr-div::after {
+  content: '';
+  flex: 1;
+  height: 1.5px;
+  background: var(--hair-soft);
+}
+
+/* ── foot rows ────────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 22px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-link-ink,
+.jf-mobile-auth-register .mr-link-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 2px;
+  font-size: 14px;
+}
+/* The rule stays welded to the TEXT, not to the 44px target box — an inset
+   box-shadow on a target-sized box draws the line a dozen pixels below the
+   baseline and reads as a stray divider. */
+.jf-mobile-auth-register .mr-link-ink {
+  font-weight: 800;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+.jf-mobile-auth-register .mr-link-quiet {
+  color: var(--muted);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--hair-soft);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+.jf-mobile-auth-register .mr-link-quiet:active {
+  color: var(--ink);
+  text-decoration-color: var(--ink);
+}
+.jf-mobile-auth-register .mr-link-quiet[disabled] { opacity: 0.5; pointer-events: none; }
+
+/* ── attribution: applied pill ────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-ref {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin-top: 18px;
+  padding: 12px 13px;
+  border: 2px solid var(--success);
+  border-radius: var(--radius);
+  background: var(--success-soft);
+  box-shadow: 3px 3px 0 rgba(58, 125, 68, 0.28);
+}
+.jf-mobile-auth-register .mr-ref-ic {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--success-dark);
+}
+.jf-mobile-auth-register .mr-ref-ic .ic { width: 17px; height: 17px; }
+.jf-mobile-auth-register .mr-ref-txt { min-width: 0; }
+.jf-mobile-auth-register .mr-ref-t {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--success-dark);
+}
+.jf-mobile-auth-register .mr-ref-c {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── attribution: manual code entry (the addition beyond the desktop port) ── */
+.jf-mobile-auth-register .mr-code { margin-top: 16px; }
+.jf-mobile-auth-register .mr-code-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1.5px dashed var(--hair-soft);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: left;
+}
+.jf-mobile-auth-register .mr-code-toggle > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.jf-mobile-auth-register .mr-code-toggle .ic { width: 16px; height: 16px; }
+.jf-mobile-auth-register .mr-code-chev { transition: transform 0.18s var(--ease-out); }
+.jf-mobile-auth-register .mr-code-chev.is-up { transform: rotate(180deg); }
+.jf-mobile-auth-register .mr-code-body { margin-top: 10px; }
+.jf-mobile-auth-register .mr-code-body.is-hidden { display: none; }
+.jf-mobile-auth-register .mr-code-row {
+  display: flex;
+  gap: 8px;
+}
+.jf-mobile-auth-register .mr-code-in {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
+.jf-mobile-auth-register .mr-code-apply {
+  flex: 0 0 auto;
+  min-width: 84px;
+  height: 52px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.jf-mobile-auth-register .mr-code-apply:active { transform: translate(2px, 2px); box-shadow: none; }
+.jf-mobile-auth-register .mr-code-apply[disabled] { opacity: 0.45; pointer-events: none; }
+.jf-mobile-auth-register .mr-code-note {
+  display: block;
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-code-note.is-bad { color: var(--danger); font-weight: 600; }
+
+/* ── perk card: the desktop right panel's message, re-cut as an inverse
+      plate. Color-blocked on purpose — this is the one showcase surface in
+      the flow and it earns the elevation. ───────────────────────────────── */
+.jf-mobile-auth-register .mr-perk {
+  margin-top: 20px;
+  padding: 20px 18px;
+  border: var(--border);
+  border-radius: var(--radius);
+  color: var(--paper);
+  background-color: var(--ink);
+  background-image:
+    linear-gradient(var(--grid-dark) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px),
+    radial-gradient(ellipse 90% 60% at 80% 0%, rgba(24, 84, 160, 0.42), transparent 62%);
+  background-size: 22px 22px, 22px 22px, auto;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.jf-mobile-auth-register .mr-perk-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 11px;
+  border: 1.5px solid var(--success);
+  border-radius: var(--radius);
+  background: var(--success-soft);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--success-dark);
+}
+.jf-mobile-auth-register .mr-perk-eyebrow .ic { width: 13px; height: 13px; }
+.jf-mobile-auth-register .mr-perk-h {
+  margin-top: 15px;
+  font-size: clamp(22px, 6.4vw, 30px);
+  font-weight: 900;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--paper);
+  text-wrap: balance;
+}
+.jf-mobile-auth-register .mr-perk-p {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(242, 240, 235, 0.78);
+  text-wrap: pretty;
+}
+.jf-mobile-auth-register .mr-perk-rule {
+  width: 46px;
+  height: 2px;
+  margin-top: 16px;
+  background: rgba(242, 240, 235, 0.3);
+}
+.jf-mobile-auth-register .mr-perk-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 14px;
+}
+.jf-mobile-auth-register .mr-perk-facts span {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.68);
+}
+.jf-mobile-auth-register .mr-perk-facts b { font-weight: 800; color: var(--paper); }
+.jf-mobile-auth-register .mr-perk-facts span:last-child b { color: #8fd39a; }
+.jf-mobile-auth-register .mr-perk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: var(--tap);
+  margin-top: 18px;
+  padding: 0 16px;
+  border: 2px solid var(--paper);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-indent: 0.06em;
+  box-shadow: 3px 3px 0 rgba(74, 158, 255, 0.55);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.jf-mobile-auth-register .mr-perk-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 rgba(74, 158, 255, 0.55);
+}
+.jf-mobile-auth-register .mr-perk-btn .ic { width: 14px; height: 14px; }
+.jf-mobile-auth-register .mr-perk-btn:focus-visible {
+  outline: 2px solid var(--sky);
+  outline-offset: 3px;
+}
+
+/* ── trade filter + chips ─────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-filter {
+  position: relative;
+  display: block;
+  margin-bottom: 14px;
+}
+.jf-mobile-auth-register .mr-filter-ic {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.jf-mobile-auth-register .mr-filter-in {
+  padding-left: 39px;
+  padding-right: 50px;
+  border-width: 1.5px;
+}
+.jf-mobile-auth-register .mr-filter-x {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--tap);
+  height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-filter-x:active { background: var(--paper-deep); color: var(--ink); }
+
+.jf-mobile-auth-register .mr-trades { display: block; }
+.jf-mobile-auth-register .mr-tgrp + .mr-tgrp { margin-top: 14px; }
+.jf-mobile-auth-register .mr-tgrp-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-auth-register .mr-tgrp-h i {
+  flex: 1 1 auto;
+  height: 1.5px;
+  background: var(--hair-soft);
+}
+.jf-mobile-auth-register .mr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.jf-mobile-auth-register .mr-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 14px;
+  /* 2px in BOTH states: swapping border width on select would reflow the whole
+     wrap and make chips jump under the finger. */
+  border: 2px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--muted);
+  transition: border-color 0.12s var(--ease), color 0.12s var(--ease),
+    background-color 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.jf-mobile-auth-register .mr-chip.is-on {
+  border-color: var(--blueprint);
+  background: rgba(24, 84, 160, 0.1);
+  color: var(--blueprint-dark);
+  font-weight: 800;
+  box-shadow: 2px 2px 0 var(--blueprint-dark);
+}
+.jf-mobile-auth-register .mr-chip:active { transform: translate(1px, 1px); }
+.jf-mobile-auth-register .mr-empty {
+  padding: 16px 14px;
+  border: 1.5px dashed var(--hair-soft);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ── quote card ───────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-quote {
+  margin-top: 28px;
+  padding: 18px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.jf-mobile-auth-register .mr-quote-q {
+  margin-top: 10px;
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1.32;
+  letter-spacing: -0.015em;
+  text-wrap: pretty;
+}
+.jf-mobile-auth-register .mr-quote-n {
+  margin-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ── done ─────────────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-done {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--success-soft);
+  color: var(--success-dark);
+  box-shadow: 3px 3px 0 var(--success);
+}
+.jf-mobile-auth-register .mr-done .ic { width: 24px; height: 24px; }
+
+/* ── buttons ──────────────────────────────────────────────────────────────── */
+.jf-mobile-auth-register .mr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  /* width:100% so a button in normal flow (the Google entry) fills the column
+     like the donor's `.btn`; inside the action bar the 100% basis simply
+     shrinks to the free space, and .mr-btn--back opts out with a fixed 56px. */
+  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 18px;
+  border: var(--border);
+  border-radius: var(--radius);
+  /* The owner's button treatment, carried forward from the desktop port and
+     NOT flattened: a solid blueprint fill, a 2px ink frame and a hard 3px
+     offset shadow with no blur. Ghost variants keep the frame and the shadow —
+     they are paper-filled, never borderless. */
+  background: var(--blueprint);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-indent: 0.08em;
+  text-align: center;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.jf-mobile-auth-register .mr-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.jf-mobile-auth-register .mr-btn[disabled] { opacity: 0.55; pointer-events: none; }
+.jf-mobile-auth-register .mr-btn--ghost { background: var(--paper); color: var(--ink); }
+.jf-mobile-auth-register .mr-btn--back {
+  flex: 0 0 auto;
+  width: 56px;
+  padding: 0;
+  gap: 0;
+}
+.jf-mobile-auth-register .mr-btn .ic { width: 17px; height: 17px; }
+
+/* ── sticky action bar: the primary action never leaves the thumb zone ────── */
+.jf-mobile-auth-register .mr-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: auto;
+  border-top: var(--border);
+  background: var(--paper);
+}
+.jf-mobile-auth-register .mr-bar-in {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: var(--sheet-max);
+  margin: 0 auto;
+  padding: 12px var(--pad-x);
+  padding-bottom: calc(12px + var(--safe-b));
+}
+
+/* ── reduced motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-auth-register,
+  .jf-mobile-auth-register *,
+  .jf-mobile-auth-register *::before,
+  .jf-mobile-auth-register *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

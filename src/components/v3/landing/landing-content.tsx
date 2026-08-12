@@ -13,10 +13,30 @@
  * public marketing route that never mounts blueprint-shell, so there is no
  * sidebar or topbar to inherit — stripping the nav would leave a headless page.
  *
- * Every href in the donor is a same-page anchor (#top / #features / #edge), so
- * nothing here is a route navigation and nothing needs next/link. That is the
- * donor's wiring, not a simplification: the marketing links are not pointed at
- * real destinations yet.
+ * HREFS ARE THE ONE CONTENT DEVIATION. Every href in the donor is a dead
+ * same-page anchor (#top / #features / #edge) — the mockup had no app to link
+ * into. Eleven of the twelve are now pointed at the real routes they name (the
+ * mapping table below); nothing else about those anchors changes, so the
+ * rendered DOM is the donor's element with a different href value. They use
+ * next/link — which renders the same <a class=… href=…> — so an in-app CTA is
+ * a client-side navigation, matching forgot-content.tsx / dashboard-content.tsx.
+ *
+ *   nav "Pricing"               #features -> /pricing
+ *   nav "About"                 #edge     -> /about
+ *   nav "For homeowners"        #features -> /homeowner
+ *   nav "Sign in"               #top      -> /auth/login
+ *   nav "Start free"            #top      -> /auth/register
+ *   hero "Start free trial"     #top      -> /auth/register
+ *   hero "Or request an estimate" #top    -> /homeowner
+ *   footer "Start free trial"   #top      -> /auth/register
+ *   footer "Privacy"            #top      -> /privacy
+ *   footer "Terms"              #top      -> /terms
+ *   footer "Login"              #top      -> /auth/login
+ *
+ * The brand mark keeps href="#top": on the landing page itself that is a
+ * scroll to the hero, which is what the donor meant and what it should do.
+ * `id="top"`, `id="features"` and `id="edge"` stay on their sections — they are
+ * donor markup, and #top is still a live target.
  *
  * The mobile burger is the one behavioral rewrite. The donor toggled seven
  * inline styles on `.nav-links`; that is React state now plus the
@@ -28,6 +48,7 @@
  */
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import "./landing.css";
 import { LandingSprite } from "./landing-sprite";
 import { useLandingBehavior } from "./use-landing-behavior";
@@ -57,12 +78,12 @@ export function LandingContent() {
           <span className="sb-head-txt"><span className="sb-head-name">JOBFLEX</span><span className="sb-head-sub">Contractor OS</span></span>
         </a>
         <div className={menuOpen ? "nav-links open" : "nav-links"}>
-          <a href="#features">Pricing</a>
-          <a href="#edge">About</a>
-          <a href="#features">For homeowners</a>
+          <Link href="/pricing">Pricing</Link>
+          <Link href="/about">About</Link>
+          <Link href="/homeowner">For homeowners</Link>
         </div>
-        <a className="nav-sign" href="#top">Sign in</a>
-        <a className="nav-cta" href="#top">Start free<svg className="ic"><use href="#i-arrow-r" /></svg></a>
+        <Link className="nav-sign" href="/auth/login">Sign in</Link>
+        <Link className="nav-cta" href="/auth/register">Start free<svg className="ic"><use href="#i-arrow-r" /></svg></Link>
         <button className="burger" type="button" aria-label="Menu" onClick={() => setMenuOpen((v) => !v)}><svg className="ic"><use href="#i-menu" /></svg></button>
         <div className="sprog" aria-hidden="true" />
       </nav>
@@ -79,8 +100,8 @@ export function LandingContent() {
             <p className="tagline an a5">CRM, smart estimating, proposals, scheduling, and payments —
               one workspace for <strong>contractors who ship</strong>.</p>
             <div className="cta-row an a5">
-              <a className="cta-a" href="#top"><svg className="ic"><use href="#i-bulb" /></svg>Start free trial</a>
-              <a className="cta-b" href="#top">Or request an estimate<svg className="ic"><use href="#i-arrow" /></svg></a>
+              <Link className="cta-a" href="/auth/register"><svg className="ic"><use href="#i-bulb" /></svg>Start free trial</Link>
+              <Link className="cta-b" href="/homeowner">Or request an estimate<svg className="ic"><use href="#i-arrow" /></svg></Link>
             </div>
             <div className="hero-note an a5">No card required · Set up in 10 minutes</div>
           </div>
@@ -267,11 +288,11 @@ export function LandingContent() {
         <div className="wrap">
           <div className="ft-cta">
             <h2 className="ft-h">Quote the next job<br /><em>before lunch.</em></h2>
-            <a className="ft-btn" href="#top">Start free trial<svg className="ic"><use href="#i-arrow-r" /></svg></a>
+            <Link className="ft-btn" href="/auth/register">Start free trial<svg className="ic"><use href="#i-arrow-r" /></svg></Link>
           </div>
           <div className="ft-bar">
             <span>© 2026 JobFlex</span>
-            <div className="ft-links"><a href="#top">Privacy</a><a href="#top">Terms</a><a href="#top">Login</a></div>
+            <div className="ft-links"><Link href="/privacy">Privacy</Link><Link href="/terms">Terms</Link><Link href="/auth/login">Login</Link></div>
           </div>
         </div>
       </footer>

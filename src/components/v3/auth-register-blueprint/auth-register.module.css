@@ -1,0 +1,449 @@
+/* ============================================================
+   AUTH · CREATE ACCOUNT — BLUEPRINT
+   Pixel-identical port of `jobflex-auth-register-blueprint.html`.
+
+   Every value below is verbatim from the donor. Source order is
+   preserved — the cascade depends on it (the donor overrides several
+   rules later in the file: `.pw-toggle`, `.perk-btn`, `.side-perk`,
+   `svg.ic`, `.auth`, `.auth-form`, … each appears more than once).
+
+   Scoping strategy: this page is STANDALONE (an auth surface that ships
+   its own chrome — brand lockup, split layout, dark right panel — and
+   does NOT mount inside components/v3/blueprint-shell). It therefore
+   owns the whole document, so:
+   - the donor's `:root` token block and its `body` rules both land on
+     `.bp`, the single wrapper element the page renders;
+   - every other donor rule `SEL { … }` becomes `.bp :global(SEL) { … }`,
+     so the donor's literal class names survive into the TSX untouched.
+
+   Adaptations (format only, never design):
+   - `--font` / `--font-mono` resolve Inter and JetBrains Mono through the
+     root layout's next/font variables instead of the donor's Google Fonts
+     <link>. Same families; the donor's fallbacks are kept in order behind
+     them.
+   - the donor's `html, body { min-height: 100% }` and `html, body
+     { height: 100% }` are NOT ported: `html`/`body` are ancestors of `.bp`
+     and unreachable from a module. They have no visual effect here —
+     every height in the layout is viewport-relative (`100dvh`), not a
+     percentage of the document.
+   - `.bp` adds `min-height: 100dvh` so the donor's flat paper covers the
+     app-wide 40px graph grid and paper grain that src/app/globals.css
+     paints on `body`. The donor's body painted the whole document.
+   - the "environment restore" block re-declares browser defaults that
+     Tailwind preflight + globals.css leak in as INHERITED values the
+     donor never authored (line-height, text-rendering,
+     font-feature-settings, scrollbar-*, svg display).
+   ============================================================ */
+
+.bp {
+  --paper: #f2f0eb; --paper-deep: #ebe8e1;
+  --ink: #0a0a0a; --ink-soft: #2a2a2a;
+  --muted: #555; --muted-light: #888; --muted-faint: #aaa;
+  --blueprint: #1854a0; --blueprint-dark: #0e3d7a; --sky: #4a9eff;
+  --success: #3a7d44; --success-dark: #2c5f34; --success-soft: #e8f0e9;
+  --warning: #b8860b; --warning-dark: #8a650a; --warning-soft: #faf3e0;
+  --danger: #a83232; --danger-soft: #f7e9e9;
+  --hair-soft: #d5d1c8; --shadow: rgba(10, 10, 10, 0.09);
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --font: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --radius: 2px; --border: 2px solid var(--ink);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1); --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* donor `body` */
+  font-family: var(--font); background: var(--paper); color: var(--ink);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+
+  /* ── Environment restore ─────────────────────────────────────────
+     Not donor value changes: the donor ran against virgin browser
+     defaults, while inside the app Tailwind preflight + globals.css leak
+     INHERITED values it never authored. */
+  line-height: normal;          /* preflight html{line-height:1.5} — donor: normal */
+  text-rendering: auto;         /* globals set optimizeLegibility — donor: auto */
+  font-feature-settings: normal;/* globals set 'cv11','ss01','ss03' — donor: none */
+  /* the donor's body painted the whole document; globals.css paints a
+     40px graph grid + paper grain on body that the donor never had. */
+  min-height: 100dvh;
+}
+
+.bp, .bp :global(*) {
+  box-sizing: border-box; margin: 0; padding: 0;
+  /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
+  scrollbar-width: auto; scrollbar-color: auto;
+}
+/* preflight sets svg{display:block;vertical-align:middle} — donor: browser
+   defaults. The donor's own `svg.ic { vertical-align: middle }` (later in
+   this file) still wins for .ic, exactly as it does in the donor. */
+.bp :global(svg) { display: inline; vertical-align: baseline; }
+
+.bp :global(button) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.bp :global(a) { color: inherit; text-decoration: none; }
+.bp :global(input), .bp :global(select) { font-family: inherit; }
+.bp :global(svg.ic) { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.bp :global(.kpi-lbl), .bp :global(.caps) {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+}
+
+/* ── раскладка ── */
+.bp :global(.auth) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100dvh; }
+.bp :global(.auth-form) {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 48px 56px; max-width: 620px; width: 100%; margin: 0 auto;
+}
+.bp :global(.brand) { display: inline-flex; align-items: center; gap: 11px; margin-bottom: 44px; }
+.bp :global(.brand-mark) {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--ink); color: var(--paper);
+  font-size: 16px; font-weight: 900;
+}
+.bp :global(.brand-name) { font-size: 19px; font-weight: 900; letter-spacing: -0.01em; }
+.bp :global(.auth-kicker) { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+.bp :global(.auth-kicker)::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--sky); }
+.bp :global(.auth-h1) { font-size: 40px; font-weight: 900; line-height: 1.04; letter-spacing: -0.025em; }
+.bp :global(.auth-lede) { margin-top: 12px; max-width: 46ch; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+.bp :global(form) { margin-top: 30px; }
+.bp :global(.fld) { display: block; margin-bottom: 16px; }
+.bp :global(.fld-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.bp :global(.fld-in) {
+  width: 100%; height: 46px; padding: 0 13px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); font-size: 14.5px; color: var(--ink);
+  box-shadow: none;
+  transition: box-shadow 0.14s var(--ease);
+}
+.bp :global(.fld-in):focus { outline: none; box-shadow: 4px 4px 0 var(--ink); }
+.bp :global(.fld-in)::placeholder { color: var(--muted-faint); }
+.bp :global(.fld-note) { margin-top: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.bp :global(.pw-wrap) { position: relative; }
+.bp :global(.pw-toggle) {
+  position: absolute; right: 6px; top: 6px; width: 34px; height: 34px;
+  display: grid; place-items: center; border-radius: var(--radius); color: var(--muted);
+}
+.bp :global(.pw-toggle):hover { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.row) { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -6px 0 20px; }
+.bp :global(.link-quiet) { font-size: 12.5px; color: var(--muted); border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.link-quiet):hover { color: var(--ink); border-color: var(--ink); }
+.bp :global(.link-ink) { font-weight: 700; color: var(--ink); border-bottom: 1.5px solid var(--ink); }
+
+.bp :global(.btn) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 48px; padding: 0 20px; width: 100%;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--blueprint); color: #fff;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.bp :global(.btn):hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.bp :global(.btn):active { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+.bp :global(.btn)[disabled] { opacity: 0.55; pointer-events: none; }
+.bp :global(.btn--ghost) { background: var(--paper); color: var(--ink); }
+.bp :global(.btn--ghost):hover { background: var(--paper-deep); }
+
+.bp :global(.err) {
+  margin-top: 16px; padding: 12px 14px;
+  border: 1.5px solid var(--danger); border-left-width: 5px; border-radius: var(--radius);
+  background: var(--danger-soft); font-size: 12.5px; line-height: 1.5; color: var(--danger);
+}
+.bp :global(.err.is-hidden) { display: none; }
+.bp :global(.divider) { display: flex; align-items: center; gap: 14px; margin: 26px 0; }
+.bp :global(.divider)::before, .bp :global(.divider)::after { content: ''; flex: 1; height: 1.5px; background: var(--hair-soft); }
+.bp :global(.foot) { margin-top: 32px; font-size: 13px; color: var(--muted); }
+.bp :global(.foot-note) { margin-top: 18px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; color: var(--muted-faint); }
+
+/* ── правая панель ── */
+
+/* ── чипы (виды работ) ── */
+.bp :global(.chips) { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.bp :global(.chip) {
+  height: 34px; padding: 0 12px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: var(--paper); font-size: 12.5px; font-weight: 600; color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.bp :global(.chip):hover { border-color: var(--ink); color: var(--ink); }
+.bp :global(.chip.on) { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07); font-weight: 700; }
+
+.bp :global(.section-split) { margin: 26px 0 18px; padding-top: 20px; border-top: 2px solid var(--hair-soft); }
+.bp :global(.section-split p) { margin-top: 6px; max-width: 52ch; font-size: 12px; line-height: 1.55; color: var(--muted); }
+.bp :global(.grid2) { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+/* ── баннер реферала ── */
+.bp :global(.ref-banner) {
+  display: flex; align-items: center; gap: 11px; margin-bottom: 22px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--success); border-radius: var(--radius);
+  background: var(--success-soft);
+}
+.bp :global(.ref-banner .ic) { width: 15px; height: 15px; color: var(--success-dark); }
+.bp :global(.ref-t) { font-size: 12.5px; font-weight: 700; color: var(--success-dark); }
+.bp :global(.ref-c) { margin-top: 2px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+
+/* ── сводка приглашения ── */
+.bp :global(.meta) { margin-top: 24px; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+.bp :global(.meta-row) { display: flex; align-items: center; gap: 14px; padding: 12px 15px; border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.meta-row):last-child { border-bottom: none; }
+.bp :global(.meta-row .caps) { flex: 0 0 88px; }
+.bp :global(.meta-v) { font-size: 13.5px; font-weight: 600; }
+.bp :global(.badge) {
+  display: inline-flex; align-items: center; padding: 3px 9px;
+  border: 1.5px solid var(--blueprint); border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.07);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint);
+}
+.bp :global(.btn-pair) { display: flex; gap: 10px; margin-top: 22px; }
+
+/* ── состояние «готово» ── */
+.bp :global(.done-mark) {
+  width: 46px; height: 46px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--success-soft); color: var(--success-dark);
+  margin-bottom: 18px;
+}
+.bp :global(.done-mark .ic) { width: 21px; height: 21px; }
+.bp :global(.state.is-hidden) { display: none; }
+
+@media (max-width: 1000px) {
+  .bp :global(.auth) { grid-template-columns: minmax(0, 1fr); }
+  .bp :global(.auth-form) { padding: 40px 28px; max-width: 520px; }
+}
+@media (max-width: 560px) {
+  .bp :global(.auth-form) { padding: 30px 20px; }
+  .bp :global(.auth-h1) { font-size: 31px; }
+  .bp :global(.grid2) { grid-template-columns: 1fr; }
+}
+
+/* ── правки: позиционирование иконок ── */
+.bp :global(svg.ic) { vertical-align: middle; }
+.bp :global(.ic--brand) { stroke: none; fill: none; }
+.bp :global(.pw-wrap) { display: block; position: relative; }
+.bp :global(.pw-wrap .fld-in) { padding-right: 46px; }
+.bp :global(.pw-toggle) {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+}
+.bp :global(.link-back) { display: inline-flex; align-items: center; gap: 7px; }
+.bp :global(.link-back .ic) { width: 13px; height: 13px; }
+.bp :global(.btn .ic) { width: 16px; height: 16px; }
+.bp :global(.ref-banner .ic) { margin-top: 1px; }
+.bp :global(.done-mark) { display: grid; place-items: center; }
+
+/* ── правки: страница помещается в экран, без прокрутки ── */
+/* donor `html, body { height: 100% }` — see the header note (not ported) */
+.bp :global(.auth) { height: 100dvh; overflow: hidden; }
+.bp :global(.auth-form) {
+  padding: clamp(14px, 3.4vh, 44px) 56px;
+  max-height: 100dvh; overflow: hidden;
+}
+.bp :global(.brand) { margin-bottom: clamp(10px, 2.6vh, 40px); }
+.bp :global(.brand-mark) { width: clamp(28px, 3.6vh, 34px); height: clamp(28px, 3.6vh, 34px); }
+.bp :global(.auth-kicker) { margin-bottom: clamp(6px, 1.2vh, 12px); }
+.bp :global(.auth-h1) { font-size: clamp(25px, 3.7vh, 40px); }
+.bp :global(.auth-lede) { margin-top: clamp(5px, 1.1vh, 12px); font-size: clamp(12.5px, 1.5vh, 14px); }
+.bp :global(form) { margin-top: clamp(12px, 2.4vh, 30px); }
+.bp :global(.fld) { margin-bottom: clamp(7px, 1.4vh, 16px); }
+.bp :global(.fld-in) { height: clamp(36px, 4.7vh, 46px); font-size: clamp(13px, 1.6vh, 14.5px); }
+.bp :global(.fld-lbl) { margin-bottom: clamp(3px, 0.6vh, 6px); }
+.bp :global(.row) { margin: clamp(-6px, -0.6vh, -2px) 0 clamp(10px, 2vh, 20px); }
+.bp :global(.btn) { height: clamp(38px, 5vh, 48px); }
+.bp :global(.divider) { margin: clamp(10px, 2.2vh, 26px) 0; }
+.bp :global(.foot) { margin-top: clamp(12px, 2.4vh, 32px); }
+.bp :global(.foot-note) { margin-top: clamp(8px, 1.6vh, 18px); }
+.bp :global(.section-split) { margin: clamp(12px, 2.4vh, 26px) 0 clamp(10px, 1.8vh, 18px); padding-top: clamp(10px, 2vh, 20px); }
+.bp :global(.chips) { margin-top: clamp(5px, 1vh, 9px); }
+.bp :global(.chip) { height: clamp(28px, 3.6vh, 34px); }
+.bp :global(.grid2) { gap: clamp(9px, 1.4vh, 14px); }
+.bp :global(.meta) { margin-top: clamp(12px, 2.2vh, 24px); }
+.bp :global(.meta-row) { padding: clamp(7px, 1.4vh, 12px) 15px; }
+.bp :global(.btn-pair) { margin-top: clamp(12px, 2.2vh, 22px); }
+.bp :global(.done-mark) { width: clamp(38px, 5vh, 46px); height: clamp(38px, 5vh, 46px); margin-bottom: clamp(10px, 1.8vh, 18px); }
+
+/* низкие или узкие экраны — прокрутка разрешена */
+@media (max-height: 620px), (max-width: 1000px) {
+  .bp :global(.auth) { height: auto; min-height: 100dvh; overflow: visible; }
+  .bp :global(.auth-form) { max-height: none; overflow: visible; }
+}
+
+/* ── индикатор шагов и второй экран ── */
+.bp :global(.stepper) { display: flex; align-items: center; gap: 12px; margin-bottom: clamp(12px, 2.4vh, 26px); }
+.bp :global(.st-item) { display: flex; align-items: center; gap: 10px; opacity: 0.45; transition: opacity 0.18s; }
+.bp :global(.st-item.on) { opacity: 1; }
+.bp :global(.st-item.done) { opacity: 0.75; }
+.bp :global(.st-n) {
+  width: 26px; height: 26px; flex: 0 0 auto; display: grid; place-items: center;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: var(--paper); font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+}
+.bp :global(.st-item.on .st-n) { background: var(--blueprint); border-color: var(--blueprint-dark); color: #fff; }
+.bp :global(.st-item.done .st-n) { background: var(--success-soft); border-color: var(--success); color: var(--success-dark); }
+.bp :global(.st-t) { display: block; font-size: 12.5px; font-weight: 800; }
+.bp :global(.st-h) { display: block; margin-top: 1px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.st-line) { flex: 1; height: 1.5px; background: var(--hair-soft); }
+.bp :global(.step.is-hidden) { display: none; }
+
+.bp :global(#skipBtn) { font-size: 12.5px; }
+
+/* ── крупный блок выгоды в правой панели ── */
+
+
+/* ── карточка выгоды: верх правой панели ── */
+
+/* ── правая панель: карточка выгоды занимает основное поле, цитата снизу ── */
+
+/* цитата: обычный поток, прижата к правому краю */
+/* когда показана карточка выгоды — цитата компактнее */
+
+/* ============================================================
+   ПРАВАЯ ПАНЕЛЬ — чертёжный лист: штамп, фокусная карточка,
+   титульный блок. Единая композиция на все auth-страницы.
+   ============================================================ */
+
+/* верхний штамп */
+
+/* центр: одна фокусная карточка */
+
+/* нижний титульный блок */
+
+/* карточка выгоды (только регистрация) — та же ширина сетки, но выше */
+
+/* ============================================================
+   ПРАВАЯ ПАНЕЛЬ — структура оригинала: тонированное поле,
+   радиальное свечение и одна карточка в правом нижнем углу.
+   ============================================================ */
+.bp :global(.auth-side) {
+  position: relative; overflow: hidden;
+  border-left: var(--border);
+  background:
+    linear-gradient(rgba(242,240,235,.116) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(242,240,235,.116) 1px, transparent 1px),
+    var(--ink);
+  background-size: 34px 34px, 34px 34px, auto;
+}
+.bp :global(.side-wash) {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 70% 50% at 80% 20%, rgba(24, 84, 160, 0.12), transparent 60%);
+}
+.bp :global(.side-card) {
+  position: absolute; right: clamp(20px, 2.6vw, 40px); bottom: clamp(20px, 3vh, 40px);
+  width: min(384px, calc(100% - clamp(40px, 5.2vw, 80px)));
+  margin: 0; padding: clamp(18px, 2.6vh, 24px);
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 6px 6px 0 var(--ink);
+}
+.bp :global(.side-card.is-hidden) { display: none; }
+.bp :global(.side-q) {
+  margin: clamp(8px, 1.4vh, 12px) 0 0;
+  font-size: clamp(17px, 2.4vh, 22px); font-weight: 900;
+  line-height: 1.32; letter-spacing: -0.015em;
+}
+.bp :global(.side-n) {
+  margin: clamp(11px, 1.8vh, 16px) 0 0;
+  font-size: 11.5px; line-height: 1.55; color: var(--muted);
+}
+
+/* карточка выгоды (регистрация, шаг 2) — занимает поле над цитатой */
+.bp :global(.side-perk.is-hidden) { display: none; }
+.bp :global(.perk-btn) {
+  display: inline-flex; align-items: center; gap: 9px;
+  height: clamp(32px, 4vh, 38px); padding: 0 14px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); color: var(--ink);
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.bp :global(.perk-btn):hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+.bp :global(.perk-btn):active { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+.bp :global(.perk-btn .ic) { width: 14px; height: 14px; }
+
+/* ── карточка выгоды: схема радиуса + спец-строки, компактная ── */
+.bp :global(.side-perk.is-hidden) { display: none; }
+
+/* схема радиуса */
+
+/* текст и спецификация */
+
+/* ── карточка выгоды: узкая, с полноширинной схемой ── */
+.bp :global(.side-perk.is-hidden) { display: none; }
+
+/* схема-плашка во всю ширину карточки */
+
+/* текст и спецификация */
+
+/* ── текстовый блок выгоды: центр свободного поля над карточкой-новостью ── */
+.bp :global(.side-perk) {
+  position: absolute; top: 0; left: 0; right: 0;
+  bottom: calc(clamp(20px, 3vh, 40px) + var(--news-h, 210px));
+  display: flex; align-items: center; justify-content: center;
+  padding: clamp(20px, 3.4vh, 44px) clamp(20px, 2.6vw, 40px) 0;
+  pointer-events: none;
+}
+.bp :global(.side-perk.is-hidden) { display: none; }
+.bp :global(.pk) { pointer-events: auto; width: 100%; max-width: 46ch; text-align: center; }
+.bp :global(.pk-eyebrow) {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 11px;
+  border: 1.5px solid var(--success); border-radius: var(--radius);
+  background: var(--success-soft);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--success-dark);
+}
+.bp :global(.pk-eyebrow .ic) { width: 13px; height: 13px; }
+.bp :global(.pk-h) {
+  margin: clamp(14px, 2.4vh, 24px) 0 0;
+  font-size: clamp(24px, 4vh, 40px); font-weight: 900;
+  line-height: 1.08; letter-spacing: -0.03em; color: var(--ink);
+  text-wrap: balance;
+}
+.bp :global(.pk-p) {
+  margin: clamp(11px, 1.9vh, 18px) auto 0; max-width: 44ch;
+  font-size: clamp(13px, 1.7vh, 15.5px); line-height: 1.6; color: var(--muted);
+  text-wrap: pretty;
+}
+.bp :global(.pk-rule) {
+  width: 46px; height: 2px; margin: clamp(14px, 2.4vh, 24px) auto 0;
+  background: var(--ink);
+}
+.bp :global(.pk-facts) {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: clamp(8px, 1.4vw, 16px); margin-top: clamp(12px, 2vh, 20px);
+}
+.bp :global(.pk-facts span) {
+  font-family: var(--font-mono); font-size: clamp(10px, 1.3vh, 11.5px); font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.bp :global(.pk-facts b) { font-weight: 800; color: var(--ink); }
+.bp :global(.pk-facts span:last-child b) { color: var(--success-dark); }
+.bp :global(.perk-btn) {
+  display: inline-flex; align-items: center; gap: 9px;
+  height: clamp(34px, 4.4vh, 42px); padding: 0 17px;
+  margin-top: clamp(16px, 2.6vh, 26px);
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); color: var(--ink);
+  font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.bp :global(.perk-btn):hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.bp :global(.perk-btn):active { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+.bp :global(.perk-btn .ic) { width: 14px; height: 14px; }
+
+/* ── парные кнопки: иконка вынесена влево, подпись строго по центру ── */
+.bp :global(.btn-pair .btn) { position: relative; padding-left: 36px; padding-right: 36px; }
+.bp :global(.btn-pair .btn > .ic:first-child) {
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+}
+/* компенсация висящего трекинга у последней буквы */
+.bp :global(.btn), .bp :global(.perk-btn) { text-indent: 0.08em; }
+
+/* perk на тёмном фоне */
+.bp :global(.side-perk .pk-h) { color: var(--paper); }
+.bp :global(.side-perk .pk-p) { color: rgba(242,240,235,.72); }
+.bp :global(.side-perk .pk-rule) { background: rgba(242,240,235,.25); }
+.bp :global(.side-perk .pk-facts span) { color: rgba(242,240,235,.62); }
+.bp :global(.side-perk .pk-facts b) { color: var(--paper); }

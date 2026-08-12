@@ -1,6 +1,29 @@
 /* ============================================================
    ESTIMATOR PICKER — the "New Estimate" dialog, GLOBAL layer.
 
+   VERBATIM PORT of `jobflex-estimator-picker-blueprint (10).html`
+   (the `ESTIMATOR PICKER — сравнительный лист` block, source lines
+   933–1018, plus the four document-level rules that reach into the
+   dialog: `svg.ic`, `::selection`, `:focus-visible`, and the reduced-
+   motion universal). Every value below is the source's, unrounded.
+
+   DROPPED FROM THE MOCKUP — chrome the shell already renders:
+   the `:root` token block, the reset/base block, `.layout`, `.sb*`
+   (sidebar), `.main`, `.topbar`, `.search`, `.icon-btn`, `.btn*`,
+   `.content`, `.banner*`, `.page-head`/`.kicker`/`.page-title`,
+   `.kpi*`, `.card*`, `.grid-23`/`.grid-11`, the revenue-chart block
+   (`.dd*`, `.ch-*`, `.chart-wrap`), `.act-*`, `.week-strip`/`.day*`,
+   `.sched-*`, `.tag`, `.empty`, `.job-*`, `.chip*`, `.list*`,
+   `.card-foot-btn`, `.section-head`/`.section-title`, `.stage-*`,
+   `.lead-*`, `.drop-slot`, the three chrome media queries and the
+   whole `MOTION SYSTEM — BALANCED` block. Those all belong to
+   blueprint-shell + dashboard-blueprint, which are already mounted
+   under this dialog; forking them here would have produced two
+   copies of the same sidebar and topbar. Verified identical where it
+   matters: shell `--sidebar-w: 264px` = source 264px, shell
+   `--topbar-h: 62px` = source 62px, shell `.content { padding: 40px
+   96px 80px; gap: 22px }` = source's `.content` exactly.
+
    A plain stylesheet, not a CSS module, and SELF-CONTAINED on purpose.
    The picker is mounted in BOTH shells — the desktop BlueprintShell and
    the handheld MobileNav — so it cannot lean on either one:
@@ -12,140 +35,94 @@
      on the desktop shell root and on each page's `.content`; neither is
      an ancestor of this dialog on a mobile surface. Custom properties
      inherit down, so declaring them on the dialog root makes the subtree
-     correct in any host. Only the font FAMILIES are borrowed from the
-     document (--font-inter / --font-jbmono come off the root layout's
-     next/font, which is genuinely global).
-   - Its own keyframes. The mdl* set lives in blueprint-global.css, which
-     is imported by blueprint-shell.tsx and therefore absent from a
-     mobile page's bundle — referencing them there would have failed
-     silently, with the dialog simply appearing without animation.
+     correct in any host. Values are the source `:root`'s. Only the font
+     FAMILIES are borrowed from the document (--font-inter / --font-jbmono
+     come off the root layout's next/font, which is genuinely global) —
+     the same two typefaces the mockup pulls from Google Fonts.
 
    SPECIFICITY — why every rule is written `.estp .estp-x` and the root
    is doubled as `.estp.estp`. On the desktop shell this dialog renders
    INSIDE the always-on `.bp` modules, which carry a button reset at
    specificity 0,1,1 (`.bp :global(button)` — border: none, background:
-   none) and a universal reset at 0,1,0 (`.bp :global(*)` — margin and
+   none), an svg reset at 0,1,1 (`.bp :global(svg)` — display: inline)
+   and a universal reset at 0,1,0 (`.bp :global(*)` — margin and
    padding zeroed).
 
    The cards are <button> elements. At a flat `.estp-card` (0,1,0) those
    resets win, and the cards render borderless, transparent and
    unpadded — on desktop only, which is exactly the kind of bug that
-   survives a mobile-only check. Two classes (0,2,0) outrank both.
+   survives a mobile-only check. Two classes (0,2,0) outrank both. The
+   doubling changes nothing about the computed values; the mockup's
+   flat selectors had no such competition to beat.
    ============================================================ */
 
 .estp.estp {
-  /* Blueprint tokens, scoped to the dialog subtree. Values are the fleet's,
-     copied from dashboard-blueprint/blueprint.module.css. */
+  /* Blueprint tokens, scoped to the dialog subtree — the source's `:root`,
+     narrowed to the ones the picker block actually reads. */
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
   --ink: #0a0a0a;
-  --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
+  --sky: #4a9eff;
   --muted: #555;
-  --muted-light: #888;
-  --muted-faint: #b0aea8;
-  --estp-font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --estp-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
-  --estp-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  --border: 2px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* NOTE — `--ease-out` is deliberately NOT declared. The source references
+     it five times (.estp-bg, .estp-box ×2, .estp-card ×2) and never defines
+     it anywhere, so in the mockup those `transition` declarations are
+     invalid at computed-value time and the dialog snaps in and out with no
+     fade. Ported verbatim, bug included. Declaring a value here would have
+     been inventing one. */
+
+  /* ── Environment restore ─────────────────────────────────────────
+     The mockup ran against a bare <body> it styled itself; inside the app
+     this subtree inherits from Tailwind preflight + globals.css instead.
+     Re-declare exactly what the source's `body` handed down, so computed
+     type metrics match the file opened in a browser. Nothing here is a
+     design choice — every value is the source body's.
+       font-family / color              — source body
+       -webkit/-moz font-smoothing      — source body
+       font-feature-settings            — source body
+       line-height: normal              — preflight html{line-height:1.5}
+       text-rendering: auto             — globals set optimizeLegibility
+       scrollbar-width/color: auto      — globals set *{scrollbar-width:thin},
+                                          which also disables Chrome's
+                                          ::-webkit-scrollbar sizing */
+  font-family: var(--font);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  line-height: normal;
+  text-rendering: auto;
+  scrollbar-width: auto;
+  scrollbar-color: auto;
 
   position: fixed;
   inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-/* Motion System "Balanced": enter 280ms, exit a deliberately shorter 190ms —
-   dismissal should feel quicker than arrival. */
-@keyframes estpBgIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes estpBgOut { from { opacity: 1; } to { opacity: 0; } }
-@keyframes estpBoxIn {
-  from { opacity: 0; transform: translateY(8px) scale(0.985); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes estpBoxOut {
-  from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(6px) scale(0.985); }
-}
-
-.estp .estp-bg {
-  position: absolute;
-  inset: 0;
-  background: rgba(10, 10, 10, 0.38);
-  animation: estpBgIn 150ms linear;
-}
-
-.estp .estp-box {
-  position: relative;
-  /* Sized to the 2×2 block rather than to the viewport: two ~280px cards plus
-     the gap and padding. A wider box would just add dead paper either side. */
-  width: min(640px, 100%);
-  max-height: calc(100vh - 96px);
-  overflow-y: auto;
-  padding: 20px;
-  font-family: var(--estp-font);
-  background: var(--paper);
-  border: 2px solid var(--ink);
-  border-radius: 2px;
-  box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.1);
-  animation: estpBoxIn 280ms var(--estp-ease);
-}
-
-.estp--closing.estp--closing { pointer-events: none; }
-.estp--closing .estp-bg { animation: estpBgOut 190ms linear forwards; }
-.estp--closing .estp-box { animation: estpBoxOut 190ms var(--estp-ease) forwards; }
-
-/* ── Head ────────────────────────────────────────────────────── */
-.estp .estp-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 14px;
-  margin-bottom: 16px;
-  border-bottom: 2px solid var(--ink);
-}
-.estp .estp-kick {
-  font-family: var(--estp-mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted-light);
-}
-.estp .estp-title {
-  margin-top: 3px;
-  font-size: 22px;
-  font-weight: 900;
-  letter-spacing: -0.015em;
-  text-transform: uppercase;
-  color: var(--ink);
-}
-.estp .estp-lede {
-  margin: 4px 0 0;
-  font-family: var(--estp-mono);
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  color: var(--muted);
-}
-.estp .estp-x {
+  z-index: 90;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  margin: -8px -8px 0 0;
-  padding: 0;
-  color: var(--muted);
-  background: none;
-  border: none;
-  border-radius: 2px;
-  cursor: pointer;
+  padding: 28px;
 }
-.estp .estp-x:hover { color: var(--ink); background: var(--paper-deep); }
-.estp .estp-x .ic {
+
+/* Scoped port of the source's `* { margin: 0; padding: 0; box-sizing:
+   border-box; }`. Kept at 0,1,0 so every `.estp .estp-*` rule below still
+   outranks it, exactly as the source's flat rules outranked the universal. */
+.estp,
+.estp *,
+.estp *::before,
+.estp *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* Scoped port of the source's `svg.ic { … }` base. */
+.estp svg.ic {
   width: 17px;
   height: 17px;
   fill: none;
@@ -153,192 +130,225 @@
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+  flex-shrink: 0;
 }
 
-/* ── Card grid ───────────────────────────────────────────────── */
-/* Fixed 2-across, not auto-fill: four engines read as a 2×2 block, which is a
-   shape you take in at a glance instead of a row you scan. It collapses to one
-   column on a phone, below. */
+/* Scoped port of the source's document-level `::selection`. */
+.estp ::selection { background: var(--blueprint); color: #fff; }
+
+.estp[hidden] { display: none; }
+
+.estp .estp-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 10, .46);
+  opacity: 0;
+  transition: opacity .28s var(--ease-out);
+}
+.estp.on .estp-bg { opacity: 1; }
+
+.estp .estp-box {
+  position: relative;
+  width: min(860px, 100%);
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  opacity: 0;
+  transform: translateY(12px) scale(.985);
+  transition: opacity .28s var(--ease-out), transform .28s var(--ease-out);
+}
+.estp.on .estp-box { opacity: 1; transform: none; }
+.estp.leaving .estp-bg { opacity: 0; transition-duration: .19s; }
+.estp.leaving .estp-box {
+  opacity: 0;
+  transform: translateY(8px) scale(.99);
+  transition-duration: .19s;
+}
+
+.estp .estp-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px 16px;
+  border-bottom: var(--border);
+}
+.estp .estp-title {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -.015em;
+  text-transform: uppercase;
+}
+.estp .estp-kick {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.estp .estp-x {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  cursor: pointer;
+  transition: background .13s var(--ease);
+}
+.estp .estp-x:hover { background: rgba(10, 10, 10, .06); }
+.estp .estp-x .ic { width: 14px; height: 14px; }
+
+/* Каталожные карточки 2×2 */
 .estp .estp-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 16px;
+  padding: 20px 22px 6px;
 }
-
 .estp .estp-card {
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  margin: 0;
-  padding: 14px;
-  font: inherit;
-  text-align: left;
+  padding: 0;
+  overflow: hidden;
+  border: var(--border);
+  border-radius: var(--radius);
   background: var(--paper);
-  border: 2px solid var(--ink);
-  border-radius: 2px;
-  box-shadow: 3px 3px 0 rgba(10, 10, 10, 0.06);
-  cursor: pointer;
-  transition: box-shadow 0.18s var(--estp-ease), transform 0.18s var(--estp-ease);
+  font-family: var(--font);
+  color: var(--ink);
+  transition: transform .14s var(--ease-out), box-shadow .14s var(--ease-out);
 }
 .estp .estp-card:hover,
 .estp .estp-card:focus-visible {
-  box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.1);
-  transform: translateY(-1px);
-}
-.estp .estp-card:focus-visible {
-  outline: 2px solid var(--blueprint);
-  outline-offset: 2px;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--shadow);
+  outline: none;
 }
 
-/* Graph-paper ground behind the diagram — the drawing surface, and the only
-   place on the card where blueprint blue is allowed to spread. */
-.estp .estp-dia-wrap {
+.estp .estp-dia-cell {
+  position: relative;
   display: block;
-  padding: 8px 0;
-  background-image:
-    linear-gradient(rgba(24, 84, 160, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(24, 84, 160, 0.07) 1px, transparent 1px);
-  background-size: 8px 8px;
-  border: 1px solid var(--muted-faint);
-  border-radius: 2px;
+  border-bottom: 1.5px solid var(--ink);
+  background-color: var(--blueprint);
+  background-image: linear-gradient(rgba(242, 240, 235, .14) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(242, 240, 235, .14) 1px, transparent 1px);
+  background-size: 16px 16px;
+  padding: 10px 14px;
 }
-.estp .estp-dia {
-  display: block;
-  width: 100%;
-  height: 50px;
+.estp .estp-dia { display: block; width: 100%; height: 96px; }
+.estp .estp-dia .ln {
   fill: none;
-  stroke: var(--blueprint);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke: var(--paper);
+  stroke-width: 1.6;
+  stroke-linecap: square;
+  vector-effect: non-scaling-stroke;
 }
-
-.estp .estp-name {
-  font-size: 16px;
-  font-weight: 900;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
-  color: var(--ink);
+.estp .estp-dia .bp {
+  fill: none;
+  stroke: rgba(242, 240, 235, .85);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
 }
-.estp .estp-method {
-  margin-top: -6px;
-  font-family: var(--estp-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+.estp .estp-dia .dim {
+  fill: none;
+  stroke: rgba(242, 240, 235, .75);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
-
-.estp .estp-spec { margin: 0; display: grid; gap: 2px; }
-.estp .estp-spec > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 3px 0;
-  border-bottom: 1px dashed var(--muted-faint);
-}
-.estp .estp-spec dt {
-  font-family: var(--estp-mono);
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted-light);
-}
-.estp .estp-spec dd {
-  margin: 0;
-  font-family: var(--estp-mono);
-  font-size: 10px;
+.estp .estp-dia text {
+  font-family: var(--font-mono);
+  font-size: 6.5px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-soft);
+  letter-spacing: .06em;
+  fill: var(--paper);
 }
 
-.estp .estp-start {
+.estp .estp-nameline {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  margin-top: auto;
-  padding: 0 12px;
-  font-size: 11.5px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #fff;
-  background: var(--blueprint);
-  border-radius: 2px;
+  gap: 14px;
+  padding: 20px 16px 22px;
 }
-.estp .estp-start .ic {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.estp .estp-nm { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.estp .estp-name { font-size: 16.5px; font-weight: 900; letter-spacing: -.01em; }
+.estp .estp-method {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+.estp .estp-time {
+  margin-left: auto;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -.005em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* ── Queued strip ────────────────────────────────────────────── */
-/* Honest placeholders for trades with no engine yet. Deliberately thin: they
-   are a roadmap note under the real choices, not four more things to weigh. */
 .estp .estp-queue {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--muted-faint);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px 22px 20px;
+  border-top: var(--border);
 }
 .estp .estp-queue-label {
-  display: block;
-  margin-bottom: 8px;
-  font-family: var(--estp-mono);
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted-light);
-}
-.estp .estp-queue-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.estp .estp-stub {
-  padding: 6px 12px;
-  font-family: var(--estp-mono);
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: .18em;
   text-transform: uppercase;
-  color: var(--muted-faint);
-  border: 1px dashed var(--muted-faint);
-  border-radius: 2px;
+  color: var(--muted);
+}
+.estp .estp-stub {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 13px;
+  border: 1.5px dashed rgba(10, 10, 10, .4);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.estp .estp-stub i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  color: rgba(10, 10, 10, .38);
 }
 
-/* ── Handheld ────────────────────────────────────────────────── */
-/* Full-bleed and bottom-anchored rather than floating in a gutter: it is a
-   bottom sheet on a phone, which is the pattern the mobile surfaces already
-   use, and it puts the cards in the thumb zone. */
-@media (max-width: 560px) {
-  .estp.estp { padding: 0; align-items: flex-end; }
-  .estp .estp-box {
-    width: 100%;
-    max-height: 92vh;
-    padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
-    border-width: 2px 0 0;
-  }
+@media (max-width: 720px) {
+  .estp.estp { padding: 12px; }
   .estp .estp-grid { grid-template-columns: 1fr; }
-  .estp .estp-card { flex-direction: row; flex-wrap: wrap; align-items: center; }
-  .estp .estp-dia-wrap { width: 84px; flex: 0 0 auto; }
-  .estp .estp-dia { height: 40px; }
-  .estp .estp-name { flex: 1; min-width: 0; }
-  .estp .estp-method { width: 100%; margin-top: -4px; }
-  .estp .estp-spec { width: 100%; }
-  .estp .estp-start { width: 100%; }
+  .estp .estp-kick { display: none; }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .estp .estp-bg,
   .estp .estp-box,
-  .estp--closing .estp-bg,
-  .estp--closing .estp-box { animation: none; }
-  .estp .estp-card { transition: none; }
-  .estp .estp-card:hover,
-  .estp .estp-card:focus-visible { transform: none; }
+  .estp .estp-card { transition: none !important; }
+  .estp .estp-box { transform: none; }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .estp,
+  .estp *,
+  .estp *::before,
+  .estp *::after { transition: none !important; animation: none !important; }
+}
+.estp :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }

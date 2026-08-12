@@ -1,0 +1,377 @@
+/* JobFlex team invite — PORT of the approved single-file mockup
+   `jobflex-auth-invite-blueprint.html` (design of record, 2026-08).
+   Every value, every selector and every comment below is the donor's; only
+   the scoping prefix and two font-family stacks were changed.
+
+   PLAIN stylesheet, not a CSS module, and that is deliberate — the same call
+   and the same reasoning as src/components/v3/landing/landing.css:
+
+   1. `* { box-sizing: border-box; margin: 0; padding: 0 }` is a universal
+      reset. `*` is not a class, so the modules pipeline would NOT scope it;
+      dropped in as a module it leaks app-wide and flattens every other page.
+   2. auth-invite-content.tsx toggles the donor's own `is-hidden` /
+      `btn--ghost` class strings, and the donor's `.state.is-hidden`,
+      `.err.is-hidden` and `.btn[disabled]` rules all key off literal names.
+
+   So every donor selector is reproduced verbatim, in donor order, with one
+   literal `.jf-auth-invite` prefix in front of it. The prefix is uniform, so
+   relative specificity — and therefore which of two duplicate rules wins — is
+   unchanged. That is what makes the transform safe. The donor deliberately
+   RE-DECLARES eleven selectors further down (`svg.ic`, `.pw-wrap`,
+   `.pw-toggle`, `html, body`, `.auth`, `.auth-form`, `.brand`, `.brand-mark`,
+   `.done-mark`, `.ref-banner .ic`, plus the whole "страница помещается в
+   экран" block); those duplicates layer on top of the base rules and win by
+   SOURCE ORDER. Do not merge, sort, dedupe or reflow them.
+
+   Donor tokens are re-declared on `.jf-auth-invite`, never on `:root`.
+   Most match globals.css exactly (`--paper`, `--ink`, `--radius`, `--ease`,
+   `--ease-out`); the rest (`--muted*`, `--hair-soft`, `--shadow`, the status
+   trio, `--blueprint`) are the donor's own names. Declaring them on the page
+   root shadows the app's tokens inside this subtree and leaks nothing
+   outward. `--blueprint: #1854a0` is the same value the app calls `--accent`;
+   it keeps the donor's name because renaming is a refactor, not a port.
+
+   TWO font stacks are the only edited values. The donor pulled Inter and
+   JetBrains Mono from the Google CDN with a `<link>` and then named them by
+   their literal CSS family (`'Inter'`, `'JetBrains Mono'`). That `<link>` is
+   deleted — src/app/layout.tsx already loads BOTH families with
+   next/font/google — but next/font emits a hashed family name, so the literal
+   names would resolve to nothing and the page would fall back to
+   -apple-system. `var(--font-inter)` / `var(--font-jbmono)` are substituted
+   in their place. Same two typefaces, same weights, same rendering.
+
+   The donor's Russian section comments are kept verbatim — they mark section
+   boundaries and record design decisions. None were deleted or translated.
+
+   Note for readers: several ported rules have no markup on THIS page —
+   `.chips` / `.chip`, `.ref-banner`, `.divider`, `.foot` / `.foot-note`,
+   `.section-split`, `.grid2`, `.row`, `.link-quiet` / `.link-ink` /
+   `.link-back`. The donor carries one shared auth stylesheet across all five
+   auth mockups and those rules serve the register / login / forgot / reset
+   pages. They are ported anyway: dropping them would be an edit to the
+   design of record, and they cost nothing inert. */
+
+.jf-auth-invite {
+  --paper: #f2f0eb; --paper-deep: #ebe8e1;
+  --ink: #0a0a0a; --ink-soft: #2a2a2a;
+  --muted: #555; --muted-light: #888; --muted-faint: #aaa;
+  --blueprint: #1854a0; --blueprint-dark: #0e3d7a; --sky: #4a9eff;
+  --success: #3a7d44; --success-dark: #2c5f34; --success-soft: #e8f0e9;
+  --warning: #b8860b; --warning-dark: #8a650a; --warning-soft: #faf3e0;
+  --danger: #a83232; --danger-soft: #f7e9e9;
+  --hair-soft: #d5d1c8; --shadow: rgba(10, 10, 10, 0.09);
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --font: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, 'SF Mono', Menlo, monospace;
+  --radius: 2px; --border: 2px solid var(--ink);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1); --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.jf-auth-invite * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Donor `html` / `body` rules ───────────────────────────────────────
+   A route-scoped CSS import in the App Router is injected once and PERSISTS
+   across client-side navigation, so a bare `html`/`body` rule would follow
+   the user to /dashboard. Both donor page-level rules are therefore gated on
+   `:has(.jf-auth-invite)`. The selector is live, so they switch themselves
+   off the moment this page unmounts — no JS teardown, nothing to forget.
+   Every other donor `body` declaration moves onto the page root class below.
+
+   The second pair of declarations is not the donor's. globals.css paints a
+   40px drafting grid on `body` (fixed attachment) plus a paper-grain
+   `body::before`; the donor's left column is BARE paper and its right column
+   paints its own 34px grid, so ported naively you get the app's grid showing
+   through both. Switch the app grid and grain off for the document
+   containing this page — explicitly, rather than relying on the page root's
+   opaque background to cover them. `body:has(.jf-auth-invite)` is (0,1,1)
+   and `body:has(.jf-auth-invite)::before` is (0,1,2), so both outrank
+   globals.css's `body` / `body::before` regardless of injection order, and
+   both are undone automatically on navigate-away. */
+html:has(.jf-auth-invite), body:has(.jf-auth-invite) { min-height: 100%; }
+body:has(.jf-auth-invite) { background-image: none; }
+body:has(.jf-auth-invite)::before { content: none; }
+.jf-auth-invite {
+  font-family: var(--font); background: var(--paper); color: var(--ink);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+.jf-auth-invite button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.jf-auth-invite a { color: inherit; text-decoration: none; }
+.jf-auth-invite input, .jf-auth-invite select { font-family: inherit; }
+.jf-auth-invite svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.jf-auth-invite .kpi-lbl, .jf-auth-invite .caps {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+}
+
+/* ── раскладка ── */
+.jf-auth-invite .auth { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100dvh; }
+.jf-auth-invite .auth-form {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 48px 56px; max-width: 620px; width: 100%; margin: 0 auto;
+}
+.jf-auth-invite .brand { display: inline-flex; align-items: center; gap: 11px; margin-bottom: 44px; }
+.jf-auth-invite .brand-mark {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--ink); color: var(--paper);
+  font-size: 16px; font-weight: 900;
+}
+.jf-auth-invite .brand-name { font-size: 19px; font-weight: 900; letter-spacing: -0.01em; }
+.jf-auth-invite .auth-kicker { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+.jf-auth-invite .auth-kicker::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--sky); }
+.jf-auth-invite .auth-h1 { font-size: 40px; font-weight: 900; line-height: 1.04; letter-spacing: -0.025em; }
+.jf-auth-invite .auth-lede { margin-top: 12px; max-width: 46ch; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+.jf-auth-invite form { margin-top: 30px; }
+.jf-auth-invite .fld { display: block; margin-bottom: 16px; }
+.jf-auth-invite .fld-lbl { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.jf-auth-invite .fld-in {
+  width: 100%; height: 46px; padding: 0 13px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); font-size: 14.5px; color: var(--ink);
+  box-shadow: none;
+  transition: box-shadow 0.14s var(--ease);
+}
+.jf-auth-invite .fld-in:focus { outline: none; box-shadow: 4px 4px 0 var(--ink); }
+.jf-auth-invite .fld-in::placeholder { color: var(--muted-faint); }
+.jf-auth-invite .fld-note { margin-top: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.jf-auth-invite .pw-wrap { position: relative; }
+.jf-auth-invite .pw-toggle {
+  position: absolute; right: 6px; top: 6px; width: 34px; height: 34px;
+  display: grid; place-items: center; border-radius: var(--radius); color: var(--muted);
+}
+.jf-auth-invite .pw-toggle:hover { background: var(--paper-deep); color: var(--ink); }
+.jf-auth-invite .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -6px 0 20px; }
+.jf-auth-invite .link-quiet { font-size: 12.5px; color: var(--muted); border-bottom: 1.5px solid var(--hair-soft); }
+.jf-auth-invite .link-quiet:hover { color: var(--ink); border-color: var(--ink); }
+.jf-auth-invite .link-ink { font-weight: 700; color: var(--ink); border-bottom: 1.5px solid var(--ink); }
+
+.jf-auth-invite .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 48px; padding: 0 20px; width: 100%;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--blueprint); color: #fff;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.jf-auth-invite .btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.jf-auth-invite .btn:active { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+.jf-auth-invite .btn[disabled] { opacity: 0.55; pointer-events: none; }
+.jf-auth-invite .btn--ghost { background: var(--paper); color: var(--ink); }
+.jf-auth-invite .btn--ghost:hover { background: var(--paper-deep); }
+
+.jf-auth-invite .err {
+  margin-top: 16px; padding: 12px 14px;
+  border: 1.5px solid var(--danger); border-left-width: 5px; border-radius: var(--radius);
+  background: var(--danger-soft); font-size: 12.5px; line-height: 1.5; color: var(--danger);
+}
+.jf-auth-invite .err.is-hidden { display: none; }
+.jf-auth-invite .divider { display: flex; align-items: center; gap: 14px; margin: 26px 0; }
+.jf-auth-invite .divider::before, .jf-auth-invite .divider::after { content: ''; flex: 1; height: 1.5px; background: var(--hair-soft); }
+.jf-auth-invite .foot { margin-top: 32px; font-size: 13px; color: var(--muted); }
+.jf-auth-invite .foot-note { margin-top: 18px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; color: var(--muted-faint); }
+
+/* ── правая панель ── */
+
+/* ── чипы (виды работ) ── */
+.jf-auth-invite .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.jf-auth-invite .chip {
+  height: 34px; padding: 0 12px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: var(--paper); font-size: 12.5px; font-weight: 600; color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.jf-auth-invite .chip:hover { border-color: var(--ink); color: var(--ink); }
+.jf-auth-invite .chip.on { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07); font-weight: 700; }
+
+.jf-auth-invite .section-split { margin: 26px 0 18px; padding-top: 20px; border-top: 2px solid var(--hair-soft); }
+.jf-auth-invite .section-split p { margin-top: 6px; max-width: 52ch; font-size: 12px; line-height: 1.55; color: var(--muted); }
+.jf-auth-invite .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+/* ── баннер реферала ── */
+.jf-auth-invite .ref-banner {
+  display: flex; align-items: center; gap: 11px; margin-bottom: 22px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--success); border-radius: var(--radius);
+  background: var(--success-soft);
+}
+.jf-auth-invite .ref-banner .ic { width: 15px; height: 15px; color: var(--success-dark); }
+.jf-auth-invite .ref-t { font-size: 12.5px; font-weight: 700; color: var(--success-dark); }
+.jf-auth-invite .ref-c { margin-top: 2px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+
+/* ── сводка приглашения ── */
+.jf-auth-invite .meta { margin-top: 24px; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+.jf-auth-invite .meta-row { display: flex; align-items: center; gap: 14px; padding: 12px 15px; border-bottom: 1.5px solid var(--hair-soft); }
+.jf-auth-invite .meta-row:last-child { border-bottom: none; }
+.jf-auth-invite .meta-row .caps { flex: 0 0 88px; }
+.jf-auth-invite .meta-v { font-size: 13.5px; font-weight: 600; }
+.jf-auth-invite .badge {
+  display: inline-flex; align-items: center; padding: 3px 9px;
+  border: 1.5px solid var(--blueprint); border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.07);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint);
+}
+.jf-auth-invite .btn-pair { display: flex; gap: 10px; margin-top: 22px; }
+
+/* ── состояние «готово» ── */
+.jf-auth-invite .done-mark {
+  width: 46px; height: 46px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--success-soft); color: var(--success-dark);
+  margin-bottom: 18px;
+}
+.jf-auth-invite .done-mark .ic { width: 21px; height: 21px; }
+.jf-auth-invite .state.is-hidden { display: none; }
+
+@media (max-width: 1000px) {
+  .jf-auth-invite .auth { grid-template-columns: minmax(0, 1fr); }
+  .jf-auth-invite .auth-form { padding: 40px 28px; max-width: 520px; }
+}
+@media (max-width: 560px) {
+  .jf-auth-invite .auth-form { padding: 30px 20px; }
+  .jf-auth-invite .auth-h1 { font-size: 31px; }
+  .jf-auth-invite .grid2 { grid-template-columns: 1fr; }
+}
+
+/* ── правки: позиционирование иконок ── */
+.jf-auth-invite svg.ic { vertical-align: middle; }
+.jf-auth-invite .ic--brand { stroke: none; fill: none; }
+.jf-auth-invite .pw-wrap { display: block; position: relative; }
+.jf-auth-invite .pw-wrap .fld-in { padding-right: 46px; }
+.jf-auth-invite .pw-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+}
+.jf-auth-invite .link-back { display: inline-flex; align-items: center; gap: 7px; }
+.jf-auth-invite .link-back .ic { width: 13px; height: 13px; }
+.jf-auth-invite .btn .ic { width: 16px; height: 16px; }
+.jf-auth-invite .ref-banner .ic { margin-top: 1px; }
+.jf-auth-invite .done-mark { display: grid; place-items: center; }
+
+/* ── правки: страница помещается в экран, без прокрутки ── */
+html:has(.jf-auth-invite), body:has(.jf-auth-invite) { height: 100%; }
+.jf-auth-invite .auth { height: 100dvh; overflow: hidden; }
+.jf-auth-invite .auth-form {
+  padding: clamp(14px, 3.4vh, 44px) 56px;
+  max-height: 100dvh; overflow: hidden;
+}
+.jf-auth-invite .brand { margin-bottom: clamp(10px, 2.6vh, 40px); }
+.jf-auth-invite .brand-mark { width: clamp(28px, 3.6vh, 34px); height: clamp(28px, 3.6vh, 34px); }
+.jf-auth-invite .auth-kicker { margin-bottom: clamp(6px, 1.2vh, 12px); }
+.jf-auth-invite .auth-h1 { font-size: clamp(25px, 3.7vh, 40px); }
+.jf-auth-invite .auth-lede { margin-top: clamp(5px, 1.1vh, 12px); font-size: clamp(12.5px, 1.5vh, 14px); }
+.jf-auth-invite form { margin-top: clamp(12px, 2.4vh, 30px); }
+.jf-auth-invite .fld { margin-bottom: clamp(7px, 1.4vh, 16px); }
+.jf-auth-invite .fld-in { height: clamp(36px, 4.7vh, 46px); font-size: clamp(13px, 1.6vh, 14.5px); }
+.jf-auth-invite .fld-lbl { margin-bottom: clamp(3px, 0.6vh, 6px); }
+.jf-auth-invite .row { margin: clamp(-6px, -0.6vh, -2px) 0 clamp(10px, 2vh, 20px); }
+.jf-auth-invite .btn { height: clamp(38px, 5vh, 48px); }
+.jf-auth-invite .divider { margin: clamp(10px, 2.2vh, 26px) 0; }
+.jf-auth-invite .foot { margin-top: clamp(12px, 2.4vh, 32px); }
+.jf-auth-invite .foot-note { margin-top: clamp(8px, 1.6vh, 18px); }
+.jf-auth-invite .section-split { margin: clamp(12px, 2.4vh, 26px) 0 clamp(10px, 1.8vh, 18px); padding-top: clamp(10px, 2vh, 20px); }
+.jf-auth-invite .chips { margin-top: clamp(5px, 1vh, 9px); }
+.jf-auth-invite .chip { height: clamp(28px, 3.6vh, 34px); }
+.jf-auth-invite .grid2 { gap: clamp(9px, 1.4vh, 14px); }
+.jf-auth-invite .meta { margin-top: clamp(12px, 2.2vh, 24px); }
+.jf-auth-invite .meta-row { padding: clamp(7px, 1.4vh, 12px) 15px; }
+.jf-auth-invite .btn-pair { margin-top: clamp(12px, 2.2vh, 22px); }
+.jf-auth-invite .done-mark { width: clamp(38px, 5vh, 46px); height: clamp(38px, 5vh, 46px); margin-bottom: clamp(10px, 1.8vh, 18px); }
+
+/* низкие или узкие экраны — прокрутка разрешена */
+@media (max-height: 620px), (max-width: 1000px) {
+  .jf-auth-invite .auth { height: auto; min-height: 100dvh; overflow: visible; }
+  .jf-auth-invite .auth-form { max-height: none; overflow: visible; }
+}
+
+/* ============================================================
+   ПРАВАЯ ПАНЕЛЬ — чертёжный лист: штамп, фокусная карточка,
+   титульный блок. Единая композиция на все auth-страницы.
+   ============================================================ */
+
+/* верхний штамп */
+
+/* центр: одна фокусная карточка */
+
+/* нижний титульный блок */
+
+/* карточка выгоды (только регистрация) — та же ширина сетки, но выше */
+
+/* ============================================================
+   ПРАВАЯ ПАНЕЛЬ — структура оригинала: тонированное поле,
+   радиальное свечение и одна карточка в правом нижнем углу.
+   ============================================================ */
+.jf-auth-invite .auth-side {
+  position: relative; overflow: hidden;
+  border-left: var(--border);
+  background:
+    linear-gradient(rgba(242,240,235,.116) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(242,240,235,.116) 1px, transparent 1px),
+    var(--ink);
+  background-size: 34px 34px, 34px 34px, auto;
+}
+.jf-auth-invite .side-wash {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 70% 50% at 80% 20%, rgba(24, 84, 160, 0.12), transparent 60%);
+}
+.jf-auth-invite .side-card {
+  position: absolute; right: clamp(20px, 2.6vw, 40px); bottom: clamp(20px, 3vh, 40px);
+  width: min(384px, calc(100% - clamp(40px, 5.2vw, 80px)));
+  margin: 0; padding: clamp(18px, 2.6vh, 24px);
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 6px 6px 0 var(--ink);
+}
+.jf-auth-invite .side-card.is-hidden { display: none; }
+.jf-auth-invite .side-q {
+  margin: clamp(8px, 1.4vh, 12px) 0 0;
+  font-size: clamp(17px, 2.4vh, 22px); font-weight: 900;
+  line-height: 1.32; letter-spacing: -0.015em;
+}
+.jf-auth-invite .side-n {
+  margin: clamp(11px, 1.8vh, 16px) 0 0;
+  font-size: 11.5px; line-height: 1.55; color: var(--muted);
+}
+
+/* ── парные кнопки: иконка вынесена влево, подпись строго по центру ── */
+.jf-auth-invite .btn-pair .btn { position: relative; padding-left: 36px; padding-right: 36px; }
+.jf-auth-invite .btn-pair .btn > .ic:first-child {
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+}
+
+/* ══════ PORT ADDENDUM ══════════════════════════════════════════════════
+   Everything above this line is the donor stylesheet. Everything below it is
+   not, and it says why it has to exist.
+
+   Restore the donor's inherited baseline. The donor was a standalone file:
+   no Tailwind preflight, no globals.css. This app has both, and three of
+   their declarations INHERIT into the page and quietly change it. None of
+   these are design choices — each one sets a property back to the value it
+   computed to in the donor:
+
+   * `line-height` — Tailwind preflight sets `html { line-height: 1.5 }` and
+     `body { line-height: inherit }`. The donor inherited the initial
+     `normal`. Every element here that does not set its own line-height grows
+     under 1.5: `.brand-name`, `.badge`, `.meta-v`, `.fld-lbl`, `.fld-note`,
+     `.kpi-lbl` / `.caps`, `.btn`, `.chip`, `.ref-t`, `.ref-c`. The seven that
+     DO set one (`.auth-h1` 1.04, `.auth-lede` 1.55, `.err` 1.5, `.foot-note`
+     1.6, `.section-split p` 1.55, `.side-q` 1.32, `.side-n` 1.55) are
+     unaffected either way. This one declaration also fixes the inputs:
+     preflight gives `input, button { line-height: inherit }`, where the
+     donor's inputs and buttons kept the UA's `normal`.
+   * `font-feature-settings` / `text-rendering` — globals.css sets
+     `'cv11','ss01','ss03'` and `optimizeLegibility` on `html, body` for the
+     app's Inter. cv11 alone swaps Inter's double-storey `a` for the
+     single-storey alternate, which is visible in every word on the page.
+     The donor computed `normal` / `auto`. Preflight's
+     `input, button { font-feature-settings: inherit }` picks this up too.
+
+   NOT restored, deliberately: globals.css also styles scrollbars globally
+   (`* { scrollbar-width: thin; scrollbar-color: … }` plus a 10px
+   `::-webkit-scrollbar`). The donor styled scrollbars not at all. On this
+   page `.auth { overflow: hidden }` means there is no scrollbar to speak of
+   above 620px height, and below it the app's 10px bar is narrower than the
+   platform default the donor got. That is app chrome, not page content, so
+   it is flagged in the port report rather than fought here. */
+.jf-auth-invite { line-height: normal; font-feature-settings: normal; text-rendering: auto; }

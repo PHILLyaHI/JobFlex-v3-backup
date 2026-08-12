@@ -150,6 +150,21 @@ export const V3_PORTED_ROUTES = {
   mobileTradeV2: "/mobile-trade-v2",
   mobileReferralsV2: "/mobile-referrals-v2",
   mobileReportsV2: "/mobile-reports-v2",
+  // ── Handheld auth, mobile-v1 ─────────────────────────────────────────────
+  // jobflex-page-styler + mobile-app-ui-design. A handheld-first Blueprint
+  // build of the sign-in surface, fluid 320–768px, shipped BESIDE the desktop
+  // /auth/login (which is untouched) per the mobile route strategy. Composition:
+  // full-bleed ink drafting band (graph grid + blueprint wash, brand, kicker,
+  // H1, and a mono annotation naming the ?next= destination when there is one)
+  // → a paper form sheet clipped over it with a 5px hard ink shadow → blueprint
+  // CTA → Google → proof title block. Real NextAuth wiring, carried verbatim
+  // from the desktop page: same signIn() calls, same three error branches, same
+  // ?next= open-redirect guard. Data layer untouched.
+  //
+  // NOT gated by middleware (it is the sign-in page). Styles are a PLAIN
+  // stylesheet with a uniform `.jf-mobile-auth-login` root-class prefix, not a
+  // CSS Module — see src/components/v3/mobile-auth-login/mobile-auth-login.css.
+  mobileAuthLoginV1: "/mobile-v1/auth/login",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;

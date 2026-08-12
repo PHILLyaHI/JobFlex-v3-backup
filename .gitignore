@@ -40,3 +40,8 @@ tsconfig.tsbuildinfo
 .firecrawl/
 .env.vercel*
 .env*
+
+# Tooling scratch — Playwright/MCP console dumps and the port-verification
+# fingerprint. Both are regenerated on demand and neither describes the app.
+.playwright-mcp/
+port-fingerprint.json

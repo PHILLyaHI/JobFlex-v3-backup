@@ -1,0 +1,380 @@
+/* AUTH · FORGOT PASSWORD (/auth/forgot) — a verbatim port of the approved
+   mockup `jobflex-auth-forgot-blueprint.html`. Plain stylesheet, NOT a CSS
+   module.
+
+   WHY NOT A MODULE. The donor's <style> block is built out of constructs that
+   class hashing cannot express:
+     · `* { box-sizing: border-box; margin: 0; padding: 0 }` — a universal
+       reset. `*` is not a class, so a module would leave it unscoped and it
+       would flatten every other page in JobFlex.
+     · bare element selectors — `html, body`, `body`, `button`, `a`,
+       `input, select`, `form`, `svg.ic`.
+   So instead: every donor selector is prefixed with the single literal root
+   class `.jf-auth-forgot`, uniformly. Relative specificity — and therefore
+   which rule wins — is unchanged, which is what makes the transform safe.
+   Same precedent (and same reasoning) as
+   `src/components/v3/homeowner-landing/homeowner.css` and
+   `src/components/v3/dashboard-blueprint/blueprint-global.css`.
+
+   ROOT CLASS. `.jf-auth-forgot` is unique to this page; the four sibling auth
+   mockups are separate ports with separate roots. The donor's `<body>` rules
+   land on this root element (a wrapper <div> that stands in for <body>), and
+   the two rules that genuinely need <html>/<body> are gated on `:has()` so
+   they go inert the moment the page unmounts — App Router keeps a route's
+   stylesheet loaded across client-side navigations.
+
+   ORDER IS LOAD-BEARING. The donor re-declares `.pw-wrap`, `.pw-toggle`,
+   `svg.ic`, `.done-mark`, `html, body`, `.auth`, `.auth-form`, `.brand`,
+   `.brand-mark`, `.auth-kicker`, `.auth-h1`, `.auth-lede`, `form`, `.fld`,
+   `.fld-in`, `.fld-lbl`, `.row`, `.btn`, `.divider`, `.foot`, `.foot-note`,
+   `.section-split`, `.chips`, `.chip`, `.grid2`, `.meta`, `.meta-row`,
+   `.btn-pair` and `.ref-banner .ic` in later blocks that layer on top of the
+   base rules and win by source order — including four blocks that sit AFTER
+   the media queries. Nothing here is merged, sorted, deduped or reflowed.
+   115 rules in, 115 out, in the donor's order.
+
+   TOKENS stay on the page root and are never promoted to `:root`. Several
+   coincide with globals.css at identical values (`--paper`, `--paper-deep`,
+   `--ink`, `--ink-soft`, `--radius`, `--ease`, `--ease-out`); `--shadow` is a
+   COLOR here, and `--blueprint` keeps its donor name even though it is the
+   same value the app calls `--accent` — renaming is a refactor, not a port.
+
+   The only edit inside the donor's own rules: `--font` and `--font-mono` point
+   at `var(--font-inter)` / `var(--font-jbmono)`, the families the root layout
+   already loads through next/font, so the donor's Google Fonts <link> could be
+   dropped. Every other fallback in both stacks is the donor's, in order.
+
+   Russian section comments are the donor's own and are kept verbatim; English
+   translations are added alongside, never in place of them. */
+
+.jf-auth-forgot {
+  --paper: #f2f0eb; --paper-deep: #ebe8e1;
+  --ink: #0a0a0a; --ink-soft: #2a2a2a;
+  --muted: #555; --muted-light: #888; --muted-faint: #aaa;
+  --blueprint: #1854a0; --blueprint-dark: #0e3d7a; --sky: #4a9eff;
+  --success: #3a7d44; --success-dark: #2c5f34; --success-soft: #e8f0e9;
+  --warning: #b8860b; --warning-dark: #8a650a; --warning-soft: #faf3e0;
+  --danger: #a83232; --danger-soft: #f7e9e9;
+  --hair-soft: #d5d1c8; --shadow: rgba(10, 10, 10, 0.09);
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --font: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, 'SF Mono', Menlo, monospace;
+  --radius: 2px; --border: 2px solid var(--ink);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1); --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.jf-auth-forgot, .jf-auth-forgot * { box-sizing: border-box; margin: 0; padding: 0; }
+/* donor: `html, body { min-height: 100% }`. Both are ancestors of the page
+   root, so no descendant selector can reach them; `:has()` gates the rule to
+   the lifetime of this page. */
+html:has(.jf-auth-forgot), body:has(.jf-auth-forgot) { min-height: 100%; }
+/* donor: the `body` rule, moved onto the page root. */
+.jf-auth-forgot {
+  font-family: var(--font); background: var(--paper); color: var(--ink);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS — not donor rules. Everything below this block is.
+   ══════════════════════════════════════════════════════════════════
+
+   1. The app's own background layers. globals.css paints a 40px drafting grid
+      on <body> (fixed attachment) and a `body::before` paper-grain overlay.
+      The donor's body is flat `var(--paper)` with no grid and no grain, and
+      the whole left column is transparent down to it, so both app layers would
+      show through. Switched off for the duration of this page — `:has()` gates
+      them, so they come back by themselves the moment the page unmounts.
+
+   2. Tailwind preflight. The donor renders against a bare UA stylesheet; this
+      app ships preflight from globals.css, and its declarations reach inside
+      the page:
+        · `html { line-height: 1.5 }` — the donor computes `normal` everywhere
+          it sets no line-height (.brand-name, .kpi-lbl, .fld-lbl, .fld-in,
+          .btn, .chip, .badge, .meta-v, .auth-kicker, .done-mark), so every one
+          of those boxes would grow.
+        · `svg { display: block; vertical-align: middle }` — the donor's icons
+          are inline replaced boxes; the donor's own later
+          `svg.ic { vertical-align: middle }` re-applies on top of this reset,
+          which is why the neutralizer has to sit above it.
+      globals.css additionally sets `font-feature-settings` and `text-rendering`
+      on html+body, which inherit in and change glyph shapes. All restored to
+      the donor's environment.
+
+   NOT neutralized, deliberately: globals.css's `* { scrollbar-width: thin }`
+   and preflight's `html { -webkit-text-size-adjust: 100% }`. Both are browser
+   chrome outside the page box; the donor's `::-webkit-` fallback would have to
+   be fought too, and the cost outweighs the gain. Same call as
+   homeowner.css. */
+body:has(.jf-auth-forgot) { background-image: none; }
+body:has(.jf-auth-forgot)::before { content: none; }
+.jf-auth-forgot {
+  line-height: normal;
+  font-feature-settings: normal;
+  text-rendering: auto;
+}
+.jf-auth-forgot svg { display: inline; vertical-align: baseline; }
+
+.jf-auth-forgot button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.jf-auth-forgot a { color: inherit; text-decoration: none; }
+.jf-auth-forgot input, .jf-auth-forgot select { font-family: inherit; }
+.jf-auth-forgot svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.jf-auth-forgot .kpi-lbl, .jf-auth-forgot .caps {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+}
+
+/* ── раскладка ── */
+/* (layout) */
+.jf-auth-forgot .auth { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100dvh; }
+.jf-auth-forgot .auth-form {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 48px 56px; max-width: 620px; width: 100%; margin: 0 auto;
+}
+.jf-auth-forgot .brand { display: inline-flex; align-items: center; gap: 11px; margin-bottom: 44px; }
+.jf-auth-forgot .brand-mark {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--ink); color: var(--paper);
+  font-size: 16px; font-weight: 900;
+}
+.jf-auth-forgot .brand-name { font-size: 19px; font-weight: 900; letter-spacing: -0.01em; }
+.jf-auth-forgot .auth-kicker { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+.jf-auth-forgot .auth-kicker::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--sky); }
+.jf-auth-forgot .auth-h1 { font-size: 40px; font-weight: 900; line-height: 1.04; letter-spacing: -0.025em; }
+.jf-auth-forgot .auth-lede { margin-top: 12px; max-width: 46ch; font-size: 14px; line-height: 1.55; color: var(--muted); }
+
+.jf-auth-forgot form { margin-top: 30px; }
+.jf-auth-forgot .fld { display: block; margin-bottom: 16px; }
+.jf-auth-forgot .fld-lbl { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.jf-auth-forgot .fld-in {
+  width: 100%; height: 46px; padding: 0 13px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); font-size: 14.5px; color: var(--ink);
+  box-shadow: none;
+  transition: box-shadow 0.14s var(--ease);
+}
+.jf-auth-forgot .fld-in:focus { outline: none; box-shadow: 4px 4px 0 var(--ink); }
+.jf-auth-forgot .fld-in::placeholder { color: var(--muted-faint); }
+.jf-auth-forgot .fld-note { margin-top: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.jf-auth-forgot .pw-wrap { position: relative; }
+.jf-auth-forgot .pw-toggle {
+  position: absolute; right: 6px; top: 6px; width: 34px; height: 34px;
+  display: grid; place-items: center; border-radius: var(--radius); color: var(--muted);
+}
+.jf-auth-forgot .pw-toggle:hover { background: var(--paper-deep); color: var(--ink); }
+.jf-auth-forgot .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -6px 0 20px; }
+.jf-auth-forgot .link-quiet { font-size: 12.5px; color: var(--muted); border-bottom: 1.5px solid var(--hair-soft); }
+.jf-auth-forgot .link-quiet:hover { color: var(--ink); border-color: var(--ink); }
+.jf-auth-forgot .link-ink { font-weight: 700; color: var(--ink); border-bottom: 1.5px solid var(--ink); }
+
+.jf-auth-forgot .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 48px; padding: 0 20px; width: 100%;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--blueprint); color: #fff;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.jf-auth-forgot .btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.jf-auth-forgot .btn:active { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+.jf-auth-forgot .btn[disabled] { opacity: 0.55; pointer-events: none; }
+.jf-auth-forgot .btn--ghost { background: var(--paper); color: var(--ink); }
+.jf-auth-forgot .btn--ghost:hover { background: var(--paper-deep); }
+
+.jf-auth-forgot .err {
+  margin-top: 16px; padding: 12px 14px;
+  border: 1.5px solid var(--danger); border-left-width: 5px; border-radius: var(--radius);
+  background: var(--danger-soft); font-size: 12.5px; line-height: 1.5; color: var(--danger);
+}
+.jf-auth-forgot .err.is-hidden { display: none; }
+.jf-auth-forgot .divider { display: flex; align-items: center; gap: 14px; margin: 26px 0; }
+.jf-auth-forgot .divider::before, .jf-auth-forgot .divider::after { content: ''; flex: 1; height: 1.5px; background: var(--hair-soft); }
+.jf-auth-forgot .foot { margin-top: 32px; font-size: 13px; color: var(--muted); }
+.jf-auth-forgot .foot-note { margin-top: 18px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; color: var(--muted-faint); }
+
+/* ── правая панель ── */
+/* (right-hand panel) */
+
+/* ── чипы (виды работ) ── */
+/* (chips — trade types) */
+.jf-auth-forgot .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.jf-auth-forgot .chip {
+  height: 34px; padding: 0 12px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: var(--paper); font-size: 12.5px; font-weight: 600; color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.jf-auth-forgot .chip:hover { border-color: var(--ink); color: var(--ink); }
+.jf-auth-forgot .chip.on { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07); font-weight: 700; }
+
+.jf-auth-forgot .section-split { margin: 26px 0 18px; padding-top: 20px; border-top: 2px solid var(--hair-soft); }
+.jf-auth-forgot .section-split p { margin-top: 6px; max-width: 52ch; font-size: 12px; line-height: 1.55; color: var(--muted); }
+.jf-auth-forgot .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+/* ── баннер реферала ── */
+/* (referral banner) */
+.jf-auth-forgot .ref-banner {
+  display: flex; align-items: center; gap: 11px; margin-bottom: 22px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--success); border-radius: var(--radius);
+  background: var(--success-soft);
+}
+.jf-auth-forgot .ref-banner .ic { width: 15px; height: 15px; color: var(--success-dark); }
+.jf-auth-forgot .ref-t { font-size: 12.5px; font-weight: 700; color: var(--success-dark); }
+.jf-auth-forgot .ref-c { margin-top: 2px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+
+/* ── сводка приглашения ── */
+/* (invite summary) */
+.jf-auth-forgot .meta { margin-top: 24px; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+.jf-auth-forgot .meta-row { display: flex; align-items: center; gap: 14px; padding: 12px 15px; border-bottom: 1.5px solid var(--hair-soft); }
+.jf-auth-forgot .meta-row:last-child { border-bottom: none; }
+.jf-auth-forgot .meta-row .caps { flex: 0 0 88px; }
+.jf-auth-forgot .meta-v { font-size: 13.5px; font-weight: 600; }
+.jf-auth-forgot .badge {
+  display: inline-flex; align-items: center; padding: 3px 9px;
+  border: 1.5px solid var(--blueprint); border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.07);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint);
+}
+.jf-auth-forgot .btn-pair { display: flex; gap: 10px; margin-top: 22px; }
+
+/* ── состояние «готово» ── */
+/* (the "done" state) */
+.jf-auth-forgot .done-mark {
+  width: 46px; height: 46px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--success-soft); color: var(--success-dark);
+  margin-bottom: 18px;
+}
+.jf-auth-forgot .done-mark .ic { width: 21px; height: 21px; }
+.jf-auth-forgot .state.is-hidden { display: none; }
+
+@media (max-width: 1000px) {
+  .jf-auth-forgot .auth { grid-template-columns: minmax(0, 1fr); }
+  .jf-auth-forgot .auth-form { padding: 40px 28px; max-width: 520px; }
+}
+@media (max-width: 560px) {
+  .jf-auth-forgot .auth-form { padding: 30px 20px; }
+  .jf-auth-forgot .auth-h1 { font-size: 31px; }
+  .jf-auth-forgot .grid2 { grid-template-columns: 1fr; }
+}
+
+/* ── правки: позиционирование иконок ── */
+/* (fixes: icon positioning) */
+.jf-auth-forgot svg.ic { vertical-align: middle; }
+.jf-auth-forgot .ic--brand { stroke: none; fill: none; }
+.jf-auth-forgot .pw-wrap { display: block; position: relative; }
+.jf-auth-forgot .pw-wrap .fld-in { padding-right: 46px; }
+.jf-auth-forgot .pw-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+}
+.jf-auth-forgot .link-back { display: inline-flex; align-items: center; gap: 7px; }
+.jf-auth-forgot .link-back .ic { width: 13px; height: 13px; }
+.jf-auth-forgot .btn .ic { width: 16px; height: 16px; }
+.jf-auth-forgot .ref-banner .ic { margin-top: 1px; }
+.jf-auth-forgot .done-mark { display: grid; place-items: center; }
+
+/* ── правки: страница помещается в экран, без прокрутки ── */
+/* (fixes: the page fits the screen, no scrolling) */
+html:has(.jf-auth-forgot), body:has(.jf-auth-forgot) { height: 100%; }
+.jf-auth-forgot .auth { height: 100dvh; overflow: hidden; }
+.jf-auth-forgot .auth-form {
+  padding: clamp(14px, 3.4vh, 44px) 56px;
+  max-height: 100dvh; overflow: hidden;
+}
+.jf-auth-forgot .brand { margin-bottom: clamp(10px, 2.6vh, 40px); }
+.jf-auth-forgot .brand-mark { width: clamp(28px, 3.6vh, 34px); height: clamp(28px, 3.6vh, 34px); }
+.jf-auth-forgot .auth-kicker { margin-bottom: clamp(6px, 1.2vh, 12px); }
+.jf-auth-forgot .auth-h1 { font-size: clamp(25px, 3.7vh, 40px); }
+.jf-auth-forgot .auth-lede { margin-top: clamp(5px, 1.1vh, 12px); font-size: clamp(12.5px, 1.5vh, 14px); }
+.jf-auth-forgot form { margin-top: clamp(12px, 2.4vh, 30px); }
+.jf-auth-forgot .fld { margin-bottom: clamp(7px, 1.4vh, 16px); }
+.jf-auth-forgot .fld-in { height: clamp(36px, 4.7vh, 46px); font-size: clamp(13px, 1.6vh, 14.5px); }
+.jf-auth-forgot .fld-lbl { margin-bottom: clamp(3px, 0.6vh, 6px); }
+.jf-auth-forgot .row { margin: clamp(-6px, -0.6vh, -2px) 0 clamp(10px, 2vh, 20px); }
+.jf-auth-forgot .btn { height: clamp(38px, 5vh, 48px); }
+.jf-auth-forgot .divider { margin: clamp(10px, 2.2vh, 26px) 0; }
+.jf-auth-forgot .foot { margin-top: clamp(12px, 2.4vh, 32px); }
+.jf-auth-forgot .foot-note { margin-top: clamp(8px, 1.6vh, 18px); }
+.jf-auth-forgot .section-split { margin: clamp(12px, 2.4vh, 26px) 0 clamp(10px, 1.8vh, 18px); padding-top: clamp(10px, 2vh, 20px); }
+.jf-auth-forgot .chips { margin-top: clamp(5px, 1vh, 9px); }
+.jf-auth-forgot .chip { height: clamp(28px, 3.6vh, 34px); }
+.jf-auth-forgot .grid2 { gap: clamp(9px, 1.4vh, 14px); }
+.jf-auth-forgot .meta { margin-top: clamp(12px, 2.2vh, 24px); }
+.jf-auth-forgot .meta-row { padding: clamp(7px, 1.4vh, 12px) 15px; }
+.jf-auth-forgot .btn-pair { margin-top: clamp(12px, 2.2vh, 22px); }
+.jf-auth-forgot .done-mark { width: clamp(38px, 5vh, 46px); height: clamp(38px, 5vh, 46px); margin-bottom: clamp(10px, 1.8vh, 18px); }
+
+/* низкие или узкие экраны — прокрутка разрешена */
+/* (short or narrow screens — scrolling is allowed) */
+@media (max-height: 620px), (max-width: 1000px) {
+  .jf-auth-forgot .auth { height: auto; min-height: 100dvh; overflow: visible; }
+  .jf-auth-forgot .auth-form { max-height: none; overflow: visible; }
+}
+
+/* ============================================================
+   ПРАВАЯ ПАНЕЛЬ — чертёжный лист: штамп, фокусная карточка,
+   титульный блок. Единая композиция на все auth-страницы.
+   ============================================================ */
+/* (RIGHT-HAND PANEL — a drafting sheet: title stamp, focus card, title block.
+   One composition shared by every auth page.) */
+
+/* верхний штамп */
+/* (top stamp) */
+
+/* центр: одна фокусная карточка */
+/* (centre: a single focus card) */
+
+/* нижний титульный блок */
+/* (bottom title block) */
+
+/* карточка выгоды (только регистрация) — та же ширина сетки, но выше */
+/* (benefit card — registration only — same grid width, but taller) */
+
+/* ============================================================
+   ПРАВАЯ ПАНЕЛЬ — структура оригинала: тонированное поле,
+   радиальное свечение и одна карточка в правом нижнем углу.
+   ============================================================ */
+/* (RIGHT-HAND PANEL — the original's structure: a tinted field, a radial glow
+   and a single card in the bottom-right corner.) */
+.jf-auth-forgot .auth-side {
+  position: relative; overflow: hidden;
+  border-left: var(--border);
+  background:
+    linear-gradient(rgba(242,240,235,.116) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(242,240,235,.116) 1px, transparent 1px),
+    var(--ink);
+  background-size: 34px 34px, 34px 34px, auto;
+}
+.jf-auth-forgot .side-wash {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 70% 50% at 80% 20%, rgba(24, 84, 160, 0.12), transparent 60%);
+}
+.jf-auth-forgot .side-card {
+  position: absolute; right: clamp(20px, 2.6vw, 40px); bottom: clamp(20px, 3vh, 40px);
+  width: min(384px, calc(100% - clamp(40px, 5.2vw, 80px)));
+  margin: 0; padding: clamp(18px, 2.6vh, 24px);
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 6px 6px 0 var(--ink);
+}
+.jf-auth-forgot .side-card.is-hidden { display: none; }
+.jf-auth-forgot .side-q {
+  margin: clamp(8px, 1.4vh, 12px) 0 0;
+  font-size: clamp(17px, 2.4vh, 22px); font-weight: 900;
+  line-height: 1.32; letter-spacing: -0.015em;
+}
+.jf-auth-forgot .side-n {
+  margin: clamp(11px, 1.8vh, 16px) 0 0;
+  font-size: 11.5px; line-height: 1.55; color: var(--muted);
+}
+
+/* ── парные кнопки: иконка вынесена влево, подпись строго по центру ── */
+/* (paired buttons: the icon is pulled to the left, the label stays dead
+   centre) */
+.jf-auth-forgot .btn-pair .btn { position: relative; padding-left: 36px; padding-right: 36px; }
+.jf-auth-forgot .btn-pair .btn > .ic:first-child {
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+}

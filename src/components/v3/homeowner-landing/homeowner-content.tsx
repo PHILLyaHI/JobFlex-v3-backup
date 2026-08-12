@@ -19,12 +19,22 @@
 // were authored differently and are left that way.
 //
 // PHOTOGRAPHY: the eight plates in the reviews arch are hotlinked from
-// images.unsplash.com, exactly as the donor authored them. `images.unsplash.com`
-// is already allow-listed in next.config.ts so they load, but this is a public
-// marketing page whose imagery depends on a third party — flagged for the owner
-// rather than silently localised. Plain `<img>`, not `next/image`: the donor
-// sizes the plates entirely from CSS (`position:absolute; inset:0`) and
-// next/image's wrapper would change the layout.
+// images.unsplash.com, exactly as the donor authored them. These are plain
+// `<img>` tags, not `next/image` — the donor sizes the plates entirely from CSS
+// (`position:absolute; inset:0`) and next/image's wrapper would change the
+// layout — so next.config.ts's `images.remotePatterns` does not govern them and
+// nothing needs allow-listing. This is a public marketing page whose imagery
+// depends on a third party; flagged for the owner rather than silently
+// localised.
+//
+// CTA → ROUTE MAPPING. The donor parks every link on the placeholder `href="#top"`.
+// On-page anchors stay `#top` because that is what they genuinely are: the brand
+// mark, and the closing "Describe your project" button, which scrolls back to
+// the wizard. The three links that name real destinations are pointed at the
+// real routes with next/link — "For contractors" (nav + footer) → /landing, the
+// contractor-facing marketing landing; "Terms" → /terms; "Privacy" → /privacy.
+// `<Link>` renders the same <a class="…"> the donor authored, so nothing about
+// the rendering changes.
 //
 // Sections, in donor order: nav · #top.hero · .steps · #net.net · .revs · .cta
 // · footer.foot, with the donor's `<noscript>` banner kept — it is real
@@ -37,6 +47,7 @@ import { StepsGrid } from "./homeowner-vignettes";
 import { HomeownerWizard } from "./wizard/homeowner-wizard";
 import { useNetParallax, useReveal } from "./use-homeowner-behavior";
 import { Fragment, useState } from "react";
+import Link from "next/link";
 
 /* donor nc-1: the licence barcode, sixteen bars. Values kept as strings so the
    emitted attributes are byte-identical to the donor's. */
@@ -198,12 +209,12 @@ export function HomeownerContent() {
         </a>
         <div className="nav-tag">Homeowner Portal</div>
         <div className="nav-gap"></div>
-        <a className="nav-cta" href="#top">
+        <Link className="nav-cta" href="/landing">
           For contractors
           <svg className="ic ic-sm">
             <use href="#i-arrow-r" />
           </svg>
-        </a>
+        </Link>
       </nav>
 
       <section className="hero" id="top">
@@ -591,11 +602,11 @@ export function HomeownerContent() {
           <span>JobFlex</span>
         </div>
         <div className="foot-links">
-          <a className="lead" href="#top">
+          <Link className="lead" href="/landing">
             For contractors
-          </a>
-          <a href="#top">Terms</a>
-          <a href="#top">Privacy</a>
+          </Link>
+          <Link href="/terms">Terms</Link>
+          <Link href="/privacy">Privacy</Link>
         </div>
       </footer>
     </div>

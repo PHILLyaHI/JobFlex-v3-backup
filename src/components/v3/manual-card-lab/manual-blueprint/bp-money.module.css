@@ -1,0 +1,694 @@
+/* ============================================================
+   MANUAL PROPOSAL — BLUEPRINT / CARD 08 "PAYMENT & DEPOSITS"
+   Companion to ./bp-money.tsx. Sits INSIDE an existing <Card>,
+   which already draws the 2px ink frame, the 24px padding, the
+   station numeral and the title. Nothing here draws a second
+   frame around any of it.
+
+   ── WHAT THIS FILE IS FOR ──────────────────────────────────
+   The card used to be two full-width blocks: a row of two
+   half-card form cells (Discount / Tax) with their figures
+   stranded 540px from the fields that produce them, and a
+   schedule whose dollars stopped 50px short of the ledger's
+   because a trash gutter was reserved beside them. Both are
+   layout problems and both are solved here rather than in the
+   markup:
+
+     1  THE LEDGER IS A RECEIPT. One ~440px column, hard right,
+        label and value adjacent. Two fields holding four
+        characters each have no business spanning 1350px.
+     2  ONE MONEY AXIS. The receipt column and the schedule's
+        figure column both END at the card's content right edge,
+        so every amount on the card lands on one vertical rule.
+        Nothing is allowed to sit to the right of a figure — the
+        delete control moves LEFT of it, into the controls half
+        of the row, where it belongs anyway.
+     3  ONE RULE, NOT TWO. A single 2px ink line above the grand
+        total. The old 1.5px divider under the adjustments split
+        the card in half and separated nothing.
+
+   ── SCOPING ────────────────────────────────────────────────
+   This route is deliberately NOT registered in blueprint-shell's
+   PAGE_STYLES, so there is no page-level `.bp` activation class
+   to hang :global rules from. Every rule below is this module's
+   own hashed class under the literal shell root —
+   `:global(.jf-blueprint) .cls` ⇒ (0,2,0) — which beats the
+   always-on modules':
+     · `.bp :global(button)` (0,1,1) — strips border / background
+       / cursor / font off every button, so the three buttons
+       here declare all four;
+     · `.bp :global(svg.ic)` (0,2,1) — pins icons at 17px, so
+       every icon resize here is written with THREE classes plus
+       an element to win on count.
+   Tailwind preflight runs app-wide: the <h3> and the buttons
+   declare their own font, size, weight, margin and background
+   rather than inheriting anything.
+
+   THE ELEMENT-SELECTOR TRICK, used twice below. The shared
+   control treatment lives in manual-blueprint.module.css as
+   `:global(.jf-blueprint) .input` ⇒ (0,2,0). A rule here written
+   as `:global(.jf-blueprint) .instRow input` is (0,2,1) and wins
+   at rest, while that module's own `.input:hover` / `.input:focus`
+   are (0,3,0) and still win on interaction. That is exactly the
+   split wanted: this card restates a field's RESTING edge and
+   leaves its hover and focus behaviour to the house.
+
+   ── NO @keyframes ──────────────────────────────────────────
+   Lightning CSS rejects @keyframes inside a CSS module. Every
+   motion here is a transition.
+
+   ── THE SPACING LADDER ─────────────────────────────────────
+     receipt → schedule .... 32px   (the card's one big break)
+     heading → its rows ..... 8px
+     row → row .............. 4px (receipt) / a 1.5px rule (schedule)
+     schedule → meter ...... 20px
+   The one ratio that must survive: EXTERNAL > INTERNAL. 32
+   between the two halves against 8 from a heading to the rows it
+   heads — which is the specific failure being fixed, because
+   "Payment schedule" used to sit 30px under the grand total and
+   further than that from its own rows, so it grouped upward.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   - Light mode only. No .dark variants.
+   - Radius is 2px (var(--radius)) or 0. Nothing is a capsule —
+     including the `auto` annotation, which is a drawn 2px-radius
+     tag, not a pill.
+   - Shadows are hard offsets with ZERO blur, or absent. There
+     are none in this file.
+   - TWO TYPE REGISTERS AND NO MORE. Inter carries every label
+     (sentence case) and every figure (tabular). Mono carries
+     three annotations and nothing else: the `auto` tag, the %/$
+     unit glyph, and the coverage readout. The mono-caps
+     letterspaced subhead is deliberately absent — four
+     treatments in one small card was the report, and the heading
+     is the one that had to give, because a heading that reads as
+     an annotation does not head anything.
+   - STATUS COLOUR IS SPENT ON COVERAGE ONLY: the meter fill, the
+     meter note and the new percentage readout are one reading in
+     three places. The `auto` tag is NOT a status — an estimated
+     tax rate is a provenance note — so it is drawn in --muted.
+   - --muted (#555) is the floor for meaningful text.
+   - Local tokens are read with literal fallbacks so the file
+     still renders if it is ever mounted outside the card
+     module's `.page` (which is where --mb-* are declared).
+   ============================================================ */
+
+/* ============================================================
+   THE RECEIPT
+   Right-aligned and capped at 440px. `margin-left: auto` is what
+   puts its right edge ON the card's content right edge, which is
+   the money axis the schedule below also ends at.
+
+   Three columns, fixed across every row: LABEL, CONTROL, AMOUNT.
+   A row with no control (Subtotal, Grand total) simply leaves
+   column 2 empty rather than spanning it — spanning would let
+   the amount column drift, and the amount column not drifting is
+   the entire point.
+   ============================================================ */
+
+:global(.jf-blueprint) .receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(440px, 100%);
+  margin-left: auto;
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 124px 168px;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+/* Sentence case, 13/600, ink-soft. Never caps: caps is a heading
+   device and there are no headings inside a receipt. */
+:global(.jf-blueprint) .rowLabel {
+  grid-column: 1;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+
+:global(.jf-blueprint) .rowCtl {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The rate field is 78px and no wider. It holds four characters.
+   The old build gave a four-character field half a card. */
+:global(.jf-blueprint) .pctField {
+  flex: none;
+  width: 78px;
+  min-width: 0;
+}
+
+/* Inter, tabular, right-aligned — the same face and weight as
+   every other figure on the card, so the four amounts read as one
+   column of arithmetic rather than as two figures with two
+   annotations between them. */
+:global(.jf-blueprint) .rowAmt {
+  grid-column: 3;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A row contributing nothing recedes. --muted, never opacity: a
+   faded figure is a contrast failure wearing hierarchy's clothes. */
+:global(.jf-blueprint) .rowAmtZero {
+  color: var(--muted);
+}
+
+/* THE ONE HEAVY RULE, and it sits above the grand total ONLY —
+   so it separates the RESULT from the inputs that produced it.
+   The rule it replaces sat under the two adjustments and cut the
+   card in half, which separated nothing from nothing. Full ink at
+   2px is the same weight the client's copy closes its own total
+   with, so the two documents agree. */
+:global(.jf-blueprint) .rowTotal {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .rowTotal .rowLabel {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+/* The largest figure in the card and Inter 900 — never mono. It
+   matches the page's own grand total register because it IS the
+   grand total; the sticky bar prints the same number, and two
+   printings of one figure must at least be one typeface. */
+:global(.jf-blueprint) .rowTotal .rowAmt {
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+/* ── THE COLLAPSED DISCOUNT ──────────────────────────────────
+   A discount of zero is not a fact worth a row, a control and a
+   sentence — it is an OFFER, so it is drawn as one and expands
+   into a real row on click. This is the single biggest weight
+   saving in the card: the estimate is not using the feature.
+
+   44px tall, not 34. It is the only affordance in the ledger and
+   the touch-target floor is not negotiable; twelve pixels of card
+   height is the right price. */
+:global(.jf-blueprint) .addRow {
+  display: flex;
+}
+
+:global(.jf-blueprint) .addLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+  transition: color 0.14s var(--ease), border-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .addLink:hover {
+  color: var(--blueprint);
+}
+
+:global(.jf-blueprint) .addLink:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 3px;
+}
+
+/* THREE classes plus the element to beat `.bp :global(svg.ic)`
+   (0,2,1) — this is (0,3,1). Two would tie and lose on order. */
+:global(.jf-blueprint) .receipt .addLink :global(svg.ic) {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* ── THE `auto` TAG ──────────────────────────────────────────
+   What replaced 111 characters of permanently-visible
+   explanation on the card's least important control. It says the
+   one thing that is not derivable from looking — that this rate
+   came from the address rather than from a person — and hands
+   the full sentence to `title` plus a screen-reader line.
+
+   NOT a status colour and NOT a pill. An auto-estimated rate is
+   provenance, not a state, so it is --muted on a 1.5px --muted-
+   faint edge at the house 2px radius. `cursor: help` is the only
+   honest signal that a title is attached. */
+:global(.jf-blueprint) .autoTag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: transparent;
+  border: 1.5px solid var(--muted-faint, #b0aea8);
+  border-radius: var(--radius, 2px);
+  cursor: help;
+}
+
+/* Surfaces ONLY when the rate has been overridden — which is the
+   moment the sentence stops being decoration and starts being the
+   answer to "how do I get the estimate back". */
+:global(.jf-blueprint) .rowNote {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* ============================================================
+   THE SCHEDULE
+   ============================================================ */
+
+/* 32px from the receipt against 8px from the heading to its rows.
+   The heading used to sit ~30px under the grand total and much
+   further from the rows beneath it, so it read as a footer on the
+   ledger rather than a header on the schedule. The distances are
+   now the other way round, which is the whole fix. */
+:global(.jf-blueprint) .payment {
+  margin-top: 8px;
+  font-family: var(--font);
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .schedHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+/* Preflight flattens h3, so size / weight / margin are declared.
+   Inter, sentence case — the second of this card's two type
+   registers, NOT the mono-caps annotation the old subhead used.
+   A heading set in the annotation register reads as an annotation. */
+:global(.jf-blueprint) .schedTitle {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+/* ── THE COVERAGE READOUT ────────────────────────────────────
+   Nothing used to say the percentages have to sum to 100. Type
+   30/30/30 and the schedule was silently a third short. This is
+   the same coverState reading the meter below prints, moved to
+   where the percentages are actually TYPED — the header of the
+   rows — and stated in the unit those rows are typed in.
+
+   Mono because it is a drawn annotation on a control, and one of
+   only three mono things on this card. Status tones because
+   coverage IS a status; this is the sanctioned spend. */
+:global(.jf-blueprint) .cover {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+:global(.jf-blueprint) .coverExact {
+  color: var(--success-dark);
+}
+
+:global(.jf-blueprint) .coverUnder {
+  color: var(--warning-dark);
+}
+
+:global(.jf-blueprint) .coverOver {
+  color: var(--danger);
+}
+
+/* (0,3,1) to beat `.bp :global(svg.ic)`. */
+:global(.jf-blueprint) .payment .cover :global(svg.ic) {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+/* ── THE ROWS ────────────────────────────────────────────────
+   FOUR columns, and the order is the argument: everything the
+   user TOUCHES is on the left (what it is for, how much, remove
+   it) and the DERIVED figure is the terminal column, alone, on
+   the card's money axis. The old row put the delete control to
+   the right of the figure, which pushed the dollars 50px inboard
+   of the ledger's and broke the one alignment that matters.
+
+   The 168px figure column is the receipt's amount column repeated,
+   so the two blocks' right edges are the same rule twice. */
+:global(.jf-blueprint) .instRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 124px 34px 168px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1.5px solid var(--mb-rule, rgba(10, 10, 10, 0.08));
+}
+
+:global(.jf-blueprint) .instFirst {
+  border-top: none;
+}
+
+/* THE FIELDS READ AS FIELDS. The house resting edge is --mb-line
+   (12% ink ≈ 2.2:1 on white), which on a warm well made the
+   control read as a disabled tint rather than as somewhere to
+   type — the exact reading the card module's own note warns about
+   ("do not set the well back to #ffffff without giving the fields
+   a heavier resting border"; this is the other half of that
+   trade). --muted-light is 3.6:1 on white and 3.3:1 on the well,
+   so the boundary clears 1.4.11 as well as looking drawn.
+
+   (0,2,1) — beats `.input` (0,2,0) at rest, loses to
+   `.input:hover` / `.input:focus` (0,3,0), which is the point:
+   the resting state is restated, the interaction is the house's.
+
+   A READ-ONLY figure on this card has no fill and no edge at all
+   (`.rowAmt`, `.instValue`), so the two species cannot be
+   confused in either direction. */
+:global(.jf-blueprint) .instRow input,
+:global(.jf-blueprint) .receipt input {
+  border-color: var(--muted-light, #888);
+}
+
+/* The amount cell. `position: relative` so the unit glyph can sit
+   INSIDE the field's right edge instead of beside it in a box of
+   its own. */
+:global(.jf-blueprint) .amtField {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+/* Room for the glyph. (0,2,1) beats `.input`'s `padding: 0 10px`
+   (0,2,0). No `suffix` is passed to NumField for this field, so
+   `.hasSuf .input` (0,3,0) is never in play and cannot outrank
+   this. */
+:global(.jf-blueprint) .amtField input {
+  padding-right: 30px;
+}
+
+/* ── THE UNIT CONTROL ────────────────────────────────────────
+   Was a ~100px bordered box holding one static character, which
+   reads as a field somebody forgot to fill in. The discount and
+   tax rows put their unit INSIDE the field as an affix, that is
+   the correct treatment, and this is now the same treatment made
+   interactive: the glyph sits where the affix sits and clicking it
+   swaps % for $.
+
+   26 x 36 visually. The ::before takes the HIT AREA to 44 x 44 —
+   9px of bleed each side lands in the 10px column gap on the
+   right and in the field's own reserved right padding on the
+   left, so nothing usable is stolen from the input. */
+:global(.jf-blueprint) .unitBtn {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius, 2px);
+  cursor: pointer;
+  transition: color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .unitBtn::before {
+  content: "";
+  position: absolute;
+  inset: -4px -9px;
+}
+
+:global(.jf-blueprint) .unitBtn:hover {
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .unitBtn:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
+}
+
+/* ── DELETE, REVEALED ────────────────────────────────────────
+   Present in the layout at all times — the column is 34px wide
+   whether or not the control is visible, so revealing it never
+   moves a figure — but INVISIBLE until the row is hovered or
+   anything inside it takes focus.
+
+   opacity, never `display: none`: a display-hidden button leaves
+   the tab order and the row becomes undeletable by keyboard. The
+   `:focus-within` rule is what brings it back for a keyboard user
+   the moment they reach the row, and its own `:focus-visible`
+   covers landing on the button itself.
+
+   34px visual, 44px hit area via ::before — same device as the
+   unit glyph, bleeding into the 10px gaps either side. */
+:global(.jf-blueprint) .del {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--muted-light);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius, 2px);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s var(--ease), color 0.14s var(--ease),
+    border-color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .del::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+}
+
+:global(.jf-blueprint) .instRow:hover .del,
+:global(.jf-blueprint) .instRow:focus-within .del,
+:global(.jf-blueprint) .del:focus-visible {
+  opacity: 1;
+}
+
+:global(.jf-blueprint) .del:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+:global(.jf-blueprint) .del:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
+}
+
+/* (0,3,1) to beat `.bp :global(svg.ic)`. */
+:global(.jf-blueprint) .instRow .del :global(svg.ic) {
+  width: 14px;
+  height: 14px;
+}
+
+/* A TOUCH DEVICE HAS NO HOVER, so a hover-revealed control is a
+   control that does not exist. `:focus-within` would only fire
+   after a tap has already landed somewhere in the row. */
+@media (hover: none) {
+  :global(.jf-blueprint) .del {
+    opacity: 1;
+  }
+}
+
+/* The derived figure. Inter and tabular, NOT the 12.5px mono the
+   old row used — the schedule's dollars and the ledger's dollars
+   are the same species of number and printing one of them in a
+   second typeface made the card look like two documents. */
+:global(.jf-blueprint) .instValue {
+  text-align: right;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── ADD A STAGE ─────────────────────────────────────────────
+   The reviewer concluded a fourth payment stage was impossible,
+   which is a fair reading of a dashed grey button parked below a
+   coverage meter. It now sits DIRECTLY under the rows it adds to,
+   and its text comes up from --muted to --ink-soft so it reads as
+   an available action rather than as a disabled one. The dashed
+   house device and every hover behaviour are left alone — this
+   restates the resting colour and nothing else.
+
+   Element selector: (0,2,1) beats `.btnAdd` (0,2,0) at rest and
+   loses to `.btnAdd:hover` (0,3,0). */
+:global(.jf-blueprint) .addWrap {
+  margin-top: 10px;
+}
+
+:global(.jf-blueprint) .addWrap button {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+/* ============================================================
+   THE COVERAGE METER
+   The track, the fill and the note tones are the card module's —
+   they are untouched and still read from `styles`. What changes
+   here is only the type above it: the figure was mono 12.5 and is
+   now Inter, because it is money.
+   ============================================================ */
+
+:global(.jf-blueprint) .meter {
+  margin-top: 20px;
+}
+
+:global(.jf-blueprint) .meterTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+:global(.jf-blueprint) .meterLabel {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+
+:global(.jf-blueprint) .meterFig {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .meterNote {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* The card's one sanctioned status spend, stated here for the
+   third and last time. Tones are the card module's, restated
+   locally so the note's own size and margin above cannot be
+   decided by stylesheet order. */
+:global(.jf-blueprint) .noteUnder {
+  color: var(--warning-dark);
+  font-weight: 600;
+}
+
+:global(.jf-blueprint) .noteExact {
+  color: var(--success-dark);
+  font-weight: 600;
+}
+
+:global(.jf-blueprint) .noteOver {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ============================================================
+   SCREEN-READER TEXT
+   The `auto` tag's sentence and the coverage readout's unit both
+   live in `title`, which a screen reader may or may not announce
+   and a keyboard user cannot summon at all. This carries the same
+   words in the accessibility tree, in the row they belong to.
+   `clip-path` rather than `display: none` — hidden text has to
+   stay in the tree to be read.
+   ============================================================ */
+
+:global(.jf-blueprint) .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   NARROW
+   Matches the card module's own 1180px step. Only the schedule's
+   fixed clusters need help; the receipt is already capped and its
+   right edge does not move, so the money axis survives the step
+   without a rule of its own.
+   ============================================================ */
+
+@media (max-width: 1180px) {
+  :global(.jf-blueprint) .instRow {
+    grid-template-columns: minmax(0, 1fr) 108px 34px 140px;
+    gap: 8px;
+  }
+
+  :global(.jf-blueprint) .row {
+    grid-template-columns: minmax(0, 1fr) 112px 140px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .addLink,
+  :global(.jf-blueprint) .unitBtn,
+  :global(.jf-blueprint) .del {
+    transition: none;
+  }
+}
