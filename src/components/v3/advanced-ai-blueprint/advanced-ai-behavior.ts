@@ -91,6 +91,19 @@ export type AdvancedAiOptions = {
   markup: { materialMarkupPct: number; laborMarkupPct: number };
   /** `router.push`, handed down from the content component. */
   navigate: (href: string) => void;
+  /**
+   * The client this estimate belongs to, when the studio was opened from one.
+   *
+   * The estimator picker puts `?client=<id>` on whichever engine is chosen, and
+   * the page verifies the id against the org before it reaches here — so by the
+   * time this is set it is a real client of this organization, not a string off
+   * the URL bar. `convertEstimateToProposal` re-checks it anyway, because a
+   * server action never trusts an id from a browser.
+   *
+   * null when the studio was opened from the topbar: no client was chosen, and
+   * a proposal with no client is a legitimate draft.
+   */
+  clientId?: string | null;
 };
 
 export function initAdvancedAiContent(
@@ -1111,7 +1124,10 @@ export function initAdvancedAiContent(
         materials: sp.materials.map(toProposalLine),
         labor: sp.labor.map(toProposalLine),
         assumptions: sp.assumptions,
-        clientId: null,
+        // Was hardcoded null, which is why a proposal started from a client's
+        // record used to arrive unassigned and had to be re-attached by hand in
+        // the builder.
+        clientId: opts.clientId ?? null,
         location: input?.location ?? null,
         discount: sp.discount,
       });

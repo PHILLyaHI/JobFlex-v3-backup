@@ -11,14 +11,23 @@
 // shell's PAGE_STYLES map — this page carries its own self-scoped module
 // instead (see the scoping note at the top of client-detail.module.css).
 //
-// Content is a fixture by design: the data layer stays out of scope until the
-// layout is signed off. Every action writes nothing, and the masthead says so
-// rather than faking success.
+// NO LONGER A FIXTURE. `?client=<id>` — the param the clients list has been
+// putting in the URL since the record became this page's destination — is read
+// here and the row behind it is loaded by ./client-detail-load. The fixture
+// survives as the FALLBACK for the bare route and for an id that resolves to
+// nothing, so the composition stays reviewable without a database row to point
+// at, and a stale link shows a page rather than a 404.
+//
+// The id is a query param and not a path segment because the route has no [id]
+// dynamic segment: adding one would make this a child route, and a child route
+// inherits its parent's page key, which is the one thing the placement note
+// above exists to avoid.
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { auth } from "@/lib/auth";
+import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { ClientDetailContent } from "@/components/v3/client-detail-blueprint/client-detail-content";
+import { loadClientDetail } from "@/components/v3/client-detail-blueprint/client-detail-load";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +36,26 @@ export const metadata: Metadata = {
   description: "One client record — particulars, figures, proposals, payments and activity.",
 };
 
-export default async function ClientDetailPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/auth/login?next=%2Fdashboard%2Fclient-detail");
+export default async function ClientDetailPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ client?: string }>;
+}) {
+  const { client: id } = await searchParams;
+
+  let organizationId: string;
+  try {
+    // requireOrg rather than a bare auth() check: the load is org-scoped, and a
+    // signed-in user with no membership has no org to scope it to.
+    ({ organizationId } = await requireOrg());
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      redirect("/auth/login?next=%2Fdashboard%2Fclient-detail");
+    }
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <ClientDetailContent />;
+  const view = await loadClientDetail(id, organizationId);
+  return <ClientDetailContent view={view} />;
 }

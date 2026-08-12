@@ -33,8 +33,12 @@ import { initAdvancedAiContent } from "./advanced-ai-behavior";
  */
 export function AdvancedAiContent({
   markup,
+  clientId = null,
 }: {
   markup: { materialMarkupPct: number; laborMarkupPct: number };
+  /** `?client=<id>`, already checked against the org by the page. Set when the
+   *  studio was reached from a client's record through the estimator picker. */
+  clientId?: string | null;
 }) {
   const router = useRouter();
   // Both of these reach `init` through refs, NOT through the callback's deps.
@@ -46,12 +50,14 @@ export function AdvancedAiContent({
   // the ref once is enough — and writing to a ref during render is not allowed.
   const markupRef = useRef(markup);
   const routerRef = useRef(router);
+  const clientIdRef = useRef(clientId);
 
   const init = useCallback(
     (content: HTMLElement) =>
       initAdvancedAiContent(content, {
         markup: markupRef.current,
         navigate: (href) => routerRef.current.push(href as Route),
+        clientId: clientIdRef.current,
       }),
     [],
   );

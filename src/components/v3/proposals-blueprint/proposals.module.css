@@ -972,6 +972,15 @@
   .bp :global(.pmast-val) { font-size: 32px; }
   .bp :global(.pmast-sub) { gap: 20px; }
   .bp :global(.ptabs), .bp :global(.pchips) { flex-wrap: wrap; }
+  /* KNOWN DEAD, left alone deliberately. This sits ABOVE the base
+     `.content .card--table { overflow: hidden }` and a media query adds no
+     specificity, so `hidden` wins and the table cannot scroll to its far
+     columns below 860px. Out-weighing it here would be one class — but this
+     module's `.bp` is on the shell root for EVERY blueprint page, so a heavier
+     rule would also override clients / jobs / leads, which each set
+     `overflow-x: visible` at this width on purpose. Fixing it needs the
+     `[data-page="proposals"]` scope the shell uses for exactly this, and that
+     is a mobile-width change, not the spacing one being made here. */
   .bp :global(.card--table) { overflow-x: auto; }
   .bp :global(.ptable) { min-width: 700px; }
   .bp :global(.pjob-head), .bp :global(.psheet-head) { flex-wrap: wrap; }
@@ -1044,7 +1053,20 @@
 .bp :global(.pchip.active[data-f="DECLINED"]) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .bp :global(.pchip.active[data-f="EXPIRED"])  { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
 
-.bp :global(.card--table) { padding: 0; overflow: hidden; }
+/* `.content` is a SPECIFICITY weight, not a scope narrowing, and it is why
+   every other table page in the fleet (clients, jobs, leads, crm, financials,
+   phone …) writes the selector this way.
+     .bp :global(.card--table)          → (0,2,0)
+     .bp :global(.card)                 → (0,2,0)   ← blueprint.module.css
+   The shell puts BOTH hashed `.bp` classes on its root and imports the
+   dashboard module AFTER this one, so at equal specificity the dashboard's
+   `.card { padding: 20px 24px 24px }` won the tie and this `padding: 0` never
+   landed. The table sat 24px inboard of its own frame, every row rule stopped
+   short of the border on both sides, and the proposal titles carried 40px of
+   left inset (24 card + 16 cell) against the 16px every sibling list uses.
+   `.content .card--table` is (0,3,0) and wins on specificity, so it no longer
+   depends on which module is imported last. */
+.bp :global(.content .card--table) { padding: 0; overflow: hidden; }
 .bp :global(.ptable) { width: 100%; border-collapse: collapse; }
 .bp :global(.ptable th) {
   font-family: var(--font-mono);

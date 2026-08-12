@@ -36,6 +36,8 @@ export type ClientRecord = {
   since: string;
   lastContact: string;
   tags: string[];
+  /** The Client.notes column, or "—". Fills the band's fourth fact slot. */
+  notes: string;
 };
 
 export type ProposalRow = {
@@ -79,6 +81,7 @@ export const CLIENT: ClientRecord = {
   since: "Mar 12, 2023",
   lastContact: "Aug 08, 2026",
   tags: ["Repeat client", "Referral source", "Net 15"],
+  notes: "Net 15 · invoiced to the company",
 };
 
 // Sorted newest-first on `updated` and nothing else. A ledger must never sort on

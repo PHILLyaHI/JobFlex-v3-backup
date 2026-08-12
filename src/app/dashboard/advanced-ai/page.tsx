@@ -24,7 +24,15 @@ export const metadata: Metadata = {
     "Smart Proposal — the estimate console and the studio that prices materials, labor and scope on one sheet.",
 };
 
-export default async function AdvancedAiPage() {
+export default async function AdvancedAiPage({
+  searchParams,
+}: {
+  // `?client=<id>` — set by the estimator picker when the studio was opened
+  // from a client's record. See the note beside the lookup below.
+  searchParams: Promise<{ client?: string }>;
+}) {
+  const { client: requestedClientId } = await searchParams;
+
   let organizationId: string;
   try {
     const ctx = await requireOrg();
@@ -44,12 +52,27 @@ export default async function AdvancedAiPage() {
     select: { materialMarkupPct: true, laborMarkupPct: true },
   });
 
+  // Resolved HERE rather than handed to the browser as-is: the id arrives on a
+  // URL a user can edit, so it is checked against this org before any part of
+  // the studio treats it as a client. An id that fails the check becomes null —
+  // the estimate is simply unassigned, which is a legitimate draft, rather than
+  // an error page over a mistyped query string.
+  const clientId = requestedClientId
+    ? (
+        await db.client.findFirst({
+          where: { id: requestedClientId, organizationId, deletedAt: null },
+          select: { id: true },
+        })
+      )?.id ?? null
+    : null;
+
   return (
     <AdvancedAiContent
       markup={{
         materialMarkupPct: org?.materialMarkupPct ?? 0,
         laborMarkupPct: org?.laborMarkupPct ?? 0,
       }}
+      clientId={clientId}
     />
   );
 }

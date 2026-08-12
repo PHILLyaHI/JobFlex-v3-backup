@@ -37,16 +37,9 @@
 // disclaimer: a page titled by a person should not be annotated by a filing
 // code, and a caveat pinned beside the actions reads as part of the actions.
 
-import { useMemo, useState } from "react";
-import {
-  ACTIVITY,
-  CLIENT,
-  PAYMENTS,
-  PROPOSALS,
-  type ProposalFilter,
-  bucketOf,
-  money,
-} from "./client-detail-data";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { type ProposalFilter, bucketOf, money } from "./client-detail-data";
+import type { ClientDetailView } from "./client-detail-load";
 import {
   Btn,
   EmptyNote,
@@ -58,6 +51,12 @@ import {
   Tag,
   cx,
 } from "./cd-ui";
+import {
+  ClientEditDialog,
+  ClientMessageDialog,
+  type EditHandle,
+  type MessageHandle,
+} from "./cd-dialogs";
 import styles from "./client-detail.module.css";
 import { useReveal } from "./use-reveal";
 
@@ -69,8 +68,11 @@ const FILTERS: { value: ProposalFilter; label: string }[] = [
   { value: "lost", label: "Lost" },
 ];
 
-export function ClientDetailContent() {
+export function ClientDetailContent({ view }: { view: ClientDetailView }) {
+  const { clientId, client: CLIENT, proposals: PROPOSALS, payments: PAYMENTS, activity: ACTIVITY } = view;
   const [filter, setFilter] = useState<ProposalFilter>("all");
+  const editRef = useRef<EditHandle | null>(null);
+  const messageRef = useRef<MessageHandle | null>(null);
 
   // The fleet entrance cascade. Marker-driven, plays once on mount.
   useReveal();
@@ -79,11 +81,11 @@ export function ClientDetailContent() {
     const base: Record<ProposalFilter, number> = { all: PROPOSALS.length, draft: 0, open: 0, won: 0, lost: 0 };
     for (const p of PROPOSALS) base[bucketOf(p.status)] += 1;
     return base;
-  }, []);
+  }, [PROPOSALS]);
 
   const rows = useMemo(
     () => (filter === "all" ? PROPOSALS : PROPOSALS.filter((p) => bucketOf(p.status) === filter)),
-    [filter],
+    [filter, PROPOSALS],
   );
 
   const figures = useMemo(() => {
@@ -99,7 +101,29 @@ export function ClientDetailContent() {
       // drafts sitting in a folder.
       rate: sent === 0 ? 0 : Math.round((won / sent) * 100),
     };
-  }, []);
+  }, [PAYMENTS, PROPOSALS]);
+
+  // NEW PROPOSAL opens the estimator picker rather than routing straight to an
+  // engine, because the record page has no business deciding whether this job
+  // is a roof, a fence or a hand-written sheet. The client rides along on the
+  // event: whichever engine is chosen receives `?client=<id>` and starts with
+  // this client already attached, so a proposal begun from a client's record
+  // can never be saved against nobody. The picker is mounted once in the shell
+  // and listens on the document — the topbar's own New Estimate button opens
+  // the same dialog the same way, minus the client.
+  const newProposal = useCallback(() => {
+    document.dispatchEvent(
+      new CustomEvent("jf:estimator-picker", { detail: clientId ? { clientId } : undefined }),
+    );
+  }, [clientId]);
+
+  // The band prints the address as ONE SENTENCE and the form edits the four
+  // columns it was built from, so the raw values travel from the server beside
+  // the formatted ones. Splitting "14208 NE 182nd St, Woodinville, WA 98072"
+  // back into street / city / state / zip would be guessing at commas, and the
+  // first client who wrote "Suite B, Building 2" would have their address
+  // quietly rearranged by an edit they never made.
+  const editValues = view.editable;
 
   return (
     <div className={styles.page}>
@@ -111,11 +135,13 @@ export function ClientDetailContent() {
         </div>
         <div className={styles.headRight}>
           <div className={styles.actions}>
-            <Btn tone="quiet" icon="pen">
+            <Btn tone="quiet" icon="pen" onClick={() => editRef.current?.open()}>
               Edit
             </Btn>
-            <Btn icon="msg">Message</Btn>
-            <Btn tone="primary" icon="plus">
+            <Btn icon="msg" onClick={() => messageRef.current?.open()}>
+              Message
+            </Btn>
+            <Btn tone="primary" icon="plus" onClick={newProposal}>
               New proposal
             </Btn>
           </div>
@@ -152,7 +178,7 @@ export function ClientDetailContent() {
               <Fact label="Email" icon="send" value={CLIENT.email} />
               <Fact label="Phone" icon="phone" value={CLIENT.phone} />
               <Fact label="Client since" icon="cal" value={CLIENT.since} />
-              <Fact label="Billing" icon="building" value="Net 15 · invoiced to the company" />
+              <Fact label="Notes" icon="building" value={CLIENT.notes} />
               <Fact label="Job address" icon="pin" value={CLIENT.address} wide />
             </div>
           </div>
@@ -273,6 +299,14 @@ export function ClientDetailContent() {
           </Panel>
         </div>
       </div>
+
+      {/* Both dialogs are mounted, closed, at the END of the page tree rather
+          than beside the buttons that open them. `.content` carries
+          `z-index: 1`, so a `position: fixed` overlay declared inside an
+          earlier band would be trapped under the bands after it — the same
+          stacking note the proposals module records against `.pmdl`. */}
+      <ClientEditDialog clientId={clientId} initial={editValues} handleRef={editRef} />
+      <ClientMessageDialog clientId={clientId} clientName={CLIENT.name} handleRef={messageRef} />
     </div>
   );
 }
