@@ -150,6 +150,15 @@ export const V3_PORTED_ROUTES = {
   mobileTradeV2: "/mobile-trade-v2",
   mobileReferralsV2: "/mobile-referrals-v2",
   mobileReportsV2: "/mobile-reports-v2",
+  // Review harness for the estimator picker, which is the one handheld surface
+  // with no route of its own: it is a `position: fixed` dialog mounted in both
+  // shells and opened by the `jf:estimator-picker` document event, so no URL
+  // puts it on screen. This one does — it mounts <MobileNav /> (the real
+  // handheld host, which mounts the real dialog) and dispatches that event on
+  // load. Deliberately NOT auth-gated, unlike the rest of the fleet: the
+  // picker's roster is a static fixture, so there is nothing to gate, and a
+  // harness that answers 307 cannot be reviewed.
+  mobileEstimatorPickerV2: "/mobile-estimator-picker-v2",
   // ── Handheld auth, mobile-v1 ─────────────────────────────────────────────
   // jobflex-page-styler + mobile-app-ui-design. A handheld-first Blueprint
   // build of the sign-in surface, fluid 320–768px, shipped BESIDE the desktop
@@ -165,6 +174,141 @@ export const V3_PORTED_ROUTES = {
   // stylesheet with a uniform `.jf-mobile-auth-login` root-class prefix, not a
   // CSS Module — see src/components/v3/mobile-auth-login/mobile-auth-login.css.
   mobileAuthLoginV1: "/mobile-v1/auth/login",
+  // ── Handheld marketing landing ───────────────────────────────────────────
+  // jobflex-page-styler + mobile-app-ui-design. The handheld rebuild of the
+  // marketing landing, fluid 320–768px. Unlike its (mobile) siblings this is
+  // a PUBLIC page (no auth gate, no data layer) and it is not a second URL for
+  // the same content: /landing itself now serves this build at <= 768px via a
+  // media-query switch in src/app/(marketing)/landing/landing-responsive.tsx.
+  // This entry is the direct preview, so the composition can be reviewed at any
+  // viewport width. Both entry points import the same component from
+  // src/components/v3/mobile-landing/, so they cannot drift.
+  mobileLandingV2: "/mobile-landing-v2",
+  // ── Handheld project detail ──────────────────────────────────────────────
+  // jobflex-page-styler + mobile-app-ui-design. The handheld rebuild of the
+  // project detail surface, fluid 320–768px, on real project data (same
+  // queries and the same attachJob server action as the desktop page — the
+  // data layer is untouched). This entry is the direct preview, keyed by id;
+  // the LIVE /dashboard/projects/[id] serves the same component at <= 768px
+  // via the media-query switch in
+  // src/components/v3/mobile-project-detail/project-detail-viewport-switch.tsx,
+  // so both entry points import one implementation and cannot drift. Styles
+  // are a PLAIN stylesheet with a uniform `.jf-mobile-project-detail` root-class
+  // prefix, not a CSS Module.
+  mobileProjectDetailV2: "/mobile-project-detail-v2",
+  // ── Client-facing proposal, handheld ─────────────────────────────────────
+  // jobflex-page-styler + mobile-app-ui-design. The page a homeowner opens
+  // from a proposal email — and the PayPal/Square checkout return_url — rebuilt
+  // for the phone it is almost always opened on. Fluid 320–768px, no shell
+  // (the `(portal)` group has no layout.tsx and must not grow one: the reader
+  // is a homeowner, not a signed-in contractor). Composition: monogram header
+  // with a 44px framed PDF control → white intro card with a hard ink shadow,
+  // kicker, caps H1 and the Total / Valid-until fact pair → Overview → the
+  // estimate ledger → Scope → payment schedule re-cut as two-line rows → the
+  // ink call-out with the phone as a 48px plate → footer; plus a STICKY action
+  // bar carrying Accept (blueprint fill) with Pay-now and Decline beneath it,
+  // the three checkout providers moved into a bottom sheet. Real proposal
+  // data, read on the server; data layer untouched.
+  //
+  // Styles are a PLAIN stylesheet with a uniform `.jf-mobile-proposal-client`
+  // root-class prefix, NOT a CSS Module — see the header of
+  // src/components/v3/mobile-proposal-client/mobile-proposal-client.css.
+  //
+  // ALSO SERVES THE LIVE /portal/q/<publicId> URL at ≤768px, through the
+  // media-query switch in
+  // src/app/(portal)/portal/q/[publicId]/portal-viewport.tsx. Above 768px that
+  // URL is unchanged. This entry is the direct preview, keyed by publicId;
+  // both entry points import one implementation and cannot drift. The single
+  // deliberate difference: the preview route does NOT write the VIEWED
+  // side-effect, so reviewing a layout cannot inflate a real client's view
+  // count.
+  mobileProposalClientV2: "/mobile-proposal-client-v2",
+  // jobflex-page-styler + mobile-app-ui-design — handheld rebuild of the
+  // PUBLIC homeowner marketing page, responsive 320–768px. Standalone: its own
+  // sticky ink nav and footer, no blueprint-shell, no MobileNav.
+  // Composition: hero + the four-step intake wizard on a sticky bottom action
+  // bar (category picker re-laid-out as a bottom sheet) → trust strip → four
+  // stacked live vignettes → the ink band with the four full-width blueprint
+  // drawings and the count-up → a two-column photo board + three reviews →
+  // ink CTA → footer.
+  //
+  // Styles are a PLAIN stylesheet with a uniform `.jf-mobile-homeowner` root
+  // class prefix, NOT a CSS Module — see the header of
+  // src/components/v3/mobile-homeowner/mobile-homeowner.css.
+  //
+  // ALSO SERVES THE LIVE /homeowner URL at ≤768px, through the media-query
+  // switch in src/app/(marketing)/homeowner/homeowner-responsive.tsx. Above
+  // 768px that URL still serves the untouched desktop build. Both entry points
+  // import one implementation and cannot drift.
+  mobileHomeownerV2: "/mobile-homeowner-v2",
+  // jobflex-page-styler + mobile-app-ui-design — handheld rebuild of the
+  // SUBSCRIPTION / BILLING surface, responsive 320–768px, on the shared
+  // MobileNav chrome. Composition: page head → plan-limit banner (raised only
+  // by a real cap at ≥90%) → ink plan hero with the rotated status stamp →
+  // pressure-sorted usage meters + the change-plan bottom sheet → stacked plan
+  // cards with the current plan pinned first → invoice ROWS (the desktop table
+  // cannot hold 320px) → refer & earn with the 3-cell KPI strip.
+  //
+  // Styles are a PLAIN stylesheet with a uniform `.jf-mobile-subscription`
+  // root class prefix, NOT a CSS Module — see the header of
+  // src/components/v3/mobile-subscription/mobile-subscription.css.
+  //
+  // REAL BILLING DATA on both entry points, never a fixture: the admin plan
+  // catalog, the limits engine, live Stripe invoices and the org's referral
+  // code, through the shared loader in the live route's folder. Owner-only on
+  // both, like the live page.
+  //
+  // ALSO SERVES THE LIVE /dashboard/subscription URL at ≤768px, through the
+  // media-query switch in
+  // src/app/(dashboard)/dashboard/subscription/subscription-responsive.tsx.
+  // Above 768px that URL still serves the untouched desktop view. Both entry
+  // points import one implementation and cannot drift.
+  mobileSubscriptionV2: "/mobile-subscription-v2",
+  // jobflex-page-styler + mobile-app-ui-design — handheld rebuild of the JOB
+  // DETAIL surface, fluid 320–768px, on the shared MobileNav chrome. Stands
+  // BESIDE the desktop /dashboard/jobs/[id] (src/components/v3/
+  // job-detail-blueprint/*), which is untouched and serves every width; this
+  // is a preview URL, keyed by id, not a second live entry point.
+  //
+  // Composition: page head (kicker + status badge, caps H1, mono date line) →
+  // the six-tab bar re-cut as a horizontally scrolling ink-framed rail that
+  // keeps the mono counts and the ink-fill active state, auto-centring the
+  // active tab → one view per tab (Overview's 2fr/1fr grid stacked, Client
+  // contact following it as its own card; fields 4-up → 2-up; photos 4-up →
+  // 2-up; the change-order 4-column grid restacked into an identity block over
+  // an amount / badge / Approve strip) → a thumb-zone action bar carrying
+  // "View proposal", the one action the desktop head shows on all six tabs.
+  //
+  // FIXTURE, NOT DATA: the desktop port's own job-detail-data.ts is imported
+  // verbatim, so the two pages can only disagree about layout. No server
+  // action, API route or Prisma change.
+  //
+  // Styles are a PLAIN stylesheet with a uniform `.jf-mobile-job-detail` root
+  // class prefix, NOT a CSS Module — see the header of
+  // src/components/v3/mobile-job-detail/mobile-job-detail.css.
+  mobileJobDetailV1: "/mobile-job-detail-v1",
+  // jobflex-page-styler + mobile-app-ui-design — handheld re-cut of the Smart
+  // Proposal ESTIMATE (result) screen, fluid 320–768px. A sibling preview URL
+  // beside the desktop /dashboard/advanced-ai, which is untouched.
+  //
+  // Estimate ONLY: the intake console (project type / location / brief /
+  // Generate) is deliberately not ported, so this URL opens straight onto the
+  // sheet. Distinct from mobileSmartProposalV2 (/mobile-advanced-ai-v2), which
+  // is the step-by-step console build.
+  //
+  // Composition: summary hoisted above the ledgers → materials / labor with
+  // each four-column row cut into name-then-[qty × unit … line total] →
+  // materials request in two bands → scope → assumptions (split out of the
+  // summary) → the three-stage "change the estimate" → a sticky thumb-zone bar
+  // carrying the live total and "Send to proposal".
+  //
+  // Styles are a PLAIN stylesheet with a uniform `.jf-mobile-smart-estimate`
+  // root class prefix, NOT a CSS Module — see the header of
+  // src/components/v3/mobile-smart-estimate/mobile-smart-estimate.css.
+  //
+  // Donor fixture only (advanced-ai-data.ts): no server actions, no API routes,
+  // no Prisma.
+  mobileSmartEstimateV1: "/mobile-smart-estimate-v1",
 } as const;
 
 export type V3RouteKey = keyof typeof V3_PORTED_ROUTES;

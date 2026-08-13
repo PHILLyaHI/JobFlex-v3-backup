@@ -38,7 +38,6 @@ import jobsStyles from "@/components/v3/jobs-blueprint/jobs.module.css";
 import leadsStyles from "@/components/v3/leads-blueprint/leads.module.css";
 import projectsStyles from "@/components/v3/projects-blueprint/projects.module.css";
 import workersStyles from "@/components/v3/workers-blueprint/workers.module.css";
-import advancedAiStyles from "@/components/v3/advanced-ai-blueprint/advanced-ai.module.css";
 import announcementsStyles from "@/components/v3/announcements-blueprint/announcements.module.css";
 import estimatorsStyles from "@/components/v3/estimators-blueprint/estimators.module.css";
 import "@/components/v3/estimators-blueprint/estimators-global.css";
@@ -60,7 +59,12 @@ import tradeStyles from "@/components/v3/trade-blueprint/trade.module.css";
  * also carry the shell chrome's own rules.
  */
 const PAGE_STYLES: Record<string, string> = {
-  "advanced-ai": advancedAiStyles.bp,
+  // NOTE: no "advanced-ai" entry. The Smart Proposal · Estimate port (and the
+  // job detail port at /dashboard/jobs/[id]) follow the newer convention the
+  // project-detail port established: the page module declares HASHED classes
+  // scoped `:global(.jf-blueprint .content) .cls`, and the page component
+  // imports it directly. Nothing has to be registered here, and no page can
+  // leak its rules onto a sibling that shares a pageKey.
   announcements: announcementsStyles.bp,
   calendar: calendarStyles.bp,
   clients: clientsStyles.bp,

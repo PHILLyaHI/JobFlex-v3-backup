@@ -1,0 +1,1065 @@
+/* ============================================================================
+   CLIENT PROPOSAL · HANDHELD  —  /portal/q/[publicId] at ≤768px
+                                  /mobile-proposal-client-v2/[publicId]
+   ============================================================================
+
+   The page a homeowner opens from a proposal email, rebuilt for the phone it
+   is almost always opened on. It is also the return_url PayPal and Square
+   bounce back to, so it has to be right on a small screen in a driveway.
+
+   The design language is the desktop port's, unchanged: paper #f2f0eb, ink
+   #0a0a0a, blueprint #1854a0, Inter 800–900 caps headings, JetBrains Mono for
+   the drawing-annotation layer, 2px ink frames, 2px radii, hard offset shadows
+   with NO blur, tabular numerals on every amount. What changes is the
+   composition — one column, thumb-zone actions, and the five-button row
+   re-cut (see "THE ACTION BAR" below).
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate) ────────────────────────
+   Two constructs here cannot survive class hashing:
+     · the scoped universal reset `.jf-mobile-proposal-client *` — `*` is not a
+       class, so a module leaves it unscoped and it flattens the whole app;
+     · `[hidden] { display: none !important }` — an attribute selector, and
+       load-bearing: `.mpc-bar` and `.mpc-state` set `display: flex`, which
+       beats Tailwind preflight's plain `[hidden] { display: none }` on source
+       order. The `hidden` attribute IS the show/hide mechanism on this page,
+       carried over from the desktop port.
+   A module would need a `:global()` escape on each, and one missed escape
+   silently drops this design's own reset so preflight + globals.css fill the
+   vacuum. Same call, same reasoning, as the desktop (portal) proposal-portal.css
+   and mobile-auth-login.css.
+
+   Every selector below therefore carries the single literal root class
+   `.jf-mobile-proposal-client`, uniformly — so relative specificity among
+   these rules is exactly what it would be unprefixed, and nothing leaks out.
+   The only exceptions are the two host neutralizers, which have to reach
+   <body>; both are `:has()`-gated so they undo themselves on unmount.
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   `.jf-mobile-proposal-client` is a new literal, checked against every other
+   `.jf-*` root in the repo. The element prefix `mpc-` is new too. No
+   @keyframes are declared here (every motion on the page is a transition) and
+   no SVG <symbol>/`id` is emitted — the icons are inline <svg> with no ids —
+   so there is nothing document-global to collide with the desktop tree's
+   `#pvBtns` / `#pvErr` sheet.
+
+   ── `--ease-out`: DECLARED HERE, UNLIKE THE DESKTOP PORT ───────────────────
+   The mockup references `var(--ease-out)` in three `transition` shorthands but
+   never declares it, so in the donor — and in the desktop port, which forces
+   `--ease-out: initial` to keep the donor's real behaviour — those shorthands
+   are invalid at computed-value time and NOTHING transitions: hover snaps and
+   the 0.55s scroll reveal pops in.
+
+   That is preserved on desktop for fidelity to an approved mockup. It is NOT
+   preserved here, and the reason is that the bug's only visible consequence on
+   a touch screen is the reveal. Hover barely exists on a phone; the reveal is
+   the whole motion budget of the page. A block that jumps 12px into place as
+   you scroll reads as a layout shift — the exact thing a homeowner reading
+   line-item prices should never see. So `--ease-out` is declared with
+   DESIGN.md's own primary curve, cubic-bezier(0.22, 0.61, 0.36, 1), and the
+   reveal fades over 0.55s (Motion System "Balanced": 550–900ms for scroll
+   reveal, 550 being the floor). Reduced motion switches all of it off.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark`. globals.css NOT touched. blueprint-shell NOT
+   touched — this surface has no shell by design; the reader is a homeowner,
+   not a signed-in contractor. No `md:` / `lg:` breakpoints and no layout media
+   query at all: the page is fluid 320px→768px on clamp() and intrinsic grids.
+   Verified at 320 / 360 / 390 / 414 / 768.
+   ========================================================================= */
+
+/* ── TOKENS ────────────────────────────────────────────────────────────────
+   Page-scoped, never promoted to :root. Values are the desktop port's, with
+   one documented deviation:
+
+   · --muted-faint is unused here and dropped rather than carried dead.
+   · --muted-on-ink is NEW. The call-out card is an ink plate and the desktop's
+     --muted (#555) on #0a0a0a measures 2.81:1 — below AA for any size. #b9b6ae
+     is 9.8:1 on ink and keeps the drafting-grey character.                  */
+.jf-mobile-proposal-client {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --sheet: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555555;
+  --muted-light: #6f6f6f;
+  --muted-on-ink: #b9b6ae;
+
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.08);
+  --danger: #a83232;
+
+  --hair: rgba(10, 10, 10, 0.2);
+  --hair-soft: rgba(10, 10, 10, 0.12);
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+
+  --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  /* DESIGN.md's primary curve. Declared on purpose — see the header note. */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Gutter honours a landscape notch without ever dropping below 16px. */
+  --gutter: max(16px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* Card padding grows with the viewport instead of stepping at a breakpoint:
+     16px at 320, 26px at ~565 and above. */
+  --card-pad: clamp(16px, 4.6vw, 26px);
+}
+
+/* Scoped universal reset — the construct a CSS Module cannot express. */
+.jf-mobile-proposal-client,
+.jf-mobile-proposal-client * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* The desktop port's mechanism, kept: `hidden` is how the action bar, the
+   error line and the settled plates are shown and hidden. */
+.jf-mobile-proposal-client [hidden] { display: none !important; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS — the only rules here that are not this design's own.
+   ══════════════════════════════════════════════════════════════════════════
+
+   1. THE BODY BACKGROUND, and why it is painted on <body> rather than on the
+      page root. Body background propagates to the canvas, so it fills the
+      viewport however short the proposal is — and the PAID fixture is a $0
+      proposal with no line items, which is exactly the short page that would
+      otherwise show a gridless band under the content. Painting it here also
+      means the `background` SHORTHAND resets `background-attachment` back to
+      `scroll`: globals.css pins the app's own 40px grid `fixed`, and a grid
+      that does not move while the document does looks like a rendering fault
+      on a phone, where the scroll is the whole interaction. The desktop port
+      reasons about this the same way; the conclusion holds on mobile.
+
+      The grid is 34px here, the desktop port's own value, NOT globals' 40px.
+
+   2. `body::before` — globals' paper-grain overlay, `mix-blend-mode: multiply`
+      at 0.18. It tints the white ledger and intro cards grey. Off for this
+      page's lifetime; `:has()` restores it the moment the tree unmounts.
+
+   3. Tailwind preflight + globals.css reaching inside the page:
+        · preflight `html { line-height: 1.5 }`. This design computes `normal`
+          everywhere except six boxes that set their own (the H1, the item
+          description, the scope prose, the call-out title, the sheet copy and
+          the error line). Without the reset every mono annotation, every
+          button, every ledger row and both totals grow 2–5px and the
+          composition drifts.
+        · globals' `font-feature-settings: 'cv11','ss01','ss03'` on html+body —
+          Inter's single-storey `a` and alternate digits. This design assumes
+          default Inter, and the alternates change the width of every tabular
+          amount column.
+        · globals' `text-rendering: optimizeLegibility`.
+        · preflight `::placeholder { color: #9ca3af }` on the decline note.
+          This design declares no placeholder colour and therefore wants the
+          UA's; `revert` restores exactly that without inventing a value —
+          the same call the desktop port makes.
+
+   NOT neutralized, deliberately:
+   · globals' `* { scrollbar-width: thin }` and the 10px `::-webkit-scrollbar`
+     rules. Browser chrome outside the page box; every sibling port left them,
+     and diverging here would be the odd one out. Nothing on this page scrolls
+     internally except a sheet body, where a thin thumb is correct anyway.
+   · preflight's `img, video { max-width: 100% }`. This page renders no <img>
+     and no <video> — org.logoUrl is not rendered, the identity mark is the
+     42px ink monogram (a deviation inherited from the desktop port). Checked,
+     not copied blindly.
+   · preflight's `svg { display: block; vertical-align: middle }`. Rather than
+     restore the bare-browser `display: inline`, `.mpc-ic` declares
+     `display: block` outright below, which is deterministic whether or not
+     preflight is present — and every icon here is a flex item, where display
+     is blockified either way.                                               */
+body:has(.jf-mobile-proposal-client) {
+  background: var(--paper, #f2f0eb);
+  background-image:
+    linear-gradient(rgba(10, 10, 10, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10, 10, 10, 0.05) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+body:has(.jf-mobile-proposal-client)::before { content: none; }
+
+.jf-mobile-proposal-client {
+  font-family: var(--font);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  line-height: normal;
+  font-feature-settings: normal;
+  text-rendering: auto;
+
+  min-height: 100dvh;
+  /* The document column plus the sticky bar. Never `overflow: hidden` — that
+     would kill `position: sticky` on the action bar. */
+}
+.jf-mobile-proposal-client textarea::placeholder { color: revert; opacity: revert; }
+
+/* ── BARE ELEMENTS, SCOPED ────────────────────────────────────────────────
+   `:where()` keeps this reset at specificity (0,0,1) so it loses to every
+   single-class rule in the file. Written plainly as
+   `.jf-mobile-proposal-client button` it would score (0,1,1) and silently
+   delete the border and background off every button rule below — the trap
+   documented in the page-styler skill's handheld notes, which has cost this
+   codebase two builds. */
+:where(.jf-mobile-proposal-client) button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+:where(.jf-mobile-proposal-client) a { color: inherit; text-decoration: none; }
+:where(.jf-mobile-proposal-client) textarea { font-family: inherit; color: inherit; }
+:where(.jf-mobile-proposal-client) h1,
+:where(.jf-mobile-proposal-client) h2,
+:where(.jf-mobile-proposal-client) p { font-size: inherit; font-weight: inherit; }
+
+/* Keyboard focus. Blueprint is 6.3:1 on paper but only 2.66:1 on ink, so the
+   ink call-out and the ink monogram get sky (7.2:1 on ink) instead. */
+.jf-mobile-proposal-client :focus-visible {
+  outline: 3px solid var(--blueprint);
+  outline-offset: 2px;
+}
+.jf-mobile-proposal-client .mpc-call :focus-visible { outline-color: var(--sky); }
+
+.jf-mobile-proposal-client .mpc-ic {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: 0 0 auto;
+  shape-rendering: geometricPrecision;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE DOCUMENT COLUMN
+   ══════════════════════════════════════════════════════════════════════════
+   One column, gutter-bounded, capped at 620px so the 768px end of the range
+   does not stretch a proposal into an unreadable measure. */
+.jf-mobile-proposal-client .mpc-doc {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 22px var(--gutter) 30px;
+}
+
+/* ── HEADER ───────────────────────────────────────────────────────────────
+   Identity mark + org + reference, and the PDF as a 44×44 framed control.
+
+   WHY THE PDF IS ICON-SIZED. At 320px the row has 288px of inner width. The
+   monogram takes 42, the two gaps 24, and the desktop's "DOWNLOAD PDF" pill
+   is ~122px at 11px/0.14em — leaving 100px for an org name set at 15.5/900,
+   which "Acme Contracting" alone overruns. A 44×44 plate leaves 178px, fits
+   every real org name in the fixture, and is a legal touch target where the
+   pill's 38px height was not. The glyph carries a mono "PDF" caption inside
+   the box so it is not an unlabelled icon, and an aria-label besides. */
+.jf-mobile-proposal-client .mpc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: var(--border);
+}
+.jf-mobile-proposal-client .mpc-mark {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  font-size: 17px;
+  font-weight: 900;
+}
+.jf-mobile-proposal-client .mpc-org { min-width: 0; flex: 1 1 auto; }
+.jf-mobile-proposal-client .mpc-org-n {
+  display: block;
+  font-size: 15.5px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-mobile-proposal-client .mpc-org-r {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-mobile-proposal-client .mpc-pdf {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow);
+  transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out);
+}
+.jf-mobile-proposal-client .mpc-pdf .mpc-ic { width: 15px; height: 15px; }
+.jf-mobile-proposal-client .mpc-pdf i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1;
+}
+.jf-mobile-proposal-client .mpc-pdf:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--shadow);
+}
+
+/* ── INTRO CARD ───────────────────────────────────────────────────────────
+   The one place on the page that carries real elevation: a white sheet on
+   paper with a 3px hard ink shadow. Standing shadow depth across the whole
+   handheld fleet is `3px 3px 0`. */
+.jf-mobile-proposal-client .mpc-intro { padding-top: 22px; }
+.jf-mobile-proposal-client .mpc-card {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 3px 3px 0 var(--ink);
+  padding: var(--card-pad);
+}
+.jf-mobile-proposal-client .mpc-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-proposal-client .mpc-kicker::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: var(--blueprint);
+}
+.jf-mobile-proposal-client .mpc-h1 {
+  margin-top: 12px;
+  font-size: clamp(23px, 6.6vw, 33px);
+  font-weight: 900;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+/* Two facts, side by side down to 320px. minmax(112px) is the widest floor
+   that still yields two columns inside a 320px card, and the values are set
+   at clamp(18px,…) so "Jul 8, 2026" at 900/tabular fits that column. */
+.jf-mobile-proposal-client .mpc-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 14px 18px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1.5px solid var(--hair-soft);
+}
+.jf-mobile-proposal-client .mpc-fact { min-width: 0; }
+.jf-mobile-proposal-client .mpc-fact span {
+  display: block;
+  margin-bottom: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-proposal-client .mpc-fact b {
+  display: block;
+  font-size: clamp(18px, 5.2vw, 24px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-proposal-client .mpc-fact--total b { color: var(--blueprint); }
+
+/* ── SETTLED PLATE ────────────────────────────────────────────────────────
+   Replaces the action bar entirely once the proposal is accepted, paid or
+   declined — there is nothing left to tap, so the bar earns none of the
+   screen. It lives in the intro card, where the decision was made. */
+.jf-mobile-proposal-client .mpc-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 2px solid var(--success);
+  border-radius: var(--radius);
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
+}
+.jf-mobile-proposal-client .mpc-state .mpc-ic {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+.jf-mobile-proposal-client .mpc-state--declined {
+  border-color: rgba(10, 10, 10, 0.5);
+  background: rgba(10, 10, 10, 0.05);
+  color: var(--muted);
+}
+
+/* ── SECTIONS ─────────────────────────────────────────────────────────────
+   The donor's rule-to-the-edge section head, kept — it is the drawing
+   language of the page. */
+.jf-mobile-proposal-client .mpc-sec { padding-top: 34px; }
+.jf-mobile-proposal-client .mpc-sec-h {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.jf-mobile-proposal-client .mpc-sec-h::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1.5px;
+  background: var(--hair);
+}
+
+/* ── LEDGER ───────────────────────────────────────────────────────────────
+   The estimate sheet: name block left, tabular amount right, dashed rules
+   between. The name block is `min-width: 0` so a long item name wraps rather
+   than pushing the amount column off the right edge. */
+.jf-mobile-proposal-client .mpc-ledger {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.jf-mobile-proposal-client .mpc-li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px dashed var(--hair);
+}
+/* THE `:last-of-type` BUG, FIXED.
+   The desktop port carries the donor's `.pv-li:last-of-type { border-bottom:
+   none }`, which never fires: `:last-of-type` matches by ELEMENT type, and the
+   totals block `.pv-tot` is also a <div> and is the last child — so the rule
+   lands on the totals block instead and the final line item keeps its dashed
+   rule stacked directly above the totals' solid 1.5px top rule. Two lines
+   where the drawing wants one.
+   The fix is structural, not a selector swap: the line items live in their own
+   `.mpc-lis` wrapper, so `:last-child` here is provably the last line item and
+   cannot be reached by the totals block at all. */
+.jf-mobile-proposal-client .mpc-lis .mpc-li:last-child { border-bottom: none; }
+.jf-mobile-proposal-client .mpc-li-t { min-width: 0; }
+.jf-mobile-proposal-client .mpc-li-n {
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-proposal-client .mpc-li-d {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-proposal-client .mpc-li-m {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-proposal-client .mpc-li-v {
+  flex: 0 0 auto;
+  padding-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* An empty ledger is a real state — the PAID fixture is a $0 proposal with no
+   line items at all. A note on the drawing rather than a blank box. */
+/* It is always the only child, so it carries NO bottom rule — the totals
+   block's own solid top rule is the one line the drawing wants there. Same
+   mistake the `:last-of-type` bug makes, avoided rather than repeated. */
+.jf-mobile-proposal-client .mpc-li-none {
+  padding: 18px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+}
+.jf-mobile-proposal-client .mpc-tot {
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper);
+  padding: 12px 16px 14px;
+}
+.jf-mobile-proposal-client .mpc-tot-r {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.jf-mobile-proposal-client .mpc-tot-r b {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-proposal-client .mpc-tot-due {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1.5px solid rgba(10, 10, 10, 0.5);
+}
+.jf-mobile-proposal-client .mpc-tot-due span {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.jf-mobile-proposal-client .mpc-tot-due b {
+  font-size: clamp(21px, 6vw, 26px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── PROSE (Overview / Scope of work) ─────────────────────────────────── */
+.jf-mobile-proposal-client .mpc-prose {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  padding: 18px 18px 18px 20px;
+  /* The drawing's margin rule, plus the standing 3px hard offset. */
+  box-shadow: inset 4px 0 0 var(--blueprint), 3px 3px 0 var(--shadow);
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* ── PAYMENT SCHEDULE ─────────────────────────────────────────────────────
+   The desktop row is four columns — index, label, percentage, amount — and at
+   320px they total 286px against 284px of usable width. Re-cut as a two-line
+   row: index + label + amount on the first line, the share on the second under
+   the label. The extra line has room for "40% of total", which is more than
+   the bare "40%" the fourth column could carry. */
+.jf-mobile-proposal-client .mpc-pay {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.jf-mobile-proposal-client .mpc-pay-r {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 13px 16px;
+  border-bottom: 1px dashed var(--hair);
+}
+.jf-mobile-proposal-client .mpc-pay-r:last-child { border-bottom: none; }
+.jf-mobile-proposal-client .mpc-pay-no {
+  grid-column: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-proposal-client .mpc-pay-n {
+  grid-column: 2;
+  font-size: 13.5px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-proposal-client .mpc-pay-v {
+  grid-column: 3;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.jf-mobile-proposal-client .mpc-pay-s {
+  grid-column: 2 / -1;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── CALL-OUT ─────────────────────────────────────────────────────────────
+   The inverse block: an ink plate among the paper sections. The phone number
+   is a 48px framed plate rather than the desktop's underlined link — a tel:
+   link is the highest-intent tap on the page after Accept and an underline is
+   not a touch target. */
+.jf-mobile-proposal-client .mpc-call {
+  margin-top: 34px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  padding: 20px var(--card-pad) 22px;
+}
+.jf-mobile-proposal-client .mpc-call-t {
+  font-size: clamp(17px, 4.8vw, 20px);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+.jf-mobile-proposal-client .mpc-call-a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  border: 2px solid rgba(242, 240, 235, 0.5);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+  transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out),
+    border-color 0.14s var(--ease-out);
+}
+.jf-mobile-proposal-client .mpc-call-a:active {
+  background: var(--paper);
+  border-color: var(--paper);
+  color: var(--ink);
+}
+
+/* ── FOOTER ───────────────────────────────────────────────────────────── */
+.jf-mobile-proposal-client .mpc-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1.5px solid var(--hair);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-proposal-client .mpc-foot i {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE ACTION BAR — the five-button row, re-cut
+   ══════════════════════════════════════════════════════════════════════════
+   The desktop row carries Accept · Stripe · Square · PayPal · Decline in a
+   `flex-wrap: wrap`. At 320px that wraps to four ragged lines and buries the
+   one tap the whole page exists for.
+
+   What ships instead: a sticky bar, with the checkout providers behind a
+   single PAY NOW that opens a bottom sheet.
+
+     row 1   ACCEPT PROPOSAL   blueprint fill, ink frame, 3px hard shadow, 54px
+     row 2   PAY NOW           ink frame on paper, 3px hard shadow, 48px
+             DECLINE           1.5px dashed frame, muted label, 48px
+
+   Three weights — filled, framed, dashed — carry the hierarchy without the
+   status palette, which DESIGN.md reserves for statuses.
+
+   WHY `position: sticky` AND NOT `fixed`. A fixed bar has to be paid for with
+   bottom padding on the document, and any mismatch either hides the footer or
+   leaves a dead band. A sticky bar declared as the LAST child reserves its own
+   space in flow: it is pinned to the bottom edge for the whole scroll, and at
+   the very end of the document it settles into its own slot below the footer,
+   so nothing is ever permanently covered. It also cannot be broken by an
+   ancestor transform the way `fixed` can — and the reveal animation puts a
+   transform on every one of its siblings.
+
+   REJECTED, and why:
+   · A segmented Stripe/Square/PayPal picker in the bar. Provider choice is a
+     once-per-proposal decision that most homeowners do not have an opinion
+     about; giving it a third of the permanently visible chrome inverts the
+     hierarchy, and three legible labels do not fit 288px beside anything else.
+   · Progressive disclosure inside the document (an expanding "payment
+     options" section). It works, but it puts the payment path outside the
+     thumb zone and off-screen — the bar exists precisely so the primary
+     actions are reachable one-handed at any scroll position.
+   · Keeping Decline in the sheet with the providers. Decline is not a payment
+     method, and burying the negative path behind the positive one is a dark
+     pattern. It stays visible, and only its weight is reduced. */
+.jf-mobile-proposal-client .mpc-bar {
+  position: sticky;
+  bottom: 0;
+  /* Under the root layout's ToastHost (z-index 100) on purpose — see the
+     component header. Above the document, which sets no z-index at all. */
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px var(--gutter) calc(12px + var(--safe-b));
+  background: var(--paper);
+  border-top: var(--border);
+  /* Hard offset shadow, no blur — cast upward because the bar's edge faces
+     up. Same 3px depth as every card on the page. */
+  box-shadow: 0 -3px 0 var(--shadow);
+}
+.jf-mobile-proposal-client .mpc-bar-in {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.jf-mobile-proposal-client .mpc-bar-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.jf-mobile-proposal-client .mpc-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out),
+    opacity 0.14s var(--ease-out);
+}
+.jf-mobile-proposal-client .mpc-btn:disabled { cursor: default; opacity: 0.55; }
+.jf-mobile-proposal-client .mpc-btn--primary {
+  min-height: 54px;
+  border: var(--border);
+  background: var(--blueprint);
+  color: #ffffff;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+}
+.jf-mobile-proposal-client .mpc-btn--frame {
+  min-height: 48px;
+  border: var(--border);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-proposal-client .mpc-btn--quiet {
+  min-height: 48px;
+  border: 1.5px dashed rgba(10, 10, 10, 0.45);
+  background: transparent;
+  color: var(--muted);
+}
+.jf-mobile-proposal-client .mpc-btn--primary:active:not(:disabled),
+.jf-mobile-proposal-client .mpc-btn--frame:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.jf-mobile-proposal-client .mpc-btn--quiet:active:not(:disabled) {
+  background: var(--paper-deep);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BOTTOM SHEETS — hand-rolled, house style. No dialog library, no Radix.
+   Geometry matches the (mobile) fleet's sheets so this page does not feel
+   like a different product; swipe-down-to-dismiss comes from the shared
+   use-sheet-drag hook rather than a private re-implementation.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-proposal-client .mpc-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s var(--ease);
+}
+.jf-mobile-proposal-client .mpc-scrim.on { opacity: 1; pointer-events: auto; }
+.jf-mobile-proposal-client .mpc-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 81;
+  display: flex;
+  flex-direction: column;
+  max-height: 92%;
+  background: var(--paper);
+  border-top: var(--border);
+  padding-bottom: var(--safe-b);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+}
+.jf-mobile-proposal-client .mpc-sheet.on { transform: none; visibility: visible; }
+.jf-mobile-proposal-client .mpc-grab {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 3px;
+  margin: 10px auto 0;
+  background: var(--hair);
+}
+.jf-mobile-proposal-client .mpc-sheet-h {
+  flex: 0 0 auto;
+  padding: 14px var(--gutter) 12px;
+  border-bottom: var(--border-thin);
+}
+.jf-mobile-proposal-client .mpc-sheet-k {
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-proposal-client .mpc-sheet-t {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-proposal-client .mpc-sheet-b {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.jf-mobile-proposal-client .mpc-sheet-note {
+  padding: 12px var(--gutter) 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.jf-mobile-proposal-client .mpc-cancel {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin: 12px var(--gutter) 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.jf-mobile-proposal-client .mpc-cancel:active { background: var(--paper-deep); }
+
+/* Provider rows — a tonal mark box, the name, a chevron. */
+.jf-mobile-proposal-client .mpc-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px var(--gutter);
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s var(--ease);
+}
+.jf-mobile-proposal-client .mpc-opt:active:not(:disabled) { background: var(--paper-deep); }
+.jf-mobile-proposal-client .mpc-opt:disabled { opacity: 0.5; cursor: default; }
+.jf-mobile-proposal-client .mpc-opt-b {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: var(--border-thin);
+  border-color: var(--blueprint);
+  border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.1);
+  color: var(--blueprint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.jf-mobile-proposal-client .mpc-opt-n {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+.jf-mobile-proposal-client .mpc-opt .mpc-ic { color: var(--muted); }
+
+/* Decline form. 16px on the textarea is a hard floor: below it iOS Safari
+   zooms the viewport on focus, and doing that in the middle of an
+   accept-or-decline decision is genuinely disorienting. */
+.jf-mobile-proposal-client .mpc-form { padding: 16px var(--gutter) 4px; }
+.jf-mobile-proposal-client .mpc-label {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-proposal-client .mpc-ta {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  padding: 12px 13px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+  resize: vertical;
+}
+.jf-mobile-proposal-client .mpc-ta:focus {
+  outline: none;
+  border-color: var(--blueprint);
+  box-shadow: 0 0 0 2px rgba(24, 84, 160, 0.25);
+}
+.jf-mobile-proposal-client .mpc-err {
+  margin-top: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--danger);
+}
+.jf-mobile-proposal-client .mpc-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out);
+}
+.jf-mobile-proposal-client .mpc-confirm:disabled { opacity: 0.55; cursor: default; }
+.jf-mobile-proposal-client .mpc-confirm:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+/* ── REVEAL ───────────────────────────────────────────────────────────────
+   `.rv` / `.on`, the desktop port's own vocabulary and its own
+   IntersectionObserver contract — framer-motion was deliberately removed from
+   this route and is not coming back. Unlike the desktop port this one actually
+   transitions, because `--ease-out` is declared above. */
+.jf-mobile-proposal-client .rv {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.55s var(--ease-out), transform 0.55s var(--ease-out);
+}
+.jf-mobile-proposal-client .rv.on { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-proposal-client .rv {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .jf-mobile-proposal-client .mpc-sheet,
+  .jf-mobile-proposal-client .mpc-scrim,
+  .jf-mobile-proposal-client .mpc-btn,
+  .jf-mobile-proposal-client .mpc-pdf,
+  .jf-mobile-proposal-client .mpc-confirm,
+  .jf-mobile-proposal-client .mpc-call-a,
+  .jf-mobile-proposal-client .mpc-opt {
+    transition: none !important;
+  }
+}

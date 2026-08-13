@@ -1,0 +1,1306 @@
+/* ============================================================================
+   JOBFLEX MARKETING LANDING — HANDHELD BUILD   ·   .jf-mobile-landing
+   ============================================================================
+
+   Serves two entry points, one implementation:
+     · /mobile-landing-v2                     — direct preview at any width
+     · /landing at <= 768px                   — the live marketing URL
+
+   Design language is TRANSLATED (not shrunk) from the approved desktop port
+   `src/components/v3/landing/` — same palette, same 2px ink frames, same 2px
+   radii, same hard offset shadows with no blur, same Inter caps + JetBrains
+   Mono annotation layer, same copy word for word.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (non-negotiable) ────────────────────
+   CSS Modules hash CLASS names and leave bare element selectors — `button`,
+   `input`, `a`, `svg`, `img` — and the `*` reset untouched. Each of those needs
+   an explicit `:global()` escape under a module; miss one and this design's own
+   reset and control styling silently vanish while Tailwind preflight and
+   globals.css fill the vacuum. There is also a live specificity trap in this
+   repo: `projects.module.css` ships `.bp :global(.content button)` at (0,2,1),
+   which strips border/background/cursor off every control it can reach.
+
+   So: a plain `.css` file where EVERY selector carries the single literal root
+   class `.jf-mobile-landing`. The prefix is uniform, so relative specificity
+   between this file's own rules is exactly what it would be unprefixed, and
+   nothing leaks outward. Same construction as the working references
+   `homeowner-landing/homeowner.css`, `landing/landing.css` and
+   `mobile-auth-login/mobile-auth-login.css`.
+
+   Two selectors deliberately do NOT start with the root class — the host
+   neutralizers, which have to reach <html> and <body>. Both are gated on
+   `:has()` so they switch themselves back off the moment this page unmounts
+   (the App Router keeps a route's stylesheet in the document across client-side
+   navigations, so a bare `body { … }` here would follow the user to /dashboard).
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   @keyframes names, element ids and SVG <symbol> ids are all document-global,
+   so every one of them carries a `jfml` / `jfml-` prefix:
+     keyframes  jfml_blink  jfml_rise  jfml_slide  jfml_stamp  jfml_mq
+     ids        jfml-top  jfml-features  jfml-edge  jfml-menu  jfml-khatch
+                jfml-i-bulb  jfml-i-users  jfml-i-file  jfml-i-cal
+                jfml-i-arrow  jfml-i-arrow-r  jfml-i-menu  jfml-i-close
+   The desktop landing's sprite uses the bare donor ids (#i-bulb …). Only one of
+   the two trees is ever mounted, but the prefix means even a mistake there
+   cannot cross-wire the two sheets.
+
+   Class names use the `ml-` prefix and are scoped by the root class, so they
+   are inert outside this subtree by construction.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Handheld only, fluid 320–768px on clamp(); NO `md:` / `lg:` breakpoints and
+   no layout media query at all — the composition is intrinsic. Light mode only,
+   no `.dark` variants. globals.css was NOT touched. No Radix.
+   ========================================================================= */
+
+/* ── TOKENS ────────────────────────────────────────────────────────────────
+   Page-scoped, never promoted to :root. Values are the desktop landing's, with
+   two documented deviations, both forced by DESIGN.md's hard accessibility
+   commitments (WCAG 2.2 AA + outdoor-sunlight readability):
+
+   · --muted-faint  the desktop's --muted-light #aaa measures 2.07:1 on paper
+     and carries the hero note ("No card required · Set up in 10 minutes"). On
+     a phone in direct sun that line is simply gone. #6b6b6b measures 4.75:1
+     and keeps the drafting-annotation grey character.
+   · --muted-on-ink is NEW. The desktop reaches for rgba(paper, .6–.78) on its
+     ink bands; at 10.5px mono that lands under 4.5:1. #b9b6ae is 9.8:1 on
+     #0a0a0a and is used wherever ink-band body copy has to be read outdoors.
+
+   FONT STACK — a deliberate divergence from the desktop page, flagged in the
+   port report. The donor stack is `'Helvetica Neue', Helvetica, Inter, …`;
+   DESIGN.md mandates Inter 800–900 for caps headings, and Helvetica Neue tops
+   out at Bold (700) on iOS, so the donor stack silently gives up the system's
+   heaviest weight on exactly the devices this build targets. Inter is loaded by
+   next/font in the root layout and is always present. Consequence: on iOS and
+   macOS the typeface changes as /landing crosses 768px. Reconciling the desktop
+   sheet to Inter-first would close that, but it would change the desktop
+   design, which is not this task's to change.                                */
+.jf-mobile-landing {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+  --muted: #555555;
+  --muted-faint: #6b6b6b;
+  --muted-on-ink: #b9b6ae;
+
+  --grid-light: rgba(0, 0, 0, 0.028);
+  --grid-dark: rgba(255, 255, 255, 0.08);
+  --grid-dark-lg: rgba(255, 255, 255, 0.14);
+  --hair-on-ink: rgba(242, 240, 235, 0.24);
+
+  --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  --radius: 2px;
+  --border: 2px solid var(--ink);
+  --border-paper: 2px solid var(--paper);
+  --border-thin: 1.5px solid var(--ink);
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Shadow depth is standardised at 3px 3px 0 at rest, no blur. `--lift` is the
+     press travel and is always EXACTLY what the shadow loses, so a press reads
+     as a stamp coming down onto the sheet rather than as a slide. */
+  --shadow-card: 3px 3px 0 rgba(10, 10, 10, 0.09);
+  --shadow-btn: 3px 3px 0 var(--ink);
+  --shadow-btn-on-ink: 3px 3px 0 rgba(242, 240, 235, 0.5);
+  --lift: 3px;
+
+  /* Nav height doubles as the sticky offset and the scroll-padding for #jfml-top. */
+  --nav-h: 58px;
+  /* Gutter honours the landscape notch but never drops below 16px. */
+  --gutter: max(clamp(16px, 5vw, 34px), env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+}
+
+/* Scoped universal reset. Bare `*` would flatten the rest of the app — this is
+   precisely the construct a CSS Module cannot express, and the reason this file
+   is not one. */
+.jf-mobile-landing,
+.jf-mobile-landing * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS — the only rules here that are not this design's own.
+   Each was verified by measuring the computed value in Chromium, not copied.
+   ══════════════════════════════════════════════════════════════════════════
+
+   1. globals.css paints a 40px drafting grid on <body> (background-attachment:
+      fixed) plus a `body::before` paper-grain overlay with mix-blend-mode:
+      multiply. This page paints its OWN 40px grid inside four sections, and the
+      two grids at slightly different opacities show through each other; the
+      grain's multiply blend additionally tints the ink bands. Both are switched
+      off for this page's lifetime. `body:has(.jf-mobile-landing)` is (0,1,1)
+      and its `::before` is (0,1,2), so both outrank globals.css's bare `body`
+      / `body::before` regardless of stylesheet injection order.
+
+   2. `scroll-behavior: smooth` + `scroll-padding-top` are only honoured on the
+      scrolling element, so they have to sit on <html>. Same `:has()` gate.
+
+   NOT neutralized, deliberately: globals' `* { scrollbar-width: thin }` and the
+   10px `::-webkit-scrollbar`. That is browser chrome outside the page box, not
+   page content — and on a touch device the overlay scrollbar takes no layout
+   width at all, so it cannot affect this build's geometry.                  */
+html:has(.jf-mobile-landing) {
+  scroll-behavior: smooth;
+  scroll-padding-top: var(--nav-h, 58px);
+}
+body:has(.jf-mobile-landing) {
+  background-image: none;
+}
+body:has(.jf-mobile-landing)::before {
+  content: none;
+}
+
+/* 3. Tailwind preflight and globals.css reach INSIDE the page and move three
+      inherited values this design assumes it inherits at their initial state:
+
+      · preflight `html { line-height: 1.5 }`. The donor inherited `normal`.
+        Every box here that sets no line-height of its own — the kicker, the
+        hero note, the feature numerals, the marquee, the whole estimate card —
+        grows. Measured on this build at 390px: page scrollHeight 3168 -> 3096
+        once restored, and the nav's 58px row stopped forcing its own overflow.
+      · globals.css `font-feature-settings: 'cv11','ss01','ss03'` on html+body
+        — Inter's single-storey `a`, alternate digits, round quotes. The
+        alternate digits are the visible one: they break the tabular-nums
+        alignment this system depends on for the estimate column.
+      · globals.css `text-rendering: optimizeLegibility` on html+body, which
+        turns on kerning and shifts every flexible column by a fraction.       */
+.jf-mobile-landing {
+  line-height: normal;
+  font-feature-settings: normal;
+  text-rendering: auto;
+}
+
+/* 4. preflight `img, video { max-width: 100% }`. REQUIRED here, and measured:
+      the brand mark is an absolutely-positioned 44px square inside a crop
+      window 16.3px wide (the window is how the lockup isolates the ink from the
+      asset's transparent field). 100% of the containing block clamped the mark
+      to 16.28px wide while its height stayed 44px — the logo rendered as a
+      vertical sliver. Restoring `none` puts it back to 44 x 44.
+      Only `max-width` is reset: preflight's `height: auto` is already outranked
+      by `.ml-mark-img`'s own `height`, and re-declaring it here would beat that
+      rule and break the crop. */
+.jf-mobile-landing img {
+  max-width: none;
+}
+
+/* 5. preflight `img, svg, video, canvas … { display: block; vertical-align:
+      middle }`. NOT restored — measured and not needed. Every <svg> on this
+      page is either a flex item (`.ml-ic` inside the buttons, the nav CTA, the
+      feature icon boxes — where the inner display type is blockified anyway and
+      vertical-align does not apply), or explicitly `display: block` (`.ml-k-svg`
+      and the 0x0 sprite). Toggling `display: inline` on `.ml-ic` at 390px moved
+      nothing: every icon's client rect stayed 18 x 18 at the same x/y. Adding
+      the reset would only re-introduce the inline-box descender gap the donor
+      never had. */
+
+/* ── BASE ─────────────────────────────────────────────────────────────────── */
+.jf-mobile-landing {
+  position: relative;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  overflow-wrap: break-word;
+}
+.jf-mobile-landing a {
+  color: inherit;
+  text-decoration: none;
+}
+.jf-mobile-landing button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Every interactive element gets a visible keyboard ring. The system's own
+   idiom — a hard offset, no blur — rather than the UA's blurred halo. */
+.jf-mobile-landing a:focus-visible,
+.jf-mobile-landing button:focus-visible {
+  outline: 3px solid var(--sky);
+  outline-offset: 2px;
+}
+.jf-mobile-landing ::selection {
+  background: var(--blueprint);
+  color: var(--paper);
+}
+.jf-mobile-landing .ml-ic {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* ── MOTION ───────────────────────────────────────────────────────────────
+   Motion System "Balanced", ported timing-for-timing from the desktop page:
+   `.ml-an` load cascade (rise 18px / 800ms / stagger 100ms), `.ml-rv` scroll
+   reveal (20px / 700ms), the 2s kicker blink, the estimate-line slide-in and
+   the APPROVED stamp. */
+@keyframes jfml_blink {
+  50% { opacity: 0.28; }
+}
+@keyframes jfml_rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes jfml_slide {
+  from { opacity: 0; transform: translateY(9px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes jfml_stamp {
+  from { opacity: 0; transform: rotate(-9deg) scale(1.7); }
+  70%  { opacity: 1; transform: rotate(-1deg) scale(0.96); }
+  to   { opacity: 1; transform: rotate(-2deg) scale(1); }
+}
+@keyframes jfml_mq {
+  to { transform: translateX(calc(-50% - 12px)); }
+}
+
+.jf-mobile-landing .ml-an { opacity: 0; animation: jfml_rise 0.8s var(--ease-out) forwards; }
+.jf-mobile-landing .ml-a1 { animation-delay: 0.06s; }
+.jf-mobile-landing .ml-a2 { animation-delay: 0.16s; }
+.jf-mobile-landing .ml-a3 { animation-delay: 0.26s; }
+.jf-mobile-landing .ml-a4 { animation-delay: 0.36s; }
+.jf-mobile-landing .ml-a5 { animation-delay: 0.46s; }
+.jf-mobile-landing .ml-rv {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out);
+}
+.jf-mobile-landing .ml-rv.on { opacity: 1; transform: none; }
+
+/* ── SHARED TYPE ──────────────────────────────────────────────────────────── */
+.jf-mobile-landing .ml-wrap {
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
+}
+.jf-mobile-landing .ml-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 16px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--blueprint);
+}
+.jf-mobile-landing .ml-kicker::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  background: currentColor;
+  animation: jfml_blink 2s infinite;
+}
+.jf-mobile-landing .ml-kicker-sky { color: var(--sky); }
+.jf-mobile-landing .ml-h2 {
+  font-size: clamp(28px, 8.6vw, 46px);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.jf-mobile-landing .ml-inv {
+  display: inline-block;
+  margin-top: 0.13em;
+  padding: 0.05em 0.24em 0.1em;
+  border-radius: var(--radius);
+  letter-spacing: -0.015em;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* ══════ NAV ═══════════════════════════════════════════════════════════════
+   The 320px width budget, computed rather than guessed (handheld.md §2):
+
+     inner  = 320
+     brand  = 12 + 15.3 (mark box: 44 x 0.3472) + 10 + 96 (text) + 12  = 145.3
+     cta    = 12 + 71 ("START FREE" @ 9.5px / 0.08em) + 12            =  95.0
+     burger = 48 + 2 (its own left frame)                             =  50.0
+     ------------------------------------------------------------------------
+     used                                                             = 290.3
+     slack at 320px                                                   =  29.7
+
+   Three values carry the slack and are the only knobs to reach for:
+   `--mark-size`, `.ml-brand-sub`'s clamp floor, and `.ml-nav-cta`'s padding.
+   The failsafe guards stay regardless — `min-width: 0` + `overflow: hidden` on
+   the text block and nowrap + ellipsis on both rows — so a substituted wider
+   font clips instead of wrapping the lockup to three lines.                  */
+.jf-mobile-landing .ml-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  height: var(--nav-h);
+  border-bottom: var(--border);
+  background: var(--paper);
+  transition: box-shadow 0.22s var(--ease);
+}
+.jf-mobile-landing .ml-nav.sc { box-shadow: 0 4px 0 rgba(10, 10, 10, 0.09); }
+
+.jf-mobile-landing .ml-brand {
+  --mark-size: 44px;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--ink);
+  color: var(--paper);
+  border-right: var(--border);
+}
+/* The asset is a square with a transparent field; this window crops to the ink.
+   Alpha-channel fractions of the source, measured once and recorded on the
+   desktop sheet: width .3472, height .4258, top inset .2871. Do not re-derive. */
+.jf-mobile-landing .ml-mark-box {
+  position: relative;
+  flex-shrink: 0;
+  width: calc(var(--mark-size) * 0.3472 + 1px);
+  height: calc(var(--mark-size) * 0.4258 + 1px);
+  overflow: hidden;
+}
+.jf-mobile-landing .ml-mark-img {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--mark-size) * -0.2871 + 0.5px);
+  width: var(--mark-size);
+  height: var(--mark-size);
+  transform: translateX(-50%);
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+.jf-mobile-landing .ml-brand-txt {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+.jf-mobile-landing .ml-brand-name {
+  font-size: clamp(14px, 4.2vw, 16px);
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-mobile-landing .ml-brand-sub {
+  font-size: clamp(7.6px, 2.3vw, 8.6px);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--sky);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The nav CTA is the owner's button treatment, held to the bar's full height so
+   the tap target is the whole 58px column: solid blueprint fill, white label,
+   ink frame (the bar's own bottom border supplies the fourth side). */
+.jf-mobile-landing .ml-nav-cta {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 0 clamp(10px, 3.4vw, 16px);
+  background: var(--blueprint);
+  color: #ffffff;
+  border-left: var(--border);
+  font-size: clamp(9.5px, 2.9vw, 11px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  transition: background 0.16s var(--ease);
+}
+.jf-mobile-landing .ml-nav-cta:active { background: var(--blueprint-dark); }
+.jf-mobile-landing .ml-nav-cta .ml-ic { width: 14px; height: 14px; }
+
+.jf-mobile-landing .ml-burger {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  border-left: var(--border);
+  background: var(--paper);
+  transition: background 0.16s var(--ease);
+}
+.jf-mobile-landing .ml-burger[aria-expanded='true'],
+.jf-mobile-landing .ml-burger:active { background: var(--paper-deep); }
+.jf-mobile-landing .ml-burger .ml-ic { width: 22px; height: 22px; }
+
+/* Read-progress bar, straddling the nav's bottom frame. */
+.jf-mobile-landing .ml-sprog {
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  z-index: 5;
+  width: 100%;
+  height: 3px;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: var(--blueprint);
+  pointer-events: none;
+}
+
+/* ── DRAWER ───────────────────────────────────────────────────────────────
+   Hand-rolled, no Radix (CLAUDE.md). A panel dropping out of the sticky bar,
+   not a modal dialog: `visibility` rather than `display` so the 180ms fade +
+   translateY(-6px) of the system's dropdown pattern can run, and so the links
+   leave the tab order when closed. */
+.jf-mobile-landing .ml-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-bottom: var(--border);
+  box-shadow: 0 5px 0 rgba(10, 10, 10, 0.12);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease), visibility 0s linear 0.18s;
+}
+.jf-mobile-landing .ml-menu.on {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease), visibility 0s;
+}
+.jf-mobile-landing .ml-menu a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 var(--gutter);
+  border-top: var(--border-thin);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: background 0.16s var(--ease), color 0.16s var(--ease);
+}
+.jf-mobile-landing .ml-menu a:first-child { border-top: none; }
+.jf-mobile-landing .ml-menu a:active { background: var(--paper-deep); color: var(--ink); }
+.jf-mobile-landing .ml-menu a .ml-ic { width: 15px; height: 15px; color: var(--blueprint); }
+.jf-mobile-landing .ml-menu .ml-menu-sign { color: var(--ink); background: var(--paper-deep); }
+
+.jf-mobile-landing .ml-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(10, 10, 10, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.22s var(--ease), visibility 0s linear 0.22s;
+}
+.jf-mobile-landing .ml-scrim.on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.22s var(--ease), visibility 0s;
+}
+
+/* ══════ HERO ══════════════════════════════════════════════════════════════
+   The desktop's two panes become two stacked bands, keeping their identities:
+   `.ml-hero-l` is the paper pane with the pitch, `.ml-hero-r` is the recessed
+   paper-deep pane holding the drawing. Both carry the 40px graph-paper grid and
+   both read the parallax offset. */
+.jf-mobile-landing .ml-hero-l {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(30px, 7vw, 52px) var(--gutter) clamp(32px, 8vw, 56px);
+}
+.jf-mobile-landing .ml-hero-l::before,
+.jf-mobile-landing .ml-hero-r::before,
+.jf-mobile-landing .ml-feat::before,
+.jf-mobile-landing .ml-ft::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-size: 40px 40px;
+  background-position: 0 var(--ml-par, 0px);
+}
+.jf-mobile-landing .ml-hero-l::before,
+.jf-mobile-landing .ml-hero-r::before {
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+}
+.jf-mobile-landing .ml-hero-in { position: relative; z-index: 1; }
+
+.jf-mobile-landing .ml-h1 {
+  font-size: clamp(38px, 13vw, 64px);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+.jf-mobile-landing .ml-h1 span { display: block; }
+.jf-mobile-landing .ml-tagline {
+  margin-top: 20px;
+  /* A measure, not a column. Left to fill the sheet it runs ~95 characters at
+     768px, which is roughly twice the comfortable line length. */
+  max-width: 44ch;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.jf-mobile-landing .ml-tagline strong { color: var(--ink); font-weight: 700; }
+
+/* CTA stack. Full-bleed within the gutter and stacked, because a phone's
+   comfortable tap column IS the content column — side-by-side halves at 320px
+   would put "Or request an estimate" on three wrapped lines. */
+.jf-mobile-landing .ml-cta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 30px;
+  /* The shadow is drawn outside the border box, so the row reserves the 3px it
+     occupies. Without this the offset clips against the section padding at
+     320px and the page gains 3px of horizontal overflow. */
+  padding-right: var(--lift);
+}
+.jf-mobile-landing .ml-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  min-height: 56px;
+  padding: 0 22px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: uppercase;
+  text-indent: 0.14em;
+  box-shadow: var(--shadow-btn);
+  transition: transform 0.14s var(--ease), box-shadow 0.14s var(--ease), background 0.16s var(--ease);
+}
+/* PRESS = STAMP. The travel is exactly what the shadow gives up, so the button
+   face lands where its shadow was — a die coming down, not a slide. */
+.jf-mobile-landing .ml-btn:active {
+  transform: translate(var(--lift), var(--lift));
+  box-shadow: 0 0 0 var(--ink);
+}
+/* Primary: solid blueprint fill, white label, 2px ink frame, hard ink offset.
+   Deliberately NOT the desktop's ink fill — this is the treatment the owner
+   signed off across the handheld fleet, and it is the one element on the sheet
+   allowed to carry real elevation. */
+.jf-mobile-landing .ml-btn-a {
+  background: var(--blueprint);
+  color: #ffffff;
+}
+.jf-mobile-landing .ml-btn-a:active { background: var(--blueprint-dark); }
+/* Secondary: paper face, ink label, same frame and same offset. It reads as a
+   second physical object on the sheet, not as a ghost of the first. */
+.jf-mobile-landing .ml-btn-b {
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 700;
+}
+.jf-mobile-landing .ml-btn-b:active { background: var(--paper-deep); }
+/* On the ink bands the frame flips to paper — an ink frame on ink is invisible
+   — and the offset takes a paper tint for the same reason. Fill and label are
+   unchanged, so it is recognisably the same button. */
+.jf-mobile-landing .ml-btn-on-ink {
+  border-color: var(--paper);
+  box-shadow: var(--shadow-btn-on-ink);
+}
+.jf-mobile-landing .ml-btn-on-ink:active { box-shadow: 0 0 0 rgba(242, 240, 235, 0.5); }
+.jf-mobile-landing .ml-btn .ml-ic { width: 18px; height: 18px; }
+
+.jf-mobile-landing .ml-hero-note {
+  margin-top: 18px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: var(--muted-faint);
+}
+
+/* ══════ THE LIVE ESTIMATE ═════════════════════════════════════════════════ */
+.jf-mobile-landing .ml-hero-r {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(26px, 6.5vw, 44px) var(--gutter) clamp(30px, 7.5vw, 50px);
+  border-top: var(--border);
+  background: var(--paper-deep);
+}
+.jf-mobile-landing .ml-hero-r-inner { position: relative; z-index: 1; }
+.jf-mobile-landing .ml-card-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 13px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--blueprint);
+}
+.jf-mobile-landing .ml-card-label-line { width: 24px; height: 2px; flex-shrink: 0; background: var(--blueprint); }
+.jf-mobile-landing .ml-card-label-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--blueprint);
+  animation: jfml_blink 2s infinite;
+}
+
+.jf-mobile-landing .ml-fh-card {
+  position: relative;
+  overflow: hidden;
+  border: var(--border-paper);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  box-shadow: var(--shadow-card);
+}
+.jf-mobile-landing .ml-fh-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: linear-gradient(var(--grid-dark) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+.jf-mobile-landing .ml-fh-card > * { position: relative; z-index: 1; }
+
+.jf-mobile-landing .ml-fh-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 11px 14px;
+  border-bottom: var(--border-paper);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+.jf-mobile-landing .ml-fh-head-l { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.jf-mobile-landing .ml-fh-head-l em { font-style: normal; font-weight: 800; color: var(--blueprint); }
+.jf-mobile-landing .ml-fh-head-r { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
+.jf-mobile-landing .ml-fh-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--blueprint);
+  animation: jfml_blink 1.8s infinite;
+}
+.jf-mobile-landing .ml-fh-sec {
+  min-width: 3ch;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* The mark again, on paper this time, so it is inked rather than reversed. */
+.jf-mobile-landing .ml-mini-mark {
+  --mark-size: 36px;
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  width: calc(var(--mark-size) * 0.3472 + 1px);
+  height: calc(var(--mark-size) * 0.4258 + 1px);
+  overflow: hidden;
+}
+.jf-mobile-landing .ml-mini-mark-img {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--mark-size) * -0.2871 + 0.5px);
+  width: var(--mark-size);
+  height: var(--mark-size);
+  transform: translateX(-50%);
+  object-fit: contain;
+  filter: brightness(0);
+}
+
+/* ── The drawing ──────────────────────────────────────────────────────────
+   The desktop SVG is one 640x300 sheet: the plan on the left, an eight-row
+   TITLE BLOCK on the right, drawn as SVG <text> at 8.5–10.5px. At 320px that
+   sheet scales to roughly 0.41 and the title block's type lands near 3.5px —
+   an unreadable smudge, and the plan itself loses its dimension strings.
+
+   So the sheet is CUT IN TWO, which is what a draughtsman does with an A1 on a
+   clipboard: the plan keeps its own viewBox (`14 18 353 268` — the plan plus
+   both dimension strings, the title block cropped out) and renders at ~0.74,
+   while the title block is rebuilt as real HTML below it. Every string is the
+   desktop's, verbatim. The annotation font sizes inside the SVG are nudged up
+   (k-lab 7.5 -> 9.5, k-mk-t 8 -> 10, k-dim-t 10 -> 11.5, k-room-t 12.5 -> 13)
+   purely so they land back at their desktop optical size after the scale.
+
+   `[class^="ml-k-"]` is an attribute PREFIX selector — the second construct a
+   CSS Module would silently destroy, since hashing would rename every one of
+   these classes out from under it and the drawing would lose every stroke
+   weight, poche fill and dimension line with no error. */
+.jf-mobile-landing .ml-schematic {
+  position: relative;
+  padding: 12px 12px 10px;
+  border-bottom: var(--border-paper);
+}
+.jf-mobile-landing .ml-k-svg { display: block; width: 100%; height: auto; }
+.jf-mobile-landing .ml-k-svg [class^='ml-k-'] { vector-effect: non-scaling-stroke; }
+.jf-mobile-landing .ml-k-poche { fill: rgba(242, 240, 235, 0.88); stroke: none; }
+.jf-mobile-landing .ml-k-cut { fill: var(--blueprint); stroke: none; }
+.jf-mobile-landing .ml-k-wall { fill: none; stroke: var(--paper); stroke-width: 1.6; }
+.jf-mobile-landing .ml-k-glass { stroke: var(--paper); stroke-width: 1; }
+.jf-mobile-landing .ml-k-jamb { stroke: var(--paper); stroke-width: 1.6; }
+.jf-mobile-landing .ml-k-leaf { stroke: var(--paper); stroke-width: 2.4; }
+.jf-mobile-landing .ml-k-swing { fill: none; stroke: rgba(242, 240, 235, 0.55); stroke-width: 1; stroke-dasharray: 4 3; }
+.jf-mobile-landing .ml-k-cab { fill: url(#jfml-khatch); stroke: var(--paper); stroke-width: 1.2; }
+.jf-mobile-landing .ml-k-isl { fill: rgba(242, 240, 235, 0.07); stroke: var(--paper); stroke-width: 1.2; }
+.jf-mobile-landing .ml-k-app { fill: var(--blueprint); stroke: var(--paper); stroke-width: 1.2; }
+.jf-mobile-landing .ml-k-lead { fill: none; stroke: rgba(242, 240, 235, 0.55); stroke-width: 1; stroke-dasharray: 3 3; }
+.jf-mobile-landing .ml-k-mk { fill: var(--blueprint); stroke: var(--paper); stroke-width: 1.2; }
+.jf-mobile-landing .ml-k-mk-t {
+  fill: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.jf-mobile-landing .ml-k-lab {
+  fill: rgba(242, 240, 235, 0.9);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.jf-mobile-landing .ml-k-hair { fill: none; stroke: rgba(242, 240, 235, 0.6); stroke-width: 0.9; }
+.jf-mobile-landing .ml-k-dim { stroke: rgba(242, 240, 235, 0.8); stroke-width: 1; }
+.jf-mobile-landing .ml-k-ext { stroke: rgba(242, 240, 235, 0.45); stroke-width: 0.8; }
+.jf-mobile-landing .ml-k-tick { stroke: var(--paper); stroke-width: 1.4; }
+.jf-mobile-landing .ml-k-dim-bg { fill: var(--blueprint); stroke: none; }
+.jf-mobile-landing .ml-k-dim-t {
+  fill: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.jf-mobile-landing .ml-k-room-t {
+  fill: var(--paper);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+}
+
+/* Title block, rebuilt as HTML. Label left, value right, hairline between —
+   the estimate-line idiom, which is also what a real title block is. */
+.jf-mobile-landing .ml-tb {
+  padding: 12px 14px 13px;
+  border-bottom: var(--border-paper);
+}
+.jf-mobile-landing .ml-tb-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--hair-on-ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--paper);
+}
+.jf-mobile-landing .ml-tb-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: rgba(242, 240, 235, 0.75);
+}
+.jf-mobile-landing .ml-tb-n svg { width: 13px; height: 13px; flex-shrink: 0; fill: var(--paper); }
+.jf-mobile-landing .ml-tb-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(242, 240, 235, 0.2);
+}
+.jf-mobile-landing .ml-tb-row:last-of-type { border-bottom: none; }
+.jf-mobile-landing .ml-tb-l {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.62);
+}
+.jf-mobile-landing .ml-tb-v {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  text-align: right;
+  text-transform: uppercase;
+  color: var(--paper);
+}
+.jf-mobile-landing .ml-tb-key {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0 0;
+}
+.jf-mobile-landing .ml-tb-key + .ml-tb-key { padding-top: 6px; }
+.jf-mobile-landing .ml-tb-mk {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 1.2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--blueprint);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--paper);
+}
+.jf-mobile-landing .ml-tb-rev {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--hair-on-ink);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.62);
+}
+
+.jf-mobile-landing .ml-fh-lines { padding: 15px 14px 8px; border-bottom: var(--border-paper); }
+.jf-mobile-landing .ml-fh-line-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.72);
+}
+.jf-mobile-landing .ml-fh-line {
+  display: grid;
+  grid-template-columns: 19px 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(242, 240, 235, 0.22);
+  opacity: 0;
+  animation: jfml_slide 0.5s ease forwards;
+}
+.jf-mobile-landing .ml-fh-line:last-of-type { border-bottom: none; }
+.jf-mobile-landing .ml-fh-l1 { animation-delay: 0.4s; }
+.jf-mobile-landing .ml-fh-l2 { animation-delay: 0.7s; }
+.jf-mobile-landing .ml-fh-l3 { animation-delay: 1s; }
+.jf-mobile-landing .ml-fh-l4 { animation-delay: 1.3s; }
+.jf-mobile-landing .ml-fh-line-num {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(242, 240, 235, 0.72);
+}
+.jf-mobile-landing .ml-fh-line-name { font-size: 12.5px; font-weight: 500; line-height: 1.35; color: var(--paper); }
+.jf-mobile-landing .ml-fh-line-price {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.jf-mobile-landing .ml-fh-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 13px 14px;
+  border-bottom: var(--border-paper);
+  background: var(--paper);
+  color: var(--ink);
+}
+.jf-mobile-landing .ml-fh-total-lbl {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.jf-mobile-landing .ml-fh-total-val {
+  font-size: clamp(28px, 8.5vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-landing .ml-fh-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-mobile-landing .ml-fh-foot-l {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted-on-ink);
+}
+.jf-mobile-landing .ml-fh-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--blueprint);
+  color: var(--paper);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+.jf-mobile-landing .ml-fh-stamp {
+  padding: 5px 11px;
+  border: 1.5px solid var(--paper);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.28em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  transform: rotate(-2deg);
+  animation: jfml_stamp 0.45s var(--ease-out) 1.75s backwards;
+}
+
+/* ══════ MARQUEE ═══════════════════════════════════════════════════════════ */
+.jf-mobile-landing .ml-mq {
+  overflow: hidden;
+  padding: 13px 0;
+  border-top: var(--border);
+  border-bottom: var(--border);
+  background: var(--blueprint);
+  color: var(--paper);
+}
+.jf-mobile-landing .ml-mq-track {
+  display: flex;
+  gap: 24px;
+  width: max-content;
+  animation: jfml_mq 24s linear infinite;
+}
+.jf-mobile-landing .ml-mq-in {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 24px;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.jf-mobile-landing .ml-mq-dot { width: 6px; height: 6px; flex-shrink: 0; background: var(--sky); }
+
+/* ══════ FEATURES — the ink band ═══════════════════════════════════════════ */
+.jf-mobile-landing .ml-feat {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(44px, 11vw, 76px) 0;
+  border-bottom: var(--border);
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-mobile-landing .ml-feat::before {
+  background-image: linear-gradient(var(--grid-dark) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+}
+.jf-mobile-landing .ml-feat::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(var(--grid-dark-lg) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark-lg) 1px, transparent 1px);
+  background-size: 160px 160px;
+  background-position: 0 calc(var(--ml-par, 0px) * 0.5);
+}
+.jf-mobile-landing .ml-feat .ml-wrap { position: relative; z-index: 2; }
+.jf-mobile-landing .ml-feat-head { margin-bottom: clamp(26px, 6vw, 40px); }
+.jf-mobile-landing .ml-feat-head .ml-h2 { color: var(--paper); }
+.jf-mobile-landing .ml-feat-head .ml-h2 em {
+  font-style: normal;
+  color: transparent;
+  letter-spacing: 0.03em;
+  -webkit-text-stroke: 1.2px rgba(242, 240, 235, 0.75);
+}
+.jf-mobile-landing .ml-grid {
+  border: var(--border-paper);
+  border-radius: var(--radius);
+}
+/* Each feature is a two-column spec row — a 46px icon plate in the margin, the
+   copy in the measure — rather than the desktop's four side-by-side columns.
+   Stacked cards read top-to-bottom in one thumb-scroll and keep the F-pattern
+   scan; four 1fr columns at 320px would be 68px wide. */
+.jf-mobile-landing .ml-f {
+  position: relative;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 16px;
+  padding: 22px 18px 24px;
+  border-bottom: var(--border-paper);
+}
+.jf-mobile-landing .ml-f:last-child { border-bottom: none; }
+.jf-mobile-landing .ml-f::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--sky);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 0.35s var(--ease-out);
+}
+.jf-mobile-landing .ml-f.on::before { transform: scaleY(1); }
+.jf-mobile-landing .ml-f-ic {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: var(--border-paper);
+  border-radius: var(--radius);
+}
+.jf-mobile-landing .ml-f-ic .ml-ic { width: 21px; height: 21px; }
+.jf-mobile-landing .ml-f-n {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  line-height: 1;
+  color: var(--sky);
+}
+.jf-mobile-landing .ml-f-t {
+  margin-top: 9px;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+.jf-mobile-landing .ml-f-b {
+  margin-top: 8px;
+  /* Same reason as the tagline: at 768px this copy is otherwise ~95 characters
+     across, and on an ink ground a long line is harder to track back, not
+     easier. Below ~500px the column is already narrower than the cap, so the
+     phone layout is untouched by it. */
+  max-width: 56ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted-on-ink);
+}
+
+/* ══════ EDGE — the quote and the figures ══════════════════════════════════ */
+.jf-mobile-landing .ml-edge {
+  padding: clamp(44px, 11vw, 76px) 0;
+  border-bottom: var(--border);
+  background: var(--paper);
+}
+.jf-mobile-landing .ml-edge-box {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow-card);
+}
+/* The card's own 3px offset lives outside its border box; the section reserves
+   it so it cannot push the document wider at 320px. */
+.jf-mobile-landing .ml-edge .ml-wrap { padding-right: calc(var(--gutter) + var(--lift)); }
+.jf-mobile-landing .ml-edge-l { padding: clamp(24px, 6.5vw, 40px); }
+.jf-mobile-landing .ml-edge-q {
+  font-size: clamp(22px, 6.6vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+  text-transform: uppercase;
+}
+.jf-mobile-landing .ml-edge-q em { font-style: normal; color: var(--blueprint); }
+.jf-mobile-landing .ml-edge-r {
+  padding: clamp(20px, 5.5vw, 34px) clamp(24px, 6.5vw, 40px);
+  border-top: var(--border);
+  background: var(--paper-deep);
+}
+/* Ledger rows, not a 3-up tile strip: the mono caption reads left, the tabular
+   numeral files right against the column edge — DESIGN.md's estimate-line rule,
+   and the only arrangement where "Crews on JobFlex" does not wrap at 320px. */
+.jf-mobile-landing .ml-stat {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 0;
+  border-bottom: 1px dashed rgba(10, 10, 10, 0.22);
+}
+.jf-mobile-landing .ml-stat:first-child { padding-top: 0; }
+.jf-mobile-landing .ml-stat:last-child { padding-bottom: 0; border-bottom: none; }
+.jf-mobile-landing .ml-stat b {
+  font-size: clamp(30px, 9vw, 42px);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.jf-mobile-landing .ml-stat span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ══════ FOOTER ════════════════════════════════════════════════════════════ */
+.jf-mobile-landing .ml-ft {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(40px, 10vw, 68px) 0 0;
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-mobile-landing .ml-ft::before {
+  background-image: linear-gradient(var(--grid-dark) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+}
+.jf-mobile-landing .ml-ft .ml-wrap { position: relative; z-index: 2; }
+.jf-mobile-landing .ml-ft-cta { padding-bottom: clamp(30px, 8vw, 52px); }
+.jf-mobile-landing .ml-ft-h {
+  font-size: clamp(28px, 8.6vw, 44px);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+  text-transform: uppercase;
+}
+.jf-mobile-landing .ml-ft-h em {
+  font-style: normal;
+  color: transparent;
+  letter-spacing: 0.03em;
+  -webkit-text-stroke: 1.2px rgba(242, 240, 235, 0.75);
+}
+.jf-mobile-landing .ml-ft-cta .ml-btn { margin-top: 26px; width: calc(100% - var(--lift)); }
+.jf-mobile-landing .ml-ft-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 18px;
+  padding: 6px 0 max(14px, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--hair-on-ink);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted-on-ink);
+}
+.jf-mobile-landing .ml-ft-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; }
+/* 44px minimum on every footer link — these are the smallest targets on the
+   page and the row is inside the home-indicator zone, so the padding is real
+   height, not a hit-slop hack. */
+.jf-mobile-landing .ml-ft-bar > span,
+.jf-mobile-landing .ml-ft-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.jf-mobile-landing .ml-ft-links a { padding: 0 10px; transition: color 0.16s var(--ease); }
+.jf-mobile-landing .ml-ft-links a:first-child { padding-left: 0; }
+.jf-mobile-landing .ml-ft-links a:active { color: var(--paper); }
+
+/* ══════ REDUCED MOTION ════════════════════════════════════════════════════
+   DESIGN.md: with prefers-reduced-motion ALL animation and transition is off.
+   The entrance and reveal states are additionally forced to their resting
+   values, so nothing is left invisible when its animation never runs. The JS
+   half of this guard lives in use-mobile-landing-behavior.ts. */
+@media (prefers-reduced-motion: reduce) {
+  html:has(.jf-mobile-landing) { scroll-behavior: auto; }
+  .jf-mobile-landing *,
+  .jf-mobile-landing *::before,
+  .jf-mobile-landing *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+  }
+  .jf-mobile-landing .ml-rv { opacity: 1; transform: none; }
+  .jf-mobile-landing .ml-an { opacity: 1; animation: none; }
+  .jf-mobile-landing .ml-fh-line { opacity: 1; animation: none; }
+  .jf-mobile-landing .ml-f::before { transform: scaleY(1); }
+  .jf-mobile-landing .ml-mq-track { animation: none; }
+}

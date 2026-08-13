@@ -1,0 +1,1286 @@
+/* ============================================================
+   MOBILE SUBSCRIPTION — Blueprint system, handheld build
+   Serves BOTH /mobile-subscription-v2 (preview) and the live
+   /dashboard/subscription at <= 768px.
+
+   ── WHY THIS IS A PLAIN STYLESHEET AND NOT A CSS MODULE ─────
+   A CSS Module hashes CLASS names but leaves BARE ELEMENT
+   selectors untouched — `button`, `a`, `input`, `svg` and the
+   `*` box-sizing reset all need explicit `:global()` escapes
+   inside a module. Miss one and the design's own reset silently
+   stops applying while Tailwind preflight and globals.css fill
+   the vacuum: every control loses its frame and its fill, with
+   no lint error and no console warning. That has cost this
+   project two rebuilds.
+
+   So: ONE plain file, every selector prefixed with the single
+   root class `.jf-mobile-subscription`. Nothing here can leak
+   (the prefix is on every rule) and nothing here can be
+   silently dropped (no hashing to get wrong).
+
+   There is also a LIVE specificity trap this file has to
+   outrank: projects.module.css ships `.bp :global(.content
+   button)` at (0,2,1), which strips border / background /
+   cursor off every control it can reach. Every control rule
+   below is written as `.jf-mobile-subscription .jfms-x`, which
+   is (0,2,0) plus, in the places that matter, an element or a
+   second class — see the `.jfms-btn` block.
+
+   ── SCOPED RESET, and why it uses :where() ──────────────────
+   `.jf-mobile-subscription button` scores (0,1,1) — one class
+   plus one type — which outranks every single-class control
+   rule in this file (0,1,0 → here (0,2,0)) regardless of source
+   order, and silently deletes their border and background.
+   `:where()` contributes zero specificity, so the reset lands
+   at (0,1,1)→(0,0,1)-equivalent and loses to everything, which
+   is what a reset is for. Do not unwrap them.
+
+   ── HOST NEUTRALIZATION ─────────────────────────────────────
+   Done from inside this file with `body:has()`, never by
+   editing globals.css. See the block after the root.
+
+   Light mode only. No .dark variants. No md:/lg: breakpoints —
+   the composition is fluid from 320px to 768px.
+   ============================================================ */
+
+/* ============================================================
+   ROOT — tokens + the fixed viewport shell.
+   Token values are the reference dashboard's, verbatim; the
+   FLUID SCALE block below them is the handheld fleet's.
+   ============================================================ */
+.jf-mobile-subscription {
+  /* ---- palette (reference values, verbatim) ----
+     Paper is the #f2f0eb drafting cream — same sheet as desktop,
+     globals.css and every sibling handheld page. paper-deep stays a
+     shade RECESSED from the sheet, never lighter than it: the zoned
+     strips on this page (hero facts band, card feet, KPI strip) read
+     as pressed into the sheet, and inverting that direction inverts
+     every one of them at once. */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  /* Status colors — STATUSES ONLY, never decoration. Three tones each:
+     base (text/frame) / dark (hover, and the AA-safe text tone) / soft fill. */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-dark: #8c2929;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ----
+     Same tokens and same numbers as every sibling handheld page, so
+     the nav module (which reads them off this root) measures the same
+     bar here as it does on /mobile-referrals-v2. */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  --fs-h1: clamp(30px, 9.2vw, 44px);
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* ---- page-specific extras ----
+     The plan name is the biggest word on the surface and it is DATA
+     ("Professional", "Build your plan"), not a fixed headline, so it
+     scales harder than the H1 and wraps rather than clipping. */
+  --fs-plan: clamp(32px, 10.4vw, 54px);
+  --fs-price: clamp(26px, 8vw, 38px);
+  --fs-code: clamp(19px, 6.2vw, 30px);
+  /* Per-plan tier tone. Overridden per card; the fallback is the
+     neutral one so a card that forgets it degrades to ink. */
+  --tone: var(--muted-faint);
+
+  /* The route renders inside the app's own wrapper (the (dashboard)
+     layout on the live URL, the root layout on the preview), so the
+     shell pins itself rather than fighting the outer flow.
+     z-index 45 clears the legacy (dashboard) tab bar (z-30) and its
+     FAB (z-40); both are also display:none'd below, so this is the
+     belt to that braces — a browser without :has() still gets one
+     navigation instead of two stacked ones. Toasts live at z-100 at
+     document level and stay above this, which is correct: a checkout
+     failure has to be visible. */
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  /* MEASURED, not decorative. Without an explicit column the grid gets one
+     IMPLICIT `auto` track, whose maximum is max-content — so a single wide
+     child (here the invoice row, before its own fix) widened the track past
+     the viewport and the root's `overflow: hidden` quietly CLIPPED 41px off
+     the right edge of every card at 320px. `minmax(0, 1fr)` pins the column
+     to the container and lets the children shrink instead. */
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  /* Tailwind preflight sets `html { line-height: 1.5 }` and every block
+     below inherits it. This composition is drawn against browser-default
+     leading with explicit line-heights where they matter, so the
+     inherited 1.5 is cancelled here rather than fought per-rule. */
+  line-height: normal;
+  background: var(--paper);
+  color: var(--ink);
+  /* Matches globals.css and every sibling handheld root: the Inter
+     stylistic sets are part of the house type, not an accident of the
+     host, so they are re-stated rather than reset to `normal`. */
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── HOST NEUTRALIZATION ─────────────────────────────────────
+   globals.css paints the drafting grid on `body` (background-image,
+   background-attachment: fixed) and a paper-grain layer on
+   `body::before` (position: fixed; inset: 0; mix-blend-mode: multiply).
+   This shell is opaque and paints above both, so neither is visible —
+   but both keep repainting behind it on every scroll, and the grain is
+   a full-viewport blended layer. Off while this page is mounted.
+   The scroller below draws the page's own parallaxed grid. */
+body:has(.jf-mobile-subscription) { background-image: none; }
+body:has(.jf-mobile-subscription)::before { content: none; }
+/* The shell owns the viewport; the document behind it must not scroll. */
+body:has(.jf-mobile-subscription) { overflow: hidden; }
+/* The live URL's (dashboard) layout renders its own legacy handheld
+   navigation — a bottom tab bar and a floating action button — which
+   would otherwise float over this build and give the page two
+   navigations at once. The wrapper holding both is selected by its
+   nav's stable aria-label rather than by a Tailwind utility class.
+   display:none, not a z-index, so the links leave the tab order too. */
+body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display: none; }
+
+/* ── ONE GUARD ON THE SHARED NAV, and why it is here ─────────
+   MobileNav's `.tbarBtn` sets `width: 44px` but no `flex-shrink: 0`, and
+   its bar needs ~361px at the narrow end (padding 24.3 + burger 44 + mark
+   41.2 + wordmark 93 + three 44px right-hand controls 144 + gaps 14.2).
+   On the sibling handheld pages that deficit is hidden: their root grid
+   has no explicit column, so the implicit `auto` track sizes to
+   max-content, the bar lays out at 361 inside a 320 viewport and the bell
+   is clipped off the right edge. This page pins its column (see the root),
+   so the bar is asked to fit 320 honestly — and flexbox pays for it by
+   shrinking the burger to 31px, under the 44px minimum.
+   So: the burger keeps its target here. The wordmark then ellipsizes at
+   320–360, which is exactly the failsafe MobileNav's own
+   `min-width: 0 / nowrap / text-overflow` guards were written for.
+   Scoped to this page's own bar — the shared module is not edited. The
+   real fix belongs in mobile-nav.module.css and is reported, not made. */
+.jf-mobile-subscription > header > button:first-child { flex: 0 0 44px; }
+
+/* ── SCOPED RESET — see the header note on :where() ───────── */
+:where(.jf-mobile-subscription) button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+:where(.jf-mobile-subscription) a { text-decoration: none; color: inherit; }
+:where(.jf-mobile-subscription) input { font-family: inherit; }
+:where(.jf-mobile-subscription) ul,
+:where(.jf-mobile-subscription) ol { list-style: none; margin: 0; padding: 0; }
+
+.jf-mobile-subscription ::selection { background: var(--blueprint); color: #fff; }
+.jf-mobile-subscription :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+.jf-mobile-subscription .jfms-ic {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax. The MAIN scroller
+   paints no scrollbar; globals' 10px `*::-webkit-scrollbar` is
+   left alone everywhere else.
+   ============================================================ */
+.jf-mobile-subscription .jfms-scroll {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  background: var(--paper);
+}
+.jf-mobile-subscription .jfms-scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.jf-mobile-subscription .jfms-scroll::-webkit-scrollbar { width: 0; }
+
+.jf-mobile-subscription .jfms-content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+.jf-mobile-subscription .jfms-pageHead { padding-top: 2px; }
+.jf-mobile-subscription .jfms-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+.jf-mobile-subscription .jfms-kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+}
+.jf-mobile-subscription .jfms-pageTitle {
+  font-size: var(--fs-h1);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  line-height: 0.95;
+  margin: 0;
+}
+.jf-mobile-subscription .jfms-pageSub {
+  margin-top: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ============================================================
+   BUTTONS
+   Written with a second class on the same element so the rule
+   is (0,3,0) — comfortably above the live `.bp .content button`
+   (0,2,1) trap documented in the header.
+   ============================================================ */
+.jf-mobile-subscription button.jfms-btn,
+.jf-mobile-subscription a.jfms-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.jf-mobile-subscription .jfms-btn .jfms-ic { width: 18px; height: 18px; }
+.jf-mobile-subscription .jfms-btn:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: none; }
+.jf-mobile-subscription .jfms-btn:disabled { opacity: 0.45; cursor: default; }
+/* The elevated, colour-blocked control. The owner treats the locked
+   tokens as a floor on showcase surfaces, and a plan CTA is exactly
+   that — so it is a filled blueprint plate on a hard ink shadow, not
+   a near-white outline. Depth is the house standard 3px 3px 0 at
+   rest; a sibling page shipped 5px and is being reconciled down. */
+.jf-mobile-subscription button.jfms-btnPrimary,
+.jf-mobile-subscription a.jfms-btnPrimary {
+  background: var(--blueprint);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-subscription button.jfms-btnInk,
+.jf-mobile-subscription a.jfms-btnInk {
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+/* Quiet control for dense zones — still a full 2px frame, no fill. */
+.jf-mobile-subscription button.jfms-btnSm,
+.jf-mobile-subscription a.jfms-btnSm {
+  width: auto;
+  min-height: 44px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+/* ============================================================
+   PLAN LIMIT BANNER — the warning palette, no ink frame, 6px
+   left edge, no offset shadow. Shown only when a real enforced
+   limit is at or past 90%.
+   ============================================================ */
+.jf-mobile-subscription .jfms-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 2px solid var(--warning);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: linear-gradient(var(--warning-soft), var(--warning-soft)), var(--paper);
+  padding: 13px 12px 14px 14px;
+}
+.jf-mobile-subscription svg.jfms-ic.jfms-bannerPin {
+  width: 26px;
+  height: 26px;
+  color: var(--warning);
+  margin-top: 1px;
+}
+.jf-mobile-subscription .jfms-bannerBody { min-width: 0; flex: 1; }
+.jf-mobile-subscription .jfms-bannerKicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--warning-dark);
+  margin-bottom: 5px;
+}
+.jf-mobile-subscription .jfms-bannerTxt {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+/* The banner's action. The donor draws it as an inline underlined link
+   inside the sentence; inline text cannot carry a 44px target, so on a
+   phone it becomes its own control on the line below — same words, same
+   warning tone, a real touch target. */
+.jf-mobile-subscription button.jfms-bannerCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid var(--warning-dark);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  color: var(--warning-dark);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.jf-mobile-subscription .jfms-bannerCta:active { background: var(--paper-deep); }
+.jf-mobile-subscription button.jfms-bannerClose {
+  width: 44px;
+  height: 44px;
+  margin: -8px -6px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.jf-mobile-subscription .jfms-bannerClose:active { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+.jf-mobile-subscription .jfms-bannerClose .jfms-ic { width: 16px; height: 16px; }
+
+/* ============================================================
+   PLAN HERO — the one inverse block on the page. Ink ground,
+   drawing grid, a rotated status stamp and a pressed facts band.
+   The tier tone appears as the 4px top edge and nowhere else,
+   so the surface stays ~80% neutral.
+   ============================================================ */
+.jf-mobile-subscription .jfms-hero {
+  position: relative;
+  overflow: hidden;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  background-image:
+    linear-gradient(rgba(242, 240, 235, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(242, 240, 235, 0.08) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.jf-mobile-subscription .jfms-heroEdge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--tone);
+}
+.jf-mobile-subscription .jfms-heroTop { padding: calc(var(--card-pad) + 4px) var(--card-pad) var(--card-pad); }
+/* Kicker left, status stamp hard right — the hero's top line. flex-start so a
+   wrapped kicker never drags the stamp down the card. */
+.jf-mobile-subscription .jfms-heroHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.jf-mobile-subscription .jfms-heroMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.6);
+}
+.jf-mobile-subscription .jfms-heroName {
+  margin: 10px 0 0;
+  font-size: var(--fs-plan);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-subscription .jfms-heroRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 14px;
+}
+/* A figure: Inter 900 + tabular-nums, never mono. */
+.jf-mobile-subscription .jfms-heroPrice {
+  font-size: var(--fs-price);
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.jf-mobile-subscription .jfms-heroPrice i {
+  font-style: normal;
+  margin-left: 7px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.6);
+}
+/* The stamp, now in the hero's top-right corner rather than under the price.
+   Cornered means it shares its line with the kicker instead of owning a band
+   of its own, so it is set a size down: an eight-character status ("PAST DUE")
+   still clears 320px beside "YOUR PLAN" inside the card's padding.
+   flex-shrink: 0 — a rotated box that gets squeezed reads as a mistake; the
+   kicker gives way first. margin-top pulls it optically level with the kicker's
+   cap height, and -0.5px right trims the overhang the -3deg rotation adds. */
+.jf-mobile-subscription .jfms-stamp {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin: -3px -0.5px 0 0;
+  padding: 7px clamp(11px, 3.6vw, 17px);
+  border: 2.5px solid var(--stamp, #58b368);
+  color: var(--stamp, #58b368);
+  background: var(--stampFill, rgba(58, 125, 68, 0.16));
+  font-size: clamp(11px, 3.1vw, 14px);
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+  white-space: nowrap;
+}
+/* Stamp tones. On the ink ground the base status colours fall below AA
+   (#3a7d44 lands at 1.9:1 on #0a0a0a), so each carries a LIFTED tone —
+   the same hue, raised until it clears 4.5:1 against ink. These are the
+   only lifted values on the page and they exist for contrast, not for a
+   second palette. The donor's own stamp green (#58b368) is the model. */
+.jf-mobile-subscription .jfms-stamp.jfms-stOk { --stamp: #58b368; --stampFill: rgba(88, 179, 104, 0.16); }
+.jf-mobile-subscription .jfms-stamp.jfms-stWarn { --stamp: #e0ac48; --stampFill: rgba(224, 172, 72, 0.16); }
+.jf-mobile-subscription .jfms-stamp.jfms-stBad { --stamp: #e07a76; --stampFill: rgba(224, 122, 118, 0.16); }
+.jf-mobile-subscription .jfms-stamp.jfms-stNeutral { --stamp: rgba(242, 240, 235, 0.8); --stampFill: rgba(242, 240, 235, 0.08); }
+
+/* Tier tone. The live surface tints by tier and that is carried forward —
+   but re-expressed inside the blueprint palette, because the status
+   colours are reserved for statuses and must never become decoration.
+   Free is the neutral graphite; paid plans cycle blueprint → sky →
+   deep blueprint by catalog order, so a fourth paid plan reuses the
+   first tone rather than inventing a colour. The tone appears ONLY as a
+   4px top edge and nowhere in text, so nothing depends on its contrast. */
+.jf-mobile-subscription .jfms-toneFree { --tone: var(--muted-faint); }
+.jf-mobile-subscription .jfms-toneA { --tone: var(--blueprint); }
+.jf-mobile-subscription .jfms-toneB { --tone: var(--sky); }
+.jf-mobile-subscription .jfms-toneC { --tone: var(--blueprint-dark); }
+
+/* Pressed facts band. Two intrinsic cells — no breakpoint needed. */
+.jf-mobile-subscription .jfms-heroFacts {
+  display: flex;
+  border-top: 1.5px solid rgba(242, 240, 235, 0.25);
+  background: rgba(242, 240, 235, 0.06);
+}
+.jf-mobile-subscription .jfms-heroFact {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 12px var(--card-pad) 13px;
+  border-right: 1.5px solid rgba(242, 240, 235, 0.25);
+}
+.jf-mobile-subscription .jfms-heroFact:last-child { border-right: none; }
+.jf-mobile-subscription .jfms-heroFactL {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.55);
+  margin-bottom: 6px;
+}
+.jf-mobile-subscription .jfms-heroFactV {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   CARD — the page's one container. Head, body, optional foot.
+   ============================================================ */
+.jf-mobile-subscription .jfms-card {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.jf-mobile-subscription .jfms-cardHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: var(--card-pad) var(--card-pad) 0;
+}
+.jf-mobile-subscription .jfms-cardTitle {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.15;
+}
+.jf-mobile-subscription .jfms-cardHeadIc { width: 18px; height: 18px; color: var(--muted); }
+.jf-mobile-subscription .jfms-cardBody { padding: var(--card-pad); }
+.jf-mobile-subscription .jfms-cardFoot {
+  padding: 12px var(--card-pad) 13px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Section label above a group of cards — a drawing annotation. */
+/* Section heading. Was a mono kicker in --muted with a drawn rule and a count
+   ("PLANS ——— 4 available"); now the word alone, set as a real headline in full
+   ink (owner's call, 2026-08-12) — bigger, heavier and darker than anything
+   around it, so it reads as the page's own break rather than an annotation. */
+.jf-mobile-subscription .jfms-sectionLbl {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  line-height: 1.05;
+  color: var(--ink);
+  margin-bottom: -2px;
+}
+
+/* Empty state — a note on a drawing. */
+.jf-mobile-subscription .jfms-empty {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 22px 16px;
+  text-align: center;
+}
+.jf-mobile-subscription .jfms-emptyIc { width: 22px; height: 22px; color: var(--muted-faint); margin-bottom: 8px; }
+.jf-mobile-subscription .jfms-emptyT { font-size: 13.5px; font-weight: 800; letter-spacing: 0.02em; }
+.jf-mobile-subscription .jfms-emptyS { margin-top: 6px; font-size: 12.5px; line-height: 1.5; color: var(--muted-light); }
+
+/* ============================================================
+   USAGE METERS — the enforced caps, pressure-sorted.
+   ============================================================ */
+.jf-mobile-subscription .jfms-usRow { margin-bottom: 16px; }
+.jf-mobile-subscription .jfms-usRow:last-child { margin-bottom: 0; }
+.jf-mobile-subscription .jfms-usTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+.jf-mobile-subscription .jfms-usLbl { font-size: 13.5px; font-weight: 600; min-width: 0; }
+/* A technical annotation (a count against a cap), so mono — and tabular,
+   so the digit columns hold still as the numbers change. */
+.jf-mobile-subscription .jfms-usNum {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.jf-mobile-subscription .jfms-usBar {
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+.jf-mobile-subscription .jfms-usFill {
+  display: block;
+  height: 100%;
+  width: var(--w, 0%);
+  background: var(--blueprint);
+  transition: width 0.8s var(--ease-out);
+}
+/* Load tones ARE statuses here — "this cap is about to stop you" — so the
+   status palette is the correct one, not decoration. */
+.jf-mobile-subscription .jfms-usFill.jfms-warn { background: var(--warning); }
+.jf-mobile-subscription .jfms-usFill.jfms-hot { background: var(--danger); }
+.jf-mobile-subscription .jfms-usRow.jfms-warn .jfms-usNum { color: var(--warning-dark); }
+.jf-mobile-subscription .jfms-usRow.jfms-hot .jfms-usNum { color: var(--danger); }
+
+/* ============================================================
+   PLAN CARDS — the handheld answer to a pricing table.
+   Full-width stacked cards, current plan first. Real elevation
+   and a colour-blocked head plate; this is a showcase surface,
+   not a dense one.
+   ============================================================ */
+.jf-mobile-subscription .jfms-plans { display: flex; flex-direction: column; gap: 12px; }
+.jf-mobile-subscription .jfms-plan {
+  position: relative;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.jf-mobile-subscription .jfms-plan::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--tone);
+}
+/* The org's own plan. A blueprint wash plus a heavier ink shadow — the
+   card the eye should land on first, without a second border weight. */
+.jf-mobile-subscription .jfms-plan.jfms-isCur {
+  background: linear-gradient(rgba(24, 84, 160, 0.05), rgba(24, 84, 160, 0.05)), var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-subscription .jfms-planTop { padding: calc(var(--card-pad) + 4px) var(--card-pad) var(--card-pad); }
+.jf-mobile-subscription .jfms-planHeadRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.jf-mobile-subscription .jfms-planName {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+/* Inverse plate — the house "stamp". Marks the catalog's own
+   highlight flag, nothing invented. */
+.jf-mobile-subscription .jfms-planFlag {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+/* The free marker, in the head row's right corner. Outline rather than the
+   flag's inverse plate: "Most popular" is a claim and earns the ink fill, while
+   "Free" is a fact about the price beside it — and if a plan is ever both, two
+   solid black plates side by side would fight. */
+.jf-mobile-subscription .jfms-planFree {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1.35;
+}
+.jf-mobile-subscription .jfms-planPrice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.jf-mobile-subscription .jfms-planPrice b {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-subscription .jfms-planPrice i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-subscription .jfms-planDesc {
+  margin-top: 9px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* The plan's own enforced caps, straight off PricingPlan.limitsJson —
+   the same numbers the limits engine meters above. A cap is the figure a
+   contractor actually compares plans on, so it sits above the feature
+   list, in an estimate-sheet ledger: label left, numeral right, thin
+   dividers, tabular so the digits line up between cards. */
+.jf-mobile-subscription .jfms-planCaps {
+  margin-top: 14px;
+  border-top: 1.5px solid var(--hair);
+}
+.jf-mobile-subscription .jfms-planCap {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px dashed rgba(10, 10, 10, 0.14);
+  font-size: 12.5px;
+}
+.jf-mobile-subscription .jfms-planCap:last-child { border-bottom: none; }
+.jf-mobile-subscription .jfms-planCapV {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* "Everything in Starter, plus" — the chain that makes four stacked
+   cards comparable without a matrix. */
+.jf-mobile-subscription .jfms-planInherit {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.jf-mobile-subscription .jfms-planInherit + .jfms-planFeat { margin-top: 8px; }
+.jf-mobile-subscription .jfms-planFeat { margin-top: 14px; }
+.jf-mobile-subscription .jfms-planFeat li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 6px 0;
+  font-size: 13px;
+  line-height: 1.45;
+  border-top: 1px dashed rgba(10, 10, 10, 0.14);
+}
+.jf-mobile-subscription .jfms-planFeat li:first-child { border-top: none; padding-top: 0; }
+.jf-mobile-subscription .jfms-featTick {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  background: var(--blueprint);
+  color: var(--paper);
+  border-radius: var(--radius);
+  font-size: 10px;
+  font-weight: 900;
+}
+.jf-mobile-subscription .jfms-planFoot {
+  padding: 12px var(--card-pad) 14px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.jf-mobile-subscription .jfms-planTrial {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+/* The current plan gets a label plate, never a button — there is
+   nothing to buy, and a disabled button here reads as broken. */
+.jf-mobile-subscription .jfms-planCur {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 48px;
+  border: 1.5px dashed var(--blueprint);
+  border-radius: var(--radius);
+  color: var(--blueprint);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   BILLING HISTORY — invoice ROWS, not a table.
+   A four-column grid cannot hold date + status + amount + link
+   at 320px, so each invoice becomes a two-line row and the whole
+   row is the link when Stripe gives us one.
+   ============================================================ */
+.jf-mobile-subscription .jfms-invList { display: block; }
+.jf-mobile-subscription .jfms-invRow {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 0 13px;
+  border-top: 1px dashed rgba(10, 10, 10, 0.16);
+  text-align: left;
+}
+.jf-mobile-subscription .jfms-invList > .jfms-invRow:first-child { border-top: none; padding-top: 2px; }
+.jf-mobile-subscription a.jfms-invRow { transition: background 0.12s; }
+.jf-mobile-subscription a.jfms-invRow:active { background: var(--paper-deep); }
+.jf-mobile-subscription .jfms-invTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.jf-mobile-subscription .jfms-invNo {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-subscription .jfms-invBot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+.jf-mobile-subscription .jfms-invDate {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-subscription .jfms-invAmt {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The "open at Stripe" affordance. 44x44 so the row carries a real
+   target even when the two text lines are short. The negative margin is
+   VERTICAL ONLY: the row has no horizontal padding to absorb a negative
+   right margin, so pulling it sideways pushed the glyph 10px outside the
+   card at 320px. */
+.jf-mobile-subscription .jfms-invGo {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  margin: -10px 0;
+  display: grid;
+  place-items: center;
+  color: var(--blueprint);
+}
+.jf-mobile-subscription .jfms-invGo .jfms-ic { width: 17px; height: 17px; }
+
+/* Status badge — 1.5px frame in the base tone, soft fill, caps. */
+.jf-mobile-subscription .jfms-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1.5px solid var(--muted-faint);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.jf-mobile-subscription .jfms-badge.jfms-ok { border-color: var(--success); background: var(--success-soft); color: var(--success-dark); }
+.jf-mobile-subscription .jfms-badge.jfms-warn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning-dark); }
+.jf-mobile-subscription .jfms-badge.jfms-bad { border-color: var(--danger); background: var(--danger-soft); color: var(--danger-dark); }
+
+/* ============================================================
+   REFER & EARN
+   ============================================================ */
+.jf-mobile-subscription .jfms-refRow { display: flex; align-items: center; gap: 12px; }
+/* A referral code is a technical annotation, not an amount — mono.
+   The plate itself is the tap target, as the desktop's is. */
+.jf-mobile-subscription button.jfms-refCode {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-align: left;
+  overflow-wrap: anywhere;
+  transition: background 0.14s;
+}
+.jf-mobile-subscription .jfms-refCode:active { background: var(--blueprint-dark); }
+.jf-mobile-subscription button.jfms-refCopy {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.jf-mobile-subscription .jfms-refCopy:active { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.jf-mobile-subscription .jfms-refCopy.jfms-isDone { border-color: var(--success); color: var(--success-dark); background: var(--success-soft); }
+.jf-mobile-subscription .jfms-refCopy .jfms-ic { width: 19px; height: 19px; }
+.jf-mobile-subscription .jfms-refReward { margin-top: 13px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); }
+.jf-mobile-subscription button.jfms-refUrl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: left;
+  overflow-wrap: anywhere;
+  transition: border-color 0.14s, color 0.14s;
+}
+.jf-mobile-subscription .jfms-refUrl:active { border-color: var(--ink); color: var(--ink); }
+.jf-mobile-subscription .jfms-refUrlTxt { flex: 1; min-width: 0; }
+/* Flag with a reserved width so the copy confirmation never reflows the row. */
+.jf-mobile-subscription .jfms-flag {
+  flex: 0 0 auto;
+  min-width: 56px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--success-dark);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.jf-mobile-subscription .jfms-flag.jfms-isOn { opacity: 1; }
+
+/* KPI strip — one block, 1.5px internal dividers, no labels below
+   the numerals. Intrinsic columns, so 320px folds it to 2+1 on its
+   own with no breakpoint. */
+.jf-mobile-subscription .jfms-kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+.jf-mobile-subscription .jfms-kpi {
+  padding: 12px var(--card-pad) 14px;
+  border-right: 1.5px solid var(--ink);
+  min-width: 0;
+}
+.jf-mobile-subscription .jfms-kpi:last-child { border-right: none; }
+.jf-mobile-subscription .jfms-kpiLbl {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.jf-mobile-subscription .jfms-kpiVal {
+  font-size: clamp(24px, 7.4vw, 32px);
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   CHANGE-PLAN SHEET — bottom sheet, never a modal dialog.
+   Hand-rolled (no Radix anywhere in this project); the drag is
+   the shared use-sheet-drag hook.
+   ============================================================ */
+.jf-mobile-subscription .jfms-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(10, 10, 10, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.jf-mobile-subscription .jfms-scrim.jfms-on { opacity: 1; pointer-events: auto; }
+/* translateY(100%) plus visibility:hidden, so a closed sheet leaves the
+   tab order and the accessibility tree rather than sitting off-screen
+   and still focusable. */
+.jf-mobile-subscription .jfms-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 81;
+  background: var(--paper);
+  border-top: var(--border);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+  padding-bottom: var(--safe-b);
+  max-height: 92%;
+  display: flex;
+  flex-direction: column;
+}
+.jf-mobile-subscription .jfms-sheet.jfms-on { transform: none; visibility: visible; }
+.jf-mobile-subscription .jfms-sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
+.jf-mobile-subscription .jfms-sheetHead {
+  padding: 14px var(--pad-x) 12px;
+  border-bottom: 1.5px solid var(--ink);
+  flex-shrink: 0;
+}
+.jf-mobile-subscription .jfms-sheetKicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.jf-mobile-subscription .jfms-sheetTitle {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+/* An INNER scroller, so it does paint a thumb — globals' 10px webkit
+   scrollbar is left alone; only the width is narrowed here. */
+.jf-mobile-subscription .jfms-sheetBody {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.jf-mobile-subscription .jfms-sheetBody::-webkit-scrollbar { width: 6px; }
+.jf-mobile-subscription .jfms-sheetBody::-webkit-scrollbar-thumb { background: var(--muted-faint); border: none; }
+.jf-mobile-subscription .jfms-sheetBody::-webkit-scrollbar-track { background: transparent; }
+.jf-mobile-subscription button.jfms-sheetOpt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px var(--pad-x);
+  border: none;
+  border-bottom: 1px solid var(--hair-soft);
+  background: var(--paper);
+  text-align: left;
+  transition: background 0.12s;
+}
+.jf-mobile-subscription .jfms-sheetOpt:active { background: var(--paper-deep); }
+.jf-mobile-subscription .jfms-sheetOpt.jfms-isSel { background: linear-gradient(rgba(24, 84, 160, 0.06), rgba(24, 84, 160, 0.06)), var(--paper); }
+.jf-mobile-subscription .jfms-optMark {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  color: transparent;
+}
+.jf-mobile-subscription .jfms-sheetOpt.jfms-isSel .jfms-optMark { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.jf-mobile-subscription .jfms-optMark .jfms-ic { width: 13px; height: 13px; }
+.jf-mobile-subscription .jfms-optTxt { flex: 1; min-width: 0; }
+.jf-mobile-subscription .jfms-optName {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-subscription .jfms-optSub {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-subscription .jfms-optPrice {
+  flex: 0 0 auto;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+}
+/* The monthly / yearly switch. Two 48px halves inside one ink frame. */
+.jf-mobile-subscription .jfms-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 14px var(--pad-x) 0;
+  border: var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.jf-mobile-subscription button.jfms-segBtn {
+  min-height: 48px;
+  padding: 0 8px;
+  border: none;
+  border-right: 1.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-subscription .jfms-segBtn:last-child { border-right: none; }
+.jf-mobile-subscription .jfms-segBtn.jfms-isSel { background: var(--ink); color: var(--paper); }
+.jf-mobile-subscription .jfms-sheetNote {
+  padding: 12px var(--pad-x) 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.jf-mobile-subscription .jfms-sheetFoot {
+  display: flex;
+  gap: 10px;
+  padding: 14px var(--pad-x);
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   MOTION SYSTEM — "Balanced". Reveal cascade on load, adaptive
+   reveal on scroll, press feedback. All of it is disabled under
+   prefers-reduced-motion (both halves — this block and the early
+   return in the component).
+   ============================================================ */
+.jf-mobile-subscription .jfms-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.jf-mobile-subscription .jfms-rv.jfms-rvIn { opacity: 1; transform: none; }
+@keyframes jfmsPress {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.jf-mobile-subscription .jfms-pressed { animation: jfmsPress 0.18s var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-subscription *,
+  .jf-mobile-subscription *::before,
+  .jf-mobile-subscription *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  .jf-mobile-subscription .jfms-rv { opacity: 1; transform: none; }
+}

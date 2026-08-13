@@ -1,0 +1,177 @@
+/* ============================================================
+   ESTIMATOR PICKER — review harness, host stylesheet.
+
+   This file styles the HARNESS ONLY. It contains not one rule that touches the
+   dialog: the picker is entirely self-styled by
+   `components/v3/estimators-blueprint/estimators-global.css`, and a harness
+   that reached into it would be measuring itself instead of the thing under
+   review.
+
+   A plain stylesheet with a `jf-epl-` prefix, not a CSS module — same reason
+   the dialog's stylesheet is one, and so that nothing here can hash away and
+   quietly change what the picker is mounted inside.
+
+   The `.jf-epl-app` root reproduces the handheld fleet's `.app` root: same
+   token block, same `position: fixed` / `grid-template-rows: var(--topbar-h)
+   1fr` / `overflow: hidden` geometry. That is the point of the harness — the
+   picker's environment-restore block and its z-index both depend on what it is
+   mounted INSIDE, so a host that is merely similar would prove nothing.
+   Token values are copied from mobile-v2.module.css; MobileNav reads
+   --paper / --ink / --sky / --topbar-h / --sidebar-w / --pad-x / --tbar-gap /
+   --safe-b / --border / --radius / --ease-out / --ease-soft / --hair /
+   --muted-light / --muted-faint / --ink-soft / --blueprint from this root.
+   ============================================================ */
+
+.jf-epl-app {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --sky: #4a9eff;
+
+  --muted: #555;
+  --muted-light: #888;
+  --muted-faint: #b0aea8;
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --topbar-h: 64px;
+  --sidebar-w: min(84vw, 320px);
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --lockup-gap: clamp(2px, 0.7vw, 5px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+}
+
+/* Graph paper, so the dialog is judged over the ground it actually sits on
+   rather than over flat cream. */
+.jf-epl-sheet {
+  overflow-y: auto;
+  padding: clamp(18px, 6vw, 34px) var(--pad-x) calc(24px + var(--safe-b));
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.jf-epl-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.jf-epl-title {
+  margin: 8px 0 0;
+  font-size: clamp(26px, 8vw, 38px);
+  font-weight: 900;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+.jf-epl-note {
+  margin: 14px 0 0;
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.jf-epl-note code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--blueprint);
+}
+
+/* The manual re-open. The dialog is opened for you on load; this is how you get
+   it back after testing a dismissal. Sized to the same ≥44px commitment the
+   dialog is being audited against, so the harness cannot fail its own rule. */
+.jf-epl-open {
+  margin-top: 22px;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out);
+}
+.jf-epl-open:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+.jf-epl-open i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--blueprint);
+}
+
+.jf-epl-list {
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1.5px solid var(--hair);
+}
+.jf-epl-list li {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1.5px solid var(--hair);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.jf-epl-list b {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--muted-light);
+  padding-top: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-epl-open { transition: none; }
+}

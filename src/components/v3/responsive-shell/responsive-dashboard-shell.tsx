@@ -175,6 +175,11 @@ const HANDHELD_SURFACES: Record<string, React.ComponentType> = {
   "/dashboard/estimators/manual": MobileManualBuilder,
 };
 
+/** Routes whose PAGE owns the handheld switch because the map above cannot:
+ *  a dynamic pathname, and a handheld build that needs the page's server data.
+ *  Deliberately anchored and single-segment — see the guard's comment below. */
+const PAGE_OWNED_HANDHELD = /^\/dashboard\/projects\/[^/]+$/;
+
 // Module-scope so the identities are stable across renders — a fresh
 // `subscribe` on every render makes useSyncExternalStore re-subscribe each
 // time, which on a resize-driven store means tearing down the listener in the
@@ -205,6 +210,22 @@ export function ResponsiveDashboardShell({
 
   const Handheld = HANDHELD_SURFACES[pathname ?? ""];
   if (isHandheld && Handheld) return <Handheld />;
+
+  // Project detail, 2026-08-12 — the one route the map above cannot express.
+  // It is DYNAMIC (/dashboard/projects/<cuid>), so no literal key matches it,
+  // and its handheld build needs the project, its jobs and the attachable-job
+  // candidates, which are read in that page's server component and cannot
+  // reach a props-less component mounted from here. So the PAGE owns the
+  // switch, on the same (max-width: 768px) query, and this guard is the other
+  // half of it: at handheld width the shell renders the page bare rather than
+  // wrapping a self-contained fixed-position tree in the desktop chrome, which
+  // would put both trees in the DOM at once. Above 768px nothing changes.
+  //
+  // Scope of the pattern, checked: /dashboard/projects (the list) is matched by
+  // the map above and returns before this line; /dashboard/projects/new lives in
+  // the (dashboard) route group, a different layout that never mounts this
+  // shell; no other route under this layout has a second path segment.
+  if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) return <>{children}</>;
 
   return <BlueprintShell user={user}>{children}</BlueprintShell>;
 }

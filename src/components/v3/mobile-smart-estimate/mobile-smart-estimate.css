@@ -1,0 +1,900 @@
+/* ============================================================================
+   SMART PROPOSAL · ESTIMATE — HANDHELD   —   /mobile-smart-estimate-v1
+   ============================================================================
+
+   The RESULT screen of Smart Proposal, rebuilt for a phone: materials, labor,
+   the materials request, scope, the summary and "change the estimate". Fluid
+   320 → 768px, no breakpoint anywhere in this file.
+
+   It is a SIBLING of the desktop /dashboard/advanced-ai, which is untouched.
+   Only that page's `panel === "estimate"` branch is ported — the intake console
+   (project type / location / brief / Generate) is deliberately NOT here.
+
+   The design language is the desktop port's, value for value: paper #f2f0eb,
+   ink #0a0a0a, blueprint #1854a0, WHITE cards (this page's cards are #ffffff,
+   not paper), 2px ink frames, 2px radii, hard 3px offset shadows with no blur,
+   dashed rgba(10,10,10,.16) row rules, 1.5px ink totals rules, Inter 800–900
+   caps for headings and amounts, JetBrains Mono for the drawing-annotation
+   layer, tabular numerals on every number. What changes is the COMPOSITION —
+   see the block comments on each section.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate, and load-bearing) ───────
+   Two constructs here cannot survive class hashing:
+     · the scoped universal reset `.jf-mobile-smart-estimate *` — `*` is not a
+       class, so the modules pipeline leaves it UNSCOPED and it flattens the
+       layout of every page in the app. This has already been shipped once and
+       had to be reverted; it is not a stylistic preference.
+     · `[hidden] { display: none !important }` — an attribute selector, and
+       load-bearing here: the three refine stages are toggled with the `hidden`
+       attribute exactly as the donor's `setRefineStage()` does, and `.mse-busy`
+       sets `display: flex`, which beats Tailwind preflight's plain
+       `[hidden] { display: none }` on source order.
+   Same call, same reasoning, as
+   src/components/v3/mobile-proposal-client/mobile-proposal-client.css — read
+   that header for the full argument.
+
+   Every selector below therefore carries the single literal root class
+   `.jf-mobile-smart-estimate`, uniformly, so relative specificity among these
+   rules is exactly what it would be unprefixed and nothing leaks out. The only
+   exceptions are the two host neutralizers, which have to reach <body>; both
+   are `:has()`-gated so they undo themselves the moment the tree unmounts.
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   `.jf-mobile-smart-estimate` and the element prefix `mse-` are new literals,
+   checked against every `.jf-*` root and class prefix in the repo. The two
+   @keyframes are namespaced (`mseRise`, `msePulse`) for the same reason: the
+   donor's `spPulse` lives in dashboard-blueprint/blueprint-global.css, which
+   this page does NOT load, so the busy dot declares its own.
+
+   ── `--ease-out`: DECLARED HERE ────────────────────────────────────────────
+   The desktop module references `var(--ease-out)` in `.sp-req-link` without
+   declaring it (it resolves from globals.css there). This page carries its own
+   token block and cannot assume the inheritance, so it declares DESIGN.md's
+   primary curve, cubic-bezier(0.22, 0.61, 0.36, 1), itself.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark`. globals.css NOT touched. No `md:` / `lg:`
+   variants and no layout media query at all — the page is fluid on clamp() and
+   intrinsic flex. The only media queries are `prefers-reduced-motion`.
+   ========================================================================= */
+
+/* ── TOKENS ────────────────────────────────────────────────────────────────
+   Page-scoped, never promoted to :root. Values are the desktop port's. */
+.jf-mobile-smart-estimate {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --sheet: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555555;
+  --muted-light: #888888;
+  --muted-faint: #b0aea8;
+
+  --success: #3a7d44;
+  --warning: #b88420;
+  --danger: #a83232;
+
+  --hair: rgba(10, 10, 10, 0.45);
+  --hair-soft: rgba(10, 10, 10, 0.16);
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+
+  --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Gutter honours a landscape notch without ever dropping below 16px. */
+  --gutter: max(16px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* Card padding grows with the viewport instead of stepping at a breakpoint:
+     16px at 320, 24px at ~520 and above. */
+  --card-pad: clamp(16px, 4.6vw, 24px);
+  /* Every touch target on this page is measured against this. CLAUDE.md's
+     floor; the desktop's 35px inputs and 22px remove button both grow to it. */
+  --tap: 44px;
+}
+
+/* Scoped universal reset — the construct a CSS Module cannot express. */
+.jf-mobile-smart-estimate,
+.jf-mobile-smart-estimate * {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* The donor's own mechanism, kept: `hidden` is how the three refine stages are
+   shown and hidden. `!important` because `.mse-busy` sets `display: flex`. */
+.jf-mobile-smart-estimate [hidden] { display: none !important; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS — the only rules here that are not this page's own.
+
+   1. The paper + graph-paper field is painted on <body> rather than on the page
+      root, because body background propagates to the canvas and so fills the
+      viewport however short the document is. The `background` SHORTHAND also
+      resets `background-attachment` to `scroll`: globals.css pins the app grid
+      `fixed`, and a grid that stays still while the document scrolls reads as a
+      rendering fault on a phone, where scrolling is the whole interaction. The
+      34px cell is the mobile fleet's, not globals' 40px.
+   2. `body::before` — globals' paper-grain overlay, mix-blend-mode: multiply at
+      0.18. It tints every white card grey. Off for this page's lifetime.
+   Both are `:has()`-gated, so they restore themselves on unmount.
+   ══════════════════════════════════════════════════════════════════════════ */
+body:has(.jf-mobile-smart-estimate) {
+  background: var(--paper, #f2f0eb);
+  background-image:
+    linear-gradient(rgba(10, 10, 10, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10, 10, 10, 0.05) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+body:has(.jf-mobile-smart-estimate)::before { content: none; }
+
+/* The root. Column flex so the action bar can be the last child and sticky.
+   Never `overflow: hidden` here — that would kill `position: sticky`.
+
+   `line-height`, `font-feature-settings` and `text-rendering` are reset off
+   Tailwind preflight / globals: preflight's `html { line-height: 1.5 }` grows
+   every mono annotation, button and ledger row by 2–5px, and globals' Inter
+   feature settings ('cv11','ss01','ss03') change the width of every tabular
+   amount column this design aligns on. */
+.jf-mobile-smart-estimate {
+  font-family: var(--font);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  line-height: normal;
+  font-feature-settings: normal;
+  text-rendering: auto;
+
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.jf-mobile-smart-estimate textarea::placeholder,
+.jf-mobile-smart-estimate input::placeholder { color: revert; opacity: revert; }
+
+/* ── BARE ELEMENTS, SCOPED ────────────────────────────────────────────────
+   `:where()` keeps this reset at (0,0,1) so it loses to every single-class rule
+   in the file. Written plainly as `.jf-mobile-smart-estimate button` it would
+   score (0,1,1) and silently delete the border and background off every button
+   rule below — the trap documented in the page-styler skill's handheld notes,
+   which has already cost this codebase two builds. */
+:where(.jf-mobile-smart-estimate) button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+:where(.jf-mobile-smart-estimate) a { color: inherit; text-decoration: none; }
+:where(.jf-mobile-smart-estimate) textarea,
+:where(.jf-mobile-smart-estimate) input { font-family: inherit; color: inherit; }
+:where(.jf-mobile-smart-estimate) h1,
+:where(.jf-mobile-smart-estimate) h2,
+:where(.jf-mobile-smart-estimate) p { font-size: inherit; font-weight: inherit; }
+
+.jf-mobile-smart-estimate :focus-visible {
+  outline: 3px solid var(--blueprint);
+  outline-offset: 2px;
+}
+
+.jf-mobile-smart-estimate .mse-ic {
+  display: block;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: 0 0 auto;
+  shape-rendering: geometricPrecision;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE DOCUMENT COLUMN
+   The desktop `sp-grid` is `3fr 2fr` — main column (materials / labor /
+   request / scope) beside a rail (summary / refine). Here it is ONE column,
+   capped at 620px so the 768px end of the range does not stretch a ledger into
+   an unreadable measure.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-smart-estimate .mse-doc {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 20px var(--gutter) 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── PAGE HEAD ────────────────────────────────────────────────────────────
+   The desktop head also carries "Start over" and "Send to proposal". Both move
+   out of here: the primary belongs in the thumb zone (see THE ACTION BAR), and
+   the reset actions sit at the end of the document where the estimate ends. */
+.jf-mobile-smart-estimate .mse-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.jf-mobile-smart-estimate .mse-kicker::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.jf-mobile-smart-estimate .mse-title {
+  /* Desktop is a flat 46px; on a phone it is fluid — 28px at 320, 40px at 476
+     and above, so "Cedar privacy fence — 128 ft" sets in two lines at every
+     width in the range instead of four. */
+  font-size: clamp(28px, 8.4vw, 40px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  line-height: 0.95;
+}
+.jf-mobile-smart-estimate .mse-brief {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ── CARD ─────────────────────────────────────────────────────────────────
+   White, not paper — this page's own deviation on desktop too. */
+.jf-mobile-smart-estimate .mse-card {
+  background: var(--sheet);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--card-pad);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.jf-mobile-smart-estimate .mse-h {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.jf-mobile-smart-estimate .mse-t {
+  font-size: clamp(17px, 5.2vw, 19px);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+}
+.jf-mobile-smart-estimate .mse-cardtotal {
+  margin-left: auto;
+  font-size: clamp(19px, 6vw, 22px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SUMMARY — HOISTED
+   On desktop this is the first card of the right-hand rail, i.e. level with the
+   top of Materials. On a phone a rail does not exist, and the total is the one
+   number a contractor checks before anything else — so the summary is the FIRST
+   card, directly under the head, and the running total is repeated in the
+   sticky bar so it is never more than a glance away.
+
+   The desktop Summary card also holds Assumptions. They are split out here into
+   their own card next to Scope of work: assumptions are the prose half of the
+   estimate, they belong with the scope, and keeping them attached to the total
+   would push the total's own rule 200px down the card.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-smart-estimate .mse-sumrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--hair-soft);
+  font-size: clamp(13.5px, 4vw, 15px);
+  font-weight: 700;
+}
+.jf-mobile-smart-estimate .mse-sumrow span { min-width: 0; }
+.jf-mobile-smart-estimate .mse-sumrow b {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-smart-estimate .mse-sumrow--disc,
+.jf-mobile-smart-estimate .mse-sumrow--disc b { color: var(--success); }
+.jf-mobile-smart-estimate .mse-sumtotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 14px;
+  border-top: 1.5px solid var(--ink);
+}
+.jf-mobile-smart-estimate .mse-sumtotal span {
+  font-size: clamp(16px, 5vw, 19px);
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.jf-mobile-smart-estimate .mse-sumtotal b {
+  font-size: clamp(22px, 7vw, 25px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LINE ITEMS — THE RE-CUT
+   Desktop is a four-column grid, `1fr 84px 96px 96px` (item / qty / unit /
+   total). 84 + 96 + 96 + 3 gaps is 312px of fixed track before the name gets a
+   pixel, so it cannot be shown at 320. Each row is cut into two lines instead:
+
+     line A   the item name (wrapping, full width) + its New/Updated badge
+     line B   [qty] × [unit]  ……………………………  line total
+
+   The mono / tabular / right-aligned treatment of the numbers is unchanged, and
+   the column header keeps the desktop's 1.5px ink rule — it now labels line B
+   only, so its three cells share line B's exact flex geometry and sit directly
+   over the controls they name. "Item" is dropped from the header because the
+   name is line A's whole content and needs no column label.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-smart-estimate .mse-thead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 9px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.jf-mobile-smart-estimate .mse-thead span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: right;
+}
+.jf-mobile-smart-estimate .mse-row { padding: 12px 0; border-bottom: 1px dashed var(--hair-soft); }
+.jf-mobile-smart-estimate .mse-row:last-child { border-bottom: none; }
+.jf-mobile-smart-estimate .mse-row-a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.jf-mobile-smart-estimate .mse-row-n {
+  font-size: 14.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  min-width: 0;
+}
+.jf-mobile-smart-estimate .mse-badge {
+  font-style: normal;
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1.5px solid var(--blueprint);
+  border-radius: var(--radius);
+  color: var(--blueprint);
+  background: rgba(24, 84, 160, 0.06);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.jf-mobile-smart-estimate .mse-row-b {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* The shared geometry of line B and its header. Flex bases, not fixed widths,
+   so the two number fields absorb the extra room above ~400px. */
+.jf-mobile-smart-estimate .mse-cell-q { flex: 0 1 74px; min-width: 62px; }
+.jf-mobile-smart-estimate .mse-cell-u { flex: 0 1 92px; min-width: 72px; }
+.jf-mobile-smart-estimate .mse-cell-x {
+  flex: 0 0 auto;
+  width: 10px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-light);
+}
+.jf-mobile-smart-estimate .mse-cell-t { margin-left: auto; flex: 0 0 auto; }
+
+/* The qty / unit fields. Desktop is 35px high — below the 44px touch floor, so
+   it grows. `inputmode: decimal` on the element gets the numeric keypad; the
+   spinners are stripped because a 44px field with a spinner leaves ~30px of
+   actual tap area. */
+.jf-mobile-smart-estimate .mse-in {
+  width: 100%;
+  height: var(--tap);
+  padding: 0 10px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.jf-mobile-smart-estimate .mse-in::-webkit-outer-spin-button,
+.jf-mobile-smart-estimate .mse-in::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.jf-mobile-smart-estimate .mse-in:focus { outline: none; border-color: var(--blueprint); border-width: 2px; }
+.jf-mobile-smart-estimate .mse-row-t {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MATERIALS REQUEST
+   Desktop is one flex line: thumb, name+meta, price block, 40px link. At 320
+   the price block and the link together claim ~150px of a 256px row, leaving
+   the name 100px. Re-cut into two bands instead:
+
+     band 1   58px hatch thumb + name + wrapping mono meta (dims / Qty / store)
+     band 2   the money, then the 44px open-at-store control on the right
+
+   The thumb keeps the desktop's 45° blueprint hatch, which is what shows when
+   an image fails — the donor's `onerror="this.remove()"`.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-smart-estimate .mse-req-count {
+  margin-left: auto;
+  padding: 5px 11px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-smart-estimate .mse-req-row {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 14px 0;
+  border-bottom: 1px dashed var(--hair-soft);
+}
+.jf-mobile-smart-estimate .mse-req-row:last-child { border-bottom: none; }
+.jf-mobile-smart-estimate .mse-req-top { display: flex; align-items: flex-start; gap: 13px; }
+.jf-mobile-smart-estimate .mse-thumb {
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+  background-image: repeating-linear-gradient(45deg, rgba(24, 84, 160, 0.10) 0 1px, transparent 1px 7px);
+}
+.jf-mobile-smart-estimate .mse-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.jf-mobile-smart-estimate .mse-req-main { min-width: 0; flex: 1 1 auto; }
+/* Desktop ellipsises the name in a fixed column; here it wraps, because the
+   name now owns the full band and truncating "Concrete bags · 60 lb" on a
+   shopping list is a real loss of information. */
+.jf-mobile-smart-estimate .mse-req-n { display: block; font-size: 15px; font-weight: 800; line-height: 1.3; }
+.jf-mobile-smart-estimate .mse-req-m {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-smart-estimate .mse-store {
+  padding: 2px 8px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-mobile-smart-estimate .mse-req-foot { display: flex; align-items: center; gap: 12px; }
+.jf-mobile-smart-estimate .mse-req-price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  min-width: 0;
+}
+.jf-mobile-smart-estimate .mse-req-price b {
+  font-size: 17px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-smart-estimate .mse-req-price span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Desktop is 40px; grown to the 44px floor. */
+.jf-mobile-smart-estimate .mse-req-link {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+  transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out);
+}
+.jf-mobile-smart-estimate .mse-req-link:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+.jf-mobile-smart-estimate .mse-reqtotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1.5px solid var(--ink);
+}
+.jf-mobile-smart-estimate .mse-reqtotal span {
+  font-size: clamp(15px, 4.6vw, 19px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.jf-mobile-smart-estimate .mse-reqtotal b {
+  flex: 0 0 auto;
+  font-size: clamp(19px, 6vw, 22px);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── SCOPE OF WORK ────────────────────────────────────────────────────────
+   16px on the textarea is not a style choice: iOS Safari zooms the viewport on
+   focus for anything smaller, and a page that scales itself on a tap into a
+   field is broken. The same floor applies to the refine box below. */
+.jf-mobile-smart-estimate .mse-scope {
+  width: 100%;
+  min-height: 168px;
+  resize: vertical;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  padding: 12px 14px;
+  font-size: 16px;
+  line-height: 1.6;
+  font-weight: 600;
+  color: var(--ink);
+}
+.jf-mobile-smart-estimate .mse-scope:focus,
+.jf-mobile-smart-estimate .mse-refine-in:focus { outline: none; border-color: var(--blueprint); border-width: 2px; }
+
+/* ── ASSUMPTIONS ──────────────────────────────────────────────────────────
+   Split out of the Summary card — see the SUMMARY block above. */
+.jf-mobile-smart-estimate .mse-asm-l {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.jf-mobile-smart-estimate .mse-asm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--hair-soft);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.jf-mobile-smart-estimate .mse-asm-row:last-child { border-bottom: none; }
+.jf-mobile-smart-estimate .mse-asm-row > span { min-width: 0; }
+.jf-mobile-smart-estimate .mse-asm-row::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  background: var(--blueprint);
+}
+/* Desktop is 22×22 — half the touch floor, and the one destructive control on
+   the page, sitting a finger's width from a text field. The frame itself grows
+   to 44×44 rather than hiding a 44px overlay behind a 22px box: at this row
+   rhythm an invisible overlay would overlap the neighbouring row's, so the two
+   assumptions above and below would share a hit area. The glyph stays 11px, so
+   the button still reads as a small remove control. */
+.jf-mobile-smart-estimate .mse-asm-x {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(10, 10, 10, 0.4);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--muted);
+  transition: border-color 0.13s var(--ease), color 0.13s var(--ease);
+}
+.jf-mobile-smart-estimate .mse-asm-x .mse-ic { width: 11px; height: 11px; }
+.jf-mobile-smart-estimate .mse-asm-x:active { border-color: var(--danger); color: var(--danger); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CHANGE THE ESTIMATE — three stages, `hidden`-toggled like the donor
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-smart-estimate .mse-refine-in {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  padding: 12px 13px;
+  font-size: 16px;
+  line-height: 1.55;
+  font-weight: 600;
+  color: var(--ink);
+}
+.jf-mobile-smart-estimate .mse-busy {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 16px 2px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Namespaced: the donor's `spPulse` lives in the blueprint global sheet, which
+   this page does not load. */
+@keyframes msePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.72); }
+}
+.jf-mobile-smart-estimate .mse-busy-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  background: var(--blueprint);
+  animation: msePulse 1s infinite var(--ease);
+}
+.jf-mobile-smart-estimate .mse-diff-l {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.jf-mobile-smart-estimate .mse-diff-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--hair-soft);
+}
+.jf-mobile-smart-estimate .mse-diff-row:last-of-type { border-bottom: none; }
+.jf-mobile-smart-estimate .mse-diff-row b { display: block; font-size: 14.5px; font-weight: 800; }
+.jf-mobile-smart-estimate .mse-diff-row i {
+  display: block;
+  margin-top: 3px;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-smart-estimate .mse-pill {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  padding: 3px 9px;
+  border: 1.5px solid;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.jf-mobile-smart-estimate .mse-pill--add {
+  border-color: var(--success);
+  color: var(--success);
+  background: rgba(58, 125, 68, 0.07);
+}
+.jf-mobile-smart-estimate .mse-pill--chg {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: rgba(184, 132, 32, 0.08);
+}
+/* Stacked, not side by side: "Keep changes" and "Discard" together measure
+   ~262px at this type size, which overruns a 320px card's 256px of inner
+   width. Full-width stacked also puts the affirmative action under the thumb. */
+.jf-mobile-smart-estimate .mse-diff-btns { display: grid; gap: 10px; margin-top: 16px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BUTTONS
+   Blueprint fill for primary, white for ghost, both with the 2px ink frame and
+   the hard 3px offset shadow. Colour is kept on purpose — these are NOT
+   flattened into outline-only or tonal grey.
+
+   `:active` rather than `:hover` carries the lift on a touch screen: hover is
+   sticky on mobile Safari (the state survives the tap and stays until you touch
+   something else), so a hover-only lift leaves a button visibly pressed after
+   you have moved on. The desktop lift is kept for pointer devices via
+   `@media (hover: hover)`.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-smart-estimate .mse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: var(--tap);
+  padding: 0 clamp(11px, 3.4vw, 18px);
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: clamp(11px, 3.2vw, 12px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: inherit;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s var(--ease);
+}
+.jf-mobile-smart-estimate .mse-btn--primary { background: var(--blueprint); color: #ffffff; }
+.jf-mobile-smart-estimate .mse-btn--ghost { background: var(--sheet); color: var(--ink); }
+.jf-mobile-smart-estimate .mse-btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+.jf-mobile-smart-estimate .mse-btn--primary:active { background: var(--blueprint-dark); }
+.jf-mobile-smart-estimate .mse-btn--ghost:active { background: var(--paper-deep); }
+@media (hover: hover) {
+  .jf-mobile-smart-estimate .mse-btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+  .jf-mobile-smart-estimate .mse-btn--primary:hover { background: var(--blueprint-dark); }
+  .jf-mobile-smart-estimate .mse-btn--ghost:hover { background: var(--paper-deep); }
+  .jf-mobile-smart-estimate .mse-req-link:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+  .jf-mobile-smart-estimate .mse-asm-x:hover { border-color: var(--danger); color: var(--danger); }
+}
+.jf-mobile-smart-estimate .mse-btn--block { width: 100%; }
+.jf-mobile-smart-estimate .mse-apply { margin-top: 12px; }
+
+/* ── DOCUMENT-END ACTIONS ─────────────────────────────────────────────────
+   "Start over" and, once "Keep changes" has run, "Undo". Both are ghost, both
+   reset state, and they sit at the END of the document rather than in the head:
+   an unlabelled destructive control pinned above the fold on a phone is a
+   mis-tap waiting to happen, and Undo's whole reason to exist appears in the
+   card immediately above this row. */
+.jf-mobile-smart-estimate .mse-foot { display: flex; flex-wrap: wrap; gap: 10px; }
+.jf-mobile-smart-estimate .mse-foot .mse-btn { flex: 1 1 140px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE ACTION BAR — thumb zone
+   The desktop head's primary, "Send to proposal", lives here, with the running
+   total beside it so the number a contractor is watching is on screen at every
+   scroll position instead of only at the top of the document.
+
+   `sticky`, not `fixed`: a fixed bar has to be paid for with bottom padding on
+   the document and any mismatch either hides the last card or leaves a dead
+   band. Declared as the LAST child of the root, a sticky bar reserves its own
+   space in flow, is pinned to the bottom edge for the whole scroll, and settles
+   into its own slot at the very end — so nothing is ever permanently covered.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-smart-estimate .mse-bar {
+  position: sticky;
+  bottom: 0;
+  /* Under the root layout's ToastHost (z-index 100), above the document, which
+     sets no z-index at all. */
+  z-index: 40;
+  flex: 0 0 auto;
+  padding: 11px var(--gutter) calc(11px + var(--safe-b));
+  background: var(--paper);
+  border-top: var(--border);
+  /* Hard offset shadow, no blur — cast upward, because the bar's edge faces up. */
+  box-shadow: 0 -3px 0 var(--shadow);
+}
+.jf-mobile-smart-estimate .mse-bar-in {
+  width: 100%;
+  max-width: 620px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.jf-mobile-smart-estimate .mse-bar-total { min-width: 0; }
+.jf-mobile-smart-estimate .mse-bar-l {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-smart-estimate .mse-bar-v {
+  margin-top: 2px;
+  font-size: clamp(17px, 5.4vw, 21px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-smart-estimate .mse-bar .mse-btn { margin-left: auto; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ENTRANCE — Motion System "Balanced"
+   A one-shot mount cascade on the document's own children. Deliberately NOT an
+   IntersectionObserver and deliberately NOT applied to rows: rows carry a
+   remount key (the donor's `renderTables()` innerHTML reset), so animating them
+   would replay the whole ledger's entrance every time a quantity is edited —
+   the "the list wiped itself" bug the page-styler skill warns about.
+   ══════════════════════════════════════════════════════════════════════════ */
+@keyframes mseRise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+.jf-mobile-smart-estimate .mse-doc > * {
+  animation: mseRise 0.55s var(--ease-out) both;
+}
+.jf-mobile-smart-estimate .mse-doc > *:nth-child(2) { animation-delay: 0.06s; }
+.jf-mobile-smart-estimate .mse-doc > *:nth-child(3) { animation-delay: 0.12s; }
+.jf-mobile-smart-estimate .mse-doc > *:nth-child(4) { animation-delay: 0.18s; }
+.jf-mobile-smart-estimate .mse-doc > *:nth-child(5) { animation-delay: 0.24s; }
+.jf-mobile-smart-estimate .mse-doc > *:nth-child(n + 6) { animation-delay: 0.3s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-smart-estimate .mse-doc > * { animation: none; }
+  .jf-mobile-smart-estimate .mse-busy-dot { animation: none; }
+  .jf-mobile-smart-estimate .mse-btn,
+  .jf-mobile-smart-estimate .mse-req-link,
+  .jf-mobile-smart-estimate .mse-asm-x { transition: none; }
+}

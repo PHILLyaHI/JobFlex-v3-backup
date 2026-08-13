@@ -24,7 +24,22 @@
    `--topbar-h: 62px` = source 62px, shell `.content { padding: 40px
    96px 80px; gap: 22px }` = source's `.content` exactly.
 
+   TWO LAYERS SINCE 2026-08-12. Everything above the HANDHELD LAYER block near
+   the bottom is still the mockup, unrounded. The handheld layer is NOT the
+   mockup: the source shipped three rules at ≤720px (pad 12, one column, hide
+   the kicker), which is a shrunken desktop modal, not a handheld design. It is
+   now a bottom sheet, and three defects the port carried in were fixed at the
+   same time — the 34px close button, `z-index: 90` colliding with both shells'
+   nav drawers, and the undeclared `--ease-out`. Each is argued at its rule.
+   Desktop above 768px is untouched by all of it.
+
    A plain stylesheet, not a CSS module, and SELF-CONTAINED on purpose.
+   NOT A CSS MODULE, and this must not be "tidied" into one. Modules hash CLASS
+   names and leave BARE ELEMENT selectors alone, so the `*` reset below, and
+   `svg.ic`, would need `:global()` escapes to survive. Miss one and this file's
+   own reset and control styling silently vanish while Tailwind preflight and
+   globals.css fill the gap — which is how the cards lose their border,
+   background and padding without anything looking wrong in the diff.
    The picker is mounted in BOTH shells — the desktop BlueprintShell and
    the handheld MobileNav — so it cannot lean on either one:
 
@@ -74,12 +89,34 @@
 
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* NOTE — `--ease-out` is deliberately NOT declared. The source references
-     it five times (.estp-bg, .estp-box ×2, .estp-card ×2) and never defines
-     it anywhere, so in the mockup those `transition` declarations are
-     invalid at computed-value time and the dialog snaps in and out with no
-     fade. Ported verbatim, bug included. Declaring a value here would have
-     been inventing one. */
+  /* `--ease-out` — declared here 2026-08-12, and the reason is narrower than it
+     looks. The source references it five times (.estp-bg, .estp-box ×2,
+     .estp-card ×2) and never declares it, so in the MOCKUP, opened as a bare
+     HTML file, `transition: opacity .28s var(--ease-out)` was invalid at
+     computed-value time and the dialog snapped. That is not what happens in the
+     app: `src/app/globals.css` declares `--ease-out: cubic-bezier(0.22, 0.61,
+     0.36, 1)` on `:root`, app-wide, so the token has always resolved here and
+     both hosts have always animated identically. Measured, not assumed —
+     computed `transition-timing-function` on `.estp-box` is that curve at 1280px
+     and at 390px, with and without this line.
+
+     It is declared anyway because every other token this dialog reads is: the
+     file's stated rule is that the picker mounts in two shells and can lean on
+     neither, and an inherited motion curve is exactly the kind of dependency
+     that goes unnoticed until someone scopes globals.css and the dialog quietly
+     stops easing in one host. Same value as globals.css and as the 22 handheld
+     page roots, which is DESIGN.md's Motion System "Balanced" primary curve —
+     it shadows those declarations with the identical string rather than
+     introducing a second opinion, so nothing about the presentation changes. */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Handheld-only geometry, declared on the root for the same reason the
+     palette is: the dialog cannot read a page's `--pad-x` / `--safe-b`,
+     because on desktop there is no page root to read them from.
+     `--estp-pad` matches the handheld fleet's `--pad-x` value exactly, so the
+     sheet's gutters line up with the page underneath it. */
+  --estp-pad: clamp(12px, 3.8vw, 22px);
+  --estp-safe-b: env(safe-area-inset-bottom, 0px);
 
   /* ── Environment restore ─────────────────────────────────────────
      The mockup ran against a bare <body> it styled itself; inside the app
@@ -107,7 +144,25 @@
 
   position: fixed;
   inset: 0;
-  z-index: 90;
+  /* 200, up from the source's 90 — 90 was a COLLISION, not a choice.
+     Both shells put a slide-out nav drawer at exactly 90 (`.sb` in
+     dashboard-blueprint/blueprint.module.css:979 and in
+     mobile-shell/mobile-nav.module.css:155) with its overlay at 89, and in
+     both trees that drawer is mounted AFTER this dialog in DOM order. At an
+     equal z-index the later element paints on top, so an open drawer covered
+     an open picker — and neither shell can be edited from here to fix it from
+     the other side. Above the drawer there are three more layers this dialog
+     has to clear: `.mdl` overlays at 120, the calendar slide-out at 110/111
+     (and its 140 escape hatch), and `.d-toast` / `.bp-sug` at 130.
+
+     200 is not a new tier: it is the value `.cmdk`, the command palette,
+     already uses (blueprint-global.css:306). That is the right precedent
+     rather than a coincidence — the palette is this dialog's sibling, mounted
+     beside it in both shells for the same reason, and the two are the app's
+     only chrome-level dialogs reachable from every page. They cannot both be
+     open (opening either is a distinct, exclusive user action), and if they
+     ever were, DOM order decides and the picker is mounted second. */
+  z-index: 200;
   display: grid;
   place-items: center;
   padding: 28px;
@@ -333,11 +388,274 @@
   color: rgba(10, 10, 10, .38);
 }
 
-@media (max-width: 720px) {
-  .estp.estp { padding: 12px; }
-  .estp .estp-grid { grid-template-columns: 1fr; }
-  .estp .estp-kick { display: none; }
+/* ============================================================
+   HANDHELD LAYER — the dialog becomes a BOTTOM SHEET.  ≤768px.
+   Last in the cascade before the reduced-motion overrides, per the house rule
+   that the mobile layer must not be outranked by a later equal-specificity
+   rule. Every declaration below is scoped inside this query, so the desktop
+   presentation above 768px is byte-for-byte the ported mockup.
+
+   WHY 768 AND NOT THE SOURCE'S 720. 768 is the app's handheld boundary —
+   `responsive-dashboard-shell.tsx` switches trees at `(max-width: 768px)`, and
+   every module in the (mobile) fleet scales to the same number. At 720 there
+   was a 721–768px band where the responsive shell had already served the
+   HANDHELD tree while this dialog was still drawing its desktop composition
+   inside it. That band is a tablet held in portrait, which is exactly where a
+   centred 860px modal reads worst.
+
+   WHY A SHEET AND NOT A CENTRED MODAL. CLAUDE.md: "Bottom-sheet / sticky-action
+   patterns preferred over modal dialogs." The shape is the fleet's existing
+   hand-rolled sheet (mobile-v2.module.css `.sheet`), matched deliberately
+   rather than reinvented: full-bleed, bottom-anchored, 2px ink border on the
+   TOP EDGE ONLY, paper ground, a grab bar, a kicker-over-title masthead, and
+   `translateY(100%)` for the enter. A user who has already met the fleet's
+   filter sheets meets the same object here.
+   ============================================================ */
+@media (max-width: 768px) {
+  .estp.estp {
+    /* Full bleed. The 28px inset is a desktop courtesy; on a phone it wastes
+       the only axis that is scarce and makes the sheet read as a floating card
+       rather than as a surface that came up from the bottom edge. */
+    padding: 0;
+    /* align-items: end / justify-items: stretch — bottom-anchored, full width. */
+    place-items: end stretch;
+  }
+
+  .estp .estp-box {
+    /* `width` has to be restated: the base sets an explicit `min(860px, 100%)`,
+       and an explicit width makes `justify-items: stretch` a no-op. */
+    width: 100%;
+    /* `dvh`, not `vh`: on iOS Safari `vh` is frozen to the LARGEST viewport, so
+       a sheet sized in vh sits partly under the collapsing toolbar until the
+       user scrolls. `vh` first as the fallback for engines without `dvh`.
+
+       A 44px reserve rather than a percentage. The sheet is CONTENT-sized —
+       four cards, a masthead and a strip, about 520px — so on any normal phone
+       this cap is never reached and the number only decides what happens on the
+       shortest ones. A percentage cap gave 88% of 568px = 500px on a 320×568
+       handset, 22px short, and put the queue strip behind a scroll on the one
+       device with the least patience for scrolling. 44px is a fixed reserve
+       instead: it always leaves exactly one touch target of backdrop above the
+       sheet to dismiss it with, and nothing scrolls at any tested size. */
+    max-height: calc(100vh - 44px);
+    max-height: calc(100dvh - 44px);
+    /* Ink frame on the top edge only — the other three run off-screen. */
+    border-width: 2px 0 0;
+    border-radius: var(--radius) var(--radius) 0 0;
+    /* Home-indicator inset, so the last row of the queue strip is not sitting
+       under the gesture bar. Declared on the box rather than the queue strip so
+       it also pays out when the strip is absent. */
+    padding-bottom: var(--estp-safe-b);
+    /* The sheet scrolls internally at short viewports; without this the scroll
+       chains to the page underneath once the sheet hits its end. */
+    overscroll-behavior: contain;
+    /* Slide up from the bottom edge instead of the desktop's
+       translateY(12px) scale(.985) settle. Same tokens, same 0.28s/0.19s
+       timings, same `.on` / `.leaving` mechanism — only the vector changes. */
+    transform: translateY(100%);
+  }
+  .estp.leaving .estp-box { transform: translateY(100%); }
+
+  /* The fleet's `.sheetGrab`, reproduced as a pseudo-element because this
+     component's markup is shared with desktop and must not grow a node that
+     only one presentation uses. 44×3px hair bar, the same object the mobile
+     dashboard's sheets carry — and, like those, it is a MARKER, not a drag
+     handle: swipe-to-dismiss would need inline transforms on the same element
+     the `.on` / `.leaving` classes drive, and that mechanism is contractual. */
+  .estp .estp-box::before {
+    content: "";
+    display: block;
+    width: 44px;
+    height: 3px;
+    margin: 10px auto 0;
+    background: rgba(10, 10, 10, .12);
+    border-radius: var(--radius);
+  }
+
+  /* ── Masthead ──────────────────────────────────────────────
+     Two rows instead of one. The source's single row is title · kicker · close,
+     which does not fit: at 320px the title (~144px), the close button and their
+     gaps leave ~76px for a "4 ACTIVE · 3 QUEUED" string that wants ~160px —
+     which is why the source simply deleted the kicker at ≤720px. Stacking it
+     ABOVE the title restores that information and puts it in the house's own
+     page-head order (kicker, then H1), the same order `.sheetKicker` /
+     `.sheetTitle` use in the fleet. */
+  .estp .estp-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 3px 12px;
+    padding: 10px var(--estp-pad) 12px;
+  }
+  .estp .estp-title {
+    grid-column: 1;
+    grid-row: 2;
+    font-size: clamp(17px, 5vw, 20px);
+    /* Caps at sheet size want air, not compression — `.sheetTitle`'s +0.02em. */
+    letter-spacing: .02em;
+  }
+  .estp .estp-kick {
+    grid-column: 1;
+    grid-row: 1;
+    margin-left: 0;
+    font-size: clamp(9px, 2.7vw, 10.5px);
+    letter-spacing: .16em;
+    /* nowrap is inherited from the base; these are the failsafe so a wider
+       substituted font clips instead of pushing the close button off the row. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .estp .estp-x {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    /* 44×44, up from the source's 34×34. CLAUDE.md and DESIGN.md both commit to
+       ≥44px touch targets on mobile surfaces, and 34 misses it. Handheld only:
+       above 768px the control is driven by a pointer, 34px already clears WCAG
+       2.2 AA's 24×24 minimum (2.5.8), and the desktop composition is not this
+       agent's to change. At ≤768px it now also clears AAA's 44×44 (2.5.5). */
+    width: 44px;
+    height: 44px;
+  }
+  .estp .estp-x .ic { width: 16px; height: 16px; }
+
+  /* ── The catalogue ─────────────────────────────────────────
+     Intrinsic, not breakpointed: one column of full-width cards on a phone,
+     two the moment the container can seat 2×300px, which lands around 640px and
+     puts a portrait tablet back into the 2×2 the desktop sheet uses.
+     `min(300px, 100%)` rather than a bare `300px` — with `auto-fit`, a track
+     minimum WIDER than the container still produces a 300px track and overflows
+     it, which at 320px is a horizontal scrollbar on the whole document. */
+  .estp .estp-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+    /* Every card the same height, whichever column count is live. Only one of
+       the four names wraps — "Smart Proposal" is 14 characters and does not fit
+       one line beside a drawing plate at any handheld width — and a catalogue
+       where one entry is 7px taller than its neighbours reads as a mistake.
+       `1fr` rows in an auto-height grid all take the tallest row's size, which
+       is the equalisation the desktop 2×2 gets for free from having two cards
+       per row. */
+    grid-auto-rows: 1fr;
+    /* Fluid, like every other measure here. 12px is the gap the sheet wants;
+       at 320×568 the three of them are the last 7px between "all four cards and
+       the queue strip are on screen" and "the strip is behind a scroll", and a
+       gap is the cheapest thing in the composition to spend. */
+    gap: clamp(9px, 3vw, 12px);
+    padding: 12px var(--estp-pad) 6px;
+  }
+
+  /* Cards go HORIZONTAL: drawing plate on the left, nameline on the right.
+     Stacked, a card is ~176px tall and four of them plus the masthead and the
+     queue strip do not fit any phone without scrolling — and this dialog is a
+     comparison sheet, so making the user scroll to see the fourth option is the
+     one thing it must not do. Laid on their side the four fit at every tested
+     height down to 320×568. */
+  .estp .estp-card {
+    flex-direction: row;
+    align-items: stretch;
+    /* Elevation at rest, which desktop gets only on hover — and hover does not
+       exist on a touch screen, so on a phone the source's cards had no
+       elevation in the only state a phone user ever sees them in. 3px 3px 0 is
+       the house rest depth; no blur, ink at 6%. */
+    box-shadow: 3px 3px 0 var(--shadow);
+    min-height: 72px;
+  }
+  /* Press reads as a stamp being pushed into the sheet: the card moves INTO its
+     own shadow and the shadow goes. `:active` is declared after the base's
+     `:hover, :focus-visible` at equal specificity, so a tap that leaves a stuck
+     hover behind still shows the press. */
+  .estp .estp-card:active {
+    transform: translate(1px, 1px);
+    box-shadow: none;
+  }
+
+  .estp .estp-dia-cell {
+    /* Sized against the CARD, not the viewport. A `vw` clamp is wrong the
+       moment the grid goes to two columns — at 740px it handed a 342px card a
+       170px plate, half the card, and squeezed both names onto two lines. 40%
+       holds the same proportion in either column count. Floored at 112px,
+       below which the drawing stops reading as a drawing; capped at 176px for
+       the one-column band just under the two-column threshold, where a card can
+       be 590px wide and 40% would be a plate with a postage stamp on it. */
+    flex: 0 0 clamp(112px, 40%, 176px);
+    /* The rule moves from the bottom edge to the right edge with the layout. */
+    border-bottom: none;
+    border-right: 1.5px solid var(--ink);
+    display: grid;
+    place-items: center;
+    padding: 10px 12px;
+  }
+  /* All four drawings keep their exact viewBox and path data; only the box they
+     are fitted into shrinks, and `preserveAspectRatio` (default xMidYMid meet)
+     scales them uniformly inside it. `vector-effect: non-scaling-stroke` on
+     .ln/.bp/.dim means the 1.6 / 1.2 / 1px line weights render unchanged at any
+     scale, so the drawings stay crisp rather than turning to grey wash.
+
+     `height: auto` rather than a fixed 96px or a clamp: the plate is always
+     WIDER-bound than tall here (the viewBox is 164×72, so it needs 2.28× more
+     width than height and never gets it), which means a height is only ever
+     deciding how much empty blue sits above and below the drawing. Auto lets
+     the SVG take its intrinsic ratio off the viewBox, so the drawing fits the
+     plate's width exactly and the plate then stretches to whatever the nameline
+     beside it needs — no letterboxing, no number to keep in step with the
+     nameline's type scale. */
+  .estp .estp-dia { height: auto; }
+  /* The one compensation the downscale needs. At handheld the plate fits the
+     164-unit viewBox into ~87–143 CSS px, a 0.53–0.87 scale, and 6.5 user units
+     of annotation would render at 3.4–5.7px. Raised to 8.5 units it renders at
+     4.5–7.4px. The drawings are aria-hidden and this layer is texture by
+     design — DESIGN.md's "drawing annotation" — so this buys back proportion,
+     not legibility; a dimension string on a thumbnail is meant to read as a
+     dimension string, not to be measured off. */
+  .estp .estp-dia text { font-size: 8.5px; }
+
+  .estp .estp-nameline {
+    /* GROW, and shrink. Both halves matter and each was a bug on its own.
+       Grow: turning the card to `row` made the nameline a flex ITEM, and a flex
+       item does not grow by default — it sized to its own content and stopped
+       35px short of the card's right edge, which took the free space away from
+       the figure's `margin-left: auto` and left "~9 min" adrift in the middle
+       of the card instead of ranged right like an estimate line.
+       Shrink with `min-width: 0`: otherwise the nameline cannot go below its
+       content width, and a long name pushes the card wider than its grid track
+       — the overflow route that matters most at 320px. */
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 10px;
+    padding: 12px clamp(10px, 3.2vw, 16px);
+  }
+  /* Shrink, never grow. `flex: 1 1 auto` here let the name column absorb the
+     card's free space, which swallowed the `margin-left: auto` on the figure
+     and left "~9 min" floating in the middle of the card instead of flush with
+     its right edge — the estimate-sheet rule DESIGN.md sets for numerals.
+     Shrinking stays on, so this is still the item that gives way at 320px. */
+  .estp .estp-nm { flex: 0 1 auto; }
+  .estp .estp-name { font-size: clamp(14px, 4.3vw, 16.5px); }
+  .estp .estp-method {
+    font-size: clamp(9.5px, 2.9vw, 10.5px);
+    /* .1em → .05em. "satellite trace" is the longest method string and at 320px
+       the tracking alone was the difference between one line and two. */
+    letter-spacing: .05em;
+  }
+  .estp .estp-time {
+    /* Never shrink the figure — all shrink is absorbed by `.estp-nm`, which has
+       `min-width: 0` and wraps. A shrunk nowrap figure would overflow its box
+       instead of wrapping. */
+    flex: 0 0 auto;
+    font-size: clamp(14px, 4.2vw, 16px);
+  }
+
+  /* ── Queue strip ───────────────────────────────────────────
+     The label takes its own row (`flex-basis: 100%`) so the three stubs sit on
+     one line at 320px instead of wrapping into a third row. Same labelled-strip
+     reading order as the masthead: annotation first, content under it. */
+  .estp .estp-queue {
+    gap: 8px;
+    padding: 12px var(--estp-pad) 14px;
+  }
+  .estp .estp-queue-label { flex: 0 0 100%; }
+  .estp .estp-stub { padding: 6px 11px; }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .estp .estp-bg,
   .estp .estp-box,

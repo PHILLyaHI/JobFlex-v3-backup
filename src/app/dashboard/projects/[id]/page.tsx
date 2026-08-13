@@ -19,7 +19,14 @@ import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { ProjectDetailContent } from "@/components/v3/project-detail-blueprint/project-detail-content";
+// The page renders the VIEWPORT SWITCH rather than the desktop content
+// directly: above 768px it is ProjectDetailContent, unchanged, and at or below
+// it the handheld rebuild in src/components/v3/mobile-project-detail/. Exactly
+// one of the two mounts. The switch lives here rather than in
+// responsive-dashboard-shell.tsx because this route is dynamic (no literal
+// pathname key can match it) and because the handheld build needs the props
+// read below — see the header of project-detail-viewport-switch.tsx.
+import { ProjectDetailViewportSwitch } from "@/components/v3/mobile-project-detail/project-detail-viewport-switch";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +79,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   });
 
   return (
-    <ProjectDetailContent
+    <ProjectDetailViewportSwitch
       project={{
         id: project.id,
         name: project.name,

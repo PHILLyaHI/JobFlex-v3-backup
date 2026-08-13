@@ -421,22 +421,39 @@ export function ToggleCell({
 
 export function Segmented<T extends string>({
   label,
+  hideLabel,
   value,
   options,
   onChange,
 }: {
   label: string;
+  /**
+   * Drop the visible label and let the control take the full measure — for the
+   * case where a card heading directly above it already names the thing (the
+   * Discount card's Dollar / Percent switch).
+   *
+   * The label is NOT dropped, only hidden: the `radiogroup` still needs an
+   * accessible name, and "two unnamed radios" is a materially worse control for
+   * a screen reader than a slightly redundant one. This is why the prop is
+   * `hideLabel` and not an optional `label` — a required label that can be
+   * hidden cannot be forgotten.
+   */
+  hideLabel?: boolean;
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
   const groupId = useId();
   return (
-    <div className={styles.segRow}>
-      <span className={styles.toggleText} id={groupId}>
+    <div className={cx(styles.segRow, hideLabel && styles.segRowBare)}>
+      <span className={cx(hideLabel ? styles.srOnly : styles.toggleText)} id={groupId}>
         {label}
       </span>
-      <div className={styles.seg} role="radiogroup" aria-labelledby={groupId}>
+      <div
+        className={cx(styles.seg, hideLabel && styles.segFull)}
+        role="radiogroup"
+        aria-labelledby={groupId}
+      >
         {options.map((o) => (
           <button
             key={o.value}

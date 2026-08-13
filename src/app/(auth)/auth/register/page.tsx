@@ -15,8 +15,13 @@
 // next-auth signIn + the promo/referral attribution capture. No server action,
 // API route or Prisma model was added or altered by the restyle.
 
+// VIEWPORT SWITCH: this route now serves the handheld rebuild at ≤768px and the
+// blueprint desktop build above it, from this one URL — see
+// ./register-responsive.tsx for the mechanism and why it is a sibling file
+// rather than inline. /mobile-v1/auth/register remains as a direct preview URL.
+
 import type { Metadata } from "next";
-import { RegisterContent } from "@/components/v3/auth-register-blueprint/register-content";
+import { RegisterResponsive } from "./register-responsive";
 
 // Title is the donor's <head> verbatim. The mockup ships no <meta
 // name="description">; the line below is this repo's own convention.
@@ -26,5 +31,5 @@ export const metadata: Metadata = {
 };
 
 export default function RegisterPage() {
-  return <RegisterContent />;
+  return <RegisterResponsive />;
 }

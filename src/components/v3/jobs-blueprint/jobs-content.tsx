@@ -74,7 +74,7 @@ export function JobsContent({ entries, clients, crew, canManage }: JobsContentPr
                 <th>Status</th>
                 <th>Schedule</th>
                 <th className="num">Crew</th>
-                <th className="th-open"></th>
+                {/* One actions column, not two — see `.j-acts` in jobs.module.css. */}
                 <th className="th-open"></th>
               </tr>
             </thead>

@@ -234,7 +234,18 @@ export function computeTotals(draft: Draft): Totals {
   // Discount comes off BEFORE tax, so tax is charged on what the client owes
   // rather than on a figure nobody pays. The other order overstates the tax
   // line, and it is the kind of error a client notices on the printed sheet.
-  const discountAmount = round2(preTax * (safe(draft.discountPct) / 100));
+  //
+  // TWO MODES. `discountIsPercent` is optional and absent means TRUE, so this
+  // is a no-op for every draft and every route that predates the dollar mode.
+  // In dollar mode the figure is capped at `preTax`: a discount larger than the
+  // job would produce a negative taxable base, a negative tax, and a total that
+  // climbs back up as the discount grows — arithmetic that is not wrong so much
+  // as meaningless. Capping is also what the UI can explain ("the whole job");
+  // clamping to zero silently would just look broken.
+  const discountAmount =
+    draft.discountIsPercent === false
+      ? Math.min(round2(safe(draft.discountFlat ?? 0)), preTax)
+      : round2(preTax * (safe(draft.discountPct) / 100));
   const taxable = round2(preTax - discountAmount);
 
   const tax = round2(taxable * (safe(draft.taxPct) / 100));

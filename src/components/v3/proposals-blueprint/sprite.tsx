@@ -13,8 +13,18 @@ export function Sprite() {
         <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></symbol>
         <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></symbol>
         <symbol id="i-crm" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4" /><path d="m15.4 6.5-6.8 4" /></symbol>
-        <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="1" /><path d="M16 2v4" /><path d="M8 2v4" /><path d="M3 10h18" /></symbol>
-        <symbol id="i-jobs" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="1" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><path d="M2 13h20" /></symbol>
+        {/* OPTICAL CORRECTION (not a donor value) — `stroke-width: 2.5`.
+            These two are the only symbols built around one LARGE thin rect
+            (18×18 and 20×14 of a 24 box). At the 17px sidebar size a 2-unit
+            stroke lands on half-pixels along those long straight edges and
+            smears across two columns at ~50% alpha each, so both icons read
+            grey next to i-grid / i-file, whose shorter runs happen to land on
+            whole pixels. Verified by rasterising every sidebar symbol to a
+            17px canvas: total ink was mid-range (i-cal 94, i-jobs 96 vs i-file
+            93), but the per-edge alpha was visibly washed. 2.5 snaps them back
+            to solid at 17px and is imperceptible at larger sizes. */}
+        <symbol id="i-cal" viewBox="0 0 24 24" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="1" /><path d="M16 2v4" /><path d="M8 2v4" /><path d="M3 10h18" /></symbol>
+        <symbol id="i-jobs" viewBox="0 0 24 24" strokeWidth="2.5"><rect x="2" y="7" width="20" height="14" rx="1" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><path d="M2 13h20" /></symbol>
         <symbol id="i-hardhat" viewBox="0 0 24 24"><path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1z" /><path d="M10 10V5a2 2 0 1 1 4 0v5" /><path d="M4 15v-3a8 8 0 0 1 16 0v3" /></symbol>
         <symbol id="i-userplus" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M19 8v6" /><path d="M22 11h-6" /></symbol>
         <symbol id="i-building" viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></symbol>

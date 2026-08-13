@@ -1,0 +1,1622 @@
+/* ============================================================================
+   MOBILE HOMEOWNER MARKETING  —  /mobile-homeowner-v2  and  /homeowner ≤768px
+   ============================================================================
+
+   A handheld-first Blueprint rebuild of the public homeowner intake page. It
+   serves two entry points from ONE implementation:
+     · /mobile-homeowner-v2                 — the preview route
+     · /homeowner at ≤768px                 — via the media-query switch in
+       src/app/(marketing)/homeowner/homeowner-responsive.tsx
+   Above 768px /homeowner keeps serving the untouched desktop build
+   (src/components/v3/homeowner-landing/*). Exactly one tree ever mounts.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (non-negotiable) ────────────────────
+   CSS Modules hash CLASS names and leave bare element selectors alone —
+   `button`, `input`, `textarea`, `a`, `svg`, `img` and the `*` reset all need
+   an explicit `:global()` escape under a module. Miss one and this design's own
+   reset and control styling silently vanish while Tailwind preflight and
+   globals.css fill the vacuum. There is also a live specificity trap in the
+   repo: `projects-blueprint/projects.module.css` carries `.bp :global(.content
+   button)` at (0,2,1), which strips border/background/cursor off any control
+   underneath it. This page never mounts inside `.bp .content` (it is a public
+   marketing route outside blueprint-shell) so that rule cannot reach it, and
+   the point is moot anyway because nothing here is hashed.
+
+   The pattern instead — the one that demonstrably works across
+   homeowner-landing/homeowner.css, mobile-auth-login/mobile-auth-login.css and
+   dashboard-blueprint/blueprint-global.css: a plain .css file where EVERY
+   selector carries the single literal root class `.jf-mobile-homeowner`. The
+   prefix is uniform, so relative specificity between this file's own rules is
+   exactly what it would be unprefixed, and nothing leaks outward.
+
+   Only three selectors deliberately do not start with the root class — the
+   host neutralizers, which must reach <html> and <body>. All three are gated
+   on `:has()` so they self-restore the moment this page unmounts (App Router
+   keeps a route's stylesheet in the document across client navigations).
+
+   ── DOCUMENT-GLOBAL NAMES ARE ALL NAMESPACED ───────────────────────────────
+   @keyframes names, element ids and SVG <symbol> ids are document-global
+   concerns. `homeowner-landing` and `homeowner-blueprint` already collide on
+   `top` / `steps` / `net` / `vType` / `vChips` / `vRows` / `vNote` / `netCount`
+   / `hatch` and get away with it only because they never co-mount. This build
+   does not join that pile:
+     · keyframes  → `jfmh-*`
+     · element ids→ `jfmh-top` / `jfmh-steps` / `jfmh-net` only. The donor's
+                    vestigial `vType` / `vChips` / `vRows` / `vNote` /
+                    `netCount` ids are DROPPED — nothing has queried them since
+                    the React port, so they were four collisions buying nothing.
+     · symbol ids → `jfmh-i-*`, and the roof-plan hatch pattern → `jfmh-hatch`.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark`. No `md:` / `lg:` variants and no UA detection.
+   globals.css, blueprint-shell, homeowner-blueprint and every sibling agent's
+   surface were NOT touched. Fluid 320px → 768px on clamp(); the only media
+   queries in the file are the reduced-motion block and one 360px nav guard.
+   ========================================================================= */
+
+/* ── TOKENS ────────────────────────────────────────────────────────────────
+   Page-scoped, never promoted to :root. Values are the desktop homeowner
+   page's own (src/components/v3/homeowner-landing/homeowner.css), with four
+   documented deviations, each driven by a DESIGN.md hard constraint:
+
+   · --font           the donor stack is 'Helvetica Neue', Helvetica, Inter,
+                      Arial — authored for a standalone HTML file with no font
+                      loader. The root layout already ships Inter via
+                      next/font, and DESIGN.md specifies Inter 800–900 for the
+                      caps headings, so Inter leads here.
+   · --muted-faint    #aaa → #6b6b6b. #aaa on paper is 2.07:1 — the question
+                      placeholders and the drawing annotations are unreadable
+                      in jobsite glare. #6b6b6b measures 4.75:1. Same
+                      correction mobile-auth-login already shipped.
+   · --shadow         .09 → .12, and --shadow-deep is NEW. The owner asked for
+                      real elevation on showcase surfaces; a 3px hard offset at
+                      9% alpha barely reads on a phone in daylight.
+   · shadow DEPTH     everything sits at `3px 3px 0` at rest. The desktop page
+                      mixes 3px / 4px / 5px; 3px is the standardised value.  */
+.jf-mobile-homeowner {
+  --paper: #f2f0eb;
+  --paper-deep: #e8e6e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --sky: #4a9eff;
+  --success: #2c5f34;
+  --success-soft: rgba(44, 95, 52, 0.12);
+  --warning: #b88420;
+
+  --muted: #555555;
+  --muted-faint: #6b6b6b;
+  --muted-on-ink: rgba(242, 240, 235, 0.72);
+
+  --grid-light: rgba(0, 0, 0, 0.028);
+  --grid-dark: rgba(255, 255, 255, 0.08);
+  --grid-dark-lg: rgba(255, 255, 255, 0.14);
+  --hair: rgba(10, 10, 10, 0.16);
+
+  /* Parallax offset for the ink band's drafting grid. Written by JS. */
+  --gy: 0px;
+
+  --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  --radius: 2px;
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --border-paper: 2px solid var(--paper);
+
+  --shadow: rgba(10, 10, 10, 0.12);
+  --shadow-deep: rgba(10, 10, 10, 0.26);
+  --shadow-ink-card: rgba(0, 0, 0, 0.45);
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Side gutter honours a landscape notch but never drops below 16px. */
+  --gutter: max(16px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  /* Reading column. Caps the composition at the top of the handheld range so
+     768px does not stretch 46ch of body copy across the whole viewport. */
+  --col: min(100%, 600px);
+  --nav-h: 54px;
+}
+
+/* Scoped universal reset. `*` alone would flatten the rest of JobFlex — this
+   is precisely the construct a CSS Module cannot express. */
+.jf-mobile-homeowner,
+.jf-mobile-homeowner * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS — the only rules in this file that are not this design's
+   own. Everything below this block is.
+   ══════════════════════════════════════════════════════════════════════════
+
+   1. globals.css paints a 40px drafting grid on <body> (background-attachment:
+      fixed) and a `body::before` paper-grain overlay with mix-blend-mode:
+      multiply. This page paints its OWN 38px grid on the page root (scroll
+      attachment, so it travels with the content) and its own ink bands; the
+      host grid would show through the transparent hero at the wrong scale and
+      the grain's multiply blend would tint every ink section. Both switched
+      off for this page's lifetime; `:has()` restores them on unmount.
+
+   2. Tailwind preflight + globals.css reach inside the page and move values
+      this design assumes it inherits:
+        · preflight `html { line-height: 1.5 }` — every box here that sets no
+          line-height of its own (the pill, the chips, the category buttons,
+          the trust rows, the mono labels) computes `normal` in the donor and
+          would grow 2–5px each, which compounds into a different composition.
+        · globals.css `font-feature-settings: 'cv11','ss01','ss03'` on
+          html+body — Inter's single-storey `a`, alternate digits and round
+          quotes. Visible immediately in the review pull-quotes.
+        · globals.css `text-rendering: optimizeLegibility` on html+body.
+
+   3. `html { scroll-behavior: smooth }` — the closing CTA and the brand mark
+      both anchor to `#jfmh-top`. <html> is an ancestor of the page root, so no
+      descendant selector can reach it; `:has()` is the only gate available.
+
+   MEASURED, NOT COPIED — two neutralizers the desktop page needs and this one
+   does NOT, verified with getComputedStyle at 320/390/768:
+   · `svg { display: inline; vertical-align: baseline }`. The desktop page
+     needs it for `.v-arrow`, a chevron sitting inline in a text flow. Here
+     every <svg> is either a flex child with an explicit box (`.ic`), an
+     absolutely positioned drawing (`.nc-svg`), or the 0×0 sprite — preflight's
+     `display: block` is correct or irrelevant for all three, and `.v-arrow`
+     was re-laid-out as a block element in a flex column. Leaving preflight
+     alone here is one less override to keep in step.
+   · `img { max-width: none }`. The desktop page needs it because the photo
+     plates are `position: absolute; inset: 0; width/height: 100%` and it wants
+     the donor's bare-UA environment. `max-width: 100%` resolves against the
+     same containing block that `width: 100%` already fills, so it is a no-op
+     on this page's plates — confirmed by measuring the rendered plate width
+     against its box at every test width.
+
+   NOT neutralized, deliberately: globals' `* { scrollbar-width: thin }` and
+   the 10px `::-webkit-scrollbar` rules. That is browser chrome outside the
+   page box, and setting `scrollbar-width` locally is known to kill
+   `::-webkit-scrollbar` styling in Chrome. This page also has no internal
+   scroll container that would expose a bar (see the photo board note — it is
+   a multi-column board, not a scroll rail, precisely so nothing here fights
+   the host's scrollbar rules).                                             */
+html:has(.jf-mobile-homeowner) { scroll-behavior: smooth; }
+body:has(.jf-mobile-homeowner) { background-image: none; }
+body:has(.jf-mobile-homeowner)::before { content: none; }
+
+.jf-mobile-homeowner {
+  line-height: normal;
+  font-feature-settings: normal;
+  text-rendering: auto;
+
+  font-family: var(--font);
+  color: var(--ink);
+  overflow-wrap: break-word;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 38px 38px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── CONTROL BASELINE ──────────────────────────────────────────────────────
+   Written with the root class + a type selector, i.e. (0,1,1). Every styled
+   control rule below carries the root class + its own class, i.e. (0,2,0), so
+   it outranks this baseline regardless of source order. That is the
+   handheld-fleet `:where()` reset trap solved by construction rather than by
+   `:where()`: there is exactly one class in the reset, not one class per page
+   rule, so the arithmetic goes the right way round.                        */
+.jf-mobile-homeowner button,
+.jf-mobile-homeowner input,
+.jf-mobile-homeowner textarea {
+  font-family: inherit;
+  color: inherit;
+}
+.jf-mobile-homeowner button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(24, 84, 160, 0.12);
+}
+.jf-mobile-homeowner a {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(24, 84, 160, 0.12);
+}
+.jf-mobile-homeowner svg { flex-shrink: 0; }
+.jf-mobile-homeowner svg.ic {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+.jf-mobile-homeowner .ic-sm { width: 14px; height: 14px; }
+
+/* One focus ring for the whole page. 2px blueprint at 2px offset reads on
+   paper and on ink alike, which is why it is not tinted per section. */
+.jf-mobile-homeowner a:focus-visible,
+.jf-mobile-homeowner button:focus-visible,
+.jf-mobile-homeowner input:focus-visible,
+.jf-mobile-homeowner textarea:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+.jf-mobile-homeowner .nav a:focus-visible,
+.jf-mobile-homeowner .net :focus-visible,
+.jf-mobile-homeowner .cta :focus-visible,
+.jf-mobile-homeowner .foot a:focus-visible {
+  outline-color: var(--sky);
+}
+
+/* ── MOTION ────────────────────────────────────────────────────────────────
+   Motion System "Balanced": load cascade 60ms stagger, scroll reveal 700ms
+   with a translateY(16px) settle, micro-interactions 100–180ms. All six
+   keyframes are namespaced `jfmh-`.                                        */
+@keyframes jfmh-fade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes jfmh-slidein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes jfmh-blink { 50% { opacity: 0.3; } }
+@keyframes jfmh-caret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes jfmh-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes jfmh-draw { to { stroke-dashoffset: 0; } }
+@keyframes jfmh-sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes jfmh-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+
+.jf-mobile-homeowner .anim { opacity: 0; animation: jfmh-fade 0.9s var(--ease-out) forwards; }
+.jf-mobile-homeowner .a1 { animation-delay: 0.08s; }
+.jf-mobile-homeowner .a2 { animation-delay: 0.20s; }
+.jf-mobile-homeowner .a3 { animation-delay: 0.34s; }
+.jf-mobile-homeowner .a4 { animation-delay: 0.48s; }
+.jf-mobile-homeowner .rv {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out);
+}
+.jf-mobile-homeowner .rv.on { opacity: 1; transform: none; }
+
+/* ============================================================
+   1. NAV — sticky ink bar: two-line brand lockup + contractor exit
+   ============================================================
+   Sticky rather than the desktop page's static header. On a 700px-tall
+   composition the contractor exit is otherwise unreachable for the whole
+   scroll, and the brand mark doubles as the "back to the wizard" anchor.
+
+   320px WIDTH BUDGET (the handheld fleet's tightest row discipline, applied
+   here). inner = 320 − gutter(16) = 304.
+     mark 24 + lockup-gap 8 + text ~104 (wordmark 15px/900 ≈ 68px, the mono
+     sub-row "HOMEOWNER PORTAL" ≈ 100px at 7.6px/0.2em) = 136
+     CTA: label ~97 + icon 13 + gap 7 + padding 26 = 143
+     136 + 143 = 279 ≤ 304  ✓  with 25px of slack.
+   `.nav-txt { min-width: 0; overflow: hidden }` plus nowrap + ellipsis on both
+   rows is the failsafe, not the plan: a substituted wider font clips instead
+   of wrapping the lockup into three lines.                                 */
+.jf-mobile-homeowner .nav {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: stretch;
+  min-height: var(--nav-h);
+  padding-left: var(--gutter);
+  border-bottom: var(--border);
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-mobile-homeowner .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 6px 10px 6px 0;
+}
+.jf-mobile-homeowner .brand-mark {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+.jf-mobile-homeowner .nav-txt { min-width: 0; overflow: hidden; }
+.jf-mobile-homeowner .brand-txt {
+  display: block;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-mobile-homeowner .nav-tag {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 7.6px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: var(--sky);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-mobile-homeowner .nav-cta {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border-left: var(--border-paper);
+  background: var(--blueprint);
+  color: #fff;
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: background 0.18s var(--ease);
+}
+.jf-mobile-homeowner .nav-cta:active { background: var(--paper); color: var(--ink); }
+/* Under 360px the mono sub-row is the first thing to give — the wordmark and
+   the exit both have to survive intact. */
+@media (max-width: 359px) {
+  .jf-mobile-homeowner .nav-tag { display: none; }
+  .jf-mobile-homeowner .nav-cta { padding: 0 11px; letter-spacing: 0.06em; }
+}
+
+/* ============================================================
+   2. HERO — kicker pill, headline, sub, then straight into the wizard
+   ============================================================ */
+.jf-mobile-homeowner .hero {
+  position: relative;
+  padding: 26px var(--gutter) 24px;
+  border-bottom: var(--border);
+}
+.jf-mobile-homeowner .hero-in { width: var(--col); margin: 0 auto; }
+.jf-mobile-homeowner .hero-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.jf-mobile-homeowner .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--success-soft);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.jf-mobile-homeowner .pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: jfmh-blink 1.9s infinite;
+}
+/* The donor pins line 2 with `white-space: nowrap`, which overflows a 320px
+   viewport by ~14px once the inverse plate's padding is counted. Dropped, and
+   the plate's horizontal padding trimmed 13px → 9px, so the line wraps
+   naturally instead of pushing the document sideways. */
+.jf-mobile-homeowner .h1 {
+  margin-top: 20px;
+  font-size: clamp(29px, 8.6vw, 46px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.jf-mobile-homeowner .h1 .inv {
+  display: inline-block;
+  padding: 0 9px 2px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-mobile-homeowner .h1-sub {
+  margin-top: 14px;
+  max-width: 42ch;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+/* ── the wizard console ───────────────────────────────────────────────────
+   2px ink frame, 2px radius, hard 3px offset with no blur. The desktop page
+   gives this card two BLURRED shadows (0 2px 10px / 0 18px 44px -12px) —
+   authored before the blueprint shadow rule was settled. Corrected to the
+   house treatment here rather than carried across, at the standardised 3px
+   depth against the deeper --shadow-deep alpha so it still reads as the one
+   elevated object on the page.                                             */
+.jf-mobile-homeowner .win-wrap { width: var(--col); margin: 24px auto 0; }
+.jf-mobile-homeowner .win {
+  position: relative;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow-deep);
+  transition: box-shadow 0.3s var(--ease);
+}
+.jf-mobile-homeowner .win.drag {
+  box-shadow: 0 0 0 3px rgba(24, 84, 160, 0.3), 3px 3px 0 var(--shadow-deep);
+}
+.jf-mobile-homeowner .win-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 11px 14px;
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-mobile-homeowner .win-step {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jf-mobile-homeowner .win-ticks { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.jf-mobile-homeowner .tick {
+  height: 5px;
+  width: 12px;
+  background: rgba(242, 240, 235, 0.3);
+  transition: width 0.45s var(--ease-out), background 0.45s var(--ease);
+}
+.jf-mobile-homeowner .tick.past { background: var(--paper); }
+.jf-mobile-homeowner .tick.now { width: 24px; background: var(--sky); }
+
+.jf-mobile-homeowner .drop-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  background: rgba(242, 240, 235, 0.95);
+  border: 2px dashed var(--blueprint);
+}
+.jf-mobile-homeowner .win.drag .drop-veil { display: flex; }
+.jf-mobile-homeowner .drop-veil span {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+}
+
+/* ── panes ────────────────────────────────────────────────────────────────
+   `.pane` is a flex column so `.pane-foot` can be a sticky last child. The
+   entrance animation is the donor's, replayed on the same events via the
+   wizard's `paneKey` remount.                                              */
+.jf-mobile-homeowner .pane {
+  display: flex;
+  flex-direction: column;
+  animation: jfmh-slidein 0.38s var(--ease-out);
+}
+.jf-mobile-homeowner .think {
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 220px;
+  padding: 44px 20px;
+}
+.jf-mobile-homeowner .think-dots { display: flex; gap: 7px; }
+.jf-mobile-homeowner .think-dots i {
+  width: 9px;
+  height: 9px;
+  background: var(--ink);
+  animation: jfmh-bounce 0.9s infinite;
+}
+.jf-mobile-homeowner .think-dots i:nth-child(2) { animation-delay: 0.12s; }
+.jf-mobile-homeowner .think-dots i:nth-child(3) { animation-delay: 0.24s; }
+.jf-mobile-homeowner .think-t {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* 16px is a hard floor on every text control: below it iOS Safari zooms the
+   viewport on focus and the visitor has to pinch back out. */
+.jf-mobile-homeowner .desc {
+  display: block;
+  width: 100%;
+  min-height: 132px;
+  resize: none;
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 15px 16px 4px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.jf-mobile-homeowner .desc::placeholder { color: var(--muted); }
+.jf-mobile-homeowner .guess {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  align-self: flex-start;
+  margin: 0 16px 4px;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-align: left;
+  border: 1.5px solid var(--blueprint);
+  border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.06);
+  color: var(--blueprint);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  animation: jfmh-slidein 0.3s var(--ease-out);
+}
+.jf-mobile-homeowner .guess i { flex-shrink: 0; width: 6px; height: 6px; background: var(--success); }
+.jf-mobile-homeowner .ups { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 16px 2px; }
+.jf-mobile-homeowner .up {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  max-width: 100%;
+  padding: 7px 10px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  animation: jfmh-slidein 0.3s var(--ease-out);
+}
+.jf-mobile-homeowner .up-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jf-mobile-homeowner .up .ic { width: 13px; height: 13px; color: var(--muted); }
+.jf-mobile-homeowner .up-ok { font-weight: 900; color: var(--success); }
+.jf-mobile-homeowner .up-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--hair);
+}
+.jf-mobile-homeowner .up-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--blueprint);
+  transition: width 0.2s linear;
+}
+
+/* Two secondary tools on one row; the primary action lives in the sticky
+   foot with every other step's primary action. */
+.jf-mobile-homeowner .tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: var(--border-thin);
+}
+.jf-mobile-homeowner .tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 10px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.15;
+  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease),
+    background 0.15s var(--ease);
+}
+.jf-mobile-homeowner .tool-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jf-mobile-homeowner .tool:active { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.jf-mobile-homeowner .tool .ic { width: 15px; height: 15px; }
+.jf-mobile-homeowner .tool.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.jf-mobile-homeowner .cat-wrap { min-width: 0; }
+
+/* ── the primary button treatment (owner-locked) ──────────────────────────
+   Solid blueprint fill, white label, 2px ink frame, hard 3px ink offset with
+   no blur. Not a near-white card, not a flattened ghost. Press collapses the
+   offset to 1px so the button reads like a stamp coming down.              */
+.jf-mobile-homeowner .go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  flex: 1 1 auto;
+  min-height: 50px;
+  padding: 0 18px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-indent: 0.08em;
+  line-height: 1.2;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.jf-mobile-homeowner .go:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+.jf-mobile-homeowner .go:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  background: var(--paper);
+  color: var(--muted-faint);
+  border-color: var(--hair);
+  box-shadow: none;
+}
+.jf-mobile-homeowner .go .ic { width: 15px; height: 15px; }
+
+/* ── the sticky action bar ────────────────────────────────────────────────
+   `position: sticky; bottom: 0` on the pane's last child. While the pane is
+   taller than the viewport the bar rides the bottom edge, inside the thumb
+   zone; the moment the whole pane fits, it settles back into the card and
+   stops behaving specially. No JS, no observer, no fixed overlay that could
+   strand the page — the sticky range IS the pane's own height, so the bar can
+   never outlive the step it belongs to. The `done` step renders no bar.    */
+.jf-mobile-homeowner .pane-body { padding: 16px; }
+.jf-mobile-homeowner .pane-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: var(--border-thin);
+  background: var(--paper);
+}
+.jf-mobile-homeowner .back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  min-height: 50px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.jf-mobile-homeowner .back:active { color: var(--ink); border-color: var(--ink); }
+
+.jf-mobile-homeowner .qs-h { font-size: 15px; font-weight: 900; letter-spacing: -0.015em; line-height: 1.25; }
+.jf-mobile-homeowner .q { margin-top: 16px; animation: jfmh-slidein 0.4s var(--ease-out) backwards; }
+.jf-mobile-homeowner .q-l {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-homeowner .q-in {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  margin-top: 7px;
+  padding: 0 12px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.15s var(--ease);
+}
+.jf-mobile-homeowner .q-in:focus { border-color: var(--ink); }
+.jf-mobile-homeowner .q-in::placeholder { color: var(--muted-faint); }
+.jf-mobile-homeowner .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+/* ≥44px on both axes, chips included — no exceptions. */
+.jf-mobile-homeowner .chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+}
+.jf-mobile-homeowner .chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+.jf-mobile-homeowner .scope-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.jf-mobile-homeowner .scope-stamp {
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 8.5px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.jf-mobile-homeowner .sheet {
+  margin-top: 14px;
+  padding: 16px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.jf-mobile-homeowner .sheet-n {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-homeowner .sheet-p { margin-top: 10px; font-size: 14px; line-height: 1.65; color: var(--ink-soft); }
+.jf-mobile-homeowner .sheet-list { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.jf-mobile-homeowner .sl {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  animation: jfmh-slidein 0.4s var(--ease-out) backwards;
+}
+.jf-mobile-homeowner .sl i {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  background: var(--success);
+  color: var(--paper);
+  font-size: 9px;
+  font-weight: 900;
+  font-style: normal;
+}
+.jf-mobile-homeowner .sl b { color: var(--ink); }
+
+.jf-mobile-homeowner .cform { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
+.jf-mobile-homeowner .fld-l {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-homeowner .c-in { margin-top: 7px; }
+.jf-mobile-homeowner .pane-lede { margin-top: 7px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+
+.jf-mobile-homeowner .done {
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  padding: 34px 20px calc(34px + env(safe-area-inset-bottom, 0px));
+  text-align: center;
+}
+.jf-mobile-homeowner .done-mark {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--success);
+  color: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.jf-mobile-homeowner .done-mark .ic { width: 28px; height: 28px; stroke-width: 2.6; }
+.jf-mobile-homeowner .done-mark use {
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: jfmh-draw 0.6s var(--ease-out) 0.18s forwards;
+}
+.jf-mobile-homeowner .done-h {
+  margin-top: 18px;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+.jf-mobile-homeowner .done-p {
+  margin-top: 12px;
+  max-width: 40ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.jf-mobile-homeowner .restart {
+  margin-top: 18px;
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1.5px solid var(--hair);
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.jf-mobile-homeowner .restart:active { color: var(--ink); border-color: var(--ink); }
+
+/* ── category picker: a bottom sheet, not a dropdown ──────────────────────
+   CLAUDE.md prefers bottom sheets over dialogs on handheld, and the donor's
+   274px popover anchored above a half-width button is unusable at 320px. Same
+   interaction, re-laid out: pick closes and commits, scrim-tap and Escape
+   cancel, and the page scroll is held by the shared reference-counted
+   lib/scrollLock rather than a hand-rolled body.style.overflow (nested locks
+   poison each other and strand the page). Hand-rolled markup — no Radix.
+
+   The sheet is rendered as a sibling of `.win`, never inside `.pane`: the
+   pane carries a transform during its 380ms entrance, and a transformed
+   ancestor would re-root `position: fixed` onto the pane.                  */
+.jf-mobile-homeowner .cat-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(10, 10, 10, 0.55);
+  animation: jfmh-scrim-in 0.2s var(--ease-out);
+}
+.jf-mobile-homeowner .cat-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 201;
+  max-height: 76vh;
+  overflow-y: auto;
+  padding: 0 var(--gutter) calc(18px + env(safe-area-inset-bottom, 0px));
+  border-top: var(--border);
+  background: var(--paper);
+  animation: jfmh-sheet-in 0.26s var(--ease-out);
+}
+.jf-mobile-homeowner .cat-grab {
+  width: 44px;
+  height: 4px;
+  margin: 10px auto 0;
+  border-radius: 2px;
+  background: var(--hair);
+}
+.jf-mobile-homeowner .cat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 14px;
+}
+.jf-mobile-homeowner .cat-t {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-homeowner .cat-x {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-right: -10px;
+  border-radius: var(--radius);
+  color: var(--ink);
+}
+.jf-mobile-homeowner .cats-in { display: flex; flex-wrap: wrap; gap: 8px; }
+.jf-mobile-homeowner .cat {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 12.5px;
+  font-weight: 700;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+}
+.jf-mobile-homeowner .cat.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+/* ── trust strip ──────────────────────────────────────────────────────────
+   One framed block with 1.5px internal dividers rather than three separate
+   floating cards — DESIGN.md's KPI-strip pattern, and it stops the hero
+   ending in a stack of three near-identical shadows.                       */
+.jf-mobile-homeowner .trust-row {
+  width: var(--col);
+  margin: 26px auto 0;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.jf-mobile-homeowner .tr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 14px 16px;
+  border-bottom: 1.5px solid var(--hair);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+.jf-mobile-homeowner .tr:last-child { border-bottom: none; }
+.jf-mobile-homeowner .tr .ic { width: 20px; height: 20px; }
+.jf-mobile-homeowner .tr:nth-child(1) svg { color: var(--warning); }
+.jf-mobile-homeowner .tr:nth-child(2) svg { color: var(--blueprint); }
+.jf-mobile-homeowner .tr:nth-child(3) svg { color: var(--success); }
+
+/* ============================================================
+   3. STEPS — four cards with the live vignettes, stacked
+   ============================================================
+   The desktop page folds these into a 2×2 grid at ≤700px and then rescues the
+   overflow with `transform: scale(.658)` on the vignette interior. That trick
+   is not carried across: at 320px it renders 7.5px mono annotations at 4.9px.
+   Stacked full width instead, so every vignette draws at 1:1 and stays
+   readable in direct sunlight, which DESIGN.md treats as a hard constraint
+   rather than a nicety.                                                    */
+.jf-mobile-homeowner .steps { padding: 42px var(--gutter); border-bottom: var(--border); }
+.jf-mobile-homeowner .sec-in { width: var(--col); margin: 0 auto; }
+.jf-mobile-homeowner .sec-n {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+}
+.jf-mobile-homeowner .sec-h {
+  margin-top: 12px;
+  font-size: clamp(26px, 7.4vw, 38px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.jf-mobile-homeowner .sec-h .inv {
+  display: inline-block;
+  padding: 0 9px 2px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-mobile-homeowner .grid4 {
+  display: flex;
+  flex-direction: column;
+  margin-top: 24px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.jf-mobile-homeowner .st { position: relative; padding: 14px; border-bottom: var(--border-thin); }
+.jf-mobile-homeowner .st:last-child { border-bottom: none; }
+.jf-mobile-homeowner .st::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: var(--blueprint);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s var(--ease-out);
+}
+/* The desktop card draws its blueprint top-rule on :hover. There is no hover on
+   a touch screen, so the rule is re-triggered off the section's scroll reveal
+   and staggered 90ms per card — the same "lines get drawn" gesture, moved to
+   the only input a phone actually has. */
+.jf-mobile-homeowner .grid4.rv.on .st::before { transform: scaleX(1); }
+.jf-mobile-homeowner .grid4 .st:nth-child(1)::before { transition-delay: 0.10s; }
+.jf-mobile-homeowner .grid4 .st:nth-child(2)::before { transition-delay: 0.19s; }
+.jf-mobile-homeowner .grid4 .st:nth-child(3)::before { transition-delay: 0.28s; }
+.jf-mobile-homeowner .grid4 .st:nth-child(4)::before { transition-delay: 0.37s; }
+.jf-mobile-homeowner .vig {
+  position: relative;
+  height: 134px;
+  overflow: hidden;
+  border: 1.5px solid rgba(10, 10, 10, 0.26);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+}
+.jf-mobile-homeowner .vig-in { position: absolute; inset: 0; }
+.jf-mobile-homeowner .st-n {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--blueprint);
+}
+.jf-mobile-homeowner .st-t {
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.jf-mobile-homeowner .st-b { margin-top: 8px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+
+/* vignette 1 — typing */
+.jf-mobile-homeowner .v-type {
+  position: absolute;
+  inset: 14px;
+  padding: 13px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.jf-mobile-homeowner .v-l {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-faint);
+}
+.jf-mobile-homeowner .v-p { margin-top: 7px; font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+.jf-mobile-homeowner .v-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 11px;
+  margin-left: 1px;
+  background: var(--blueprint);
+  vertical-align: middle;
+  animation: jfmh-caret 1s step-end infinite;
+}
+/* vignette 2 — chips */
+.jf-mobile-homeowner .v-q { padding: 14px; }
+.jf-mobile-homeowner .v-qt { font-size: 12.5px; font-weight: 900; }
+.jf-mobile-homeowner .v-qt.dim { margin-top: 12px; color: var(--muted-faint); }
+.jf-mobile-homeowner .v-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.jf-mobile-homeowner .v-chip {
+  padding: 4px 8px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 11px;
+  font-weight: 700;
+  transition: background 0.3s var(--ease), color 0.3s var(--ease),
+    border-color 0.3s var(--ease);
+}
+.jf-mobile-homeowner .v-chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+/* vignette 3 — the raw sentence turning into an estimate */
+.jf-mobile-homeowner .v-s { display: flex; flex-direction: column; align-items: flex-start; padding: 14px; }
+.jf-mobile-homeowner .v-raw { font-size: 10.5px; line-height: 1.45; font-style: italic; color: var(--muted-faint); }
+/* No width/height here on purpose. `svg.ic` above is (0,2,1) and would outrank
+   a `.v-arrow` size at (0,2,0), so the desktop page's 13px declaration is
+   already inert there and the chevron renders at 17px on both builds. Stating
+   a number that cannot win would only look like a bug later. */
+.jf-mobile-homeowner .v-arrow { display: block; margin: 5px 0; color: var(--blueprint); }
+.jf-mobile-homeowner .v-rows { display: flex; flex-direction: column; gap: 6px; }
+.jf-mobile-homeowner .v-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.4s var(--ease), transform 0.4s var(--ease-out);
+}
+.jf-mobile-homeowner .v-row.on { opacity: 1; transform: none; }
+.jf-mobile-homeowner .v-row i {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  background: var(--success);
+  color: var(--paper);
+  font-size: 8px;
+  font-weight: 900;
+  font-style: normal;
+}
+/* vignette 4 — the notification */
+.jf-mobile-homeowner .v-back {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 44px;
+  height: 44px;
+  border: 1.5px solid var(--hair);
+  background: var(--paper);
+}
+.jf-mobile-homeowner .v-note {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 28px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px;
+  border: var(--border-thin);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  opacity: 0;
+  transform: translateY(-12px);
+  transition: opacity 0.45s var(--ease), transform 0.5s var(--ease-out);
+}
+.jf-mobile-homeowner .v-note.on { opacity: 1; transform: none; }
+.jf-mobile-homeowner .v-mark {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+.jf-mobile-homeowner .v-nbody { min-width: 0; }
+.jf-mobile-homeowner .v-nt { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.jf-mobile-homeowner .v-nt b { font-size: 10.5px; font-weight: 900; }
+.jf-mobile-homeowner .v-nt span { font-family: var(--font-mono); font-size: 10px; color: var(--muted-faint); }
+.jf-mobile-homeowner .v-nb { margin-top: 3px; font-size: 10.5px; line-height: 1.45; color: var(--muted); }
+.jf-mobile-homeowner .v-nb em { font-style: normal; font-weight: 800; color: var(--ink); }
+.jf-mobile-homeowner .v-nb b { font-weight: 800; color: var(--warning); }
+
+/* ============================================================
+   4. NETWORK — the ink band and its four drawings
+   ============================================================
+   Stacked, not gridded. In a 2-up grid at 320px each drawing box is ~138px
+   wide, which renders the 200×200 viewBox at 0.69 and the mono annotations
+   ("No. WA-2847", "34'0\"", "1,720 SF") at ~5px. These drawings are the page's
+   best asset and the only place the blueprint language is literal; they get
+   full width and draw at ≥1:1 at every tested viewport.                    */
+.jf-mobile-homeowner .net {
+  position: relative;
+  overflow: hidden;
+  padding: 44px var(--gutter);
+  border-bottom: var(--border);
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-mobile-homeowner .net::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-dark) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy);
+}
+.jf-mobile-homeowner .net::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-dark-lg) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-dark-lg) 1px, transparent 1px);
+  background-size: 200px 200px;
+  background-position: 0 calc(var(--gy) * 2.2);
+}
+.jf-mobile-homeowner .net-in { position: relative; z-index: 2; width: var(--col); margin: 0 auto; }
+.jf-mobile-homeowner .net-h {
+  text-align: center;
+  font-size: clamp(30px, 9vw, 48px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+  text-transform: uppercase;
+}
+.jf-mobile-homeowner .net-h span {
+  color: rgba(242, 240, 235, 0.22);
+  -webkit-text-stroke: 1.2px rgba(242, 240, 235, 0.78);
+}
+.jf-mobile-homeowner .net-cards { display: flex; flex-direction: column; gap: 14px; margin-top: 26px; }
+.jf-mobile-homeowner .nc {
+  display: flex;
+  flex-direction: column;
+  border: var(--border-paper);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.34);
+  box-shadow: 3px 3px 0 var(--shadow-ink-card);
+}
+.jf-mobile-homeowner .nc-art { position: relative; height: clamp(186px, 54vw, 230px); overflow: hidden; }
+.jf-mobile-homeowner .nc-cap { flex-shrink: 0; padding: 14px; border-top: var(--border-paper); line-height: 1.42; }
+.jf-mobile-homeowner .nc-cap b {
+  display: block;
+  font-size: 15.5px;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+.jf-mobile-homeowner .nc-cap span { display: block; margin-top: 6px; font-size: 12.5px; color: rgba(242, 240, 235, 0.8); }
+.jf-mobile-homeowner .nc-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* The attribute PREFIX selector that a CSS Module would have broken: hashing
+   `nc-edge` into `homeowner_nc-edge__x7f2q` makes `[class^="nc-"]` match
+   nothing and every stroke weight in all four drawings silently disappears. */
+.jf-mobile-homeowner .nc-svg [class^="nc-"] { vector-effect: non-scaling-stroke; }
+.jf-mobile-homeowner .nc-face { fill: rgba(242, 240, 235, 0.07); stroke: rgba(242, 240, 235, 0.5); stroke-width: 1.2; }
+.jf-mobile-homeowner .nc-edge { fill: none; stroke: var(--paper); stroke-width: 1.8; stroke-linejoin: round; }
+.jf-mobile-homeowner .nc-hip { fill: none; stroke: rgba(242, 240, 235, 0.5); stroke-width: 1; stroke-dasharray: 5 4; }
+.jf-mobile-homeowner .nc-dot { fill: var(--sky); }
+.jf-mobile-homeowner .nc-bar { fill: rgba(242, 240, 235, 0.72); }
+.jf-mobile-homeowner .nc-road { fill: none; stroke: rgba(242, 240, 235, 0.3); stroke-width: 2.5; }
+.jf-mobile-homeowner .nc-min { fill: none; stroke: rgba(242, 240, 235, 0.34); stroke-width: 1; }
+.jf-mobile-homeowner .nc-hatch { fill: url(#jfmh-hatch); stroke: none; }
+.jf-mobile-homeowner .nc-pinf { fill: var(--ink); stroke: var(--paper); stroke-width: 1.5; }
+.jf-mobile-homeowner .nc-pind { fill: var(--sky); }
+.jf-mobile-homeowner .nc-area {
+  fill: var(--sky);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+}
+.jf-mobile-homeowner .nc-xs {
+  fill: rgba(242, 240, 235, 0.78);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+}
+.jf-mobile-homeowner .nc-cell { fill: none; stroke: rgba(242, 240, 235, 0.42); stroke-width: 1; }
+.jf-mobile-homeowner .nc-fill { fill: var(--sky); stroke: none; }
+.jf-mobile-homeowner .nc-key {
+  fill: none;
+  stroke: var(--sky);
+  stroke-width: 2.6;
+  stroke-linecap: square;
+  stroke-dasharray: 420;
+  stroke-dashoffset: 420;
+}
+.jf-mobile-homeowner .nc.on .nc-key { animation: jfmh-draw 1.1s var(--ease-out) 0.15s forwards; }
+.jf-mobile-homeowner .nc-s {
+  fill: rgba(242, 240, 235, 0.82);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 1.8px;
+}
+.jf-mobile-homeowner .nc-num {
+  fill: var(--paper);
+  font-family: var(--font);
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: -1.6px;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-homeowner .nc-plus { fill: var(--sky); }
+
+/* ============================================================
+   5. REVIEWS — the photo board and the three quotes
+   ============================================================
+   THE 144px EMPTY BAND, DESIGNED AWAY. On the desktop page, `.arch` keeps a
+   `padding-bottom: clamp(140px, 16vh, 182px)` from a trailing "фотодоска"
+   block that re-declares it AFTER the ≤1080px media query at equal
+   specificity, while that media query has already set `.arch-col { display:
+   none }`. The result under 1080px is a 144px void beneath the heading,
+   reserved for photographs that are not being rendered.
+
+   The fix here is compositional, not a `padding-bottom: 0` patch: the photos
+   come BACK. Eight plates in a two-column CSS-multicolumn board with the
+   donor's alternating ±1° tilts, hatch overlay and mono labels — a real
+   photo board rather than a reserved absence — and the heading is an ordinary
+   flow sibling above it instead of an absolutely positioned overlay. There is
+   no `padding-bottom` on this container at any width, no `display: none`
+   column, and nothing positioned out of flow, so the void cannot re-form.
+
+   Multi-column rather than a horizontal scroll rail on purpose: a rail hides
+   six of the eight plates behind a swipe, and an `overflow-x` container would
+   pick up globals' 10px `::-webkit-scrollbar` at the top of the range. The
+   ±1° tilt on a ~139px plate bleeds ≈1.3px horizontally, comfortably inside
+   the 16px gutter, so the board contributes no document overflow.          */
+.jf-mobile-homeowner .revs { padding: 42px var(--gutter); border-bottom: var(--border); }
+.jf-mobile-homeowner .arch-h {
+  font-size: clamp(26px, 7.4vw, 38px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.jf-mobile-homeowner .arch-h span { color: var(--blueprint); }
+/* `column-width`, not `columns: 2`. A fixed two-up holds the plates at ~139px
+   across at 320 but stretches them to ~297px at 768, where the fixed plate
+   heights turn every photograph into a letterbox. Asking for a 128px minimum
+   instead lets the browser pick the count — 2 columns from 320 to ~440, 4 at
+   the top of the range — so a plate stays between 139px and 186px wide at
+   every tested viewport and keeps its portrait character. */
+.jf-mobile-homeowner .arch {
+  columns: 128px;
+  column-gap: 10px;
+  margin-top: 22px;
+}
+.jf-mobile-homeowner .plate {
+  position: relative;
+  display: block;
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin-bottom: 10px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+}
+.jf-mobile-homeowner .plate:nth-child(odd) { transform: rotate(-1.1deg); }
+.jf-mobile-homeowner .plate:nth-child(even) { transform: rotate(0.9deg); }
+.jf-mobile-homeowner .plate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background-image: repeating-linear-gradient(45deg, rgba(24, 84, 160, 0.1) 0 1px, transparent 1px 7px);
+}
+.jf-mobile-homeowner .plate-ph {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: calc(var(--radius) - 1px);
+  filter: saturate(0.86) contrast(1.02);
+}
+.jf-mobile-homeowner .plate-l {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  z-index: 3;
+  padding: 4px 6px;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jf-mobile-homeowner .revs-grid {
+  margin-top: 26px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.jf-mobile-homeowner .rev { padding: 20px 16px; border-bottom: var(--border-thin); }
+.jf-mobile-homeowner .rev:last-child { border-bottom: none; }
+.jf-mobile-homeowner .rate { display: flex; gap: 4px; }
+.jf-mobile-homeowner .rate i {
+  width: 9px;
+  height: 9px;
+  background: var(--blueprint);
+  transform: scale(0);
+  transition: transform 0.3s var(--ease-out);
+}
+.jf-mobile-homeowner .rv.on .rate i { transform: scale(1); }
+.jf-mobile-homeowner .rate i:nth-child(2) { transition-delay: 0.06s; }
+.jf-mobile-homeowner .rate i:nth-child(3) { transition-delay: 0.12s; }
+.jf-mobile-homeowner .rate i:nth-child(4) { transition-delay: 0.18s; }
+.jf-mobile-homeowner .rate i:nth-child(5) { transition-delay: 0.24s; }
+.jf-mobile-homeowner .rev-q { margin-top: 13px; font-size: 14px; line-height: 1.6; color: var(--ink-soft); }
+.jf-mobile-homeowner .rev-who {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1.5px solid var(--hair);
+}
+.jf-mobile-homeowner .rev-av {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 13px;
+  font-weight: 900;
+}
+.jf-mobile-homeowner .rev:nth-child(2) .rev-av { background: var(--blueprint); }
+.jf-mobile-homeowner .rev:nth-child(3) .rev-av { background: var(--success); }
+.jf-mobile-homeowner .rev:nth-child(2) .rate i { background: var(--blueprint); }
+.jf-mobile-homeowner .rev:nth-child(3) .rate i { background: var(--success); }
+.jf-mobile-homeowner .rev-n { font-size: 12.5px; font-weight: 900; }
+.jf-mobile-homeowner .rev-r {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ============================================================
+   6. CTA + FOOTER
+   ============================================================
+   INVERSE BUTTON RULE. On paper the primary is blueprint fill / white label /
+   ink frame / 3px ink offset. On an ink ground that same recipe loses its
+   frame and its shadow entirely, so it flips: paper fill / ink label / paper
+   frame / 3px paper-alpha offset. Same object, same weight, same 3px depth —
+   only the ground changed. This is the desktop page's own logic, kept.     */
+.jf-mobile-homeowner .cta {
+  padding: 44px var(--gutter);
+  border-bottom: 1.5px solid rgba(242, 240, 235, 0.16);
+  background: var(--ink);
+  color: var(--paper);
+  text-align: center;
+}
+.jf-mobile-homeowner .cta-in { width: var(--col); margin: 0 auto; }
+.jf-mobile-homeowner .cta-q {
+  font-size: clamp(21px, 6.4vw, 32px);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.66);
+}
+.jf-mobile-homeowner .cta-a {
+  margin-top: 8px;
+  font-size: clamp(21px, 6.4vw, 32px);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.jf-mobile-homeowner .cta-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: min(100%, 400px);
+  margin: 28px auto 0;
+  min-height: 56px;
+  padding: 14px 22px;
+  border: var(--border-paper);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 rgba(242, 240, 235, 0.24);
+  font-size: 11.5px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.jf-mobile-homeowner .cta-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 rgba(242, 240, 235, 0.24); }
+.jf-mobile-homeowner .cta-btn .ic { width: 15px; height: 15px; }
+
+.jf-mobile-homeowner .foot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px var(--gutter) calc(26px + env(safe-area-inset-bottom, 0px));
+  background: var(--ink);
+}
+.jf-mobile-homeowner .foot-b { display: flex; align-items: center; gap: 10px; }
+.jf-mobile-homeowner .foot-b span:not(.brand-mark) {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.55);
+}
+.jf-mobile-homeowner .foot-links { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.jf-mobile-homeowner .foot-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(242, 240, 235, 0.62);
+}
+.jf-mobile-homeowner .foot-links a.lead { color: var(--sky); }
+
+.jf-mobile-homeowner .nojs {
+  padding: 14px 16px;
+  border-bottom: var(--border);
+  background: var(--warning);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Anchor target for the brand mark and the closing CTA. The nav is sticky, so
+   the anchor needs to clear it or the hero lands underneath the bar. */
+.jf-mobile-homeowner .anchor-top { scroll-margin-top: calc(var(--nav-h) + 8px); }
+
+/* ── REDUCED MOTION ───────────────────────────────────────────────────────
+   DESIGN.md treats this as a standing commitment. Every animation and
+   transition is neutered, the reveal states resolve to their final values,
+   and the JS side returns early too (the typing loop, the chip cycle, the
+   scope rows, the notification, the placeholder typewriter, the count-up and
+   the band parallax all check the same media query).                       */
+@media (prefers-reduced-motion: reduce) {
+  html:has(.jf-mobile-homeowner) { scroll-behavior: auto; }
+  .jf-mobile-homeowner *,
+  .jf-mobile-homeowner *::before,
+  .jf-mobile-homeowner *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .jf-mobile-homeowner .rv { opacity: 1; transform: none; }
+  .jf-mobile-homeowner .anim { opacity: 1; animation: none; }
+}

@@ -267,16 +267,23 @@ export function initJobsContent(
       '<td class="num" data-cell="crew">' +
       crewStack(j.crew) +
       "</td>" +
-      '<td class="num"><a class="pt-open" href="' +
-      jobHref(j.id) +
-      '" aria-label="Open ' +
-      esc(j.title) +
-      '"><svg class="ic"><use href="#i-arrow"/></svg></a></td>' +
-      '<td class="num"><button class="pt-open" type="button" data-menu="' +
+      // Both affordances share ONE cell. They used to sit in two separate
+      // <td>s, which put 32px of cell padding between them (16 right + 16
+      // left) and read as a layout gap rather than a pair. The menu comes
+      // first, then the open arrow — the arrow is the row's primary action
+      // and belongs closest to the row's edge.
+      '<td class="num"><div class="j-acts">' +
+      '<button class="pt-open" type="button" data-menu="' +
       esc(j.id) +
       '" aria-haspopup="menu" aria-label="Actions for ' +
       esc(j.title) +
-      '"><svg class="ic"><use href="#i-dots"/></svg></button></td>' +
+      '"><svg class="ic"><use href="#i-dots"/></svg></button>' +
+      '<a class="pt-open" href="' +
+      jobHref(j.id) +
+      '" aria-label="Open ' +
+      esc(j.title) +
+      '"><svg class="ic"><use href="#i-arrow"/></svg></a>' +
+      "</div></td>" +
       "</tr>"
     );
   }

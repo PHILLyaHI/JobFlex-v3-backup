@@ -56,6 +56,14 @@
 
 @keyframes mdlBoxOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px) scale(0.985); } }
 
+/* The Smart Proposal · Estimate refine card's "Editing the estimate…" pulse.
+   Verbatim from `jobflex-smartproposal-estimate-blueprint (8).html`. Declared
+   here for the same reason as the keyframes above: Lightning CSS rejects
+   @keyframes inside the modules pipeline, and the rule that uses it lives in
+   advanced-ai-blueprint/advanced-ai.module.css, which also disables it under
+   prefers-reduced-motion. */
+@keyframes spPulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
 /* The manual builder's total-changed highlight. Declared here because
    Lightning CSS rejects @keyframes inside a CSS module; the rule that uses it
    lives in estimators-blueprint/estimators.module.css, which also disables it

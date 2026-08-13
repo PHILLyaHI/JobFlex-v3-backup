@@ -47,6 +47,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { toast } from "@/components/ui/Toast";
@@ -228,12 +229,80 @@ function LoginInner() {
   );
 }
 
+// ── VIEWPORT SWITCH ────────────────────────────────────────────────────
+// One URL, two designs: this desktop build above 768px, the handheld rebuild
+// at or below it. A MEDIA QUERY, never the user agent — the mobile-first rule
+// forbids UA detection, and a query is also the only thing that makes DevTools'
+// device toolbar work: drag the viewport under 768px and the surface swaps
+// live, no reload and no second URL to remember.
+//
+// The switch lives inline in this file rather than in a sibling
+// `login-responsive.tsx`, because such a file would have to import LoginInner
+// from here while this file imported the switch from it — a cycle. Register
+// gets a sibling file instead: its page is a server component, so the cycle
+// cannot arise there.
+//
+// The handheld build previously shipped only at /mobile-v1/auth/login, which
+// nothing linked to. That preview URL still works; this is what makes the real
+// URL serve it.
+
+/** CLAUDE.md's handheld target: ≤768px. Matches the mobile module's own scale. */
+const HANDHELD = "(max-width: 768px)";
+
+// Paper-coloured full-bleed hold for the one chunk fetch that happens when the
+// viewport first crosses 768px. Without it `dynamic` renders null and the swap
+// blinks through to whatever is behind the app — which reads as a crash rather
+// than a load. Inline styles on purpose: this has to paint before the handheld
+// stylesheet has been fetched, which is also why the #f2f0eb drafting cream is
+// written out rather than read from a token.
+const MobileHold = () => (
+  <div style={{ position: "fixed", inset: 0, zIndex: 45, background: "#f2f0eb" }} />
+);
+
+// Imported out of the (mobile) tree rather than copied, so /auth/login and
+// /mobile-v1/auth/login cannot drift apart — one implementation, two entry
+// points. Lazy and `ssr: false` so a desktop visitor never downloads the
+// handheld bundle or its stylesheet for a tree they will not render.
+const MobileLogin = dynamic(
+  () =>
+    import("@/components/v3/mobile-auth-login/mobile-login-content").then(
+      (m) => m.MobileLoginContent,
+    ),
+  { ssr: false, loading: MobileHold },
+);
+
+// Module scope so the identities are stable across renders — a fresh
+// `subscribe` on every render makes useSyncExternalStore re-subscribe each
+// time, which on a resize-driven store means tearing down the listener in the
+// middle of the resize that triggered the render.
+function subscribe(onStoreChange: () => void) {
+  const mq = window.matchMedia(HANDHELD);
+  mq.addEventListener("change", onStoreChange);
+  return () => mq.removeEventListener("change", onStoreChange);
+}
+const getSnapshot = () => window.matchMedia(HANDHELD).matches;
+// The server cannot know the viewport, so it renders desktop and the client
+// corrects during hydration. A phone therefore shows desktop for one frame; the
+// alternative — render nothing until mounted — flashes blank for every visitor
+// at every viewport, a worse trade on the app's entry page.
+const getServerSnapshot = () => false;
+
+// EXACTLY ONE TREE IS MOUNTED, never both. Both branches call
+// signIn("credentials") against the same handler and both read `?next=`; two
+// live forms would put a second set of email/password fields in the tab order
+// and let a password manager fill the hidden one.
+function LoginSwitch() {
+  const isHandheld = React.useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return isHandheld ? <MobileLogin /> : <LoginInner />;
+}
+
 // useSearchParams() must sit under a Suspense boundary for static prerender
-// (Next.js CSR-bailout requirement).
+// (Next.js CSR-bailout requirement). Both branches call it, so the boundary
+// wraps the switch rather than either tree.
 export default function LoginPage() {
   return (
     <React.Suspense fallback={null}>
-      <LoginInner />
+      <LoginSwitch />
     </React.Suspense>
   );
 }

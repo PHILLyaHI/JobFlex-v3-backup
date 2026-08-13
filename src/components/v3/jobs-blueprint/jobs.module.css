@@ -1485,6 +1485,11 @@
 .bp :global(.content .pmenu.is-busy .pmenu-item) { pointer-events: none; opacity: 0.55; }
 .bp :global(.content .pmenu-err) { margin: 6px 4px 2px; padding: 7px 9px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); font-size: 11.5px; font-weight: 700; line-height: 1.4; color: var(--danger); }
 
-/* The row's two affordances — open, and the actions menu — sit in their own
-   narrow columns so the dots never crowd the arrow. */
-.bp :global(.content .jtable th.th-open + th.th-open) { width: 44px; }
+/* The row's two affordances — the actions menu, then open — share ONE cell.
+   They used to sit in two separate columns, which put the full 32px of cell
+   padding (16 right + 16 left) between them: the pair read as two stray
+   controls with a hole in the middle rather than one action group. An 8px
+   gap inside a single cell is the same rhythm the card actions use.
+   Width: 30 + 8 + 30 button/gap run, plus the td's 16px padding either side. */
+.bp :global(.content .jtable th.th-open) { width: 100px; }
+.bp :global(.content .j-acts) { display: inline-flex; align-items: center; gap: 8px; }

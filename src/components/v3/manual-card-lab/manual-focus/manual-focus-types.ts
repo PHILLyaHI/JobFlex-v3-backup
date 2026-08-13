@@ -180,6 +180,32 @@ export type Draft = {
    */
   discountPct: number;
 
+  /**
+   * A FLAT DOLLAR discount, used instead of `discountPct` when
+   * `discountIsPercent` is false.
+   *
+   * ── WHY TWO FIELDS AND NOT ONE ───────────────────────────────
+   * The obvious shape is one `discountValue` plus a mode flag, and it is wrong
+   * here for a reason that shows up the first time anyone uses the control:
+   * with a single field, flipping Percent -> Dollar reinterprets "10" as $10,
+   * and flipping back reinterprets "500" as 500%. The number the user typed
+   * silently becomes a different fact. Two fields let each mode keep its own
+   * value, so the toggle is genuinely a toggle — switch to dollars, type $500,
+   * switch back, and the 10% you had is still 10%.
+   *
+   * The cost is that only one of the two is live at a time, which is exactly
+   * what `discountIsPercent` says.
+   */
+  discountFlat?: number;
+
+  /**
+   * Which discount field is live. OPTIONAL and TREATED AS TRUE when absent, so
+   * every existing draft and every consumer that predates the dollar mode
+   * (notably /dashboard/manual-focus, which shares this type) keeps its
+   * percentage behaviour with no change at all.
+   */
+  discountIsPercent?: boolean;
+
   scopeOfWork: string;
   notes: string;
   terms: string;

@@ -31,8 +31,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { money, longDate } from "@/lib/format";
+import { buildPortalView } from "@/components/v3/mobile-proposal-client/portal-view";
 import { PortalActions } from "./portal-actions";
 import { PortalReveal } from "./portal-reveal";
+import { PortalViewport } from "./portal-viewport";
 import "./proposal-portal.css";
 
 export const dynamic = "force-dynamic";
@@ -114,7 +116,20 @@ export default async function PublicProposalPortal({
   const hasInstallments = proposal.installments.length > 0;
   const telHref = org.phone ? `tel:${org.phone.replace(/\s+/g, "")}` : null;
 
+  // ── HANDHELD ────────────────────────────────────────────────────────────
+  // At ≤768px this URL serves the handheld rebuild instead of the tree below;
+  // above it, nothing changes. The switch is a media query inside
+  // ./portal-viewport.tsx and exactly one of the two trees is ever mounted.
+  //
+  // The read, the VIEWED write and generateMetadata all stay here, on the
+  // server — this page is opened from an email link and is the PayPal/Square
+  // return_url, so it does not become a client-side fetch. `view` is the same
+  // row, already formatted, in a plain serialisable shape. No data-layer
+  // change: same query, same includes, same endpoints.
+  const view = buildPortalView(publicId, proposal, { money, longDate });
+
   return (
+    <PortalViewport view={view}>
     <div className="jf-proposal-portal">
       <div className="pv">
 
@@ -263,5 +278,6 @@ export default async function PublicProposalPortal({
         }}
       />
     </div>
+    </PortalViewport>
   );
 }

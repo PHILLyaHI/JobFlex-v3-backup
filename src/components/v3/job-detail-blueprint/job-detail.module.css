@@ -1,0 +1,291 @@
+/* ============================================================
+   JOB DETAIL — BLUEPRINT
+   /dashboard/jobs/[id]
+
+   WHAT THIS IS
+   A verbatim port of the donor `jobflex-jobdetail-blueprint (14).html`.
+   Every size, colour, spacing, weight, radius, shadow and transition
+   below is the donor's literal value — nothing rounded, substituted
+   or re-derived.
+
+   ── WHAT IS *NOT* HERE, AND WHY ────────────────────────────
+   The donor ships the whole dashboard chrome: :root tokens, the reset,
+   `.layout`, the sidebar, `.main` (graph-paper field + scrollbars), the
+   topbar and the `.content` wrapper. ALL of it is dropped —
+   blueprint-shell already renders that furniture from
+   src/app/dashboard/layout.tsx and it persists across navigation.
+   Verified value-for-value against the donor before dropping:
+   `--sidebar-w: 264px`, `--topbar-h: 62px`, `.content { padding:
+   40px 96px 80px; gap: 22px; display: flex; flex-direction: column;
+   position: relative; z-index: 1 }` — all identical.
+
+   The donor's OTHER dashboard blocks — banner, KPI strip, chart,
+   activity, week strip, upcoming jobs, pipeline board, dropdown, list
+   limits — are absent too: this page's markup contains none of them,
+   and the always-on dashboard module publishes every one of those
+   rules verbatim anyway. Only the rules THIS page's markup actually
+   uses are restated here.
+
+   ── SCOPING ────────────────────────────────────────────────
+   This route's pageKey is "jobs" (blueprint-shell's pageKey() reads the
+   first segment after /dashboard), so jobs.module.css — the JOBS LIST
+   donor — is ALSO active on this page. It disagrees with this donor on
+   two tokens (`--hair: #0a0a0a` / `--hair-soft: rgba(10,10,10,.55)`
+   against this donor's `rgba(10,10,10,.12)` / `rgba(10,10,10,.08)`).
+   Neither token is reachable from this page's markup — no `.card-rule`,
+   `.act-row`, `.job-row`, `.sched-row`, `.tag`, `.day` or
+   `.stage-col-head` is rendered here — so the disagreement cannot
+   surface. Nothing below reads either one.
+
+   Beyond that, NOTHING here relies on an inherited global rule. Every
+   class is this module's own hashed name and the whole file is scoped
+   `:global(.jf-blueprint .content) .cls` ⇒ (0,3,0). That number is
+   load-bearing: jobs.module.css scopes its donor reset under
+   `.content` — `.bp :global(.content button)` is (0,2,1) and
+   `.bp :global(.content *)` is (0,2,0) — so a (0,2,0) prefix would LOSE
+   the border, background and cursor off every control on this page.
+   (0,3,0) wins both.
+
+   Icons carry this module's `.ic`, not the literal one, so
+   `.content svg.ic` (which adds a `shape-rendering` the donor never
+   wrote) cannot reach them.
+
+   The literal-global classes the markup does use — `rv`, `rv-in`,
+   `pressed` — are the fleet's entrance cascade and press feedback.
+   Both the always-on dashboard module and jobs.module.css publish them
+   at exactly the donor's values.
+
+   ── NO @keyframes ──────────────────────────────────────────
+   Lightning CSS rejects @keyframes inside the modules pipeline. This
+   page's markup triggers only `press2`, already published verbatim in
+   dashboard-blueprint/blueprint-global.css.
+   ============================================================ */
+
+/* ============================================================
+   PAGE HEAD  (donor: .page-head / .kicker / .page-title)
+   ============================================================ */
+:global(.jf-blueprint .content) .page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  margin-bottom: 14px;
+}
+:global(.jf-blueprint .content) .kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+:global(.jf-blueprint .content) .kicker::before {
+  content: '';
+  width: 7px; height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+}
+:global(.jf-blueprint .content) .page-title {
+  font-size: 46px; font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+}
+
+/* ============================================================
+   BUTTONS  (donor topbar block — content rules on this page)
+   `.btn-ghost` carries the JOB DETAIL block's `background: #ffffff`
+   override, not the base `var(--paper)`.
+   ============================================================ */
+:global(.jf-blueprint .content) .btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 0 16px;
+  height: 40px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+  font-family: inherit;
+  cursor: pointer;
+  color: inherit;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint .content) .btn .ic { width: 15px; height: 15px; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:hover .ic { transform: scale(1.12); }
+:global(.jf-blueprint .content) .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint .content) .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btn-ghost { background: #ffffff; color: var(--ink); }
+:global(.jf-blueprint .content) .btn-ghost:hover { background: var(--paper-deep); }
+
+/* Donor `svg.ic` base. This module's own class, so the always-on
+   `.content svg.ic` (which adds a shape-rendering the donor never
+   wrote) cannot reach these. */
+:global(.jf-blueprint .content) .ic {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  display: inline; vertical-align: baseline;
+}
+
+/* ============================================================
+   CARDS  (donor `.card`, with the JOB DETAIL block's white fill)
+   ============================================================ */
+:global(.jf-blueprint .content) .card {
+  background: #ffffff;
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px 24px;
+  position: relative;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* ═══════ JOB DETAIL ═══════ */
+
+:global(.jf-blueprint .content) .jd-kick { display: flex; align-items: center; gap: 8px; }
+:global(.jf-blueprint .content) .jd-st { display: inline-flex; padding: 2px 9px; border: 1.5px solid var(--warning);
+  border-radius: var(--radius); color: var(--warning); background: rgba(184,132,32,.08);
+  font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+:global(.jf-blueprint .content) .jd-st--sch { border-color: var(--blueprint); color: var(--blueprint);
+  background: rgba(24,84,160,.06); }
+:global(.jf-blueprint .content) .jd-st--done { border-color: var(--success); color: var(--success);
+  background: rgba(58,125,68,.07); }
+:global(.jf-blueprint .content) .jd-st--can { border-color: var(--danger); color: var(--danger);
+  background: rgba(168,50,50,.06); }
+:global(.jf-blueprint .content) .jd-dates { margin-top: 9px; font-family: var(--font-mono); font-size: 12.5px;
+  font-weight: 600; letter-spacing: .06em; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+
+:global(.jf-blueprint .content) .jd-tabbar { display: flex; gap: 14px; justify-content: space-between; }
+:global(.jf-blueprint .content) .jd-tabs { display: inline-flex; flex-wrap: wrap; width: max-content;
+  border: var(--border); border-radius: var(--radius); background: #ffffff;
+  overflow: hidden; }
+:global(.jf-blueprint .content) .jd-vp { align-self: stretch; }
+:global(.jf-blueprint .content) .jd-tab { appearance: none; cursor: pointer; border: none; background: transparent;
+  padding: 10px 18px; font-family: var(--font); font-size: 12.5px; font-weight: 800;
+  letter-spacing: .04em; color: var(--ink); display: inline-flex; align-items: center;
+  gap: 8px; border-right: 1.5px solid var(--ink);
+  transition: background .14s var(--ease), color .14s var(--ease); }
+:global(.jf-blueprint .content) .jd-tab:last-child { border-right: none; }
+:global(.jf-blueprint .content) .jd-tab:hover:not(.on) { background: rgba(10,10,10,.05); }
+:global(.jf-blueprint .content) .jd-tab.on { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .jd-tab i { font-style: normal; font-family: var(--font-mono); font-size: 11.5px;
+  font-weight: 600; color: var(--muted); }
+:global(.jf-blueprint .content) .jd-tab.on i { color: rgba(242,240,235,.65); }
+
+:global(.jf-blueprint .content) .jd-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px;
+  align-items: start; }
+:global(.jf-blueprint .content) .jd-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+:global(.jf-blueprint .content) .jd-t { font-size: 16px; font-weight: 900; letter-spacing: -.01em; }
+:global(.jf-blueprint .content) .jd-s { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px;
+  font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+/* статус-пикер */
+:global(.jf-blueprint .content) .jd-status { margin-bottom: 20px; }
+:global(.jf-blueprint .content) .jd-status-row { display: flex; gap: 8px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .jd-sbtn { appearance: none; cursor: pointer; padding: 6px 13px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #ffffff;
+  font-family: var(--font); font-size: 12px; font-weight: 800; letter-spacing: .06em;
+  color: var(--ink); transition: background .13s var(--ease); }
+:global(.jf-blueprint .content) .jd-sbtn:hover:not(.on) { background: rgba(10,10,10,.05); }
+:global(.jf-blueprint .content) .jd-sbtn.on { border-width: 2px; padding: 5.5px 12.5px; }
+:global(.jf-blueprint .content) .jd-sbtn--sch.on { border-color: var(--blueprint); color: var(--blueprint);
+  background: rgba(24,84,160,.07); }
+:global(.jf-blueprint .content) .jd-sbtn--prog.on { border-color: var(--warning); color: var(--warning);
+  background: rgba(184,132,32,.09); }
+:global(.jf-blueprint .content) .jd-sbtn--done.on { border-color: var(--success); color: var(--success);
+  background: rgba(58,125,68,.08); }
+:global(.jf-blueprint .content) .jd-sbtn--can.on { border-color: var(--danger); color: var(--danger);
+  background: rgba(168,50,50,.07); }
+
+:global(.jf-blueprint .content) .jd-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+  margin-bottom: 20px; }
+:global(.jf-blueprint .content) .jd-f span { display: block; font-family: var(--font-mono); font-size: 10.5px;
+  font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 5px; }
+:global(.jf-blueprint .content) .jd-f b { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .jd-sec { margin-top: 18px; }
+:global(.jf-blueprint .content) .jd-sec-l { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+  margin-bottom: 8px; }
+:global(.jf-blueprint .content) .jd-sec p { font-size: 14.5px; line-height: 1.7; }
+
+:global(.jf-blueprint .content) .jd-c-row { display: flex; align-items: center; gap: 10px; padding: 10px 0;
+  border-bottom: 1px dashed rgba(10,10,10,.16); font-size: 14px; font-weight: 700; }
+:global(.jf-blueprint .content) .jd-c-row:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .jd-c-row .ic { width: 15px; height: 15px; color: var(--blueprint); flex-shrink: 0; }
+:global(.jf-blueprint .content) .jd-c-row a { color: var(--ink); text-underline-offset: 3px; text-decoration: none; }
+:global(.jf-blueprint .content) .jd-c-row.mono { font-family: var(--font-mono); font-weight: 600; font-size: 13px; }
+
+:global(.jf-blueprint .content) .jd-row { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .jd-row:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .jd-row-n { font-size: 14.5px; font-weight: 800; }
+:global(.jf-blueprint .content) .jd-row-m { margin-top: 4px; font-family: var(--font-mono); font-size: 13px;
+  font-weight: 600; letter-spacing: .04em; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .jd-b { flex-shrink: 0; padding: 3px 10px; border: 1.5px solid; border-radius: var(--radius);
+  font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .jd-b--ok { border-color: var(--success); color: var(--success);
+  background: rgba(58,125,68,.07); }
+:global(.jf-blueprint .content) .jd-b--wait { border-color: rgba(10,10,10,.45); color: var(--muted); }
+:global(.jf-blueprint .content) .jd-b--warn { border-color: var(--warning); color: var(--warning);
+  background: rgba(184,132,32,.08); }
+:global(.jf-blueprint .content) .jd-row .btn { padding: 6px 13px; font-size: 10.5px; }
+:global(.jf-blueprint .content) .jd-amt { font-family: var(--font-mono); font-size: 14px; font-weight: 600;
+  font-variant-numeric: tabular-nums; flex-shrink: 0; }
+:global(.jf-blueprint .content) .jd-corow { display: grid; grid-template-columns: 1fr 104px 104px 104px;
+  gap: 10px; align-items: center; padding: 13px 0;
+  border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .jd-corow:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .jd-corow .jd-amt { box-sizing: border-box; width: 100%; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 19px; font-weight: 700; }
+:global(.jf-blueprint .content) .jd-row .jd-b { box-sizing: border-box; width: 104px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+:global(.jf-blueprint .content) .jd-corow .jd-b,
+:global(.jf-blueprint .content) .jd-corow .btn { box-sizing: border-box; width: 100%; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  font-size: 11.5px; }
+:global(.jf-blueprint .content) .jd-total { display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: 6px; padding-top: 14px; border-top: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .jd-total span { font-size: 15px; font-weight: 900; letter-spacing: .16em;
+  text-transform: uppercase; }
+:global(.jf-blueprint .content) .jd-total b { font-size: 21px; font-weight: 900; color: var(--blueprint);
+  font-variant-numeric: tabular-nums; }
+/* The donor writes these two footers inline:
+   `style="border-top:none;padding-top:8px"` (Schedule / Crew) and
+   `style="border-top:none;padding-top:14px"` (Photos). Kept as classes
+   so the markup stays declarative; the values are the donor's. */
+:global(.jf-blueprint .content) .jd-total--foot { border-top: none; padding-top: 8px; }
+:global(.jf-blueprint .content) .jd-total--foot14 { border-top: none; padding-top: 14px; }
+
+:global(.jf-blueprint .content) .jd-photos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+:global(.jf-blueprint .content) .jd-ph { border: var(--border-thin); border-radius: var(--radius); overflow: hidden; }
+:global(.jf-blueprint .content) .jd-ph-img { aspect-ratio: 4 / 3; position: relative;
+  background-image: repeating-linear-gradient(45deg, rgba(24,84,160,.10) 0 1px, transparent 1px 7px); }
+:global(.jf-blueprint .content) .jd-ph-k { position: absolute; left: 7px; bottom: 7px; padding: 2px 8px;
+  background: var(--ink); color: var(--paper); font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .jd-ph-c { padding: 8px 10px; font-size: 12.5px; font-weight: 700; }
+
+@media (max-width: 1000px) {
+  :global(.jf-blueprint .content) .jd-grid { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .jd-fields { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content) .jd-photos { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 1000px) {
+  :global(.jf-blueprint .content) .page-title { font-size: 38px; }
+}
+
+:global(.jf-blueprint .content) .jd-tab:focus-visible,
+:global(.jf-blueprint .content) .jd-sbtn:focus-visible,
+:global(.jf-blueprint .content) .btn:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint .content) .btn,
+  :global(.jf-blueprint .content) .btn .ic,
+  :global(.jf-blueprint .content) .jd-tab,
+  :global(.jf-blueprint .content) .jd-sbtn { transition: none !important; animation: none !important; }
+}

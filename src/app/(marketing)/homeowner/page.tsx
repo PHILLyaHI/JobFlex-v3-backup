@@ -29,8 +29,19 @@
 // leave the browser — the donor's wizard has no submit target and none was
 // invented (see the port report for the api/homeowner-request mismatch).
 
+// RESPONSIVE (2026-08-12): this route now serves TWO designs from one URL —
+// the desktop build below at >768px, and the handheld rebuild
+// (src/components/v3/mobile-homeowner/, also previewable at
+// /mobile-homeowner-v2) at ≤768px. The switch is a media query in
+// ./homeowner-responsive.tsx, never user-agent detection, and exactly one tree
+// is ever mounted. It lives in a sibling client file because this file has to
+// stay a server component for the `metadata` export below.
+//
+// The desktop components in src/components/v3/homeowner-landing/ were NOT
+// modified.
+
 import type { Metadata } from "next";
-import { HomeownerContent } from "@/components/v3/homeowner-landing/homeowner-content";
+import { HomeownerResponsive } from "./homeowner-responsive";
 
 export const metadata: Metadata = {
   title: "JobFlex Homeowner Portal — Describe your project, get real quotes",
@@ -39,5 +50,5 @@ export const metadata: Metadata = {
 };
 
 export default function HomeownerLandingPage() {
-  return <HomeownerContent />;
+  return <HomeownerResponsive />;
 }

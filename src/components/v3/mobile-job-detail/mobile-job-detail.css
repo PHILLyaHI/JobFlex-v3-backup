@@ -1,0 +1,849 @@
+/* ============================================================================
+   JOB DETAIL · HANDHELD  —  /mobile-job-detail-v1/[id]
+   ============================================================================
+
+   The handheld build of the job record. It stands BESIDE the desktop page
+   (src/components/v3/job-detail-blueprint/*, untouched) and reads the same
+   fixture module verbatim — every string, number and amount on this page is
+   the donor's, re-cut for a phone rather than re-worded.
+
+   The design language is the desktop port's, unchanged: paper #f2f0eb,
+   ink #0a0a0a, blueprint #1854a0, Inter 800–900 uppercase headings,
+   JetBrains Mono for the drawing-annotation layer, 2px ink frames, 2px radii,
+   hard offset shadows with NO blur, dashed 1px row rules, tabular numerals on
+   every amount. What changes is the COMPOSITION — see the notes at each block.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate) ────────────────────────
+   Two constructs here cannot survive class hashing:
+     · the scoped universal reset `.jf-mobile-job-detail *` — `*` is not a
+       class, so the modules pipeline leaves it UNSCOPED and it flattens every
+       page in the app;
+     · the `[hidden]` attribute selector used to keep the tab views' rules
+       honest — an attribute is not a class either.
+   A module would need a `:global()` escape on each, and one missed escape
+   silently drops this design's own reset so Tailwind preflight + globals.css
+   fill the vacuum. Same call, and the same reasoning, as the sibling
+   mobile-proposal-client.css / mobile-project-detail.css.
+
+   Every selector below therefore carries the single literal root class
+   `.jf-mobile-job-detail`, uniformly — so relative specificity among these
+   rules is exactly what it would be unprefixed, and nothing leaks out. The
+   only exceptions are the two host neutralizers, which have to reach <body>;
+   both are `:has()`-gated so they undo themselves on unmount.
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   `.jf-mobile-job-detail` and the element prefix `mjd-` are new literals,
+   checked against every other `.jf-*` root and every prefix in the repo. The
+   fleet's literal globals `rv` / `rv-in` / `pressed` are NOT used — this page
+   writes `mjd-rv` / `mjd-rv-in` / `mjd-pressed` so no second file can style
+   them. Both @keyframes are namespaced `jf-mjd-*` (`press2` is declared 29
+   times in this app and `rowIn` 22 times; keyframe names are document-global).
+   The page emits no SVG <symbol> of its own — the icons are <use> references
+   into the shared MobileNav sprite — so there is no id to collide with.
+
+   ── `--ease-out` IS DECLARED HERE ──────────────────────────────────────────
+   Not assumed to inherit. globals.css happens to define it, but this page's
+   reveal, its press feedback and every button transition read it, and a page
+   whose motion depends on an outer file's accident is a page that breaks
+   silently. Value: DESIGN.md's primary curve.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark`. globals.css NOT touched. No `md:`/`lg:`
+   variants and no desktop breakpoint: the page is fluid 320px → 768px on
+   clamp() and intrinsic grids. Verified at 320 / 390 / 768.
+   ========================================================================= */
+
+.jf-mobile-job-detail {
+  /* ---- PALETTE — the desktop port's values, verbatim ---- */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --sheet: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555555;
+  --muted-light: #888888;
+  --muted-faint: #b0aea8;
+
+  /* Status colours. STATUSES ONLY — never decoration. */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.06);
+  --blueprint-soft: rgba(24, 84, 160, 0.06);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+  --dash: rgba(10, 10, 10, 0.16);
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- FLUID SCALE — one composition, 320px → 768px, no breakpoint ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  /* The H1 is a job TITLE — "Roof tear-off & reroof — 4812 Maple Ave" is 41
+     characters, so the ceiling is well under the desktop's 46px or the first
+     screen is nothing but the headline. 22px at 320, 34px at 768. */
+  --fs-h1: clamp(22px, 6.6vw, 34px);
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* Touch floor. CLAUDE.md and DESIGN.md both put it at 44px; every control on
+     this page is sized from this token so an audit has one number to check. */
+  --tap: 44px;
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow.
+     Row 3 is the thumb-zone action bar — see THE ACTION BAR below. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr) auto;
+  /* minmax(0, 1fr) on the single column, not the implicit `auto`: an auto
+     track grows to its widest item's max-content, and the shared topbar's
+     max-content is ~361px at a 320px viewport — which would widen the
+     scroller under it and clip ~41px off every card behind this element's own
+     `overflow: hidden`. Same fix as the sibling project-detail page. */
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+
+  /* ── HOST NEUTRALIZERS, part 1 (the two that live on the root) ──────────
+     Tailwind preflight sets `html { line-height: 1.5 }` and globals.css sets
+     `text-rendering: optimizeLegibility`; both inherit, and without these two
+     lines every box that declares no line-height of its own grows 2–5px.
+     font-feature-settings is deliberately RESTATED rather than neutralised to
+     `normal`: globals puts 'cv11','ss01','ss03' on html+body and all 25
+     sibling handheld pages re-declare exactly that, so `normal` here would
+     make this the one page whose Inter draws different digits. */
+  line-height: normal;
+  text-rendering: auto;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+/* Scoped universal reset — the construct a CSS Module cannot express.
+   WRAPPED IN :where(). Written bare it scores (0,1,0), the same as every class
+   rule in mobile-nav.module.css, and this sheet is imported after that module
+   — so `padding: 0` would win every tie and cancel the shared topbar's own
+   padding, leaving the nav flush to both screen edges on this page alone. At
+   (0,0,0) the reset still beats the UA defaults it exists for and loses to
+   every author rule. Do not un-wrap. */
+:where(.jf-mobile-job-detail),
+:where(.jf-mobile-job-detail *) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* :where() holds the control reset at element-level specificity (0,0,1).
+   Un-wrapped — the root class as a plain ancestor of a type selector — it
+   scores (0,2,1) and silently beats EVERY rule below that styles a button by
+   class (0,2,0): every background and every border on this page would be
+   cancelled at render time, and it would parse, lint and typecheck clean while
+   doing it. That trap has cost this fleet a day. Do not un-wrap these. */
+:where(.jf-mobile-job-detail) button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+:where(.jf-mobile-job-detail) a { text-decoration: none; color: inherit; }
+:where(.jf-mobile-job-detail) h1,
+:where(.jf-mobile-job-detail) h2 { font-size: inherit; font-weight: inherit; }
+
+/* Attribute selector — the second construct a module cannot scope. The tab
+   views are mounted/unmounted by React, but the action bar's label swap and
+   any future `hidden` toggle must beat preflight's plain `[hidden]` rule on
+   source order, so the mechanism is declared once, here. */
+.jf-mobile-job-detail [hidden] { display: none !important; }
+
+.jf-mobile-job-detail ::selection { background: var(--blueprint); color: #fff; }
+.jf-mobile-job-detail :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+/* Icons come from the shared MobileNav sprite. `display: block` is declared
+   rather than inherited: preflight sets `svg { display: block }` and the bare
+   browser sets `inline`, so stating it makes the icon box identical either
+   way. No global `svg` override is written — MobileNav's product mark is an
+   <img> whose crop window is tuned against preflight, and reaching into the
+   shared nav from here would break it. */
+.jf-mobile-job-detail .mjd-ic {
+  display: block;
+  width: 16px; height: 16px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS, part 2 — the only rules here that do not start with the
+   root class. globals.css paints a 40px drafting grid on <body> (fixed
+   attachment) and a `body::before` paper-grain overlay with
+   mix-blend-mode: multiply. This page paints its own graph paper inside its
+   own scroller, parallaxed; the body copy would sit a second, non-parallaxing
+   grid behind it, and the grain's multiply blend would tint every white card.
+   Switched off for this page's lifetime only — `:has()` restores them on
+   unmount, which matters because the App Router keeps this stylesheet in the
+   document after a client-side navigation away.
+   ══════════════════════════════════════════════════════════════════════════ */
+body:has(.jf-mobile-job-detail) { background-image: none; }
+body:has(.jf-mobile-job-detail)::before { content: none; }
+
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.jf-mobile-job-detail .mjd-scroll {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  /* No rail down the edge of the sheet — the graph paper has to read as one
+     continuous drawing. Both engines are told the same thing. */
+  scrollbar-width: none;
+}
+.jf-mobile-job-detail .mjd-scroll::-webkit-scrollbar { width: 0; height: 0; }
+.jf-mobile-job-detail .mjd-scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.jf-mobile-job-detail .mjd-content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) 28px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  /* Every child is width-constrained by the flex column; this is the belt to
+     that braces: nothing in this tree may widen the page. */
+  min-width: 0;
+}
+
+/* ============================================================
+   PAGE HEAD — kicker + status badge, H1, mono date line
+   The desktop head is a `justify-content: space-between` row with room for
+   actions on the right. There is no room on a phone, so it is a stack; the
+   one action it carried ("View proposal") moved to the thumb-zone bar.
+   ============================================================ */
+.jf-mobile-job-detail .mjd-head { padding-top: 2px; }
+.jf-mobile-job-detail .mjd-kick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.jf-mobile-job-detail .mjd-kick::before {
+  content: "";
+  width: 7px; height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* The status badge. Base tone is the warning palette (the fixture opens
+   In progress); the three modifiers repaint all three tones together. */
+.jf-mobile-job-detail .mjd-st {
+  display: inline-flex;
+  padding: 2px 9px;
+  border: 1.5px solid var(--warning);
+  border-radius: var(--radius);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.jf-mobile-job-detail .mjd-st--sch {
+  border-color: var(--blueprint); color: var(--blueprint); background: var(--blueprint-soft);
+}
+.jf-mobile-job-detail .mjd-st--done {
+  border-color: var(--success); color: var(--success); background: var(--success-soft);
+}
+.jf-mobile-job-detail .mjd-st--can {
+  border-color: var(--danger); color: var(--danger); background: var(--danger-soft);
+}
+.jf-mobile-job-detail .mjd-title {
+  font-size: var(--fs-h1);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  line-height: 0.96;
+  /* The title carries an em dash and a street address; breaking anywhere is
+     the only thing that guarantees the page body never scrolls sideways. */
+  overflow-wrap: anywhere;
+}
+.jf-mobile-job-detail .mjd-dates {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   TAB RAIL — the six-tab bar, re-cut
+   The desktop bar is one framed box of six tabs plus a "View proposal" ghost
+   button on the same row. Six tabs with their counts measure ~640px: they
+   cannot sit in a row at 320px, and wrapping them into three ragged rows
+   costs a third of the first screen and loses the single-frame reading.
+   So the frame KEEPS its six tabs in one row and the row SCROLLS
+   horizontally — the ink-fill active state, the 1.5px ink dividers and the
+   mono count annotations are all the desktop's. The frame is on the
+   max-content row itself, so it wraps all six and travels with them; the
+   active tab is scrolled into view on selection, so the state is never
+   parked off-screen.
+   ============================================================ */
+.jf-mobile-job-detail .mjd-tabwrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  /* The rail scrolls edge to edge even though the content column is inset —
+     a rail that stops short of the screen edge does not read as scrollable. */
+  margin: 0 calc(var(--pad-x) * -1);
+  padding: 0 var(--pad-x);
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.jf-mobile-job-detail .mjd-tabwrap::-webkit-scrollbar { width: 0; height: 0; }
+.jf-mobile-job-detail .mjd-tabs {
+  display: inline-flex;
+  width: max-content;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  overflow: hidden;
+}
+.jf-mobile-job-detail .mjd-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 16px;
+  background: transparent;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--ink);
+  border-right: 1.5px solid var(--ink);
+  transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out);
+}
+.jf-mobile-job-detail .mjd-tab:last-child { border-right: none; }
+.jf-mobile-job-detail .mjd-tab.mjd-on { background: var(--ink); color: var(--paper); }
+.jf-mobile-job-detail .mjd-tab i {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-job-detail .mjd-tab.mjd-on i { color: rgba(242, 240, 235, 0.65); }
+
+/* ============================================================
+   VIEW + CARDS
+   The view is ONE block of the content column (so the reveal cascade treats a
+   tab's contents as a single arrival) and a column in its own right, because
+   Overview stacks two cards inside it.
+   ============================================================ */
+.jf-mobile-job-detail .mjd-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.jf-mobile-job-detail .mjd-card {
+  background: var(--sheet);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--card-pad);
+  box-shadow: 3px 3px 0 var(--shadow);
+  min-width: 0;
+}
+.jf-mobile-job-detail .mjd-h {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.jf-mobile-job-detail .mjd-t {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+/* The desktop pushes this annotation to the far right with `margin-left: auto`,
+   which at 320px strands it against the frame with a ragged gap in between. It
+   simply follows the title here and wraps under it when the pair does not fit,
+   so the head reads as one object at every width. */
+.jf-mobile-job-detail .mjd-s {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---- STATUS PICKER — four chips, wrapping, each keeping its own tone ---- */
+.jf-mobile-job-detail .mjd-status { margin-bottom: 20px; }
+/* An intrinsic grid, not a wrapping flex row and not a breakpoint: the four
+   chips fall to 2×2 wherever they stop fitting (320–~430px) and line up 4-up
+   above that, with no ragged last row — a flex wrap left "Canceled" alone
+   across the full width, which read as a fifth, different control. */
+.jf-mobile-job-detail .mjd-status-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+.jf-mobile-job-detail .mjd-sbtn {
+  /* The desktop chip is 6px/13px tall — ~29px, well under the touch floor.
+     Height comes up to --tap; the type and the 1.5px frame are the desktop's. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 13px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: var(--ink);
+  transition: background 0.13s var(--ease-out), border-color 0.13s var(--ease-out),
+    color 0.13s var(--ease-out);
+}
+/* The selected chip thickens to 2px and pays for it out of its own padding, so
+   the row never reflows on selection — the desktop's trick, kept. */
+.jf-mobile-job-detail .mjd-sbtn.mjd-on { border-width: 2px; padding: 0 12.5px; }
+.jf-mobile-job-detail .mjd-sbtn--sch.mjd-on {
+  border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07);
+}
+.jf-mobile-job-detail .mjd-sbtn--prog.mjd-on {
+  border-color: var(--warning); color: var(--warning); background: rgba(184, 132, 32, 0.09);
+}
+.jf-mobile-job-detail .mjd-sbtn--done.mjd-on {
+  border-color: var(--success); color: var(--success); background: rgba(58, 125, 68, 0.08);
+}
+.jf-mobile-job-detail .mjd-sbtn--can.mjd-on {
+  border-color: var(--danger); color: var(--danger); background: rgba(168, 50, 50, 0.07);
+}
+
+/* ---- FACT FIELDS — the desktop's 4-up grid at 2-up ---- */
+.jf-mobile-job-detail .mjd-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.jf-mobile-job-detail .mjd-f span {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.jf-mobile-job-detail .mjd-f b {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* ---- PROSE SECTIONS ---- */
+.jf-mobile-job-detail .mjd-sec { margin-top: 18px; }
+.jf-mobile-job-detail .mjd-sec-l {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.jf-mobile-job-detail .mjd-sec p { font-size: 14px; line-height: 1.7; }
+
+/* ---- CLIENT CONTACT ROWS ---- */
+.jf-mobile-job-detail .mjd-c-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* 12px of padding on a 20px line box clears the 44px touch floor for the two
+     rows that are links; the two that are plain text match them so the dashed
+     rules stay on an even rhythm. */
+  min-height: var(--tap);
+  padding: 11px 0;
+  border-bottom: 1px dashed var(--dash);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-job-detail .mjd-c-row:last-child { border-bottom: none; }
+.jf-mobile-job-detail .mjd-c-row .mjd-ic { width: 15px; height: 15px; color: var(--blueprint); }
+.jf-mobile-job-detail .mjd-c-row.mjd-mono {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 13px;
+}
+/* A phone number and an email are the two things a contractor actually taps on
+   this page, so the WHOLE ROW is the anchor — an inline <a> around 13px mono
+   type is a 20px target, less than half the 44px floor, and the desktop's
+   inline link is exactly that. The underline moves to an inner span so the
+   affordance still reads as a link rather than as a whole tinted row; the ink
+   colour is the desktop's, and blueprint carries the affordance. */
+.jf-mobile-job-detail a.mjd-c-row { color: var(--ink); }
+.jf-mobile-job-detail .mjd-c-link {
+  border-bottom: 1.5px solid var(--blueprint);
+  padding-bottom: 1px;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   LIST ROWS — schedule, crew, expenses
+   ============================================================ */
+.jf-mobile-job-detail .mjd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px dashed var(--dash);
+  min-width: 0;
+}
+.jf-mobile-job-detail .mjd-row:last-child { border-bottom: none; }
+.jf-mobile-job-detail .mjd-row > div { min-width: 0; }
+.jf-mobile-job-detail .mjd-row-n {
+  font-size: 14.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-job-detail .mjd-row-m {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Status badges. Fixed pill, never stretched — the desktop's 104px cell would
+   not fit beside a name at 320px, so the badge is intrinsic here. */
+.jf-mobile-job-detail .mjd-b {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1.5px solid;
+  border-radius: var(--radius);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.jf-mobile-job-detail .mjd-b--ok {
+  border-color: var(--success); color: var(--success); background: var(--success-soft);
+}
+.jf-mobile-job-detail .mjd-b--wait {
+  border-color: rgba(10, 10, 10, 0.45); color: var(--muted);
+}
+.jf-mobile-job-detail .mjd-b--warn {
+  border-color: var(--warning); color: var(--warning); background: var(--warning-soft);
+}
+
+.jf-mobile-job-detail .mjd-amt {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   CHANGE ORDERS — the desktop's `1fr 104px 104px 104px` grid, restacked
+   Three 104px cells beside the description leave 8px for the description at
+   320px. So the row becomes two zones: the identity block on top, and a
+   money-and-decision strip beneath it carrying the amount (promoted to the
+   desktop's 19px), the status badge and the Approve button at full touch
+   height. `flex-wrap` is the failsafe, not the plan: measured at 320px the
+   strip is ~245px inside a ~266px content box.
+   ============================================================ */
+.jf-mobile-job-detail .mjd-co {
+  padding: 14px 0;
+  border-bottom: 1px dashed var(--dash);
+  min-width: 0;
+}
+.jf-mobile-job-detail .mjd-co:last-child { border-bottom: none; }
+.jf-mobile-job-detail .mjd-co-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.jf-mobile-job-detail .mjd-co-foot .mjd-amt {
+  font-size: 19px;
+  font-weight: 700;
+  margin-right: auto;
+}
+.jf-mobile-job-detail .mjd-co-foot .mjd-b { min-height: 34px; }
+
+/* ============================================================
+   TOTALS + CARD FOOTERS
+   ============================================================ */
+.jf-mobile-job-detail .mjd-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1.5px solid var(--ink);
+}
+.jf-mobile-job-detail .mjd-total span {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.jf-mobile-job-detail .mjd-total b {
+  font-size: 21px;
+  font-weight: 900;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+/* The desktop writes these footers inline as `border-top: none` with 8px /
+   14px of top padding. Same values, as classes. */
+.jf-mobile-job-detail .mjd-foot { border-top: none; padding-top: 12px; }
+.jf-mobile-job-detail .mjd-foot14 { border-top: none; padding-top: 14px; }
+
+/* ============================================================
+   PHOTOS — the desktop's 4-up at 2-up, aspect and hatch unchanged
+   ============================================================ */
+.jf-mobile-job-detail .mjd-photos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.jf-mobile-job-detail .mjd-ph {
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-width: 0;
+}
+.jf-mobile-job-detail .mjd-ph-img {
+  aspect-ratio: 4 / 3;
+  position: relative;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(24, 84, 160, 0.1) 0 1px,
+    transparent 1px 7px
+  );
+}
+.jf-mobile-job-detail .mjd-ph-k {
+  position: absolute;
+  left: 7px; bottom: 7px;
+  padding: 2px 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.jf-mobile-job-detail .mjd-ph-c {
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   BUTTONS — the owner's explicit preference, kept COLOURED.
+   primary = blueprint fill + white text + 2px ink border;
+   ghost   = white fill + ink text + 2px ink border;
+   hover/active lift = translate(-1px,-1px) + 3px 3px 0 ink, NO blur;
+   12px / 800 / uppercase / .12em.
+   Hover barely exists on a phone, so the lift is bound to :active too — the
+   press is where the feedback has to land.
+   ============================================================ */
+.jf-mobile-job-detail .mjd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: var(--tap);
+  padding: 0 16px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: inherit;
+  transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out),
+    background 0.12s var(--ease-out);
+}
+.jf-mobile-job-detail .mjd-btn-block { width: 100%; }
+.jf-mobile-job-detail .mjd-btn-primary { background: var(--blueprint); color: #fff; }
+.jf-mobile-job-detail .mjd-btn-ghost { background: var(--sheet); color: var(--ink); }
+@media (hover: hover) {
+  .jf-mobile-job-detail .mjd-btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  .jf-mobile-job-detail .mjd-btn-primary:hover { background: var(--blueprint-dark); }
+  .jf-mobile-job-detail .mjd-btn-ghost:hover { background: var(--paper-deep); }
+  .jf-mobile-job-detail .mjd-tab:hover:not(.mjd-on) { background: rgba(10, 10, 10, 0.05); }
+  .jf-mobile-job-detail .mjd-sbtn:hover:not(.mjd-on) { background: rgba(10, 10, 10, 0.05); }
+}
+.jf-mobile-job-detail .mjd-btn:active {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+/* The Approve button is a compact cell control inside a row, not a bar action:
+   34px tall like the desktop's, but never below the touch floor — it gets the
+   floor through a transparent tap extension rather than by growing the strip. */
+.jf-mobile-job-detail .mjd-co-foot .mjd-btn {
+  position: relative;
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 11.5px;
+}
+.jf-mobile-job-detail .mjd-co-foot .mjd-btn::after {
+  content: "";
+  position: absolute;
+  inset: -5px -2px;
+}
+
+/* ============================================================
+   THE ACTION BAR — the page's one persistent action, in the thumb zone.
+   "View proposal" is the only action the desktop head carries across all six
+   tabs, so it becomes the fixed bottom bar rather than a button that scrolls
+   away. It is a grid ROW of the shell (not `position: sticky` inside the
+   scroller): a row is deterministic at every viewport, cannot be outrun by an
+   overscroll, and reserves its own space so the last card is never covered.
+   It is PRIMARY here, not the desktop's ghost — a lone white button on paper
+   in the thumb zone reads as disabled, and the owner's rule is that buttons
+   stay coloured.
+   ============================================================ */
+.jf-mobile-job-detail .mjd-bar {
+  z-index: 25;
+  padding: 12px var(--pad-x) calc(12px + var(--safe-b));
+  background: var(--paper);
+  border-top: var(--border);
+  /* Hard offset, no blur — the bar sits ON the sheet, drawn not floated. */
+  box-shadow: 0 -3px 0 var(--shadow);
+}
+
+/* ============================================================
+   MOTION — Balanced. Reveal on load / on scroll, press stamp, row arrival.
+   ============================================================ */
+.jf-mobile-job-detail .mjd-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.jf-mobile-job-detail .mjd-rv-in { opacity: 1; transform: none; }
+
+@keyframes jf-mjd-press {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.jf-mobile-job-detail .mjd-pressed { animation: jf-mjd-press 0.18s var(--ease-out); }
+
+@keyframes jf-mjd-row-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+/* Rows animate on the FIRST paint of a view only. The class is applied by
+   React with the tab as the key — never by a MutationObserver — so approving a
+   change order, or any other in-place repaint, does not replay the whole
+   list's entrance. That observer is the most expensive trap in this codebase;
+   it is not repeated here. */
+.jf-mobile-job-detail .mjd-rowin {
+  opacity: 0;
+  animation: jf-mjd-row-in 0.3s var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-job-detail *,
+  .jf-mobile-job-detail *::before,
+  .jf-mobile-job-detail *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .jf-mobile-job-detail .mjd-rv { opacity: 1; transform: none; }
+  .jf-mobile-job-detail .mjd-rowin { opacity: 1; animation: none; }
+}

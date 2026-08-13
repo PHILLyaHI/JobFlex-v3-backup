@@ -1,0 +1,1076 @@
+/* ============================================================================
+   MOBILE PROJECT DETAIL  —  /mobile-project-detail-v2/[id]
+                             /dashboard/projects/[id] at <= 768px
+   ============================================================================
+
+   The handheld rebuild of the project detail surface. One implementation, two
+   entry points: the (mobile) preview route and the live dashboard route, which
+   switches to this build below 768px. Nothing is copied between them.
+
+   Design language is translated from the approved desktop port
+   (src/components/v3/project-detail-blueprint/*): the same palette, the same
+   2px ink frames, the same 2px radii, the same hard 3px 3px 0 offset shadows
+   with no blur, the same Inter 800/900 caps + JetBrains Mono annotation layer,
+   the same button colour treatment (blueprint fill, white label, ink frame),
+   and the same three status tones used for statuses only.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate) ────────────────────────
+   The desktop page uses project-detail.module.css. This one must not, and that
+   is the whole reason this file exists in this shape. CSS Modules hash CLASS
+   names but leave bare element selectors (`button`, `input`, `a`, `svg`) and
+   the `*` universal reset unscoped; each needs an explicit `:global()` escape,
+   and one missed escape silently drops this design's own reset and control
+   styling so that Tailwind preflight and globals.css fill the vacuum. That has
+   cost this project two rebuilds.
+
+   So: a plain .css file in the house pattern that demonstrably works
+   (mobile-auth-login.css, homeowner.css, proposal-portal.css) — EVERY selector
+   carries the single literal root class `.jf-mobile-project-detail`. The
+   prefix is uniform, so relative specificity between this file's own rules is
+   exactly what it would be unprefixed, and nothing leaks outward.
+
+   Two selectors deliberately do not start with the root class — the host
+   neutralizers, which have to reach <body>. Both are gated on `:has()` so they
+   self-restore the moment the page unmounts (App Router keeps a route's
+   stylesheet in the document across client navigations).
+
+   ── THE SPECIFICITY SITUATION ON /dashboard/projects/[id] ──────────────────
+   That route's pageKey is "projects", so blueprint-shell also loads
+   projects.module.css. MEASURED, not assumed (see the audit script in the
+   scratchpad): every one of its 1425 lines is scoped `.bp :global(.content …)`
+   — its donor reset is `.bp .content button` (0,2,1) and `.bp .content *`
+   (0,2,0). Both need a `.bp` AND a `.content` ancestor. This build replaces
+   BlueprintShell rather than mounting inside it, so no node here has either
+   ancestor and not one of those rules can match. Verified in the live DOM at
+   768px: every control here reports its own border, background and cursor.
+
+   Nothing here therefore leans on out-ranking that file — but nothing here
+   leans on inheriting from it either. Every property this design needs is
+   declared locally, so the page renders identically at /mobile-project-detail-v2
+   (where projects.module.css is not even in the document) and at
+   /dashboard/projects/[id] (where it is).
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   @keyframes names are document-global exactly like SVG <symbol> ids, and this
+   app already has `rowIn` declared 22 times and `press2` 29 times. Both
+   keyframes here are namespaced `jf-mpd-*`. The class names `rv` / `rv-in` /
+   `rv-cell` / `pressed` are literal globals in the blueprint fleet, so this
+   page uses `mpd-rv` / `mpd-rv-in` / `mpd-rv-cell` / `mpd-pressed` instead —
+   they would otherwise be styled by two files at once on the dashboard route.
+   The page renders no SVG sprite of its own; its icons come from the shared
+   MobileNav sprite via <use>, so there is no id to collide with either.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark` variants. globals.css NOT touched.
+   blueprint-shell, mobile-shell and projects.module.css NOT touched.
+   No `md:` / `lg:` breakpoints: the composition is fluid from 320px to 768px
+   on clamp(), with no layout media query at all.
+   ========================================================================= */
+
+/* ── TOKENS ────────────────────────────────────────────────────────────────
+   Page-scoped, never promoted to :root. Values are the handheld fleet's, so
+   this page and its 24 siblings are one product. --topbar-h / --pad-x /
+   --tbar-gap / --sidebar-w / --safe-b / --border / --radius / --ease-out /
+   --ease-soft / --hair / --muted-light / --muted-faint / --ink-soft /
+   --blueprint / --sky / --paper / --ink are also the token contract
+   <MobileNav /> reads out of whatever page root it is mounted inside.        */
+.jf-mobile-project-detail {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555555;
+  --muted-light: #888888;
+  --muted-faint: #b0aea8;
+
+  /* Status colours — statuses ONLY, never decoration. Three tones each. */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  /* Ink on the blueprint plate. #c8d8ea measures 4.96:1 on #1854a0 — the
+     desktop's --muted (#555) is 1.5:1 there and would be unreadable, and
+     DESIGN.md's outdoor-sunlight commitment makes a marginal 4.5 not enough
+     for 10px caps. */
+  --on-bp: #ffffff;
+  --on-bp-muted: #c8d8ea;
+  --on-bp-rule: rgba(255, 255, 255, 0.3);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+  --dash: rgba(10, 10, 10, 0.16);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+  /* Standardised at 3px 3px 0 at rest, everywhere. No second depth. */
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  /* DONOR BUG, FIXED HERE ON PURPOSE. The mockup's :root declares --ease and
+     never --ease-out, yet `.pd-g-bar` transitions on var(--ease-out): in the
+     mockup that declaration is invalid at computed-value time and the bar just
+     appears. globals.css happens to define --ease-out, so the shipped desktop
+     page animates. Rather than depend on that accident, this page declares the
+     token itself — the timeline bars grow deterministically at both URLs and
+     at every viewport, with or without globals.css in the document. Growing is
+     also the correct half of the fork: "lines get drawn" is the Motion System
+     "Balanced" character, and the grow reads as the bar measuring out the
+     job's span. */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- MOBILE FLUID SCALE — one composition, 320px → 768px ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  /* Smaller ceiling than the Projects LIST page's clamp(30px, 9.2vw, 44px):
+     this headline is a project NAME, not the word "Projects", so it has to
+     survive "Maple Ridge Remodel — Phase 2" without eating the first screen. */
+  --fs-h1: clamp(24px, 7.6vw, 38px);
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* Touch floor. CLAUDE.md and DESIGN.md both put it at 44px; every control on
+     this page is sized from this token so the audit has one number to check. */
+  --tap: 44px;
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  /* MEASURED FIX, and the one place this page departs from the sibling page
+     modules' `.app`. They declare rows only, which leaves the single implicit
+     COLUMN at `auto` — and an auto track grows to its widest item's max-content.
+     The shared topbar's max-content (burger + mark + wordmark + three 44px
+     controls) is 360.9px at a 320px viewport, so on every sibling handheld page
+     that column is 360.9px wide, the scroller under it inherits that width, and
+     ~41px of every card is clipped by this element's own `overflow: hidden`.
+     Measured on /dashboard/projects and /dashboard/jobs at 320px, so it is
+     pre-existing and fleet-wide rather than anything this page introduced —
+     but it is not inherited here. `minmax(0, 1fr)` pins the column to the
+     container, which also lets the nav's own `min-width: 0` + ellipsis guards
+     finally do their job instead of being bypassed by an oversized track. */
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+
+  /* ── HOST NEUTRALIZERS, part 1 (the two that can live on the root) ───────
+     Tailwind preflight sets `html { line-height: 1.5 }` and globals.css sets
+     `text-rendering: optimizeLegibility` on html+body. Both are inherited, so
+     without these two lines every box below that declares no line-height of
+     its own grows 2–5px and the composition drifts between this page and its
+     own preview URL. Declared, not assumed. Every text class below carries an
+     explicit line-height, so `normal` here is deterministic rather than a
+     value anything depends on.
+
+     font-feature-settings is deliberately NOT set to `normal`. globals.css
+     puts 'cv11','ss01','ss03' on html+body and all 24 sibling handheld pages
+     re-declare exactly that on their own root; neutralising to `normal` here
+     would make this the one page in the fleet whose Inter draws a
+     double-storey `a` and different digits. Restating the fleet value gets the
+     determinism the neutralizer is for — the page renders identically with or
+     without globals.css — without breaking the family resemblance. */
+  line-height: normal;
+  text-rendering: auto;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+/* Scoped universal reset. A bare `*` would flatten the rest of the app — this
+   is the construct a CSS Module cannot express, and the reason for a plain
+   stylesheet.
+
+   WRAPPED IN :where() (fixed 2026-08-12). Written as `.jf-mobile-project-detail
+   *` it scored (0,1,0) — the SAME specificity as every class rule in
+   mobile-nav.module.css, and this stylesheet is imported after that module, so
+   the later rule won every tie: `padding: 0` cancelled the shared topbar's
+   `padding: 0 var(--pad-x)` and every padding in the drawer, and the nav on
+   this page alone rendered flush to both screen edges while the same component
+   looked correct on /mobile-proposals-v2. At (0,0,0) the reset still beats the
+   UA defaults it is there for and loses to every author rule, so the nav is
+   byte-identical across the fleet again. Do not un-wrap this. */
+:where(.jf-mobile-project-detail),
+:where(.jf-mobile-project-detail *) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* :where() holds the control reset at element-level specificity (0,0,1).
+   Un-wrapped — the root class as a plain ancestor of a type selector — it
+   scores (0,2,1) and silently beats EVERY rule in this file that styles a
+   button by class (0,2,0): every background and every border below would be
+   cancelled at render time, and it would parse, lint and typecheck clean while
+   doing it. That trap has cost this fleet a day. Do not un-wrap these. */
+:where(.jf-mobile-project-detail) button {
+  font-family: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+:where(.jf-mobile-project-detail) a { text-decoration: none; color: inherit; }
+:where(.jf-mobile-project-detail) h1,
+:where(.jf-mobile-project-detail) h2 { font-size: inherit; font-weight: inherit; }
+
+.jf-mobile-project-detail ::selection { background: var(--blueprint); color: #fff; }
+.jf-mobile-project-detail :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+/* Icons come from the shared MobileNav sprite. `display: block` is declared
+   rather than inherited: Tailwind preflight sets `svg { display: block }` and
+   the bare browser sets `inline`, so stating it makes the icon box the same
+   with or without preflight. No global `svg` override is written — MobileNav's
+   product mark is an <img> whose crop window is tuned against preflight's
+   `img { max-width: 100% }`, and overriding either from here would reach into
+   the shared nav and break it. Measured at 320/768: the nav renders
+   pixel-identically to its 24 sibling pages. */
+.jf-mobile-project-detail .ic {
+  display: block;
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS, part 2 — the only rules here that are not this design's
+   own, and the only two that do not start with the root class.
+
+   globals.css paints a 40px drafting grid on <body> (fixed attachment) and a
+   `body::before` paper-grain overlay with mix-blend-mode: multiply. This page
+   paints its own graph paper inside its own scroller, parallaxed; the body
+   copy would sit a second, non-parallaxing grid behind it, and the grain's
+   multiply blend would tint both that and the blueprint plate. Switched off
+   for this page's lifetime only — `:has()` restores them on unmount, which
+   matters because the App Router keeps this stylesheet in the document after
+   a client-side navigation away.
+
+   NOT neutralized, deliberately:
+   · globals' `* { scrollbar-width: thin }` + the 10px `::-webkit-scrollbar`.
+     Browser chrome outside the page box; every sibling made the same call.
+   · preflight's `img, video { max-width: 100% }` — see the note on .ic above.
+   ══════════════════════════════════════════════════════════════════════════ */
+body:has(.jf-mobile-project-detail) { background-image: none; }
+body:has(.jf-mobile-project-detail)::before { content: none; }
+
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.jf-mobile-project-detail .mpd-scroll {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  /* The page scroller paints no bar at all — the graph paper reads as one
+     sheet without a rail down its edge, matching the fleet. Both engines are
+     told the same thing. Nothing inside this page styles a ::-webkit-scrollbar
+     thumb, so the documented Chrome gotcha (a local `scrollbar-width` kills
+     ::-webkit-scrollbar styling on that element) has nothing to break here. */
+  scrollbar-width: none;
+}
+.jf-mobile-project-detail .mpd-scroll::-webkit-scrollbar { width: 0; height: 0; }
+.jf-mobile-project-detail .mpd-scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h); left: 0; right: 0; bottom: 0;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.jf-mobile-project-detail .mpd-content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(var(--safe-b) + 56px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  /* Every child is width-constrained by the flex column; this is the belt to
+     that braces: nothing in this tree may widen the page. */
+  min-width: 0;
+}
+
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+/* The back link and the "Projects" kicker were removed (owner's call,
+   2026-08-12) — the drawer is the way back, and the project name now opens the
+   page. Their rules went with them rather than being left to rot. */
+.jf-mobile-project-detail .mpd-head { padding-top: 2px; }
+.jf-mobile-project-detail .mpd-title {
+  font-size: var(--fs-h1);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  line-height: 0.94;
+  /* A project name is user input: "Maple-Ridge-Phase-2-Rebuild" is one word to
+     the line breaker, and at 320px it is wider than the screen. Breaking
+     anywhere is the only thing that guarantees the page body never scrolls
+     sideways. */
+  overflow-wrap: anywhere;
+}
+.jf-mobile-project-detail .mpd-dateline {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-project-detail .mpd-dateline b { font-weight: 600; color: var(--ink); }
+
+/* ============================================================
+   MASTHEAD — the budget plate
+   The page's ONE inverse block (DESIGN.md: "inverse sections — dark
+   ink/blueprint blocks among light paper sections"), carrying the desktop
+   KPI strip's four numerals: budget as the headline, the three counts as
+   cells on one internal rule. Labels sit ABOVE the numerals, never under
+   them, which is the strip's rule.
+   ============================================================ */
+.jf-mobile-project-detail .mpd-mast {
+  position: relative;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: var(--on-bp);
+  box-shadow: 3px 3px 0 var(--ink);
+  overflow: hidden;
+}
+/* Graph paper on the drawing-card, at the same 40px pitch as the sheet. */
+.jf-mobile-project-detail .mpd-mast::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+.jf-mobile-project-detail .mpd-mast-top {
+  position: relative;
+  padding: var(--card-pad) var(--card-pad) calc(var(--card-pad) - 2px);
+}
+.jf-mobile-project-detail .mpd-mast-lbl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--on-bp-muted);
+  margin-bottom: 12px;
+}
+.jf-mobile-project-detail .mpd-mast-rule {
+  flex: 1;
+  height: 1.5px;
+  background: var(--on-bp-rule);
+}
+.jf-mobile-project-detail .mpd-mast-val {
+  font-size: clamp(38px, 12vw, 56px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 0.92;
+  font-variant-numeric: tabular-nums;
+  color: var(--on-bp);
+}
+.jf-mobile-project-detail .mpd-cells {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1.5px solid var(--on-bp-rule);
+}
+.jf-mobile-project-detail .mpd-cell {
+  padding: 13px var(--card-pad) 15px;
+  border-right: 1.5px solid var(--on-bp-rule);
+  min-width: 0;
+}
+.jf-mobile-project-detail .mpd-cell:last-child { border-right: none; }
+.jf-mobile-project-detail .mpd-cell-lbl {
+  font-family: var(--font-mono);
+  font-size: clamp(8.5px, 2.5vw, 9.5px);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.35;
+  color: var(--on-bp-muted);
+  margin-bottom: 7px;
+}
+.jf-mobile-project-detail .mpd-cell-val {
+  font-size: clamp(22px, 6.6vw, 30px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   VIEW BAR — segmented control + the attach action
+   ============================================================ */
+.jf-mobile-project-detail .mpd-views {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.jf-mobile-project-detail .mpd-seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.jf-mobile-project-detail .mpd-seg-btn {
+  min-height: var(--tap);
+  padding: 0 6px;
+  font-size: clamp(11px, 3.3vw, 12.5px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--paper);
+  border-right: 1.5px solid var(--ink);
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.jf-mobile-project-detail .mpd-seg-btn:last-child { border-right: none; }
+.jf-mobile-project-detail .mpd-seg-btn.mpd-on { background: var(--ink); color: var(--paper); }
+
+/* The one primary action on the page. Blueprint fill, white label, ink frame,
+   hard ink shadow — the fleet's stamp button, at full width because the thumb
+   arrives here from the left OR the right. */
+.jf-mobile-project-detail .mpd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  background: var(--blueprint);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.jf-mobile-project-detail .mpd-btn .ic { width: 15px; height: 15px; }
+.jf-mobile-project-detail .mpd-btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--ink);
+  background: var(--blueprint-dark);
+}
+.jf-mobile-project-detail .mpd-btn.mpd-open { background: var(--ink); }
+
+/* ============================================================
+   ATTACH PANEL — kept MOUNTED and toggled with `hidden`, exactly like the
+   desktop build: the reveal observer is still watching it, so opening the
+   panel fades it up instead of popping it in.
+   Inline disclosure rather than a bottom sheet: it is not a modal, it is a
+   list that belongs to the button above it, and the `hidden` toggle is the
+   behaviour being preserved.
+   ============================================================ */
+.jf-mobile-project-detail [hidden] { display: none !important; }
+.jf-mobile-project-detail .mpd-attach {
+  border: 1.5px dashed var(--blueprint);
+  border-radius: var(--radius);
+  padding: 14px var(--card-pad) 6px;
+  background: var(--paper);
+}
+.jf-mobile-project-detail .mpd-attach-t {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+/* A refused write says so, in the danger tone rather than the muted mono of an
+   empty state: on a phone the panel is the whole screen and a grey line reads
+   as "nothing here" rather than "that failed". The desktop build prints it in
+   the neutral empty-state vocabulary; this is the one place the two differ,
+   and the tone is the palette's own --danger, used for an error, which is what
+   the status-colours-only rule permits. */
+.jf-mobile-project-detail .mpd-attach-err {
+  display: flex;
+  gap: 9px;
+  margin: 10px 0 4px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--danger);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.jf-mobile-project-detail .mpd-av {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 11px 0;
+  border-bottom: 1px dashed var(--dash);
+}
+.jf-mobile-project-detail .mpd-av:last-child { border-bottom: none; }
+.jf-mobile-project-detail .mpd-av-txt { min-width: 0; }
+.jf-mobile-project-detail .mpd-av-n {
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-project-detail .mpd-av-m {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-project-detail .mpd-av-btn {
+  min-height: var(--tap);
+  min-width: 88px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+  box-shadow: 3px 3px 0 var(--shadow);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.jf-mobile-project-detail .mpd-av-btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--shadow);
+}
+.jf-mobile-project-detail .mpd-av-btn[disabled] {
+  background: var(--paper-deep);
+  color: var(--muted);
+  border-color: var(--hair);
+  box-shadow: none;
+  cursor: default;
+}
+
+/* ============================================================
+   CARD — the view body
+   ============================================================ */
+.jf-mobile-project-detail .mpd-card {
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--card-pad) var(--card-pad) calc(var(--card-pad) + 2px);
+  box-shadow: 3px 3px 0 var(--shadow);
+  min-width: 0;
+}
+.jf-mobile-project-detail .mpd-card-h {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.jf-mobile-project-detail .mpd-card-t {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.jf-mobile-project-detail .mpd-card-s {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* An empty state is a note on a drawing: dashed frame, mono caps. */
+.jf-mobile-project-detail .mpd-empty {
+  margin-top: 12px;
+  padding: 18px 14px;
+  border: 1.5px dashed var(--hair);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--muted);
+}
+/* The same note, without the frame, when it annotates a list rather than
+   replacing one (e.g. "3 jobs have no dates"). */
+.jf-mobile-project-detail .mpd-note {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1.5px solid var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ---- the filter dropdown ------------------------------------------------
+   Replaces the wrapped chip rail in all three views (owner's call,
+   2026-08-12). Same control, same measurements and same drawn-table menu as
+   the mobile projects list, ported into this stylesheet's flat naming — the
+   two surfaces are the same product and must not drift.
+
+   Why it replaced the chips: the rail cost two 44px rows before any job was on
+   screen, and the calendar's version grew one chip per month in the project
+   window, so a six-month project pushed the schedule below the fold. The
+   dropdown is one 50px row at four options or fourteen. */
+.jf-mobile-project-detail .mpd-fbar {
+  margin: 12px 0 4px;
+  padding-bottom: 14px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.jf-mobile-project-detail .mpd-dd { position: relative; }
+.jf-mobile-project-detail .mpd-dd-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--ink);
+  /* No offset shadow on the button or the menu: the hard ink drop reads as a
+     black slab at this width. The 2px ink frame is enough. */
+  transition: background 0.12s var(--ease);
+}
+.jf-mobile-project-detail .mpd-dd-btn .ic { width: 17px; height: 17px; }
+.jf-mobile-project-detail .mpd-dd.mpd-open .mpd-dd-btn { background: var(--paper-deep); }
+/* margin-left:auto pushes the value hard right; the caret sits last. */
+.jf-mobile-project-detail .mpd-dd-value {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+/* Tone only, from the page's own three status tones — never decoration. */
+.jf-mobile-project-detail .mpd-dd-value[data-tone="all"] { color: var(--ink); }
+.jf-mobile-project-detail .mpd-dd-value[data-tone="prog"] { color: var(--blueprint); }
+.jf-mobile-project-detail .mpd-dd-value[data-tone="done"] { color: var(--success-dark); }
+.jf-mobile-project-detail .mpd-dd-value[data-tone="sch"] { color: var(--muted); }
+.jf-mobile-project-detail .mpd-dd-caret {
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform 0.2s var(--ease-out);
+}
+.jf-mobile-project-detail .mpd-dd.mpd-open .mpd-dd-caret { transform: rotate(180deg); }
+.jf-mobile-project-detail .mpd-dd-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* A 3-column drawn TABLE, not a one-deep list: a twelve-month project would
+     otherwise be a twelve-row scroller. padding:0 so the cell borders below are
+     the grid's own rules, with no gutter against the menu frame.
+     minmax(0,1fr): plain 1fr floors at auto, so "In progress" would widen its
+     column past a third and shove the panel out of its own frame. */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+  /* Viewport height only via --app-h — never a bare vh. */
+  max-height: calc(var(--app-h, 100dvh) * 0.6);
+  overflow-y: auto;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
+}
+.jf-mobile-project-detail .mpd-dd.mpd-open .mpd-dd-menu {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+}
+/* A cell, not a row: label over count, centred. The dividers are border-TOP and
+   border-LEFT with the first row and first column cleared — that draws a
+   correct table at ANY option count and never doubles a line against the
+   menu's own 2px frame. */
+.jf-mobile-project-detail .mpd-dd-item {
+  position: relative;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 6px;
+  border-radius: 0;
+  border-top: 1.5px solid var(--hair);
+  border-left: 1.5px solid var(--hair);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  text-align: center;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.jf-mobile-project-detail .mpd-dd-item:nth-child(-n + 3) { border-top: none; }
+.jf-mobile-project-detail .mpd-dd-item:nth-child(3n + 1) { border-left: none; }
+/* A last cell that would otherwise sit alone (or in a half-empty row) stretches
+   across the remainder, so the drawn table stays a complete rectangle at any
+   option count — four statuses or thirteen months. */
+.jf-mobile-project-detail .mpd-dd-item:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
+.jf-mobile-project-detail .mpd-dd-item:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
+.jf-mobile-project-detail .mpd-dd-item:active { background: var(--paper-deep); }
+.jf-mobile-project-detail .mpd-dd-item.mpd-on {
+  font-weight: 800;
+  background: var(--paper-deep);
+  color: var(--blueprint);
+}
+.jf-mobile-project-detail .mpd-dd-item.mpd-on[data-tone="done"] { color: var(--success-dark); }
+.jf-mobile-project-detail .mpd-dd-item.mpd-on[data-tone="sch"] { color: var(--ink); }
+.jf-mobile-project-detail .mpd-dd-count {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- job rows -----------------------------------------------------------
+   Dense data surface: quiet. No fill, no shadow, no card-per-row — a dashed
+   rule between entries, exactly like an estimate sheet. */
+.jf-mobile-project-detail .mpd-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 6px 12px;
+  padding: 13px 0;
+  border-bottom: 1px dashed var(--dash);
+}
+.jf-mobile-project-detail .mpd-row:last-child { border-bottom: none; }
+.jf-mobile-project-detail .mpd-row-txt { min-width: 0; }
+.jf-mobile-project-detail .mpd-row-n {
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-project-detail .mpd-row-m {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-project-detail .mpd-b {
+  flex-shrink: 0;
+  align-self: start;
+  padding: 4px 9px;
+  border: 1.5px solid;
+  border-radius: var(--radius);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.jf-mobile-project-detail .mpd-b--done {
+  border-color: var(--success);
+  color: var(--success-dark);
+  background: var(--success-soft);
+}
+.jf-mobile-project-detail .mpd-b--prog {
+  border-color: var(--blueprint);
+  color: var(--blueprint);
+  background: rgba(24, 84, 160, 0.06);
+}
+.jf-mobile-project-detail .mpd-b--sch {
+  border-color: rgba(10, 10, 10, 0.45);
+  color: var(--muted);
+}
+
+/* ---- calendar agenda ----------------------------------------------------
+   The desktop's three-column row (168px date | title | badge) collapses to the
+   date on its own line — which is what the desktop itself already does below
+   860px, so this is the same composition, not a new one. */
+.jf-mobile-project-detail .mpd-ag-mo {
+  margin-top: 18px;
+  padding-bottom: 8px;
+  border-bottom: 1.5px solid var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.jf-mobile-project-detail .mpd-ag-d {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   TIMELINE (the Gantt, re-cut for a phone)
+   ============================================================
+   THE PROBLEM. The desktop draws one horizontal bar per job against a shared
+   month axis, with a 200px label column beside it. On a 320px screen that
+   column is 63% of the width, and what is left cannot hold a month.
+
+   WHAT THIS DOES INSTEAD. The label moves ABOVE its bar and the track takes
+   the full column width. Every track spans the identical project window, so
+   the bars stay vertically comparable — which is the whole point of a Gantt:
+   who overlaps whom, and what runs longest. A month ruler sits once at the top
+   and its gridlines repeat inside every track at the same percentages, so a
+   bar still reads against the calendar. Dates print under the bar in mono
+   instead of living in a hover title nobody can hover.
+
+   WHAT WAS REJECTED. (1) A horizontally-scrollable rail with a sticky label
+   column: two-axis navigation on the smallest screen, with the labels eating
+   40% of it, one-handed, in gloves. (2) Collapsing to a date-grouped list:
+   that IS the Calendar tab, so the Gantt would stop earning its place. (3) A
+   month-per-screen pager: it hides exactly the cross-month overlap the chart
+   exists to show.
+   ------------------------------------------------------------ */
+.jf-mobile-project-detail .mpd-g-ruler {
+  position: relative;
+  height: 20px;
+  margin: 14px 0 2px;
+  /* Absolutely-positioned labels can sit at 100% of the track; clipping here
+     is what keeps a right-edge month from widening the document. */
+  overflow: hidden;
+}
+.jf-mobile-project-detail .mpd-g-month {
+  position: absolute;
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  color: var(--muted);
+  border-left: 1.5px solid rgba(10, 10, 10, 0.35);
+  padding-left: 5px;
+  white-space: nowrap;
+}
+.jf-mobile-project-detail .mpd-g-row {
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--dash);
+}
+.jf-mobile-project-detail .mpd-g-row:last-child { border-bottom: none; }
+.jf-mobile-project-detail .mpd-g-top {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 6px 12px;
+  margin-bottom: 9px;
+}
+.jf-mobile-project-detail .mpd-g-name {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-project-detail .mpd-g-track {
+  position: relative;
+  height: 30px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  overflow: hidden;
+}
+.jf-mobile-project-detail .mpd-g-grid {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: rgba(10, 10, 10, 0.14);
+}
+/* Today, when it falls inside the window: a drawing annotation in ink, not a
+   status colour. It is the one thing a contractor standing in a driveway
+   actually needs from a timeline — "are we behind?" */
+.jf-mobile-project-detail .mpd-g-today {
+  position: absolute;
+  top: -2px; bottom: -2px;
+  width: 0;
+  border-left: 1.5px dashed var(--ink);
+  z-index: 2;
+}
+.jf-mobile-project-detail .mpd-g-bar {
+  position: absolute;
+  top: 2px; bottom: 2px;
+  border-radius: var(--radius);
+  /* See the --ease-out note in the token block: declared locally, so this
+     grows deterministically instead of depending on globals.css. */
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.5s var(--ease-out);
+}
+.jf-mobile-project-detail .mpd-g-bar.mpd-in { transform: scaleX(1); }
+.jf-mobile-project-detail .mpd-g-bar--done {
+  background: rgba(58, 125, 68, 0.18);
+  border: 1.5px solid var(--success);
+}
+.jf-mobile-project-detail .mpd-g-bar--prog {
+  background: rgba(24, 84, 160, 0.16);
+  border: 1.5px solid var(--blueprint);
+}
+.jf-mobile-project-detail .mpd-g-bar--sch {
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+}
+.jf-mobile-project-detail .mpd-g-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-project-detail .mpd-g-meta b { color: var(--ink); font-weight: 600; }
+
+/* ============================================================
+   MOTION SYSTEM — BALANCED (package 02, the standard)
+   Namespaced: `rowIn` is already declared 22 times in this app and `press2`
+   29 times, and the fleet's `rv` / `rv-in` / `pressed` are literal global
+   class names that projects.module.css also publishes on the dashboard route.
+   ============================================================ */
+.jf-mobile-project-detail .mpd-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.jf-mobile-project-detail .mpd-rv-in { opacity: 1; transform: none; }
+.jf-mobile-project-detail .mpd-rv-cell {
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.jf-mobile-project-detail .mpd-rv-cell.mpd-rv-in { opacity: 1; transform: none; }
+
+@keyframes jf-mpd-press {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.jf-mobile-project-detail .mpd-pressed { animation: jf-mpd-press 0.18s var(--ease-out); }
+
+@keyframes jf-mpd-row-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+/* Rows animate on FIRST paint of a view only — the class is applied by React
+   keyed on the view, never by a MutationObserver, so a filter tap does not
+   replay the whole list's entrance. */
+.jf-mobile-project-detail .mpd-row-in {
+  animation: jf-mpd-row-in 0.3s var(--ease-out) both;
+}
+
+/* ============================================================
+   REDUCED MOTION — everything off, per DESIGN.md's hard constraint.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-project-detail *,
+  .jf-mobile-project-detail *::before,
+  .jf-mobile-project-detail *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .jf-mobile-project-detail .mpd-rv,
+  .jf-mobile-project-detail .mpd-rv-cell { opacity: 1; transform: none; }
+  .jf-mobile-project-detail .mpd-g-bar { transform: scaleX(1); }
+}
