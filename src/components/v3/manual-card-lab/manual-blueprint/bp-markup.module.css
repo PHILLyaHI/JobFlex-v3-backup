@@ -389,6 +389,30 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The rate a ledger row was produced BY, printed inside the label
+   rather than as its own column: "Tax 8.25%" is one fact, and the
+   markup rows already carry theirs in parentheses. Boxed, mono and
+   muted so it cannot be mistaken for the money on the right. */
+:global(.jf-blueprint) .lRate {
+  flex: none;
+  padding: 1px 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--muted);
+  background: var(--mb-sunken, rgba(10, 10, 10, 0.04));
+  border-radius: var(--radius, 2px);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A row contributing nothing recedes to the label's own colour —
+   the em dash is already the quiet form, and printing it in full
+   ink weight would give a zero the same presence as the tax. */
+:global(.jf-blueprint) .lValueZero {
+  color: var(--muted);
+}
+
 /* Two rules in the whole plate, and they are DIFFERENT weights on
    purpose: a hairline closes the cost block, 2px of ink closes the
    sheet. Same device, ranked. */
@@ -438,70 +462,125 @@
 }
 
 /* ============================================================
-   THE QUIET ACTION
-   Preflight plus `.bp button` between them strip the border, the
-   background, the font and the cursor, so all four are declared.
+   THE TWO ADJUSTMENTS
+   Discount and tax, under the four sliders. They are typed, not
+   swept, so they get FIELDS — see the note in bp-markup.tsx.
+
+   Separated from the rates by one hairline and 24px, which is the
+   same break `.rowSub` draws inside the plate: the rail now has
+   two halves (four rates, two adjustments) and the rule says so
+   once. No box, no heading — a heading over two labelled fields is
+   a third naming of the same thing.
    ============================================================ */
 
-:global(.jf-blueprint) .saveWrap {
-  margin-top: 16px;
+:global(.jf-blueprint) .adjust {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  gap: 20px;
+  margin-top: 4px;
+  padding-top: 24px;
+  border-top: 1.5px solid var(--hair, rgba(10, 10, 10, 0.12));
 }
 
-:global(.jf-blueprint) .saveBtn {
-  display: inline-flex;
+:global(.jf-blueprint) .adj {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .adjTop {
+  display: flex;
   align-items: center;
-  gap: 7px;
-  min-height: 24px;
-  padding: 0;
-  font-family: var(--font);
-  font-size: 12px;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Matches `.rateName` exactly — an adjustment names itself in the
+   same register as a rate, because in the rail they are peers. */
+:global(.jf-blueprint) .adjName {
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  min-width: 0;
+}
+
+/* The $ / % segmented control, held to two characters' worth of
+   box. `Segmented` with `hideLabel` renders one bare div, and
+   `.segFull` inside the OTHER module would otherwise stretch it
+   across the whole rail for two single-character buttons. */
+:global(.jf-blueprint) .adjTop > div {
+  flex: 0 0 auto;
+  width: 88px;
+}
+
+:global(.jf-blueprint) .adjBody {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .adjField {
+  flex: 0 0 auto;
+  width: 118px;
+}
+
+/* Same register and same alignment as `.rateAmt` under a slider:
+   an annotation of the control, mono, tabular, hard right — so the
+   six figures in the rail land on one axis whether they came from
+   a slider or a field. */
+:global(.jf-blueprint) .adjAmt {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
   font-weight: 600;
   line-height: 1.3;
-  text-align: left;
   color: var(--muted);
-  background: transparent;
-  border: 0;
-  border-bottom: 1.5px solid transparent;
-  border-radius: 0;
-  cursor: pointer;
-  transition: color 0.14s var(--ease), border-color 0.14s var(--ease);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-:global(.jf-blueprint) .saveBtn:hover {
-  color: var(--blueprint);
-  border-bottom-color: var(--blueprint);
+/* The cap is a RULE being applied, not a failure — muted ink at
+   the same weight, never a status colour. computeTotals has
+   already clamped the figure; this only says why. */
+:global(.jf-blueprint) .adjAmtCap {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft, #3a3a3a);
 }
 
-:global(.jf-blueprint) .saveBtn:focus-visible {
-  outline: 2px solid var(--blueprint);
-  outline-offset: 3px;
-}
-
-/* THREE classes plus the element to beat `.bp :global(svg.ic)`
-   (0,2,1) — this is (0,3,1). Two would tie and lose on order. */
-:global(.jf-blueprint) .saveBtn :global(svg.ic) {
-  width: 14px;
-  height: 14px;
+/* Provenance, not status: an estimated rate is where a number came
+   from, and the three status tones are reserved for real states. */
+:global(.jf-blueprint) .autoTag {
   flex: none;
-}
-
-/* A live region that is mounted empty and collapses until it has
-   something honest to say. */
-:global(.jf-blueprint) .saveNote {
-  margin: 0;
-  max-width: 44ch;
-  font-size: 11.5px;
-  font-weight: 500;
-  line-height: 1.45;
+  padding: 2px 5px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
+  border: 1.5px solid var(--hair, rgba(10, 10, 10, 0.12));
+  border-radius: var(--radius, 2px);
+  cursor: help;
 }
 
-:global(.jf-blueprint) .saveNote:empty {
-  display: none;
+:global(.jf-blueprint) .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ============================================================

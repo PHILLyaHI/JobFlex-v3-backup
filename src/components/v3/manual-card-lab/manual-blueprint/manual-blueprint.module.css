@@ -1032,14 +1032,24 @@
   border-top: none;
 }
 
+/* THE CONTROL LABELS CARRY THE CARD. "Quote style" and the three
+   switch labels are not captions on a control — on a card that is
+   nothing BUT controls they are the only reading matter, and at
+   13.5px/500 in --ink-soft they sat below the weight of the card
+   heading, the field labels and even the ledger rows elsewhere on
+   the page. Full ink, 700, and a step up in size puts them at the
+   register of the decision they name. */
 :global(.jf-blueprint) .toggleText {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--ink-soft);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  color: var(--ink);
 }
 
+/* The labels are full ink at rest now, so hover has to move
+   somewhere else to say anything at all. */
 :global(.jf-blueprint) .toggleRow:hover .toggleText {
-  color: var(--ink);
+  color: var(--blueprint);
 }
 
 /* ── THE THREE PRINT SWITCHES, AS ONE ROW ────────────────────
@@ -1061,10 +1071,23 @@
    these three cells. Two unrelated things called the same word is
    not a collision the module system can warn about; it just picks
    one. */
+/* RULED IN INK, AND CLOSED AT THE FOOT. The grid was drawn in
+   1.5px `--mb-rule`, which is the hairline this page uses to
+   SEPARATE things inside a block. That is the wrong job here: the
+   three cells are a drawn table — the house's 2px ink border is
+   what a table is made of, and at hairline weight the verticals
+   read as accidental gaps between three floating labels rather
+   than as three ruled cells.
+
+   The bottom rule is new. With only a top edge and two verticals
+   the table had three open-ended columns running off the foot of
+   the card; the fourth side closes it and gives the labels a
+   baseline to sit on. */
 :global(.jf-blueprint) .switchRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1.5px solid var(--mb-rule);
+  border-top: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
 }
 
 /* Declares its own box: `.bp button` strips border, background and
@@ -1081,7 +1104,10 @@
   text-align: left;
   background: transparent;
   border: none;
-  border-left: 1.5px solid var(--mb-rule);
+  /* Ink at 2px, matching the row's own edges — see the note above
+     `.switchRow`. The three cells are one drawn table, so all four
+     of its rules are the same weight and the same colour. */
+  border-left: 2px solid var(--ink);
   border-radius: 0;
   cursor: pointer;
 }
@@ -1099,17 +1125,20 @@
   padding-right: 0;
 }
 
-/* One step down from `.toggleText` (13.5px): a label with a third
-   of the measure wraps, and 13px keeps a two-line wrap tight. */
+/* One step down from `.toggleText` (15px): a label with a third of
+   the measure wraps, and 14px keeps a two-line wrap tight. Same
+   ink and same weight though — the three switch labels are peers
+   of the quote-style label, not a subordinate caption layer. */
 :global(.jf-blueprint) .cellText {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1.35;
-  color: var(--ink-soft);
+  letter-spacing: -0.005em;
+  color: var(--ink);
 }
 
 :global(.jf-blueprint) .toggleCell:hover .cellText {
-  color: var(--ink);
+  color: var(--blueprint);
 }
 
 /* ── THE TOGGLE: GREEN ON, RED OFF ───────────────────────────
@@ -1170,12 +1199,21 @@
   border-color: var(--ink);
 }
 
+/* THE INSET IS 3px ON ALL FOUR SIDES, and the arithmetic is the
+   only way to keep it that way — the plate is 46×25 with a 1.5px
+   ink edge, so the box the knob moves inside is 43×22.
+   A 17px knob at top/left 2px left 2px above and 3px below, 2px
+   behind and 3px ahead: the seat looked bottom-heavy at rest and
+   the travel looked short of the end when on.
+   16px at 3px seats it exactly: 3 + 16 + 3 = 22 down the short
+   axis, and 21px of travel puts the far edge at 40 of 43 — the
+   same 3px it started with. */
 :global(.jf-blueprint) .knob {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 17px;
-  height: 17px;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
   background: var(--danger, #a83232);
   border-radius: 1px;
   transition:
@@ -1206,12 +1244,54 @@
   border-top: 1.5px solid var(--mb-rule);
 }
 
+/* The label-less variant: no ruled top, no space-between, no min
+   height reserved for a label that is not drawn. Used where a card
+   heading directly above the control already names it. */
+:global(.jf-blueprint) .segRowBare {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border-top: none;
+}
+
+/* The house's visually-hidden. `clip-path` plus a 1px box, NOT
+   `display:none` or `visibility:hidden` — both of those remove the
+   element from the accessibility tree, which is the one thing this
+   must never do: it exists precisely so a hidden label still names
+   its control. */
+:global(.jf-blueprint) .srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 :global(.jf-blueprint) .seg {
   flex-shrink: 0;
   display: inline-flex;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+/* Two equal halves across the full measure, rather than two
+   content-width buttons pinned right. `1fr` on the children is what
+   stops "Dollar ($)" and "Percent (%)" — which differ by two
+   characters — from drawing two visibly different plates. */
+:global(.jf-blueprint) .segFull {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+}
+
+:global(.jf-blueprint) .segFull .segBtn {
+  min-width: 0;
+  min-height: 40px;
 }
 
 :global(.jf-blueprint) .segBtn {
@@ -1816,16 +1896,6 @@
   gap: 10px;
 }
 
-/* The honest note. --muted at 11.5px with a 1.6 line height: it is
-   read once, when the card is new, and never again. */
-:global(.jf-blueprint) .pdfNote {
-  max-width: 92ch;
-  font-size: 11.5px;
-  font-weight: 400;
-  line-height: 1.6;
-  color: var(--muted);
-}
-
 /* ── THE VAULT ────────────────────────────────────────────────
    Closed, the sheet is CLIPPED, not unmounted and not
    `display: none`. Two things need it laid out at all times: the
@@ -1840,10 +1910,191 @@
   visibility: hidden;
 }
 
+/* ── AND OPEN, IT IS THE VIEWER ───────────────────────────────
+   The same element, full screen. A sheet of paper previewed inline
+   in a column that is itself only ~840px wide was showing US
+   Letter at roughly two thirds size with no way to get closer —
+   you could see the SHAPE of the proposal but not read a line of
+   it, which is the one thing a preview is for.
+
+   Fixed to the viewport rather than pushed into a portal: the
+   whole overlay has to stay inside `.jf-blueprint` for the page's
+   tokens and the `.bp` element resets to reach it, and a portal to
+   <body> would land it outside both. Nothing on this page
+   establishes a containing block above it, so `position: fixed`
+   behaves as viewport-fixed here.
+
+   It scrolls in BOTH axes on purpose: at 300% zoom a Letter sheet
+   is 2448px wide, and a viewer that clips the right-hand half of
+   every line is worse than no zoom at all. */
+/* ── ESCAPING THE COLUMN'S STACKING CONTEXT ───────────────────
+   `.content` is `position: relative; z-index: 1`, which makes it a
+   stacking context — so NO z-index on a descendant can lift this
+   overlay above the topbar (`z-index: 30`), which is a sibling of
+   `.content`, not a child. The viewer opened full-screen and the
+   topbar painted straight over its bar: the zoom buttons were
+   visible and un-clickable, because the header was intercepting
+   the pointer.
+
+   The fix is to raise the CONTEXT while the viewer is open, not to
+   keep bidding the z-index inside it. `:has()` is the mechanism —
+   already used by this stylesheet for `.card:has(.pdfBlock)` — and
+   it costs nothing when the viewer is shut, which is the state the
+   page is in essentially all of the time.
+
+   Both wrappers are listed because the column is nested inside a
+   second `z-index: 10` context above `.content`; whichever of the
+   two is the topbar's sibling is the one that has to win. */
+:global(.jf-blueprint) :global(.content):has(.pdfVaultOpen),
+:global(.jf-blueprint):has(.pdfVaultOpen) {
+  z-index: 200;
+}
+
 :global(.jf-blueprint) .pdfVaultOpen {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
   height: auto;
-  overflow: visible;
+  overflow: hidden;
   visibility: visible;
+  background: color-mix(in srgb, var(--ink) 62%, transparent);
+  animation: pdfViewerIn 0.16s var(--ease-out, ease-out);
+}
+
+@keyframes pdfViewerIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .pdfVaultOpen {
+    animation: none;
+  }
+}
+
+/* ── THE VIEWER BAR ───────────────────────────────────────────
+   Paper, 2px of ink under it, and the three controls a document
+   viewer has: what this is, how big it is, and the way out. It
+   does not scroll with the sheet — losing the Close button off the
+   top of a three-page proposal is how a modal traps somebody. */
+:global(.jf-blueprint) .pdfBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 18px;
+  background: var(--paper);
+  border-bottom: 2px solid var(--ink);
+}
+
+:global(.jf-blueprint) .pdfBarTitle {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:global(.jf-blueprint) .pdfBarSep {
+  padding: 0 0.5em;
+  opacity: 0.5;
+}
+
+:global(.jf-blueprint) .pdfZoom {
+  flex: none;
+  display: flex;
+  align-items: center;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--mb-card, #ffffff);
+}
+
+/* One drawn box with internal rules, exactly as `.seg` is built —
+   the zoom stepper is a segmented control that happens to have a
+   readout in the middle, not three loose buttons. */
+:global(.jf-blueprint) .pdfZoomBtn,
+:global(.jf-blueprint) .pdfZoomNow {
+  min-height: 32px;
+  padding: 0 12px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .pdfZoomBtn {
+  min-width: 38px;
+  font-size: 16px;
+}
+
+/* The readout is the widest of the three and carries the rules, so
+   the box does not change width as 50% becomes 100% becomes 300%. */
+:global(.jf-blueprint) .pdfZoomNow {
+  min-width: 62px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  border-left: 2px solid var(--ink);
+  border-right: 2px solid var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .pdfZoomBtn:hover,
+:global(.jf-blueprint) .pdfZoomNow:hover {
+  background: color-mix(in srgb, var(--blueprint) 12%, transparent);
+}
+
+:global(.jf-blueprint) .pdfZoomBtn:disabled {
+  color: var(--muted);
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+:global(.jf-blueprint) .pdfZoomBtn:focus-visible,
+:global(.jf-blueprint) .pdfZoomNow:focus-visible,
+:global(.jf-blueprint) .pdfClose:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 2px;
+}
+
+:global(.jf-blueprint) .pdfClose {
+  flex: none;
+  min-height: 32px;
+  padding: 0 16px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--paper);
+  background: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .pdfClose:hover {
+  background: var(--blueprint);
+  border-color: var(--blueprint);
 }
 
 /* The ground the paper lies on. Deep paper, inset, so the white
@@ -1857,6 +2108,55 @@
   border: var(--border);
   border-radius: var(--radius);
   overflow-x: auto;
+}
+
+/* ── THE STAGE INSIDE THE OPEN VIEWER ─────────────────────────
+   It takes the rest of the overlay under the bar and becomes the
+   scroll container in both axes. No border and no radius: at full
+   screen the stage IS the ground, and a rounded 2px frame drawn
+   against the viewport edge is a card pretending to be a window.
+
+   `place-items: start center` rather than the flex centring above:
+   once the sheet is taller than the viewport, a centred flex child
+   in a scroll container has its top pushed out of reach — the
+   classic overflow-centring trap. Starting it at the top keeps
+   page 1 reachable at every zoom level. */
+:global(.jf-blueprint) .pdfVaultOpen .pdfStage {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: start center;
+  min-height: 0;
+  padding: 28px;
+  border: none;
+  border-radius: 0;
+  overflow: auto;
+}
+
+/* THE ZOOM. Applied to a WRAPPER of the sheet rather than to the
+   sheet, and with `transform-origin: top center`, so growing the
+   document pushes it down and outward from the point the eye is
+   already on instead of from its middle.
+
+   A transform and not `width`/`zoom`: the sheet is laid out at a
+   true trim size in px and everything inside it — the page-break
+   rules, the runhead offsets, the measured flow height — is a
+   function of that. Scaling is the one operation that changes what
+   you see without changing any of it, which is why the page count
+   in the bar stays honest at 300%. */
+:global(.jf-blueprint) .pdfVaultOpen .pdfSheet {
+  transform: scale(var(--pdf-zoom, 1));
+  transform-origin: top center;
+  /* Reserves the scrolled height the transform does not claim —
+     without it a scaled sheet overflows its container invisibly and
+     the last page cannot be reached. */
+  margin-bottom: calc((var(--pdf-zoom, 1) - 1) * 100%);
+  transition: transform 0.14s var(--ease-out, ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .pdfVaultOpen .pdfSheet {
+    transition: none;
+  }
 }
 
 :global(.jf-blueprint) .pdfSheet {
@@ -2337,9 +2637,11 @@
   :global(.jf-blueprint) .card:has(.pdfBlock) .cardHead,
   :global(.jf-blueprint) .pdfSpec,
   :global(.jf-blueprint) .pdfBlock > .toggles,
-  :global(.jf-blueprint) .pdfBlock > .printCaption,
   :global(.jf-blueprint) .pdfActions,
-  :global(.jf-blueprint) .pdfNote {
+  /* Screen chrome. The viewer bar must never reach the paper —
+     printing while the preview is open is the NORMAL path now that
+     Preview opens full screen. */
+  :global(.jf-blueprint) .pdfBar {
     display: none !important;
   }
 
@@ -2351,11 +2653,37 @@
 
   /* THE VAULT OPENS FOR PRINT, whether or not the preview is open
      on screen. Downloading the file must not depend on having
-     pressed Preview first. */
-  :global(.jf-blueprint) .pdfVault {
+     pressed Preview first.
+
+     And it UNDOES the viewer in the other direction: printing with
+     the preview open must not carry `position: fixed`, the scrim or
+     the zoom onto the paper. A fixed overlay prints as one clipped
+     page, and a 300% transform prints a quarter of page one across
+     nine sheets — both are the state the user is most likely to be
+     in when they press Download, since Preview now opens full
+     screen. */
+  :global(.jf-blueprint) .pdfVault,
+  :global(.jf-blueprint) .pdfVaultOpen {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    display: block !important;
     height: auto !important;
     overflow: visible !important;
     visibility: visible !important;
+    background: none !important;
+    animation: none !important;
+  }
+
+  :global(.jf-blueprint) .pdfVaultOpen .pdfSheet {
+    transform: none !important;
+    margin-bottom: 0 !important;
+  }
+
+  :global(.jf-blueprint) .pdfVaultOpen .pdfStage {
+    display: block !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
   :global(.jf-blueprint) .pdfStage {

@@ -82,7 +82,7 @@ import { ClientField, ProjectField } from "./bp-pickers";
 // money columns carrying their own running totals in the header. It lives
 // outside this folder because it is shared with the line-item lab.
 import { LinesV2 } from "../lines-v2/lines-v2";
-import { PaymentBlock, PricingBlock } from "./bp-money";
+import { PaymentBlock } from "./bp-money";
 import { MarkupBlock } from "./bp-markup";
 import { PrintOptions, FilesBlock } from "./bp-blocks";
 import { TheirCopy } from "./bp-proof";
@@ -349,11 +349,16 @@ export function ManualBlueprintContent() {
           />
         </Card>
 
-        {/* 04 — the owner's reference layout: four rate sliders on the left, an
-            ESTIMATE plate on the right ending in the pre-tax total, and a
-            margin badge. Deliberately its OWN card and not merged with the
-            deposits below — the split is by question ("what am I charging?"
-            vs "what do they owe and when?"), not by arithmetic. ------- */}
+        {/* 04 — SIX controls on the left, an ESTIMATE plate on the right, and
+            a margin badge. The plate now runs the WHOLE chain and ends on the
+            grand total, so discount and tax had to come with it: a card that
+            prints the final figure while two of its inputs live on a different
+            card is the "hold a number in your head while you scroll" failure.
+            The old card 08 (Discount & tax) is absorbed here.
+
+            Still deliberately NOT merged with the deposits below — the split is
+            by question ("what am I charging?" vs "when do they pay it?"), not
+            by arithmetic. ------------------------------------------- */}
         <Card num="04" title="Markup & margin" id="q-04">
           <MarkupBlock
             materialMarkupPct={draft.materialMarkupPct}
@@ -364,6 +369,17 @@ export function ManualBlueprintContent() {
             onLaborMarkupPct={(n) => patch({ laborMarkupPct: n })}
             onOverheadPct={(n) => patch({ overheadPct: n })}
             onProfitPct={(n) => patch({ profitPct: n })}
+            discountPct={draft.discountPct}
+            // The two dollar-mode fields are OPTIONAL on Draft so the sibling
+            // manual-focus route is untouched by their addition; the defaults
+            // are applied here, at the one boundary that knows about them.
+            discountFlat={draft.discountFlat ?? 0}
+            discountIsPercent={draft.discountIsPercent ?? true}
+            taxPct={draft.taxPct}
+            taxAuto={draft.taxAuto}
+            taxState={draft.taxState}
+            onPatch={patch}
+            onTaxPct={(n) => patch({ taxPct: n, taxAuto: false, taxState: "" })}
             totals={totals}
           />
         </Card>
@@ -411,20 +427,14 @@ export function ManualBlueprintContent() {
           ) : null}
         </Card>
 
-        {/* 07 — the whole money story, in the order the money travels:
-            cost → markups → overhead → profit → subtotal → discount → tax →
-            grand total → schedule. Two blocks, one card, because the coverage
-            meter compares against a total produced three rows above it. ---- */}
+        {/* 08 — WHEN it is paid, and nothing else. The four-row receipt that
+            used to sit above these fields is gone: card 04 now runs the whole
+            chain and ends on the grand total, and printing the same arithmetic
+            again here — a scroll away, with no way to tell which was
+            authoritative — was the one-number-many-places failure at its
+            worst. The schedule divides a figure produced up there; the coverage
+            meter is what says whether the division adds up. ------------ */}
         <Card num="08" title="Payment & deposits" id="q-08">
-          <PricingBlock
-            discountPct={draft.discountPct}
-            taxPct={draft.taxPct}
-            taxAuto={draft.taxAuto}
-            taxState={draft.taxState}
-            onPatch={patch}
-            onTaxPct={(n) => patch({ taxPct: n, taxAuto: false, taxState: "" })}
-            totals={totals}
-          />
           <PaymentBlock
             installments={draft.installments}
             total={totals.total}

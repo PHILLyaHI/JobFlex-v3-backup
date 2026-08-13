@@ -1,73 +1,29 @@
 "use client";
 
-// MANUAL PROPOSAL / BLUEPRINT — card 08, "Payment & deposits".
+// MANUAL PROPOSAL / BLUEPRINT — "Payment & deposits".
 //
-// ── WHY THIS IS ONE CARD AND NOT TWO ─────────────────────────
-// Markup, margin, overhead, profit, discount and tax used to live in card 04
-// and the schedule in card 08. They are now a single card, in the order the
-// money actually travels:
+// ── THE RECEIPT LEFT THIS CARD ───────────────────────────────
+// This card used to open with the whole money chain — subtotal, discount, tax,
+// grand total — printed above the deposit fields. It does not any more. The
+// Markup & margin card now owns every figure between the line items and the
+// amount the client pays, INCLUDING discount and tax, and it ends on the grand
+// total. Printing that same four-row chain again here was the "one number, four
+// places" failure at its worst: the same arithmetic, in two cards, a scroll
+// apart, with no way for a reader to know which one was authoritative.
 //
-//     line-item subtotal → markups → overhead → profit
-//       → pre-tax → discount → taxable → tax → GRAND TOTAL → schedule
+// What is left is the only question this card was ever really asking: the total
+// is $X — WHEN is it paid? The schedule divides a figure produced elsewhere, and
+// the coverage meter reports whether the division adds up.
 //
-// The old split forced the reader to hold a figure from card 04 in their head
-// while looking at card 08's coverage meter, and printed the grand total in
-// both — the "same number in three places" failure. One card owns every figure
-// between the line items and the amount the client pays, so each appears once,
-// in the row where it is produced.
+// ── THE TOTAL IS STILL PRINTED ONCE, AND ONLY ONCE ───────────
+// In the meter's "scheduled $X of $Y" line, which is the one honest reason to
+// repeat it: a coverage reading with a single figure in it means nothing. It
+// stays at value size, never display size, so it cannot compete with the grand
+// total on the card above or with the persistent bar at the foot of the page.
 //
-// ── THE LEDGER IS A RECEIPT, NOT A FORM ──────────────────────
-// It was two half-card form cells inside a full-page-width row, and the report
-// on it measured the discount's own figure sitting ~540px from the field that
-// produces it and ~45px from the tax field it has nothing to do with — twelve
-// times closer to the wrong control, so the amount read as a DIVIDER between
-// two inputs rather than as "discount = nothing". Two fields holding four
-// characters each were stretched across 1350px to achieve that.
-//
-// It is now one ~440px column, hard right, label and value adjacent:
-//
-//     Subtotal                    $11,581.36
-//     + Add discount
-//     Tax  [8.25]% auto             +$955.46
-//     ──────────────────────────────────────
-//     Grand total                 $12,536.82
-//
-// THE SUBTOTAL ROW IS BACK. It was removed in a previous pass on the grounds
-// that it repeated card 04's last row, and that was the wrong trade: the
-// arithmetic here is 11,581.36 → +955.46 → 12,536.82, and with the base
-// missing you can see the tax RATE and the tax RESULT but not what the rate was
-// applied to, which makes the one line a client queries unverifiable. A figure
-// printed twice is a smaller cost than a chain that cannot be checked.
-//
-// THE DISCOUNT COLLAPSES WHEN IT IS ZERO. A row, a control and a sentence spent
-// on a feature the estimate is not using was the bulk of the wasted weight in
-// this card. It expands into a real row on click, and the click moves focus
-// into the field — an affordance that opens a control and leaves the keyboard
-// user on <body> has not opened anything.
-//
-// ── DISCOUNT COMES OFF BEFORE TAX ────────────────────────────
-// Tax is charged on what the client owes, not on a figure nobody pays. The
-// arithmetic is in computeTotals; the ledger prints the order so it is checkable
-// rather than trusted.
-//
-// ── THE TAX SENTENCE MOVED INTO A TOOLTIP ────────────────────
-// "Charged on the total after discount. Estimated from the job address in Texas
-// — editing it stops that." is 111 characters of permanently-visible
-// explanation attached to a field that is correct by default and rarely
-// touched: the largest block of copy in the card, on its least important
-// control. The provenance is now a small `auto` tag beside the rate, the full
-// sentence is its `title` and a screen-reader line, and the sentence only
-// becomes visible copy when someone has actually overridden the rate — which is
-// the one moment "clear it to go back to the address estimate" is the answer to
-// a question the user is having.
-//
-// Status colour appears here on the coverage reading — meter fill, meter note
-// and the new percentage readout, which are one reading in three places — and
-// on the unnamed-line warning, and nowhere else on the page. The `auto` tag is
-// deliberately NOT a status colour: an estimated rate is provenance, not a
-// state.
+// Status colour appears on the coverage reading — meter fill, meter note and the
+// percentage readout, which are one reading in three places — and nowhere else.
 
-import { useEffect, useId, useState } from "react";
 import type { Installment } from "../manual-focus/manual-focus-types";
 import {
   coverState,
@@ -76,168 +32,9 @@ import {
   pct,
   round2,
 } from "../manual-focus/manual-focus-math";
-import { stateDisplayName } from "../manual-focus/manual-focus-data";
 import styles from "./manual-blueprint.module.css";
 import m from "./bp-money.module.css";
 import { Btn, Ic, NumField, cx } from "./bp-ui";
-
-/* ============================================================
-   THE PRICING LEDGER
-   ============================================================ */
-
-/** Money with its operator attached. Zero keeps the house's em dash — a row
- *  contributing nothing should recede, and "−$0.00" is a loud way to say
- *  "nothing happened". */
-function signed(n: number, op: "+" | "−"): string {
-  return n > 0 ? `${op}${money(n)}` : "—";
-}
-
-/**
- * The tax rate's sentence: what the rate is charged ON, then where it came from.
- *
- * Unchanged copy, new home. Base first, always, and in the same words the
- * discount uses — the order of operations is the thing people get wrong, and it
- * is only legible if both state their base in a form you can lay side by side.
- *
- * Provenance second, and deliberately saying what will happen NEXT rather than
- * only what happened: the field silently stops tracking the address once it is
- * typed in, and that is the behaviour people are surprised by, not the estimate.
- */
-function taxNote(taxAuto: boolean, taxState: string): string {
-  const base = "Charged on the total after discount.";
-  if (!taxAuto) {
-    return `${base} Set by hand — clear it to go back to the address estimate.`;
-  }
-  if (!taxState) {
-    return `${base} No rate could be estimated from the job address.`;
-  }
-  return `${base} Estimated from the job address in ${stateDisplayName(taxState)} — editing it stops that.`;
-}
-
-export function PricingBlock({
-  discountPct,
-  taxPct,
-  taxAuto,
-  taxState,
-  onPatch,
-  onTaxPct,
-  totals,
-}: {
-  discountPct: number;
-  taxPct: number;
-  taxAuto: boolean;
-  taxState: string;
-  onPatch: (patch: { discountPct?: number }) => void;
-  onTaxPct: (n: number) => void;
-  totals: {
-    baseTotal: number;
-    materialsMarkup: number;
-    laborMarkup: number;
-    subtotalCosts: number;
-    overheadAmount: number;
-    profitAmount: number;
-    preTax: number;
-    discountAmount: number;
-    taxable: number;
-    tax: number;
-    total: number;
-    margin: number;
-  };
-}) {
-  const discountId = useId();
-  const taxId = useId();
-
-  // A discount that is already set is never collapsed — the affordance is for
-  // the empty case, and hiding a live figure behind a "+ Add" would be a lie.
-  const [opened, setOpened] = useState(false);
-  const showDiscount = opened || discountPct > 0;
-
-  // Opening the row moves focus into it. `getElementById` rather than a ref
-  // because NumField takes an `id` and not a ref, and the id is a useId — safe
-  // to look up directly, and never a selector, so its colons do not matter.
-  useEffect(() => {
-    if (!opened) return;
-    document.getElementById(discountId)?.focus();
-  }, [opened, discountId]);
-
-  const note = taxNote(taxAuto, taxState);
-
-  return (
-    <div className={m.receipt}>
-      {/* SUBTOTAL — the base the two rates below are applied to. Without it the
-          tax amount is a figure you can read but not check. */}
-      <div className={m.row}>
-        <span className={m.rowLabel}>Subtotal</span>
-        <span className={m.rowAmt}>{money(totals.preTax)}</span>
-      </div>
-
-      {showDiscount ? (
-        <div className={m.row}>
-          <label className={m.rowLabel} htmlFor={discountId}>
-            Discount
-          </label>
-          <span className={m.rowCtl}>
-            <span className={m.pctField}>
-              <NumField
-                id={discountId}
-                value={discountPct}
-                suffix="%"
-                max={100}
-                onChange={(n) => onPatch({ discountPct: n })}
-              />
-            </span>
-          </span>
-          <span className={cx(m.rowAmt, totals.discountAmount <= 0 && m.rowAmtZero)}>
-            {signed(totals.discountAmount, "−")}
-          </span>
-        </div>
-      ) : (
-        <div className={m.addRow}>
-          <button type="button" className={m.addLink} onClick={() => setOpened(true)}>
-            <Ic name="plus" />
-            Add discount
-          </button>
-        </div>
-      )}
-
-      <div className={m.row}>
-        <label className={m.rowLabel} htmlFor={taxId}>
-          Tax
-        </label>
-        <span className={m.rowCtl}>
-          <span className={m.pctField}>
-            <NumField id={taxId} value={taxPct} suffix="%" max={100} onChange={onTaxPct} />
-          </span>
-          {taxAuto ? (
-            <>
-              <span className={m.autoTag} title={note}>
-                auto
-              </span>
-              {/* `title` is a mouse affordance. The same words, in the tree, for
-                  everyone else. */}
-              <span className={m.sr}>{note}</span>
-            </>
-          ) : null}
-        </span>
-        <span className={cx(m.rowAmt, totals.tax <= 0 && m.rowAmtZero)}>
-          {signed(totals.tax, "+")}
-        </span>
-        {/* Only once the rate has been overridden. Until then this sentence is
-            an explanation nobody asked for, attached to a correct default. */}
-        {!taxAuto ? <p className={m.rowNote}>{note}</p> : null}
-      </div>
-
-      {/* Margin is NOT printed here. It is the badge on the Markup & margin
-          card, which is where the levers that move it live. Two printings would
-          drift the moment a discount is applied, because the two cards measure
-          it against different revenue. */}
-      <div className={cx(m.row, m.rowTotal)}>
-        <span className={m.rowLabel}>Grand total</span>
-        <span className={m.rowAmt}>{money(totals.total)}</span>
-      </div>
-    </div>
-  );
-}
 
 /* ============================================================
    THE SCHEDULE
@@ -357,7 +154,7 @@ export function PaymentBlock({
             onChange={(e) => onPatch(inst.id, { label: e.target.value })}
           />
           {/* ONE CONTROL, TWO UNITS, and the unit now lives INSIDE the field as
-              an affix — the treatment the discount and tax rows already use.
+              an affix — the treatment the discount and tax fields already use.
               It was a ~100px bordered box holding a single static character,
               which reads as a field somebody forgot to fill in. */}
           <span className={m.amtField}>
@@ -403,14 +200,18 @@ export function PaymentBlock({
       </div>
 
       <div className={m.meter}>
-        {/* The one honest reason to print the grand total twice inside this
-            card: "scheduled $X of $Y" is meaningless with a single figure. It
-            stays at value size, never display size, so it cannot compete with
-            the ledger's total above it. */}
+        {/* "scheduled $X of $Y" — the one place this card repeats the grand
+            total, because a coverage reading with one figure in it says
+            nothing. The joining word is a real gap, not a space: two tabular
+            money figures butted against a two-letter word read as one long
+            string of digits, and the eye needs the seam to find the second
+            figure. */}
         <div className={m.meterTop}>
           <span className={m.meterLabel}>Scheduled</span>
           <span className={m.meterFig}>
-            {money(covered)} of {money(total)}
+            {money(covered)}
+            <span className={m.meterOf}>of</span>
+            {money(total)}
           </span>
         </div>
         <div

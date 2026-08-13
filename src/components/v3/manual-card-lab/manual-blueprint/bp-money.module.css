@@ -128,10 +128,26 @@
    device and there are no headings inside a receipt. */
 :global(.jf-blueprint) .rowLabel {
   grid-column: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.3;
   color: var(--ink-soft);
+}
+
+/* The rate, printed beside the word rather than in the control
+   column — because there is no control column here any more. The
+   fields moved to the "Discount & tax" card, so "8.25%" is now a
+   FACT about the row rather than a thing you can reach for, and it
+   is set at the weight of a fact: --muted, tabular, one step down
+   from the label it qualifies. */
+:global(.jf-blueprint) .rowRate {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 :global(.jf-blueprint) .rowCtl {
@@ -617,6 +633,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The seam in "$12,796.62 of $12,796.62". A plain space between
+   two tabular figures and a two-letter word runs the three
+   together into one string of digits, and when the two figures are
+   IDENTICAL — which is the state this meter is trying to report —
+   there is nothing at all to tell the eye where the first ends.
+   0.62em either side is roughly a word space and a half.
+
+   The word also drops to the label's weight and colour: it is a
+   conjunction, not a figure, and it was previously carrying the
+   same 700 ink as the money on both sides of it. */
+:global(.jf-blueprint) .meterOf {
+  display: inline-block;
+  padding: 0 0.62em;
+  font-weight: 500;
+  color: var(--muted);
+}
+
 :global(.jf-blueprint) .meterNote {
   margin-top: 8px;
   font-size: 12px;
@@ -667,6 +700,99 @@
 }
 
 /* ============================================================
+   DISCOUNT & TAX — the card the two controls moved into
+
+   Two blocks side by side. They are drawn as PLATES inside the
+   card rather than as bare stacked fields, because the reference
+   the owner supplied reads as two objects and because it is true:
+   these are two independent adjustments, not two rows of one form.
+
+   The plates are the house's card treatment one step quieter — a
+   1.5px ink edge and NO offset shadow. A hard shadow inside a card
+   that already casts one reads as a second elevation level the
+   page does not have; the border alone is enough to say "object"
+   when the thing it sits on is white.
+   ============================================================ */
+
+:global(.jf-blueprint) .dtPair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+:global(.jf-blueprint) .dtCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--mb-well, #f7f5f1);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+}
+
+/* Sentence case, not the caps-mono annotation register. These are
+   headings OF a control, and the card title above them already
+   carries the page's caps voice — a second caps line 16px under it
+   makes the two compete. */
+:global(.jf-blueprint) .dtHead {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+/* The field row. `position: relative` and the gap exist for the
+   `auto` tag, which sits beside the tax input rather than under it
+   — provenance belongs to the rate, and a line of its own would
+   make it look like a second value. */
+:global(.jf-blueprint) .dtField {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+:global(.jf-blueprint) .dtField > *:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* What the rate comes to. --muted at 11.5px: it is a readout of a
+   control one line above it, so it must not read as a second
+   figure competing with the receipt's column one card down. */
+:global(.jf-blueprint) .dtNote {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one status reading in this card, and a real one: the figure
+   the user typed is NOT the figure being applied. */
+:global(.jf-blueprint) .dtNoteCap {
+  font-weight: 600;
+  color: var(--warning-dark, #8a650a);
+}
+
+/* The tax provenance sentence. It lives here — the card where the
+   rate is actually set — rather than in the receipt, where it was
+   111 characters of explanation attached to a figure nobody was
+   about to change. */
+:global(.jf-blueprint) .dtProv {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ============================================================
    NARROW
    Matches the card module's own 1180px step. Only the schedule's
    fixed clusters need help; the receipt is already capped and its
@@ -682,6 +808,15 @@
 
   :global(.jf-blueprint) .row {
     grid-template-columns: minmax(0, 1fr) 112px 140px;
+  }
+}
+
+/* Two plates side by side stop being two objects and start being
+   two cramped columns somewhere under 720px of card. They stack
+   before that happens. */
+@media (max-width: 860px) {
+  :global(.jf-blueprint) .dtPair {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

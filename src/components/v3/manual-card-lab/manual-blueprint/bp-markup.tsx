@@ -55,9 +55,10 @@
 // module for the same reason.
 
 import { useId, useRef, useState } from "react";
-import { money, pct1 } from "../manual-focus/manual-focus-math";
+import { money, pct, pct1, round2 } from "../manual-focus/manual-focus-math";
+import { stateDisplayName } from "../manual-focus/manual-focus-data";
 import type { Totals } from "../manual-focus/manual-focus-types";
-import { Ic, cx } from "./bp-ui";
+import { NumField, Segmented, cx } from "./bp-ui";
 import s from "./bp-markup.module.css";
 
 /* ============================================================
@@ -88,6 +89,9 @@ export type MarkupFigures = Pick<
   | "overheadAmount"
   | "profitAmount"
   | "preTax"
+  | "discountAmount"
+  | "tax"
+  | "total"
   | "margin"
 >;
 
@@ -104,6 +108,23 @@ export type MarkupBlockProps = {
   onLaborMarkupPct: (next: number) => void;
   onOverheadPct: (next: number) => void;
   onProfitPct: (next: number) => void;
+
+  /** The two ADJUSTMENTS, which used to be a card of their own. See the note on
+   *  `Adjustments` below for why they now sit under the four rates. Each mode of
+   *  the discount keeps its own stored figure, so flipping $ / % never
+   *  reinterprets a number already typed. */
+  discountPct: number;
+  discountFlat: number;
+  discountIsPercent: boolean;
+  taxPct: number;
+  taxAuto: boolean;
+  taxState: string;
+  onPatch: (patch: {
+    discountPct?: number;
+    discountFlat?: number;
+    discountIsPercent?: boolean;
+  }) => void;
+  onTaxPct: (next: number) => void;
 
   totals: MarkupFigures;
 };
@@ -266,6 +287,162 @@ function Rate({
 }
 
 /* ============================================================
+   THE TWO ADJUSTMENTS
+   Discount and tax were card 08 of their own. They are here now
+   because the ESTIMATE plate beside them prints the grand total,
+   and a total that includes two figures set on a different card is
+   the "hold a number in your head while you scroll" failure this
+   column was reorganised to remove. Every lever that moves the
+   plate is now within one eye-travel of it.
+
+   They are the FIFTH and SIXTH controls in the left rail, under a
+   ruled break — not two more sliders. A slider is right for a rate
+   you sweep to feel the effect; a discount and a tax rate are typed
+   exact figures (8.25%, $500 off), and a 0.5%-stepped track cannot
+   even express the first one.
+   ============================================================ */
+
+/**
+ * The tax rate's sentence: what the rate is charged ON, then where it came from.
+ *
+ * Base first, always, and in the same words the discount uses — the order of
+ * operations is the thing people get wrong, and it is only legible if both state
+ * their base in a form you can lay side by side.
+ *
+ * Provenance second, and deliberately saying what will happen NEXT rather than
+ * only what happened: the field silently stops tracking the address once it is
+ * typed in, and that is the behaviour people are surprised by, not the estimate.
+ */
+function taxNote(taxAuto: boolean, taxState: string): string {
+  const base = "Charged on the total after discount.";
+  if (!taxAuto) {
+    return `${base} Set by hand — clear it to go back to the address estimate.`;
+  }
+  if (!taxState) {
+    return `${base} No rate could be estimated from the job address.`;
+  }
+  return `${base} Estimated from the job address in ${stateDisplayName(taxState)} — editing it stops that.`;
+}
+
+function Adjustments({
+  discountPct,
+  discountFlat,
+  discountIsPercent,
+  taxPct,
+  taxAuto,
+  taxState,
+  onPatch,
+  onTaxPct,
+  totals,
+}: Pick<
+  MarkupBlockProps,
+  | "discountPct"
+  | "discountFlat"
+  | "discountIsPercent"
+  | "taxPct"
+  | "taxAuto"
+  | "taxState"
+  | "onPatch"
+  | "onTaxPct"
+> & { totals: Pick<MarkupFigures, "preTax" | "discountAmount" | "tax"> }) {
+  const discountId = useId();
+  const taxId = useId();
+  const note = taxNote(taxAuto, taxState);
+
+  // A flat discount larger than the job is capped by computeTotals rather than
+  // producing a negative taxable base. Saying so is the difference between a
+  // control that looks broken and one that has a rule.
+  const capped =
+    !discountIsPercent && discountFlat > 0 && round2(discountFlat) > totals.preTax;
+
+  return (
+    <div className={s.adjust}>
+      <div className={s.adj}>
+        <div className={s.adjTop}>
+          <label className={s.adjName} htmlFor={discountId}>
+            Discount
+          </label>
+          <Segmented<"amount" | "percent">
+            label="Discount mode"
+            hideLabel
+            value={discountIsPercent ? "percent" : "amount"}
+            options={[
+              { value: "amount", label: "$" },
+              { value: "percent", label: "%" },
+            ]}
+            onChange={(v) => onPatch({ discountIsPercent: v === "percent" })}
+          />
+        </div>
+        <div className={s.adjBody}>
+          <span className={s.adjField}>
+            {discountIsPercent ? (
+              <NumField
+                id={discountId}
+                value={discountPct}
+                suffix="%"
+                max={100}
+                onChange={(n) => onPatch({ discountPct: n })}
+                ariaLabel="Discount, percent"
+              />
+            ) : (
+              <NumField
+                id={discountId}
+                value={discountFlat}
+                prefix="$"
+                onChange={(n) => onPatch({ discountFlat: n })}
+                ariaLabel="Discount, dollars"
+              />
+            )}
+          </span>
+          {/* Same register as `.rateAmt` under a slider: an annotation of the
+              control, so the em dash stands in for zero here too. */}
+          <span className={cx(s.adjAmt, capped && s.adjAmtCap)}>
+            {capped
+              ? `Capped at ${money(totals.preTax)}`
+              : totals.discountAmount > 0
+                ? `−${money(totals.discountAmount)}`
+                : "—"}
+          </span>
+        </div>
+      </div>
+
+      <div className={s.adj}>
+        <div className={s.adjTop}>
+          <label className={s.adjName} htmlFor={taxId}>
+            Tax
+          </label>
+          {taxAuto ? (
+            <>
+              <span className={s.autoTag} title={note}>
+                auto
+              </span>
+              {/* `title` is a mouse affordance. The same words, in the tree,
+                  for everyone else. */}
+              <span className={s.sr}>{note}</span>
+            </>
+          ) : null}
+        </div>
+        <div className={s.adjBody}>
+          <span className={s.adjField}>
+            <NumField
+              id={taxId}
+              value={taxPct}
+              suffix="%"
+              max={100}
+              onChange={onTaxPct}
+              ariaLabel="Tax rate, percent"
+            />
+          </span>
+          <span className={s.adjAmt}>
+            {totals.tax > 0 ? `+${money(totals.tax)}` : "—"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    MARGIN BADGE
    The one legitimate STATUS reading on the card: a margin is good,
    thin or dangerous in a way a markup percentage never is.
@@ -309,10 +486,17 @@ export function MarkupBlock({
   onLaborMarkupPct,
   onOverheadPct,
   onProfitPct,
+  discountPct,
+  discountFlat,
+  discountIsPercent,
+  taxPct,
+  taxAuto,
+  taxState,
+  onPatch,
+  onTaxPct,
   totals,
 }: MarkupBlockProps) {
   const headId = useId();
-  const [saveNote, setSaveNote] = useState(false);
 
   const tone = marginTone(totals.margin, totals.preTax > 0);
 
@@ -356,6 +540,18 @@ export function MarkupBlock({
             amount={totals.profitAmount}
             onChange={onProfitPct}
           />
+
+          <Adjustments
+            discountPct={discountPct}
+            discountFlat={discountFlat}
+            discountIsPercent={discountIsPercent}
+            taxPct={taxPct}
+            taxAuto={taxAuto}
+            taxState={taxState}
+            onPatch={onPatch}
+            onTaxPct={onTaxPct}
+            totals={totals}
+          />
         </div>
 
         <section className={s.panel} aria-labelledby={headId}>
@@ -363,26 +559,37 @@ export function MarkupBlock({
             Estimate
           </h3>
 
+          {/* THE OPERATORS ARE GONE FROM THE LABELS. Every row but the two
+              bases and the three totals was prefixed "+", which is the one
+              thing a ledger column does not need told: a figure in an
+              accumulating column is added unless it says otherwise, and the two
+              rows that DON'T add (discount, and the total) are the two that
+              carry a sign. Six "+" characters spent saying "normal" left the
+              one "−" that matters with no contrast to land against.
+
+              "Base ·" went for the same reason — the first two rows of an
+              estimate are the base by position, and the qualifier was doing
+              nothing that the row order was not already doing. */}
           <div className={s.ledger}>
             <div className={s.lRow}>
-              <span className={s.lLabel}>Base · materials</span>
+              <span className={s.lLabel}>Materials</span>
               <span className={s.lValue}>{money(totals.baseMaterials)}</span>
             </div>
             <div className={s.lRow}>
-              <span className={s.lLabel}>Base · labor</span>
+              <span className={s.lLabel}>Labor</span>
               <span className={s.lValue}>{money(totals.baseLabor)}</span>
             </div>
             <div className={s.lRow}>
               <span className={s.lLabel}>
-                <span className={cx(s.markSm, s.markCost)} aria-hidden="true" />+ Materials markup (
-                {pct1(materialMarkupPct)})
+                <span className={cx(s.markSm, s.markCost)} aria-hidden="true" />
+                Materials markup ({pct1(materialMarkupPct)})
               </span>
               <span className={s.lValue}>{money(totals.materialsMarkup)}</span>
             </div>
             <div className={s.lRow}>
               <span className={s.lLabel}>
-                <span className={cx(s.markSm, s.markCost)} aria-hidden="true" />+ Labor markup (
-                {pct1(laborMarkupPct)})
+                <span className={cx(s.markSm, s.markCost)} aria-hidden="true" />
+                Labor markup ({pct1(laborMarkupPct)})
               </span>
               <span className={s.lValue}>{money(totals.laborMarkup)}</span>
             </div>
@@ -394,47 +601,66 @@ export function MarkupBlock({
 
             <div className={s.lRow}>
               <span className={s.lLabel}>
-                <span className={cx(s.markSm, s.markSheet)} aria-hidden="true" />+ Overhead (
-                {pct1(overheadPct)})
+                <span className={cx(s.markSm, s.markSheet)} aria-hidden="true" />
+                Overhead ({pct1(overheadPct)})
               </span>
               <span className={s.lValue}>{money(totals.overheadAmount)}</span>
             </div>
             <div className={s.lRow}>
               <span className={s.lLabel}>
-                <span className={cx(s.markSm, s.markSheet)} aria-hidden="true" />+ Profit (
-                {pct1(profitPct)})
+                <span className={cx(s.markSm, s.markSheet)} aria-hidden="true" />
+                Profit ({pct1(profitPct)})
               </span>
               <span className={s.lValue}>{money(totals.profitAmount)}</span>
             </div>
 
-            {/* The terminal beat: a 2px ink rule against the subtotal's hairline,
-                and the only Inter 900 figure on the card. Mono is banned on
-                large amounts. */}
-            <div className={cx(s.lRow, s.rowTotal)}>
-              {/* "Pre-tax total", not "Grand total". The reference image had
-                  no tax in it, so its last row could be the final answer. Here
-                  discount and tax are applied in the NEXT card, which prints
-                  the real grand total — two rows both called "grand total"
-                  showing two different figures is the worst version of the
-                  one-number-one-home rule being broken. */}
-              <span className={s.labelTotal}>Pre-tax total</span>
-              <span className={s.valueTotal}>{money(totals.preTax)}</span>
+            {/* THE PRE-TAX LINE STAYS, as a subtotal rather than as the answer.
+                The chain below it is preTax → −discount → +tax → total, and with
+                the base missing you can see the tax RATE and the tax RESULT but
+                not what the rate was applied to — which makes the one line a
+                client actually queries unverifiable. */}
+            <div className={cx(s.lRow, s.rowSub)}>
+              <span className={cx(s.lLabel, s.labelSub)}>Pre-tax</span>
+              <span className={cx(s.lValue, s.valueSub)}>{money(totals.preTax)}</span>
             </div>
-          </div>
 
-          {/* UI-ONLY, and it says so. There is no server behind this lab route,
-              so the honest response to the click is the sentence below — never a
-              success state for a write that did not happen. */}
-          <div className={s.saveWrap}>
-            <button type="button" className={s.saveBtn} onClick={() => setSaveNote(true)}>
-              <Ic name="pin" />
-              Save these as company defaults
-            </button>
-            <p className={s.saveNote} role="status">
-              {saveNote
-                ? "Nothing was saved. This card lab has no server — the four rates live on this page only."
-                : ""}
-            </p>
+            {/* Both adjustments print every time, unlike the client's copy,
+                which hides a zero discount. This is the CONTRACTOR's plate: a
+                row that reads "—" tells them the lever exists and is currently
+                doing nothing, which is exactly the question the card answers. */}
+            <div className={s.lRow}>
+              <span className={s.lLabel}>
+                Discount
+                {discountIsPercent && discountPct > 0 ? (
+                  <span className={s.lRate}>{pct(discountPct)}</span>
+                ) : null}
+              </span>
+              <span className={cx(s.lValue, totals.discountAmount <= 0 && s.lValueZero)}>
+                {totals.discountAmount > 0 ? `−${money(totals.discountAmount)}` : "—"}
+              </span>
+            </div>
+            <div className={s.lRow}>
+              <span className={s.lLabel}>
+                Tax
+                <span className={s.lRate}>{pct(taxPct)}</span>
+              </span>
+              <span className={cx(s.lValue, totals.tax <= 0 && s.lValueZero)}>
+                {totals.tax > 0 ? `+${money(totals.tax)}` : "—"}
+              </span>
+            </div>
+
+            {/* The terminal beat: a 2px ink rule against the subtotals'
+                hairlines, and the only Inter 900 figure on the card. Mono is
+                banned on large amounts.
+
+                This is now the REAL grand total — the figure the client is
+                asked to sign — because every lever that produces it is on this
+                card. It agrees with the persistent bar at the foot of the page
+                by construction: both print `totals.total`. */}
+            <div className={cx(s.lRow, s.rowTotal)}>
+              <span className={s.labelTotal}>Grand total</span>
+              <span className={s.valueTotal}>{money(totals.total)}</span>
+            </div>
           </div>
         </section>
       </div>

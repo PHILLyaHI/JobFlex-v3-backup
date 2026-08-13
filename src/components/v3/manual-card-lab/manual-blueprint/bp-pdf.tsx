@@ -153,6 +153,13 @@ type DocProps = {
    to answer "what am I about to send?" without opening anything.
    ============================================================ */
 
+/** The zoom ladder, in the order the buttons step through it. Ratios rather
+ *  than a linear range: 0.6 → 0.8 → 1 → 1.25… is how every document viewer
+ *  steps, because each press should be a visible change at any starting point,
+ *  and a fixed +0.1 is a big jump at 0.5 and an invisible one at 2. */
+const ZOOM_STOPS = [0.5, 0.65, 0.8, 1, 1.25, 1.5, 2, 3] as const;
+const ZOOM_FIT = 3; // index of 1 — "actual size"
+
 export function PdfBlock({
   setup,
   onPatch,
@@ -163,8 +170,10 @@ export function PdfBlock({
   doc: Omit<DocProps, "setup">;
 }) {
   const [open, setOpen] = useState(false);
+  const [zoomAt, setZoomAt] = useState(ZOOM_FIT);
   const [flowH, setFlowH] = useState(0);
   const flowRef = useRef<HTMLDivElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
 
   // The page estimate measures the REAL flow, at real paper width, whether or
   // not the preview is open — the vault clips the sheet but does not stop it
@@ -173,16 +182,42 @@ export function PdfBlock({
     const el = flowRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
-      // Rounded before it reaches state, and read OUTSIDE the updater: a
-      // sub-pixel height change on every keystroke would otherwise re-render
-      // the document that is being measured, and a DOM read inside a state
-      // updater runs twice under StrictMode.
-      const next = Math.round(el.getBoundingClientRect().height);
+      // `offsetHeight`, NOT getBoundingClientRect: the overlay scales the sheet
+      // with a CSS transform, and a bounding rect is the VISUAL box — at 200%
+      // zoom it would report twice the height and the card would claim the
+      // proposal had doubled in length. offsetHeight is the layout box, which
+      // is what a page count is a function of. It is already an integer, so the
+      // rounding this used to do is gone with it.
+      //
+      // Read OUTSIDE the updater: a DOM read inside one runs twice under
+      // StrictMode.
+      const next = el.offsetHeight;
       setFlowH((prev) => (prev === next ? prev : next));
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // ESCAPE, and the scroll lock. Both belong to the overlay being open and both
+  // have to be undone by the same effect that set them — a preview that leaves
+  // `overflow: hidden` on the body after it closes has broken the whole page.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    // The close button is the one control that is always present, so it is
+    // where focus goes — landing on <body> inside an open dialog is the same
+    // bug the client picker fixed on card 01.
+    closeRef.current?.focus();
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   const paper = PAPER[setup.paper];
   const usable =
@@ -194,20 +229,9 @@ export function PdfBlock({
   const pages = bodyPages > 0 ? bodyPages + (setup.cover ? 1 : 0) : 0;
   const count = sectionCount(doc);
 
-  const included = [
-    setup.cover ? "cover page" : "no cover",
-    doc.options.laborOnly
-      ? "summary pricing"
-      : doc.options.hideBreakdown
-        ? "priced lines, no per-line breakdown"
-        : "priced lines with breakdown",
-    doc.options.showScope ? "scope printed" : "scope withheld",
-    doc.installments.length > 0 ? "payment schedule" : "no schedule",
-    doc.options.showSignature ? "acceptance block" : "no acceptance block",
-    doc.files.length > 0
-      ? `${doc.files.length} attachment${doc.files.length === 1 ? "" : "s"} listed`
-      : "no attachments",
-  ].join(" · ");
+  const zoom = ZOOM_STOPS[zoomAt] ?? 1;
+  const stepZoom = (dir: 1 | -1) =>
+    setZoomAt((at) => Math.min(ZOOM_STOPS.length - 1, Math.max(0, at + dir)));
 
   /** Chrome names the saved file from `document.title`. Setting it for the
    *  duration of the print is the difference between the client receiving
@@ -269,29 +293,94 @@ export function PdfBlock({
         </div>
       </div>
 
-      <div className={styles.printCaption}>{included}</div>
-
       <div className={styles.pdfActions}>
-        <Btn icon="file" onClick={() => setOpen((v) => !v)}>
-          {open ? "Hide the sheet" : "Preview the sheet"}
+        <Btn icon="file" onClick={() => setOpen(true)}>
+          Preview the sheet
         </Btn>
         <Btn tone="primary" icon="download" onClick={download}>
           Download PDF
         </Btn>
       </div>
 
-      <p className={styles.pdfNote}>
-        Saved through the browser&rsquo;s print dialog — choose &ldquo;Save as PDF&rdquo;. Page
-        numbers come from that dialog&rsquo;s own headers &amp; footers option; the strip at the
-        foot of each page carries the reference, the client and the expiry so a separated
-        page is still identifiable. Everything on card 06 decides what this file contains.
-      </p>
+      {/* THE VAULT, WHICH IS ALSO THE VIEWER.
+          Closed, it is clipped — not unmounted and not `display: none`, because
+          the page estimate needs a laid-out document and the print layer needs
+          one that is still in the DOM when the preview is shut.
 
-      {/* THE VAULT. Clipped, not unmounted, and not `display: none` — the page
-          estimate needs a laid-out document, and the print layer needs one that
-          is still in the DOM when the preview is shut. Print re-opens it. */}
-      <div className={cx(styles.pdfVault, open && styles.pdfVaultOpen)} aria-hidden={!open}>
-        <div className={styles.pdfStage}>
+          Open, the SAME element becomes a full-screen overlay. One instance of
+          the document, in both states: a second copy rendered only for the
+          modal would be a second thing to keep in agreement with the paper, and
+          the measured flow would be whichever of the two happened to hold the
+          ref. */}
+      <div
+        className={cx(styles.pdfVault, open && styles.pdfVaultOpen)}
+        aria-hidden={!open}
+        role={open ? "dialog" : undefined}
+        aria-modal={open ? true : undefined}
+        aria-label={open ? "Proposal PDF preview" : undefined}
+      >
+        {open ? (
+          <div className={styles.pdfBar}>
+            <span className={styles.pdfBarTitle}>
+              {PROPOSAL_NO}
+              <span className={styles.pdfBarSep}>·</span>
+              {paper.label}
+              <span className={styles.pdfBarSep}>·</span>
+              {pages > 0 ? `≈ ${pages} ${pages === 1 ? "page" : "pages"}` : "—"}
+            </span>
+
+            <div className={styles.pdfZoom}>
+              <button
+                type="button"
+                className={styles.pdfZoomBtn}
+                aria-label="Zoom out"
+                disabled={zoomAt === 0}
+                onClick={() => stepZoom(-1)}
+              >
+                −
+              </button>
+              {/* The readout is a BUTTON: the percentage is also the way back to
+                  100%, which is the one zoom level anybody ever wants to return
+                  to, and a viewer that can only step there is a viewer you have
+                  to click four times. */}
+              <button
+                type="button"
+                className={styles.pdfZoomNow}
+                aria-label={`Zoom, ${Math.round(zoom * 100)} percent. Reset to actual size`}
+                onClick={() => setZoomAt(ZOOM_FIT)}
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                className={styles.pdfZoomBtn}
+                aria-label="Zoom in"
+                disabled={zoomAt === ZOOM_STOPS.length - 1}
+                onClick={() => stepZoom(1)}
+              >
+                +
+              </button>
+            </div>
+
+            <button
+              ref={closeRef}
+              type="button"
+              className={styles.pdfClose}
+              onClick={() => setOpen(false)}
+            >
+              Close
+            </button>
+          </div>
+        ) : null}
+
+        {/* `--pdf-zoom` scales the sheet at the STAGE, not on the sheet itself:
+            a transform creates a containing block, and scaling the article
+            would take the print layer's `position: fixed` page furniture with
+            it. The stage is screen-only scenery, so it is safe to transform. */}
+        <div
+          className={styles.pdfStage}
+          style={{ "--pdf-zoom": open ? zoom : 1 } as React.CSSProperties}
+        >
           <PdfDocument {...doc} setup={setup} flowRef={flowRef} />
         </div>
       </div>
