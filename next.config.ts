@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -48,7 +49,14 @@ const nextConfig: NextConfig = {
     // workerThreads runs the same worker on worker_threads instead of a forked
     // process: one heap, no stdio pipes (so no `write EPIPE`), and no child to
     // die in the first place.
-    workerThreads: true,
+    //
+    // DEV ONLY — see the phase switch at the bottom of this file. `next build`
+    // hands its page-generation workers values a structured clone cannot carry
+    // (`Error [DataCloneError]: ()=>null could not be cloned`), which fails the
+    // build outright; a forked child gets those values over its own channel and
+    // is fine. The flag is set per phase rather than deleted because the dev
+    // crash it fixes is real.
+    workerThreads: false,
     serverActions: {
       bodySizeLimit: "8mb",
     },
@@ -78,4 +86,14 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Phase switch. The only per-phase value is experimental.workerThreads: on for
+// the dev server, where it stops the static-paths worker from dying and taking
+// every dynamic route down with it, and off everywhere else, where it breaks
+// `next build`. Everything above is shared.
+export default function config(phase: string): NextConfig {
+  const dev = phase === PHASE_DEVELOPMENT_SERVER;
+  return {
+    ...nextConfig,
+    experimental: { ...nextConfig.experimental, workerThreads: dev },
+  };
+}
