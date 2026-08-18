@@ -16,11 +16,16 @@
 // arrangement as its two siblings. There is one implementation with two entry
 // points, so nothing has to be kept in sync.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is REAL. The book is read from the database by ./client-book.ts —
+// the desktop page's query, org-scoped through requireOrg — and asked for by
+// the component on mount rather than passed down, because the same component
+// is mounted props-less by responsive-dashboard-shell on the live URL.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
-// its own redirect-to-login like the other design routes.
+// its own redirect-to-login like the other design routes. The book read runs
+// its own requireOrg on top of that: the session check here decides whether
+// the page renders, and the guard in the action decides whose records it may
+// return — a page-level check can never be the thing that scopes a query.
 
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";

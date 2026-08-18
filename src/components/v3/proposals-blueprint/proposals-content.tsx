@@ -72,7 +72,13 @@ export function ProposalsContent({ rows }: { rows: ProposalRow[] }) {
             </svg>
             Smart Proposal
           </Link>
-          <Link className="btn btn-ghost" href="/dashboard/proposals/new">
+          {/* The manual builder is the blueprint one now (2026-08-15): it
+              reads real clients, writes through saveProposal / sendProposal and
+              is the destination the estimator picker's "Manual" card already
+              points at, so the two entry points land in the same place. The old
+              /dashboard/proposals/new editor is untouched and still reachable
+              directly. */}
+          <Link className="btn btn-ghost" href="/dashboard/manual-blueprint">
             <svg className="ic">
               <use href="#i-file" />
             </svg>

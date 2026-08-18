@@ -58,7 +58,7 @@ import { useId, useRef, useState } from "react";
 import { money, pct, pct1, round2 } from "../manual-focus/manual-focus-math";
 import { stateDisplayName } from "../manual-focus/manual-focus-data";
 import type { Totals } from "../manual-focus/manual-focus-types";
-import { NumField, Segmented, cx } from "./bp-ui";
+import { NumField, cx } from "./bp-ui";
 import s from "./bp-markup.module.css";
 
 /* ============================================================
@@ -356,30 +356,29 @@ function Adjustments({
     !discountIsPercent && discountFlat > 0 && round2(discountFlat) > totals.preTax;
 
   return (
+    // TWO PEERS, TWO COLUMNS. Discount and tax are the same KIND of thing —
+    // a typed figure that moves the plate beside them — and stacking them made
+    // the rail read as six sequential steps when it is four rates and two
+    // adjustments. Side by side they are one row of two, which is what they are.
     <div className={s.adjust}>
       <div className={s.adj}>
         <div className={s.adjTop}>
           <label className={s.adjName} htmlFor={discountId}>
             Discount
           </label>
-          <Segmented<"amount" | "percent">
-            label="Discount mode"
-            hideLabel
-            value={discountIsPercent ? "percent" : "amount"}
-            options={[
-              { value: "amount", label: "$" },
-              { value: "percent", label: "%" },
-            ]}
-            onChange={(v) => onPatch({ discountIsPercent: v === "percent" })}
-          />
         </div>
+        {/* label · amount · unit. The $ / % switch used to be an 88px
+            segmented control parked up on the label line, a whole row away
+            from the digits it reinterprets. It is now a single character
+            INSIDE the field's right edge — the same interactive affix the
+            payment schedule uses (see `.unitBtn` in bp-money.module.css) — so
+            the unit sits where a unit belongs: against the number. */}
         <div className={s.adjBody}>
           <span className={s.adjField}>
             {discountIsPercent ? (
               <NumField
                 id={discountId}
                 value={discountPct}
-                suffix="%"
                 max={100}
                 onChange={(n) => onPatch({ discountPct: n })}
                 ariaLabel="Discount, percent"
@@ -388,11 +387,18 @@ function Adjustments({
               <NumField
                 id={discountId}
                 value={discountFlat}
-                prefix="$"
                 onChange={(n) => onPatch({ discountFlat: n })}
                 ariaLabel="Discount, dollars"
               />
             )}
+            <button
+              type="button"
+              className={s.unitBtn}
+              aria-label={discountIsPercent ? "Switch to dollars" : "Switch to percent"}
+              onClick={() => onPatch({ discountIsPercent: !discountIsPercent })}
+            >
+              {discountIsPercent ? "%" : "$"}
+            </button>
           </span>
           {/* Same register as `.rateAmt` under a slider: an annotation of the
               control, so the em dash stands in for zero here too. */}
@@ -427,11 +433,17 @@ function Adjustments({
             <NumField
               id={taxId}
               value={taxPct}
-              suffix="%"
               max={100}
               onChange={onTaxPct}
               ariaLabel="Tax rate, percent"
             />
+            {/* A tax rate has exactly one unit, so this slot holds a GLYPH
+                rather than a switch — same position, same metrics, no false
+                affordance. Dropping it instead would leave the two columns
+                mismatched by 26px on the one axis they are compared across. */}
+            <span className={s.unitStatic} aria-hidden="true">
+              %
+            </span>
           </span>
           <span className={s.adjAmt}>
             {totals.tax > 0 ? `+${money(totals.tax)}` : "—"}

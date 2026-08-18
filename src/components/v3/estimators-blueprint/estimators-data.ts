@@ -39,14 +39,14 @@ export const ENGINES: Engine[] = [
     method: "line items",
     diagram: "sheet",
     status: "active",
-    // POINTED AT THE REDESIGN WHILE IT IS UNDER REVIEW.
-    // The shipped builder is untouched and still reachable directly at
-    // /dashboard/estimators/manual — only this card's destination moved, so
-    // reverting is restoring that one string.
+    // The blueprint builder, and it is WIRED as of 2026-08-15: it reads the
+    // org's real clients and defaults, honours the `?client=` this dialog
+    // appends, and Save / Save & send write through saveProposal /
+    // sendProposal. The proposals page's "Manual proposal" button points here
+    // too, so both entry points land on the same builder.
     //
-    // Worth knowing before using it for real work: the redesign is a FIXTURE.
-    // Save and Save & send write nothing and say so on the page. Anything typed
-    // there is gone on reload.
+    // The older cost-sheet builder is untouched and still reachable directly at
+    // /dashboard/estimators/manual.
     href: "/dashboard/manual-blueprint",
     spec: { input: "typed rows", output: "cost sheet", time: "~9 min" },
   },

@@ -1,25 +1,14 @@
-// Mobile workers (mobile-workers-v2) — demo fixture.
+// Mobile workers (mobile-workers-v2) — the roster's shape and its pure helpers.
 //
-// Carried over VERBATIM from the desktop workers donor fixture
-// (src/components/v3/workers-blueprint/workers-data.ts): same field names, same
-// values, same seven records, so the handheld composition is judged against the
-// same roster as the desktop sheet. Seattle-area contractor texture — a small
-// roofing/fencing shop's crew.
+// NO FIXTURE LIVES HERE ANY MORE. The roster is the org's real crew, read by
+// ./workers-roster.ts (the desktop page's own query) and written by the real
+// worker server actions. What stays in this file is the row TYPE the two
+// editions share and the pure functions the handheld surface filters, searches
+// and counts with — everything that can be decided without a database.
 //
-// Every state the UI can render is reachable in this seed:
-//  · ACCEPTED with live work (Marcus 3, Dan 2, Ivan 1) → the "On a job" filter
-//  · ACCEPTED with nothing open (Sofia)                → the "Available" filter
-//  · PENDING invites (Tyler, Amara)                    → the "Invited" filter
-//  · a DECLINED invite (Grant)                         → the "Declined" filter
-//  · no email on file (Amara)  → the sheet's Email row renders DISABLED
-//  · no phone on file (Grant)  → the sheet's Call row renders DISABLED
-//  · no hourly rate set (Ivan, Amara) → the row's money figure is an em dash
-//  · no specialties set (Amara) → the record sheet's "none set" field state
-//
-// This is a design surface: the data layer is out of scope, so nothing here
-// touches Prisma or a server action. The array is mutated at runtime by the
-// invite / edit / remove flows, so the component clones this seed per mount and
-// runtime edits never leak between mounts.
+// The type is still the desktop donor's field-for-field
+// (src/components/v3/workers-blueprint/workers-data.ts), so both editions
+// describe the same record.
 
 export type WorkerRoleValue = "INSTALLER" | "SALES" | "ESTIMATOR" | "MANAGER";
 export type InviteStatus = "PENDING" | "ACCEPTED" | "DECLINED";
@@ -49,23 +38,6 @@ export const WORKER_ROLES: WorkerRoleOption[] = [
   { value: "ESTIMATOR", label: "Estimator" }, { value: "MANAGER", label: "Manager" },
 ];
 
-/** Donor: `let wkSeq = 10;` — new ids continue from w11. */
-export const WK_SEQ_START = 10;
-
-export const WORKERS_SEED: WorkerEntry[] = [
-  { id: 'w1', name: 'Marcus Bell',   email: 'marcus@bellroofing.com', phone: '(425) 555-0141', specialties: ['Roofing', 'Fencing'], rate: 42, token: 'wk_8f2a41', invite: 'ACCEPTED', role: 'INSTALLER', joined: 'Mar 2024',
-    jobs: [{ id: 'j1', title: 'Roof tear-off — 4812 Maple Ave' }, { id: 'j4', title: 'Asphalt reroof — Henderson' }, { id: 'j5', title: 'Cedar fence — 902 Alder Ct' }] },
-  { id: 'w2', name: 'Sofia Ramos',   email: 'sofia@bellroofing.com',  phone: '(425) 555-0152', specialties: ['Estimating', 'Decking'], rate: 38, token: 'wk_1c77b0', invite: 'ACCEPTED', role: 'ESTIMATOR', joined: 'Jun 2024',
-    jobs: [] },
-  { id: 'w3', name: 'Dan Kowalski',  email: 'dan.k@bellroofing.com',  phone: '(425) 555-0163', specialties: ['Gutters', 'Roofing'], rate: 36, token: 'wk_59de23', invite: 'ACCEPTED', role: 'INSTALLER', joined: 'Sep 2024',
-    jobs: [{ id: 'j2', title: 'Dumpster swap — Maple Ave' }, { id: 'j6', title: 'Skylight install — 210 Fir St' }] },
-  { id: 'w4', name: 'Ivan Petrov',   email: 'ivan@bellroofing.com',   phone: '(425) 555-0100', specialties: ['Roofing', 'Siding', 'Decking'], rate: null, token: 'wk_0a3f77', invite: 'ACCEPTED', role: 'MANAGER', joined: 'Jan 2023',
-    jobs: [{ id: 'j4', title: 'Asphalt reroof — Henderson' }] },
-  { id: 'w5', name: 'Tyler Brooks',  email: 'tyler.brooks@mail.com',  phone: '(425) 555-0188', specialties: ['Fencing'], rate: 34, token: 'wk_b41e09', invite: 'PENDING', role: 'INSTALLER', joined: 'Jul 2026', jobs: [] },
-  { id: 'w6', name: 'Amara Cole',    email: null,                     phone: '(425) 555-0195', specialties: [], rate: null, token: 'wk_77c2ab', invite: 'PENDING', role: 'SALES', joined: 'Jul 2026', jobs: [] },
-  { id: 'w7', name: 'Grant Mueller', email: 'grant.m@mail.com',       phone: null,             specialties: ['Siding'], rate: 30, token: 'wk_e6d105', invite: 'DECLINED', role: 'INSTALLER', joined: 'May 2026', jobs: [] },
-];
-
 /**
  * The desktop roster shows the whole crew in one internally-scrolling card. A
  * handheld row is three lines tall, so the book pages instead — 6, the same
@@ -91,15 +63,6 @@ export const FILTERS: { key: string; label: string }[] = [
   { key: INVITED, label: "Invited" },
   { key: DECLINED, label: "Declined" },
 ];
-
-/** Per-mount clone: invite / edit / remove mutate the roster in place. */
-export function cloneWorkers(seed: WorkerEntry[]): WorkerEntry[] {
-  return seed.map((e) => ({
-    ...e,
-    specialties: e.specialties.slice(),
-    jobs: e.jobs.map((j) => ({ ...j })),
-  }));
-}
 
 /**
  * Two letters, so a roster is scannable: "Marcus Bell" → MB, a single word →

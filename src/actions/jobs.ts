@@ -94,6 +94,13 @@ export async function createJob(raw: unknown) {
 
   // Crew picked at creation. Only workers that belong to this org are attached
   // (guards a tampered payload); ids are de-duped before insert.
+  //
+  // The created rows are read back and returned: a caller that keeps the new
+  // job in local state (the blueprint jobs board) manages crew through
+  // `unassignAssignment`, which takes an ASSIGNMENT id — without this the one
+  // job created in a session is the only row whose crew can be added to but
+  // never removed. Additive: `{ id }` is unchanged for every existing caller.
+  let assignments: { id: string; workerId: string }[] = [];
   if (effectiveWorkerIds.length) {
     const ids = Array.from(new Set(effectiveWorkerIds));
     const valid = await db.workerProfile.findMany({
@@ -110,6 +117,10 @@ export async function createJob(raw: unknown) {
           workerId: w.id,
           ...(installer ? { status: "ACCEPTED" } : {}),
         })),
+      });
+      assignments = await db.jobAssignment.findMany({
+        where: { jobId: job.id },
+        select: { id: true, workerId: true },
       });
       // Auto-create the job's group chat with the invited crew + the manager who
       // built it, so it shows up on the Messages page ready to use. Skipped when
@@ -130,7 +141,33 @@ export async function createJob(raw: unknown) {
 
   revalidatePath("/dashboard/jobs");
   revalidatePath("/dashboard/calendar");
-  return { id: job.id };
+  return { id: job.id, assignments };
+}
+
+/**
+ * Delete a job outright — the row menu's one irreversible item on
+ * /dashboard/jobs, behind its own confirm dialog.
+ *
+ * Cancelling (`updateJob({ status: "CANCELED" })`) is the non-destructive
+ * option and is what the menu offers first; this is for the mistyped record
+ * that should never have existed. Manager-only, org-scoped, and the dependent
+ * rows go with it: assignments, photos, expenses, messages, the group
+ * conversation, change orders and review requests all cascade in the schema.
+ * `JobEvent.jobId` is optional and NULLs out instead, so a calendar entry the
+ * crew is standing in front of is not silently erased — it is unlinked.
+ */
+export async function deleteJob(id: string) {
+  const { organizationId } = await requireManager();
+  const job = await db.job.findUnique({
+    where: { id },
+    select: { id: true, organizationId: true },
+  });
+  if (!job || job.organizationId !== organizationId) throw new Error("Not found");
+
+  await db.job.delete({ where: { id } });
+
+  revalidatePath("/dashboard/jobs");
+  revalidatePath("/dashboard/calendar");
 }
 
 export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput>>) {

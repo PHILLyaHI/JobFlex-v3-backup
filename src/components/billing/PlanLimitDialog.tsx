@@ -68,7 +68,7 @@ export function PlanLimitDialog() {
                 <Button variant="ghost" onClick={close}>
                   Not now
                 </Button>
-                <Link href={"/dashboard/subscription" as never} onClick={close}>
+                <Link href={"/dashboard/subscription-blueprint" as never} onClick={close}>
                   <Button icon={<ArrowUpRight className="h-3.5 w-3.5" />}>Upgrade plan</Button>
                 </Link>
               </div>

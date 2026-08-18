@@ -89,9 +89,17 @@ export async function createWorkerInvite(raw: unknown) {
     },
   });
 
-  // Best-effort invite email (link doubles as the manual shareable link).
+  // Invite email (the link doubles as the manual shareable link).
+  //
+  // The send used to be swallowed by a bare `console.warn` and the action
+  // returned success either way, so a manager saw "invited" for a worker whose
+  // invite never left the building. The outcome is reported back instead: the
+  // profile is created regardless (the link still works by hand), but the UI
+  // is told, in words, that the email did not go.
+  let emailSent = false;
+  let emailError: string | null = null;
   try {
-    const { sendEmail } = await import("@/lib/sdk/resend");
+    const { sendEmail, isEmailEnabled } = await import("@/lib/sdk/resend");
     const { renderEmail } = await import("@/lib/email/renderEmail");
     const { buildWorkerInvite } = await import("@/lib/email/build/worker");
     const org = await db.organization.findUnique({
@@ -112,13 +120,27 @@ export async function createWorkerInvite(raw: unknown) {
         href: `${appUrl}/w/${profile.token}`,
       }),
     );
-    await sendEmail({ to: data.email, subject, html });
+    const res = await sendEmail({ to: data.email, subject, html });
+    if (res?.skipped) {
+      // No transport at all — sendEmail logs and returns a stub. Name the exact
+      // variables, because the person reading this message is the one who can
+      // set them.
+      emailError = isEmailEnabled()
+        ? "The invite email was not sent."
+        : "No email transport is configured on this server, so the invite email was not sent. Set RESEND_API_KEY, or SMTP_HOST + SMTP_USER + SMTP_PASSWORD, then invite again.";
+    } else {
+      emailSent = true;
+    }
   } catch (err) {
     console.warn("[createWorkerInvite] invite email failed:", err);
+    const msg = err instanceof Error ? err.message.trim() : "";
+    emailError = msg
+      ? `The invite email could not be sent: ${msg}`
+      : "The invite email could not be sent.";
   }
 
   revalidatePath("/dashboard/workers");
-  return { id: profile.id, token: profile.token };
+  return { id: profile.id, token: profile.token, emailSent, emailError };
 }
 
 // ── Worker invite response (token-gated, no session) ────────────────────────

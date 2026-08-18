@@ -65,6 +65,7 @@ export function Card({
   title,
   id,
   sheet,
+  wide,
   children,
 }: {
   num: string;
@@ -72,6 +73,17 @@ export function Card({
   id: string;
   /** Card 10 only: the printed document reads as a sheet, not as a form. */
   sheet?: boolean;
+  /**
+   * Card 03 only: the body holds something that is legitimately wider than a
+   * phone (the seven-column priced table) and must scroll INSIDE the card at
+   * handheld width instead of taking the whole column sideways with it.
+   *
+   * A flag rather than a blanket rule on every body, because a scroll container
+   * clips — the two pickers in cards 01 and 02 hang their popovers outside the
+   * body, and those cards must not get one. See the handheld block in the
+   * stylesheet.
+   */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -91,7 +103,7 @@ export function Card({
           {title}
         </h2>
       </header>
-      <div className={styles.body}>{children}</div>
+      <div className={cx(styles.body, wide && styles.bodyWide)}>{children}</div>
     </section>
   );
 }
@@ -301,16 +313,26 @@ export function Btn({
   tone = "plain",
   icon,
   type = "button",
+  disabled,
+  title,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   tone?: "plain" | "primary" | "quiet" | "add" | "danger";
   icon?: string;
   type?: "button" | "submit";
+  /** Set while a write is in flight, and while the sheet is not savable. The
+   *  page never hides an action it cannot run — a button that vanishes mid-form
+   *  is harder to reason about than one that is visibly unavailable. */
+  disabled?: boolean;
+  /** The reason it is unavailable, when it is. */
+  title?: string;
 }) {
   return (
     <button
       type={type}
+      disabled={disabled}
+      title={title}
       className={cx(
         styles.btn,
         tone === "primary" && styles.btnPrimary,

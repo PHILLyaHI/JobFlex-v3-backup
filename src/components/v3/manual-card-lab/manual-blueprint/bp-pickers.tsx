@@ -20,7 +20,6 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { ClientChoice, ClientRecord, ProjectRecord } from "../manual-focus/manual-focus-types";
-import { newId } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Field, Ic, TextField, cx } from "./bp-ui";
 
@@ -127,17 +126,22 @@ export function ProjectField({
   projects,
   value,
   onChange,
+  hint,
 }: {
   projects: ProjectRecord[];
   value: string;
   onChange: (id: string) => void;
+  /** Six words at most, under the control. Carries the one thing the field
+   *  cannot show by itself — currently that a pick is not stored on the
+   *  proposal (Proposal has no project column). */
+  hint?: string;
 }) {
   const current = projects.find((p) => p.id === value);
   return (
-    <Field label="Project">
+    <Field label="Project" hint={hint}>
       <Picker
         ariaLabel="Project"
-        display={current?.name ?? "No project"}
+        display={current?.name ?? (projects.length === 0 ? "No projects on file" : "No project")}
         empty={!current}
       >
         {(close) => (
@@ -178,6 +182,17 @@ export function ProjectField({
  *  contractor actually has at proposal time; the rest arrive later. */
 const BLANK = { name: "", email: "", phone: "", address: "", city: "", state: "", zip: "" };
 
+/** What the inline form collects. NO id: the record is created by the
+ *  `createClient` server action and the row it returns is what gets selected —
+ *  a locally invented id would file the proposal against a client that does not
+ *  exist. */
+export type NewClientInput = {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+};
+
 export function ClientField({
   clients,
   choice,
@@ -187,11 +202,15 @@ export function ClientField({
   clients: ClientRecord[];
   choice: ClientChoice;
   onChoice: (next: ClientChoice) => void;
-  /** Appends to the local roster and selects the new record. */
-  onCreate: (rec: ClientRecord) => void;
+  /** Writes the client, then appends it to the roster and selects it. Rejects
+   *  with a message the form prints in place — the create is a real round trip
+   *  now, so it can fail, and a silently discarded name is worse than an error. */
+  onCreate: (input: NewClientInput) => Promise<void>;
 }) {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(BLANK);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const nameId = useId();
 
   /**
@@ -250,6 +269,9 @@ export function ClientField({
           <Picker ariaLabel="Client" display={display} empty={choice.mode === "none"}>
             {(close) => (
               <>
+                {clients.length === 0 ? (
+                  <div className={styles.pickSub}>No clients on file yet.</div>
+                ) : null}
                 {clients.map((c) => (
                   <Opt
                     key={c.id}
@@ -284,6 +306,7 @@ export function ClientField({
                   icon="userplus"
                   onClick={() => {
                     setForm(BLANK);
+                    setError(null);
                     setCreating(true);
                     close();
                   }}
@@ -328,33 +351,39 @@ export function ClientField({
               ariaLabel="New client address"
             />
           </Field>
+          {error ? <div className={styles.freeTag}>{error}</div> : null}
           <div className={styles.rowActions}>
             <Btn
               tone="primary"
+              disabled={busy}
               onClick={() => {
                 const name = form.name.trim();
-                if (!name) return;
+                if (!name) {
+                  setError("A name is required.");
+                  return;
+                }
                 // The address is typed as one line here, so it is stored as one
                 // line: splitting a free-text string into street/city/state/zip
                 // by guesswork is how a record ends up with "TX 78704" as its
                 // city. The tax estimate reads the same single line anyway.
-                onCreate({
-                  id: newId("cl"),
+                setBusy(true);
+                setError(null);
+                void onCreate({
                   name,
                   email: form.email.trim(),
                   phone: form.phone.trim(),
                   address: form.address.trim(),
-                  city: "",
-                  state: "",
-                  zip: "",
-                  tags: [],
-                });
-                setCreating(false);
+                })
+                  .then(() => setCreating(false))
+                  .catch((err: unknown) =>
+                    setError(err instanceof Error ? err.message : "Could not add the client."),
+                  )
+                  .finally(() => setBusy(false));
               }}
             >
-              Add client
+              {busy ? "Adding…" : "Add client"}
             </Btn>
-            <Btn tone="quiet" onClick={() => setCreating(false)}>
+            <Btn tone="quiet" disabled={busy} onClick={() => setCreating(false)}>
               Cancel
             </Btn>
           </div>

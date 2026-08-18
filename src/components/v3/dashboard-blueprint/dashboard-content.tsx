@@ -13,13 +13,25 @@
 // Nothing on this sheet is a fixture any more: `data` is the org's real
 // aggregates, read in src/app/dashboard/page.tsx.
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
-import { initDashboardContent } from "./blueprint-behavior";
+import { WEEK_DAY_EVENT, initDashboardContent, initialWeekIso } from "./blueprint-behavior";
 import type { DashboardData } from "./blueprint-data";
 
 export function DashboardContent({ data }: { data: DashboardData }) {
+  // The week strip is drawn imperatively, but the day it lands on has to reach
+  // a `Link` — a Link navigates to its href PROP, so rewriting the rendered
+  // anchor's attribute from the behavior module would move the text and not the
+  // destination. The module announces each pick instead, and the footer's
+  // "Schedule a job" is a real client-side navigation to that day.
+  const [weekIso, setWeekIso] = useState(() => initialWeekIso(data));
+  useEffect(() => {
+    const onPick = (e: Event) => setWeekIso((e as CustomEvent<string>).detail);
+    window.addEventListener(WEEK_DAY_EVENT, onPick);
+    return () => window.removeEventListener(WEEK_DAY_EVENT, onPick);
+  }, []);
+
   // The server rows reach `init` through a ref, NOT through the callback's
   // deps. `useBlueprintContent` re-runs whenever `init` changes identity, and a
   // re-run tears the page down and replays the whole reveal cascade — so the
@@ -48,6 +60,9 @@ export function DashboardContent({ data }: { data: DashboardData }) {
               <span id="bannerMissing"></span> to start receiving them.{" "}
               <Link className="banner-link" href="/dashboard/company">
                 Complete your profile
+                <svg className="ic">
+                  <use href="#i-arrow" />
+                </svg>
               </Link>
             </div>
           </div>
@@ -178,6 +193,24 @@ export function DashboardContent({ data }: { data: DashboardData }) {
           </div>
           <div className="week-strip" id="weekStrip"></div>
           <div className="list" id="weekList"></div>
+          {/* The week card's own footer. "Schedule a job" carries the day the
+              strip is showing, so the calendar opens on that date with the
+              new-event composer up. "Go to Calendar" lives here rather than
+              inside the list, which only revealed it past ten rows. */}
+          <div className="week-foot">
+            <Link className="card-foot-btn card-foot-btn--new" href={`/dashboard/calendar?date=${weekIso}&new=1`}>
+              <svg className="ic">
+                <use href="#i-plus" />
+              </svg>
+              Schedule a job
+            </Link>
+            <Link className="card-foot-btn" href="/dashboard/calendar">
+              Go to Calendar
+              <svg className="ic">
+                <use href="#i-arrow" />
+              </svg>
+            </Link>
+          </div>
         </div>
 
         <div className="card" id="jobsCard">

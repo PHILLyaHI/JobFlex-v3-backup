@@ -74,6 +74,11 @@ interface GenerateInput {
   qualityTier?: "budget" | "standard" | "luxury";
   /** User-edited assumptions fed back in via "Regenerate with AI" — treated as constraints. */
   assumptions?: string[];
+  /**
+   * Site photos from the intake step, as base64 data URLs (or https URLs).
+   * Sent to the model as vision input, never stored. See `safePhotos`.
+   */
+  photos?: string[];
 }
 
 // ── Live retail product search (SerpAPI · Google Shopping) ──────────────────
@@ -301,6 +306,55 @@ function safeHttp(url: string | null | undefined): string | null {
   }
 }
 
+// ── Site photos (vision input) ──────────────────────────────────────────────
+//
+// The intake step lets a contractor drop photos of the job. They are read to
+// base64 data URLs in the browser and passed straight through to the model —
+// nothing is uploaded or persisted, so a photo exists only for the length of
+// the request that prices it.
+//
+// The cap is deliberate: images dominate the token cost of these calls, and a
+// modern phone camera roll will happily hand over 12MB frames. Six images at
+// roughly 6MB of base64 each is the ceiling a single estimate can spend.
+const MAX_PHOTOS = 6;
+const MAX_PHOTO_CHARS = 8_000_000; // ~6MB binary once base64-decoded.
+
+/**
+ * Keep only what is safe to hand OpenAI as an image: an inline base64 image, or
+ * an https image URL. Anything else — a `javascript:` scheme, a `file:` path, a
+ * non-image data URL, an oversized frame — is dropped silently rather than
+ * failing the estimate the contractor is waiting on.
+ */
+function safePhotos(photos: string[] | undefined): string[] {
+  if (!photos?.length) return [];
+  const clean: string[] = [];
+  for (const p of photos) {
+    const v = typeof p === "string" ? p.trim() : "";
+    if (!v || v.length > MAX_PHOTO_CHARS) continue;
+    const inlineImage = /^data:image\/(png|jpe?g|webp|gif|heic|heif);base64,[A-Za-z0-9+/=]+$/i.test(v);
+    const httpsImage = /^https:\/\//i.test(v);
+    if (inlineImage || httpsImage) clean.push(v);
+    if (clean.length === MAX_PHOTOS) break;
+  }
+  return clean;
+}
+
+/**
+ * A chat `content` value carrying the prompt text plus any photos.
+ *
+ * Returns the plain string when there are no photos so the text-only path stays
+ * byte-identical to what it was before photos existed — the multimodal array
+ * form is only used when it earns its place.
+ */
+function withPhotos(text: string, photos: string[]) {
+  if (!photos.length) return text;
+  return [
+    { type: "text", text },
+    ...photos.map((url) => ({ type: "image_url", image_url: { url, detail: "auto" } })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ] as any;
+}
+
 // Loose store-name key so "The Home Depot" ~ "Home Depot" ~ "homedepot".
 function normStore(s: string): string {
   return s.toLowerCase().replace(/^the\s+/, "").replace(/[^a-z0-9]+/g, " ").trim();
@@ -417,6 +471,8 @@ export async function analyzeEstimatePrompt(input: {
   description: string;
   location?: string;
   sqft?: number;
+  /** Site photos as data/https URLs — a photo often answers a question the gate would otherwise ask. */
+  photos?: string[];
 }): Promise<
   | { ok: true; data: PromptAnalysis }
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
@@ -441,6 +497,8 @@ export async function analyzeEstimatePrompt(input: {
   };
   if (!isOpenAIEnabled()) return { ok: true, data: passthrough };
 
+  const analyzePhotos = safePhotos(input.photos);
+
   try {
     const client = getOpenAI();
     const completion = await client.chat.completions.create({
@@ -457,10 +515,17 @@ export async function analyzeEstimatePrompt(input: {
         },
         {
           role: "user",
-          content: `Project type: ${input.projectType}
+          content: withPhotos(
+            `Project type: ${input.projectType}
 ${input.location ? `Location: ${input.location}` : "Location: (none given)"}
 ${input.sqft ? `Approx size: ${input.sqft} sqft` : ""}
-Description: ${input.description}`,
+Description: ${input.description}${
+              analyzePhotos.length
+                ? `\n\n${analyzePhotos.length} site photo(s) are attached. Read them before deciding the brief is thin — do not ask for anything a photo already shows.`
+                : ""
+            }`,
+            analyzePhotos,
+          ),
         },
       ],
       response_format: { type: "json_object" },
@@ -527,12 +592,21 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
           .join("\n")}`
       : "";
 
+  // Photos ride along into both model calls: the planner needs them to see what
+  // is actually on site (a second layer of shingles, a rotted post, the fence
+  // that is already there), and the matcher needs them to pick a product that
+  // matches what it can see rather than what the sentence implied.
+  const photos = safePhotos(input.photos);
+  const photoBlock = photos.length
+    ? `\n\n${photos.length} site photo(s) are attached. Use them as evidence for materials, quantities, condition and access — they outrank the written description where the two disagree.`
+    : "";
+
   try {
     const client = getOpenAI();
 
     // ── Step 1 · Material Planner ───────────────────────────────────────────
     console.info(
-      `[advancedEstimator] Step 1 (planner) · type="${input.projectType}" tier=${qualityTier}`
+      `[advancedEstimator] Step 1 (planner) · type="${input.projectType}" tier=${qualityTier} photos=${photos.length}`
     );
     const plannerCompletion = await client.chat.completions.create({
       model: OPENAI_MODEL,
@@ -546,11 +620,14 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
         },
         {
           role: "user",
-          content: `Project type: ${input.projectType}
+          content: withPhotos(
+            `Project type: ${input.projectType}
 ${input.location ? `Location: ${input.location}` : ""}
 ${input.sqft ? `Approximate size: ${input.sqft} sqft` : ""}
 Quality tier: ${qualityTier}
-Description: ${input.description}${assumptionsBlock}`,
+Description: ${input.description}${assumptionsBlock}${photoBlock}`,
+            photos,
+          ),
         },
       ],
       response_format: { type: "json_object" },
@@ -624,14 +701,17 @@ Description: ${input.description}${assumptionsBlock}`,
         },
         {
           role: "user",
-          content: `Project type: ${input.projectType}
+          content: withPhotos(
+            `Project type: ${input.projectType}
 ${input.location ? `Location: ${input.location}` : ""}
 ${input.sqft ? `Approximate size: ${input.sqft} sqft` : ""}
 Quality tier: ${qualityTier}
-Description: ${input.description}${assumptionsBlock}
+Description: ${input.description}${assumptionsBlock}${photoBlock}
 
 Planned materials with live product options (JSON):
 ${JSON.stringify(promptResearch)}`,
+            photos,
+          ),
         },
       ],
       response_format: { type: "json_object" },

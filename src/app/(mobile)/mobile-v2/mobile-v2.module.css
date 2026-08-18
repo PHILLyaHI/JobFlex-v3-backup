@@ -404,16 +404,37 @@
   color: var(--ink-soft);
   line-height: 1.45;
 }
+/* A real control, not underlined prose: an amber plate one tint deeper than the
+   banner it sits on (warning-soft composited over the banner's own tint), which
+   inverts to a solid amber stamp when pressed. Its own line under the sentence,
+   at the 44px touch minimum. */
 .bannerLink {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  font-size: 10.5px;
   font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--warning);
-  border-bottom: 1.5px solid var(--warning);
-  padding-bottom: 1px;
+  transition: color 0.12s, background 0.12s, box-shadow 0.12s var(--ease-out),
+    transform 0.12s var(--ease-out);
+}
+.bannerLink .ic {
+  width: 13px;
+  height: 13px;
 }
 .bannerLink:active {
-  color: var(--warning-dark);
-  border-bottom-color: var(--warning-dark);
+  color: var(--paper);
+  background: var(--warning);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--warning-dark);
 }
 .bannerClose {
   width: 44px;
@@ -510,37 +531,12 @@
   color: var(--blueprint);
   font-variant-numeric: tabular-nums;
 }
-.mastNotes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  border-top: 1.5px solid var(--ink);
-  background: var(--paper-deep);
-}
-.mastNote {
-  padding: 11px var(--card-pad) 12px;
-  border-right: 1.5px solid var(--ink);
-}
-.mastNote:last-child {
-  border-right: none;
-}
-.mastNoteLbl {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
-.mastNoteVal {
-  font-size: 15px;
-  font-weight: 800;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.mastNoteVal.ok {
-  color: var(--success);
-}
+/* The "Collected / Outstanding" strip that used to sit under the hero is gone
+   (2026-08-13). Neither figure had a source: they were two literals in the
+   markup, and nothing in the schema backs a collected-vs-outstanding split on
+   this surface. The masthead now carries the hero alone and the KPI strip
+   below it carries the other three — the desktop sheet's four figures, no
+   more and no fewer. Its `.mastNotes` / `.mastNote*` rules went with it. */
 
 /* ============================================================
    KPI STRIP — 3-up, single block, no labels under the numerals
@@ -967,13 +963,18 @@
   color: var(--ink);
   line-height: 1.3;
 }
+/* The status chip gets its own line under the sub, left-aligned on the same
+   axis as the title. Pinned right of the sub it read as a second column on a
+   row too narrow to have one, and it sat level with the row's smallest type. */
 .jobFoot {
-  margin-top: 6px;
+  margin-top: 5px;
   display: flex;
-  align-items: center;
-  gap: 9px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
 }
 .jobSub {
+  max-width: 100%;
   font-size: 11.5px;
   font-weight: 500;
   color: var(--muted-light);
@@ -991,7 +992,6 @@
   padding: 3px 7px;
   white-space: nowrap;
   flex-shrink: 0;
-  margin-left: auto;
 }
 .chip.ok {
   color: var(--success);
@@ -1057,6 +1057,34 @@
 }
 .list.hasMore .cardFootBtn {
   display: flex;
+}
+
+/* THIS WEEK's own footer: the day-carrying action and the plain destination on
+   one axis. Both are full-height touch targets, so they stack rather than
+   squeeze when the labels cannot share a 390px line. */
+.weekFoot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.weekFoot .cardFootBtn {
+  margin-top: 0;
+  padding: 0 8px;
+  letter-spacing: 0.08em;
+}
+.cardFootBtnNew {
+  border-color: var(--blueprint);
+  color: var(--blueprint);
+}
+.cardFootBtnNew:active {
+  background: var(--blueprint);
+  color: var(--paper);
+}
+/* A plus is not a direction — it does not fly off like the "go somewhere"
+   arrows do. */
+.cardFootBtnNew:active .ic {
+  transform: none;
 }
 
 /* ============================================================
@@ -1233,11 +1261,23 @@
   justify-content: space-between;
   gap: 6px;
 }
+/* The card's left meta slot. It used to print an invented dollar amount; a
+   Lead carries no amount, so it now carries the OWNER, same as the desktop
+   board. `.none` is the unassigned state — present, but not claiming to be a
+   name. Mirrors `.lead-val.none` in the desktop blueprint sheet. */
 .leadVal {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--blueprint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.leadVal.none {
+  color: var(--muted-light);
+  font-style: italic;
 }
 .leadAge {
   font-family: var(--font-mono);
@@ -1843,6 +1883,70 @@
 }
 .pressed {
   animation: press2 0.18s ease-out;
+}
+
+/* ============================================================
+   TOAST — the only channel a refused stage move has.
+   The board writes optimistically; when `updateLeadStatus`
+   refuses (a sales rep reaching a lead that is not theirs) the
+   card rolls back, and without this the rollback reads as the
+   app losing the tap. Sits above the bottom bar (z 60) so it is
+   readable wherever the rail was scrolled to.
+   ============================================================ */
+.toast {
+  position: fixed;
+  left: var(--pad-x);
+  right: var(--pad-x);
+  bottom: calc(var(--bottomnav-h) + var(--safe-b) + 12px);
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  border: 2px solid var(--warning);
+  border-radius: var(--radius);
+  background: linear-gradient(var(--warning-soft), var(--warning-soft)), var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  animation: toastIn 0.26s var(--ease-out);
+}
+.toast > .ic {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--warning);
+}
+.toastTxt {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+/* 44px target, pulled back with negative margin so the visual box stays the
+   14px glyph the layout wants — the rule is the TOUCH area, not the paint. */
+.toastX {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  margin: -12px -12px -12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.toastX .ic {
+  width: 14px;
+  height: 14px;
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Scoped to the page — the global kill switch stays the app's business */

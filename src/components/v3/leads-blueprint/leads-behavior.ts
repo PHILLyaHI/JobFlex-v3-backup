@@ -27,12 +27,11 @@ import { acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
-  LEADS_SEED,
-  OFFERS_SEED,
   STAGES,
   LEAD_STATUSES,
   SRC,
   PAGE_SIZE,
+  isPlatformIncoming,
   parseCsvRows,
   type Lead,
   type Offer,
@@ -40,10 +39,10 @@ import {
 } from "./leads-data";
 
 export type LeadsContentOptions = {
-  /** The org's real pipeline, read server-side. Omit to fall back to the donor
-   *  fixture (the standalone mock routes have no session to read from). */
+  /** The org's real pipeline, read server-side. There is no fixture to fall
+   *  back to: an empty array paints the sheet's own empty states. */
   leads?: Lead[];
-  /** Live Lead Center offers. Same fallback rule as `leads`. */
+  /** Live Lead Center offers, read server-side. Same rule as `leads`. */
   offers?: Offer[];
   /** `router.refresh()` — pulls rows the client cannot construct itself (an
    *  import returns a count, an accepted offer materializes server-side). */
@@ -70,6 +69,17 @@ function actionError(err: unknown): string {
     return "Something went wrong. Check your connection and try again.";
   }
   return msg;
+}
+
+/** Attribute-safe user text. The row builders below drop database strings into
+ *  innerHTML, so anything landing inside quotes has to be escaped first — same
+ *  helper Jobs and Projects carry. */
+function esc(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /** Cheap identity of a row set — id, status and assignee are everything this
@@ -142,13 +152,13 @@ export function initLeadsContent(
   const $ = (sel: string) => root.querySelector<HTMLElement>(sel);
   const $$ = (sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
-  // The org's real pipeline when the page supplies one (src/app/dashboard/leads),
-  // the donor fixture otherwise. Either way it is CLONED, because import /
-  // accept / decline / delete / drag mutate it in place: the server actions are
-  // the source of truth, and this array mirrors them so the sheet repaints the
-  // moment one returns instead of waiting on a round trip through the router.
-  const leadsData: Lead[] = (options.leads ?? LEADS_SEED).map((l) => ({ ...l }));
-  const offersData: Offer[] = (options.offers ?? OFFERS_SEED).map((o) => ({ ...o }));
+  // The org's real pipeline, read in src/app/dashboard/leads/page.tsx. It is
+  // CLONED, because import / accept / decline / delete / drag mutate it in
+  // place: the server actions are the source of truth, and this array mirrors
+  // them so the sheet repaints the moment one returns instead of waiting on a
+  // round trip through the router.
+  const leadsData: Lead[] = (options.leads ?? []).map((l) => ({ ...l }));
+  const offersData: Offer[] = (options.offers ?? []).map((o) => ({ ...o }));
   const refresh = options.refresh ?? (() => {});
 
   // Dismiss Lead Center banners (smooth height + gap collapse) — inert on this
@@ -242,10 +252,10 @@ export function initLeadsContent(
       ? p[0].slice(0, 2).toUpperCase()
       : (p[0][0] + p[p.length - 1][0]).toUpperCase();
   }
+  // Incoming is the Lead Center triage queue, NOT "everything new" — the rule
+  // and the reasoning live in leads-data.ts, shared with mobile-leads-v2.
   function incoming() {
-    return leadsData.filter(function (l) {
-      return l.status === "NEW" || l.status === "ROUTED";
-    });
+    return leadsData.filter(isPlatformIncoming);
   }
   function pct(c: number) {
     return Math.round(c * 100) + "%";
@@ -425,22 +435,25 @@ export function initLeadsContent(
             '<td><div class="cname"><span class="cav">' +
             initials(l.name) +
             "</span>" +
-            '<span><span class="pt-title">' +
-            l.name +
+            // `title` carries the untruncated name — .pt-title ellipsises it.
+            '<span><span class="pt-title" title="' +
+            esc(l.name) +
+            '">' +
+            esc(l.name) +
             "</span>" +
             '<span class="pt-sub" style="display:block">' +
-            (l.email || l.phone || "—") +
+            esc(l.email || l.phone || "—") +
             " · " +
             srcLabel(l.source) +
             "</span></span></div></td>" +
             '<td><span class="pt-sub">' +
-            l.project +
+            esc(l.project) +
             "</span>" +
             (l.spec
               ? ' <span class="pstatus ltrade" style="--p:' +
                 Math.round(l.conf * 100) +
                 '%">' +
-                l.spec +
+                esc(l.spec) +
                 "<b>" +
                 pct(l.conf) +
                 "</b></span>"
@@ -452,13 +465,13 @@ export function initLeadsContent(
             l.status +
             "</span></td>" +
             '<td><span class="pt-mono">' +
-            (l.assignee || "—") +
+            esc(l.assignee || "—") +
             "</span></td>" +
             '<td><span class="pt-mono">' +
             l.age +
             "</span></td>" +
             '<td class="num"><button class="pt-open" type="button" data-act="ask-delete" aria-label="Delete ' +
-            l.name +
+            esc(l.name) +
             '"><svg class="ic"><use href="#i-trash"/></svg></button></td>' +
             "</tr>"
           );
@@ -487,18 +500,24 @@ export function initLeadsContent(
       '<div class="lead-card" draggable="true" data-id="' +
       l.id +
       '">' +
-      '<div class="lead-name">' +
-      l.name +
+      // Both lines ellipsise inside a ~160px column; `title` keeps the full
+      // string reachable so a truncated card is never a dead end.
+      '<div class="lead-name" title="' +
+      esc(l.name) +
+      '">' +
+      esc(l.name) +
       "</div>" +
-      '<div class="lead-job">' +
-      l.project +
+      '<div class="lead-job" title="' +
+      esc(l.project + " · " + l.city) +
+      '">' +
+      esc(l.project) +
       " · " +
-      l.city +
+      esc(l.city) +
       "</div>" +
       '<div class="lead-meta"><span class="lead-val' +
       (l.assignee ? "" : " none") +
       '">' +
-      (l.assignee || "Unassigned") +
+      esc(l.assignee || "Unassigned") +
       '</span><span class="lead-age">' +
       l.age +
       "</span></div>" +
@@ -764,10 +783,10 @@ export function initLeadsContent(
       .map(function (r, i) {
         return (
           '<div class="st-row"><div><div class="st-name">' +
-          r.name +
+          esc(r.name) +
           "</div>" +
           '<div class="st-meta">' +
-          [r.email, r.phone, r.project].filter(Boolean).join(" · ") +
+          esc([r.email, r.phone, r.project].filter(Boolean).join(" · ")) +
           " · " +
           srcLabel(r.source) +
           "</div></div>" +
@@ -989,7 +1008,72 @@ export function initLeadsContent(
     });
     $("#tableView")?.classList.toggle("is-hidden", lstate.view !== "table");
     $("#boardView")?.classList.toggle("is-hidden", lstate.view !== "board");
+    // The board is display:none until now, so every width it could have been
+    // measured on was zero — the rail can only be sized once it is on screen.
+    if (lstate.view === "board") syncRail();
   });
+
+  // ================= BOARD RAIL: HORIZONTAL SCROLL CONTROL =================
+  // Seven stage columns at a 206px floor overflow every desktop content width,
+  // and a mouse without a horizontal wheel has no way to move a sideways-
+  // scrolling grid. The rail steps the board one column per click.
+  //
+  // The step is measured, not assumed: `grid-auto-columns: minmax(206px, 1fr)`
+  // means the real column width depends on the content area, so a hardcoded
+  // number would drift a little further out of register on every click.
+  function railStep(board: HTMLElement): number {
+    const col = board.querySelector<HTMLElement>(".stage-col");
+    // offsetWidth, NOT getBoundingClientRect: the shell's FLUID SCALE sets a CSS
+    // `zoom` on its root, and the two are in different spaces — the rect comes
+    // back multiplied by the zoom while offsetWidth, scrollLeft, scrollWidth and
+    // clientWidth all stay in the element's own layout pixels. Stepping by a
+    // rect width scrolls short by exactly the zoom factor (at 1440px that is
+    // 172px against a 206px column, and the shortfall compounds per click).
+    const w = col ? col.offsetWidth : 0;
+    return Math.max(160, Math.round(w) || 206);
+  }
+  /** End-state of the two buttons + whether the rail is worth showing at all. */
+  function syncRail() {
+    const board = $("#lBoard");
+    const rail = $("#lRail");
+    if (!board || !rail) return;
+    // 2px of slack absorbs sub-pixel scroll positions, which would otherwise
+    // leave "next" live at a hard end.
+    const max = board.scrollWidth - board.clientWidth;
+    const overflows = max > 2;
+    rail.classList.toggle("is-hidden", !overflows);
+    const prev = root.querySelector<HTMLButtonElement>('[data-brail="prev"]');
+    const next = root.querySelector<HTMLButtonElement>('[data-brail="next"]');
+    if (prev) prev.disabled = board.scrollLeft <= 2;
+    if (next) next.disabled = board.scrollLeft >= max - 2;
+    const of = $("#lRailOf");
+    if (of) {
+      // "3 / 7" — which column is at the left edge, so the rail says where the
+      // board is and not just that it can move.
+      const step = railStep(board);
+      const first = Math.round(board.scrollLeft / step) + 1;
+      const shown = Math.max(1, Math.round(board.clientWidth / step));
+      of.textContent = overflows ? first + "–" + Math.min(STAGES.length, first + shown - 1) + " / " + STAGES.length : "";
+    }
+  }
+  (function () {
+    const board = $("#lBoard");
+    const rail = $("#lRail");
+    if (!board || !rail) return;
+    onEl(rail, "click", function (e) {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-brail]");
+      if (!btn || btn.disabled) return;
+      const rm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const dir = btn.dataset.brail === "next" ? 1 : -1;
+      board.scrollBy({ left: dir * railStep(board), behavior: rm ? "auto" : "smooth" });
+      // Smooth scrolling settles after the click, so the end-states are read
+      // from the scroll event below rather than guessed here.
+    });
+    on(board, "scroll", syncRail, { passive: true });
+    // A window resize re-flows `minmax(206px, 1fr)`, which can take the board
+    // from overflowing to fitting (or back) without any scrolling at all.
+    on(window, "resize", syncRail);
+  })();
   onEl($("#iMeth"), "click", function (e) {
     const btn = (e.target as HTMLElement).closest<HTMLElement>(".imeth-btn");
     if (!btn) return;

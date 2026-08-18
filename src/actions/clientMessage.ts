@@ -25,17 +25,24 @@ import { db } from "@/lib/db";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
+import { parseGmailSettings } from "@/lib/settings";
 
 export type ClientChannel = "email" | "sms";
 
 /** What the dialog needs to know before it offers a channel: an address it can
- *  actually reach, and — for SMS — a configured Twilio line. Asked once when
- *  the sheet opens so a channel is disabled with a reason rather than failing
- *  after the user has typed a message. */
+ *  actually reach, a configured Twilio line for SMS, and a connected Gmail for
+ *  email. Asked once when the sheet opens so a channel is disabled with a
+ *  reason rather than failing after the user has typed a message.
+ *
+ *  `emailConfigured` reads the org's STORED Gmail settings — the same
+ *  `connected` flag the settings page writes and `sendOrgEmail` consults. No
+ *  new column: an org that never connected Gmail has `connected: false` from
+ *  GMAIL_DEFAULTS, which is exactly the state the composer needs to warn about. */
 export async function clientChannels(clientId: string): Promise<{
   email: string | null;
   phone: string | null;
   smsConfigured: boolean;
+  emailConfigured: boolean;
 }> {
   const { organizationId } = await requireSalesOrManager();
   const client = await db.client.findUnique({
@@ -45,10 +52,15 @@ export async function clientChannels(clientId: string): Promise<{
   if (!client || client.organizationId !== organizationId || client.deletedAt) {
     throw new Error("Client not found");
   }
+  const org = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { gmailSettingsJson: true },
+  });
   return {
     email: client.email,
     phone: client.phone,
     smsConfigured: isTwilioEnabled(),
+    emailConfigured: parseGmailSettings(org?.gmailSettingsJson).connected,
   };
 }
 

@@ -372,10 +372,20 @@
 .ddValue[data-f="WON"] { color: var(--success-dark); }
 .ddValue[data-f="LOST"] { color: var(--danger); }
 .ddValue[data-f="ARCHIVED"] { color: var(--danger); }
+/* PLACEMENT. The menu is absolutely positioned, so it does NOT lengthen the
+   `.scroll` container it overflows: with an empty ledger under the bar there is
+   nothing to scroll and a menu hanging off the bottom edge is unreachable, not
+   merely below the fold. components/v3/mobile-shell/use-anchored-menu writes
+   `data-place` and `--menu-max-h` on `.dd` from the room actually available —
+   down while it fits, up when it does not, capped and scrolling either way.
+   Without the hook the attribute is never written and this reads exactly as it
+   did: downward, uncapped. */
 .ddMenu {
   position: absolute;
   top: calc(100% + 6px); left: 0; right: 0;
   z-index: 40;
+  max-height: var(--menu-max-h, none);
+  overscroll-behavior: contain;
   background: var(--paper);
   border: var(--border);
   border-radius: var(--radius);
@@ -390,13 +400,24 @@
      column past a third and shove the panel out of its own frame. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 0;
-  overflow: hidden;
+  /* Was `overflow: hidden` — the cap above needs the Y axis to scroll, and the
+     X axis stays clipped so the cell rules still die inside the 2px frame. */
+  overflow-x: hidden;
+  overflow-y: auto;
   visibility: hidden;
   opacity: 0;
   transform: translateY(-6px);
   transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
 }
 .dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+/* Flipped: the menu hangs above the button and enters from below, so the travel
+   still reads as coming OUT of the control rather than falling onto it. */
+.dd[data-place="up"] .ddMenu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform: translateY(6px);
+}
+.dd[data-place="up"].open .ddMenu { transform: none; }
 /* A cell, not a row: label over count, centred. The dividers are border-TOP
    and border-LEFT with the first row and first column cleared — that way the
    block reads as one drawn table at ANY item count and never doubles a line
@@ -543,6 +564,10 @@
   color: var(--ink);
   flex-shrink: 0;
 }
+/* `overflow-wrap` alone kept a 200-character pasted name inside the card, but
+   at 224px wide that is eight lines and the row becomes a wall — the clamp is
+   what makes the row survivable. Jobs and Projects clamp their titles the same
+   way; the whole string stays on the row's sheet. */
 .lname {
   grid-column: 2;
   grid-row: 1;
@@ -552,6 +577,10 @@
   align-self: end;
   min-width: 0;
   overflow-wrap: anywhere;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 .lwhere {
   grid-column: 2;
@@ -564,6 +593,10 @@
   color: var(--muted-light);
   min-width: 0;
   overflow-wrap: anywhere;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 .lrowOpen {
   grid-column: 3;
@@ -580,21 +613,56 @@
 }
 .lrowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
 .lrowOpen .ic { width: 18px; height: 18px; }
-/* Rows 2 and 3 are ONE group: the mono line sits tight above the badge row
-   (5px) and the pair is pushed well clear of the name (16px). Reading down you
-   get identity, a gap, then the record's data — not three competing lines.
-   Row 3 spans the whole card so the badges start at the left grid edge and the
+/* Rows 2 and 3 are the mono ANNOTATION group — project · city, then contact ·
+   source — sitting tight under the name (4px, then 5px). Row 4 is the record's
+   data and is pushed clear of that group (12px). Reading down you get identity,
+   its annotations, a gap, then the state of the lead.
+   Row 4 spans the whole card so the badges start at the left grid edge and the
    figures close at the far right. Two groups rather than one wrapping flex
    line: with a status badge, a trade gauge, an owner and an age on one line the
    age was the thing that dropped, and the age is the point. */
-.lrowFoot {
+/* CONTACT + SOURCE — the desktop table's first column carries "name / contact ·
+   source"; the card had only the name. Row 3, full width, because an email at
+   11.5px mono needs the whole card and the source label must not be what gets
+   truncated to make room for it. Contact takes the flexible track and
+   ellipsises; source takes an auto track and never wraps. */
+.lcontact {
   grid-column: 1 / -1;
   grid-row: 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  /* Tight against the project line — both are the mono annotation layer, and
+     they read as one block under the name rather than two separate lines. */
+  margin-top: 5px;
+}
+.lcontactV {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* An absence is an absence, same rule as the owner slot below. */
+.lcontactV.isNone { color: var(--muted-faint); letter-spacing: 0.08em; text-transform: uppercase; }
+.lsrc {
+  justify-self: end;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.lrowFoot {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 8px 10px;
-  margin-top: 13px;
+  margin-top: 12px;
 }
 .lrowBadges {
   grid-column: 1;
@@ -1111,6 +1179,51 @@
   background: var(--paper-deep);
   flex-shrink: 0;
 }
+/* The real file picker behind the drawn dropzone. Off-screen rather than
+   display:none so the button's click can still open it on every browser. */
+.fileInput {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* ============================================================
+   FAILURE SURFACE — a write the server refused
+   The sheets carry their own inline errors (a refused import, a bad CSV).
+   Everything else — a refused stage move, a lost accept/decline race — has no
+   dialog to land in, so it lands here: fixed, above the sheets, dismissable.
+   ============================================================ */
+.mlToast {
+  position: fixed;
+  left: var(--pad-x); right: var(--pad-x);
+  bottom: calc(var(--safe-b) + 16px);
+  z-index: 90;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 12px 13px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: opacity 0.18s var(--ease-out), transform 0.18s var(--ease-out);
+}
+.mlToastHidden { opacity: 0; transform: translateY(8px); pointer-events: none; visibility: hidden; }
+.mlToast .ic { width: 17px; height: 17px; flex-shrink: 0; margin-top: 1px; color: var(--danger); }
+.mlToastTxt {
+  flex: 1; min-width: 0;
+  font-size: 13.5px; font-weight: 600; line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.mlToastX {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px;
+  margin: -12px -12px -12px 0;
+  color: var(--muted);
+}
+.mlToastX .ic { width: 15px; height: 15px; color: inherit; margin-top: 0; }
 /* ============================================================
    MOTION SYSTEM — BALANCED (package 02, the standard)
    ============================================================ */

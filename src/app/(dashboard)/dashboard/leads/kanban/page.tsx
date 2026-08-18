@@ -35,7 +35,7 @@ export default async function LeadsKanbanPage() {
         title="Leads board"
         description="Drag leads through the pipeline. Status changes save instantly."
         actions={
-          <Link href={"/dashboard/leads" as any}>
+          <Link href="/dashboard/leads">
             <Button variant="outline" size="sm" icon={<LayoutList className="h-3.5 w-3.5" />}>
               Table view
             </Button>

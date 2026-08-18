@@ -49,11 +49,12 @@
 // optimistic row rolls back and the panel says so).
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { attachJob } from "@/actions/projects";
 import { money } from "@/lib/format";
 import { lockScroll } from "@/lib/scrollLock";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 // Shapes and pure helpers are IMPORTED from the desktop module rather than
 // re-declared: the status vocabulary, the bucket rules, the month tables and
 // the short-date shape must not drift between the two builds. Nothing in that
@@ -61,13 +62,15 @@ import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import {
   MO,
   MOFULL,
-  type PdAvailJob,
+  type PdAvailProposal,
   type PdJob,
   type PdProject,
+  attachableFirst,
   badgeMod,
   bucketOf,
   labelOf,
   monthKey,
+  proposalMeta,
   shortDate,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import "./mobile-project-detail.css";
@@ -99,6 +102,14 @@ function daysBetween(a: Date, b: Date): number {
 
 type View = "list" | "calendar" | "gantt";
 type ListFilter = "all" | "done" | "prog" | "sch";
+
+/** `?view=` — the one piece of page state worth putting in the URL, so another
+ *  surface can link straight at the schedule or the timeline (the projects
+ *  book's row sheet does exactly that). Anything unrecognised falls back to the
+ *  jobs list, which is what a bare /dashboard/projects/<id> opens on. */
+function viewFromParam(raw: string | null): View {
+  return raw === "calendar" || raw === "gantt" ? raw : "list";
+}
 
 function Icon({ id }: { id: string }) {
   return (
@@ -249,19 +260,22 @@ function windowOf(project: PdProject, jobs: PdJob[]): { w0: number; w1: number }
 export function MobileProjectDetail({
   project,
   jobs,
-  availableJobs,
+  availableProposals,
 }: {
   project: PdProject;
   jobs: PdJob[];
-  availableJobs: PdAvailJob[];
+  availableProposals: PdAvailProposal[];
 }) {
   const router = useRouter();
+  const search = useSearchParams();
   const [, startTransition] = useTransition();
 
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const [view, setView] = useState<View>("list");
+  // Seeded from `?view=`, then owned by the segmented control — deep-linking in
+  // must not fight the tabs once you are on the page.
+  const [view, setView] = useState<View>(() => viewFromParam(search.get("view")));
   const [listF, setListF] = useState<ListFilter>("all");
   const [calF, setCalF] = useState<string>("all");
   // The timeline gets the list's own status filter, so all three views are
@@ -367,6 +381,20 @@ export function MobileProjectDetail({
     };
   }, []);
 
+  /* ---------- Escape closes the attach sheet ------------------------------
+     Bound only while the sheet is open, so MobileNav's own Escape (its drawer)
+     and this one can never both claim a single key press. */
+  useEffect(() => {
+    if (!attachOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      setAttachOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [attachOpen]);
+
   /* ---------- Motion: graph-paper parallax ------------------------------- */
   useEffect(() => {
     if (prefersReducedMotion()) return;
@@ -406,38 +434,35 @@ export function MobileProjectDetail({
 
   /* ---------- attach ------------------------------------------------------ */
   const shownAvail = useMemo(
-    () => availableJobs.filter((j) => !moved.includes(j.id)),
-    [availableJobs, moved],
+    () => attachableFirst(availableProposals.filter((p) => !moved.includes(p.id))),
+    [availableProposals, moved],
   );
-  const shownJobs = useMemo<PdJob[]>(() => {
-    const have = new Set(jobs.map((j) => j.id));
-    // `endsAt: null` on the optimistic row: the page's available-jobs query
-    // selects no end date, and widening it would be a data-layer change. The
-    // row is replaced by the real one as soon as the refresh lands.
-    const pending = availableJobs
-      .filter((j) => moved.includes(j.id) && !have.has(j.id))
-      .map<PdJob>((j) => ({
-        id: j.id,
-        title: j.title,
-        status: j.status,
-        startsAt: j.startsAt,
-        endsAt: null,
-        clientName: j.clientName,
-      }));
-    return [...jobs, ...pending];
-  }, [jobs, availableJobs, moved]);
+  /* No optimistic job row any more. The old panel attached ONE job and could
+     splice a stand-in for it out of `availableJobs`; a proposal carries n jobs
+     whose titles this page never reads, so inventing rows for them would mean
+     widening the query to serve 300ms of placeholder. The attached proposal
+     leaves the sheet the instant it is picked, and the jobs arrive with the
+     refresh. */
+  const shownJobs = jobs;
 
+  /** Attach a PROPOSAL: move every one of its project-less jobs onto this
+   *  project through the existing `attachJob` action. Sequential rather than
+   *  `Promise.all` — each call revalidates the same two paths, and a partial
+   *  failure should stop rather than race. */
   const onAttach = useCallback(
-    async (id: string) => {
+    async (p: PdAvailProposal) => {
+      if (p.blocked || !p.linkJobIds.length) return;
       setAttachErr(null);
-      setBusyId(id);
-      setMoved((m) => [...m, id]);
+      setBusyId(p.id);
+      setMoved((m) => [...m, p.id]);
       try {
-        await attachJob(project.id, id);
+        for (const jobId of p.linkJobIds) {
+          await attachJob(project.id, jobId);
+        }
         startTransition(() => router.refresh());
       } catch (err) {
-        setMoved((m) => m.filter((x) => x !== id));
-        setAttachErr(err instanceof Error ? err.message : "Could not attach that job");
+        setMoved((m) => m.filter((x) => x !== p.id));
+        setAttachErr(err instanceof Error ? err.message : "Could not attach that proposal");
       } finally {
         setBusyId(null);
       }
@@ -451,6 +476,10 @@ export function MobileProjectDetail({
   const kProg = shownJobs.filter((j) => j.status === "IN_PROGRESS").length;
 
   const hasWindow = Boolean(project.startsAt && project.endsAt);
+
+  // Swipe-down dismissal on the attach sheet, on the same setter Escape and the
+  // scrim use.
+  const attachDrag = useSheetDrag(attachOpen, () => setAttachOpen(false));
 
   return (
     <div
@@ -534,48 +563,16 @@ export function MobileProjectDetail({
             <button
               className={`mpd-btn${attachOpen ? " mpd-open" : ""}`}
               type="button"
+              aria-haspopup="dialog"
               aria-expanded={attachOpen}
-              aria-controls="mpd-attach-panel"
-              onClick={() => setAttachOpen((o) => !o)}
+              onClick={() => {
+                setAttachErr(null);
+                setAttachOpen(true);
+              }}
             >
-              <Icon id={attachOpen ? "i-x" : "i-plus"} />
-              {attachOpen ? "Close" : "Attach job"}
+              <Icon id="i-plus" />
+              Attach proposal
             </button>
-          </div>
-
-          {/* ============ ATTACH PANEL ============
-              Kept MOUNTED and toggled with `hidden`, like the desktop build. */}
-          <div className="mpd-attach" id="mpd-attach-panel" hidden={!attachOpen}>
-            <span className="mpd-attach-t">Attach a job — unassigned in your shop</span>
-            {attachErr ? (
-              <div className="mpd-attach-err" role="alert">
-                <Icon id="i-x" />
-                <span>{attachErr}</span>
-              </div>
-            ) : null}
-            {shownAvail.length ? (
-              shownAvail.map((j) => (
-                <div className="mpd-av" key={j.id}>
-                  <div className="mpd-av-txt">
-                    <div className="mpd-av-n">{j.title}</div>
-                    <div className="mpd-av-m">
-                      {j.clientName ?? "Unassigned"}
-                      {j.startsAt ? ` · starts ${shortDate(j.startsAt)}` : " · unscheduled"}
-                    </div>
-                  </div>
-                  <button
-                    className="mpd-av-btn"
-                    type="button"
-                    disabled={busyId === j.id}
-                    onClick={() => onAttach(j.id)}
-                  >
-                    {busyId === j.id ? "Attaching" : "Attach"}
-                  </button>
-                </div>
-              ))
-            ) : (
-              <div className="mpd-empty">Nothing left to attach</div>
-            )}
           </div>
 
           {/* ============ VIEW BODY ============ */}
@@ -588,6 +585,65 @@ export function MobileProjectDetail({
           )}
         </div>
       </main>
+
+      {/* ============ ATTACH SHEET ============
+          Was an inline `hidden`-toggled panel between the tab bar and the view
+          (owner, 2026-08-15). It is a POPUP now, and on a handheld the house
+          popup is a bottom sheet, not a centred dialog — CLAUDE.md's own rule,
+          and the same `.sheet` grammar the projects book and the proposals
+          ledger already use, down to the grab handle and the swipe-down
+          dismissal. What it lists changed too: PROPOSALS, not jobs. */}
+      <div
+        className={`mpd-scrim${attachOpen ? " mpd-on" : ""}`}
+        onClick={() => setAttachOpen(false)}
+        aria-hidden="true"
+      />
+      <div
+        className={`mpd-sheet${attachOpen ? " mpd-on" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mpdAttachTitle"
+        aria-hidden={!attachOpen}
+        {...attachDrag.sheetProps}
+      >
+        <div className="mpd-sheet-grab" {...attachDrag.handleProps} />
+        <div className="mpd-sheet-head" {...attachDrag.handleProps}>
+          <div className="mpd-sheet-kick">Delivery / attach</div>
+          <div className="mpd-sheet-t" id="mpdAttachTitle">Attach a proposal</div>
+          <div className="mpd-sheet-s">Picking one files its jobs under {project.name}.</div>
+        </div>
+        <div className="mpd-sheet-body">
+          {attachErr ? (
+            <div className="mpd-attach-err" role="alert">
+              <Icon id="i-x" />
+              <span>{attachErr}</span>
+            </div>
+          ) : null}
+          {shownAvail.length ? (
+            shownAvail.map((p) => (
+              <div className={`mpd-av${p.blocked ? " mpd-av-off" : ""}`} key={p.id}>
+                <div className="mpd-av-txt">
+                  <div className="mpd-av-n">{p.title}</div>
+                  <div className="mpd-av-m">{proposalMeta(p, money)}</div>
+                </div>
+                <button
+                  className="mpd-av-btn"
+                  type="button"
+                  disabled={Boolean(p.blocked) || busyId === p.id}
+                  onClick={() => onAttach(p)}
+                >
+                  {busyId === p.id ? "Attaching" : "Attach"}
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="mpd-empty">No proposals left</div>
+          )}
+        </div>
+        <button className="mpd-sheet-cancel" type="button" onClick={() => setAttachOpen(false)}>
+          Close
+        </button>
+      </div>
     </div>
   );
 }
@@ -816,6 +872,10 @@ function GanttView({
     </div>
   );
 
+  // The clock, read once per mount. Hooks run before the `!win` early return
+  // below, so this cannot sit beside its only use further down.
+  const [now] = useState(() => Date.now());
+
   // Bars grow in sequence, at the donor's numbers (120ms + 70ms per row).
   // Driven straight at the DOM, as the donor does: a re-render rebuilds the
   // bars at scaleX(0) and the run replays, which is what renderView() produces.
@@ -871,7 +931,10 @@ function GanttView({
     }
   }
 
-  const now = Date.now();
+  // `now` is read ONCE per mount (the lazy initialiser above), not on every
+  // render: `Date.now()` in a render body is an impure call, and re-reading the
+  // clock on a filter tap could only ever move a day-scale marker by pixels it
+  // cannot draw. Pre-existing lint failure, fixed while this file was open.
   const todayLeft = now > win.w0 && now < win.w1 ? ((now - win.w0) / span) * 100 : null;
 
   return (

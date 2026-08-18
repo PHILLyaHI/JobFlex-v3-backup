@@ -12,8 +12,10 @@
 // radii and Inter 900 caps stay, rather than the mobile skill's soft-shadow /
 // rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// The roster is REAL (2026-08-16): the component reads the org's crew through
+// ./workers-roster.ts — the desktop page's own query — and its invite / edit /
+// remove flows call the same worker server actions the desktop sheet calls.
+// This page therefore hands down no props; both entry points mount it bare.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
 // its own redirect-to-login like the other design routes. The redirect target is

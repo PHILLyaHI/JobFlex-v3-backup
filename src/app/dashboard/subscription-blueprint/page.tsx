@@ -23,10 +23,23 @@
 // and — on a billing surface, emphatically — no Stripe call. The plan CTAs,
 // the Change plan link and the Copy button are UI state and write nothing.
 
+// RESPONSIVE + PROMOTED, 2026-08-13. The sidebar's Subscription button now
+// points HERE rather than at /dashboard/subscription, so this route has to
+// answer a phone as well as a desktop: above 768px the blueprint port below,
+// at or below it the handheld build in components/v3/mobile-subscription,
+// switched by a media query in ./subscription-blueprint-responsive.tsx.
+//
+// The handheld half runs on REAL data, so this page now performs the live
+// surface's read (loadSubscriptionData — the existing loader, no new query, no
+// new action, no schema change) and its owner-only guard. The desktop half is
+// still the mockup's fixture; the two halves therefore disagree on the numbers
+// until the blueprint port is wired to the same loader, which is separate work.
+
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { auth } from "@/lib/auth";
-import { SubscriptionContent } from "@/components/v3/subscription-blueprint/subscription-content";
+import { requireOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { loadSubscriptionData } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
+import { SubscriptionBlueprintResponsive } from "./subscription-blueprint-responsive";
 
 export const dynamic = "force-dynamic";
 
@@ -39,10 +52,28 @@ export const metadata: Metadata = {
 };
 
 export default async function SubscriptionBlueprintPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/auth/login?next=%2Fdashboard%2Fsubscription-blueprint");
+  // The blueprint layout swallows an auth failure so the PAGE can decide, which
+  // is why this is a try/catch rather than a bare requireOrg().
+  let organizationId: string;
+  let role: string;
+  try {
+    const ctx = await requireOrg();
+    organizationId = ctx.organizationId;
+    role = ctx.role;
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      redirect("/auth/login?next=%2Fdashboard%2Fsubscription-blueprint");
+    }
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <SubscriptionContent />;
+  // Billing is owner-only. The nav hides the entry from every other role; this
+  // is the fail-closed side, and it also has to run BEFORE the loader, whose
+  // invoice and referral calls assert ownership themselves.
+  if (!isOwnerRole(role)) redirect("/dashboard");
+
+  const data = await loadSubscriptionData(organizationId);
+
+  return <SubscriptionBlueprintResponsive {...data} />;
 }

@@ -5,16 +5,11 @@
 //
 // The "Quiet" variant (/dashboard/manual-quiet), re-skinned into the house
 // blueprint system. The composition below is unchanged from the build that was
-// approved — same ten cards, same order, same spacing, same de-emphasis. What
+// approved — same eleven cards, same order, same spacing, same de-emphasis. What
 // moved is entirely in manual-blueprint.module.css: ink frames and hard offset
 // shadows instead of a borderless soft-shadow surface, caps 900 card titles,
 // mono confined to the drawing-annotation layer, square check plates instead of
 // pill switches, and the fleet's entrance cascade.
-//
-// The claim being tested: the calm came from the SPACING and the DE-EMPHASIS,
-// not from the soft surface. If that is right, this reads as restfully as the
-// donor while looking like the other 22 blueprint pages. If it is wrong, the
-// donor route is still standing next door and the two can be put side by side.
 //
 // SURFACES: the three-tone trial (white / light beige / deep beige) is decided.
 // White won everywhere, including the sticky total bar, so there is no `tone`
@@ -24,36 +19,47 @@
 // by nothing but a hairline.
 //
 // THE BET: nothing collapses, and the calm comes from typography and air alone.
-// All ten cards are open, always. There is no accordion, no promotion state, no
-// "open" affordance anywhere, because every one of those is a second thing to
+// All eleven cards are open, always. There is no accordion, no promotion state,
+// no "open" affordance anywhere, because every one of those is a second thing to
 // understand before you can read the first thing. If a long single column can
 // be restful, it has to be restful with everything showing.
 //
-// What that costs, and how it is paid:
-//   · LENGTH. Paid with rhythm — the cards have honestly different heights
-//     (four switches tall, five table rows tall, one document tall), and card 10
-//     carries a heavier shadow as a terminal beat, so the scroll has punctuation
-//     instead of ten identical slabs. (It used to be paid partly with a surface
-//     change too; now that every card is white, the WEIGHT does that job alone.)
-//   · FINDABILITY. Paid with one persistent device and exactly one: a slim
-//     sticky bar at the foot carrying the grand total and the three actions.
-//     Nothing else lives in it. A second bar, a rail, or a progress chip would
-//     be the "where am I" problem answered twice.
+// ── THE FIXTURE IS GONE ─────────────────────────────────────────────
+// The demo homeowner, the seeded Austin re-roof and its five priced rows have
+// been deleted, along with the org name and reference number that were printed
+// as fixtures on the client's copy and on every page of the PDF. This page now:
+//
+//   · opens EMPTY — one blank line row, no client, no scope, no terms;
+//   · reads the org's real clients, projects and saved markup / tax defaults;
+//   · honours `?client=<id>` (the spelling the estimator picker already hands
+//     every engine) and `?proposal=<id>`;
+//   · writes through the EXISTING `saveProposal` / `sendProposal` actions, and
+//     writes `?proposal=<id>` into the URL after the first save so navigating
+//     away and back reopens the row instead of a blank sheet;
+//   · creates a real client record through `createClient`.
+//
+// What still does NOT survive a reload — the project pick, the terms text, the
+// four "what prints" toggles and the staged files — has no column on Proposal,
+// and this pass adds no schema. Each of the four cards says so on its own face
+// rather than losing the input quietly. See manual-blueprint-bridge.ts.
 //
 // STATE. One `draft` object rather than twenty useStates, because the totals,
 // the coverage meter and the client's copy all read the WHOLE draft on every
-// keystroke. Two things sit OUTSIDE it on purpose:
+// keystroke. Three things sit OUTSIDE it on purpose:
 //   · `contact` — Draft has no email/phone fields (they belong to the client
 //     record), but the sheet still has to carry a contact for a typed name, so
 //     the override lives here rather than being smuggled into a shared type
 //     this variant may not edit;
-//   · `clients` — the inline "add a new client" has to append somewhere, and a
-//     component-local roster is the honest version of that with no data layer.
-//
-// Save, Save & send and the draft-state chip write NOTHING and say so. Reset
-// confirms in place, inside the bar, so the page never needs a modal.
+//   · `clients` — the inline "add a new client" has to append somewhere, and
+//     appending the row the server RETURNED keeps the roster and the database
+//     in agreement without a refetch;
+//   · `pdf` — the four page decisions, which describe the paper rather than the
+//     proposal.
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { saveProposal, sendProposal } from "@/actions/proposals";
+import { createClient } from "@/actions/clients";
+import { ensureWithinLimit, reportPlanLimit } from "@/stores/usePlanLimitStore";
 import type {
   ClientChoice,
   ClientRecord,
@@ -63,20 +69,14 @@ import type {
   ProposalOptions,
   StagedFile,
 } from "../manual-focus/manual-focus-types";
-import {
-  ORG_NAME,
-  PROPOSAL_DATE,
-  PROPOSAL_NO,
-  SEED_CLIENTS,
-  SEED_PROJECTS,
-  TERMS_TEMPLATE,
-  estimateFromAddress,
-  makeSeedDraft,
-} from "../manual-focus/manual-focus-data";
+// What survives from the donor's data module: the starter TERMS text (a button
+// the user presses, not seeded content) and the address → sales-tax lookup.
+// Every fixture record, the seeded draft and the fake org identity are gone.
+import { TERMS_TEMPLATE, estimateFromAddress } from "../manual-focus/manual-focus-data";
 import { computeTotals, money, newId } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Card, Field, Group, Pair, TextArea, TextField, cx } from "./bp-ui";
-import { ClientField, ProjectField } from "./bp-pickers";
+import { ClientField, ProjectField, type NewClientInput } from "./bp-pickers";
 // The line table is the lines-v2 block — the reference format: one entry row
 // per line plus a full-width material/labor split beneath it, with the three
 // money columns carrying their own running totals in the header. It lives
@@ -89,23 +89,28 @@ import { TheirCopy } from "./bp-proof";
 // Card 11. The same proposal as PAPER — see the header of bp-pdf.tsx for why
 // the file is produced by print CSS rather than by a PDF library.
 import { DEFAULT_PDF_SETUP, PdfBlock, type PdfSetup } from "./bp-pdf";
+import {
+  addressOf,
+  blankLine,
+  emptyDraft,
+  payloadFromDraft,
+  proposalRef,
+  whyNotSavable,
+  type SheetIdentity,
+} from "./manual-blueprint-bridge";
+import type { ManualBuilderData } from "./manual-blueprint-load";
 import { useReveal } from "./use-reveal";
 
-type SaveNote = "clean" | "edited" | "saved" | "sent";
+/**
+ * The masthead chip. ONE state rather than a status enum plus a message,
+ * because every one of these is "a sentence and how loudly to say it" — and a
+ * chip that could be `saved` AND carry an error string is a state the page
+ * would have to decide between at render time.
+ */
+type Note = { tone: "idle" | "live" | "ok" | "err"; text: string };
 
-const NOTE_TEXT: Record<SaveNote, string> = {
-  clean: "Fixture · unedited",
-  edited: "Edited · nothing autosaves",
-  saved: "Nothing saved — this lab has no server",
-  sent: "Nothing sent — this lab has no server",
-};
-
-/** A record's address as the one line the sheet and the tax estimator both
- *  read. Kept as a single string on purpose — see the note in bp-pickers. */
-function addressOf(rec: ClientRecord): string {
-  const tail = [rec.city, [rec.state, rec.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-  return [rec.address, tail].filter(Boolean).join(", ");
-}
+const NOTE_NEW: Note = { tone: "idle", text: "Nothing saved yet" };
+const NOTE_EDITED: Note = { tone: "live", text: "Edited — not saved" };
 
 function contactOf(clients: ClientRecord[], choice: ClientChoice) {
   if (choice.mode !== "record") return { email: "", phone: "" };
@@ -123,12 +128,52 @@ function withTax(d: Draft): Draft {
   return { ...d, taxPct: est.pct, taxState: est.code };
 }
 
-export function ManualBlueprintContent() {
-  const [draft, setDraft] = useState<Draft>(makeSeedDraft);
-  const [clients, setClients] = useState<ClientRecord[]>(() => SEED_CLIENTS.map((c) => ({ ...c })));
-  const [contact, setContact] = useState(() => contactOf(SEED_CLIENTS, makeSeedDraft().client));
+/**
+ * The draft this mount opens with.
+ *
+ * A reopened proposal wins outright. A new one is empty, then takes the client
+ * from `?client=<id>` if the id resolved in this org — and its address with it,
+ * which is the whole point of arriving from a client's record.
+ */
+function openingDraft(data: ManualBuilderData): Draft {
+  const base = data.proposal ? data.proposal.draft : emptyDraft(data.defaults);
+  const id = data.initialClientId;
+  if (!id) return base;
+  const rec = data.clients.find((c) => c.id === id);
+  if (!rec) return base;
+  const next: Draft = { ...base, client: { mode: "record", id } };
+  // A reopened proposal has `addressAuto: false` and its own saved address, so
+  // this only ever fills a blank sheet.
+  if (next.addressAuto && !next.address) next.address = addressOf(rec);
+  return withTax(next);
+}
+
+export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
+  const [draft, setDraft] = useState<Draft>(() => openingDraft(data));
+  const [clients, setClients] = useState<ClientRecord[]>(() => data.clients);
+  const [contact, setContact] = useState(() =>
+    contactOf(
+      data.clients,
+      data.initialClientId
+        ? { mode: "record", id: data.initialClientId }
+        : { mode: "none" },
+    ),
+  );
   const [openLines, setOpenLines] = useState<string[]>([]);
-  const [note, setNote] = useState<SaveNote>("clean");
+  const [note, setNote] = useState<Note>(() =>
+    data.proposalMissing
+      ? { tone: "err", text: "That proposal is gone — this is a new one" }
+      : data.proposal
+        ? { tone: "ok", text: `${data.proposal.ref} · ${data.proposal.status.toLowerCase()}` }
+        : NOTE_NEW,
+  );
+
+  // The row this page is writing to. Seeded from `?proposal=<id>`; captured
+  // from the first save otherwise, so every later write in the same session
+  // UPDATES that row rather than creating a second one.
+  const [savedId, setSavedId] = useState<string | null>(data.proposal?.id ?? null);
+  const [identity, setIdentity] = useState<SheetIdentity>(data.identity);
+  const [busy, setBusy] = useState<null | "save" | "send">(null);
 
   // The PDF's four page decisions. OUTSIDE `draft`, for the same reason
   // `contact` is: Draft is shared with four other card-lab variants and
@@ -145,7 +190,7 @@ export function ManualBlueprintContent() {
 
   const edit = (fn: (d: Draft) => Draft) => {
     setDraft(fn);
-    setNote("edited");
+    setNote(NOTE_EDITED);
   };
   const patch = (p: Partial<Draft>) => edit((d) => ({ ...d, ...p }));
 
@@ -161,11 +206,44 @@ export function ManualBlueprintContent() {
     setContact(contactOf(clients, choice));
   };
 
-  const createClient = (rec: ClientRecord) => {
+  /**
+   * Inline "add a new client" — a REAL write now.
+   *
+   * The row the server returns is what lands in the roster and what the
+   * proposal is filed against; the old build invented a local id, which would
+   * have filed the proposal against a client that does not exist. Rejections
+   * are re-thrown so the form prints them in place rather than closing over a
+   * failure.
+   */
+  const createClientRecord = useCallback(async (input: NewClientInput) => {
+    const created = await createClient({
+      name: input.name,
+      email: input.email,
+      phone: input.phone,
+      address: input.address,
+    });
+    const rec: ClientRecord = {
+      id: created.id,
+      name: created.name,
+      email: created.email ?? "",
+      phone: created.phone ?? "",
+      address: created.address ?? "",
+      city: created.city ?? "",
+      state: created.state ?? "",
+      zip: created.zip ?? "",
+      tags: [],
+    };
     setClients((list) => [...list, rec]);
-    edit((d) => withTax({ ...d, client: { mode: "record", id: rec.id }, address: d.addressAuto ? rec.address : d.address }));
+    setDraft((d) =>
+      withTax({
+        ...d,
+        client: { mode: "record", id: rec.id },
+        address: d.addressAuto && !d.address ? addressOf(rec) : d.address,
+      }),
+    );
     setContact({ email: rec.email, phone: rec.phone });
-  };
+    setNote(NOTE_EDITED);
+  }, []);
 
   const setAddress = (v: string) =>
     edit((d) => withTax({ ...d, address: v, addressAuto: false }));
@@ -173,22 +251,7 @@ export function ManualBlueprintContent() {
   const patchLine = (id: string, p: Partial<Line>) =>
     edit((d) => ({ ...d, lines: d.lines.map((l) => (l.id === id ? { ...l, ...p } : l)) }));
 
-  const addLine = () =>
-    edit((d) => ({
-      ...d,
-      lines: [
-        ...d.lines,
-        {
-          id: newId("ln"),
-          name: "",
-          description: "",
-          unit: "UNIT",
-          quantity: 1,
-          materialCost: 0,
-          laborCost: 0,
-        },
-      ],
-    }));
+  const addLine = () => edit((d) => ({ ...d, lines: [...d.lines, blankLine()] }));
 
   const removeLine = (id: string) => {
     edit((d) => ({ ...d, lines: d.lines.filter((l) => l.id !== id) }));
@@ -216,6 +279,70 @@ export function ManualBlueprintContent() {
   const addFiles = (staged: StagedFile[]) =>
     edit((d) => ({ ...d, files: [...d.files, ...staged] }));
 
+  /* ---- the two writes ----------------------------------------------- */
+
+  /**
+   * Save, and optionally send.
+   *
+   * The URL is rewritten with `history.replaceState` rather than `router.replace`
+   * on purpose: the id has to survive a reload and a back-navigation, and a
+   * router push here would re-render the server component and replay the whole
+   * entrance cascade over a form the user is still typing in.
+   */
+  async function persist(opts?: { sendAfter?: boolean }) {
+    const why = whyNotSavable(draft);
+    if (why) {
+      setNote({ tone: "err", text: why });
+      return;
+    }
+    // A brand-new proposal counts against the monthly cap; the dialog the shell
+    // already mounts is what explains it.
+    if (!savedId && !(await ensureWithinLimit("proposalsCreated"))) return;
+
+    setBusy(opts?.sendAfter ? "send" : "save");
+    setNote({ tone: "live", text: "Saving…" });
+    try {
+      const res = await saveProposal(payloadFromDraft(draft, savedId ?? undefined));
+      setSavedId(res.id);
+      const ref = proposalRef(res.publicId);
+      setIdentity((prev) => ({ ...prev, ref }));
+      window.history.replaceState(
+        null,
+        "",
+        `/dashboard/manual-blueprint?proposal=${encodeURIComponent(res.id)}`,
+      );
+
+      if (opts?.sendAfter) {
+        setNote({ tone: "live", text: "Sending…" });
+        await sendProposal(res.id);
+        setNote({
+          tone: "ok",
+          text: contact.email
+            ? `${ref} · sent to ${contact.email}`
+            : `${ref} · marked sent — no client email on file`,
+        });
+      } else {
+        setNote({ tone: "ok", text: `${ref} · saved to your proposals` });
+      }
+    } catch (err: unknown) {
+      if (reportPlanLimit(err)) {
+        setNote({ tone: "err", text: "Monthly proposal limit reached" });
+        return;
+      }
+      // A zod failure serialises to a JSON array — never surface that raw.
+      const raw = err instanceof Error ? err.message : "";
+      setNote({
+        tone: "err",
+        text:
+          raw && !raw.trim().startsWith("[")
+            ? raw
+            : "Save failed — check the title and that every line has a name",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /* ---- derived ------------------------------------------------------ */
 
   // Bound to a const first: narrowing a discriminated union through
@@ -230,8 +357,11 @@ export function ManualBlueprintContent() {
         : "";
 
   // The project's NAME, not its id: the client's copy and the PDF both name it,
-  // and neither has any business printing "pr_2".
-  const projectName = SEED_PROJECTS.find((p) => p.id === draft.projectId)?.name ?? "";
+  // and neither has any business printing a cuid.
+  const projectName = data.projects.find((p) => p.id === draft.projectId)?.name ?? "";
+
+  const blocked = whyNotSavable(draft);
+  const working = busy !== null;
 
   return (
     <div className={styles.page}>
@@ -242,12 +372,17 @@ export function ManualBlueprintContent() {
         </div>
         <div className={styles.meta}>
           <span className={styles.metaMono}>
-            {PROPOSAL_NO} · {PROPOSAL_DATE}
+            {identity.ref} · {identity.date}
           </span>
-          <span className={styles.metaOrg}>{ORG_NAME}</span>
-          <span className={styles.state}>
-            <span className={cx(styles.stateDot, note === "edited" && styles.stateDotLive)} />
-            {NOTE_TEXT[note]}
+          <span className={styles.metaOrg}>{identity.orgName}</span>
+          <span className={styles.state} role="status">
+            <span
+              className={cx(
+                styles.stateDot,
+                (note.tone === "live" || note.tone === "err") && styles.stateDotLive,
+              )}
+            />
+            {note.text}
           </span>
         </div>
       </div>
@@ -265,9 +400,13 @@ export function ManualBlueprintContent() {
               />
             </Field>
             <ProjectField
-              projects={SEED_PROJECTS}
+              projects={data.projects}
               value={draft.projectId}
               onChange={(id) => patch({ projectId: id })}
+              // A proposal has no project column, so a pick is a working note
+              // for this session and nothing more. Said out loud rather than
+              // discovered on the next reload.
+              hint="Reference only — not stored on the proposal"
             />
           </Group>
           <Field label="Overview" htmlFor="q-overview">
@@ -287,16 +426,22 @@ export function ManualBlueprintContent() {
               clients={clients}
               choice={draft.client}
               onChoice={setClient}
-              onCreate={createClient}
+              onCreate={createClientRecord}
             />
             <Pair>
-              <Field label="Email" htmlFor="q-email">
+              <Field
+                label="Email"
+                htmlFor="q-email"
+                hint={
+                  draft.client.mode === "record" ? "From the client record" : undefined
+                }
+              >
                 <TextField
                   id="q-email"
                   value={contact.email}
                   onChange={(v) => {
                     setContact((c) => ({ ...c, email: v }));
-                    setNote("edited");
+                    setNote(NOTE_EDITED);
                   }}
                 />
               </Field>
@@ -306,7 +451,7 @@ export function ManualBlueprintContent() {
                   value={contact.phone}
                   onChange={(v) => {
                     setContact((c) => ({ ...c, phone: v }));
-                    setNote("edited");
+                    setNote(NOTE_EDITED);
                   }}
                 />
               </Field>
@@ -322,7 +467,10 @@ export function ManualBlueprintContent() {
         </Card>
 
         {/* 03 ------------------------------------------------------- */}
-        <Card num="03" title="Line items" id="q-03">
+        {/* `wide` — the priced table is ~860px on its own grid, which is wider
+            than a phone and is not a layout to squeeze. At handheld width it
+            scrolls inside this card rather than panning the whole column. */}
+        <Card num="03" title="Line items" id="q-03" wide>
           <LinesV2
             lines={draft.lines}
             openIds={openLines}
@@ -341,7 +489,7 @@ export function ManualBlueprintContent() {
             taxAuto={draft.taxAuto}
             taxState={draft.taxState}
             onTaxPct={(n) => patch({ taxPct: n, taxAuto: false, taxState: "" })}
-            // Tax lives in card 07 now, in the chain between the subtotal and
+            // Tax lives in card 04 now, in the chain between the subtotal and
             // the grand total, with the note explaining where the rate came
             // from. Rendering it here too would be the same control in two
             // cards. The props still flow so the block stays contract-shaped.
@@ -354,7 +502,6 @@ export function ManualBlueprintContent() {
             grand total, so discount and tax had to come with it: a card that
             prints the final figure while two of its inputs live on a different
             card is the "hold a number in your head while you scroll" failure.
-            The old card 08 (Discount & tax) is absorbed here.
 
             Still deliberately NOT merged with the deposits below — the split is
             by question ("what am I charging?" vs "when do they pay it?"), not
@@ -411,7 +558,11 @@ export function ManualBlueprintContent() {
 
         {/* 07 ------------------------------------------------------- */}
         <Card num="07" title="Terms" id="q-07">
-          <Field label="Terms & conditions" htmlFor="q-terms">
+          <Field
+            label="Terms & conditions"
+            htmlFor="q-terms"
+            hint="Prints on the sheet — not stored on the proposal yet"
+          >
             <TextArea
               id="q-terms"
               rows={7}
@@ -458,12 +609,14 @@ export function ManualBlueprintContent() {
         {/* 10 ------------------------------------------------------- */}
         <Card num="10" title="Their copy" id="q-10" sheet>
           <TheirCopy
+            identity={identity}
             title={draft.title}
             clientName={clientName}
             address={draft.address}
             scopeOfWork={draft.scopeOfWork}
             terms={draft.terms}
             taxPct={draft.taxPct}
+            discountPct={draft.discountIsPercent === false ? 0 : draft.discountPct}
             options={draft.options}
             totals={totals}
           />
@@ -485,9 +638,10 @@ export function ManualBlueprintContent() {
               setPdf((s) => ({ ...s, ...p }));
               // These change what the client receives, so they count as an
               // edit even though they live outside the draft.
-              setNote("edited");
+              setNote(NOTE_EDITED);
             }}
             doc={{
+              identity,
               title: draft.title,
               clientName,
               email: contact.email,
@@ -513,15 +667,26 @@ export function ManualBlueprintContent() {
           <div className={styles.barLabel}>Grand total</div>
           <div className={styles.barMoney}>{money(totals.total)}</div>
         </div>
-        {/* Reset is gone by request, and with it the two-step discard
-            confirmation it needed. The bar is now the two actions that move
-            the proposal forward and nothing else — which is what a persistent
-            bar should carry. Nothing else on the page restores the fixture, so
-            a reload is the way back. */}
+        {/* The two actions that move the proposal forward, and nothing else —
+            which is what a persistent bar should carry. Both are DISABLED
+            rather than hidden while the sheet is not savable, and the reason
+            travels in `title` and in the masthead chip. */}
         <div className={styles.barActions}>
-          <Btn onClick={() => setNote("saved")}>Save</Btn>
-          <Btn tone="primary" icon="send" onClick={() => setNote("sent")}>
-            Save &amp; send
+          <Btn
+            onClick={() => void persist()}
+            disabled={working || blocked !== null}
+            title={blocked ?? undefined}
+          >
+            {busy === "save" ? "Saving…" : "Save"}
+          </Btn>
+          <Btn
+            tone="primary"
+            icon="send"
+            onClick={() => void persist({ sendAfter: true })}
+            disabled={working || blocked !== null}
+            title={blocked ?? undefined}
+          >
+            {busy === "send" ? "Sending…" : "Save & send"}
           </Btn>
         </div>
       </div>

@@ -148,15 +148,9 @@
 /* ============================================================
    PAGE HEAD
    ============================================================ */
+/* No `.kicker` rule: the "Delivery" eyebrow was deleted (owner, 2026-08-15) and
+   its styles left with it rather than sitting here unreferenced. */
 .pageHead { padding-top: 2px; }
-.kicker {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 11.5px; font-weight: 800;
-  letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 9px;
-}
-.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
 .pageTitle {
   font-size: var(--fs-h1); font-weight: 900;
   letter-spacing: -0.03em; text-transform: uppercase;
@@ -319,16 +313,26 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 0;
-  overflow: hidden;
-  /* Viewport height only via --app-h — never a bare vh. */
-  max-height: calc(var(--app-h, 100dvh) * 0.6);
+  overflow-x: hidden;
+  /* PLACEMENT (2026-08-15). The menu used to hang off the bottom of the phone
+     whenever the book under the bar was short: an absolutely positioned box does
+     not lengthen the `.scroll` container it overflows, so with an empty list
+     there was nothing to scroll and the lower half of the panel was unreachable.
+     `--menu-max-h` is written by useAnchoredMenu with the room actually left
+     under (or over) the trigger, and `[data-place="up"]` below flips the panel
+     when there is more room above. The fallback keeps the old ceiling for any
+     render before the first measurement lands. Viewport height only via
+     --app-h — never a bare vh. */
+  max-height: var(--menu-max-h, calc(var(--app-h, 100dvh) * 0.6));
   overflow-y: auto;
   visibility: hidden;
   opacity: 0;
   transform: translateY(-6px);
   transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
 }
+.dd[data-place="up"] .ddMenu { top: auto; bottom: calc(100% + 6px); transform: translateY(6px); }
 .dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+.dd[data-place="up"].open .ddMenu { transform: none; }
 /* A cell, not a row: label over count, centred. The dividers are border-TOP and
    border-LEFT with the first row and first column cleared — that draws a correct
    table at ANY item count and never doubles a line against the menu's own 2px
@@ -405,7 +409,13 @@
   transition: background 0.12s;
 }
 .pjrow:last-child { border-bottom: none; }
+/* The card is the door to the record, so it takes the pointer and the focus
+   ring a control is owed — it was a div with a pressed tint and no destination
+   until the row itself became the tap target. Same three lines as the clients
+   book's .crow. */
+.pjrow { cursor: pointer; }
 .pjrow:active { background: var(--paper-deep); }
+.pjrow:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
 /* EVERY child is pinned to an explicit grid-column. A child given a grid-row
    but no grid-column is placed in its own earlier pass and can claim the wrong
    column, shoving a sibling sideways — that shipped once on the clients rows. */
@@ -429,13 +439,22 @@
   -webkit-box-orient: vertical;
 }
 /* Spans the kicker+title block and centres on it, so the button reads as
-   belonging to the whole heading rather than to either line. */
+   belonging to the whole heading rather than to either line.
+
+   THE ⋮ IS 32px DRAWN, 44px TAPPABLE — the clients row's pattern, verbatim
+   (mobile-clients.module.css `.crowOpen`). A 44px drawn box made a secondary
+   control the heaviest object on the row and put a hard frame right where the
+   project name wants to run; the box shrank, the TARGET did not. `::after`
+   pushes an invisible 44×44 hit area out from the button's own centre, bounded
+   rather than a blanket `inset: -100px`, so it cannot swallow taps meant for
+   anything beside it. */
 .pjOpen {
+  position: relative;
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
-  width: 44px; height: 44px;
-  margin: 0 -6px 0 0;
+  width: 32px; height: 32px;
+  margin: 0 -2px 0 0;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
@@ -443,8 +462,15 @@
   flex-shrink: 0;
   transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
 }
+.pjOpen::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+}
 .pjOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
-.pjOpen .ic { width: 18px; height: 18px; }
+.pjOpen .ic { width: 16px; height: 16px; }
 /* The KICKER. Same drawing-annotation register as before — mono, small, muted,
    caps — it has only moved above the name, where a dateline stamped over a
    title is the register's natural home. It stays in column 1: spanning under
@@ -590,6 +616,20 @@
   letter-spacing: 0.14em; text-transform: uppercase;
 }
 .pjemptyA .ic { width: 15px; height: 15px; }
+/* A refused read or write — the plan-limit message, the role refusal, a lost
+   connection. Same danger tone as the field-level error, given a block of its
+   own because it belongs to the book rather than to one input. */
+.bookErr {
+  border: var(--border-thin);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--danger);
+}
 /* ============================================================
    BOTTOM SHEETS — hand-rolled (house style, no dialog library).
    Two of them: the row actions menu, and the create form (the
@@ -708,9 +748,6 @@
 }
 .pinput::placeholder { color: var(--muted-faint); }
 .pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
-/* Dates are the drawing-annotation layer, so the native control gets mono. */
-.pinput[type="date"] { font-family: var(--font-mono); font-size: 14px; }
-.pinput[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.55; cursor: pointer; }
 .ptextarea {
   min-height: 84px;
   padding: 11px 12px;
@@ -727,6 +764,145 @@
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 12px;
 }
+/* ============================================================
+   DATE FIELD (.dpk) — the house month grid, handheld edition.
+
+   WHY THE NATIVE CONTROL IS GONE (2026-08-15). `<input type="date">` opens an
+   OS panel no stylesheet can reach: no frame, no radius, no type, nothing about
+   it is ours, and its grey browser glyph drew the SAME mark on Starts and Ends
+   so the two fields were indistinguishable. Replacing the CONTROL is the only
+   way to style the panel — the same call the desktop dialog already made in
+   components/v3/shared/date-popover.ts.
+
+   This is that control's handheld sibling, not a second implementation of it:
+   the desktop module's stylesheet is anchored under the literal
+   `.jf-blueprint .content` the blueprint shell carries, which this page is not
+   inside, and its panel is positioned inside a `.mdl` overlay against the
+   shell's FLUID SCALE zoom, which this page does not run. What the two share is
+   the DESIGN — 34px mono day cells, today as a blueprint ring, the chosen day
+   as an ink fill, the beige TODAY / CLEAR footer — and the wire format, which
+   comes from that module's own `toISODate` / `fromISODate` so the two can never
+   read a date differently.
+   ============================================================ */
+.dpk { position: relative; display: block; }
+/* The field keeps `.pinput`'s height, frame and focus ring; this adds only the
+   drawing-annotation type a date belongs in and the room the two icons need. */
+.dpkIn {
+  padding-left: 34px;
+  padding-right: 46px;
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.dpkLead {
+  position: absolute;
+  left: 11px; top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  pointer-events: none;
+  color: var(--blueprint);
+}
+.dpkLead .ic { width: 15px; height: 15px; }
+/* 42px wide and full field height — the handheld touch floor, spent on the
+   button rather than on a 12px browser glyph. */
+.dpkTgl {
+  position: absolute;
+  right: 1.5px; top: 1.5px; bottom: 1.5px;
+  width: 42px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  color: var(--muted);
+  transition: color 0.12s, background 0.12s;
+}
+.dpkTgl:active { color: var(--ink); background: var(--paper-deep); }
+.dpkTgl .ic { width: 14px; height: 14px; transition: transform 0.2s var(--ease-out); }
+.dpk.open .dpkTgl .ic { transform: rotate(180deg); }
+.dpk.open .dpkIn { border-color: var(--ink); }
+/* --- the panel ------------------------------------------------------------
+   Rendered as a SIBLING of the sheet and positioned in viewport coordinates,
+   never parented to the field: `.sheetBody` scrolls and `.sheet` animates a
+   transform, either of which would clip or drag a panel anchored inside it. */
+.dpkLayer { position: fixed; inset: 0; z-index: 90; }
+.dpkCatch { position: absolute; inset: 0; }
+.dpkPop {
+  position: absolute;
+  width: min(300px, calc(100vw - 24px));
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  animation: dpkIn 0.18s var(--ease-out);
+}
+@keyframes dpkIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.dpkCal { padding: 10px 10px 12px; }
+.dpkHead {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 9px;
+}
+.dpkMonth { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.dpkNav {
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.dpkNav:active { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+.dpkNav .ic { width: 13px; height: 13px; }
+.dpkDow, .dpkGrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.dpkDow { margin-bottom: 4px; }
+.dpkDow span {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted-light);
+}
+.dpkDay {
+  height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 700;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.dpkDay:active { background: var(--paper-deep); border-color: var(--hair); }
+.dpkOut { color: var(--muted-faint); }
+/* Today is a ring, the chosen day is a fill — the same two states the calendar's
+   own grid uses, so a day never means two things. */
+.dpkToday { border-color: var(--blueprint); color: var(--blueprint); }
+.dpkSel { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.dpkFoot {
+  display: flex; flex-wrap: wrap;
+  align-items: center; justify-content: space-between;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  border-top: 1.5px solid var(--hair-soft);
+  background: var(--paper-deep);
+}
+.dpkVal {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dpkActs { display: inline-flex; gap: 6px; flex: 0 0 auto; }
+.dpkAct {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s;
+}
+.dpkAct:active { background: var(--ink); color: var(--paper); }
 /* Segmented status picker — the same three tones the badges use, so the status
    a project starts in is picked from the shapes it is filtered and labelled by.
    Flat: the selected segment takes a 2px ink frame and the recessed beige of the

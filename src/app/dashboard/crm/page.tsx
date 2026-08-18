@@ -20,6 +20,8 @@ import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { longDate, relative } from "@/lib/format";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { parseChannel } from "@/lib/followUps/copy";
 import { CrmContent } from "@/components/v3/crm-blueprint/crm-content";
 import type {
   ActivityItem,
@@ -28,7 +30,6 @@ import type {
   Customer,
   FollowUpRule,
   QueueItem,
-  TemplateOption,
 } from "@/components/v3/crm-blueprint/crm-data";
 import { STATUS_ORDER } from "@/components/v3/crm-blueprint/crm-data";
 
@@ -81,7 +82,7 @@ export default async function CrmPage() {
     conversations,
     clients,
     ruleRows,
-    templateRows,
+    org,
     followUps,
   ] = await Promise.all([
     db.lead.findMany({ where: { organizationId }, select: { status: true } }),
@@ -105,10 +106,11 @@ export default async function CrmPage() {
       },
     }),
     db.followUpRule.findMany({ where: { organizationId }, orderBy: { name: "asc" } }),
-    db.emailTemplate.findMany({
-      where: { organizationId },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
+    // The preview card renders the contractor's OWN letterhead, so the sender
+    // lockup and footer come from the org row rather than a placeholder.
+    db.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true, phone: true, logoUrl: true },
     }),
     db.followUp.findMany({
       where: { organizationId, completedAt: null },
@@ -196,10 +198,8 @@ export default async function CrmPage() {
     triggerStatus: r.triggerStatus,
     delayMinutes: r.delayMinutes,
     enabled: r.enabled,
-    template: r.template,
+    channel: parseChannel(r.template),
   }));
-
-  const templates: TemplateOption[] = templateRows.map((t) => ({ id: t.id, name: t.name }));
 
   const data: CrmContentData = {
     stats: {
@@ -214,8 +214,13 @@ export default async function CrmPage() {
     activity,
     customers,
     rules,
-    templates,
     queue,
+    org: {
+      name: org?.name ?? "Your company",
+      phone: org?.phone ?? null,
+      logoUrl: org?.logoUrl ?? null,
+    },
+    smsEnabled: isTwilioEnabled(),
   };
 
   return <CrmContent data={data} />;

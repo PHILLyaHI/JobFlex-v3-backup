@@ -23,6 +23,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
+import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
 
 /** CLAUDE.md's handheld target: ≤768px. Matches the mobile modules' own scale. */
 const HANDHELD = "(max-width: 768px)";
@@ -177,8 +178,37 @@ const HANDHELD_SURFACES: Record<string, React.ComponentType> = {
 
 /** Routes whose PAGE owns the handheld switch because the map above cannot:
  *  a dynamic pathname, and a handheld build that needs the page's server data.
- *  Deliberately anchored and single-segment — see the guard's comment below. */
-const PAGE_OWNED_HANDHELD = /^\/dashboard\/projects\/[^/]+$/;
+ *  Deliberately anchored and single-segment — see the guard's comment below.
+ *
+ *  · /dashboard/projects/<id> — mobile-project-detail/project-detail-viewport-switch
+ *  · /dashboard/jobs/<id>     — mobile-job-detail/job-detail-viewport-switch
+ *
+ *  Single-segment anchoring is what keeps the static siblings out: /dashboard/
+ *  projects/new and /dashboard/jobs/new match neither branch, and the list
+ *  pages /dashboard/projects and /dashboard/jobs are handled by the map above,
+ *  which returns before this line. */
+const PAGE_OWNED_HANDHELD = /^\/dashboard\/(projects|jobs)\/[^/]+$/;
+
+/** Static routes whose PAGE owns the switch for the other reason: the handheld
+ *  build needs the page's server data, so it cannot be a props-less component
+ *  mounted from this layout.
+ *
+ *  · /dashboard/subscription-blueprint — the URL the sidebar's Subscription
+ *    button points at (2026-08-13). Its handheld half is the real-data
+ *    components/v3/mobile-subscription build, fed by the page's own loader; see
+ *    app/dashboard/subscription-blueprint/subscription-blueprint-responsive.tsx.
+ *  · /dashboard/client-detail — the record the handheld clients book opens
+ *    (2026-08-15). It was the one surface reachable from a mobile page with no
+ *    mobile chrome: the desktop topbar was clipped off the right edge of a
+ *    390px viewport and there was no hamburger, so there was no way back into
+ *    the app. Its handheld half is the SAME ClientDetailContent — the page body
+ *    already collapses — wrapped in the fleet's MobileNav by
+ *    components/v3/client-detail-blueprint/client-detail-viewport-switch.tsx,
+ *    which needs the `?client=` row the page's own loader read. */
+const PAGE_OWNED_STATIC = new Set([
+  "/dashboard/subscription-blueprint",
+  "/dashboard/client-detail",
+]);
 
 // Module-scope so the identities are stable across renders — a fresh
 // `subscribe` on every render makes useSyncExternalStore re-subscribe each
@@ -209,23 +239,36 @@ export function ResponsiveDashboardShell({
   const pathname = usePathname();
 
   const Handheld = HANDHELD_SURFACES[pathname ?? ""];
-  if (isHandheld && Handheld) return <Handheld />;
+  // Wrapped because every entry in the map above is a `dynamic(…, { ssr:false })`
+  // chunk fetched at navigation time. When a deploy lands under a tab that is
+  // already open, that fetch 404s and React surfaces the dead import as the
+  // generic client-side exception; the boundary spends one reload picking up
+  // the new build instead. Keyed on the pathname so navigating off a surface
+  // whose chunk is missing clears the panel rather than carrying it along.
+  if (isHandheld && Handheld) {
+    return (
+      <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
+        <Handheld />
+      </ChunkRecoveryBoundary>
+    );
+  }
 
-  // Project detail, 2026-08-12 — the one route the map above cannot express.
-  // It is DYNAMIC (/dashboard/projects/<cuid>), so no literal key matches it,
-  // and its handheld build needs the project, its jobs and the attachable-job
-  // candidates, which are read in that page's server component and cannot
-  // reach a props-less component mounted from here. So the PAGE owns the
+  // Project detail (2026-08-12) and job detail (2026-08-13) — the two routes
+  // the map above cannot express. Both are DYNAMIC (/dashboard/projects/<cuid>,
+  // /dashboard/jobs/<id>), so no literal key matches them. So the PAGE owns the
   // switch, on the same (max-width: 768px) query, and this guard is the other
   // half of it: at handheld width the shell renders the page bare rather than
   // wrapping a self-contained fixed-position tree in the desktop chrome, which
   // would put both trees in the DOM at once. Above 768px nothing changes.
   //
-  // Scope of the pattern, checked: /dashboard/projects (the list) is matched by
-  // the map above and returns before this line; /dashboard/projects/new lives in
-  // the (dashboard) route group, a different layout that never mounts this
-  // shell; no other route under this layout has a second path segment.
+  // Scope of the pattern, checked for BOTH branches: the list pages
+  // /dashboard/projects and /dashboard/jobs are matched by the map above and
+  // return before this line; /dashboard/projects/new and /dashboard/jobs/new
+  // both live in the (dashboard) route group, a different layout that never
+  // mounts this shell, so the single-segment pattern matching them is inert;
+  // no other route under this layout has a second path segment.
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) return <>{children}</>;
+  if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) return <>{children}</>;
 
   return <BlueprintShell user={user}>{children}</BlueprintShell>;
 }

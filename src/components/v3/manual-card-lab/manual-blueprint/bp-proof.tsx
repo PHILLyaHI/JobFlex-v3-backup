@@ -20,26 +20,35 @@
 
 import type { ProposalOptions, Totals } from "../manual-focus/manual-focus-types";
 import { UNIT_LABEL, money, pct, qty } from "../manual-focus/manual-focus-math";
-import { ORG_NAME, PROPOSAL_DATE, PROPOSAL_NO } from "../manual-focus/manual-focus-data";
+// The three fixtures this file used to print in its own head — ORG_NAME,
+// PROPOSAL_NO, PROPOSAL_DATE — are gone; the sheet is headed by the REAL org
+// and the REAL record's reference now. See manual-blueprint-bridge.ts.
+import type { SheetIdentity } from "./manual-blueprint-bridge";
 import styles from "./manual-blueprint.module.css";
 import { cx } from "./bp-ui";
 
 export function TheirCopy({
+  identity,
   title,
   clientName,
   address,
   scopeOfWork,
   terms,
   taxPct,
+  discountPct,
   options,
   totals,
 }: {
+  identity: SheetIdentity;
   title: string;
   clientName: string;
   address: string;
   scopeOfWork: string;
   terms: string;
   taxPct: number;
+  /** The rate as typed, for the discount row's own label. The AMOUNT comes
+   *  from `totals`, like every other figure on this sheet. */
+  discountPct: number;
   options: ProposalOptions;
   totals: Totals;
 }) {
@@ -57,7 +66,7 @@ export function TheirCopy({
       <div>
         <div className={styles.sheetHead}>
           <div>
-            <div className={styles.sheetOrg}>{ORG_NAME}</div>
+            <div className={styles.sheetOrg}>{identity.orgName}</div>
             <div className={styles.sheetFor}>
               {clientName || "No client yet"}
               {address ? (
@@ -69,9 +78,9 @@ export function TheirCopy({
             </div>
           </div>
           <div className={styles.sheetRef}>
-            {PROPOSAL_NO}
+            {identity.ref}
             <br />
-            {PROPOSAL_DATE}
+            {identity.date}
           </div>
         </div>
 
@@ -111,6 +120,18 @@ export function TheirCopy({
           <span className={styles.sumLabel}>Subtotal</span>
           <span className={styles.sumValue}>{money(totals.preTax)}</span>
         </div>
+        {/* The discount was missing from this column, and with it the sheet no
+            longer added up: subtotal + tax did not reach the total the client
+            was asked to pay. It prints between the two figures it sits between
+            in the arithmetic, and only when there is one. */}
+        {totals.discountAmount > 0 ? (
+          <div className={styles.sumRow}>
+            <span className={styles.sumLabel}>
+              Discount{discountPct > 0 ? ` · ${pct(discountPct)}` : ""}
+            </span>
+            <span className={styles.sumValue}>−{money(totals.discountAmount)}</span>
+          </div>
+        ) : null}
         <div className={styles.sumRow}>
           <span className={styles.sumLabel}>Tax · {pct(taxPct)}</span>
           <span className={styles.sumValue}>{money(totals.tax)}</span>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Badge } from "@/components/ui/Badge";
-import { WorkerInviteCard } from "@/components/workers/WorkerInviteCard";
+import { WorkerInviteContent } from "@/components/v3/worker-invite-blueprint/worker-invite-content";
 import { JobResponseCard } from "./job-response";
 import { longDate, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -50,29 +50,19 @@ export default async function WorkerDashboard({
   const role = membership?.role ?? "INSTALLER";
 
   // ── Invite gate ──────────────────────────────────────────────────────────
-  // The magic link is the invite link until the worker responds.
-  if (worker.inviteStatus === "PENDING") {
+  // The magic link is the invite link until the worker responds. Both branches
+  // are the one blueprint landing page (the layout renders it without the
+  // portal chrome); the declined state is a stage of it, not a separate card.
+  if (worker.inviteStatus === "PENDING" || worker.inviteStatus === "DECLINED") {
     return (
-      <WorkerInviteCard
+      <WorkerInviteContent
         token={token}
         orgName={worker.organization?.name ?? "the team"}
         workerName={worker.displayName}
         email={worker.user?.email ?? ""}
         role={role}
+        alreadyDeclined={worker.inviteStatus === "DECLINED"}
       />
-    );
-  }
-  if (worker.inviteStatus === "DECLINED") {
-    return (
-      <div className="max-w-md mx-auto paper-card p-10 text-center">
-        <h1 className="font-display text-[26px] leading-[1.1] tracking-[-0.02em]">
-          Invite declined
-        </h1>
-        <p className="mt-2 text-[13px] text-[color:var(--ink-muted)]">
-          This invitation was declined. Ask {worker.organization?.name ?? "your manager"} to send a
-          new one if you&apos;d like to join.
-        </p>
-      </div>
     );
   }
   // ACCEPTED with a real password → the magic link becomes the dashboard link.

@@ -28,9 +28,12 @@
 // client as a page that went missing.
 //
 // Sections are also the atomic unit of pagination: each one carries
-// `break-inside: avoid`, so a heading never ends a page with its body on the
-// next. Long sections (pricing, terms) are allowed to break INTERNALLY at the
-// row, never mid-row.
+// `break-inside: avoid`, so a section that will not fit in what is left of a
+// page moves to the next page WHOLE rather than being cut at an arbitrary
+// line. The single exception is the one the property makes for itself — a
+// section taller than a page cannot be moved anywhere it would fit, so it
+// flows, breaking at a row (pricing, payments, attachments) or between lines
+// of prose (scope, terms), and never mid-row.
 //
 // ── WHAT THIS PRINTS THAT CARD 10 DOES NOT ───────────────────
 // The payment schedule, the attachment list and the project overview. All three
@@ -41,9 +44,12 @@
 // the paper cannot drift.
 //
 // ── THE HONEST LIMITS ────────────────────────────────────────
-// · "≈ N pages" is an estimate: it divides the measured flow height by the
-//   usable page height. The browser makes the final breaks, and `break-inside`
-//   can push a section down a page. It is printed with a ≈ for that reason.
+// · "≈ N pages" packs the measured blocks under the same rule the print layer
+//   gives the browser (a section that does not fit moves whole; one taller
+//   than a page flows), so it agrees with the file in every case measured. It
+//   keeps the ≈ because the measurement is taken from the PREVIEW, which the
+//   shell's fluid-scale zoom lays out at a fraction of 1 while the paper is
+//   always at zoom 1 — a line that wraps on screen can hold on the sheet.
 // · "Page 1 of 3" is not achievable in print CSS — `counter(page)` only works
 //   inside @page margin boxes, which Chrome does not implement. The footer
 //   therefore carries the identifiers that DO survive a separated page (the
@@ -65,13 +71,11 @@ import {
   pct,
   qty,
 } from "../manual-focus/manual-focus-math";
-import {
-  ORG_LINE,
-  ORG_NAME,
-  PROPOSAL_DATE,
-  PROPOSAL_NO,
-  VALID_DAYS,
-} from "../manual-focus/manual-focus-data";
+// The five fixtures that used to sit here — ORG_NAME, ORG_LINE, PROPOSAL_NO,
+// PROPOSAL_DATE, VALID_DAYS — are gone. Who is sending this, under what
+// reference and until when are facts about a REAL org and a REAL row, so they
+// arrive as `doc.identity`, read on the server. See manual-blueprint-bridge.ts.
+import type { SheetIdentity } from "./manual-blueprint-bridge";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Segmented, ToggleCell, cx } from "./bp-ui";
 
@@ -114,21 +118,25 @@ const PAPER: Record<PaperSize, { label: string; css: string; w: number; h: numbe
   a4: { label: "A4", css: "A4", w: 794, h: 1123 },
 };
 
-/** @page margins, in px, matching the print block in the stylesheet
- *  (20mm top / 18mm bottom). Used only by the page-count estimate. */
-const PAGE_MARGIN_Y = 144;
-const RUNHEAD_H = 58;
-const RUNFOOT_H = 34;
+/** CSS px per millimetre at 96/in — the document is measured in px and the
+ *  page box is specified in mm, and one of the two has to convert. */
+const MM = 96 / 25.4;
 
-/** The date the offer stops standing. Computed once from the two fixtures, so
- *  the server and the client render the same string. */
-const VALID_UNTIL = (() => {
-  const d = new Date(`${PROPOSAL_DATE}T00:00:00`);
-  d.setDate(d.getDate() + VALID_DAYS);
-  return d.toISOString().slice(0, 10);
-})();
+/** THE PAGE BOX, IN ONE PLACE — the paper's own white edge, written into the
+ *  @page rule below and used by the length estimate, so the estimate cannot
+ *  drift from the paper it is estimating. */
+const TRIM_MM = { top: 20, side: 16, bottom: 18 };
+
+/** The two running bands cost their height on EVERY sheet, not once: they are
+ *  a repeating <thead>/<tfoot> (see the note on the document), so the usable
+ *  text height of every page is the page box less whichever bands are on.
+ *  Measured from the rendered bands at true trim width. */
+const RUNHEAD_H = 48;
+const RUNFOOT_H = 53;
 
 type DocProps = {
+  /** Sender, reference, date and expiry — see SheetIdentity. */
+  identity: SheetIdentity;
   title: string;
   clientName: string;
   email: string;
@@ -171,31 +179,69 @@ export function PdfBlock({
 }) {
   const [open, setOpen] = useState(false);
   const [zoomAt, setZoomAt] = useState(ZOOM_FIT);
-  const [flowH, setFlowH] = useState(0);
+  const [blocks, setBlocks] = useState<Block[]>([]);
   const flowRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   // The page estimate measures the REAL flow, at real paper width, whether or
   // not the preview is open — the vault clips the sheet but does not stop it
   // laying out, which is the whole reason it clips instead of unmounting.
+  //
+  // It measures the BLOCKS, not the total. Dividing one tall column by the
+  // page height answers "how much paper is this", which stopped being the
+  // question when the sheet started moving whole sections to the next page
+  // rather than cutting them: a proposal whose sections happen to land badly
+  // is genuinely longer than its own height, and an estimate that cannot see
+  // that reads one page short exactly when the contractor is deciding whether
+  // to trim something.
   useEffect(() => {
     const el = flowRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       // `offsetHeight`, NOT getBoundingClientRect: the overlay scales the sheet
       // with a CSS transform, and a bounding rect is the VISUAL box — at 200%
       // zoom it would report twice the height and the card would claim the
       // proposal had doubled in length. offsetHeight is the layout box, which
-      // is what a page count is a function of. It is already an integer, so the
-      // rounding this used to do is gone with it.
+      // is what a page count is a function of.
       //
+      // The margin above each block is kept SEPARATE from its height, because
+      // the two are not worth the same on paper: a margin at the top of a new
+      // page is truncated by the fragmenter and costs nothing, which is worth
+      // roughly one section's height across a long proposal. It is read from
+      // the computed style rather than hard-coded so the stylesheet stays the
+      // one place the rhythm is set.
+      const next = Array.from(el.children).map((node) => {
+        const n = node as HTMLElement;
+        return { h: n.offsetHeight, mt: parseFloat(getComputedStyle(n).marginTop) || 0 };
+      });
       // Read OUTSIDE the updater: a DOM read inside one runs twice under
       // StrictMode.
-      const next = el.offsetHeight;
-      setFlowH((prev) => (prev === next ? prev : next));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
+      setBlocks((prev) =>
+        prev.length === next.length && prev.every((v, i) => v.h === next[i].h && v.mt === next[i].mt)
+          ? prev
+          : next,
+      );
+    };
+    const ro = new ResizeObserver(measure);
+    // Every block is watched, not just the flow: the flow's own height changes
+    // for a hundred reasons, and what the estimate needs is which BLOCK grew.
+    const watch = () => {
+      ro.disconnect();
+      ro.observe(el);
+      Array.from(el.children).forEach((n) => ro.observe(n));
+    };
+    watch();
+    // Sections come and go with the proposal — a section appears the moment
+    // terms are typed — and a new child is not a resize of anything already
+    // observed, so the list is re-watched when it changes rather than the
+    // effect being re-run on every render of a doc object that is new each
+    // time regardless of whether the document is.
+    const mo = new MutationObserver(watch);
+    mo.observe(el, { childList: true });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+    };
   }, []);
 
   // ESCAPE, and the scroll lock. Both belong to the overlay being open and both
@@ -222,10 +268,10 @@ export function PdfBlock({
   const paper = PAPER[setup.paper];
   const usable =
     paper.h -
-    PAGE_MARGIN_Y -
+    (TRIM_MM.top + TRIM_MM.bottom) * MM -
     (setup.letterhead ? RUNHEAD_H : 0) -
     (setup.footer ? RUNFOOT_H : 0);
-  const bodyPages = flowH > 0 ? Math.max(1, Math.ceil(flowH / usable)) : 0;
+  const bodyPages = fitPages(blocks, usable);
   const pages = bodyPages > 0 ? bodyPages + (setup.cover ? 1 : 0) : 0;
   const count = sectionCount(doc);
 
@@ -238,7 +284,7 @@ export function PdfBlock({
    *  "MC-2041 Roof replacement.pdf" and "JobFlex · Manual proposal.pdf". */
   const download = () => {
     const prev = document.title;
-    const stem = [PROPOSAL_NO, doc.title.trim() || "Proposal"].join(" ");
+    const stem = [doc.identity.ref, doc.title.trim() || "Proposal"].join(" ");
     document.title = stem.replace(/[\\/:*?"<>|]+/g, "-");
     const restore = () => {
       document.title = prev;
@@ -251,9 +297,12 @@ export function PdfBlock({
   return (
     <div className={styles.pdfBlock}>
       {/* @page cannot be scoped to a class, so the one rule that has to follow
-          the paper control is written as a real stylesheet. Keyed on the
-          paper so React replaces the rule rather than appending a second. */}
-      <style key={setup.paper}>{`@page { size: ${paper.css} portrait; margin: 20mm 16mm 18mm; }`}</style>
+          the paper control is written as a real stylesheet. Keyed on the whole
+          page box — paper AND the two bands, since each band widens a margin —
+          so React replaces the rule rather than appending a second. */}
+      <style key={setup.paper}>
+        {`@page { size: ${paper.css} portrait; margin: ${TRIM_MM.top}mm ${TRIM_MM.side}mm ${TRIM_MM.bottom}mm; }`}
+      </style>
 
       <div className={styles.pdfSpec}>
         <SpecCell label="Paper" value={paper.label} />
@@ -322,7 +371,7 @@ export function PdfBlock({
         {open ? (
           <div className={styles.pdfBar}>
             <span className={styles.pdfBarTitle}>
-              {PROPOSAL_NO}
+              {doc.identity.ref}
               <span className={styles.pdfBarSep}>·</span>
               {paper.label}
               <span className={styles.pdfBarSep}>·</span>
@@ -388,6 +437,47 @@ export function PdfBlock({
   );
 }
 
+/** One block of the flow — the document head, then one per section — with the
+ *  space above it kept apart from its own height. */
+type Block = { h: number; mt: number };
+
+/**
+ * The page count, under the rule the printed sheet actually follows.
+ *
+ * It is the same rule stated twice — once to the browser as `break-inside`,
+ * once here as arithmetic — because there is no way to ask a browser how many
+ * pages something WILL be without printing it. The two are kept adjacent in
+ * the comments for that reason: change one and the other is wrong.
+ *
+ *   · a block that does not fit in what is left of the page moves whole;
+ *   · a block taller than a whole page is the exception, and flows;
+ *   · a block that opens a page loses the margin above it, as the fragmenter
+ *     truncates it — so it is charged for its height and nothing else.
+ */
+function fitPages(blocks: Block[], usable: number): number {
+  if (usable <= 0 || blocks.length === 0) return 0;
+  let pages = 1;
+  let used = 0;
+  for (const b of blocks) {
+    if (used > 0 && used + b.mt + b.h > usable) {
+      pages += 1;
+      used = 0;
+    }
+    const cost = used > 0 ? b.mt + b.h : b.h;
+    if (used + cost <= usable) {
+      used += cost;
+      continue;
+    }
+    // Taller than the page it starts on: it breaks, and what is left of it
+    // decides how many further sheets it costs.
+    const rest = cost - (usable - used);
+    const extra = Math.ceil(rest / usable);
+    pages += extra;
+    used = rest - (extra - 1) * usable;
+  }
+  return pages;
+}
+
 function SpecCell({ label, value }: { label: string; value: string }) {
   return (
     <div className={styles.pdfSpecCell}>
@@ -402,6 +492,7 @@ function SpecCell({ label, value }: { label: string; value: string }) {
    ============================================================ */
 
 export function PdfDocument({
+  identity,
   title,
   clientName,
   email,
@@ -423,6 +514,7 @@ export function PdfDocument({
   const jobTitle = title.trim() || "Untitled proposal";
   const client = clientName.trim() || "No client yet";
   const sections = buildSections({
+    identity,
     title,
     clientName,
     email,
@@ -446,28 +538,54 @@ export function PdfDocument({
       style={{ "--pdf-w": `${paper.w}px` } as React.CSSProperties}
       aria-label="Proposal PDF"
     >
-      {/* PAGE FURNITURE. Static blocks on screen; `position: fixed` under
-          @media print, which is what makes Chrome repeat them on every sheet.
-          One element per band, not two — a screen version and a print version
-          would be two documents to keep in agreement. */}
-      {setup.letterhead ? (
-        <header className={styles.pdfRunHead}>
-          <div>
-            <div className={styles.pdfHeadOrg}>{ORG_NAME}</div>
-            <div className={styles.pdfHeadLine}>{ORG_LINE}</div>
-          </div>
-          <div className={styles.pdfHeadRef}>
-            {PROPOSAL_NO}
-            <br />
-            {PROPOSAL_DATE}
-          </div>
-        </header>
-      ) : null}
+      {/* ── THE PAGED FRAME ──────────────────────────────────────────
+          A REAL TABLE, and the only reason is the one thing print CSS has no
+          other way to say: repeat this band at the head of every sheet AND
+          reserve its height in the text area of every sheet.
 
+          `position: fixed` repeats a band, but a fixed box is out of flow, so
+          nothing below it moves — it printed the letterhead straight through
+          the opening lines of page two onward, and the padding that cleared it
+          on page one could not reach page two, because padding belongs to a
+          box and pages are not boxes. Negative offsets into the page margin do
+          not help either: a fixed box that overflows the top of its page area
+          is painted on the PREVIOUS sheet (measured, not assumed).
+          `display: table-header-group` on a div is ignored by Chrome for
+          repetition — also measured. A real <thead> is repeated, reserves its
+          own space, and the section-level `break-inside: avoid` below keeps
+          working inside the cell. That is the whole justification; the table
+          carries no data and is marked `presentation` so it carries no
+          meaning either. */}
+      <table className={styles.pdfPaged} role="presentation">
+        {setup.letterhead ? (
+          <thead>
+            <tr>
+              <td>
+                <header className={styles.pdfRunHead}>
+                  <div>
+                    <div className={styles.pdfHeadOrg}>{identity.orgName}</div>
+                    {identity.orgLine ? (
+                      <div className={styles.pdfHeadLine}>{identity.orgLine}</div>
+                    ) : null}
+                  </div>
+                  <div className={styles.pdfHeadRef}>
+                    {identity.ref}
+                    <br />
+                    {identity.date}
+                  </div>
+                </header>
+              </td>
+            </tr>
+          </thead>
+        ) : null}
+
+        <tbody>
+          <tr>
+            <td>
       <div className={cx(styles.pdfFlow, setup.letterhead && styles.pdfFlowHead, setup.footer && styles.pdfFlowFoot)}>
         {setup.cover ? (
           <section className={styles.pdfCover}>
-            <div className={styles.pdfCoverKicker}>Proposal {PROPOSAL_NO}</div>
+            <div className={styles.pdfCoverKicker}>Proposal {identity.ref}</div>
             <h1 className={styles.pdfCoverTitle}>{jobTitle}</h1>
             <div className={styles.pdfCoverFor}>
               Prepared for {client}
@@ -483,7 +601,7 @@ export function PdfDocument({
               <span className={styles.pdfCoverTotalValue}>{money(totals.total)}</span>
             </div>
             <div className={styles.pdfCoverMeta}>
-              {ORG_NAME} · {PROPOSAL_DATE} · valid until {VALID_UNTIL}
+              {identity.orgName} · {identity.date} · valid until {identity.validUntil}
             </div>
           </section>
         ) : null}
@@ -495,7 +613,7 @@ export function PdfDocument({
           <div className={styles.pdfDocHead}>
             <h2 className={styles.pdfDocTitle}>{jobTitle}</h2>
             <div className={styles.pdfDocSub}>
-              Proposal {PROPOSAL_NO} · {PROPOSAL_DATE} · valid until {VALID_UNTIL}
+              Proposal {identity.ref} · {identity.date} · valid until {identity.validUntil}
             </div>
           </div>
 
@@ -510,15 +628,25 @@ export function PdfDocument({
           ))}
         </div>
       </div>
+            </td>
+          </tr>
+        </tbody>
 
-      {setup.footer ? (
-        <footer className={styles.pdfRunFoot}>
-          <span>
-            {PROPOSAL_NO} · {client}
-          </span>
-          <span>Valid until {VALID_UNTIL} · {ORG_NAME}</span>
-        </footer>
-      ) : null}
+        {setup.footer ? (
+          <tfoot>
+            <tr>
+              <td>
+                <footer className={styles.pdfRunFoot}>
+                  <span>
+                    {identity.ref} · {client}
+                  </span>
+                  <span>Valid until {identity.validUntil} · {identity.orgName}</span>
+                </footer>
+              </td>
+            </tr>
+          </tfoot>
+        ) : null}
+      </table>
     </article>
   );
 }
@@ -549,7 +677,7 @@ function buildSections(d: DocProps): Section[] {
         <MetaPair label="Email" value={d.email.trim() || "—"} />
         <MetaPair label="Phone" value={d.phone.trim() || "—"} />
         <MetaPair label="Project" value={d.projectName || "—"} />
-        <MetaPair label="Prepared by" value={ORG_NAME} />
+        <MetaPair label="Prepared by" value={d.identity.orgName} />
       </div>
     ),
   });
@@ -672,14 +800,14 @@ function buildSections(d: DocProps): Section[] {
           <p className={styles.pdfProse}>
             Signing below accepts this proposal, its scope, its price of{" "}
             {money(d.totals.total)} and the terms above. This offer stands until{" "}
-            {VALID_UNTIL}.
+            {d.identity.validUntil}.
           </p>
           <div className={styles.signRow}>
             <div className={styles.signLine}>Client signature</div>
             <div className={styles.signLine}>Date</div>
           </div>
           <div className={styles.signRow}>
-            <div className={styles.signLine}>For {ORG_NAME}</div>
+            <div className={styles.signLine}>For {d.identity.orgName}</div>
             <div className={styles.signLine}>Date</div>
           </div>
         </>

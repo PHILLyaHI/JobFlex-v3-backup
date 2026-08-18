@@ -4,6 +4,7 @@ import { Send } from "lucide-react";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { PopupLoading } from "@/components/ui/LoadingSpinner";
 import { cn } from "@/lib/cn";
 import { type TradeJob, type ChatMessage } from "./trade-data";
 
@@ -12,6 +13,8 @@ interface TradeChatSheetProps {
   onClose: () => void;
   job: TradeJob | null;
   messages: ChatMessage[];
+  /** History still on the wire. The sheet opens BEFORE the fetch resolves. */
+  loading?: boolean;
   onSend: (jobId: string, body: string) => void;
 }
 
@@ -20,6 +23,7 @@ export function TradeChatSheet({
   onClose,
   job,
   messages,
+  loading = false,
   onSend,
 }: TradeChatSheetProps) {
   const endRef = React.useRef<HTMLDivElement>(null);
@@ -49,7 +53,8 @@ export function TradeChatSheet({
 
           {/* Messages */}
           <div className="flex-1 space-y-3 py-4">
-            {messages.length === 0 && (
+            {loading && <PopupLoading label="Loading messages" minHeight={160} />}
+            {!loading && messages.length === 0 && (
               <p className="px-2 pt-8 text-center text-[13px] text-[color:var(--ink-muted)]">
                 You&apos;re connected with {job.postedByName.split(" ")[0]}. Say hello to
                 work out timing and price.

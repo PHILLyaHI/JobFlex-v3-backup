@@ -43,17 +43,18 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Money",
     items: [
       { label: "Financials", icon: "i-bank", href: "/dashboard/financials" },
-      // Points at the LIVE subscription page, not the blueprint port of it —
-      // /dashboard/subscription-blueprint does not exist yet, and `typedRoutes`
-      // makes a link to a missing route a compile error. Repoint when the port
-      // lands and the owner promotes it.
+      // REPOINTED 2026-08-13 (owner's call): the button now opens the NEW
+      // design at /dashboard/subscription-blueprint — the blueprint port above
+      // 768px, the handheld build at or below it, one switch in that page. The
+      // old design is still served at /dashboard/subscription, which nothing
+      // links to any more.
       //
       // NOT role-gated here, and that is a known gap rather than a decision:
       // the production sidebar (components/layout/Sidebar.tsx) hides this item
       // from every role except OWNER, but the blueprint shell filters NAV_SECTIONS
       // by nothing at all — Financials sits one line above under the same rule.
       // Whoever brings RBAC to this shell owns both.
-      { label: "Subscription", icon: "i-card", href: "/dashboard/subscription" },
+      { label: "Subscription", icon: "i-card", href: "/dashboard/subscription-blueprint" },
     ],
   },
   {

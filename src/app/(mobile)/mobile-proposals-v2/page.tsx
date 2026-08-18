@@ -1,7 +1,8 @@
 // Mobile proposals — mobile-proposals-v2. A handheld-first rebuild of the
 // Proposals surface in the Blueprint design system, sibling to /mobile-v2
 // (the mobile Overview). Lives beside the desktop /dashboard/proposals rather
-// than replacing it, per the mobile route strategy.
+// than replacing it, per the mobile route strategy, and ALSO serves that route
+// at ≤768px through components/v3/responsive-shell/responsive-dashboard-shell.
 //
 // Built with the jobflex-page-styler skill (visual system: tokens, palette,
 // type scale, Motion System "Balanced", the Proposals page patterns) and the
@@ -10,15 +11,21 @@
 // system wins — hard 3px offset shadows, 2px radii and Inter 900 caps stay,
 // rather than the mobile skill's soft-shadow / rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of
-// scope until the layout is signed off.
+// The content is NOT a fixture any more (2026-08-13). This route reads the
+// org's real proposal book here, in the server component, through the same
+// readProposalBook() the desktop sheet renders from, and hands it down. The
+// shell-mounted copy at /dashboard/proposals gets no props, so it loads the
+// same book itself — see ./proposals-actions.ts.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
-// its own redirect-to-login like the other design routes.
+// its own redirect-to-login like the other design routes. readProposalBook()
+// throws UnauthorizedError when there is no session, which is the same gate.
 
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { readProposalBook } from "@/components/v3/proposals-blueprint/proposals-query";
+import type { ProposalRow } from "@/components/v3/proposals-blueprint/proposals-data";
 import { V3_PORTED_ROUTES } from "@/lib/v3/routes";
 import { MobileProposals } from "./mobile-proposals";
 
@@ -41,10 +48,16 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileProposalsV2Page() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect(`/auth/login?next=${encodeURIComponent(V3_PORTED_ROUTES.mobileProposalsV2)}`);
+  let rows: ProposalRow[];
+  try {
+    rows = await readProposalBook();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      redirect(`/auth/login?next=${encodeURIComponent(V3_PORTED_ROUTES.mobileProposalsV2)}`);
+    }
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <MobileProposals />;
+  return <MobileProposals rows={rows} />;
 }

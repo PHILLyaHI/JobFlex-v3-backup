@@ -1322,9 +1322,20 @@
 .bp :global(.content .wk-tile.on .wk-tile-v) { color: var(--blueprint); }
 .bp :global(.content .wk-tile-h) { margin-top: 8px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted); }
 
-/* register */
-.bp :global(.content .wk-space) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
-.bp :global(.content .wk-space.with-insp) { grid-template-columns: minmax(0, 1fr) 360px; }
+/* register
+   MOTION — the sheet OPENS, it does not appear. The donor toggled the second
+   track on and off, which is a 1→2 track change: not interpolable, so the
+   roster snapped ~378px narrower in a single frame. The closed state now
+   declares the same two tracks at 0px, which makes the change a plain length
+   interpolation, and the roster glides. `column-gap` rides the same curve so
+   the 18px gutter is never sitting next to a closed panel.
+   320ms — Motion System "Balanced", UI band, primary ease-out. */
+.bp :global(.content .wk-space) {
+  display: grid; grid-template-columns: minmax(0, 1fr) 0px;
+  row-gap: 18px; column-gap: 0; align-items: start;
+  transition: grid-template-columns 320ms var(--ease-out), column-gap 320ms var(--ease-out);
+}
+.bp :global(.content .wk-space.with-insp) { grid-template-columns: minmax(0, 1fr) 360px; column-gap: 18px; }
 .bp :global(.content .wk-card) { padding: 0; overflow: hidden; }
 .bp :global(.content .wk-card-head) { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; border-bottom: 2px solid var(--ink); background: var(--paper-deep); }
 .bp :global(.content .wk-card-head .kpi-lbl) { margin: 0; }
@@ -1373,12 +1384,40 @@
 .bp :global(.content .wk-empty p) { margin: 10px auto 0; max-width: 42ch; font-size: 13px; line-height: 1.6; color: var(--muted); }
 .bp :global(.content .wk-empty .btn) { margin-top: 16px; }
 
-/* inspector */
-.bp :global(.content .wk-insp) { position: sticky; top: 0; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+/* inspector
+   `.wk-insp` is now the CLIPPING track and carries no frame of its own; the
+   border, the paper and the hard offset shadow moved onto `.insp-panel`
+   inside it. Two reasons: the panel keeps a FIXED width, so its rows do not
+   re-wrap while the track is opening, and `margin-left: auto` pins it to the
+   container's right edge — the track opens leftwards, so the sheet is
+   uncovered like a drawer instead of unrolling from its own left edge.
+   357 + the 3px shadow = the donor's 360px column, unchanged. */
+.bp :global(.content .wk-insp) { position: sticky; top: 0; overflow: hidden; padding: 0 3px 3px 0; }
 .bp :global(.content .wk-insp.is-hidden) { display: none; }
+.bp :global(.content .insp-panel) {
+  width: 357px; margin-left: auto;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+  transition: opacity 300ms var(--ease-out) 40ms, transform 300ms var(--ease-out) 40ms;
+}
+/* Start states. `transition: none` on the way IN, so applying the class is not
+   itself an animation — only its removal is. */
+.bp :global(.content .insp-panel.insp-enter) { opacity: 0; transform: translateX(16px); transition: none; }
+/* A different worker in a sheet that is already open: nothing moves sideways,
+   the content just changes over. */
+.bp :global(.content .insp-panel.insp-swap) { opacity: 0; transform: translateY(6px); transition: none; }
+/* Dismissal is quicker than arrival, as with the dialogs. */
+.bp :global(.content .insp-panel.insp-leave) {
+  opacity: 0; transform: translateX(10px);
+  transition: opacity 190ms var(--ease-out), transform 190ms var(--ease-out);
+}
 .bp :global(.content .insp-head) { display: flex; align-items: flex-start; gap: 12px; padding: 16px 16px 14px; border-bottom: 2px solid var(--ink); background: var(--paper-deep); }
 .bp :global(.content .insp-head .wk-mono) { width: 42px; height: 42px; font-size: 13.5px; }
-.bp :global(.content .insp-name) { font-size: 16px; font-weight: 900; letter-spacing: -0.005em; }
+/* A worker's name is text a manager typed. `anywhere` (not `break-word`) is
+   what actually shrinks the min-content width, so a 200-character run wraps
+   inside the sheet instead of running out under its clipped right edge. */
+.bp :global(.content .insp-name) { min-width: 0; font-size: 16px; font-weight: 900; letter-spacing: -0.005em; overflow-wrap: anywhere; }
 .bp :global(.content .insp-folio) { margin-top: 4px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .insp-x) { margin-left: auto; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); font-size: 16px; line-height: 1; color: var(--muted); }
 .bp :global(.content .insp-x:hover) { border-color: var(--ink); color: var(--ink); }
@@ -1472,14 +1511,38 @@
 .bp :global(.content .mf-err--boxed) { margin: 0 17px 15px; padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); }
 .bp :global(.content .mf-err.is-hidden) { display: none; }
 
+/* The invite was written but not EMAILED. Amber, not red: the worker is on the
+   roster, so this is a partial result, not a refusal. Same 6px left edge as the
+   Lead Center informational banner. */
+.bp :global(.content .mf-warn) {
+  margin-bottom: 14px; padding: 12px 14px;
+  border: 1.5px solid var(--warning); border-left-width: 6px; border-radius: var(--radius);
+  background: var(--warning-soft);
+}
+.bp :global(.content .mf-warn-t) { font-size: 13px; font-weight: 800; line-height: 1.4; color: var(--warning-dark); }
+.bp :global(.content .mf-warn p) { margin-top: 6px; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); overflow-wrap: anywhere; }
+
 /* In-flight write: the button stops inviting a second click and drops its
    hover lift, so the pending state reads as pending rather than as broken. */
 .bp :global(.content .btn.is-busy) { opacity: 0.72; cursor: progress; }
 .bp :global(.content .btn.is-busy:hover) { transform: none; box-shadow: none; }
 
+/* prefers-reduced-motion: the sheet still opens and closes, it just arrives.
+   The JS skips the enter classes and unmounts the panel in the same frame. */
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .wk-space),
+  .bp :global(.content .insp-panel) { transition: none; }
+}
+
 @media (max-width: 1100px) {
-  .bp :global(.content .wk-space.with-insp) { grid-template-columns: minmax(0, 1fr); }
+  /* One column: the sheet stacks UNDER the roster, so there is no track to
+     open and the panel takes the full width. row-gap already separates them. */
+  .bp :global(.content .wk-space),
+  .bp :global(.content .wk-space.with-insp) {
+    grid-template-columns: minmax(0, 1fr); column-gap: 0; transition: none;
+  }
   .bp :global(.content .wk-insp) { position: static; }
+  .bp :global(.content .insp-panel) { width: auto; margin-left: 0; }
 }
 @media (max-width: 860px) {
   .bp :global(.content .wk-head) { flex-direction: column; align-items: stretch; gap: 14px; }

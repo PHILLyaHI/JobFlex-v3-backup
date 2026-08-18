@@ -62,6 +62,13 @@ export default async function ProposalsCPage() {
           measurementType: true,
           quantity: true,
           materialCost: true,
+          // The product metadata the AI estimator attached from its live SerpAPI
+          // match. Without it the materials sheet can only guess a merchant, so
+          // every row loses its thumbnail and its "Buy at …" link.
+          store: true,
+          productUrl: true,
+          imageUrl: true,
+          dimensions: true,
         },
         orderBy: { position: "asc" },
       },
@@ -105,6 +112,10 @@ export default async function ProposalsCPage() {
       measurementType: l.measurementType,
       quantity: l.quantity,
       materialCost: l.materialCost,
+      store: l.store,
+      productUrl: l.productUrl,
+      imageUrl: l.imageUrl,
+      dimensions: l.dimensions,
     })),
     beforePhotos: parseProposalPhotos(p.beforePhotos),
     afterPhotos: parseProposalPhotos(p.afterPhotos),

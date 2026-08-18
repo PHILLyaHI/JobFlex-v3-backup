@@ -2,23 +2,25 @@
 //
 // The direct-review entry point for the handheld job-detail build: always the
 // mobile design, at any width, so the composition can be opened on a desktop
-// browser without resizing. The desktop page at /dashboard/jobs/[id] is
-// untouched and keeps serving its own build at every width — this route stands
-// beside it, per the mobile route strategy.
+// browser without resizing. The desktop page at /dashboard/jobs/[id] serves its
+// own build above 768px and the SAME handheld build below it — this route
+// stands beside them, per the mobile route strategy.
 //
-// NO DATA LAYER. Like the desktop page, this surface is a FIXTURE: the content
-// comes from src/components/v3/job-detail-blueprint/job-detail-data.ts,
-// imported verbatim. `[id]` resolves so the segment exists (and so a link from
-// a job list keeps its shape), but it selects no content.
+// REAL DATA, NOT A FIXTURE. Both this route and /dashboard/jobs/[id] read the
+// Job behind `[id]` through the one loader in
+// src/components/v3/job-detail-blueprint/job-detail-load.ts, so the preview URL
+// and the live URL describe the same record and cannot drift. An id that
+// resolves to nothing this org owns is a 404 here too.
 //
 // Auth: middleware only matches /dashboard and /admin, so this route enforces
 // its own redirect-to-login like every other (mobile) design route — the same
 // requireOrg / UnauthorizedError / NoOrgError shape as
 // src/app/(mobile)/mobile-project-detail-v2/[id]/page.tsx.
 
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata, Viewport } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { loadJobDetail } from "@/components/v3/job-detail-blueprint/job-detail-load";
 import { MobileJobDetail } from "@/components/v3/mobile-job-detail/mobile-job-detail";
 
 export const dynamic = "force-dynamic";
@@ -45,8 +47,12 @@ export default async function MobileJobDetailV1Page({
 }) {
   const { id } = await params;
 
+  let organizationId: string;
+  let role: string;
   try {
-    await requireOrg();
+    const ctx = await requireOrg();
+    organizationId = ctx.organizationId;
+    role = ctx.role;
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       redirect(`/auth/login?next=${encodeURIComponent(`/mobile-job-detail-v1/${id}`)}`);
@@ -55,5 +61,10 @@ export default async function MobileJobDetailV1Page({
     throw err;
   }
 
-  return <MobileJobDetail />;
+  const record = await loadJobDetail(id, organizationId, role);
+  if (!record) notFound();
+
+  // Keyed on the record — see the note on the same line in
+  // src/app/dashboard/jobs/[id]/page.tsx.
+  return <MobileJobDetail key={record.id} record={record} />;
 }

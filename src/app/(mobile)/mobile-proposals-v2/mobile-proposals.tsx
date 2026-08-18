@@ -12,10 +12,10 @@
 //  · 3 tabs (All / Accepted / Completed) with live counts + sliding rule
 //  · masthead: one numeral per tab, mono kicker, EXACTLY two annotations
 //  · 6 filter chips, each inheriting its status badge tones when active
-//  · all 7 status badges (Draft/Sent/Viewed/Accepted/Declined/Expired/Paid)
+//  · all status badges (Draft/Sent/Viewed/Accepted/Declined/Expired/Paid)
 //  · ledger rows, contract dossiers, completion tear-sheets
 //  · BOTH payment variants: ≤5 instalments → columns, 6+ → row table
-//  · row actions sheet: 5 tonal icon boxes + a disabled and a danger item
+//  · row actions sheet: tonal icon boxes, disabled rows and a danger item
 //  · pagers, empty states, and the mutating actions behind them
 //
 // What changes versus the desktop sheet, and why:
@@ -26,27 +26,56 @@
 //  · Page sizes drop (6/2/1 vs 8/3/2): phone rows are taller, and density
 //    falls along the funnel.
 //
-// Content is the donor demo fixture by design: the data layer is out of
-// scope until the layout is signed off.
+// ── THE DATA LAYER (2026-08-13) ────────────────────────────────────────────
+// This surface WAS a fixture: sixteen invented proposals with invented clients,
+// cities and totals, mutated in memory by menu items that wrote nothing. It is
+// now the org's real proposal book, and every control reaches a real effect:
+//
+//   Open proposal    → /dashboard/proposals/<id>          (the live editor)
+//   View public page → /portal/q/<publicId>               (the client page)
+//   Duplicate        → duplicateProposal()
+//   Send to client   → sendProposal()
+//   Send reminder    → notifyPaymentReminder()
+//   Request payment  → notifyPaymentReminder() (no instalment = whole balance)
+//   Mark accepted / completed / un-accept → updateProposalStatus()
+//   Get directions   → the maps URL built server-side from the client address
+//   Before / After   → uploadProposalPhoto()
+//   PDF              → /api/proposals/<id>/pdf
+//   Delete           → bulkDeleteProposals()
+//
+// Rows arrive two ways. The standalone /mobile-proposals-v2 route reads them in
+// its server component and passes them as props. The copy the responsive shell
+// mounts at /dashboard/proposals gets NO props — that map renders props-less
+// components — so it loads the same book itself through ./proposals-actions.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-proposals.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import {
+  bulkDeleteProposals,
+  duplicateProposal,
+  sendProposal,
+  updateProposalStatus,
+  uploadProposalPhoto,
+} from "@/actions/proposals";
+import { notifyPaymentReminder } from "@/actions/notify";
+import { loadProposalBook } from "./proposals-actions";
 import {
   FILTERS,
   OPEN_STATUSES,
   PAGE_ACC,
   PAGE_ALL,
   PAGE_DONE,
-  PROPOSALS_SEED,
-  PSTATUS,
   TABS,
   instDollars,
+  statusPlate,
   sumOf,
   type FilterKey,
-  type Proposal,
+  type ProposalRow,
   type TabKey,
 } from "./proposals-data";
 
@@ -54,6 +83,22 @@ const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
+/** Server actions reject with an Error whose message is written for the user
+ *  ("Not found", "Plan limit reached", a send-transport failure). Surface that
+ *  text; fall back to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  const code = (err as { code?: string } | null)?.code;
+  if (code === "PLAN_LIMIT_REACHED") {
+    return "Plan limit reached — upgrade to create more proposals.";
+  }
+  if (msg === "Not found") return "That proposal is no longer available to you. Pull to refresh.";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
 
 function Icon({ id, className }: { id: string; className?: string }) {
   return (
@@ -101,6 +146,82 @@ type MenuRow = {
   danger?: boolean;
 };
 
+/* ============================================================
+   DROPDOWN PLACEMENT (2026-08-15)
+
+   The filter is a `.dd`: a `position: relative` wrapper holding a full-width
+   button and a `position: absolute; top: 100%` menu. That geometry fails
+   whenever the ledger under the bar is short or empty — the page is barely
+   taller than the viewport, so there is nothing to scroll, and an absolutely
+   positioned box does not lengthen the `.scroll` container it overflows. The
+   menu was not merely below the fold; its lower half was unreachable.
+
+   The rule, which is the one native pickers use: open DOWNWARD while there is
+   room below the trigger; when there is not, and there is more room above, FLIP
+   UP; either way cap the panel at the space actually available and let it
+   scroll internally. Nothing is ever positioned outside the visual viewport.
+
+   Written straight at the DOM — one attribute and one custom property on the
+   wrapper — because it re-runs on scroll and on every visual-viewport change
+   (the software keyboard), and none of that should cost a React render.
+   ============================================================ */
+const MENU_GAP = 6;
+const MENU_MARGIN = 12;
+/** Two rows of a 62px cell plus the frame — below this, opening down is not
+ *  worth it even if a scroller that short would technically hold the menu. */
+const MENU_MIN_DOWN = 140;
+
+function useMenuPlacement(
+  open: boolean,
+  anchorRef: React.RefObject<HTMLDivElement | null>,
+  menuRef: React.RefObject<HTMLDivElement | null>,
+) {
+  const measure = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    // visualViewport, not innerHeight: with the software keyboard up the two
+    // disagree by ~300px, and the keyboard is exactly when a filter gets opened
+    // right after typing in the search box.
+    const vv = window.visualViewport;
+    const viewTop = vv?.offsetTop ?? 0;
+    const viewH = vv?.height ?? window.innerHeight;
+
+    const below = viewTop + viewH - rect.bottom - MENU_GAP - MENU_MARGIN;
+    const above = rect.top - viewTop - MENU_GAP - MENU_MARGIN;
+    // The natural height decides whether a flip is warranted at all: a short
+    // menu that fits below must not jump above just because there is more room
+    // up there. `.ddMenu` hides with visibility/opacity, not display, so it is
+    // laid out and measurable while closed.
+    const natural = menuRef.current?.scrollHeight ?? 0;
+
+    const place = below >= Math.max(MENU_MIN_DOWN, natural) || below >= above ? "down" : "up";
+    anchor.dataset.place = place;
+    anchor.style.setProperty(
+      "--menu-max-h",
+      `${Math.max(MENU_MIN_DOWN, Math.round(place === "down" ? below : above))}px`,
+    );
+  }, [anchorRef, menuRef]);
+
+  useEffect(() => {
+    if (!open) return;
+    measure();
+    const vv = window.visualViewport;
+    // capture: the page scroller is an inner element, so a bubbling document
+    // listener would never see its scroll event.
+    document.addEventListener("scroll", measure, { capture: true, passive: true });
+    window.addEventListener("resize", measure);
+    vv?.addEventListener("resize", measure);
+    vv?.addEventListener("scroll", measure);
+    return () => {
+      document.removeEventListener("scroll", measure, { capture: true });
+      window.removeEventListener("resize", measure);
+      vv?.removeEventListener("resize", measure);
+      vv?.removeEventListener("scroll", measure);
+    };
+  }, [open, measure]);
+}
+
 function Pager({
   page,
   total,
@@ -141,23 +262,73 @@ function Pager({
   );
 }
 
-export function MobileProposals() {
+export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
+  const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const [data, setData] = useState<Proposal[]>(() =>
-    PROPOSALS_SEED.map((p) => ({ ...p, inst: p.inst ? p.inst.map((i) => ({ ...i })) : undefined })),
-  );
+  const [data, setData] = useState<ProposalRow[]>(() => rows ?? []);
+  // Only the shell-mounted copy loads its own book; the standalone route is
+  // server-rendered and arrives with rows already in hand.
+  const [loading, setLoading] = useState(rows === undefined);
+  // Re-seed when the SERVER hands down a new book — router.refresh() after a
+  // write re-runs the page's query, and the local optimistic copy has to give
+  // way to it. React's documented "adjust state when a prop changes" shape:
+  // compare against the last prop seen, during render, no effect involved.
+  const [seenRows, setSeenRows] = useState(rows);
+  if (rows !== undefined && rows !== seenRows) {
+    setSeenRows(rows);
+    setData(rows);
+  }
   const [tab, setTab] = useState<TabKey>("all");
   const [filter, setFilter] = useState<FilterKey>("ALL");
   const [pageAll, setPageAll] = useState(1);
   const [pageAcc, setPageAcc] = useState(1);
   const [pageDone, setPageDone] = useState(1);
-  const [sheetId, setSheetId] = useState<number | null>(null);
-  /* Derived from the URL, not held in state — the old label string only moved
-     the highlight, which is why the drawer could never change pages. */
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const [confirmDel, setConfirmDel] = useState(false);
+  /** Guards a second write while one is on the wire. */
+  const [writing, setWriting] = useState(false);
+  /** One-line report for a write that succeeded or refused. */
+  const [note, setNote] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  /* The filter menu's placement AND the outside-tap closer share one node.
+     `useAnchoredMenu` caps the panel at the room actually left under the trigger
+     and flips it above when there is more room there — without it the menu hung
+     off the bottom edge of the phone whenever the ledger was short, and an
+     absolutely positioned box does not lengthen the scroller it overflows, so
+     the lower half was unreachable rather than merely below the fold. */
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+  useMenuPlacement(filterOpen, filterRef, filterMenuRef);
+
+  /* ---------- the book, when nobody handed one down -------------------
+     Only the shell-mounted copy gets here (rows === undefined). The rows
+     the standalone route passes are reconciled during render, above. */
+  useEffect(() => {
+    if (rows !== undefined) return;
+    let alive = true;
+    loadProposalBook()
+      .then((book) => {
+        if (alive) setData(book);
+      })
+      .catch(() => {
+        if (alive) setNote({ tone: "bad", text: "Couldn't load your proposals. Reload the page." });
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [rows]);
+
+  /* ---------- the note clears itself ---------------------------------- */
+  useEffect(() => {
+    if (!note) return;
+    const id = window.setTimeout(() => setNote(null), 4200);
+    return () => window.clearTimeout(id);
+  }, [note]);
 
   /* ---------- filter dropdown: close on outside tap / Esc ------------- */
   useEffect(() => {
@@ -199,8 +370,11 @@ export function MobileProposals() {
     };
   }, []);
 
-  /* ---------- Motion: reveal on load + adaptive reveal on scroll ------ */
+  /* ---------- Motion: reveal on load + adaptive reveal on scroll ------
+     Runs once the book has landed: before that the content block is a single
+     placeholder, and observing it would spend the cascade on nothing. */
   useEffect(() => {
+    if (loading) return;
     if (prefersReducedMotion()) return;
     const host = scrollRef.current;
     const content = contentRef.current;
@@ -252,7 +426,7 @@ export function MobileProposals() {
       io.disconnect();
       host.removeEventListener("scroll", onScroll);
     };
-  }, []);
+  }, [loading]);
 
   /* ---------- Motion: graph-paper parallax --------------------------- */
   useEffect(() => {
@@ -298,6 +472,7 @@ export function MobileProposals() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       setSheetId(null);
+      setConfirmDel(false);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -370,28 +545,160 @@ export function MobileProposals() {
     scrollRef.current?.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [pageAll, pageAcc, pageDone]);
 
-  /* ---------- mutating actions --------------------------------------- */
+  /* ================= WRITES (real server actions) =====================
+     Every one of these is the action the desktop row menu calls, org- and
+     owner-scoped on the server and revalidating /dashboard/proposals. Local
+     state is patched from the result so the surface repaints immediately;
+     router.refresh() re-reads the same rows for the server-rendered entry. */
   const resetPages = () => {
     setPageAll(1);
     setPageAcc(1);
     setPageDone(1);
   };
-  const patch = (id: number, fn: (p: Proposal) => Proposal) => {
+  const patch = (id: string, fn: (p: ProposalRow) => ProposalRow) => {
     setData((prev) => prev.map((p) => (p.id === id ? fn({ ...p }) : p)));
     resetPages();
   };
-  const flash = (el: HTMLElement) => {
-    if (prefersReducedMotion()) return;
-    el.classList.remove(styles.flashOk);
-    void el.offsetWidth;
-    el.classList.add(styles.flashOk);
-    el.addEventListener("animationend", () => el.classList.remove(styles.flashOk), { once: true });
-  };
+  const todayPlate = () =>
+    new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit" }).toUpperCase();
+
+  async function runStatus(p: ProposalRow, status: "ACCEPTED" | "PAID" | "DRAFT", ok: string) {
+    if (writing) return;
+    setWriting(true);
+    try {
+      await updateProposalStatus(p.id, status);
+      patch(p.id, (x) => ({
+        ...x,
+        status,
+        updated: "just now",
+        accepted: status === "DRAFT" ? undefined : status === "ACCEPTED" ? todayPlate() : x.accepted,
+        paid: status === "PAID" ? todayPlate() : undefined,
+      }));
+      setNote({ tone: "ok", text: ok });
+      router.refresh();
+    } catch (err) {
+      setNote({ tone: "bad", text: actionError(err) });
+    } finally {
+      setWriting(false);
+    }
+  }
+
+  /** Remind / Request payment. An empty instalment id is the whole outstanding
+   *  balance — notifyPaymentReminder's own documented fallback. */
+  async function runReminder(p: ProposalRow, installmentId: string) {
+    if (writing) return;
+    setWriting(true);
+    try {
+      const res = await notifyPaymentReminder({ proposalId: p.id, installmentId });
+      if (res.skipped) {
+        setNote({
+          tone: "bad",
+          text:
+            res.reason === "no-client-email"
+              ? "This client has no email on file. Add one on the client record."
+              : "That proposal is no longer available to you.",
+        });
+      } else {
+        setNote({ tone: "ok", text: `Reminder sent to ${p.clientEmail ?? p.client}.` });
+      }
+    } catch (err) {
+      setNote({ tone: "bad", text: actionError(err) });
+    } finally {
+      setWriting(false);
+    }
+  }
+
+  async function runSend(p: ProposalRow) {
+    if (writing) return;
+    setWriting(true);
+    try {
+      await sendProposal(p.id);
+      patch(p.id, (x) => ({ ...x, status: "SENT", updated: "just now" }));
+      setNote({
+        tone: "ok",
+        text: p.clientEmail
+          ? `Sent to ${p.clientEmail}.`
+          : "Marked sent — no email went out, the client has no address on file.",
+      });
+      router.refresh();
+    } catch (err) {
+      setNote({ tone: "bad", text: actionError(err) });
+    } finally {
+      setWriting(false);
+    }
+  }
+
+  async function runDuplicate(p: ProposalRow) {
+    if (writing) return;
+    setWriting(true);
+    try {
+      const res = await duplicateProposal(p.id);
+      // The copy's publicId is generated server-side and is not returned, so
+      // there is nothing honest to append to the list here — open the copy in
+      // the editor, which is what "Clone & edit" meant on the desktop menu.
+      router.push(`/dashboard/proposals/${res.id}`);
+    } catch (err) {
+      setNote({ tone: "bad", text: actionError(err) });
+      setWriting(false);
+    }
+  }
+
+  async function runDelete(p: ProposalRow) {
+    if (writing) return;
+    setWriting(true);
+    try {
+      const res = await bulkDeleteProposals([p.id]);
+      if (res.deleted === 0) {
+        setNote({ tone: "bad", text: "That proposal is no longer yours to delete." });
+        return;
+      }
+      setData((prev) => prev.filter((x) => x.id !== p.id));
+      resetPages();
+      setNote({ tone: "ok", text: `"${p.title}" deleted.` });
+      router.refresh();
+    } catch (err) {
+      setNote({ tone: "bad", text: actionError(err) });
+    } finally {
+      setWriting(false);
+      setSheetId(null);
+      setConfirmDel(false);
+    }
+  }
+
+  /** Before / After completion shot → uploadProposalPhoto(). Stored on the
+   *  proposal (Vercel Blob when configured, inline data URL if not). */
+  async function runPhotoUpload(p: ProposalRow, slot: "before" | "after", file: File) {
+    if (writing) return;
+    setWriting(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result));
+        fr.onerror = () => reject(new Error("Couldn't read that file."));
+        fr.readAsDataURL(file);
+      });
+      const photo = await uploadProposalPhoto(p.id, dataUrl, file.name, slot);
+      patch(p.id, (x) => ({
+        ...x,
+        before: slot === "before" ? [...x.before, photo] : x.before,
+        after: slot === "after" ? [...x.after, photo] : x.after,
+      }));
+      setNote({ tone: "ok", text: `${slot === "before" ? "Before" : "After"} photo added.` });
+      router.refresh();
+    } catch (err) {
+      setNote({ tone: "bad", text: actionError(err) });
+    } finally {
+      setWriting(false);
+    }
+  }
 
   const sheetProposal = sheetId === null ? null : (data.find((p) => p.id === sheetId) ?? null);
 
   // Swipe-down dismissal, on the same close path as Escape and the scrim.
-  const sheetDrag = useSheetDrag(sheetProposal !== null, () => setSheetId(null));
+  const sheetDrag = useSheetDrag(sheetProposal !== null, () => {
+    setSheetId(null);
+    setConfirmDel(false);
+  });
 
   const menuRows = useMemo<MenuRow[]>(() => {
     const p = sheetProposal;
@@ -399,43 +706,45 @@ export function MobileProposals() {
     const isDraft = p.status === "DRAFT";
     const isAcc = p.status === "ACCEPTED";
     return [
-      { act: "open", icon: "i-file", tone: styles.pmiBp, title: "Open proposal", sub: "View the full document" },
+      { act: "open", icon: "i-file", tone: styles.pmiBp, title: "Open proposal", sub: "Edit the full document" },
+      { act: "public", icon: "i-arrow", title: "View public page", sub: "What the client sees" },
       { act: "dup", icon: "i-copy", title: "Duplicate", sub: "Copy into a new draft" },
-      { act: "remind", icon: "i-send", tone: styles.pmiSky, title: "Send reminder",
-        sub: isDraft ? "Draft — nothing sent yet" : "Nudge the client by email", disabled: isDraft },
+      { act: "send", icon: "i-send", tone: styles.pmiSky, title: "Send to client",
+        sub: p.clientEmail ?? "No email on the client record" },
+      { act: "remind", icon: "i-card", tone: styles.pmiSky, title: "Send payment reminder",
+        sub: isDraft
+          ? "Draft — nothing sent yet"
+          : p.clientEmail
+            ? "Nudge the client by email"
+            : "No email on the client record",
+        disabled: isDraft || !p.clientEmail },
       { act: "accept", icon: "i-check", tone: styles.pmiOk,
         title: isAcc ? "Already accepted" : "Mark accepted",
         sub: isAcc ? `Signed ${p.accepted ?? ""}` : "Move it into contracts", disabled: isAcc },
       { act: "dir", icon: "i-pin", tone: styles.pmiWarn, title: "Get directions",
-        sub: p.addr ? `${p.city} — open in maps` : "No address on client", disabled: !p.addr },
+        sub: p.maps ? `${p.city || "Client address"} — open in maps` : "No address on client",
+        disabled: !p.maps },
       { act: "del", icon: "i-trash", tone: styles.pmiDanger, title: "Delete", sub: "Remove permanently", danger: true },
     ];
   }, [sheetProposal]);
 
   const runMenu = (act: string) => {
     const p = sheetProposal;
-    setSheetId(null);
     if (!p) return;
     if (act === "del") {
-      setData((prev) => prev.filter((x) => x.id !== p.id));
-      resetPages();
-    } else if (act === "dup") {
-      setData((prev) => [
-        { ...p, id: p.id + 1000, status: "DRAFT", views: 0, updated: "now", accepted: undefined, paid: undefined, inst: undefined },
-        ...prev,
-      ]);
-      resetPages();
-    } else if (act === "accept") {
-      patch(p.id, (x) => ({
-        ...x,
-        status: "ACCEPTED",
-        accepted: "TODAY",
-        inst: x.inst ?? [
-          { label: "Deposit", due: null, amount: 50, pct: true },
-          { label: "Final on completion", due: null, amount: 50, pct: true },
-        ],
-      }));
+      // Two-step in the sheet rather than a native confirm(): the delete is
+      // permanent and CLAUDE.md prefers sheets to dialogs on handheld.
+      setConfirmDel(true);
+      return;
     }
+    setSheetId(null);
+    if (act === "open") router.push(`/dashboard/proposals/${p.id}`);
+    else if (act === "public") window.open(`/portal/q/${p.publicId}`, "_blank", "noopener,noreferrer");
+    else if (act === "dup") void runDuplicate(p);
+    else if (act === "send") void runSend(p);
+    else if (act === "remind") void runReminder(p, "");
+    else if (act === "accept") void runStatus(p, "ACCEPTED", `"${p.title}" moved into contracts.`);
+    else if (act === "dir" && p.maps) window.open(p.maps, "_blank", "noopener,noreferrer");
   };
 
   const sliceAll = listAll.slice((pageAll - 1) * PAGE_ALL, pageAll * PAGE_ALL);
@@ -458,15 +767,27 @@ export function MobileProposals() {
             <div className={styles.kicker}>Sales · Documents</div>
             <h1 className={styles.pageTitle}>Proposals</h1>
             <div className={styles.pageActions}>
-              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button">
+              {/* The two live creation routes. Anchors, not handlers: they are
+                  navigations and they work without JavaScript. */}
+              <Link className={`${styles.btn} ${styles.btnPrimary}`} href="/dashboard/proposals/ai">
                 <Icon id="i-bulb" />Smart Proposal
-              </button>
-              <button className={`${styles.btn} ${styles.btnGhost}`} type="button">
+              </Link>
+              {/* Same destination as the desktop proposals page and the
+                  estimator picker's "Manual" card — the wired blueprint
+                  builder, which serves both viewports from one URL. */}
+              <Link
+                className={`${styles.btn} ${styles.btnGhost}`}
+                href="/dashboard/manual-blueprint"
+              >
                 <Icon id="i-file" />Manual proposal
-              </button>
+              </Link>
             </div>
           </div>
 
+          {loading ? (
+            <div className={styles.pempty}>Loading your proposals…</div>
+          ) : (
+          <>
           {/* MASTHEAD — key on tab so the 320ms slide-in replays */}
           <div className={`${styles.pmast} ${styles.slide}`} key={tab}>
             <div className={styles.pmastTop}>
@@ -510,7 +831,7 @@ export function MobileProposals() {
                 </span>
                 <Icon id="i-chev" className={`${styles.ic} ${styles.ddCaret}`} />
               </button>
-              <div className={styles.ddMenu} role="listbox">
+              <div className={styles.ddMenu} role="listbox" ref={filterMenuRef}>
                 {FILTERS.map((f) => (
                   <button key={f.key} className={`${styles.ddItem} ${filter === f.key ? styles.active : ""}`}
                     type="button" role="option" aria-selected={filter === f.key}
@@ -525,28 +846,30 @@ export function MobileProposals() {
           )}
           {tab === "all" && (
             listAll.length === 0 ? (
-              <div className={styles.pempty}>No proposals match this filter.</div>
+              <div className={styles.pempty}>
+                {data.length === 0
+                  ? "No proposals yet — start one with Smart Proposal or Manual proposal above."
+                  : "No proposals match this filter."}
+              </div>
             ) : (
               <div className={styles.pledger}>
                 {sliceAll.map((p, i) => {
-                  const st = PSTATUS[p.status];
+                  const st = statusPlate(p.status);
                   return (
                     <div key={p.id} className={`${styles.prow} ${styles.rowIn}`} style={{ animationDelay: `${i * 45}ms` }}>
                       <div>
-                        <div className={styles.prowId}>#{p.id} · {p.owner}</div>
+                        <div className={styles.prowId}>{p.updated} · {p.owner}</div>
                         <div className={styles.prowTitle}>{p.title}</div>
                       </div>
                       <button className={styles.prowOpen} type="button"
-                        aria-label={`Actions for proposal ${p.id}`} onClick={() => setSheetId(p.id)}>
+                        aria-label={`Actions for ${p.title}`} onClick={() => setSheetId(p.id)}>
                         <Icon id="i-dots" />
                       </button>
                       {/* Row 2 — who and where, hard left */}
                       <div className={styles.prowWho}>
-                        {p.client} · {p.city}
+                        {[p.client, p.city].filter(Boolean).join(" · ")}
                       </div>
-                      {/* Row 3 — badge leads, price closes at the far right.
-                          "Updated" and the line-item count were dropped: they
-                          added noise without changing any decision here. */}
+                      {/* Row 3 — badge leads, price closes at the far right. */}
                       <div className={styles.prowFoot}>
                         <span className={`${styles.pstatus} ${st.cls ? styles[st.cls] : ""}`}>{st.label}</span>
                         <span className={styles.prowMono}>{p.views} views</span>
@@ -575,7 +898,8 @@ export function MobileProposals() {
                       <div className={styles.pjobHead}>
                         <div className={styles.pjobTitle}>{p.title}</div>
                         <div className={styles.pjobSub}>
-                          <span>{p.client}</span><span>{p.city}</span><span>signed {p.accepted ?? "—"}</span>
+                          <span>{p.client}</span>{p.city ? <span>{p.city}</span> : null}
+                          <span>signed {p.accepted ?? "—"}</span>
                         </div>
                         <div className={styles.pjobTotal}>
                           <div className={styles.pjobTotalL}>Contract value</div>
@@ -584,12 +908,12 @@ export function MobileProposals() {
                       </div>
 
                       {/* ≤5 instalments → columns; 6+ → row table with Remind */}
-                      {inst.length <= 5 ? (
+                      {inst.length === 0 ? null : inst.length <= 5 ? (
                         <div className={styles.pcols}>
                           {inst.map((it) => {
                             const sub = it.pct ? `${it.amount}% of total` : it.due ? `due ${it.due}` : "";
                             return (
-                              <div className={styles.pcol} key={it.label}>
+                              <div className={styles.pcol} key={it.id}>
                                 <div className={styles.pcolLbl}>{it.label}</div>
                                 <div className={styles.pcolVal}>{money(instDollars(p, it))}</div>
                                 {sub ? <div className={styles.pcolSub}>{sub}</div> : null}
@@ -600,12 +924,14 @@ export function MobileProposals() {
                       ) : (
                         <div className={styles.psched}>
                           {inst.map((it) => (
-                            <div className={styles.pschedRow} key={it.label}>
+                            <div className={styles.pschedRow} key={it.id}>
                               <div className={styles.pschedLbl}>{it.label}</div>
                               <div className={styles.pschedAmt}>{money(instDollars(p, it))}</div>
                               <div className={styles.pschedDue}>{it.due ? `due ${it.due}` : "on completion"}</div>
+                              {/* Real: mails THIS instalment's reminder. */}
                               <button className={styles.pschedRem} type="button"
-                                onClick={(e) => flash(e.currentTarget)}>Remind</button>
+                                disabled={writing || !p.clientEmail}
+                                onClick={() => void runReminder(p, it.id)}>Remind</button>
                             </div>
                           ))}
                         </div>
@@ -613,18 +939,21 @@ export function MobileProposals() {
 
                       <div className={styles.pjobFoot}>
                         <button className={`${styles.pjobAct} ${styles.pjobActOk}`} type="button"
-                          onClick={() => patch(p.id, (x) => ({ ...x, status: "PAID", paid: "TODAY" }))}>
+                          disabled={writing}
+                          onClick={() => void runStatus(p, "PAID", `"${p.title}" filed as completed.`)}>
                           <Icon id="i-check" />Mark completed
                         </button>
                         <button className={`${styles.pjobAct} ${styles.pjobActAccent}`} type="button"
-                          onClick={(e) => flash(e.currentTarget)}>
+                          disabled={writing || !p.clientEmail}
+                          onClick={() => void runReminder(p, "")}>
                           <Icon id="i-card" />Request payment
                         </button>
                         <button className={styles.pjobAct} type="button" onClick={() => setSheetId(p.id)}>
                           <Icon id="i-dots" />More
                         </button>
                         <button className={styles.pjobAct} type="button"
-                          onClick={() => patch(p.id, (x) => ({ ...x, status: "SENT", accepted: undefined, inst: undefined }))}>
+                          disabled={writing}
+                          onClick={() => void runStatus(p, "DRAFT", `"${p.title}" is back in draft.`)}>
                           <Icon id="i-rotate" />Un-accept
                         </button>
                       </div>
@@ -650,7 +979,8 @@ export function MobileProposals() {
                       <div className={styles.psheetStamp}><Icon id="i-check" />Paid in full</div>
                       <div className={styles.pjobTitle}>{p.title}</div>
                       <div className={styles.pjobSub}>
-                        <span>{p.client}</span><span>{p.city}</span><span>#{p.id}</span>
+                        <span>{p.client}</span>{p.city ? <span>{p.city}</span> : null}
+                        <span>{p.updated}</span>
                       </div>
                     </div>
 
@@ -659,7 +989,7 @@ export function MobileProposals() {
                       <div className={styles.pcol}>
                         <div className={styles.pcolLbl}>Contract</div>
                         <div className={styles.pcolVal}>{money(p.total)}</div>
-                        <div className={styles.pcolSub}>{p.mat} line items</div>
+                        <div className={styles.pcolSub}>{p.mat} material lines</div>
                       </div>
                       <div className={styles.pcol}>
                         <div className={styles.pcolLbl}>Signed</div>
@@ -669,41 +999,71 @@ export function MobileProposals() {
                       <div className={styles.pcol}>
                         <div className={styles.pcolLbl}>Paid</div>
                         <div className={styles.pcolVal}>{p.paid ?? "—"}</div>
-                        <div className={styles.pcolSub}>by {p.owner}</div>
+                        <div className={styles.pcolSub}>{p.owner}</div>
                       </div>
                     </div>
 
-                    <div className={styles.psheetBody}>
-                      <div className={styles.psheetSecl}>Payment record</div>
-                      {(p.inst ?? []).map((it) => (
-                        <div className={styles.pchk} key={it.label}>
-                          <span className={styles.pchkIc}><Icon id="i-check" /></span>
-                          <span className={styles.pchkLbl}>{it.label}</span>
-                          <span className={styles.pchkLead} />
-                          <span className={styles.pchkAmt}>{money(instDollars(p, it))}</span>
-                        </div>
-                      ))}
-                    </div>
+                    {(p.inst ?? []).length > 0 && (
+                      <div className={styles.psheetBody}>
+                        <div className={styles.psheetSecl}>Payment record</div>
+                        {(p.inst ?? []).map((it) => (
+                          <div className={styles.pchk} key={it.id}>
+                            <span className={styles.pchkIc}><Icon id="i-check" /></span>
+                            <span className={styles.pchkLbl}>{it.label}</span>
+                            <span className={styles.pchkLead} />
+                            <span className={styles.pchkAmt}>{money(instDollars(p, it))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     <div className={styles.psheetBody}>
                       <div className={styles.psheetSecl}>Completion photos</div>
                       <div className={styles.psheetPhotos}>
-                        <div className={styles.photoBox}><Icon id="i-imgplus" />Before</div>
-                        <div className={styles.photoBox}><Icon id="i-imgplus" />After</div>
+                        {(["before", "after"] as const).map((slot) => {
+                          const shots = slot === "before" ? p.before : p.after;
+                          const last = shots[shots.length - 1];
+                          const label = slot === "before" ? "Before" : "After";
+                          return (
+                            // A <label> wrapping a hidden file input: the whole
+                            // 116px box is the picker's hit target.
+                            <label key={slot}
+                              className={`${styles.photoBox} ${last ? styles.photoBoxFilled : ""}`}>
+                              {last ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={last.url} alt={`${label} photo`} />
+                              ) : (
+                                <><Icon id="i-imgplus" />{label}</>
+                              )}
+                              <input type="file" accept="image/*" hidden disabled={writing}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = "";
+                                  if (file) void runPhotoUpload(p, slot, file);
+                                }} />
+                            </label>
+                          );
+                        })}
                       </div>
                     </div>
 
                     <div className={styles.psheetFoot}>
-                      <div className={styles.psheetBanklbl}>Send paid receipt to</div>
+                      {/* The donor drew a "Send paid receipt to <email>" box
+                          here. There is no receipt transport in the app — no
+                          builder in lib/email/build, no action — so the input
+                          and its Send button were removed rather than left
+                          pretending to mail something. The proposal PDF, which
+                          IS a real route, is what a paid client actually asks
+                          for, and un-marking the payment is a real write. */}
+                      <div className={styles.psheetBanklbl}>Paid record</div>
                       <div className={styles.psheetSend}>
-                        <input className={styles.pinput} type="email" aria-label="Receipt email"
-                          defaultValue={`${p.client.toLowerCase().replace(/[^a-z]/g, "")}@example.com`} />
-                        <button className={`${styles.btnStamp} ${styles.btnStampAccent}`} type="button"
-                          onClick={(e) => flash(e.currentTarget)}>
-                          <Icon id="i-send" />Send receipt
-                        </button>
-                        <button className={styles.btnStamp} type="button" onClick={(e) => flash(e.currentTarget)}>
+                        <a className={`${styles.btnStamp} ${styles.btnStampAccent}`}
+                          href={`/api/proposals/${p.id}/pdf`} target="_blank" rel="noopener noreferrer">
                           <Icon id="i-download" />PDF
+                        </a>
+                        <button className={styles.btnStamp} type="button" disabled={writing}
+                          onClick={() => void runStatus(p, "ACCEPTED", `"${p.title}" is back in contracts.`)}>
+                          <Icon id="i-rotate" />Unmark paid
                         </button>
                       </div>
                     </div>
@@ -715,6 +1075,8 @@ export function MobileProposals() {
           {tab === "completed" && (
             <Pager page={pageDone} total={listDone.length} per={PAGE_DONE} onGo={setPageDone} />
           )}
+          </>
+          )}
         </div>
       </main>
 
@@ -722,32 +1084,58 @@ export function MobileProposals() {
           The two primary actions already live in the page head, so nothing
           needs to hover over the content. */}
 
+      {/* What a write did, or why it refused. Silence would read as "the tap
+          did nothing", which is exactly the failure this page had. */}
+      {note ? (
+        <div className={`${styles.note} ${note.tone === "bad" ? styles.noteBad : ""}`} role="status">
+          {note.text}
+        </div>
+      ) : null}
 
       {/* ============ ROW ACTIONS SHEET ============ */}
-      <div className={`${styles.scrim} ${sheetProposal ? styles.on : ""}`} onClick={() => setSheetId(null)} aria-hidden="true" />
+      <div className={`${styles.scrim} ${sheetProposal ? styles.on : ""}`}
+        onClick={() => { setSheetId(null); setConfirmDel(false); }} aria-hidden="true" />
       <div className={`${styles.sheet} ${sheetProposal ? styles.on : ""}`} role="dialog" aria-modal="true"
         aria-label="Proposal actions" aria-hidden={!sheetProposal} {...sheetDrag.sheetProps}>
         <div className={styles.sheetGrab} {...sheetDrag.handleProps} />
         <div className={styles.sheetHead} {...sheetDrag.handleProps}>
           <div className={styles.sheetKicker}>
-            {sheetProposal ? `#${sheetProposal.id} · ${money(sheetProposal.total)}` : "Proposal · —"}
+            {sheetProposal ? `${sheetProposal.client} · ${money(sheetProposal.total)}` : "Proposal · —"}
           </div>
           <div className={styles.sheetTitle}>{sheetProposal?.title ?? "Actions"}</div>
         </div>
-        <div className={styles.sheetBody}>
-          {menuRows.map((r) => (
-            <button key={r.act} type="button" disabled={r.disabled}
-              className={`${styles.pmenuItem} ${r.danger ? styles.pmenuItemDanger : ""}`}
-              onClick={() => runMenu(r.act)}>
-              <span className={`${styles.pmiIc} ${r.tone ?? ""}`}><Icon id={r.icon} /></span>
+        {confirmDel && sheetProposal ? (
+          <div className={styles.sheetBody}>
+            <div className={styles.pempty}>
+              Deleting removes the proposal, its line items, payment schedule and snapshots.
+              Public links stop working, and it can&apos;t be undone.
+            </div>
+            <button className={`${styles.pmenuItem} ${styles.pmenuItemDanger}`} type="button"
+              disabled={writing} onClick={() => void runDelete(sheetProposal)}>
+              <span className={`${styles.pmiIc} ${styles.pmiDanger}`}><Icon id="i-trash" /></span>
               <span>
-                <span className={styles.pmenuItemT}>{r.title}</span>
-                <span className={styles.pmenuItemS}>{r.sub}</span>
+                <span className={styles.pmenuItemT}>Delete forever</span>
+                <span className={styles.pmenuItemS}>{sheetProposal.title}</span>
               </span>
             </button>
-          ))}
-        </div>
-        <button className={styles.sheetCancel} type="button" onClick={() => setSheetId(null)}>Cancel</button>
+          </div>
+        ) : (
+          <div className={styles.sheetBody}>
+            {menuRows.map((r) => (
+              <button key={r.act} type="button" disabled={r.disabled || writing}
+                className={`${styles.pmenuItem} ${r.danger ? styles.pmenuItemDanger : ""}`}
+                onClick={() => runMenu(r.act)}>
+                <span className={`${styles.pmiIc} ${r.tone ?? ""}`}><Icon id={r.icon} /></span>
+                <span>
+                  <span className={styles.pmenuItemT}>{r.title}</span>
+                  <span className={styles.pmenuItemS}>{r.sub}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        <button className={styles.sheetCancel} type="button"
+          onClick={() => { setSheetId(null); setConfirmDel(false); }}>Cancel</button>
       </div>
     </div>
   );

@@ -14,13 +14,30 @@
 //    was removed at the owner's call, 2026-07-29: the action now lives in
 //    the bar, so nothing hovers over the content.
 //  · KPI row of 4 → a masthead hero numeral + a 3-up strip, so one number
-//    owns the screen instead of four competing for it.
+//    owns the screen instead of four competing for it. The four figures are
+//    the desktop's four, unchanged.
+//  · The week strip shows FIVE day cells, not seven: at 320px seven cells fall
+//    under the 44px touch minimum. The window slides so it always contains
+//    today; the full week's count is in the card's sub line, and any day
+//    outside the window is one tap away on the Calendar.
 //  · Schedule and jobs move ABOVE revenue: on a phone the question is
 //    "what's next", and the money question is already answered by the hero.
 //  · Chart plot box re-cut for a 320px screen; hover → pointer scrub.
 //  · Kanban drag & drop → tap a lead, pick a stage in a bottom sheet.
 //    HTML5 drag has no touch equivalent, so the interaction is rebuilt
-//    rather than desktop-gated.
+//    rather than desktop-gated. The drop PERSISTS through `updateLeadStatus`,
+//    the same action the desktop board and the classic kanban use, and rolls
+//    back with the server's own message when a write is refused.
+//
+// DATA. This surface was a demo fixture until 2026-08-13 — invented clients,
+// invented amounts, an invented week. It now renders `DashboardData`: the same
+// org-scoped read the desktop Overview runs, reached two ways because the
+// surface has two mounts.
+//   · /mobile-v2 — the server page awaits it and passes `data`.
+//   · /dashboard at ≤768px — `ResponsiveDashboardShell` mounts this component
+//     props-less and client-only, so it fetches the identical rows itself
+//     through the `getDashboardData` action.
+// There is no local seed left to fall back to.
 
 import Image from "next/image";
 import Link from "next/link";
@@ -34,21 +51,20 @@ import {
   activeHref,
   PLOT,
   RANGES,
-  TODAY,
-  WEEK_DAYS,
-  WEEK_LABEL,
+  WEEK_CELLS,
   Y_ROWS,
-  activities,
-  chartDatasets,
-  jobsData,
-  leadsData as seedLeads,
-  weekEvents,
-  type Lead,
   type RangeKey,
   type StageKey,
 } from "./mobile-data";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { getDashboardData } from "@/app/dashboard/dashboard-actions";
+import { updateLeadStatus } from "@/actions/leads";
+import {
+  leadProfileMissing,
+  type BoardLead,
+  type DashboardData,
+} from "@/components/v3/dashboard-blueprint/blueprint-data";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -58,7 +74,45 @@ const prefersReducedMotion = () =>
 // conditional hook call — it just keeps useLayoutEffect off the server.
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
+/** The classic CompleteLeadProfileBanner snoozed the Lead Center nudge for a
+ *  week in localStorage, deliberately not in the schema. Same key and window as
+ *  the desktop blueprint, so a dismissal on either edition is honoured by both. */
+const SNOOZE_KEY = "jf.leadProfileNag";
+const SNOOZE_DAYS = 7;
+
+/** Destinations this surface links to. Literals so `typedRoutes` checks them. */
+const R = {
+  calendar: "/dashboard/calendar",
+  jobs: "/dashboard/jobs",
+  leads: "/dashboard/leads",
+  company: "/dashboard/company",
+  newProposal: "/dashboard/proposals/new",
+  preferences: "/dashboard/settings/preferences",
+  account: "/dashboard/settings/account",
+  login: "/auth/login",
+} satisfies Record<string, Route>;
+
 const usd = (n: number) => n.toLocaleString("en-US");
+
+/** `updateLeadStatus` rejects with a message written for the user ("You can
+ *  only update your own leads"). Surface that text; fall back to a generic line
+ *  for a transport failure, which carries nothing useful. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** A phone cannot carry "$132,400" in a third of the KPI strip. Compact it —
+ *  but only once the figure is big enough that the rounding is invisible. */
+function compactMoney(n: number): { value: number; prefix: string; suffix: string; decimals: number } {
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return { value: n / 1_000_000, prefix: "$", suffix: "M", decimals: 1 };
+  if (abs >= 10_000) return { value: n / 1_000, prefix: "$", suffix: "K", decimals: 0 };
+  return { value: n, prefix: "$", suffix: "", decimals: 0 };
+}
 
 function Icon({ id, className }: { id: string; className?: string }) {
   return (
@@ -76,20 +130,27 @@ function CountUp({
   value,
   prefix = "",
   suffix = "",
+  decimals = 0,
   className,
 }: {
   value: number;
   prefix?: string;
   suffix?: string;
+  decimals?: number;
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const fmt = useCallback(
+    (n: number) =>
+      n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
+    [decimals],
+  );
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (prefersReducedMotion()) {
-      el.textContent = prefix + usd(value) + suffix;
+      el.textContent = prefix + fmt(value) + suffix;
       return;
     }
     let raf = 0;
@@ -98,16 +159,16 @@ function CountUp({
       if (t0 === null) t0 = t;
       const pr = Math.min(1, (t - t0) / 750);
       const e = 1 - Math.pow(1 - pr, 3);
-      el.textContent = prefix + usd(Math.round(value * e)) + suffix;
+      el.textContent = prefix + fmt(value * e) + suffix;
       if (pr < 1) raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [value, prefix, suffix]);
+  }, [value, prefix, suffix, fmt]);
 
   return (
     <div ref={ref} className={className}>
-      {prefix + usd(value) + suffix}
+      {prefix + fmt(value) + suffix}
     </div>
   );
 }
@@ -141,23 +202,99 @@ function useListLimit(ref: React.RefObject<HTMLDivElement | null>, count: number
   }, [count, visible, ...deps]);
 }
 
-export function MobileDashboard() {
+/* ============================================================
+   ENTRY — resolves the org's rows, then draws the sheet.
+   Split in two so every hook below runs against real data and
+   none of them is conditional.
+   ============================================================ */
+export function MobileDashboard({ data: seed }: { data?: DashboardData }) {
+  const [data, setData] = useState<DashboardData | null>(seed ?? null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (seed) return;
+    let alive = true;
+    getDashboardData()
+      .then((d) => {
+        if (alive) setData(d);
+      })
+      .catch((err) => {
+        if (alive) setLoadError(actionError(err));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [seed]);
+
+  if (data) return <DashboardView data={data} />;
+  return <BootScreen error={loadError} />;
+}
+
+/** Paper hold while the rows land, and an honest failure if they do not. The
+ *  shell's own `MobileHold` paints the same cream behind the chunk fetch, so
+ *  the two read as one uninterrupted load. */
+function BootScreen({ error }: { error: string | null }) {
+  return (
+    <div className={styles.app}>
+      <Sprite />
+      {error ? (
+        <main className={styles.scroll}>
+          <div className={styles.content}>
+            <div className={styles.card}>
+              <div className={styles.cardHead}>
+                <div className={styles.cardTitles}>
+                  <div className={styles.cardTitle}>Overview unavailable</div>
+                  <div className={styles.cardSub}>{error}</div>
+                </div>
+              </div>
+              <Link className={styles.cardFootBtn} href={R.login}>
+                Sign in
+                <Icon id="i-arrow" />
+              </Link>
+            </div>
+          </div>
+        </main>
+      ) : null}
+    </div>
+  );
+}
+
+function DashboardView({ data }: { data: DashboardData }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const [selectedDay, setSelectedDay] = useState<number>(TODAY);
+  /* ---------- WEEK WINDOW --------------------------------------------
+     Five cells out of the server's seven, always containing today. Sunday
+     is reachable early in the week, Saturday late — the days a contractor
+     is most likely to be looking at from the day they are standing on. */
+  const weekWindow = useMemo(() => {
+    const days = data.week.days;
+    if (days.length <= WEEK_CELLS) return days;
+    const t = days.findIndex((d) => d.today);
+    const max = days.length - WEEK_CELLS;
+    const start = t < 0 ? 0 : Math.max(0, Math.min(t - 2, max));
+    return days.slice(start, start + WEEK_CELLS);
+  }, [data.week.days]);
+
+  const defaultIso = weekWindow.some((d) => d.iso === data.week.todayIso)
+    ? data.week.todayIso
+    : (weekWindow[0]?.iso ?? "");
+  const [pickedIso, setPickedIso] = useState<string | null>(null);
+  const selectedIso = pickedIso ?? defaultIso;
+
   const [range, setRange] = useState<RangeKey>("7d");
-  const [leads, setLeads] = useState<Lead[]>(() => seedLeads.map((l) => ({ ...l })));
+  const [leads, setLeads] = useState<BoardLead[]>(() => data.leads.map((l) => ({ ...l })));
   const [navOpen, setNavOpen] = useState(false);
   /* The lit nav item is DERIVED from the URL, not held in state. It used to be
      a label string the drawer set on click, which is why clicking a link only
      moved the highlight and never changed the page. */
   const activeNav = activeHref(usePathname() ?? "");
   const [banner, setBanner] = useState<"open" | "closing" | "hidden">("open");
-  const [sheetLead, setSheetLead] = useState<Lead | null>(null);
-  const [landedId, setLandedId] = useState<number | null>(null);
+  const [sheetLead, setSheetLead] = useState<BoardLead | null>(null);
+  const [landedId, setLandedId] = useState<string | null>(null);
   const [railIdx, setRailIdx] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
 
   /* ---------- viewport height ----------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL
@@ -206,7 +343,7 @@ export function MobileDashboard() {
       if (!initial) el.dataset.rvScroll = "1";
       el.style.transitionDelay = initial ? `${i * 60}ms` : "200ms";
     });
-    const cells = Array.from(content.querySelectorAll<HTMLElement>(`.${styles.kpi}, .${styles.mastNote}`));
+    const cells = Array.from(content.querySelectorAll<HTMLElement>(`.${styles.kpi}`));
     cells.forEach((el, i) => {
       el.classList.add(styles.rvCell);
       const initial = el.getBoundingClientRect().top < vpH;
@@ -244,10 +381,7 @@ export function MobileDashboard() {
     };
   }, []);
 
-  /* ---------- Motion: graph-paper parallax ----------------------------
-     The direction-aware FAB collapse that used to share this handler went
-     with the FAB — the bottom bar is a fixed grid row and does not react
-     to scroll. */
+  /* ---------- Motion: graph-paper parallax ---------------------------- */
   useEffect(() => {
     const host = scrollRef.current;
     if (!host || prefersReducedMotion()) return;
@@ -265,10 +399,7 @@ export function MobileDashboard() {
   }, []);
 
   /* ---------- NAV DRAWER ---------------------------------------------
-     The sliding active-item indicator is measured, not guessed: it needs the
-     link's real offsetTop/Height, which only exist once the drawer is laid
-     out. `ready` is added a frame later so the first open snaps into place
-     instead of sliding down from zero. */
+     The sliding active-item indicator is measured, not guessed. */
   const navScrollRef = useRef<HTMLElement>(null);
   const indicatorRef = useRef<HTMLDivElement>(null);
 
@@ -316,10 +447,39 @@ export function MobileDashboard() {
     node.addEventListener("animationend", () => node.classList.remove(cls), { once: true });
   }, []);
 
-  /* ---------- Lead Center banner: smooth collapse of height + gap ----- */
+  /* ---------- TOAST — the only channel a refused board move has ------- */
+  const toastTimer = useRef<number | null>(null);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 6000);
+  }, []);
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
+
+  /* ---------- Lead Center banner -------------------------------------
+     Rendered only when the org genuinely cannot receive platform leads, and
+     the snooze is read before paint so a dismissed banner never flashes. */
   const bannerRef = useRef<HTMLDivElement>(null);
+  useIsoLayoutEffect(() => {
+    try {
+      if (Date.now() < Number(window.localStorage.getItem(SNOOZE_KEY) ?? 0)) setBanner("hidden");
+    } catch {
+      /* private mode: show it */
+    }
+  }, []);
+
   const dismissBanner = () => {
     const b = bannerRef.current;
+    try {
+      window.localStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_DAYS * 24 * 60 * 60 * 1000));
+    } catch {
+      /* still collapse for this visit */
+    }
     if (!b || banner !== "open") return;
     if (prefersReducedMotion()) return setBanner("hidden");
     b.style.height = `${b.offsetHeight}px`;
@@ -338,42 +498,62 @@ export function MobileDashboard() {
     b.addEventListener("transitionend", done);
   };
 
+  const gap = data.leadProfile;
+  const missingPiece = gap ? leadProfileMissing(gap) : "";
+
   /* ---------- THIS WEEK ---------------------------------------------- */
   const dayEvents = useMemo(
-    () => (weekEvents[selectedDay] ?? []).slice().sort((a, b) => a.m - b.m),
-    [selectedDay],
+    () => (data.week.events[selectedIso] ?? []).slice().sort((a, b) => a.m - b.m),
+    [data.week.events, selectedIso],
   );
   const weekListRef = useRef<HTMLDivElement>(null);
-  useListLimit(weekListRef, dayEvents.length, 4, [selectedDay]);
+  useListLimit(weekListRef, dayEvents.length, 4, [selectedIso]);
+  /** Open the calendar ON the picked day with the new-event composer already
+   *  up. A bare /dashboard/calendar dropped the selection, so the day the user
+   *  had just tapped had to be found again on the other side. */
+  const scheduleHref = `${R.calendar}?date=${selectedIso}&new=1` as Route;
 
-  /* ---------- UPCOMING JOBS ------------------------------------------ */
-  const sortedJobs = useMemo(() => jobsData.slice().sort((a, b) => a.k - b.k), []);
+  /* ---------- UPCOMING JOBS ------------------------------------------
+     Server order is `startsAt` ascending — nearest first is already true.
+     The date plate arrives as "JUL 28"; the phone stacks the two halves. */
+  const jobs = useMemo(
+    () =>
+      data.jobs.map((j) => {
+        const [mo = "", dd = ""] = j.date.split(" ");
+        return { ...j, mo, dd };
+      }),
+    [data.jobs],
+  );
   const jobsListRef = useRef<HTMLDivElement>(null);
-  useListLimit(jobsListRef, sortedJobs.length, 4, []);
+  useListLimit(jobsListRef, jobs.length, 4, []);
 
-  /* ---------- RECENT ACTIVITY (limit 10, even though 12 exist) -------- */
-  const shownActivity = useMemo(() => activities.slice(0, 10), []);
+  /* ---------- RECENT ACTIVITY (server already caps at 10) ------------- */
   const actListRef = useRef<HTMLDivElement>(null);
-  useListLimit(actListRef, shownActivity.length, 5, []);
+  useListLimit(actListRef, data.activities.length, 5, []);
 
   /* ---------- CHART --------------------------------------------------- */
-  const ds = chartDatasets[range];
+  const ds = data.chart[range];
   const pts = useMemo(() => {
     const n = ds.values.length;
+    if (!n) return [];
     const span = PLOT.x1 - PLOT.x0;
     const hgt = PLOT.y1 - PLOT.y0;
     return ds.values.map((v, i) => ({
-      x: PLOT.x0 + i * (span / (n - 1)),
-      y: PLOT.y1 - (v / ds.yMax) * hgt,
+      x: n === 1 ? (PLOT.x0 + PLOT.x1) / 2 : PLOT.x0 + i * (span / (n - 1)),
+      y: PLOT.y1 - (ds.yMax > 0 ? (v / ds.yMax) * hgt : 0),
       v,
-      d: ds.labels[i],
+      d: ds.labels[i] ?? "",
     }));
   }, [ds]);
 
   // A 320px screen cannot carry 10–13 x-labels legibly: thin to ~5.
   const labelStep = Math.max(1, Math.ceil(pts.length / 5));
-  const peak = useMemo(() => pts.reduce((m, p) => (p.v > m.v ? p : m), pts[0]), [pts]);
+  const peak = useMemo(
+    () => (pts.length ? pts.reduce((m, p) => (p.v > m.v ? p : m), pts[0]) : null),
+    [pts],
+  );
   const peakLabel = useMemo(() => {
+    if (!peak) return "";
     let k = (Math.round(peak.v / 100) / 10).toString();
     if (k.slice(-2) === ".0") k = k.slice(0, -2);
     return `$${k}K`;
@@ -399,13 +579,13 @@ export function MobileDashboard() {
     const area = areaRef.current;
     const note = noteRef.current;
     const dots = dotsRef.current ? (Array.from(dotsRef.current.children) as SVGRectElement[]) : [];
-    if (!line || !area || !note) return;
+    if (!line || !area) return;
     const len = line.getTotalLength();
     line.style.strokeDasharray = String(len);
     line.style.strokeDashoffset = String(len);
     line.style.transition = "none";
     area.style.opacity = "0";
-    note.style.opacity = "0";
+    if (note) note.style.opacity = "0";
     dots.forEach((d) => (d.style.opacity = "0"));
     const timers: number[] = [];
     const raf = requestAnimationFrame(() =>
@@ -426,7 +606,7 @@ export function MobileDashboard() {
         timers.push(
           window.setTimeout(() => {
             area.style.opacity = "1";
-            note.style.opacity = "1";
+            if (note) note.style.opacity = "1";
           }, 950),
         );
       }),
@@ -444,6 +624,12 @@ export function MobileDashboard() {
   }, [scrubIdx, range]);
 
   const hideTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    },
+    [],
+  );
   const pickPoint = useCallback(
     (clientX: number) => {
       const svg = svgRef.current;
@@ -496,24 +682,60 @@ export function MobileDashboard() {
     setRailIdx(Math.max(0, Math.min(LEAD_STAGES.length - 1, Math.round(rail.scrollLeft / w))));
   };
 
-  const moveLead = (to: StageKey) => {
+  /** Cards with a stage write still in flight; a second tap would race its own
+   *  rollback. */
+  const busyLeads = useRef<Set<string>>(new Set());
+  const landTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (landTimer.current) clearTimeout(landTimer.current);
+    },
+    [],
+  );
+
+  /** Lands at the END of the target column — exactly where the desktop
+   *  drop-slot preview sits. */
+  const placeLead = useCallback((lead: BoardLead, stage: string) => {
+    setLeads((prev) => {
+      const next = prev.filter((l) => l.id !== lead.id);
+      next.push({ ...lead, stage });
+      return next;
+    });
+  }, []);
+
+  /**
+   * OPTIMISTIC, then PERSISTED with `updateLeadStatus` — the same action the
+   * desktop board uses. The server is org-scoped and gates sales reps to their
+   * own slice, so a refusal is real and has to be honoured: the card goes back
+   * to the column it came from and the action's own message is shown.
+   */
+  const moveLead = async (to: StageKey) => {
     const lead = sheetLead;
     setSheetLead(null);
     if (!lead || lead.stage === to) return;
-    setLeads((prev) => {
-      const next = prev.filter((l) => l.id !== lead.id);
-      // Lands at the END of the target column — exactly where the desktop
-      // drop-slot preview sits.
-      next.push({ ...lead, stage: to });
-      return next;
-    });
+    if (busyLeads.current.has(lead.id)) return;
+    const from = lead.stage;
+    busyLeads.current.add(lead.id);
+
+    placeLead(lead, to);
     setLandedId(lead.id);
-    window.setTimeout(() => setLandedId(null), 500);
+    if (landTimer.current) clearTimeout(landTimer.current);
+    landTimer.current = window.setTimeout(() => setLandedId(null), 500);
+
     const rail = railRef.current;
     const idx = LEAD_STAGES.findIndex((s) => s.key === to);
     if (rail && idx >= 0) {
       const col = rail.children[idx] as HTMLElement | undefined;
       if (col) rail.scrollTo({ left: col.offsetLeft, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    }
+
+    try {
+      await updateLeadStatus(lead.id, to.toUpperCase());
+    } catch (err) {
+      placeLead(lead, from);
+      showToast(actionError(err));
+    } finally {
+      busyLeads.current.delete(lead.id);
     }
   };
 
@@ -531,12 +753,23 @@ export function MobileDashboard() {
   const sheetDrag = useSheetDrag(Boolean(sheetLead), () => setSheetLead(null));
 
   const rowDelay = (i: number) => ({ animationDelay: `${i * 45}ms` });
+  const rangeLabel = RANGES.find((r) => r.key === range)?.label ?? "";
+  const avatar = (data.viewer.name.trim().charAt(0) || "A").toUpperCase();
+  const heroRevenue = data.kpiRaw.revenue;
+  const pipeline = compactMoney(data.kpiRaw.pipeline);
 
   return (
     <div className={styles.app} ref={rootRef} onClick={onRootClick}>
       <Sprite />
 
-      {/* ============ TOPBAR ============ */}
+      {/* ============ TOPBAR ============
+          The search and bell buttons that used to sit on the right were
+          decoration: neither had a handler, and `.bellDot` was a static dot no
+          code ever toggled, so it advertised unread notifications permanently.
+          There is no handheld search or notification surface to open — the
+          desktop pair open the command palette, which lives in the blueprint
+          shell this build replaces — so they are gone rather than lying. The
+          drawer carries every destination they implied. */}
       <header className={styles.tbar}>
         <button
           className={styles.tbarBtn}
@@ -561,68 +794,61 @@ export function MobileDashboard() {
           <span className={styles.tbarName}>JOBFLEX</span>
           <span className={styles.tbarSub}>Contractor OS</span>
         </span>
-        <div className={styles.tbarRight}>
-          <button className={styles.tbarBtn} type="button" aria-label="Search">
-            <Icon id="i-search" />
-          </button>
-          <button className={styles.tbarBtn} type="button" aria-label="Notifications">
-            <Icon id="i-bell" />
-            <span className={styles.bellDot} />
-          </button>
-        </div>
       </header>
 
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>
         <div className={styles.content} ref={contentRef}>
-          {/* LEAD CENTER BANNER */}
-          <div
-            ref={bannerRef}
-            className={[
-              styles.banner,
-              banner === "closing" ? styles.bannerClosing : "",
-              banner === "hidden" ? styles.bannerHidden : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <Icon id="i-pin" className={`${styles.ic} ${styles.bannerPin}`} />
-            <div className={styles.bannerBody}>
-              <div className={styles.bannerKicker}>Lead Center</div>
-              <div className={styles.bannerTxt}>
-                Homeowner leads near you aren&apos;t reaching your shop yet — add your business address and
-                the trades you take.{" "}
-                <a className={styles.bannerLink} href="#">
+          {/* LEAD CENTER BANNER — only for an org that cannot receive platform
+              leads yet, and only until it is snoozed for a week. */}
+          {gap && banner !== "hidden" ? (
+            <div
+              ref={bannerRef}
+              className={[styles.banner, banner === "closing" ? styles.bannerClosing : ""]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <Icon id="i-pin" className={`${styles.ic} ${styles.bannerPin}`} />
+              <div className={styles.bannerBody}>
+                <div className={styles.bannerKicker}>Lead Center</div>
+                <div className={styles.bannerTxt}>
+                  Homeowner leads near you aren&apos;t reaching your shop yet — add {missingPiece} to
+                  start receiving them.
+                </div>
+                {/* Its own line, not a word inside the sentence: at 44px tall a
+                    control inflates the line box it sits in and the paragraph
+                    stops reading as a paragraph. */}
+                <Link className={styles.bannerLink} href={R.company}>
                   Complete your profile
-                </a>
+                  <Icon id="i-arrow" />
+                </Link>
               </div>
+              <button
+                className={styles.bannerClose}
+                type="button"
+                aria-label="Dismiss for a week"
+                onClick={dismissBanner}
+              >
+                <Icon id="i-x" />
+              </button>
             </div>
-            <button className={styles.bannerClose} type="button" aria-label="Dismiss" onClick={dismissBanner}>
-              <Icon id="i-x" />
-            </button>
-          </div>
+          ) : null}
 
           {/* PAGE HEAD */}
           <div className={styles.pageHead}>
-            <div className={styles.kicker}>Good Evening · Jul 22</div>
+            <div className={styles.kicker}>{data.greeting}</div>
             <h1 className={styles.pageTitle}>Overview</h1>
           </div>
 
-          {/* MASTHEAD — the one number that owns the screen */}
+          {/* MASTHEAD — the one number that owns the screen.
+              The "Collected / Outstanding" pair that used to sit under it was
+              removed: neither figure had a source anywhere in the schema, they
+              were two literals in the markup. The four KPIs shown here are the
+              desktop sheet's four, so both editions describe one business. */}
           <div className={styles.masthead}>
             <div className={styles.mastMain}>
-              <div className={styles.mastKicker}>Revenue</div>
-              <CountUp value={48250} prefix="$" className={styles.mastVal} />
-            </div>
-            <div className={styles.mastNotes}>
-              <div className={styles.mastNote}>
-                <div className={styles.mastNoteLbl}>Collected</div>
-                <div className={`${styles.mastNoteVal} ${styles.ok}`}>$31,900</div>
-              </div>
-              <div className={styles.mastNote}>
-                <div className={styles.mastNoteLbl}>Outstanding</div>
-                <div className={styles.mastNoteVal}>$16,350</div>
-              </div>
+              <div className={styles.mastKicker}>Revenue · 30D</div>
+              <CountUp value={heroRevenue} prefix="$" className={styles.mastVal} />
             </div>
           </div>
 
@@ -630,15 +856,21 @@ export function MobileDashboard() {
           <div className={styles.kpiGrid}>
             <div className={styles.kpi}>
               <div className={styles.kpiLbl}>Pipeline</div>
-              <CountUp value={132} prefix="$" suffix="K" className={styles.kpiVal} />
+              <CountUp
+                value={pipeline.value}
+                prefix={pipeline.prefix}
+                suffix={pipeline.suffix}
+                decimals={pipeline.decimals}
+                className={styles.kpiVal}
+              />
             </div>
             <div className={styles.kpi}>
               <div className={styles.kpiLbl}>Open Prop.</div>
-              <CountUp value={7} className={`${styles.kpiVal} ${styles.accent}`} />
+              <CountUp value={data.kpiRaw.openProposals} className={`${styles.kpiVal} ${styles.accent}`} />
             </div>
             <div className={styles.kpi}>
               <div className={styles.kpiLbl}>Leads · 7D</div>
-              <CountUp value={12} className={styles.kpiVal} />
+              <CountUp value={data.kpiRaw.newLeads} className={styles.kpiVal} />
             </div>
           </div>
 
@@ -651,17 +883,23 @@ export function MobileDashboard() {
             </div>
             <hr className={styles.cardRule} />
             <div className={styles.list} ref={actListRef}>
-              {shownActivity.map((a, i) => (
-                <div key={`${a.t}-${i}`} className={`${styles.actRow} ${styles.rowIn}`} style={rowDelay(i)}>
-                  <div className={styles.actIc}>
-                    <Icon id={a.i} />
+              {data.activities.length ? (
+                data.activities.map((a, i) => (
+                  <div key={`${a.t}-${i}`} className={`${styles.actRow} ${styles.rowIn}`} style={rowDelay(i)}>
+                    <div className={styles.actIc}>
+                      <Icon id={a.i} />
+                    </div>
+                    <div className={styles.actBody}>
+                      <div className={styles.actTitle}>{a.t}</div>
+                      <div className={styles.actMeta}>{a.m}</div>
+                    </div>
                   </div>
-                  <div className={styles.actBody}>
-                    <div className={styles.actTitle}>{a.t}</div>
-                    <div className={styles.actMeta}>{a.m}</div>
-                  </div>
+                ))
+              ) : (
+                <div className={`${styles.empty} ${styles.rowIn}`}>
+                  <div className={styles.emptyTxt}>No activity yet.</div>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -671,64 +909,73 @@ export function MobileDashboard() {
               <div className={styles.cardTitles}>
                 <div className={styles.cardTitle}>This Week</div>
                 <div className={styles.cardSub}>
-                  {WEEK_LABEL.range} · <b>{WEEK_LABEL.count} scheduled</b>
+                  {data.week.range} · <b>{data.week.scheduled} scheduled</b>
                 </div>
               </div>
             </div>
             <div className={styles.weekStrip}>
-              {WEEK_DAYS.map((d) => (
+              {weekWindow.map((d) => (
                 <div
-                  key={d.day}
+                  key={d.iso}
                   className={[
                     styles.day,
-                    d.day === TODAY ? styles.today : "",
-                    d.day === selectedDay ? styles.selected : "",
+                    d.today ? styles.today : "",
+                    d.iso === selectedIso ? styles.selected : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
-                  data-day={d.day}
+                  data-day={d.iso}
                   role="button"
                   tabIndex={0}
-                  aria-pressed={d.day === selectedDay}
-                  onClick={() => setSelectedDay(d.day)}
+                  aria-pressed={d.iso === selectedIso}
+                  onClick={() => setPickedIso(d.iso)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      setSelectedDay(d.day);
+                      setPickedIso(d.iso);
                     }
                   }}
                 >
                   <div className={styles.dayLbl}>{d.lbl}</div>
-                  <div className={styles.dayNum}>{d.day}</div>
-                  <div className={`${styles.dayDot} ${d.dot ? "" : styles.off}`} />
+                  <div className={styles.dayNum}>{d.num}</div>
+                  <div className={`${styles.dayDot} ${d.has ? "" : styles.off}`} />
                 </div>
               ))}
             </div>
             <div className={`${styles.list} ${styles.weekList}`} ref={weekListRef}>
-                {dayEvents.length ? (
-                  dayEvents.map((e, i) => (
-                    <div
-                      key={`${selectedDay}-${e.t}-${e.title}`}
-                      className={`${styles.schedRow} ${styles.rowIn}`}
-                      style={rowDelay(i)}
-                    >
-                      <span className={styles.tag}>{e.t}</span>
-                      <span className={styles.schedTitle}>{e.title}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div key={`empty-${selectedDay}`} className={`${styles.empty} ${styles.rowIn}`}>
-                    <div className={styles.emptyTxt}>Nothing scheduled for this day.</div>
-                    <a className={styles.emptyAct} href="#">
-                      <Icon id="i-plus" />
-                      Schedule a job
-                    </a>
+              {dayEvents.length ? (
+                dayEvents.map((e, i) => (
+                  <div
+                    key={`${selectedIso}-${e.m}-${e.title}`}
+                    className={`${styles.schedRow} ${styles.rowIn}`}
+                    style={rowDelay(i)}
+                  >
+                    <span className={styles.tag}>{e.t}</span>
+                    <span className={styles.schedTitle}>{e.title}</span>
                   </div>
-                )}
-                <a className={styles.cardFootBtn} href="#">
-                  Go to Calendar
-                  <Icon id="i-arrow" />
-                </a>
+                ))
+              ) : (
+                /* No action inside the note: the card footer below carries
+                   "Schedule a job" on every state now, and two of them a
+                   centimetre apart read as two different actions. */
+                <div key={`empty-${selectedIso}`} className={`${styles.empty} ${styles.rowIn}`}>
+                  <div className={styles.emptyTxt}>Nothing scheduled for this day.</div>
+                </div>
+              )}
+            </div>
+            {/* The card's own footer, outside the list. "Schedule a job" used to
+                exist only in the empty state — the moment a day had one event
+                the way to add a second one vanished — and it dropped the picked
+                day on the way to the calendar. */}
+            <div className={styles.weekFoot}>
+              <Link className={`${styles.cardFootBtn} ${styles.cardFootBtnNew}`} href={scheduleHref}>
+                <Icon id="i-plus" />
+                Schedule a job
+              </Link>
+              <Link className={styles.cardFootBtn} href={R.calendar}>
+                Go to Calendar
+                <Icon id="i-arrow" />
+              </Link>
             </div>
           </div>
 
@@ -737,31 +984,42 @@ export function MobileDashboard() {
             <div className={styles.cardHead}>
               <div className={styles.cardTitles}>
                 <div className={styles.cardTitle}>Upcoming Jobs</div>
+                <div className={styles.cardSub}>Next installs on the calendar</div>
               </div>
             </div>
             <hr className={styles.cardRule} />
             <div className={styles.list} ref={jobsListRef}>
-              {sortedJobs.map((j, i) => (
-                <div key={j.k} className={`${styles.jobRow} ${styles.rowIn}`} style={rowDelay(i)}>
-                  <span className={`${styles.jobDate} ${j.k === 700 + TODAY ? styles.today : ""}`}>
-                    {j.mo}
-                    <b>{j.dd}</b>
-                  </span>
-                  <div className={styles.jobInfo}>
-                    <div className={styles.jobTitle}>{j.title}</div>
-                    <div className={styles.jobFoot}>
-                      <span className={styles.jobSub}>{j.sub}</span>
-                      <span className={`${styles.chip} ${j.st === "ok" ? styles.ok : styles.wait}`}>
-                        {j.st === "ok" ? "Confirmed" : "Pending"}
-                      </span>
+              {jobs.length ? (
+                jobs.map((j, i) => (
+                  <div key={j.id} className={`${styles.jobRow} ${styles.rowIn}`} style={rowDelay(i)}>
+                    <span className={`${styles.jobDate} ${j.today ? styles.today : ""}`}>
+                      {j.mo}
+                      <b>{j.dd}</b>
+                    </span>
+                    <div className={styles.jobInfo}>
+                      <div className={styles.jobTitle}>{j.title}</div>
+                      <div className={styles.jobFoot}>
+                        <span className={styles.jobSub}>{j.sub}</span>
+                        <span className={`${styles.chip} ${j.st === "ok" ? styles.ok : styles.wait}`}>
+                          {j.st === "ok" ? "Confirmed" : "Pending"}
+                        </span>
+                      </div>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className={`${styles.empty} ${styles.rowIn}`}>
+                  <div className={styles.emptyTxt}>Your calendar is clear.</div>
+                  <Link className={styles.emptyAct} href={`${R.calendar}?new=1` as Route}>
+                    <Icon id="i-plus" />
+                    Schedule a job
+                  </Link>
                 </div>
-              ))}
-              <a className={styles.cardFootBtn} href="#">
+              )}
+              <Link className={styles.cardFootBtn} href={R.jobs}>
                 Go to Jobs
                 <Icon id="i-arrow" />
-              </a>
+              </Link>
             </div>
           </div>
 
@@ -790,7 +1048,12 @@ export function MobileDashboard() {
               ))}
             </div>
             <div className={styles.chartWrap}>
-              <svg ref={svgRef} viewBox="0 0 340 212" role="img" aria-label="Revenue trend">
+              <svg
+                ref={svgRef}
+                viewBox="0 0 340 212"
+                role="img"
+                aria-label={`Revenue trend, last ${rangeLabel}`}
+              >
                 <defs>
                   <pattern id="mvMinor" x={PLOT.x0} y={PLOT.y0} width="20.71" height="20" patternUnits="userSpaceOnUse">
                     <path d="M 20.71 0 L 0 0 0 20" className={styles.chMinor} fill="none" />
@@ -803,14 +1066,16 @@ export function MobileDashboard() {
                 ))}
                 <line x1={PLOT.x0} y1={PLOT.y0} x2={PLOT.x0} y2={PLOT.y1} className={styles.chAxis} />
                 <line x1={PLOT.x0} y1={PLOT.y1} x2={PLOT.x1} y2={PLOT.y1} className={styles.chAxis} />
+                {/* The server's ticks carry a "$" the desktop gutter has room
+                    for and this one does not — 32px at 320px. */}
                 {Y_ROWS.map((y, i) => (
                   <text key={y} x={32} y={y + 4} textAnchor="end" className={styles.chLbl}>
-                    {ds.ticks[i]}
+                    {(ds.ticks[i] ?? "").replace("$", "")}
                   </text>
                 ))}
                 {pts.map((p, i) =>
                   i % labelStep === 0 || i === pts.length - 1 ? (
-                    <text key={p.d} x={p.x} y={192} textAnchor="middle" className={styles.chLbl}>
+                    <text key={`x-${i}`} x={p.x} y={192} textAnchor="middle" className={styles.chLbl}>
                       {p.d}
                     </text>
                   ) : null,
@@ -825,7 +1090,7 @@ export function MobileDashboard() {
                 <g ref={dotsRef}>
                   {pts.map((p, i) => (
                     <rect
-                      key={p.d}
+                      key={`dot-${i}`}
                       x={p.x - 4.5}
                       y={p.y - 4.5}
                       width={9}
@@ -835,16 +1100,18 @@ export function MobileDashboard() {
                   ))}
                 </g>
                 {/* Peak is COMPUTED from the dataset max, and hides while scrubbing */}
-                <text
-                  ref={noteRef}
-                  x={Math.min(Math.max(peak.x, 60), 306)}
-                  y={Math.max(peak.y - 14, 22)}
-                  textAnchor="middle"
-                  className={styles.chNote}
-                  style={{ opacity: scrubIdx === null ? 1 : 0 }}
-                >
-                  {peakLabel}
-                </text>
+                {peak ? (
+                  <text
+                    ref={noteRef}
+                    x={Math.min(Math.max(peak.x, 60), 306)}
+                    y={Math.max(peak.y - 14, 22)}
+                    textAnchor="middle"
+                    className={styles.chNote}
+                    style={{ opacity: scrubIdx === null ? 1 : 0 }}
+                  >
+                    {peakLabel}
+                  </text>
+                ) : null}
                 <line
                   x1={0}
                   y1={PLOT.y0}
@@ -890,10 +1157,10 @@ export function MobileDashboard() {
           {/* LEAD FLOW */}
           <div className={styles.sectionHead}>
             <h2 className={styles.sectionTitle}>Lead Flow</h2>
-            <a className={styles.cardLink} href="#">
+            <Link className={styles.cardLink} href={R.leads}>
               <span>Open leads</span>
               <Icon id="i-arrow" />
-            </a>
+            </Link>
           </div>
 
           <div className={styles.railWrap}>
@@ -922,8 +1189,13 @@ export function MobileDashboard() {
                               {l.job} · {l.city}
                             </span>
                             <span className={styles.leadMeta}>
-                              <span className={styles.leadVal}>${usd(l.val)}</span>
-                              <span className={styles.leadAge}>{l.age} ago</span>
+                              {/* The donor printed an invented dollar value here.
+                                  A Lead carries no amount; it carries an owner,
+                                  which is what the desktop board shows too. */}
+                              <span className={`${styles.leadVal} ${l.owner ? "" : styles.none}`}>
+                                {l.owner || "Unassigned"}
+                              </span>
+                              <span className={styles.leadAge}>{l.age}</span>
                             </span>
                           </button>
                         ))
@@ -948,26 +1220,28 @@ export function MobileDashboard() {
 
       {/* ============ BOTTOM NAV ============
           A grid row of .app, so it never overlaps the scroller. Three cells:
-          the primary action, then the two account-level destinations. */}
+          the primary action, then the two account-level destinations. All
+          three were bare <button>s with no handler until 2026-08-13 — the
+          press animation was the only thing that ever responded. */}
       <nav className={styles.bottomNav} aria-label="Primary actions">
-        <button className={`${styles.bnavBtn} ${styles.primary}`} type="button">
+        <Link className={`${styles.bnavBtn} ${styles.primary}`} href={R.newProposal}>
           <span className={styles.bnavPlate}>
             <Icon id="i-fileplus" />
           </span>
           <span className={styles.bnavLbl}>New Proposal</span>
-        </button>
-        <button className={styles.bnavBtn} type="button">
+        </Link>
+        <Link className={styles.bnavBtn} href={R.preferences}>
           <span className={styles.bnavPlate}>
             <Icon id="i-gear" />
           </span>
           <span className={styles.bnavLbl}>Settings</span>
-        </button>
-        <button className={styles.bnavBtn} type="button">
+        </Link>
+        <Link className={styles.bnavBtn} href={R.account}>
           <span className={styles.bnavPlate}>
             <Icon id="i-user" />
           </span>
           <span className={styles.bnavLbl}>Account</span>
-        </button>
+        </Link>
       </nav>
 
       {/* ============ NAV DRAWER (the reference sidebar) ============ */}
@@ -1036,17 +1310,31 @@ export function MobileDashboard() {
           ))}
         </nav>
 
+        {/* The footer printed the donor's demo identity — the literal strings
+            "Ivan" / "Owner" — to every signed-in user, and neither control went
+            anywhere. Both are now real: the name and role come from the same
+            `requireOrg()` read that fills the sheet. */}
         <div className={styles.sbFoot}>
-          <button className={styles.sbFootAcc} type="button" title="Account">
-            <span className={styles.sbFootAv}>I</span>
+          <Link
+            className={styles.sbFootAcc}
+            href={R.account}
+            title="Account"
+            onClick={() => setNavOpen(false)}
+          >
+            <span className={styles.sbFootAv}>{avatar}</span>
             <span className={styles.sbFootTxt}>
-              <span className={styles.sbFootName}>Ivan</span>
-              <span className={styles.sbFootRole}>Owner</span>
+              <span className={styles.sbFootName}>{data.viewer.name}</span>
+              <span className={styles.sbFootRole}>{data.viewer.role}</span>
             </span>
-          </button>
-          <button className={styles.sbFootIc} type="button" aria-label="Settings">
+          </Link>
+          <Link
+            className={styles.sbFootIc}
+            href={R.preferences}
+            aria-label="Settings"
+            onClick={() => setNavOpen(false)}
+          >
             <Icon id="i-gear" />
-          </button>
+          </Link>
         </div>
       </aside>
 
@@ -1067,7 +1355,7 @@ export function MobileDashboard() {
         <div className={styles.sheetGrab} {...sheetDrag.handleProps} />
         <div className={styles.sheetHead} {...sheetDrag.handleProps}>
           <div className={styles.sheetKicker}>
-            {sheetLead ? `${sheetLead.name} · $${usd(sheetLead.val)}` : "Lead · —"}
+            {sheetLead ? `${sheetLead.name} · ${sheetLead.job}` : "Lead · —"}
           </div>
           <div className={styles.sheetTitle}>Move to stage</div>
         </div>
@@ -1080,7 +1368,7 @@ export function MobileDashboard() {
                 className={`${styles.sheetOpt} ${current ? styles.current : ""}`}
                 type="button"
                 disabled={current || !sheetLead}
-                onClick={() => moveLead(s.key)}
+                onClick={() => void moveLead(s.key)}
               >
                 <span className={styles.sheetOptN}>{String(i + 1).padStart(2, "0")}</span>
                 {s.label}
@@ -1093,6 +1381,25 @@ export function MobileDashboard() {
           Cancel
         </button>
       </div>
+
+      {/* ============ TOAST ============
+          A refused stage move has no dialog of its own to speak through, and a
+          silent rollback reads as the app losing the tap. Fixed, so the reason
+          is on screen wherever the rail was scrolled to. */}
+      {toast ? (
+        <div className={styles.toast} role="alert" aria-live="assertive">
+          <Icon id="i-x" />
+          <span className={styles.toastTxt}>{toast}</span>
+          <button
+            className={styles.toastX}
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setToast(null)}
+          >
+            <Icon id="i-x" />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

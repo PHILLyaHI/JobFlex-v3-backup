@@ -1,10 +1,12 @@
-// CRM blueprint — the donor's embedded demo data, hardcoded exactly as written
-// in jobflex-crm-blueprint_1.html. Same order, same values, same nulls: the
-// rendered numbers (conversion rate, active leads, LTV totals, queue counts)
-// are all derived from these arrays, so any edit here changes the page.
+// CRM blueprint — shapes, enum option lists and class maps ONLY.
 //
-// `RULES_SEED` and `QUEUE_SEED` are seeds — the ported behavior mutates rules
-// and the follow-up queue at runtime, so each mount clones them.
+// The donor's embedded demo arrays (15 leads, 13 customers, 4 rules, 8
+// follow-ups, a conversation count and a template list) used to live here as a
+// fallback for a props-less render. They are gone: `src/app/dashboard/crm/
+// page.tsx` reads the org's real rows out of Prisma and `CrmContentData` is now
+// a REQUIRED prop, so the sheet has no path that paints a demo record.
+
+import type { FollowUpChannel } from "@/lib/followUps/copy";
 
 export type CrmLead = {
   name: string;
@@ -35,7 +37,10 @@ export type FollowUpRule = {
   triggerStatus: string;
   delayMinutes: number;
   enabled: boolean;
-  template: string | null;
+  /** Email or text. A rule has no template any more — its wording is derived
+   *  from the trigger in src/lib/followUps/copy.ts, which is the same module
+   *  the preview card and the dispatcher read. */
+  channel: FollowUpChannel;
 };
 
 export type QueueItem = {
@@ -47,53 +52,6 @@ export type QueueItem = {
   overdue: boolean;
   days: number;
 };
-
-// Overview counts by lead: conversion = won / (won + lost), active — still in play.
-export const CRM_LEADS: CrmLead[] = [
-  { name: 'M. Alvarez',   project: 'Asphalt reroof',        status: 'NEW',       assignee: null,     age: '2h ago' },
-  { name: 'S. Rao',       project: 'Vinyl fence, 160 ft',   status: 'NEW',       assignee: null,     age: '5h ago' },
-  { name: 'J. Whitfield', project: 'Metal roof repair',     status: 'ROUTED',    assignee: 'Marcus', age: '3h ago' },
-  { name: 'T. Ortiz',     project: 'Roof inspection',       status: 'ROUTED',    assignee: null,     age: '9h ago' },
-  { name: 'T. Bishop',    project: 'Skylight install',      status: 'CLAIMED',   assignee: 'Ivan',   age: '6h ago' },
-  { name: 'S. Patel',     project: 'Siding replacement',    status: 'CLAIMED',   assignee: 'Marcus', age: '1w ago' },
-  { name: 'R. Okafor',    project: 'Gutter replacement',    status: 'CONTACTED', assignee: 'Marcus', age: '1d ago' },
-  { name: 'L. Wong',      project: 'Pergola build',         status: 'CONTACTED', assignee: 'Sofia',  age: '6d ago' },
-  { name: 'M. Henderson', project: 'Asphalt reroof',        status: 'QUOTED',    assignee: 'Ivan',   age: '2d ago' },
-  { name: 'A. Kim',       project: 'Composite deck rebuild',status: 'QUOTED',    assignee: 'Ivan',   age: '3d ago' },
-  { name: 'D. Reyes',     project: 'Cedar fence, 140 ft',   status: 'WON',       assignee: 'Ivan',   age: '4d ago' },
-  { name: 'K. Sorensen',  project: 'Cedar fence, 90 ft',    status: 'WON',       assignee: 'Sofia',  age: '1w ago' },
-  { name: 'C. Ferreira',  project: 'Asphalt reroof',        status: 'WON',       assignee: 'Ivan',   age: '2w ago' },
-  { name: 'P. Delgado',   project: 'Vinyl fence, 220 ft',   status: 'LOST',      assignee: 'Marcus', age: '2w ago' },
-  { name: 'R. Tran',      project: 'Deck power wash',       status: 'LOST',      assignee: 'Sofia',  age: '3w ago' }
-];
-
-export const CONVERSATIONS_COUNT: number = 12;
-
-export const ACTIVITY_FEED: ActivityItem[] = [
-  { summary: 'Proposal #2851 sent to M. Henderson', age: '25m ago' },
-  { summary: 'New lead: cedar fence, 140 ft — Bothell', age: '1h ago' },
-  { summary: 'SMS reply from D. Reyes', age: '1h ago' },
-  { summary: 'Invoice #1032 paid — $8,400', age: '3h ago' },
-  { summary: 'Tear-off scheduled at 4812 Maple Ave', age: '5h ago' },
-  { summary: 'Client added: R. Tran', age: '8h ago' }
-];
-
-// Customer book: clients with >=1 proposal, sorted by LTV
-export const CUSTOMERS_DATA: Customer[] = [
-  { id: 'c1', name: 'Cascade PM',      email: 'ops@cascadepm.com',    quotes: 9, quoted: 96400,  ltv: 78200, last: '4h ago',  top: 'PAID' },
-  { id: 'c2', name: 'Northgate LLC',   email: 'facilities@ngllc.com', quotes: 6, quoted: 128900, ltv: 61400, last: '3d ago',  top: 'ACCEPTED' },
-  { id: 'c3', name: 'M. Henderson',    email: 'm.henderson@mail.com', quotes: 3, quoted: 41200,  ltv: 24800, last: '25m ago', top: 'VIEWED' },
-  { id: 'c4', name: 'C. Ferreira',     email: 'c.ferreira@mail.com',  quotes: 2, quoted: 18000,  ltv: 18000, last: '2w ago',  top: 'PAID' },
-  { id: 'c5', name: 'S. Patel',        email: 's.patel@mail.com',     quotes: 4, quoted: 52300,  ltv: 14600, last: '1w ago',  top: 'SENT' },
-  { id: 'c6', name: 'D. Reyes',        email: 'd.reyes@mail.com',     quotes: 2, quoted: 18600,  ltv: 6200,  last: '1d ago',  top: 'ACCEPTED' },
-  { id: 'c7', name: 'K. Sorensen',     email: 'k.sorensen@mail.com',  quotes: 1, quoted: 6200,   ltv: 6200,  last: '1w ago',  top: 'PAID' },
-  { id: 'c8', name: 'A. Kim',          email: 'a.kim@mail.com',       quotes: 1, quoted: 21500,  ltv: 0,     last: '2d ago',  top: 'ACCEPTED' },
-  { id: 'c9', name: 'T. Bishop',       email: 't.bishop@mail.com',    quotes: 2, quoted: 14300,  ltv: 0,     last: '2w ago',  top: 'VIEWED' },
-  { id: 'c10', name: 'L. Wong',        email: 'l.wong@mail.com',      quotes: 2, quoted: 22600,  ltv: 0,     last: '6d ago',  top: 'SENT' },
-  { id: 'c11', name: 'R. Okafor',      email: 'r.okafor@mail.com',    quotes: 1, quoted: 3800,   ltv: 0,     last: '6h ago',  top: 'DRAFT' },
-  { id: 'c12', name: 'P. Delgado',     email: 'p.delgado@mail.com',   quotes: 1, quoted: 11300,  ltv: 0,     last: '1w ago',  top: 'EXPIRED' },
-  { id: 'c13', name: 'R. Tran',        email: 'r.tran@mail.com',      quotes: 1, quoted: 1900,   ltv: 0,     last: '4d ago',  top: 'DECLINED' }
-];
 
 export const STATUS_ORDER = ['PAID', 'ACCEPTED', 'VIEWED', 'SENT', 'DRAFT', 'DECLINED', 'EXPIRED', 'ARCHIVED'];
 
@@ -116,41 +74,16 @@ export const TRIGGERS: Trigger[] = [
   { value: 'DECLINED', label: 'Proposal declined' }
 ];
 
-export const TEMPLATES = ['nudge-after-send', 'viewed-no-reply', 'thanks-and-review', 'win-back'];
-
-export const RULE_SEQ_START = 20;
-
-export const RULES_SEED: FollowUpRule[] = [
-  { id: 'r1', name: 'Nudge after send',      triggerStatus: 'SENT',     delayMinutes: 60 * 24 * 2, enabled: true,  template: 'nudge-after-send' },
-  { id: 'r2', name: 'Viewed but quiet',      triggerStatus: 'VIEWED',   delayMinutes: 60 * 24,     enabled: true,  template: 'viewed-no-reply' },
-  { id: 'r3', name: 'Thank you + review',    triggerStatus: 'PAID',     delayMinutes: 60 * 24 * 3, enabled: true,  template: 'thanks-and-review' },
-  { id: 'r4', name: 'Win-back after decline',triggerStatus: 'DECLINED', delayMinutes: 60 * 24 * 30, enabled: false, template: 'win-back' }
-];
-
-// Follow-up queue: unfinished, ascending by runAt
-export const QUEUE_SEED: QueueItem[] = [
-  { id: 'f1', client: 'M. Henderson', title: 'Asphalt reroof — 4812 Maple Ave', date: 'Jul 19, 2026', rel: '3d ago',    overdue: true,  days: 3 },
-  { id: 'f2', client: 'T. Bishop',    title: 'Skylight + solar tube combo',     date: 'Jul 14, 2026', rel: '8d ago',    overdue: true,  days: 8 },
-  { id: 'f3', client: 'L. Wong',      title: 'Pergola build',                   date: 'Jul 22, 2026', rel: 'today',     overdue: true,  days: 0 },
-  { id: 'f4', client: 'S. Patel',     title: 'Siding replacement',              date: 'Jul 21, 2026', rel: '1d ago',    overdue: true,  days: 1 },
-  { id: 'f5', client: 'A. Kim',       title: 'Composite deck rebuild',          date: 'Jul 24, 2026', rel: 'in 2 days', overdue: false, days: 0 },
-  { id: 'f6', client: 'R. Okafor',    title: 'Gutter replacement',              date: 'Jul 26, 2026', rel: 'in 4 days', overdue: false, days: 0 },
-  { id: 'f7', client: 'K. Marsh',     title: 'Skylight install',                date: 'Jul 29, 2026', rel: 'in 1 week', overdue: false, days: 0 },
-  { id: 'f8', client: 'C. Ferreira',  title: null,                              date: 'Aug 02, 2026', rel: 'in 11 days',overdue: false, days: 0 }
-];
-
 export const Q_PAGE = 20;
 
 // ─────────────────────────────────────────────
 // LIVE DATA CONTRACT
 //
-// Everything above is the donor fixture and stays as the fallback for the
-// standalone mock render. `src/app/dashboard/crm/page.tsx` reads the real rows
-// out of Prisma — the SAME queries the classic CRM pages used
-// (src/app/(dashboard)/dashboard/crm/{queue,workflows,customers} and
-// old-design-pages/dashboard/crm) — and hands them to `initCrmContent`, which
-// then keeps itself in step with the database through the follow-up server
-// actions in src/actions/followUps.ts.
+// `src/app/dashboard/crm/page.tsx` reads the real rows out of Prisma — the SAME
+// queries the classic CRM pages use
+// (src/app/(dashboard)/dashboard/crm/{queue,workflows,customers}) — and hands
+// them to `initCrmContent`, which then keeps itself in step with the database
+// through the follow-up server actions in src/actions/followUps.ts.
 // ─────────────────────────────────────────────
 
 /** Overview counters. Derived server-side from Lead / FollowUp / Conversation. */
@@ -161,32 +94,21 @@ export type CrmStats = {
   conversations: number;
 };
 
-/** An org email template, offered as the rule's send-time copy.
- *  `FollowUpRule.template` stores this row's **id** — that is what
- *  `dispatchOne()` looks the template up by. */
-export type TemplateOption = { id: string; name: string };
+/** The sender the preview card renders as — the org's own lockup and footer, so
+ *  the contractor sees their letterhead, not a placeholder. */
+export type PreviewOrg = { name: string; phone: string | null; logoUrl: string | null };
 
-/** The whole live payload. Every field is optional at the boundary only so the
- *  donor fixture can still render without a session; the page always fills it. */
+/** The whole live payload. Every field is required — the page always fills it
+ *  from Prisma, and there is no fixture left to stand in for any of it. */
 export type CrmContentData = {
   stats: CrmStats;
   fresh: CrmLead[];
   activity: ActivityItem[];
   customers: Customer[];
   rules: FollowUpRule[];
-  templates: TemplateOption[];
   queue: QueueItem[];
+  org: PreviewOrg;
+  /** A configured Twilio number. Without one the TEXT channel is offered
+   *  disabled, with the same note the client message dialog shows. */
+  smsEnabled: boolean;
 };
-
-/** Fixture-derived stats — the fallback when the page supplies no live data. */
-export const SEED_STATS: CrmStats = {
-  won: CRM_LEADS.filter((l) => l.status === "WON").length,
-  lost: CRM_LEADS.filter((l) => l.status === "LOST").length,
-  active: CRM_LEADS.filter(
-    (l) => ["NEW", "ROUTED", "CLAIMED", "CONTACTED", "QUOTED"].indexOf(l.status) !== -1,
-  ).length,
-  conversations: CONVERSATIONS_COUNT,
-};
-
-/** Fixture template list, shaped like the live one (id === name, no db row). */
-export const SEED_TEMPLATES: TemplateOption[] = TEMPLATES.map((t) => ({ id: t, name: t }));

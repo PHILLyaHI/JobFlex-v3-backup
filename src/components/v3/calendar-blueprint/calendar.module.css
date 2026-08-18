@@ -1541,7 +1541,7 @@
    there the whole cell really is the target. */
 .bp :global(.content .wg-col.is-drawing) { user-select: none; cursor: crosshair; }
 .bp :global(.content .wg-slot) { height: var(--wg-row); border-bottom: 1.5px solid var(--hair-soft); transition: background 0.1s; }
-.bp :global(.content .wg-col:not(.is-drawing) .wg-slot:hover) { background: rgba(24, 84, 160, 0.06); }
+.bp :global(.content .wg-col:not(.is-drawing):not(.is-resizing) .wg-slot:hover) { background: rgba(24, 84, 160, 0.06); }
 
 /* Event layer — pointer-transparent so the slots underneath keep taking the
    drops and the drag-to-create press. `inset: 0` (not 0 3px): a block sits
@@ -1588,6 +1588,9 @@
 @media (prefers-reduced-motion: reduce) {
   .bp :global(.content .evc), .bp :global(.content .wg-ev:hover),
   .bp :global(.content .wg-ev:active) { transition: none; transform: none; }
+  /* The grip's reveal is the only thing on the resize gesture that eases; the
+     geometry itself never did, so it is already reduced-motion correct. */
+  .bp :global(.content .wg-rz)::after { transition: none; }
 }
 /* A block whose top lands exactly on an hour line is shifted up by one line
    width (see `flushTop` in calendar-behavior) so its own top border paints OVER
@@ -1607,6 +1610,62 @@
 .bp :global(.content .wg-ev.is-short) { padding-top: 2px; padding-bottom: 2px; }
 .bp :global(.content .wg-ev.is-short .wg-ev-time) { display: none; }
 .bp :global(.content .wg-ev.evc--blocked .wg-ev-time) { color: var(--danger); }
+
+/* — week: resize grips —
+   One on each horizontal edge of a block: drag the bottom to change the end,
+   the top to change the start. They are pointer-active at all times so the
+   gesture never needs a hunt, but only become VISIBLE on hover or keyboard
+   focus — fourteen columns each carrying two permanent bars would read as a
+   table of rules, not a schedule. The grip itself is a drawing tick: a short
+   2px blueprint dash sitting on the edge it moves.
+   `.wg-ev` is `overflow: hidden`, so the strips sit flush at 0 rather than
+   straddling the border; the 7px depth is the whole hit area, which is why the
+   dash is only its centre and not its size. */
+.bp :global(.content .wg-rz) {
+  position: absolute; left: 0; right: 0; height: 7px; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  cursor: ns-resize;
+  /* Without this a touch drag scrolls the week instead of resizing. */
+  touch-action: none;
+}
+.bp :global(.content .wg-rz--t) { top: 0; }
+.bp :global(.content .wg-rz--b) { bottom: 0; }
+/* A 22px block cannot spare 7px twice and still be clickable. */
+.bp :global(.content .wg-ev.is-short .wg-rz) { height: 5px; }
+.bp :global(.content .wg-rz)::after {
+  content: ''; width: 20px; height: 2px; background: var(--blueprint);
+  opacity: 0; transition: opacity 0.12s var(--ease);
+}
+.bp :global(.content .wg-ev:hover .wg-rz)::after,
+.bp :global(.content .wg-ev:focus-visible .wg-rz)::after,
+.bp :global(.content .wg-ev.is-resizing .wg-rz)::after { opacity: 1; }
+/* The block being dragged. Long-hands, NOT the `border-color` shorthand — the
+   3px left edge is the status stripe and the shorthand would repaint it, so a
+   block would lose its status for the length of the gesture. Transitions are
+   off: top/height follow the pointer directly and anything easing them makes
+   the block trail the hand that is drawing it. */
+.bp :global(.content .wg-ev.is-resizing) {
+  transition: none; transform: none; z-index: 5;
+  border-top-color: var(--blueprint);
+  border-right-color: var(--blueprint);
+  border-bottom-color: var(--blueprint);
+  box-shadow: 3px 3px 0 var(--blueprint);
+}
+.bp :global(.content .wg-col.is-resizing) { user-select: none; cursor: ns-resize; }
+/* The live reading, riding the edge under the pointer. Mono on a filled
+   blueprint plate — the same annotation device as the drag-to-create preview's
+   duration chip, because it is the same kind of statement. */
+.bp :global(.content .wg-rz-tag) {
+  position: absolute; z-index: 6; margin-left: 5px;
+  transform: translateY(-50%);
+  padding: 2px 6px;
+  background: var(--blueprint); color: var(--paper);
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+  pointer-events: none;
+}
+/* Last column: anchored to the right edge and grown inward — see `rzPaint`. */
+.bp :global(.content .wg-rz-tag.is-right) { margin-left: 0; margin-right: 5px; }
 
 /* All-day band — the SECOND ROW of `.wg-head`, so it inherits that grid's eight
    tracks instead of declaring its own. The `.wg-allday` wrapper it used to live
@@ -1764,6 +1823,14 @@
 .bp :global(.content .sf-crew) { display: flex; flex-wrap: wrap; gap: 6px; }
 .bp :global(.content .sf-act) { display: flex; gap: 9px; margin-top: 22px; padding-top: 16px; border-top: 2px solid var(--hair-soft); }
 .bp :global(.content .sf-act .btn) { flex: 1; justify-content: center; }
+/* The destructive action in the detail sheet. Identical treatment to the crew
+   inspector's Remove (workers-blueprint) — one treatment per control, published
+   once: the ghost keeps its paper fill and takes the danger frame and label, and
+   the hover fills soft-danger and stamps the hard offset shadow in the SAME
+   tone instead of ink. It has to be later in the file than `.btn-ghost:hover`
+   and `.btn:hover`, which it overrides at equal specificity. */
+.bp :global(.content .btn--danger) { border-color: var(--danger); color: var(--danger); }
+.bp :global(.content .btn--danger:hover) { background: var(--danger-soft); box-shadow: 3px 3px 0 var(--danger); }
 /* A server action refused the write. The message is the action's own wording —
    it is written for the user — so it gets the same weight as a field label,
    not a whispered aside. */

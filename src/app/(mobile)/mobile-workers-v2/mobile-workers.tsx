@@ -34,24 +34,28 @@
 //    there is no hover on touch).
 //  · The roster pages 6 at a time: a handheld row is three lines tall.
 //  · The folio number leaves the row and lives in the sheet kicker — it was
-//    noise repeated seven times, and it is an identifier, not a decision.
+//    noise repeated on every row, and it is an identifier, not a decision.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// THIS IS NOT A FIXTURE any more (2026-08-16). The roster is the org's real
+// crew: ./workers-roster.ts runs the desktop page's own query on mount, and the
+// invite / edit / remove flows call the same three server actions the desktop
+// sheet calls (createWorkerInvite, updateWorker, removeWorker). Local state is
+// still updated in step so one row moves rather than the whole book blinking —
+// but the write happens first, and a failure keeps the sheet open with the
+// action's own message on it.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-workers.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { createWorkerInvite, removeWorker, updateWorker } from "@/actions/workers";
+import { loadRoster } from "./workers-roster";
 import {
   ALL,
   FILTERS,
   PAGE_SIZE,
-  WK_SEQ_START,
-  WORKERS_SEED,
   WORKER_ROLES,
-  cloneWorkers,
   counts,
   filterCount,
   matchesFilter,
@@ -121,6 +125,17 @@ type MenuRow = {
   danger?: boolean;
 };
 
+/** The action's own message where it wrote one ("That worker has already
+ *  joined…", "Not found"), a generic line for the transport failures that carry
+ *  none. Same contract as the desktop dialog's `actionError`. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
 /** The worker sheet is one element with three views, so moving from the action
  *  list to the record — or to the delete confirmation — never cross-slides two
  *  sheets past each other. */
@@ -130,7 +145,12 @@ export function MobileWorkers() {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const [data, setData] = useState<WorkerEntry[]>(() => cloneWorkers(WORKERS_SEED));
+  // `null` is LOADING, not empty. The distinction is the whole point: an empty
+  // array is a real answer ("no crew yet") and drawing that state while the read
+  // is still in flight tells a contractor with a twelve-man crew that their
+  // roster is gone.
+  const [data, setData] = useState<WorkerEntry[] | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>(ALL);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -150,10 +170,14 @@ export function MobileWorkers() {
   const [nameErr, setNameErr] = useState(false);
   const [emailErr, setEmailErr] = useState(false);
   const [rateErr, setRateErr] = useState(false);
+  /** A write is in flight. The foot buttons say so and refuse a second tap —
+   *  createWorkerInvite sends an email, so a double submit is not free. */
+  const [saving, setSaving] = useState(false);
+  const [formErr, setFormErr] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removeErr, setRemoveErr] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
-  /** New ids continue the donor's sequence (`let wkSeq = 10;` → w11). */
-  const seqRef = useRef(WK_SEQ_START);
 
   const filterRef = useRef<HTMLDivElement>(null);
 
@@ -165,6 +189,30 @@ export function MobileWorkers() {
   const [host] = useState(() =>
     typeof window === "undefined" ? "jobflex.app" : window.location.host,
   );
+
+  /* ---------- the roster read ------------------------------------------
+     One read on mount, the desktop page's own query (./workers-roster.ts).
+     `alive` because a handheld visitor can navigate off the surface long
+     before a cold server action answers. */
+  const reload = useCallback(async () => {
+    try {
+      const rows = await loadRoster();
+      setData(rows);
+      setLoadErr(null);
+    } catch (err) {
+      setLoadErr(actionError(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    loadRoster()
+      .then((rows) => alive && setData(rows))
+      .catch((err) => alive && setLoadErr(actionError(err)));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /* ---------- viewport height ------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
@@ -332,20 +380,24 @@ export function MobileWorkers() {
   }, [copied]);
 
   /* ---------- derived ------------------------------------------------- */
+  /** The roster once it has arrived. Everything below reads this rather than
+   *  `data`, so a read in flight is a distinct state and never a false empty. */
+  const roster = useMemo(() => data ?? [], [data]);
+  const loading = data === null && loadErr === null;
   const visible = useMemo(
-    () => data.filter((e) => matchesFilter(e, filter) && matchesQuery(e, query)),
-    [data, filter, query],
+    () => roster.filter((e) => matchesFilter(e, filter) && matchesQuery(e, query)),
+    [roster, filter, query],
   );
-  const c = useMemo(() => counts(data), [data]);
+  const c = useMemo(() => counts(roster), [roster]);
 
   const activeFilter = FILTERS.find((f) => f.key === filter) ?? FILTERS[0];
   const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const safePage = Math.min(page, pages);
   const slice = visible.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const sheetWorker = sheetId === null ? null : (data.find((e) => e.id === sheetId) ?? null);
-  const editWorker = editId === null ? null : (data.find((e) => e.id === editId) ?? null);
-  const sheetFolio = sheetWorker ? String(data.indexOf(sheetWorker) + 1).padStart(2, "0") : "—";
+  const sheetWorker = sheetId === null ? null : (roster.find((e) => e.id === sheetId) ?? null);
+  const editWorker = editId === null ? null : (roster.find((e) => e.id === editId) ?? null);
+  const sheetFolio = sheetWorker ? String(roster.indexOf(sheetWorker) + 1).padStart(2, "0") : "—";
   const sheetPath = sheetWorker ? portalLink(host, sheetWorker.token) : "";
 
   const resetFilters = () => {
@@ -390,8 +442,8 @@ export function MobileWorkers() {
   /* ---------- row sheet ------------------------------------------------
      Built inline rather than memoised: it is six literals, and a useMemo over a
      row of `data` is exactly the shape the React Compiler refuses to optimise
-     around. Two rows arrive DISABLED from real fixture state — Grant Mueller
-     has no phone, Amara Cole has no email — and one is the danger row. */
+     around. Call and Send email arrive DISABLED whenever the record has no
+     number or no address on file, and one row is the danger row. */
   const menuRows: MenuRow[] = sheetWorker
     ? [
         { act: "record", icon: "i-user", tone: styles.wmiBp, title: "Worker record",
@@ -423,6 +475,7 @@ export function MobileWorkers() {
     setNameErr(false);
     setEmailErr(false);
     setRateErr(false);
+    setFormErr(null);
     setSheetId(null);
     setFormOpen(true);
     // Focus after the slide settles — focusing mid-transform makes the
@@ -454,16 +507,29 @@ export function MobileWorkers() {
     setSheetId(null);
   };
 
-  const confirmRemove = () => {
+  /* The real removal. The row leaves local state only after the action has
+     answered — an optimistic drop would hide a "Can't remove the last owner"
+     refusal behind a row that is already gone. */
+  const confirmRemove = async () => {
     const e = sheetWorker;
-    setSheetId(null);
-    if (!e) return;
-    setData((prev) => prev.filter((x) => x.id !== e.id));
-    setPage(1);
+    if (!e || removing) return;
+    setRemoving(true);
+    setRemoveErr(null);
+    try {
+      await removeWorker(e.id);
+      setData((prev) => (prev ?? []).filter((x) => x.id !== e.id));
+      setPage(1);
+      setSheetId(null);
+    } catch (err) {
+      setRemoveErr(actionError(err));
+    } finally {
+      setRemoving(false);
+    }
   };
 
-  const submitForm = (ev: React.FormEvent) => {
+  const submitForm = async (ev: React.FormEvent) => {
     ev.preventDefault();
+    if (saving) return;
     const name = form.name.trim();
     const email = form.email.trim();
     const rateRaw = form.rate.trim();
@@ -490,37 +556,61 @@ export function MobileWorkers() {
     const specialties = form.spec.split(",").map((s) => s.trim()).filter(Boolean);
     const phone = form.phone.trim() || null;
 
-    if (editId) {
-      setData((prev) =>
-        prev.map((x) => (x.id === editId ? { ...x, name, phone, rate, specialties, role } : x)),
-      );
-      setLandedId(editId);
-    } else {
-      const n = ++seqRef.current;
-      const rec: WorkerEntry = {
-        id: `w${n}`,
-        name,
-        email,
-        phone,
-        specialties,
-        rate,
-        token: `wk_${((n * 104729) % 0xffffff).toString(16).padStart(6, "0")}`,
-        invite: "PENDING",
-        role,
-        joined: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }),
-        jobs: [],
-      };
-      // Appended, not prepended: the folio is the array index, so inserting at
-      // the top would renumber the whole roster. The filter is cleared and the
-      // pager jumps to the page the new row lands on, so the flash lands on a
-      // row that is actually on screen.
-      setData((prev) => [...prev, rec]);
-      setFilter(ALL);
-      setQuery("");
-      setPage(Math.ceil((data.length + 1) / PAGE_SIZE));
-      setLandedId(rec.id);
+    setSaving(true);
+    setFormErr(null);
+    try {
+      if (editId) {
+        await updateWorker({ id: editId, name, role, phone, specialties, hourlyRate: rate });
+        // ONE worker changed, so one row is swapped rather than the roster
+        // re-read: a full reload here would blink every other row for nothing.
+        setData((prev) =>
+          (prev ?? []).map((x) =>
+            x.id === editId ? { ...x, name, phone, rate, specialties, role } : x,
+          ),
+        );
+        setLandedId(editId);
+      } else {
+        // The action returns the REAL profile id and magic-link token, so the
+        // row appended here is the database row — portal link included.
+        const created = await createWorkerInvite({
+          name,
+          email,
+          role,
+          phone,
+          specialties,
+          hourlyRate: rate,
+        });
+        const rec: WorkerEntry = {
+          id: created.id,
+          name,
+          email,
+          phone,
+          specialties,
+          rate,
+          token: created.token,
+          invite: "PENDING",
+          role,
+          joined: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+          jobs: [],
+        };
+        // Appended, not prepended: the folio is the array index, so inserting at
+        // the top would renumber the whole roster. The filter is cleared and the
+        // pager jumps to the page the new row lands on, so the flash lands on a
+        // row that is actually on screen.
+        setData((prev) => [...(prev ?? []), rec]);
+        setFilter(ALL);
+        setQuery("");
+        setPage(Math.ceil((roster.length + 1) / PAGE_SIZE));
+        setLandedId(rec.id);
+      }
+      setFormOpen(false);
+    } catch (err) {
+      // The sheet stays open with the action's own refusal on it — "That worker
+      // has already joined", a seat limit, a dead connection.
+      setFormErr(actionError(err));
+    } finally {
+      setSaving(false);
     }
-    setFormOpen(false);
   };
 
   const anyOverlay = Boolean(sheetWorker) || formOpen;
@@ -553,9 +643,12 @@ export function MobileWorkers() {
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>
         <div className={styles.content} ref={contentRef}>
-          {/* PAGE HEAD */}
+          {/* PAGE HEAD
+              The badge is one word (owner, 2026-08-16). "Crew · Roster" said
+              the same thing twice and then said it a third time under the
+              title, which is what a page called WORKERS already says. */}
           <div className={styles.pageHead}>
-            <div className={styles.kicker}>Crew · Roster</div>
+            <div className={styles.kicker}>Crew</div>
             <h1 className={styles.pageTitle}>Workers</h1>
             <div className={styles.pageActions}>
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => openForm(null)}>
@@ -569,7 +662,7 @@ export function MobileWorkers() {
           <div className={styles.wmast}>
             <div className={styles.wmastTop}>
               <div className={styles.wmastLbl}>
-                Crew · on the books
+                Crew
                 <span className={styles.wmastRule} />
               </div>
               <CountUp value={c.all} className={styles.wmastVal} />
@@ -617,7 +710,7 @@ export function MobileWorkers() {
                 <Icon id="i-filter" />
                 Filter
                 <span className={`${styles.ddValue} ${filter === ALL ? styles.isAll : ""}`}>
-                  {activeFilter.label} · {filterCount(data, filter)}
+                  {activeFilter.label} · {filterCount(roster, filter)}
                 </span>
                 <Icon id="i-chev" className={`${styles.ic} ${styles.ddCaret}`} />
               </button>
@@ -627,7 +720,7 @@ export function MobileWorkers() {
                     type="button" role="option" aria-selected={filter === f.key}
                     onClick={() => { setFilter(f.key); setPage(1); setFilterOpen(false); }}>
                     {f.label}
-                    <span className={styles.ddCount}>{filterCount(data, f.key)}</span>
+                    <span className={styles.ddCount}>{filterCount(roster, f.key)}</span>
                     {filter === f.key ? <Icon id="i-check" /> : null}
                   </button>
                 ))}
@@ -635,10 +728,28 @@ export function MobileWorkers() {
             </div>
           </div>
 
-          {/* ROSTER — the desktop 7-column list re-cut as row cards */}
-          {visible.length === 0 ? (
+          {/* ROSTER — the desktop 7-column list re-cut as row cards.
+              Four states, in the order they can occur: the read is in flight,
+              the read failed, the crew is genuinely empty, the filters match
+              nothing. The first two used to be impossible because the page
+              could not fail — it rendered a constant. */}
+          {loadErr ? (
             <div className={styles.wempty}>
-              {data.length === 0 ? (
+              <div className={styles.wemptyT}>Couldn&rsquo;t load your crew</div>
+              <div className={styles.wemptyS}>{loadErr}</div>
+              <button className={styles.wemptyA} type="button"
+                onClick={() => { setLoadErr(null); void reload(); }}>
+                <Icon id="i-rotate" />Try again
+              </button>
+            </div>
+          ) : loading ? (
+            <div className={styles.wempty}>
+              <div className={styles.wemptyT}>Loading your crew…</div>
+              <div className={styles.wemptyS}>Reading the roster on file for your company.</div>
+            </div>
+          ) : visible.length === 0 ? (
+            <div className={styles.wempty}>
+              {roster.length === 0 ? (
                 <>
                   <div className={styles.wemptyT}>No workers on the books</div>
                   <div className={styles.wemptyS}>
@@ -679,23 +790,33 @@ export function MobileWorkers() {
                     <span className={`${styles.wav} ${e.invite === "ACCEPTED" ? "" : styles.isProvisional}`}>
                       {monogram(e.name)}
                     </span>
-                    <div className={styles.wname}>
-                      {e.name}
-                      {/* The affordance. Without it a flat row card reads as a
-                          read-out, and only the ⋮ looks pressable — so the
-                          disclosure chevron rides with the name, where the eye
-                          already is, and slides on press. */}
-                      <Icon id="i-chevr" className={`${styles.ic} ${styles.wnameChev}`} />
+                    {/* IDENTITY BLOCK — name line and contact line in ONE grid
+                        cell, so the pair is welded and centred against the
+                        monogram instead of being pushed apart by the slack of
+                        a two-row span. */}
+                    <div className={styles.wid}>
+                      <div className={styles.wname}>
+                        <span className={styles.wnameT}>{e.name}</span>
+                        {/* The affordance. Without it a flat row card reads as
+                            a read-out, and only the ⋮ looks pressable — so the
+                            disclosure chevron rides with the name, where the
+                            eye already is, and slides on press. It is a FLEX
+                            item, not inline text: the app's reset draws every
+                            svg as display:block, which used to drop this glyph
+                            onto a line of its own between the name and the
+                            email. */}
+                        <Icon id="i-chevr" className={`${styles.ic} ${styles.wnameChev}`} />
+                      </div>
+                      {/* How you reach them. Not uppercased: an address that is
+                          not lower-case is an address you mistype. */}
+                      <div className={`${styles.wmeta} ${e.email ? "" : styles.isNone}`}>
+                        {e.email ?? "no email on file"}
+                      </div>
                     </div>
                     <button className={styles.wrowOpen} type="button"
                       aria-label={`Actions for ${e.name}`} onClick={() => openSheet(e.id)}>
                       <Icon id="i-dots" />
                     </button>
-                    {/* Row 2 — how you reach them. Not uppercased: an address
-                        that is not lower-case is an address you mistype. */}
-                    <div className={`${styles.wmeta} ${e.email ? "" : styles.isNone}`}>
-                      {e.email ?? "no email on file"}
-                    </div>
                     {/* Row 3 — status badges lead, the figures close at the far
                         right. Folio and "joined" were dropped: they are in the
                         sheet, and neither changes a decision here. */}
@@ -754,6 +875,13 @@ export function MobileWorkers() {
       <div className={`${styles.sheet} ${sheetWorker ? styles.on : ""}`} role="dialog" aria-modal="true"
         aria-label={sheetWorker ? `Worker · ${sheetWorker.name}` : "Worker"} aria-hidden={!sheetWorker} {...workerDrag.sheetProps}>
         <div className={styles.sheetGrab} {...workerDrag.handleProps} />
+        {/* HEAD — rebuilt 2026-08-16. It was a 44px back square beside a
+            three-clause eyebrow that wrapped to two lines the moment the square
+            appeared, which left the name sitting low and off-axis. Now: a 38px
+            back square centred on the whole text block, a ONE-LINE eyebrow
+            (folio and role — the joined date is a field row in the record
+            below, where it was already repeated), and the name a size up so the
+            record reads as a record rather than as a wide menu title. */}
         <div className={styles.sheetHead} {...workerDrag.handleProps}>
           {view === "actions" ? null : (
             <button className={styles.sheetBack} type="button" aria-label="Back to actions"
@@ -763,9 +891,7 @@ export function MobileWorkers() {
           )}
           <div className={styles.sheetHeadTxt}>
             <div className={styles.sheetKicker}>
-              {sheetWorker
-                ? `Folio ${sheetFolio} · ${roleLabel(sheetWorker.role)} · joined ${sheetWorker.joined}`
-                : "Worker · —"}
+              {sheetWorker ? `Folio ${sheetFolio} · ${roleLabel(sheetWorker.role)}` : "Worker"}
             </div>
             <div className={styles.sheetTitle}>
               {view === "confirm" ? `Remove ${sheetWorker?.name ?? "worker"}?` : sheetWorker?.name ?? "Actions"}
@@ -900,13 +1026,16 @@ export function MobileWorkers() {
                   need a new owner.
                 </div>
               ) : null}
+              {removeErr ? <div className={styles.sheetErr} role="alert">{removeErr}</div> : null}
             </div>
             <div className={styles.formFoot}>
-              <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setView("actions")}>
+              <button className={`${styles.btn} ${styles.btnGhost}`} type="button" disabled={removing}
+                onClick={() => setView("actions")}>
                 Cancel
               </button>
-              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={confirmRemove}>
-                <Icon id="i-trash" />Remove worker
+              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" disabled={removing}
+                onClick={() => void confirmRemove()}>
+                <Icon id="i-trash" />{removing ? "Removing…" : "Remove worker"}
               </button>
             </div>
           </>
@@ -1009,15 +1138,19 @@ export function MobileWorkers() {
               ? "Changes save straight to the roster."
               : "We email them an invite link. They accept, set a password, and see only their own jobs."}
           </div>
+          {/* The action's own refusal, on the sheet that caused it. */}
+          {formErr ? <div className={styles.sheetErr} role="alert">{formErr}</div> : null}
         </form>
         {/* The submit pair sits in a beige foot OUTSIDE the scrolling body and
             reaches the form through form=, so it is always in the thumb zone. */}
         <div className={styles.formFoot}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setFormOpen(false)}>
+          <button className={`${styles.btn} ${styles.btnGhost}`} type="button" disabled={saving}
+            onClick={() => setFormOpen(false)}>
             Cancel
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mwForm">
-            <Icon id="i-check" />{editId ? "Save changes" : "Send invite"}
+          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mwForm" disabled={saving}>
+            <Icon id="i-check" />
+            {saving ? (editId ? "Saving…" : "Sending…") : editId ? "Save changes" : "Send invite"}
           </button>
         </div>
       </div>

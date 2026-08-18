@@ -387,6 +387,10 @@ export function TradeServicesWorkspace({
         onClose={() => setChatOpen(false)}
         job={chatJob}
         messages={chatJob ? conversations[chatJob.id] ?? [] : []}
+        // `undefined` = this job's history has never come back from the server.
+        // An empty array is a real answer ("no messages yet"); the two must not
+        // collapse, or an existing thread claims to be empty while it loads.
+        loading={chatJob ? conversations[chatJob.id] === undefined : false}
         onSend={handleSendChat}
       />
     </div>

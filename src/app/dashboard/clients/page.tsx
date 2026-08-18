@@ -73,6 +73,7 @@ export default async function ClientsPage() {
     city: c.city,
     state: c.state,
     zip: c.zip,
+    notes: c.notes,
   }));
 
   return <ClientsContent entries={entries} />;

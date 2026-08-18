@@ -66,7 +66,80 @@ export type CalendarContentOptions = {
   /** The org's real calendar, read server-side. Omit to fall back to the donor
    *  fixture (the standalone mock route has no session to read from). */
   seed?: CalendarSeed;
+  /** Next's client-side router push, handed down from calendar-content.tsx.
+   *
+   *  Used by the detail sheet's "Open job". A `location.assign()` here would be
+   *  a HARD document load, and the destination is a blueprint page whose
+   *  entrance cascade is armed from a LAYOUT EFFECT — on a hard load the server
+   *  HTML paints in full before hydration, so the job record appears finished,
+   *  drops to opacity 0 and replays its entrance: the "it shows one version,
+   *  then the real one" double take. A hard load also tears the shared shell
+   *  down and rebuilds the sidebar. Same contract as clients-behavior.ts.
+   *
+   *  Optional: the standalone mock route mounts this module with no router, and
+   *  the fixture has no job ids to open anyway. */
+  navigate?: (href: string) => void;
 };
+
+/** The jobs board's own href shape (jobs-behavior.ts `jobHref`) — one shape, so
+ *  the two surfaces cannot disagree about where a job lives. */
+function jobHref(id: string): string {
+  return "/dashboard/jobs/" + encodeURIComponent(id);
+}
+
+/**
+ * `?date=YYYY-MM-DD` / `?new=1` — the overview's week card links here to open
+ * on a specific day, optionally with the create sheet already up.
+ *
+ * Read once off `window.location` on mount, then removed from the URL (see
+ * `clearEntryParams`) so a Back navigation into this page is just the calendar
+ * and not the create sheet all over again. A missing or malformed date is a
+ * no-op: `2026-02-31` rolls over in the Date constructor, so the only proof the
+ * date was real is that it survives the round trip.
+ */
+function readEntryParams(): { date: Date | null; create: boolean } {
+  if (typeof window === "undefined") return { date: null, create: false };
+  // THIS EDITION IS NOT ALWAYS THE ONE THE USER GETS. `ResponsiveDashboardShell`
+  // renders desktop on the server — it cannot know the viewport — and corrects
+  // during hydration, so on a phone this module mounts, inits and unmounts
+  // inside a single frame before `MobileCalendar` takes over. Consuming here
+  // therefore STOLE `?date=` / `?new=1` from the handheld build, which then
+  // opened on today with no create sheet. The same query the shell switches on,
+  // evaluated at the same moment, so the two can only ever agree about which
+  // edition owns the params.
+  if (window.matchMedia("(max-width: 768px)").matches) return { date: null, create: false };
+  let q: URLSearchParams;
+  try {
+    q = new URLSearchParams(window.location.search);
+  } catch {
+    return { date: null, create: false };
+  }
+  const raw = q.get("date");
+  const m = raw ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw) : null;
+  let date: Date | null = null;
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (
+      !Number.isNaN(d.getTime()) &&
+      d.getFullYear() === Number(m[1]) &&
+      d.getMonth() === Number(m[2]) - 1 &&
+      d.getDate() === Number(m[3])
+    ) {
+      date = d;
+    }
+  }
+  return { date, create: q.get("new") === "1" };
+}
+
+/** Drop `date` / `new` from the address bar without a navigation. */
+function clearEntryParams(): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("date") && !url.searchParams.has("new")) return;
+  url.searchParams.delete("date");
+  url.searchParams.delete("new");
+  window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+}
 
 /** Server actions reject with an Error whose message is written for the user
  *  ("You can only change appointments you created or are staffed on.",
@@ -293,9 +366,13 @@ export function initCalendarContent(
     }
   }
 
+  /** `?date=` / `?new=1`, read before the cursor is seeded so the calendar
+   *  OPENS on the asked-for day instead of jumping to it after first paint. */
+  const entry = readEntryParams();
+
   const cal = {
     view: "month" as "month" | "week" | "team",
-    cursor: new Date(TODAY),
+    cursor: new Date(entry.date ?? TODAY),
     trayOpen: true,
     workers: [] as string[],
     statuses: [] as string[],
@@ -943,6 +1020,32 @@ export function initCalendarContent(
     const g = flushTop(p.top, p.height);
     return "top:" + g.top.toFixed(1) + "px;height:" + g.height.toFixed(1) + "px;" + laneStyle(p.lane, p.lanes);
   }
+  /**
+   * Whether this block's edges may be dragged to change its span.
+   *
+   * Four things have to be true, and each of them is a write or a drawing that
+   * would otherwise lie:
+   * - BLOCKED TIME has exactly one move action and `rescheduleBlockedTime`
+   *   keeps both the clock time AND the duration, so no server call exists that
+   *   could land a resize. The gesture is not offered rather than refused on
+   *   release — the same reasoning `canDrag` applies to a role that cannot
+   *   write.
+   * - ALL-DAY events are drawn in the band above the grid, where an hour has no
+   *   height to drag.
+   * - A block that does not START AND END on its own day is drawn clipped at
+   *   the window's edge (`layoutDay` caps it at WG_END), so the handle would
+   *   sit on the clip, not on the time. Same for a span that runs outside
+   *   06:00–20:00 at either end.
+   * - And the role has to be allowed to move the thing at all, which is exactly
+   *   what `canDrag` already decides.
+   */
+  function canResize(e: CalEvent) {
+    if (e.kind === "blocked" || e.allDay) return false;
+    if (!sameDay(e.start, e.end)) return false;
+    if (minsOf(e.start) < WG_START * 60 || minsOf(e.end) > WG_END * 60) return false;
+    return canDrag(e);
+  }
+
   function weekEvHtml(p: Placed) {
     const short = p.height < 42;
     return '<button class="evc wg-ev ' + statusCls(p.e) + (short ? " is-short" : "") +
@@ -952,6 +1055,14 @@ export function initCalendarContent(
       '<span class="evc-t"><svg class="ic"><use href="#' + (KIND_IC[p.e.kind] || "i-cal") + '"/></svg>' +
       '<span class="evc-txt">' + esc(p.e.title) + "</span></span>" +
       '<span class="wg-ev-time">' + fmtRange(p.e.start, p.e.end) + "</span>" +
+      // The two edge grips. Rendered inside the block (which is the containing
+      // block for them) and marked aria-hidden: they are a pointer affordance
+      // for a gesture the sheet's own start/end pickers already expose to the
+      // keyboard, so announcing them would add two stops that do nothing.
+      (canResize(p.e)
+        ? '<span class="wg-rz wg-rz--t" data-rz="start" aria-hidden="true"></span>' +
+          '<span class="wg-rz wg-rz--b" data-rz="end" aria-hidden="true"></span>'
+        : "") +
       "</button>";
   }
 
@@ -1539,7 +1650,21 @@ export function initCalendarContent(
       '<label class="sf"><span class="sf-lbl">Notes</span><textarea class="sf-area" data-e="notes" placeholder="Anything the crew should know">' + esc(e.notes || "") + "</textarea></label>" +
       '<div class="sf-act">' +
         '<button class="btn btn-primary btn--sm" type="button" data-act="save-event"><svg class="ic"><use href="#i-check"/></svg>Save changes</button>' +
-        '<button class="btn btn-ghost btn--sm" type="button" data-act="delete-event"><svg class="ic"><use href="#i-trash"/></svg>Delete</button>' +
+        // Only a JobEvent with a job behind it has anything to open — an
+        // appointment, a block, and the optional-job path in createJobEvent all
+        // have none, so the button is absent rather than disabled. The id is
+        // carried on the button, not read back off `cal.editing`, so the
+        // handler cannot open a job the sheet has since moved off.
+        (e.jobId
+          ? '<button class="btn btn-ghost btn--sm" type="button" data-act="open-job" data-job="' +
+            esc(e.jobId) + '"><svg class="ic"><use href="#i-jobs"/></svg>Open job</button>'
+          : "") +
+        // The one destructive control on this page, so it carries the house
+        // danger treatment (`btn--danger`) rather than reading as a third
+        // equal-weight ghost button next to Save and Open job. Same modifier and
+        // same tones as the crew inspector's Remove in workers-blueprint — one
+        // treatment per control, published once.
+        '<button class="btn btn-ghost btn--sm btn--danger" type="button" data-act="delete-event"><svg class="ic"><use href="#i-trash"/></svg>Delete</button>' +
       "</div>");
   }
 
@@ -1861,6 +1986,205 @@ export function initCalendarContent(
       if (cal.sheet) { closeSheet(); return; }
       dropGhost();
     });
+  }
+
+  // ---------- week: drag an edge to re-time ----------
+  // Press the grip on a block's top or bottom edge and drag: the BLOCK itself
+  // grows and shrinks under the pointer and its time line rewrites live, with a
+  // mono plate riding the edge being moved. Bottom changes the end, top changes
+  // the start; both snap to SNAP_MIN, exactly like drag-to-create and
+  // drag-to-move, and the release goes through `persistMove` — the SAME write
+  // path a drag-and-drop move uses, so a resize and a move cannot disagree
+  // about what "this event now runs 9:00–13:30" means to the database.
+  //
+  // Nothing is written until the pointer is released. An abandoned gesture
+  // (Escape, pointercancel, a release that never moved) costs a repaint.
+  if (wgBody) {
+    let rzEv: CalEvent | null = null;
+    let rzEl: HTMLElement | null = null;
+    let rzCol: HTMLElement | null = null;
+    let rzTag: HTMLElement | null = null;
+    let rzDay: Date | null = null;
+    let rzEdge: "start" | "end" = "end";
+    /** The edge that stays put, in minutes since midnight. */
+    let rzAnchor = 0;
+    /** The live span under the pointer, in minutes since midnight. */
+    let rzA = 0;
+    let rzB = 0;
+    let rzMoved = false;
+    let rzPid = -1;
+    /**
+     * A gesture ends with a `pointerup` on the block, and the browser follows
+     * that with a `click` — which `#calWrap`'s delegate reads as "open this
+     * event". Deadline rather than a one-shot flag: the commit re-renders the
+     * week, so whether the click lands at all depends on what the browser makes
+     * of a mousedown target that no longer exists, and a flag nobody consumes
+     * would swallow an innocent click minutes later.
+     */
+    let rzSwallowUntil = 0;
+
+    /** Paint the block at the live span, using the geometry a render would give
+     *  it — so committing changes nothing visible and abandoning restores
+     *  nothing. */
+    const rzPaint = () => {
+      if (!rzEl || !rzDay) return;
+      const top = yOfMins(rzA);
+      // The same 22px floor `layoutDay` applies, then the same flush-top
+      // correction `geoStyle` applies. Any other pair of numbers here would make
+      // the block jump by a hairline on release.
+      const raw = Math.max(22, yOfMins(rzB) - top);
+      const g = flushTop(top, raw);
+      rzEl.style.top = g.top.toFixed(1) + "px";
+      rzEl.style.height = g.height.toFixed(1) + "px";
+      rzEl.classList.toggle("is-flush-top", g.onLine);
+      rzEl.classList.toggle("is-short", raw < 42);
+      const label = fmtRange(atMins(rzDay, rzA), atMins(rzDay, rzB));
+      const line = rzEl.querySelector<HTMLElement>(".wg-ev-time");
+      if (line) line.textContent = label;
+      if (rzTag) {
+        // A short block hides its time line, so the plate is not a duplicate —
+        // it is the only reading of the span while the block is small.
+        rzTag.textContent = label + " · " + durLabel((rzB - rzA) * 60000);
+        // The plate is wider than a day column, so it hangs over the column to
+        // its right. Saturday has none, and `.wg-scroll` computes `overflow-x`
+        // from its `overflow-y: auto` — an overhang there would put a
+        // horizontal scrollbar under the whole week. In the last column the
+        // plate is anchored to the right edge and grows inward instead.
+        const last = !!rzCol && !rzCol.nextElementSibling;
+        rzTag.classList.toggle("is-right", last);
+        // `left` is copied verbatim: on a split hour it is a `calc()` against
+        // the same containing block the plate sits in, so it resolves to the
+        // block's own lane.
+        rzTag.style.left = last ? "auto" : rzEl.style.left || "0";
+        rzTag.style.right = last ? "0" : "auto";
+        // Centred on the edge it reports, but never half-outside the grid: the
+        // plate is ~17px tall and the scroller clips, so at 6:00 and 20:00 it
+        // would lose its top or bottom half.
+        const edgeY = yOfMins(rzEdge === "start" ? rzA : rzB);
+        rzTag.style.top = Math.min(WG_H - 10, Math.max(10, edgeY)).toFixed(1) + "px";
+      }
+    };
+
+    /** Put the gesture down. `commit` false = abandon it and repaint from the
+     *  model; a gesture that never moved is a click and is left alone. */
+    const rzEnd = (commit: boolean) => {
+      const ev = rzEv;
+      const el = rzEl;
+      const day = rzDay;
+      const moved = rzMoved;
+      const a = rzA;
+      const b = rzB;
+      if (rzPid !== -1) {
+        try { wgBody.releasePointerCapture(rzPid); } catch { /* already released */ }
+        rzPid = -1;
+      }
+      rzTag?.remove();
+      rzTag = null;
+      el?.classList.remove("is-resizing");
+      rzCol?.classList.remove("is-resizing");
+      if (el && ev) el.draggable = canDrag(ev);
+      rzEv = null; rzEl = null; rzCol = null; rzDay = null; rzMoved = false;
+      if (!ev || !day) return;
+      // Pressed and released without ever passing a snap boundary: the DOM was
+      // never changed (rzPaint's first call reproduces the rendered geometry),
+      // so there is nothing to put back and the click may open the sheet.
+      if (!moved) return;
+      if (!commit) { renderWeek(); return; }
+      rzSwallowUntil = Date.now() + 500;
+      const before = snapshot(ev);
+      // Read BEFORE the span moves: the lane the block is currently DRAWN in.
+      //
+      // A resize is not a move. The block never leaves its lane — only its
+      // extent changes — so the hint has to be where it already is, and
+      // `laneFor` (which is what a DROP asks) is the wrong question here: it
+      // lays out everyone else and hands the caller the first FREE lane, i.e.
+      // the answer for a newcomer arriving. Asking it made a pair sharing an
+      // hour swap sides the instant one of them was stretched, because the
+      // stretched block was told to take the lane beside its neighbour and the
+      // neighbour slid into the one it vacated. `honourLaneHints` still
+      // validates both ends, so a hint that the new extent has made impossible
+      // is simply ignored rather than stacking two cards.
+      const held = layoutDay(eventsOn(day).filter(function (x) { return !x.allDay; }))
+        .find(function (p) { return p.e.id === ev.id; });
+      ev.start = atMins(day, a);
+      ev.end = atMins(day, b);
+      ev.lane = held ? held.lane : undefined;
+      landed = ev.id;
+      renderCal();
+      flashEvent();
+      void persistMove(ev, before);
+    };
+
+    on(wgBody, "pointerdown", function (e) {
+      const pe = e as PointerEvent;
+      if (pe.button !== 0) return;
+      const grip = asEl(pe.target)?.closest<HTMLElement>(".wg-rz");
+      if (!grip) return;
+      const el = grip.closest<HTMLElement>(".wg-ev");
+      const c = grip.closest<HTMLElement>(".wg-col");
+      if (!el || !c || !el.dataset.ev || !c.dataset.day) return;
+      const ev = eventsData.find(function (x) { return x.id === el.dataset.ev; });
+      if (!ev || !canResize(ev)) return;
+      closeFdd();
+      dropGhost();
+      // The block is `draggable` for the MOVE gesture. A press that starts on a
+      // grip must not also arm an HTML5 drag, or the browser takes the pointer
+      // away mid-resize and the block lands somewhere nobody asked for.
+      el.draggable = false;
+      rzEv = ev; rzEl = el; rzCol = c;
+      rzDay = new Date(c.dataset.day);
+      rzEdge = grip.dataset.rz === "start" ? "start" : "end";
+      rzA = minsOf(ev.start);
+      rzB = minsOf(ev.end);
+      rzAnchor = rzEdge === "start" ? rzB : rzA;
+      rzMoved = false;
+      el.classList.add("is-resizing");
+      c.classList.add("is-resizing");
+      const layer = el.parentElement;
+      if (layer) {
+        rzTag = document.createElement("span");
+        rzTag.className = "wg-rz-tag";
+        layer.appendChild(rzTag);
+      }
+      rzPaint();
+      // Suppresses the text selection a drag across the grid paints, and the
+      // compat mouse events that would otherwise start the native drag.
+      pe.preventDefault();
+      rzPid = pe.pointerId;
+      try { wgBody.setPointerCapture(rzPid); } catch { /* capture is best-effort */ }
+    });
+
+    on(wgBody, "pointermove", function (e) {
+      const pe = e as PointerEvent;
+      if (!rzEv || !rzCol) return;
+      const raw = minsAtY(rzCol, pe.clientY);
+      // Day bounds are the grid's own window, and the two edges are clamped
+      // against each other one slot apart — so an edge can neither leave its
+      // column nor pass its partner, and the minimum a block can be dragged to
+      // is exactly the minimum `rescheduleJobEventTime` enforces server-side.
+      if (rzEdge === "end") {
+        rzA = rzAnchor;
+        rzB = Math.min(WG_END * 60, Math.max(rzAnchor + SNAP_MIN, raw));
+      } else {
+        rzB = rzAnchor;
+        rzA = Math.max(WG_START * 60, Math.min(rzAnchor - SNAP_MIN, raw));
+      }
+      if (rzA !== minsOf(rzEv.start) || rzB !== minsOf(rzEv.end)) rzMoved = true;
+      rzPaint();
+    });
+
+    on(wgBody, "pointerup", function () { if (rzEv) rzEnd(true); });
+    on(wgBody, "pointercancel", function () { if (rzEv) rzEnd(false); });
+    on(document, "keydown", function (e) {
+      if ((e as KeyboardEvent).key !== "Escape" || !rzEv) return;
+      rzEnd(false);
+    });
+    on(root, "click", function (e) {
+      if (!rzSwallowUntil || Date.now() > rzSwallowUntil) { rzSwallowUntil = 0; return; }
+      rzSwallowUntil = 0;
+      e.stopPropagation();
+      e.preventDefault();
+    }, { capture: true });
   }
 
   // dragging: event chips and tray cards.
@@ -2245,6 +2569,15 @@ export function initCalendarContent(
       return field ? field.value : "";
     };
 
+    if (act.dataset.act === "open-job") {
+      const jobId = act.dataset.job;
+      if (!jobId) return;
+      closeSheet();
+      const href = jobHref(jobId);
+      if (options.navigate) options.navigate(href);
+      else window.location.assign(href);
+      return;
+    }
     if (act.dataset.act === "save-event") {
       if (sheetBusy) return;
       void saveEvent(val);
@@ -2707,6 +3040,21 @@ export function initCalendarContent(
     // an empty cell) and answer with the one-line explanation in `openQuickAdd`.
     byId("newEventBtn")?.classList.toggle("is-hidden", CREATE_KINDS.length === 0);
     renderCal();
+
+    // `?date=` already moved the cursor (see `entry` above, read before `cal`
+    // was built). This is the other half: `?new=1` means the caller wants to
+    // BOOK something on that day, so the create sheet opens prefilled at the
+    // day's 8:00 default. `openQuickAdd` refuses on its own when the role
+    // cannot create, so there is no second guard here.
+    if (entry.create) {
+      const day = entry.date ?? cal.cursor;
+      openQuickAdd(atMins(day, 8 * 60), atMins(day, 10 * 60));
+    }
+    // Consumed either way: leaving them in the URL means Back re-opens the
+    // sheet, and a stale `?date=` outliving the day it was about. A no-op at
+    // handheld width, where `readEntryParams` declined to read them and the
+    // handheld build owns the clearing — see its guard.
+    if (entry.date || entry.create) clearEntryParams();
   });
 
   // Keep the week's "now" marker honest while the page stays open (outside the

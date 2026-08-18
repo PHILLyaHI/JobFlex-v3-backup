@@ -13,6 +13,7 @@ import {
 } from "@/actions/followUps";
 import { cn } from "@/lib/cn";
 import { relative } from "@/lib/format";
+import { channelLabel, triggerMoment, type FollowUpChannel } from "@/lib/followUps/copy";
 
 export interface FollowUpRuleRow {
   id: string;
@@ -20,7 +21,9 @@ export interface FollowUpRuleRow {
   triggerStatus: string;
   delayMinutes: number;
   enabled: boolean;
-  templateName: string | null;
+  /** Email or text. The wording itself is derived from the trigger — see
+   *  src/lib/followUps/copy.ts. */
+  channel: FollowUpChannel;
 }
 
 export interface PendingFollowUp {
@@ -91,7 +94,7 @@ export function FollowUpRulesTable({ rules, pending, onEdit }: FollowUpRulesTabl
               <tr className="border-b border-[color:var(--ink-line)]">
                 <th className="quiet-caps text-left px-5 py-3">Rule</th>
                 <th className="quiet-caps text-left px-5 py-3">Trigger</th>
-                <th className="quiet-caps text-left px-5 py-3">Template</th>
+                <th className="quiet-caps text-left px-5 py-3">Sends</th>
                 <th className="quiet-caps text-right px-5 py-3 w-[220px]">Actions</th>
               </tr>
             </thead>
@@ -108,9 +111,10 @@ export function FollowUpRulesTable({ rules, pending, onEdit }: FollowUpRulesTabl
                     <Badge tone="accent">{formatTrigger(r.triggerStatus, r.delayMinutes)}</Badge>
                   </td>
                   <td className="px-5 py-3.5 text-[12.5px] text-[color:var(--ink-soft)]">
-                    {r.templateName ?? (
-                      <span className="text-[color:var(--ink-faint)]">— no template —</span>
-                    )}
+                    {channelLabel(r.channel)}
+                    <span className="block text-[11px] text-[color:var(--ink-faint)]">
+                      {triggerMoment(r.triggerStatus)}
+                    </span>
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     <div className="inline-flex items-center gap-1">

@@ -11,12 +11,17 @@
 // radii and Inter 900 caps stay, rather than the mobile skill's soft-shadow /
 // rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is REAL. The board is read from the database by ./jobs-board.ts —
+// the desktop page's query, org-scoped through requireOrg — and asked for by
+// the component on mount rather than passed down, because the same component is
+// mounted props-less by responsive-dashboard-shell on the live /dashboard/jobs
+// URL.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
-// its own redirect-to-login like the other design routes. The next= target is
-// the literal route string — the V3_PORTED_ROUTES key is registered separately.
+// its own redirect-to-login like the other design routes. The board read runs
+// its own requireOrg on top of that: the session check here decides whether the
+// page renders, and the guard in the read decides whose records it may return —
+// a page-level check can never be the thing that scopes a query.
 
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";

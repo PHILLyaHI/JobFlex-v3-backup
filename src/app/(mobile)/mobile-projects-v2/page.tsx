@@ -12,8 +12,12 @@
 // 900 caps stay, rather than the mobile skill's soft-shadow / rounded-3xl
 // defaults.
 //
-// Content is the desktop demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is the org's REAL project book: the client component reads it through
+// the `listProjects` server action on mount — the desktop page's own org-scoped
+// query — and writes through createProject / updateProject / archiveProject.
+// It reads rather than being handed props because the same component is mounted
+// props-less by the responsive shell at /dashboard/projects ≤768px, and one data
+// path beats two.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces its
 // own redirect-to-login like the other design routes. The route key is not read

@@ -1,40 +1,66 @@
-// Mobile jobs (mobile-jobs-v2) — demo fixture.
+// Mobile jobs (mobile-jobs-v2) — row shape, status vocabulary and the date
+// formatters the board renders with.
 //
-// Carried over VERBATIM from the desktop jobs donor fixture
-// (src/components/v3/jobs-blueprint/jobs-data.ts): same 14 records, same ids,
-// titles, clients, statuses, dates, `rel` vocabulary and crews, so the handheld
-// composition is judged against the same board as the desktop sheet.
-// Seattle-area contractor texture — Maple Ave / Fern St / Alder Ct / Mill Creek
-// / Redmond / Sammamish / Kirkland, and diverse client names.
+// This file used to be the donor demo fixture and nothing else. The board is
+// now READ FROM THE DATABASE by ./jobs-board.ts (the desktop jobs page's query,
+// org-scoped through requireOrg) and written through the real job server
+// actions, so the fixture is gone rather than kept as a fallback: a handheld
+// board that quietly shows fourteen invented jobs is worse than one that says
+// it could not load.
 //
-// Every STATE the surface can render is reachable in this fixture:
-//  · all four statuses (in progress ×1, scheduled ×9, completed ×3, canceled ×1)
-//  · three UNSCHEDULED jobs with no crew (j8, j9, j14) — that is what makes the
-//    row card's em-dash crew cell and its "Unscheduled" meta reachable
-//  · one job with NO CLIENT (j14) — that is what makes the row sheet's disabled
-//    "Message client" row reachable
-//  · a multi-day range (j4, j7, j12) and a single-day job (j1, j10)
-//  · a 3-person crew (j4) so the crew stack's overflow "+N" is reachable at a
-//    2-pip cap
-//
-// This is a design surface: the data layer is out of scope, so nothing here
-// touches Prisma or a server action. The array is mutated at runtime (mark
-// completed / delete / create), so the component clones this seed per mount.
+// DATES. Rows carry a plain "YYYY-MM-DD" calendar day, not a display string —
+// the same contract the desktop rows use. The server has to hand over something
+// the client can re-derive "today" / "in 2 days" from, and the old hardcoded
+// ", 2026" suffix stripping only ever worked in its own demo year.
 
 export type JobStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED";
 
 /** The desktop page's five status tabs, re-used as the filter's five options. */
 export type StatusFilter = "ALL" | JobStatus;
 
+/** One JobAssignment row. The `id` is what `unassignWorker` takes (it wants the
+ *  ASSIGNMENT, not the worker), so the mapping ships with the row rather than
+ *  being looked up again at click time. */
+export type JobCrewAssignment = { id: string; workerId: string; name: string };
+
 export type Job = {
   id: string;
   title: string;
+  /** Display name of the linked client, or null when the job has none. */
   client: string | null;
+  clientId: string | null;
   status: JobStatus;
+  /** "YYYY-MM-DD", or null when unscheduled. */
   start: string | null;
+  /** "YYYY-MM-DD", or null for a single-day job. */
   end: string | null;
-  rel: string | null;
+  /** Display names of the assigned crew — derived from `assignments`. */
   crew: string[];
+  assignments: JobCrewAssignment[];
+  /** Where the work is: the client's address if there is one, else the tail of
+   *  the title after the em dash. Feeds the sheet's "Get directions". */
+  site: string;
+  /** Title of the linked proposal, or null. */
+  proposal: string | null;
+};
+
+/** A client the create sheet can attach the new job to. */
+export type JobClientOption = { id: string; name: string };
+/** A worker the create sheet and the crew sheet can staff a job with. */
+export type JobCrewOption = { id: string; name: string };
+/** A proposal the create sheet can link the new job to. */
+export type JobProposalOption = { id: string; title: string; clientId: string | null };
+
+/** Everything one mount of the handheld board needs, in a single round trip. */
+export type JobsBoard = {
+  jobs: Job[];
+  clients: JobClientOption[];
+  crew: JobCrewOption[];
+  proposals: JobProposalOption[];
+  /** Owner/manager. Staffing and status writes are `requireManager` actions, so
+   *  the rows that call them are disabled for everyone else rather than offered
+   *  and then refused by the server. */
+  canManage: boolean;
 };
 
 export const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
@@ -48,28 +74,10 @@ export const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
 /** Not completed and not canceled — the masthead's primary numeral. */
 export const OPEN_STATUSES: JobStatus[] = ["SCHEDULED", "IN_PROGRESS"];
 
-export const JOBS_SEED: Job[] = [
-  { id: 'j1',  title: 'Roof tear-off — 4812 Maple Ave',   client: 'M. Henderson', status: 'IN_PROGRESS', start: 'Jul 22, 2026', end: 'Jul 22, 2026', rel: 'today',      crew: ['Marcus B.', 'Dan K.'] },
-  { id: 'j2',  title: 'Dumpster swap — Maple Ave',        client: 'M. Henderson', status: 'SCHEDULED',   start: 'Jul 22, 2026', end: null,            rel: 'today',      crew: ['Dan K.'] },
-  { id: 'j3',  title: 'Fence repair — 1409 Fern St',      client: 'K. Nguyen',    status: 'SCHEDULED',   start: 'Jul 23, 2026', end: null,            rel: 'in 1 day',   crew: ['Marcus B.'] },
-  { id: 'j4',  title: 'Asphalt reroof — Henderson',       client: 'M. Henderson', status: 'SCHEDULED',   start: 'Jul 24, 2026', end: 'Jul 25, 2026',  rel: 'in 2 days',  crew: ['Marcus B.', 'Dan K.', 'Ivan'] },
-  { id: 'j5',  title: 'Cedar fence — 902 Alder Ct',       client: 'D. Reyes',     status: 'SCHEDULED',   start: 'Jul 25, 2026', end: null,            rel: 'in 3 days',  crew: ['Marcus B.'] },
-  { id: 'j6',  title: 'Skylight install — 210 Fir St',    client: 'K. Marsh',     status: 'SCHEDULED',   start: 'Jul 28, 2026', end: null,            rel: 'in 6 days',  crew: ['Dan K.'] },
-  { id: 'j7',  title: 'Siding patch — Mill Creek',        client: 'S. Patel',     status: 'SCHEDULED',   start: 'Jul 30, 2026', end: 'Jul 31, 2026',  rel: 'in 1 week',  crew: ['Marcus B.', 'Dan K.'] },
-  { id: 'j8',  title: 'Gutter replacement — Redmond',     client: 'R. Okafor',    status: 'SCHEDULED',   start: null,           end: null,            rel: null,         crew: [] },
-  { id: 'j9',  title: 'Pergola build — Sammamish',        client: 'L. Wong',      status: 'SCHEDULED',   start: null,           end: null,            rel: null,         crew: [] },
-  { id: 'j10', title: 'Deck power wash — 55 Cedar Loop',  client: 'R. Tran',      status: 'COMPLETED',   start: 'Jul 20, 2026', end: 'Jul 20, 2026',  rel: '2d ago',     crew: ['Dan K.'] },
-  { id: 'j11', title: 'Gutter guards — Redmond',          client: 'D. Pham',      status: 'COMPLETED',   start: 'Jul 17, 2026', end: null,            rel: '5d ago',     crew: ['Marcus B.'] },
-  { id: 'j12', title: 'Cedar privacy fence — Kirkland',   client: 'K. Sorensen',  status: 'COMPLETED',   start: 'Jul 05, 2026', end: 'Jul 08, 2026',  rel: '2w ago',     crew: ['Marcus B.', 'Sofia R.'] },
-  { id: 'j13', title: 'Punch list — Cypress Ln',          client: 'C. Ferreira',  status: 'CANCELED',    start: 'Jul 14, 2026', end: null,            rel: '1w ago',     crew: ['Marcus B.'] },
-  { id: 'j14', title: 'Roof inspection — Bothell',        client: null,           status: 'SCHEDULED',   start: null,           end: null,            rel: null,         crew: [] },
-];
-
 /**
- * The desktop sheet pages 20 at a time (so its pager never appears on this
- * fixture). A handheld row is three lines tall, so 8 — the same reasoning that
- * took the clients book from 12 to 8 and the proposals ledger from 8 to 6. It
- * also makes the pager a real, reachable control here.
+ * The desktop sheet pages 20 at a time. A handheld row is three lines tall, so
+ * 8 — the same reasoning that took the clients book from 12 to 8 and the
+ * proposals ledger from 8 to 6.
  */
 export const PAGE_SIZE = 8;
 
@@ -90,24 +98,75 @@ export function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/**
- * "Jul 22" for a single day, "Jul 24 – Jul 25" for a range, null when the job
- * is unscheduled. The year is dropped: every record is 2026, so it carries no
- * information on a 320px meta line (design-system.md — text that adds nothing
- * to what is already visible should not exist). One helper for both the row and
- * the sheet, so the two can never drift.
- */
-export function scheduleLabel(j: Job): string | null {
-  if (!j.start) return null;
-  const from = j.start.replace(", 2026", "");
-  if (!j.end || j.end === j.start) return from;
-  return `${from} – ${j.end.replace(", 2026", "")}`;
+/** Parsed field by field on purpose: `new Date("2026-07-30")` is read as UTC
+ *  midnight and renders as the previous day in every negative-offset timezone.
+ *  The desktop helper, verbatim. */
+export function parseDay(v: string | null | undefined): Date | null {
+  if (!v) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+
+/** The inverse of `parseDay` — a Date to the calendar day it falls on locally. */
+export function toDay(d: Date | null | undefined): string | null {
+  if (!d) return null;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+/** "2026-07-30" → "Jul 30". The year is dropped when it is the current one: on
+ *  a 320px meta line it carries no information (DESIGN.md — text that adds
+ *  nothing to what is already visible should not exist), and a job dated some
+ *  other year has to say so. */
+function shortDay(v: string | null | undefined): string | null {
+  const d = parseDay(v);
+  if (!d) return null;
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
 
 /**
- * The address / neighbourhood, taken from the part of the title after the
- * em dash — every record on this board is titled "<work> — <where>", which is
- * what lets the row sheet offer directions and the search box answer a city.
+ * "Jul 22" for a single day, "Jul 24 – Jul 25" for a range, null when the job
+ * is unscheduled. One helper for both the row and the sheet, so the two can
+ * never drift.
+ */
+export function scheduleLabel(j: Pick<Job, "start" | "end">): string | null {
+  const a = shortDay(j.start);
+  if (!a) return null;
+  if (!j.end || j.end === j.start) return a;
+  return `${a} – ${shortDay(j.end) ?? ""}`.trim();
+}
+
+/** The relative plate, in the donor's own vocabulary:
+ *  today / in 1 day / in 2 days / in 1 week / 2d ago / 2w ago. */
+export function relLabel(v: string | null | undefined): string | null {
+  const d = parseDay(v);
+  if (!d) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((d.getTime() - today.getTime()) / 86400000);
+  if (days === 0) return "today";
+  if (days > 0) {
+    if (days === 1) return "in 1 day";
+    if (days < 7) return `in ${days} days`;
+    if (days < 14) return "in 1 week";
+    return `in ${Math.round(days / 7)} weeks`;
+  }
+  const ago = -days;
+  if (ago < 7) return `${ago}d ago`;
+  if (ago < 14) return "1w ago";
+  return `${Math.round(ago / 7)}w ago`;
+}
+
+/**
+ * The address / neighbourhood taken from the part of the title after the em
+ * dash — the shape a jobs board is usually titled in ("<work> — <where>"). Only
+ * the fallback now: a real record carries its client's address, which the
+ * server read prefers (see jobs-board.ts).
  */
 export function siteOf(title: string): string {
   const i = title.indexOf("—");
@@ -126,7 +185,7 @@ export function matchesQuery(j: Job, query: string): boolean {
   return (
     j.title.toLowerCase().includes(q) ||
     (j.client ?? "").toLowerCase().includes(q) ||
-    siteOf(j.title).toLowerCase().includes(q) ||
+    j.site.toLowerCase().includes(q) ||
     statusLabel(j.status).toLowerCase().includes(q) ||
     j.crew.join(" ").toLowerCase().includes(q)
   );

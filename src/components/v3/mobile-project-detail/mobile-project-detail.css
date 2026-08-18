@@ -503,27 +503,117 @@ body:has(.jf-mobile-project-detail)::before { content: none; }
 .jf-mobile-project-detail .mpd-btn.mpd-open { background: var(--ink); }
 
 /* ============================================================
-   ATTACH PANEL — kept MOUNTED and toggled with `hidden`, exactly like the
-   desktop build: the reveal observer is still watching it, so opening the
-   panel fades it up instead of popping it in.
-   Inline disclosure rather than a bottom sheet: it is not a modal, it is a
-   list that belongs to the button above it, and the `hidden` toggle is the
-   behaviour being preserved.
+   ATTACH SHEET — the popup behind "Attach proposal".
+
+   It was an inline `hidden`-toggled disclosure sitting between the tab bar and
+   the view (owner, 2026-08-15). Two reasons it is a sheet now. First, the ask:
+   the control opens a POPUP on both viewports. Second, what it holds changed —
+   the list is the shop's proposal book, not the handful of loose jobs it used
+   to be, so it is a screen's worth of rows rather than a footnote under a
+   button, and pushing the jobs list down by 400px to show it read as the page
+   coming apart.
+
+   On a handheld the house popup is a bottom sheet, never a centred dialog
+   (CLAUDE.md). The grammar below is the projects book's and the proposals
+   ledger's, verbatim in this file's flat naming: 2px ink top frame, grab
+   handle, head over an internally scrolling body, a full-width Close under it,
+   and the same 0.3s --ease-out slide. Names carry the `mpd-` prefix for the
+   reason given at the top of this file.
    ============================================================ */
 .jf-mobile-project-detail [hidden] { display: none !important; }
-.jf-mobile-project-detail .mpd-attach {
-  border: 1.5px dashed var(--blueprint);
-  border-radius: var(--radius);
-  padding: 14px var(--card-pad) 6px;
-  background: var(--paper);
+.jf-mobile-project-detail .mpd-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(10, 10, 10, 0.4);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s var(--ease-out), visibility 0.3s;
 }
-.jf-mobile-project-detail .mpd-attach-t {
-  display: block;
+.jf-mobile-project-detail .mpd-scrim.mpd-on { opacity: 1; visibility: visible; }
+.jf-mobile-project-detail .mpd-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  /* Viewport height only via --app-h — a bare vh is a scroll bug on a phone. */
+  max-height: calc(var(--app-h, 100dvh) * 0.86);
+  padding-bottom: var(--safe-b);
+  border-top: var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--paper);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.3s var(--ease-out), visibility 0.3s;
+}
+.jf-mobile-project-detail .mpd-sheet.mpd-on { transform: none; visibility: visible; }
+.jf-mobile-project-detail .mpd-sheet-grab {
+  width: 44px;
+  height: 3px;
+  margin: 10px auto 0;
+  background: var(--hair);
+  flex-shrink: 0;
+}
+.jf-mobile-project-detail .mpd-sheet-head {
+  padding: 14px var(--pad-x) 12px;
+  border-bottom: 1.5px solid var(--ink);
+  flex-shrink: 0;
+}
+.jf-mobile-project-detail .mpd-sheet-kick {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.jf-mobile-project-detail .mpd-sheet-t {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.jf-mobile-project-detail .mpd-sheet-s {
+  margin-top: 7px;
   font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-project-detail .mpd-sheet-body {
+  padding: 4px var(--pad-x) 6px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* 6px bar, thumb in muted-faint, transparent track — the fleet's own. */
+.jf-mobile-project-detail .mpd-sheet-body::-webkit-scrollbar { width: 6px; }
+.jf-mobile-project-detail .mpd-sheet-body::-webkit-scrollbar-track { background: transparent; }
+.jf-mobile-project-detail .mpd-sheet-body::-webkit-scrollbar-thumb {
+  background: var(--muted-faint);
+  border: none;
+  border-radius: 0;
+}
+.jf-mobile-project-detail .mpd-sheet-cancel {
+  min-height: 52px;
+  margin: 12px var(--pad-x) 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.01em;
-  line-height: 1.35;
-  margin-bottom: 4px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  flex-shrink: 0;
 }
 /* A refused write says so, in the danger tone rather than the muted mono of an
    empty state: on a phone the panel is the whole screen and a grey line reads
@@ -600,6 +690,11 @@ body:has(.jf-mobile-project-detail)::before { content: none; }
   box-shadow: none;
   cursor: default;
 }
+/* A proposal with nothing to link is greyed but still READ: the mono line under
+   it carries the reason, and hiding the row would leave the reader wondering
+   where their proposal went. */
+.jf-mobile-project-detail .mpd-av-off .mpd-av-n { color: var(--muted); }
+.jf-mobile-project-detail .mpd-av-off .mpd-av-m { color: var(--muted-light); }
 
 /* ============================================================
    CARD — the view body

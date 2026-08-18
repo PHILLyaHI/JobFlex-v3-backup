@@ -29,6 +29,11 @@
   --warning-soft: rgba(184, 132, 32, 0.08);
   --danger: #a83232;
   --danger-soft: rgba(168, 50, 50, 0.08);
+  /* The one place --danger cannot be used: a 5px dot sitting ON today's filled
+     blueprint plate. #a83232 against #1854a0 is dark-on-dark and the dot
+     disappears, so the blocked dot lightens rather than changing hue — it is
+     still unmistakably the danger tone, just legible on a dark ground. */
+  --danger-lite: #f08a8a;
 
   --grid-light: rgba(0, 0, 0, 0.035);
   --hair: rgba(10, 10, 10, 0.12);
@@ -170,6 +175,9 @@
    (owner's call, 2026-07-29). */
 .btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
 .btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
+/* In flight to the server. The shadow drops so the button reads as already
+   pressed rather than as still waiting to be. */
+.btn:disabled { opacity: 0.55; box-shadow: none; transform: translate(1px, 1px); }
 /* A live count riding a button face — inbox pending, tray waiting. */
 .btnCount {
   display: inline-flex; align-items: center; justify-content: center;
@@ -509,13 +517,23 @@
   font-variant-numeric: tabular-nums;
 }
 /* Status dots and status badges read from the same three-tone set. Kind is not
-   a status: appointments take sky, blocked time takes the ink plate. */
+   a status: appointments take sky, blocked time takes DANGER.
+   Blocked was the ink plate until 2026-08-15, which made "nobody can work this
+   day" the quietest mark on the grid — identical in weight to a frame, a rule
+   and the body text. It is the one kind that is a REFUSAL, and the desktop
+   already reads it rose (WeekGridA / TeamGridA use `var(--rose)`, which is the
+   same #a83232 this module calls `--danger`). The two editions now agree. */
 .dotSched { background: var(--blueprint); }
 .dotProg { background: var(--warning); }
 .dotDone { background: var(--success); }
 .dotCancel { background: var(--danger); }
 .dotAppt { background: var(--sky); }
-.dotBlocked { background: var(--ink); }
+.dotBlocked { background: var(--danger); }
+/* Today's cell paints its dots paper so they survive the blueprint fill; the
+   blocked dot opts out of that and keeps its own tone, lightened to clear the
+   plate. Declared after `.mgCell.isToday .mgDot` and at (0,3,0) vs its (0,2,0),
+   so it wins on specificity rather than on source order. */
+.mgCell.isToday .mgDots .dotBlocked { background: var(--danger-lite); }
 /* ============================================================
    AGENDA — the selected day (Month view). Head names the day and
    carries the create affordance the desktop got from clicking an
@@ -742,7 +760,31 @@
 .stDone { border-color: var(--success); background: var(--success-soft); color: var(--success); }
 .stCancel { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 .stAppt { border-color: var(--sky); background: rgba(74, 158, 255, 0.13); color: var(--blueprint); }
-.stBlocked { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+.stBlocked { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+/* ---- BLOCKED ROW ---------------------------------------------------------
+   The desktop's own treatment for unavailable time, re-cut for a row card: a
+   3px rose rail down the left edge (WeekGridA writes exactly
+   `inset 3px 0 0 var(--rose)`) over the soft danger wash. Deliberately NOT a
+   full rose fill — the row still has to carry a black title and a mono meta
+   line at AA in direct sunlight, and a saturated ground would cost both.
+
+   Declared AFTER `.etime.isToday`, which it must beat: a block that happens to
+   fall on today would otherwise take the filled blueprint plate and read as the
+   most ordinary event on the page. Both score (0,2,0), so this is a source-order
+   win and the two rules must not be reordered. */
+.erow.isBlocked { background: var(--danger-soft); box-shadow: inset 3px 0 0 var(--danger); }
+.erow.isBlocked:active { background: rgba(168, 50, 50, 0.14); }
+.erow.isBlocked .etime {
+  background: var(--paper);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.erow.isBlocked .etimeH,
+.erow.isBlocked .etimeM,
+.erow.isBlocked .etimeD { color: var(--danger); }
+/* The title stays ink — a rose headline on a rose wash is the "everything is
+   an alert" failure. Only the frame and the annotation layer carry the tone. */
+.erow.isBlocked .ewho { color: var(--danger); }
 .ecrew {
   font-family: var(--font-mono);
   font-size: 11.5px; font-weight: 600;
@@ -1325,6 +1367,308 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+/* ============================================================
+   DATE FIELD (.dpk) and TIME FIELD (.tpk) — the house pickers.
+
+   WHY THE NATIVE CONTROLS ARE GONE (2026-08-15). `<input type="date">` and
+   `<input type="time">` open an OS panel no stylesheet can reach: no frame, no
+   2px radius, no Inter, no mono numerals — and on Android the time control is a
+   Material clock dial, which is the single least house-looking object that has
+   ever appeared inside a JobFlex sheet. Replacing the CONTROL is the only way
+   to style the panel; this is the same call mobile-projects-v2 made for its
+   create form, and the `.dpk` block below is that page's control ported here
+   rather than re-invented — same 34px mono day cells, same blueprint ring for
+   today, same ink fill for the chosen day, same beige TODAY / CLEAR foot.
+
+   The WIRE FORMAT is untouched. `.dpkIn` is still a real text input holding
+   "YYYY-MM-DD" and the time field still resolves to "HH:MM", which is exactly
+   what `fromInputs()` and the save path already read — the panels write the
+   strings, they do not replace them.
+   ============================================================ */
+.dpk, .tpk { position: relative; display: block; }
+/* The field keeps `.pinput`'s height, frame and focus ring; this adds only the
+   drawing-annotation type a date belongs in and the room the two icons need. */
+.dpkIn {
+  padding-left: 34px;
+  padding-right: 46px;
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.dpkLead {
+  position: absolute;
+  left: 11px; top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  pointer-events: none;
+  color: var(--blueprint);
+}
+.dpkLead .ic { width: 15px; height: 15px; }
+/* 42px wide and full field height — the handheld touch floor, spent on the
+   button rather than on a 12px browser glyph. */
+.dpkTgl {
+  position: absolute;
+  right: 1.5px; top: 1.5px; bottom: 1.5px;
+  width: 42px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  color: var(--muted);
+  transition: color 0.12s, background 0.12s;
+}
+.dpkTgl:active { color: var(--ink); background: var(--paper-deep); }
+.dpkTgl .ic { width: 14px; height: 14px; transition: transform 0.2s var(--ease-out); }
+.dpk.open .dpkTgl .ic, .tpk.open .dpkTgl .ic { transform: rotate(180deg); }
+.dpk.open .dpkIn, .tpk.open .tpkFace { border-color: var(--ink); }
+/* The TIME face is a button, not an input: unlike a date, a time has no format
+   worth typing on a phone ("7:00 AM"? "0700"? "7p"?), so the whole face opens
+   the panel and the value is picked, never spelled. */
+.tpkFace {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 46px 0 34px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+.tpkFace:active { background: var(--paper-deep); }
+.tpkVal {
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+/* --- the panel, shared by both fields --------------------------------------
+   Rendered as a SIBLING of the sheet and positioned in viewport coordinates,
+   never parented to the field: `.sheetBody` scrolls and `.sheet` animates a
+   transform, either of which would clip or drag a panel anchored inside it. */
+.dpkLayer { position: fixed; inset: 0; z-index: 90; }
+.dpkCatch { position: absolute; inset: 0; }
+.dpkPop {
+  position: absolute;
+  width: min(300px, calc(100vw - 24px));
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  animation: dpkIn 0.18s var(--ease-out);
+}
+@keyframes dpkIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.dpkCal { padding: 10px 10px 12px; }
+.dpkHead {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 9px;
+}
+.dpkMonth { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.dpkNav {
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.dpkNav:active { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+.dpkNav .ic { width: 13px; height: 13px; }
+.dpkDow, .dpkGrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.dpkDow { margin-bottom: 4px; }
+.dpkDow span {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted-light);
+}
+.dpkDay {
+  height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 700;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.dpkDay:active { background: var(--paper-deep); border-color: var(--hair); }
+.dpkOut { color: var(--muted-faint); }
+/* Today is a ring, the chosen day is a fill — the same two states the month
+   grid on this very page uses, so a day never means two things. */
+.dpkToday { border-color: var(--blueprint); color: var(--blueprint); }
+.dpkSel { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.dpkFoot {
+  display: flex; flex-wrap: wrap;
+  align-items: center; justify-content: space-between;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  border-top: 1.5px solid var(--hair-soft);
+  background: var(--paper-deep);
+}
+.dpkVal {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dpkActs { display: inline-flex; gap: 6px; flex: 0 0 auto; }
+.dpkAct {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s;
+}
+.dpkAct:active { background: var(--ink); color: var(--paper); }
+/* --- the TIME panel's three banks -----------------------------------------
+   Hour, minute, meridiem — read left to right in the order the value is spoken.
+   Minutes are the four quarter marks and nothing else: SNAP_MIN is 15, so a
+   :07 the user could pick would be snapped away under them on save. A control
+   must not offer a value the save path will silently move. */
+.tpkBank { padding: 10px 10px 4px; }
+.tpkBank + .tpkBank { padding-top: 0; }
+.tpkLbl {
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted-light);
+  margin-bottom: 5px;
+}
+.tpkHours { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.tpkMins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.tpkAmpm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.tpkCell {
+  min-height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.tpkCell:active { background: var(--paper-deep); border-color: var(--hair); }
+.tpkCell.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+/* ============================================================
+   CREW PICKER (.crew*) — the desktop WorkerMultiPicker, folded into
+   the sheet. Same semantics: search the roster, tap to toggle, the
+   chosen crew reads back as removable chips above the trigger, and
+   the count is on the face so a collapsed picker still says how many
+   are on the job. What is NOT carried over is the popover: a floating
+   layer over a bottom sheet is one layer too many on a phone, so the
+   roster opens INLINE, exactly like the linked-record picker two
+   fields up — the two pickers in one form should behave the same.
+   ============================================================ */
+.crewChips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.crewChip {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 34px;
+  padding: 0 6px 0 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 12px; font-weight: 700;
+  color: var(--ink);
+  max-width: 100%;
+}
+.crewChipT { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crewChipX {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border-radius: var(--radius);
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.crewChipX:active { background: var(--ink); color: var(--paper); }
+.crewChipX .ic { width: 12px; height: 12px; }
+.crewCount {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  flex-shrink: 0;
+}
+/* A roster row: drawn checkbox, initials plate, name over role. */
+.crewRow {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0 11px;
+  width: 100%;
+  min-height: 56px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.crewRow:last-child { border-bottom: none; }
+.crewRow:active { background: var(--paper-deep); }
+.crewRow[aria-pressed="true"] { background: var(--paper-deep); }
+.crewRow[aria-pressed="true"] .fchkBox { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.crewAv {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.crewRow[aria-pressed="true"] .crewAv { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+/* The two lines are spans, so they need to be told to stack — inline by default
+   they run together and a row reads "CaseyMANAGER". */
+.crewWho { min-width: 0; display: block; }
+.crewName { display: block; font-size: 14px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.crewRole {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+/* Blocked time: `createBlockedTime` is self-owned by construction — it takes no
+   owner and there is no update path for one. Offering a roster there would be a
+   control that changes nothing, so the field states the rule instead. */
+.crewStatic {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 50px;
+  padding: 0 12px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 14px; font-weight: 700;
+  color: var(--ink);
+}
+.crewStatic .ic { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
+/* A save that the server refused. Danger frame, danger soft fill, no ink box —
+   the informational-banner shape, in the status tone that fits. */
+.formErr {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 12px;
+  border: 1.5px solid var(--danger);
+  border-left-width: 5px;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  font-size: 13px; font-weight: 600;
+  line-height: 1.45;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.formErr .ic { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
 /* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
    reachable without scrolling the form to its end, and reaches the form with
    the form= attribute. */

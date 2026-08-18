@@ -72,6 +72,13 @@
   inset: 0;
   z-index: 20;
   display: grid;
+  /* minmax(0, 1fr), not the implicit `auto` column. An auto track is floored at
+     its items' min-content width, and at 320px the shared topbar's min-content
+     is ~361px — so the single column grew to 361, the scroller grew with it,
+     and `overflow: hidden` above quietly sliced 41px off the right of every
+     card, taking the line totals with it. Capping the track at the container
+     width puts the clipping back where it belongs: inside the topbar. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--topbar-h) 1fr;
   height: var(--app-h, 100dvh);
   overflow: hidden;
@@ -131,20 +138,54 @@
 /* ============================================================
    PAGE HEAD
    ============================================================ */
+/* The "SALES · ESTIMATING" kicker was removed on 2026-08-13 (owner): the page
+   title already says what this is, and on a 4-step wizard the kicker was one
+   more line of chrome between the user and step 1. */
 .pageHead { padding-top: 2px; }
-.kicker {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 11.5px; font-weight: 800;
-  letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 9px;
-}
-.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
 .pageTitle {
   font-size: var(--fs-h1); font-weight: 900;
   letter-spacing: -0.03em; text-transform: uppercase;
   line-height: 0.95;
 }
+/* ============================================================
+   FAILURE / NOTICE BANNER — the one place this surface reports a
+   plan limit, a dead AI key, a refused refine or a thin brief. It
+   is on the page, not a toast: the page pins itself over the app,
+   and "nothing happened" is not an answer to a 40-second wait.
+   ============================================================ */
+.banner {
+  border: var(--border-thin);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  padding: 13px var(--card-pad) 14px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.bDanger { border-color: var(--danger); background: var(--danger-soft); }
+.bWarn { border-color: var(--warning); background: var(--warning-soft); }
+.bInfo { border-color: var(--sky); background: rgba(74, 158, 255, 0.08); }
+.bTitle { font-size: 14.5px; font-weight: 900; letter-spacing: 0.01em; line-height: 1.25; }
+.bBody { margin-top: 7px; font-size: 13.5px; font-weight: 500; line-height: 1.5; color: var(--ink-soft); }
+.bList { list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+.bList li {
+  display: flex; gap: 9px;
+  font-size: 13.5px; font-weight: 500; line-height: 1.45;
+  color: var(--ink-soft);
+}
+.bList li::before { content: ""; flex: 0 0 auto; width: 5px; height: 5px; margin-top: 7px; background: var(--ink); }
+.bActs { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 13px; }
+.bBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.bBtn:active { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
 /* ============================================================
    BUTTONS — only the sticky commit pair carries a fill. Every other
    control on this surface is FLAT: a 2px ink frame and no background.
@@ -170,9 +211,12 @@
 .btn:disabled { opacity: 0.4; }
 .btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
 .btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
-/* Two-tap "Start over": the armed state is a real warning, not a colour swap
-   for its own sake. */
-.btnGhost.isArmed { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+/* "Start over" throws away a priced estimate, so it wears the danger tone at
+   rest rather than only once it is armed — the cost is legible BEFORE the first
+   tap, not after it. The armed state then fills, so the two states cannot be
+   confused with each other. */
+.btnDanger { border-color: var(--danger); color: var(--danger); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
+.btnDanger.isArmed { background: var(--danger); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
 /* ============================================================
    WIZARD PROGRESS — a mono plate over a drawn rule filled to the
    fraction. A horizontal stepper rail cannot label four steps at
@@ -275,7 +319,31 @@
 }
 /* ---- fields ---- */
 .fld { display: flex; flex-direction: column; }
-.fldRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+/* ---- unit chips ----
+   The edit sheet's quantity is unit-bearing: "8" on its own is either eight
+   hours or eight square feet, and the old bare Qty column made the reader
+   guess. Eight choices do not earn a picker sheet the way 51 states did, so
+   they are chips — every one a real 44px target, and whatever off-list unit
+   the AI actually returned ("square", "lot") is kept and offered rather than
+   silently retyped. */
+.unitChips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.unitChip {
+  min-height: 44px;
+  padding: 0 12px;
+  display: inline-flex; align-items: center;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 13px; font-weight: 700;
+  color: var(--muted);
+  transition: border-color 0.12s, color 0.12s, background 0.12s, box-shadow 0.12s var(--ease);
+}
+.unitChip.on {
+  border-color: var(--blueprint);
+  color: var(--blueprint);
+  background: rgba(24, 84, 160, 0.07);
+  box-shadow: 2px 2px 0 var(--blueprint);
+}
 .fldLbl {
   font-size: 11.5px; font-weight: 800;
   letter-spacing: 0.14em; text-transform: uppercase;
@@ -334,11 +402,65 @@
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
 .sample:active { border-style: solid; border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
-/* ---- review recap ---- */
-.review {
+/* ---- site photos: tap to shoot, tap to choose, drop on a tablet ---- */
+.fileIn { display: none; }
+.dz {
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  padding: 20px 14px 18px;
+  text-align: center;
+  background: var(--paper);
+  transition: border-color 0.14s, background 0.14s;
+}
+.dzOver { border-style: solid; border-color: var(--blueprint); background: rgba(24, 84, 160, 0.06); }
+.dzIc { width: 26px; height: 26px; fill: none; stroke: var(--blueprint); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dzT { margin-top: 9px; font-size: 15px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.dzS { margin-top: 7px; font-size: 13px; font-weight: 500; line-height: 1.5; color: var(--muted); }
+.dzActs { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 9px; margin-top: 15px; }
+.dzBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px;
+  padding: 0 10px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.dzBtn .ic { width: 15px; height: 15px; }
+.dzBtn:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.thumbs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.thumb {
+  position: relative;
+  width: 84px; height: 84px;
   border: var(--border-thin);
   border-radius: var(--radius);
   overflow: hidden;
+  background: var(--paper-deep);
+}
+.thumbImg { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Same trick the ⋮ control uses: a 28px drawn box with an invisible 44px hit
+   area around it, because a 44px chrome square would swallow an 84px thumb. */
+.thumbX {
+  position: absolute;
+  top: 3px; right: 3px;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--danger);
+}
+.thumbX::before { content: ""; position: absolute; inset: -8px; }
+.thumbX .ic { width: 14px; height: 14px; }
+.thumbX:active { background: var(--danger); color: #fff; }
+/* ---- review recap: rows sit DIRECTLY in the step card. A bordered recap box
+   inside a bordered step card was a card in a card, so the box is gone and the
+   rows run full bleed to the card's own frame instead. ---- */
+.revList {
+  display: flex; flex-direction: column;
+  margin: 0 calc(var(--card-pad) * -1) calc(var(--card-pad) * -1);
 }
 /* Every child is pinned to an explicit cell. A grid-row without a grid-column
    lets auto-placement claim the wrong column and shove a sibling sideways. */
@@ -346,8 +468,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0 12px;
-  padding: 12px 13px 13px;
-  border-bottom: 1.5px solid var(--ink);
+  padding: 13px var(--card-pad) 14px;
+  border-bottom: 1.5px solid var(--hair);
 }
 .revRow:last-child { border-bottom: none; }
 .revLbl {
@@ -389,20 +511,52 @@
   transition: color 0.2s var(--ease-out);
 }
 .stage:last-child { border-bottom: none; }
+/* The step mark is one 26px square in three states, and the OUTLINE is drawn by
+   the inline SVG rather than by `border` — the active state has to animate a
+   line travelling around that outline, and a CSS border cannot be dashed
+   progressively. The square never changes size or position between states, only
+   what is painted on it, so the checklist does not twitch as it advances.
+   Matches the desktop console's mark exactly, at handheld scale. */
 .stageIc {
+  position: relative;
   width: 26px; height: 26px;
   flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1.5px solid var(--muted-faint);
-  border-radius: var(--radius);
   color: transparent;
-  transition: border-color 0.2s, background 0.2s, color 0.2s;
 }
-.stageIc .ic { width: 14px; height: 14px; }
+.stageRing { position: absolute; inset: 0; width: 26px; height: 26px; overflow: visible; }
+/* The fill belongs to the TRACK alone, never to `.stageRing rect`. Written as a
+   type selector it scores (0,1,1) and outranks the single-class `.stageRingRun`
+   (0,1,0) — and the run rect is drawn last, so it would paint its own fill over
+   the done state's filled square and the white check on it. */
+.stageRing rect {
+  stroke-width: 1.5;
+  transition: fill 0.2s var(--ease-out), stroke 0.2s var(--ease-out);
+}
+.stageRingTrack { fill: transparent; stroke: var(--muted-faint); stroke-dasharray: 3 3; }
+.stageRingRun { fill: none; stroke: none; }
+.stageIc .ic { position: relative; width: 14px; height: 14px; }
+
+/* ACTIVE — the outline goes solid and faint, and one quarter of the perimeter
+   walks around it. The rect is 24×24, so the perimeter is 96 user units:
+   `24 72` puts one quarter on the path and offsetting by a full 96 returns it
+   exactly where it started, which is what makes the loop seamless. */
 .stage.isNow { color: var(--blueprint); font-weight: 700; }
-.stage.isNow .stageIc { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.09); }
+.stage.isNow .stageRingTrack {
+  stroke: color-mix(in srgb, var(--blueprint) 30%, transparent);
+  stroke-dasharray: none;
+}
+.stage.isNow .stageRingRun {
+  stroke: var(--blueprint); stroke-linecap: square; stroke-dasharray: 24 72;
+  animation: stageRing 1.5s linear infinite;
+}
+
+/* DONE — solid filled square, check revealed. */
 .stage.isDone { color: var(--ink-soft); }
-.stage.isDone .stageIc { border-color: var(--success); background: var(--success-soft); color: var(--success); }
+.stage.isDone .stageRingTrack {
+  fill: var(--success); stroke: var(--success); stroke-dasharray: none;
+}
+.stage.isDone .stageIc { color: #ffffff; }
 /* ============================================================
    STUDIO — identity, then the numeral it belongs to
    ============================================================ */
@@ -421,20 +575,9 @@
   margin-bottom: 9px;
 }
 .stTitle { font-size: 20px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.2; }
-.stActs { display: flex; margin-top: 15px; }
-.stAct {
-  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
-  min-height: 44px;
-  padding: 0 14px;
-  border: var(--border-thin);
-  border-radius: var(--radius);
-  font-size: 11.5px; font-weight: 800;
-  letter-spacing: 0.14em; text-transform: uppercase;
-  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
-}
-.stAct .ic { width: 15px; height: 15px; }
-.stAct:active:not(:disabled) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
-.stAct:disabled { opacity: 0.35; }
+/* "Undo last change" used to live here, alone in a .stActs row. It moved into
+   the refine card beside Apply changes (owner, 2026-08-13) — an undo belongs
+   next to the thing it undoes, not in the masthead five cards above it. */
 /* ---- masthead: one numeral + mono kicker + EXACTLY two annotations, all
    computed, so editing a line moves them ---- */
 .smast {
@@ -459,6 +602,9 @@
   letter-spacing: -0.005em; line-height: 0.92;
   color: var(--blueprint);
   font-variant-numeric: tabular-nums;
+  /* A 52px numeral has no room to spare at 320px. An absurd figure wraps
+     inside the masthead rather than running off the edge of the card. */
+  overflow-wrap: anywhere;
 }
 .smastCnt {
   display: grid;
@@ -548,20 +694,56 @@
   color: var(--ink);
   overflow-wrap: anywhere;
 }
-.lrowOpen {
-  grid-column: 2; grid-row: 1;
-  align-self: start;
-  width: 44px; height: 44px;
-  margin: -4px -6px 0 0;
+/* "Updated" / "Added" after a refine — cleared by Undo. */
+.lbadge {
+  display: inline-block;
+  margin-left: 7px;
+  vertical-align: 2px;
+  padding: 2px 6px;
+  border: 1.5px solid var(--blueprint);
+  border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.09);
+  font-size: 9.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--blueprint);
+  white-space: nowrap;
+}
+.lrowActs { grid-column: 2; grid-row: 1; align-self: start; display: flex; gap: 6px; }
+/* The ⋮ control. The owner asked for a SMALLER frame, but a 44px tap target
+   is a hard rule — so the drawn box shrinks to 30px and `::before` restores
+   the 44px hit area invisibly around it. Visually smaller, still thumb-safe.
+   .lrowDel is its twin: removal used to be three taps deep in the sheet. */
+.lrowOpen,
+.lrowDel {
+  position: relative;
+  width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
+  background: var(--paper);
   color: var(--ink);
   flex-shrink: 0;
-  transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
+  transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
 }
-.lrowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
-.lrowOpen .ic { width: 18px; height: 18px; }
+.lrowOpen { margin: 0 -2px 0 0; }
+.lrowOpen::before,
+.lrowDel::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+.lrowOpen:active,
+.lrowDel:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.lrowOpen .ic,
+.lrowDel .ic { width: 14px; height: 14px; }
+/* Armed, not fired: the first tap turns the ✕ into a filled trash can and the
+   second one commits, so a mis-tap on a 30px control can never silently
+   destroy a priced line. It disarms itself after 3s, like Start over. */
+.lrowDel.isArmed {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
 .lmeta {
   margin-top: 16px;
   font-family: var(--font-mono);
@@ -573,21 +755,32 @@
 .lfoot {
   grid-column: 1 / -1; grid-row: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: end;
   gap: 8px 10px;
   margin-top: 5px;
 }
-.llink {
+/* The retail affordance is a REAL link now, resolved through merchantUrl() and
+   opened in a new tab. Same 11px mono face as before; the invisible ::before
+   lifts the hit area to the 44px floor without growing the drawn row. */
+.llinkBtn {
+  position: relative;
   grid-column: 1; grid-row: 1;
+  min-width: 0;
   display: inline-flex; align-items: center; gap: 5px;
   justify-self: start;
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--blueprint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.llink .ic { width: 12px; height: 12px; }
+.llinkBtn::before { content: ""; position: absolute; inset: -14px -8px; }
+.llinkBtn .ic { width: 12px; height: 12px; flex: 0 0 auto; }
+.llinkBtn:active { color: var(--blueprint-dark); }
 .lown {
   grid-column: 1; grid-row: 1;
   justify-self: start;
@@ -599,14 +792,19 @@
   color: var(--muted-light);
   white-space: nowrap;
 }
+/* A pasted 16-digit price must give way to an ellipsis, not push the row's
+   right edge through the card frame. flex/grid children default to a min-width
+   of auto, which is exactly what lets a long numeral refuse to shrink. */
 .ltotal {
   grid-column: 2; grid-row: 1;
   justify-self: end;
+  max-width: 100%;
   font-size: 20px; font-weight: 900;
   letter-spacing: -0.005em;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
 }
 /* Empty state — a dashed note, like an annotation on a drawing. Never blank:
    it says what happened AND what to do next. */
@@ -630,11 +828,133 @@
   letter-spacing: 0.14em; text-transform: uppercase;
 }
 .lemptyA .ic { width: 15px; height: 15px; }
-/* ---- assumptions ---- */
-.assump { list-style: none; padding: 4px var(--card-pad) 6px; }
+/* ============================================================
+   MATERIALS REQUEST — the shoppable list, derived from the very
+   lines the ledger renders (materialsRequest()), never a second
+   copy. Thumb / identity / money / buy, stacked because a
+   six-column purchasing table does not exist at 320px.
+   ============================================================ */
+.mrows { display: block; }
+.mrow {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 0 12px;
+  padding: 14px var(--card-pad) 15px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.mrow:last-child { border-bottom: none; }
+.mthumb {
+  grid-column: 1; grid-row: 1;
+  width: 56px; height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  overflow: hidden;
+}
+.mthumbImg { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mthumbIc { width: 20px; height: 20px; fill: none; stroke: var(--muted-faint); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mbody { grid-column: 2; grid-row: 1; min-width: 0; }
+.mname { font-size: 14.5px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.mmeta {
+  display: flex; flex-wrap: wrap; gap: 3px 10px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+/* A hand-added line the product search has never seen. It is not an error —
+   it just cannot be bought from here, and pretending otherwise would be worse. */
+.mUnshopped {
+  border: 1.5px dashed var(--warning);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+  color: var(--warning);
+}
+.mline {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin-top: 9px;
+}
+.mqty {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis;
+}
+/* The retail price stays the headline and the contractor's override sits beside
+   it in parentheses — the list must never claim the store sells it for whatever
+   was typed. */
+.mover { margin-left: 5px; font-style: normal; color: var(--warning); }
+.mtotal {
+  flex: 0 0 auto;
+  max-width: 60%;
+  font-size: 17px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mbuy {
+  grid-column: 1 / -1; grid-row: 2;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46px;
+  margin-top: 12px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--blueprint);
+  text-align: center;
+  transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.mbuy .ic { width: 15px; height: 15px; }
+.mbuy:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.mreqTotal {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 13px var(--card-pad) 14px;
+  background: var(--paper-deep);
+}
+.mreqTotal span {
+  min-width: 0;
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.mreqTotal b {
+  flex: 0 0 auto;
+  font-size: 19px; font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+}
+/* ---- assumptions: now inside the refine card, because they are the other
+   half of the instruction the model is handed ---- */
+.asmHead {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1.5px solid var(--ink);
+}
+.asmCount {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-light);
+}
+.asmEmpty {
+  margin-top: 10px;
+  font-size: 13.5px; font-weight: 500; line-height: 1.5;
+  color: var(--muted-light);
+}
+.assump { list-style: none; margin-top: 2px; }
 .assump li {
-  display: flex; gap: 10px;
-  padding: 11px 0;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 0;
   border-bottom: 1.5px solid var(--hair-soft);
   font-size: 14.5px; font-weight: 500; line-height: 1.45;
   color: var(--ink-soft);
@@ -644,27 +964,61 @@
   content: "";
   flex: 0 0 auto;
   width: 6px; height: 6px;
-  margin-top: 7px;
+  margin-top: 12px;
   background: var(--blueprint);
 }
+.asmT { flex: 1; min-width: 0; padding-top: 3px; overflow-wrap: anywhere; }
+.asmX {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.asmX::before { content: ""; position: absolute; inset: -8px; }
+.asmX .ic { width: 13px; height: 13px; }
+.asmX:active { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 /* ---- totals: an estimate sheet. Right-aligned tabular numerals, thin
    dividers, and a ruled total row. ---- */
+/* Money cells are guarded against a pasted 16-digit figure: the LABEL is the
+   flex item allowed to shrink (min-width:0 + ellipsis), the AMOUNT never is
+   (flex:0 0 auto) but is itself capped and clipped, so an absurd number
+   truncates inside the card instead of pushing through its frame. */
 .totRow {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
   padding: 10px 0;
 }
-.totLbl { font-size: 13.5px; font-weight: 700; }
-.totVal { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.totLbl {
+  min-width: 0;
+  font-size: 13.5px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.totVal {
+  flex: 0 0 auto;
+  max-width: 68%;
+  font-size: 15px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* A discount is money coming OFF, so it is not drawn in the same ink as money
+   going on. Success green would read as "good news"; this is just a credit. */
+.isCredit { color: var(--warning); }
 .totGrand {
   margin-top: 12px;
   padding-top: 14px;
   border-top: var(--border);
 }
 .totGrandVal {
+  flex: 0 0 auto;
+  max-width: 68%;
   font-size: 22px; font-weight: 900;
   letter-spacing: -0.005em;
   font-variant-numeric: tabular-nums;
   color: var(--blueprint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .marginBox {
   margin-top: 8px;
@@ -675,8 +1029,31 @@
 }
 .marginRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .marginRow + .marginRow { margin-top: 10px; }
-.marginRow .fldLbl { margin-bottom: 0; }
-.marginAdd { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.marginRow .fldLbl { margin-bottom: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.marginAdd { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+/* ---- discount unit ----
+   The counter needs to say WHAT it is counting, and "10" alone is either a
+   tenth of the job or a tenner. The pair sits where the sibling boxes put
+   their explanatory note, so the box keeps its two-row rhythm. */
+.discToggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+.discBtn {
+  width: 44px;
+  min-height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 15px; font-weight: 700;
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s;
+}
+.discBtn + .discBtn { border-left: 1.5px solid var(--hair); }
+.discBtn.on { background: var(--blueprint); color: #fff; }
 .marginCtl {
   display: inline-flex; align-items: stretch;
   border: 1.5px solid var(--ink);
@@ -696,7 +1073,9 @@
 }
 .marginBtn:active { background: var(--paper-deep); }
 .marginIn {
-  width: 54px;
+  /* 60px, not 54: the discount counter also holds dollar amounts, and a
+     four-figure discount had nowhere to render. */
+  width: 60px;
   min-height: 44px;
   padding: 0 4px;
   border: none;
@@ -714,6 +1093,34 @@
 .marginIn::-webkit-outer-spin-button,
 .marginIn::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .marginIn:focus { outline: none; background: var(--paper); }
+/* ---- tax rate ----
+   The % is drawn as a sibling rather than appended to the value, so the field
+   stays a real number input (steppers, inputMode, min/max) while the reader
+   still sees a rate. The wrapper carries the cell's dividers; the input inside
+   drops them so the pair reads as one cell. */
+.taxField {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border-left: 1.5px solid var(--hair);
+  border-right: 1.5px solid var(--hair);
+}
+.taxIn {
+  width: 52px;
+  border-left: none;
+  border-right: none;
+  padding-right: 14px;
+  text-align: right;
+}
+.taxPct {
+  position: absolute;
+  right: 5px;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
 /* ---- refine + the review diff ---- */
 .rfNote { font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--muted); }
 .rfNote + .fld { margin-top: 14px; }
@@ -731,7 +1138,12 @@
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
 .rfBtn .ic { width: 15px; height: 15px; }
-.rfBtn:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.rfBtn:active:not(:disabled) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.rfBtn:disabled { opacity: 0.4; }
+/* Undo is reversible but consequential — warning, not danger, and never the
+   same weight as the primary action it sits beside. */
+.rfBtnWarn { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
+.rfBtnWarn:disabled { border-color: var(--hair); color: var(--muted-light); background: var(--paper); }
 .diffList { list-style: none; display: flex; flex-direction: column; gap: 9px; margin-top: 13px; }
 /* The 3px status edge is the donor's own diff row, and the house system already
    sanctions a status-toned left edge (see the info-banner pattern in
@@ -878,6 +1290,109 @@
   background: var(--paper-deep);
   flex-shrink: 0;
 }
+/* ---- the intake questions sheet ----
+   The third sheet, and the only one that opens BEFORE anything exists to act
+   on. It takes the same plate as the other two — grab, ink-ruled head, inner
+   scroller, beige foot outside it — because it is the same object, not a new
+   surface; only the body is a numbered question list instead of a menu. */
+.clqSub {
+  margin-top: 8px;
+  font-size: 13px; font-weight: 500; line-height: 1.5;
+  color: var(--muted);
+}
+.clqBody { padding: 2px var(--pad-x) 8px; }
+/* One question = a numbered block on a dashed rule, the estimate-sheet cadence. */
+.clqQ {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px dashed var(--hair-soft);
+}
+.clqQ:last-child { border-bottom: none; }
+.clqN {
+  font-size: 19px; font-weight: 900; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--blueprint);
+  padding-top: 1px;
+}
+/* Hostile input: a question the model wrote can carry an unbroken run, and
+   this is a 320px column. */
+.clqBd { min-width: 0; }
+.clqLbl {
+  display: block;
+  font-size: 14.5px; font-weight: 700; line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.clqOpts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+/* 44px minimum — these are the primary touch targets of the whole dialog. */
+.clqOpt {
+  min-height: 44px;
+  padding: 0 13px;
+  display: inline-flex; align-items: center;
+  max-width: 100%;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 13.5px; font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  overflow-wrap: anywhere;
+  transition: border-color 0.12s, color 0.12s, background 0.12s, box-shadow 0.12s var(--ease);
+}
+.clqOpt.on {
+  border-color: var(--blueprint);
+  background: var(--blueprint);
+  color: #ffffff;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.clqOptOther { border-style: dashed; color: var(--muted); }
+.clqOptOther.on {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #ffffff;
+}
+.clqNumRow { display: flex; align-items: center; gap: 9px; margin-top: 10px; }
+.clqNum { width: 140px; flex: 0 0 auto; }
+.clqUnit {
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+.clqTa {
+  width: 100%; box-sizing: border-box;
+  margin-top: 10px;
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font: inherit; font-size: 14.5px; line-height: 1.45;
+  resize: vertical;
+}
+.clqTa::placeholder { color: var(--muted-faint); }
+.clqTa:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+/* The commit pair sits in a beige foot OUTSIDE the scrolling body, so it is
+   reachable without scrolling eight questions to their end. */
+.clqFoot {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+  flex-shrink: 0;
+}
+.clqCount {
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.clqActs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
 /* ============================================================
    MOTION SYSTEM — BALANCED (package 02, the standard)
    ============================================================ */
@@ -926,6 +1441,13 @@
   100% { background: transparent; }
 }
 .landed { animation: landFlash 0.6s var(--ease-out); }
+/* The generation checklist's ACTIVE square: a line drawn around the square's
+   own outline — the draughtsman gesture, not a spinner. See `.stage.isNow` for
+   why the dash numbers are what they are. */
+@keyframes stageRing {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -96; }
+}
 /* Scoped to the page — the global kill switch stays the app's business */
 @media (prefers-reduced-motion: reduce) {
   .app *,
@@ -934,6 +1456,10 @@
     transition: none !important;
     animation: none !important;
   }
+  /* The travelling line stops, but the active square must still READ as active.
+     Park the segment as a static three-quarter outline instead of letting the
+     kill switch above make "running" and "pending" identical. */
+  .stage.isNow .stageRingRun { stroke-dasharray: 72 24 !important; }
 }
 /* ============================================================
    MOBILE LAYER — must be the LAST block in this file. Anything the
@@ -952,10 +1478,16 @@
   /* Two 148px tiles no longer clear the gutter; one column reads cleanly and
      keeps every target well past 44px. */
   .ptypes { grid-template-columns: 1fr; }
+  .dzActs { grid-template-columns: 1fr; }
   .smastCnt { grid-template-columns: 1fr; }
   .smastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
   .smastSub:last-child { border-bottom: none; }
-  .fldRow { grid-template-columns: 1fr; }
   .wfoot { grid-template-columns: minmax(80px, auto) minmax(0, 1fr); gap: 8px; }
   .btn { font-size: 11.5px; letter-spacing: 0.08em; }
+  /* "DISCOUNT" + a 151px stepper is the widest pair in the totals card. Tighten
+     the tracking rather than let the label wrap under its own control. */
+  .marginRow .fldLbl { letter-spacing: 0.08em; }
+  .marginIn { width: 54px; }
+  .mrow { grid-template-columns: 48px minmax(0, 1fr); }
+  .mthumb { width: 48px; height: 48px; }
 }

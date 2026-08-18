@@ -1,31 +1,32 @@
 "use client";
 
-// JOB DETAIL · HANDHELD — /mobile-job-detail-v1/[id]
+// JOB DETAIL · HANDHELD — /dashboard/jobs/[id] at ≤768px, and /mobile-job-detail-v1/[id]
 //
 // The handheld build of the job record, fluid 320px → 768px. It stands BESIDE
-// the desktop page (src/components/v3/job-detail-blueprint/*), which is not
-// touched and keeps serving /dashboard/jobs/[id] at every width. This is a
-// preview URL in the (mobile) route group, per the mobile route strategy.
+// the desktop page (src/components/v3/job-detail-blueprint/*), which keeps
+// serving /dashboard/jobs/[id] above 768px. Both entry points import this one
+// implementation, so the preview URL and the live URL cannot drift.
 //
-// ── THE FIXTURE IS THE CONTENT ─────────────────────────────────────────────
-// Every string, number and amount comes from the desktop port's own fixture,
-// ../job-detail-blueprint/job-detail-data.ts, imported as-is: ST,
-// INITIAL_STATUS, STATUS_BUTTONS, EVENTS, CREW, CHANGES, PHOTOS, EXPENSES,
-// JOB and fmt. Nothing is retyped, re-worded or "improved", so the two pages
-// can only ever disagree about layout. The `[id]` segment resolves but selects
-// no content — exactly like the desktop route.
+// ── THE SAME RECORD AS THE DESKTOP, NOT A FIXTURE ──────────────────────────
+// This page shipped rendering the desktop port's demo fixture. It now takes the
+// `record` the server read in ../job-detail-blueprint/job-detail-load.ts — the
+// same object the desktop edition renders, passed down by the viewport switch —
+// so the two can only ever disagree about LAYOUT. Every write goes through
+// ../job-detail-blueprint/use-job-detail-actions.ts, which is also shared: one
+// set of rules about what a button does, drawn two ways.
 //
 // ── WHAT WAS RE-CUT, AND WHY ───────────────────────────────────────────────
-// · The six-tab bar scrolls horizontally inside its own ink frame instead of
-//   sitting in a row (six tabs + counts measure ~640px) — the active tab is
-//   scrolled into view on selection so the state is never parked off-screen.
+// · The six-tab bar is a dropdown section picker (owner's call) — six tabs plus
+//   counts measure ~640px.
 // · Overview's 2fr/1fr grid is one column; the Client contact card follows the
 //   Overview card as its own block, so each reveals on its own.
 // · `jd-fields` 4-up → 2-up; `jd-photos` 4-up → 2-up (4/3 + hatch kept).
-// · The change-order row's `1fr 104px 104px 104px` grid restacks into an
+// · The change-order row's `1fr 104px 104px 140px` grid restacks into an
 //   identity block over a money-and-decision strip.
 // · "View proposal" — the one action the desktop head carries on all six tabs
-//   — becomes the thumb-zone bar, as a grid row of the shell.
+//   — becomes the thumb-zone bar, as a grid row of the shell. It is present
+//   ONLY when the job has a linked proposal; with none, the row collapses and
+//   the sheet runs to the bottom edge.
 //
 // ── MOTION ─────────────────────────────────────────────────────────────────
 // Balanced: a reveal cascade over the content blocks (adaptive duration below
@@ -36,43 +37,35 @@
 // off in both CSS and JS.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Route } from "next";
+import Link from "next/link";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import {
-  ST,
-  INITIAL_STATUS,
   STATUS_BUTTONS,
-  EVENTS,
-  CREW,
-  CHANGES,
-  PHOTOS,
-  EXPENSES,
-  JOB,
   fmt,
-  type StatusKey,
+  type JobDetailRecord,
 } from "@/components/v3/job-detail-blueprint/job-detail-data";
+import {
+  useJobDetailActions,
+  type PhotoKind,
+} from "@/components/v3/job-detail-blueprint/use-job-detail-actions";
 import "./mobile-job-detail.css";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/** Same six tabs, same order, same counts as the desktop's `TABS`. */
+/** Same six sections, same order, same counts as the desktop's `TABS`. */
 type TabKey = "overview" | "schedule" | "crew" | "changes" | "photos" | "expenses";
-const TABS: Array<[TabKey, string, number | null]> = [
-  ["overview", "Overview", null],
-  ["schedule", "Schedule", EVENTS.length],
-  ["crew", "Crew", CREW.length],
-  ["changes", "Changes", CHANGES.length],
-  ["photos", "Photos", PHOTOS.length],
-  ["expenses", "Expenses", EXPENSES.length],
+
+const PHOTO_KINDS: Array<[PhotoKind, string]> = [
+  ["BEFORE", "Before"],
+  ["PROGRESS", "Progress"],
+  ["AFTER", "After"],
 ];
 
-/** The status badge modifier, translated from the fixture's desktop class. */
-const ST_MOD: Record<StatusKey, string> = {
-  sch: " mjd-st--sch",
-  prog: "",
-  done: " mjd-st--done",
-  can: " mjd-st--can",
-};
+/* The head's status badge (and its `ST_MOD` class map) was removed at the
+   owner's request; `ST` labels went with it. Status itself is unchanged — it
+   is set and shown on the Overview card's picker, which owns the control. */
 
 function Icon({ id }: { id: string }) {
   return (
@@ -82,44 +75,71 @@ function Icon({ id }: { id: string }) {
   );
 }
 
+/** DESIGN.md's empty state: a note on the drawing, 1.5px dashed. */
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return <div className="mjd-empty">{children}</div>;
+}
+
 /** Stagger index as a custom property — read by `.mjd-rowin`'s animation-delay. */
 const rowVar = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
-export function MobileJobDetail() {
+export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const tabWrapRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [tab, setTab] = useState<TabKey>("overview");
-  const [status, setStatus] = useState<StatusKey>(INITIAL_STATUS);
-  const [approved, setApproved] = useState<number[]>([]);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [photoKind, setPhotoKind] = useState<PhotoKind>("BEFORE");
   // The row arrival plays on a REAL view change only, never on the first paint
   // (where the block reveal already carries the entrance) and never on a
   // repaint such as approving a change order.
   const [switched, setSwitched] = useState(false);
 
-  const changes = CHANGES.map((c, i) => (approved.includes(i) ? { ...c, st: "ok" as const } : c));
-  const expTotal = EXPENSES.reduce((a, e) => a + e.amt, 0);
+  const a = useJobDetailActions(record.id, record.booking, record.status);
+
+  const expTotal = record.expenses.reduce((sum, e) => sum + e.amount, 0);
+  const scheduled = record.events.length > 0;
+
+  const TABS: Array<[TabKey, string, number | null]> = [
+    ["overview", "Overview", null],
+    ["schedule", "Schedule", record.events.length],
+    ["crew", "Crew", record.crew.length],
+    ["changes", "Changes", record.changes.length],
+    ["photos", "Photos", record.photos.length],
+    ["expenses", "Expenses", record.expenses.length],
+  ];
 
   const selectTab = useCallback((k: TabKey) => {
     setTab(k);
     setSwitched(true);
   }, []);
 
-  /* ---------- Keep the active tab on screen ------------------------------
-     Measured against the rail's own box rather than offsetLeft: the tab's
-     offsetParent is the fixed page root, so offsetLeft would carry the page's
-     own offset into the sum. */
+  /** The picker's closed face. TABS is built from the record every render and
+   *  always contains `tab`, so this cannot miss. */
+  const activeTab = TABS.find(([k]) => k === tab)!;
+
+  /* ---------- Dismiss the section picker --------------------------------
+     Pointerdown rather than click so a tap that starts outside closes the
+     list before it can activate whatever is underneath, and Escape for the
+     keyboard. Both are bound only while the list is open. */
   useEffect(() => {
-    const wrap = tabWrapRef.current;
-    if (!wrap) return;
-    const el = wrap.querySelector<HTMLElement>(".mjd-tab.mjd-on");
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const w = wrap.getBoundingClientRect();
-    const delta = r.left - w.left - (w.width - r.width) / 2;
-    wrap.scrollBy({ left: delta, behavior: prefersReducedMotion() ? "auto" : "smooth" });
-  }, [tab]);
+    if (!pickOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (!pickerRef.current?.contains(e.target as Node)) setPickOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPickOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pickOpen]);
 
   /* ---------- Motion: reveal on load + adaptive reveal on scroll ---------- */
   useEffect(() => {
@@ -206,7 +226,7 @@ export function MobileJobDetail() {
   const onRootClick = useCallback((e: React.MouseEvent) => {
     if (prefersReducedMotion()) return;
     const el = (e.target as HTMLElement | null)?.closest<HTMLElement>(
-      ".mjd-btn, .mjd-tab, .mjd-sbtn",
+      ".mjd-btn, .mjd-pickbtn, .mjd-pickitem, .mjd-sbtn, .mjd-pick-row",
     );
     if (!el) return;
     el.classList.remove("mjd-pressed");
@@ -231,33 +251,66 @@ export function MobileJobDetail() {
       <main className="mjd-scroll" ref={scrollRef}>
         <div className="mjd-content" ref={contentRef}>
           {/* ============ PAGE HEAD ============ */}
+          {/* The "Job status ·" kicker and its badge were removed at the
+              owner's request. Status is still set and read on the Overview
+              card's own picker, which is the control that owns it. */}
           <div className="mjd-head">
-            <div className="mjd-kick">
-              Job status ·{" "}
-              <span className={`mjd-st${ST_MOD[status]}`}>{ST[status].l}</span>
-            </div>
-            <h1 className="mjd-title">{JOB.title}</h1>
-            <div className="mjd-dates">{JOB.dates}</div>
+            <h1 className="mjd-title">{record.title}</h1>
+            <div className="mjd-dates">{record.dates}</div>
           </div>
 
-          {/* ============ TAB RAIL ============ */}
-          <div className="mjd-tabwrap" ref={tabWrapRef}>
-            <div className="mjd-tabs" role="tablist" aria-label="Job sections">
-              {TABS.map(([key, label, count]) => (
-                <button
-                  key={key}
-                  className={`mjd-tab${tab === key ? " mjd-on" : ""}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === key}
-                  onClick={() => selectTab(key)}
-                >
-                  {label}
-                  {count !== null && <i>{count}</i>}
-                </button>
-              ))}
-            </div>
+          {/* ============ SECTION PICKER ============
+              Was a horizontally scrolling six-tab rail; the owner asked for a
+              dropdown. It shows the current section (Overview by default) and
+              opens the other five. A listbox rather than a <select>: the rows
+              carry the mono count annotation, which a native option cannot,
+              and the OS picker would not be the drawing's own furniture. */}
+          <div className="mjd-picker" ref={pickerRef}>
+            <button
+              type="button"
+              className={`mjd-pickbtn${pickOpen ? " mjd-open" : ""}`}
+              aria-haspopup="listbox"
+              aria-expanded={pickOpen}
+              onClick={() => setPickOpen((o) => !o)}
+            >
+              <span className="mjd-picklabel">{activeTab[1]}</span>
+              {activeTab[2] !== null && <i>{activeTab[2]}</i>}
+              <span className="mjd-pickcaret" aria-hidden="true" />
+            </button>
+
+            {pickOpen && (
+              <ul className="mjd-picklist" role="listbox" aria-label="Job sections">
+                {TABS.map(([key, label, count]) => (
+                  <li key={key} role="none">
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={tab === key}
+                      className={`mjd-pickitem${tab === key ? " mjd-on" : ""}`}
+                      onClick={() => {
+                        selectTab(key);
+                        setPickOpen(false);
+                      }}
+                    >
+                      {label}
+                      {count !== null && <i>{count}</i>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
+
+          {/* Write failures land here rather than in an alert() — one line, in
+              the page's own voice, dismissible. */}
+          {a.error && (
+            <div className="mjd-err" role="alert">
+              <span>{a.error}</span>
+              <button type="button" onClick={a.dismissError} aria-label="Dismiss">
+                <Icon id="i-x" />
+              </button>
+            </div>
+          )}
 
           {/* ============ VIEW ============
               Keyed on the tab: React remounts the subtree on a real view
@@ -270,51 +323,58 @@ export function MobileJobDetail() {
                     <h2 className="mjd-t">Overview</h2>
                   </div>
 
-                  <div className="mjd-status">
-                    <div className="mjd-sec-l">Set up the status</div>
-                    <div className="mjd-status-row">
-                      {STATUS_BUTTONS.map(([key, label]) => (
-                        <button
-                          key={key}
-                          className={`mjd-sbtn mjd-sbtn--${key}${status === key ? " mjd-on" : ""}`}
-                          type="button"
-                          aria-pressed={status === key}
-                          onClick={() => setStatus(key)}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                  {record.canWrite && (
+                    <div className="mjd-status">
+                      <div className="mjd-sec-l">Set up the status</div>
+                      <div className="mjd-status-row">
+                        {STATUS_BUTTONS.map(([key, label]) => (
+                          <button
+                            key={key}
+                            className={`mjd-sbtn mjd-sbtn--${key}${a.status === key ? " mjd-on" : ""}`}
+                            type="button"
+                            aria-pressed={a.status === key}
+                            disabled={a.busy?.kind === "status"}
+                            onClick={() => a.pickStatus(key)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="mjd-fields">
                     <div className="mjd-f">
                       <span>Client</span>
-                      <b>{JOB.client}</b>
+                      <b>{record.clientName ?? "—"}</b>
                     </div>
                     <div className="mjd-f">
                       <span>Crew</span>
-                      <b>{CREW.length} assigned</b>
+                      <b>{record.crew.length} assigned</b>
                     </div>
                     <div className="mjd-f">
                       <span>Expenses</span>
                       <b>
-                        {fmt(expTotal)} · {EXPENSES.length}
+                        {fmt(expTotal)} · {record.expenses.length}
                       </b>
                     </div>
                     <div className="mjd-f">
                       <span>Dates</span>
-                      <b>{JOB.fieldDates}</b>
+                      <b>{record.fieldDates}</b>
                     </div>
                   </div>
 
                   <div className="mjd-sec">
                     <div className="mjd-sec-l">Scope of work</div>
-                    <p>{JOB.scopeOfWork}</p>
+                    {record.scopeOfWork ? (
+                      <p>{record.scopeOfWork}</p>
+                    ) : (
+                      <EmptyNote>No scope recorded on this job.</EmptyNote>
+                    )}
                   </div>
                   <div className="mjd-sec">
                     <div className="mjd-sec-l">Notes</div>
-                    <p>{JOB.notes}</p>
+                    {record.notes ? <p>{record.notes}</p> : <EmptyNote>No notes yet.</EmptyNote>}
                   </div>
                 </section>
 
@@ -325,25 +385,43 @@ export function MobileJobDetail() {
                   <div className="mjd-h">
                     <h2 className="mjd-t">Client contact</h2>
                   </div>
-                  <div className="mjd-c-row">
-                    <Icon id="i-users" />
-                    {JOB.contact.name}
-                  </div>
-                  {/* The whole row is the anchor — see the note on
-                      `a.mjd-c-row` in the stylesheet: an inline link around
-                      13px mono type is a 20px tap target. */}
-                  <a className="mjd-c-row mjd-mono" href={JOB.contact.phoneHref}>
-                    <Icon id="i-phone" />
-                    <span className="mjd-c-link">{JOB.contact.phone}</span>
-                  </a>
-                  <a className="mjd-c-row mjd-mono" href={`mailto:${JOB.contact.email}`}>
-                    <Icon id="i-msg" />
-                    <span className="mjd-c-link">{JOB.contact.email}</span>
-                  </a>
-                  <div className="mjd-c-row">
-                    <Icon id="i-pin" />
-                    {JOB.contact.address}
-                  </div>
+                  {record.contact ? (
+                    <>
+                      <div className="mjd-c-row">
+                        <Icon id="i-users" />
+                        {record.contact.name}
+                      </div>
+                      {/* The whole row is the anchor — see the note on
+                          `a.mjd-c-row` in the stylesheet: an inline link around
+                          13px mono type is a 20px tap target. */}
+                      {record.contact.phone &&
+                        (record.contact.phoneHref ? (
+                          <a className="mjd-c-row mjd-mono" href={record.contact.phoneHref}>
+                            <Icon id="i-phone" />
+                            <span className="mjd-c-link">{record.contact.phone}</span>
+                          </a>
+                        ) : (
+                          <div className="mjd-c-row mjd-mono">
+                            <Icon id="i-phone" />
+                            {record.contact.phone}
+                          </div>
+                        ))}
+                      {record.contact.email && (
+                        <a className="mjd-c-row mjd-mono" href={`mailto:${record.contact.email}`}>
+                          <Icon id="i-msg" />
+                          <span className="mjd-c-link">{record.contact.email}</span>
+                        </a>
+                      )}
+                      {record.contact.address && (
+                        <div className="mjd-c-row">
+                          <Icon id="i-pin" />
+                          {record.contact.address}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <EmptyNote>No client linked to this job.</EmptyNote>
+                  )}
                 </section>
               </>
             )}
@@ -352,28 +430,53 @@ export function MobileJobDetail() {
               <section className="mjd-card">
                 <div className="mjd-h">
                   <h2 className="mjd-t">Schedule</h2>
-                  <span className="mjd-s">{EVENTS.length} on the calendar</span>
+                  <span className="mjd-s">{record.events.length} on the calendar</span>
                 </div>
-                {EVENTS.map((e, i) => (
-                  <div
-                    className={`mjd-row${switched ? " mjd-rowin" : ""}`}
-                    style={rowVar(i)}
-                    key={e.t}
-                  >
-                    <div>
-                      <div className="mjd-row-n">{e.t}</div>
-                      <div className="mjd-row-m">
-                        {e.d} · {e.m}
+                {record.events.length === 0 ? (
+                  <EmptyNote>Nothing on the calendar for this job yet.</EmptyNote>
+                ) : (
+                  record.events.map((e, i) => (
+                    <div
+                      className={`mjd-row${switched ? " mjd-rowin" : ""}`}
+                      style={rowVar(i)}
+                      key={e.id}
+                    >
+                      <div>
+                        <div className="mjd-row-n">{e.title}</div>
+                        <div className="mjd-row-m">
+                          {e.when}
+                          {e.meta ? ` · ${e.meta}` : ""}
+                        </div>
                       </div>
                     </div>
+                  ))
+                )}
+                {record.canWrite && (
+                  <div className="mjd-total mjd-foot">
+                    <div className="mjd-note">
+                      {scheduled ? "Already booked" : `Books ${record.booking.label}`}
+                    </div>
+                    {scheduled ? (
+                      <Link
+                        className="mjd-btn mjd-btn-ghost mjd-btn-block"
+                        href="/dashboard/calendar"
+                      >
+                        <Icon id="i-cal" />
+                        On the schedule
+                      </Link>
+                    ) : (
+                      <button
+                        className="mjd-btn mjd-btn-ghost mjd-btn-block"
+                        type="button"
+                        disabled={a.busy?.kind === "schedule"}
+                        onClick={() => a.addToSchedule(record.title)}
+                      >
+                        <Icon id="i-cal" />
+                        {a.busy?.kind === "schedule" ? "Adding…" : "Add to schedule"}
+                      </button>
+                    )}
                   </div>
-                ))}
-                <div className="mjd-total mjd-foot">
-                  <button className="mjd-btn mjd-btn-ghost mjd-btn-block" type="button">
-                    <Icon id="i-cal" />
-                    Add to schedule
-                  </button>
-                </div>
+                )}
               </section>
             )}
 
@@ -383,29 +486,98 @@ export function MobileJobDetail() {
                   <h2 className="mjd-t">Crew</h2>
                   <span className="mjd-s">confirm via portal link</span>
                 </div>
-                {CREW.map((w, i) => (
-                  <div
-                    className={`mjd-row${switched ? " mjd-rowin" : ""}`}
-                    style={rowVar(i)}
-                    key={w.n}
-                  >
-                    <div>
-                      <div className="mjd-row-n">{w.n}</div>
-                      <div className="mjd-row-m">
-                        {w.r} · {w.ph}
+                {record.crew.length === 0 ? (
+                  <EmptyNote>Nobody is on this job yet.</EmptyNote>
+                ) : (
+                  record.crew.map((w, i) => (
+                    <div
+                      className={`mjd-row${switched ? " mjd-rowin" : ""}`}
+                      style={rowVar(i)}
+                      key={w.assignmentId}
+                    >
+                      <div>
+                        <div className="mjd-row-n">{w.name}</div>
+                        <div className="mjd-row-m">{w.meta}</div>
+                      </div>
+                      <div className="mjd-row-act">
+                        <span
+                          className={`mjd-b ${
+                            w.state === "ok"
+                              ? "mjd-b--ok"
+                              : w.state === "no"
+                                ? "mjd-b--no"
+                                : "mjd-b--wait"
+                          }`}
+                        >
+                          {w.state === "ok"
+                            ? "Confirmed"
+                            : w.state === "no"
+                              ? "Declined"
+                              : "Pending"}
+                        </span>
+                        {record.canWrite && (
+                          <button
+                            className="mjd-btn mjd-btn-ghost mjd-x"
+                            type="button"
+                            aria-label={`Take ${w.name} off this job`}
+                            disabled={a.busy?.kind === "unassign" && a.busy.id === w.assignmentId}
+                            onClick={() => a.unassign(w.assignmentId)}
+                          >
+                            <Icon id="i-trash" />
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <span className={`mjd-b ${w.st === "ok" ? "mjd-b--ok" : "mjd-b--wait"}`}>
-                      {w.st === "ok" ? "Confirmed" : "Pending"}
-                    </span>
-                  </div>
-                ))}
-                <div className="mjd-total mjd-foot">
-                  <button className="mjd-btn mjd-btn-ghost mjd-btn-block" type="button">
-                    <Icon id="i-userplus" />
-                    Assign worker
-                  </button>
-                </div>
+                  ))
+                )}
+                {record.canWrite && (
+                  <>
+                    <div className="mjd-total mjd-foot">
+                      <div className="mjd-note">{record.roster.length} on the roster</div>
+                      <button
+                        className="mjd-btn mjd-btn-ghost mjd-btn-block"
+                        type="button"
+                        aria-expanded={rosterOpen}
+                        onClick={() => setRosterOpen((o) => !o)}
+                      >
+                        <Icon id={rosterOpen ? "i-x" : "i-userplus"} />
+                        {rosterOpen ? "Close" : "Assign worker"}
+                      </button>
+                    </div>
+                    {rosterOpen &&
+                      (record.roster.length === 0 ? (
+                        <EmptyNote>
+                          Everyone on the roster is already on this job.{" "}
+                          <Link className="mjd-link" href="/dashboard/workers">
+                            Add a worker
+                          </Link>
+                          .
+                        </EmptyNote>
+                      ) : (
+                        <div className="mjd-pick" role="list">
+                          {record.roster.map((w) => (
+                            <button
+                              key={w.id}
+                              type="button"
+                              role="listitem"
+                              className="mjd-pick-row"
+                              disabled={a.busy?.kind === "assign" && a.busy.id === w.id}
+                              onClick={async () => {
+                                const ok = await a.assign(w.id);
+                                if (ok) setRosterOpen(false);
+                              }}
+                            >
+                              <span className="mjd-pick-id">
+                                <span className="mjd-row-n">{w.name}</span>
+                                {w.meta && <span className="mjd-row-m">{w.meta}</span>}
+                              </span>
+                              <Icon id="i-plus" />
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                  </>
+                )}
               </section>
             )}
 
@@ -415,35 +587,70 @@ export function MobileJobDetail() {
                   <h2 className="mjd-t">Change orders</h2>
                   <span className="mjd-s">client-signed extras</span>
                 </div>
-                {changes.map((c, i) => (
-                  <div
-                    className={`mjd-co${switched ? " mjd-rowin" : ""}`}
-                    style={rowVar(i)}
-                    key={c.id}
-                  >
-                    <div className="mjd-row-n">
-                      {c.id} · {c.t}
-                    </div>
-                    <div className="mjd-row-m">{c.m}</div>
-                    <div className="mjd-co-foot">
-                      <span className="mjd-amt">{fmt(c.amt)}</span>
-                      {c.st === "ok" ? (
-                        <span className="mjd-b mjd-b--ok">Approved</span>
-                      ) : (
-                        <>
-                          <span className="mjd-b mjd-b--warn">Pending</span>
-                          <button
-                            className="mjd-btn mjd-btn-primary"
-                            type="button"
-                            onClick={() => setApproved((a) => (a.includes(i) ? a : [...a, i]))}
+                {record.changes.length === 0 ? (
+                  <EmptyNote>
+                    No change orders on this job. They are raised from the proposal or the
+                    job, then signed by the client.
+                  </EmptyNote>
+                ) : (
+                  record.changes.map((c, i) => {
+                    const working = a.busy?.kind === "change" && a.busy.id === c.id;
+                    return (
+                      <div
+                        className={`mjd-co${switched ? " mjd-rowin" : ""}`}
+                        style={rowVar(i)}
+                        key={c.id}
+                      >
+                        <div className="mjd-row-n">
+                          {c.ref} · {c.title}
+                        </div>
+                        <div className="mjd-row-m">{c.meta}</div>
+                        <div className="mjd-co-foot">
+                          <span className="mjd-amt">{fmt(c.amount)}</span>
+                          <span
+                            className={`mjd-b ${
+                              c.state === "ok"
+                                ? "mjd-b--ok"
+                                : c.state === "no"
+                                  ? "mjd-b--no"
+                                  : c.state === "sent"
+                                    ? "mjd-b--warn"
+                                    : "mjd-b--wait"
+                            }`}
                           >
-                            Approve
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                            {c.state === "ok"
+                              ? "Approved"
+                              : c.state === "no"
+                                ? "Declined"
+                                : c.state === "sent"
+                                  ? "Pending"
+                                  : "Draft"}
+                          </span>
+                          {record.canWrite && c.state === "draft" && (
+                            <button
+                              className="mjd-btn mjd-btn-primary"
+                              type="button"
+                              disabled={working}
+                              onClick={() => a.sendChange(c.id)}
+                            >
+                              {working ? "Sending…" : "Send"}
+                            </button>
+                          )}
+                          {record.canWrite && c.state === "sent" && (
+                            <button
+                              className="mjd-btn mjd-btn-primary"
+                              type="button"
+                              disabled={working}
+                              onClick={() => a.approveChange(c.id, c.publicToken)}
+                            >
+                              {working ? "Saving…" : "Mark approved"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </section>
             )}
 
@@ -453,26 +660,71 @@ export function MobileJobDetail() {
                   <h2 className="mjd-t">Photos</h2>
                   <span className="mjd-s">Before · Progress · After</span>
                 </div>
-                <div className="mjd-photos">
-                  {PHOTOS.map((p, i) => (
-                    <div
-                      className={`mjd-ph${switched ? " mjd-rowin" : ""}`}
-                      style={rowVar(i)}
-                      key={p.c}
-                    >
-                      <div className="mjd-ph-img">
-                        <span className="mjd-ph-k">{p.k}</span>
+                {record.photos.length === 0 ? (
+                  <EmptyNote>No photos on this job yet.</EmptyNote>
+                ) : (
+                  <div className="mjd-photos">
+                    {record.photos.map((p, i) => (
+                      <div
+                        className={`mjd-ph${switched ? " mjd-rowin" : ""}`}
+                        style={rowVar(i)}
+                        key={p.id}
+                      >
+                        <div className="mjd-ph-img">
+                          {/* A JobPhoto url is a data: URL whenever Vercel Blob
+                              is not configured (uploadJobPhoto's fallback),
+                              which next/image cannot take — so a plain img. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.url} alt={p.caption} />
+                          <span className="mjd-ph-k">{p.kind}</span>
+                        </div>
+                        <div className="mjd-ph-c">{p.caption}</div>
                       </div>
-                      <div className="mjd-ph-c">{p.c}</div>
+                    ))}
+                  </div>
+                )}
+                {record.canWrite && (
+                  <div className="mjd-total mjd-foot14">
+                    <div className="mjd-status-row">
+                      {PHOTO_KINDS.map(([key, label]) => (
+                        <button
+                          key={key}
+                          className={`mjd-sbtn mjd-sbtn--sch${photoKind === key ? " mjd-on" : ""}`}
+                          type="button"
+                          aria-pressed={photoKind === key}
+                          onClick={() => setPhotoKind(key)}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className="mjd-total mjd-foot14">
-                  <button className="mjd-btn mjd-btn-ghost mjd-btn-block" type="button">
-                    <Icon id="i-plus" />
-                    Upload
-                  </button>
-                </div>
+                    {/* `accept` only, no `capture`: a phone still offers the
+                        camera in its own sheet, and forcing it would block
+                        picking a photo the crew already took. */}
+                    <input
+                      ref={fileRef}
+                      className="mjd-file"
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        // Cleared before the await: the same file picked twice
+                        // in a row fires no change event otherwise.
+                        e.target.value = "";
+                        if (file) await a.upload(file, photoKind);
+                      }}
+                    />
+                    <button
+                      className="mjd-btn mjd-btn-ghost mjd-btn-block"
+                      type="button"
+                      disabled={a.busy?.kind === "upload"}
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      <Icon id="i-plus" />
+                      {a.busy?.kind === "upload" ? "Uploading…" : "Upload"}
+                    </button>
+                  </div>
+                )}
               </section>
             )}
 
@@ -482,36 +734,50 @@ export function MobileJobDetail() {
                   <h2 className="mjd-t">Expenses</h2>
                   <span className="mjd-s">logged on this job</span>
                 </div>
-                {EXPENSES.map((e, i) => (
-                  <div
-                    className={`mjd-row${switched ? " mjd-rowin" : ""}`}
-                    style={rowVar(i)}
-                    key={e.v}
-                  >
-                    <div>
-                      <div className="mjd-row-n">{e.v}</div>
-                      <div className="mjd-row-m">{e.m}</div>
+                {record.expenses.length === 0 ? (
+                  <EmptyNote>Nothing logged against this job yet.</EmptyNote>
+                ) : (
+                  <>
+                    {record.expenses.map((e, i) => (
+                      <div
+                        className={`mjd-row${switched ? " mjd-rowin" : ""}`}
+                        style={rowVar(i)}
+                        key={e.id}
+                      >
+                        <div>
+                          <div className="mjd-row-n">{e.vendor}</div>
+                          <div className="mjd-row-m">{e.meta}</div>
+                        </div>
+                        <span className="mjd-amt">{fmt(e.amount)}</span>
+                      </div>
+                    ))}
+                    <div className="mjd-total">
+                      <span>Total</span>
+                      <b>{fmt(expTotal)}</b>
                     </div>
-                    <span className="mjd-amt">{fmt(e.amt)}</span>
-                  </div>
-                ))}
-                <div className="mjd-total">
-                  <span>Total</span>
-                  <b>{fmt(expTotal)}</b>
-                </div>
+                  </>
+                )}
               </section>
             )}
           </div>
         </div>
       </main>
 
-      {/* ============ THUMB-ZONE ACTION BAR ============ */}
-      <div className="mjd-bar">
-        <button className="mjd-btn mjd-btn-primary mjd-btn-block" type="button">
-          <Icon id="i-file" />
-          View proposal
-        </button>
-      </div>
+      {/* ============ THUMB-ZONE ACTION BAR ============
+          The proposal link, and ONLY when the job has one. With no linked
+          proposal the row is not rendered at all — the shell's third grid
+          track collapses to zero and the sheet runs to the bottom edge. */}
+      {record.proposal && (
+        <div className="mjd-bar">
+          <Link
+            className="mjd-btn mjd-btn-primary mjd-btn-block"
+            href={`/dashboard/proposals/${record.proposal.id}` as Route}
+          >
+            <Icon id="i-file" />
+            View proposal · {fmt(record.proposal.total)}
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

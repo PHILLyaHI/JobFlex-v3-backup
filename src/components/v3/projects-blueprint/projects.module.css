@@ -1281,8 +1281,20 @@
 .bp :global(.content .pjc), .bp :global(.content .pjc:hover .pjc-name) { color: inherit; }
 
 .bp :global(.content .pjc-head) { flex: 1 1 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 15px 16px 14px; }
-.bp :global(.content .pjc-name) { font-size: 16.5px; font-weight: 800; letter-spacing: -0.005em; line-height: 1.25; }
-.bp :global(.content .pjc-desc) { margin-top: 6px; font-size: 12.5px; line-height: 1.5; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* User text never breaks layout. The head's text column already carries
+   `min-width: 0` (see projects-behavior rowHtml), but min-width alone cannot
+   save a card from a 200-character unbroken project name: nothing is allowed
+   to break the word, so the card's min-content width is the whole string and
+   the grid cell blows out past the viewport. `overflow-wrap: anywhere` is the
+   one value that shrinks min-content — `break-word` does not. The clamp then
+   holds the wrapped name to two lines so a long name cannot stretch the card
+   taller than its row-mates. */
+.bp :global(.content .pjc-name) {
+  font-size: 16.5px; font-weight: 800; letter-spacing: -0.005em; line-height: 1.25;
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.bp :global(.content .pjc-desc) { margin-top: 6px; font-size: 12.5px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* project statuses */
 .bp :global(.content .pjs--active) { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.06); }

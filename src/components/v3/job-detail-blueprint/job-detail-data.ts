@@ -1,15 +1,25 @@
-// JOB DETAIL — BLUEPRINT · the donor's fixture, verbatim.
+// JOB DETAIL — BLUEPRINT · the shapes both editions read, and nothing else.
 //
-// Every string and number below is copied character-for-character from the
-// `// ================= ДАННЫЕ =================` block of
-// `jobflex-jobdetail-blueprint (14).html`. The donor's `·` / `→`
-// escapes are written as the literal characters they denote (·, →, —), which
-// is the same text.
+// ── THIS FILE USED TO BE THE DONOR'S FIXTURE ───────────────────────────────
+// It held the demo job ("Roof tear-off & reroof — 4812 Maple Ave"), its crew,
+// change orders, photos and expenses, and BOTH editions rendered it for every
+// `[id]`. That is gone: the page reads the real Job row now (see
+// ./job-detail-load.ts) and this module keeps only what a fixture never was —
+// the type of a record, the status vocabulary, and the money formatter.
 //
-// This is a FIXTURE, not a query. The page it replaces read the real Job
-// record; shipping the donor's content verbatim was the explicit call for this
-// port, so the demo job ("Roof tear-off & reroof — 4812 Maple Ave") is what
-// renders. See the header of ./job-detail-content.tsx.
+// Nothing here touches the database, so it is safe to import from a client
+// component; the load module is the server half and imports these types back.
+//
+// DATES ARE STRINGS ON PURPOSE. Every field below that reads like a date is
+// pre-formatted on the server (same rule as client-detail-data.ts): a `Date`
+// formatted inside a client component is formatted twice, once per
+// environment, and the first machine whose clock or locale disagreed would
+// produce a hydration mismatch.
+
+/** The donor's four status keys. They are the UI vocabulary — the database
+ *  column is `Job.status` ("SCHEDULED" | "IN_PROGRESS" | "COMPLETED" |
+ *  "CANCELED") and the two maps below are the only place they meet. */
+export type StatusKey = "sch" | "prog" | "done" | "can";
 
 /** Donor: `const ST = { … }` — label + status-badge modifier per state. */
 export const ST = {
@@ -19,11 +29,6 @@ export const ST = {
   can: { l: "Canceled", cls: "jd-st--can" },
 } as const;
 
-export type StatusKey = keyof typeof ST;
-
-/** Donor: `let status = 'prog'`. */
-export const INITIAL_STATUS: StatusKey = "prog";
-
 /** Donor: the four status buttons, in order. */
 export const STATUS_BUTTONS: Array<[StatusKey, string]> = [
   ["sch", "Scheduled"],
@@ -32,61 +37,127 @@ export const STATUS_BUTTONS: Array<[StatusKey, string]> = [
   ["can", "Canceled"],
 ];
 
-export type JobEvent = { d: string; t: string; m: string };
-export const EVENTS: JobEvent[] = [
-  { d: "Aug 11 · 7:00 AM", t: "Tear-off crew dispatch", m: "4 workers · dumpster on site" },
-  { d: "Aug 12 · 8:30 AM", t: "Material delivery", m: "Pacific Building Supply · 24 sq shingles" },
-  { d: "Aug 14 · 4:00 PM", t: "Final walkthrough", m: "with M. Henderson · punch list" },
-];
+/** `Job.status` values, exactly as `updateJob`'s zod schema accepts them. */
+export type JobStatusValue = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED";
 
-export type CrewMember = { n: string; r: string; ph: string; st: "ok" | "wait" };
-export const CREW: CrewMember[] = [
-  { n: "Diego Reyes", r: "Crew lead", ph: "(425) 555-0134", st: "ok" },
-  { n: "Sam Whitaker", r: "Roofer", ph: "(425) 555-0118", st: "ok" },
-  { n: "Lena Novak", r: "Laborer", ph: "(206) 555-0177", st: "wait" },
-];
+export const STATUS_TO_KEY: Record<string, StatusKey> = {
+  SCHEDULED: "sch",
+  IN_PROGRESS: "prog",
+  COMPLETED: "done",
+  CANCELED: "can",
+};
 
-export type ChangeOrder = { id: string; t: string; m: string; amt: number; st: "ok" | "warn" };
-export const CHANGES: ChangeOrder[] = [
-  { id: "CO-1", t: "Add second skylight", m: "Velux FS · flashing kit included", amt: 640, st: "ok" },
-  { id: "CO-2", t: "Rotten sheathing — 6 sheets", m: "found at tear-off · $85/sheet", amt: 510, st: "warn" },
-];
-
-export type JobPhoto = { k: string; c: string };
-export const PHOTOS: JobPhoto[] = [
-  { k: "Before", c: "Street side · two layers" },
-  { k: "Before", c: "Chimney flashing rust" },
-  { k: "Progress", c: "Deck exposed · day 1" },
-  { k: "After", c: "Ridge line finished" },
-];
-
-export type Expense = { v: string; m: string; amt: number };
-export const EXPENSES: Expense[] = [
-  { v: "Pacific Building Supply", m: "shingles · underlayment", amt: 1120 },
-  { v: "North Bend Transfer", m: "dump fee · 2 loads", amt: 180 },
-  { v: "Fastener Depot", m: "coil nails · caps", amt: 92 },
-  { v: "Fuel · crew trucks", m: "week of Aug 10", amt: 450 },
-];
+export const KEY_TO_STATUS: Record<StatusKey, JobStatusValue> = {
+  sch: "SCHEDULED",
+  prog: "IN_PROGRESS",
+  done: "COMPLETED",
+  can: "CANCELED",
+};
 
 /** Donor: `const fmt = n => '$' + n.toLocaleString('en-US')`. */
-export const fmt = (n: number): string => "$" + n.toLocaleString("en-US");
+export const fmt = (n: number): string => "$" + Math.round(n).toLocaleString("en-US");
 
-/** Donor page head, `.content` block 1. */
-export const JOB = {
-  title: "Roof tear-off & reroof — 4812 Maple Ave",
-  dates: "Aug 11 → Aug 14, 2026",
-  /** Donor `.jd-fields` — the Dates cell states the span more tersely. */
-  fieldDates: "Aug 11 → 14",
-  client: "M. Henderson",
-  scopeOfWork:
-    "Two-layer tear-off to the deck, synthetic underlayment, CertainTeed Landmark architectural shingles, new chimney flashing and continuous ridge vent. Rotten sheathing replaced at $85 per sheet as found.",
-  notes:
-    "Gate code 4821. Dog stays inside — confirm with the client before opening the run. Dumpster sits on the street side, permit taped to the lid.",
+/** One JobEvent row — the job's real calendar entries, ascending. */
+export type JdEvent = {
+  id: string;
+  /** JobEvent.title. */
+  title: string;
+  /** "Aug 11 · 7:00 AM" — pre-formatted (see the header). */
+  when: string;
+  /** JobEvent.notes, or the span, or null. */
+  meta: string | null;
+};
+
+/** One JobAssignment row. `state` is the donor's badge vocabulary; DECLINED
+ *  gets its own value rather than being folded into "wait" — a crew list that
+ *  prints a decline as "Pending" is a crew list that gets someone stood up. */
+export type JdCrew = {
+  assignmentId: string;
+  workerId: string;
+  name: string;
+  /** "Crew · (425) 555-0134" — role/specialty and phone where known. */
+  meta: string;
+  state: "ok" | "wait" | "no";
+};
+
+/** One ChangeOrder row. `state` mirrors ChangeOrder.status. */
+export type JdChange = {
+  id: string;
+  /** "CO-1" — positional, the way the donor numbered them. */
+  ref: string;
+  title: string;
+  meta: string;
+  amount: number;
+  state: "draft" | "sent" | "ok" | "no";
+  /** The client-facing approval token — /co/<token>. */
+  publicToken: string;
+};
+
+/** One JobPhoto row. `url` may be a data: URL — uploadJobPhoto persists the
+ *  data URL inline when Vercel Blob isn't configured. */
+export type JdPhoto = {
+  id: string;
+  url: string;
+  /** "Before" / "Progress" / "After", title-cased for the plate. */
+  kind: string;
+  caption: string;
+};
+
+/** One JobExpense row. */
+export type JdExpense = {
+  id: string;
+  vendor: string;
+  meta: string;
+  amount: number;
+};
+
+/** A WorkerProfile the org can still put on this job. */
+export type JdWorkerOption = {
+  id: string;
+  name: string;
+  meta: string | null;
+};
+
+/** The window "Add to schedule" would book, decided on the server so the
+ *  button can name it without a clock read during render. */
+export type JdBooking = {
+  startsAtISO: string;
+  endsAtISO: string;
+  /** "Aug 18 · 9:00 AM – 2:00 PM". */
+  label: string;
+};
+
+export type JobDetailRecord = {
+  id: string;
+  title: string;
+  status: StatusKey;
+  /** Page head: "Aug 11 → Aug 14, 2026", or "Unscheduled". */
+  dates: string;
+  /** Overview's Dates cell — the same span, terser. */
+  fieldDates: string;
+  clientName: string | null;
+  scopeOfWork: string | null;
+  notes: string | null;
   contact: {
-    name: "Mark Henderson",
-    phone: "(425) 555-0172",
-    phoneHref: "tel:+14255550172",
-    email: "mhenderson@gmail.com",
-    address: "4812 Maple Ave, Bothell, WA 98012",
-  },
-} as const;
+    name: string;
+    phone: string | null;
+    phoneHref: string | null;
+    email: string | null;
+    address: string | null;
+  } | null;
+  /** Null unless `Job.proposalId` resolves. The proposal section renders ONLY
+   *  when this is set — no linked proposal, no section. */
+  proposal: { id: string; title: string; total: number } | null;
+  events: JdEvent[];
+  crew: JdCrew[];
+  changes: JdChange[];
+  photos: JdPhoto[];
+  expenses: JdExpense[];
+  /** Roster minus the workers already on the job. */
+  roster: JdWorkerOption[];
+  booking: JdBooking;
+  /** False for the SALES / ESTIMATOR roles, which requireManager rejects: the
+   *  page renders as a record and hides the controls rather than offering
+   *  buttons that can only fail. */
+  canWrite: boolean;
+};

@@ -22,6 +22,15 @@ export default async function WorkerPortalLayout({
   // Worker opened their portal — record activity for the 6-month inactivity cron.
   await touchWorkerActivity(worker.id);
 
+  // An unanswered invite is not a page INSIDE the portal — it is the public
+  // landing page the invite email points at, and it owns the whole viewport
+  // (components/v3/worker-invite-blueprint). The portal header would be chrome
+  // for an account that does not exist yet, and its 720px column would crop the
+  // drafting panel, so the invite gate is rendered bare.
+  if (worker.inviteStatus === "PENDING" || worker.inviteStatus === "DECLINED") {
+    return <>{children}</>;
+  }
+
   return (
     <div className="min-h-dvh bg-[color:var(--paper)]">
       <WorkerPortalHeader

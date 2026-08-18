@@ -4,21 +4,26 @@
 //
 // Built with the jobflex-page-styler skill (visual system: tokens, palette,
 // type scale, Motion System "Balanced") and the mobile-app-ui-design skill
-// (structure: thumb zone, 5-item tab bar, ≥44px targets, bottom sheets over
-// modals). Where the two disagree the house system wins — hard 3px offset
-// shadows, 2px radii and Inter 900 caps stay, rather than the mobile skill's
-// soft-shadow / rounded-3xl defaults.
+// (structure: thumb zone, ≥44px targets, bottom sheets over modals). Where the
+// two disagree the house system wins — hard 3px offset shadows, 2px radii and
+// Inter 900 caps stay, rather than the mobile skill's soft-shadow /
+// rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of
-// scope until the layout is signed off.
+// The donor demo fixture is gone. This page awaits the same org-scoped read
+// the desktop Overview runs and hands it down as a prop, so the standalone
+// review URL never pays for a client round trip. When the responsive shell
+// mounts <MobileDashboard /> props-less at ≤768px on /dashboard, the component
+// fetches the identical rows itself through `getDashboardData`.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
 // its own redirect-to-login like the other design routes.
 
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { V3_PORTED_ROUTES } from "@/lib/v3/routes";
+import { buildDashboardData } from "@/app/dashboard/dashboard-data";
+import type { DashboardData } from "@/components/v3/dashboard-blueprint/blueprint-data";
 import { MobileDashboard } from "./mobile-dashboard";
 
 export const dynamic = "force-dynamic";
@@ -39,10 +44,16 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileV2Page() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect(`/auth/login?next=${encodeURIComponent(V3_PORTED_ROUTES.mobileV2)}`);
+  let data: DashboardData;
+  try {
+    data = await buildDashboardData();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      redirect(`/auth/login?next=${encodeURIComponent(V3_PORTED_ROUTES.mobileV2)}`);
+    }
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <MobileDashboard />;
+  return <MobileDashboard data={data} />;
 }

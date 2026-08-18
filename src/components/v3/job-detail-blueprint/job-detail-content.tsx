@@ -3,10 +3,9 @@
 // JOB DETAIL / BLUEPRINT — the page.
 // Route: /dashboard/jobs/[id].
 //
-// A verbatim port of `jobflex-jobdetail-blueprint (14).html`. It REPLACES the
-// classic record page that lived at src/app/(dashboard)/dashboard/jobs/[id]/ —
-// it does not stand beside it. Same arrangement as the sibling
-// project-detail-blueprint port.
+// A port of `jobflex-jobdetail-blueprint (14).html`. It REPLACES the classic
+// record page that lived at src/app/(dashboard)/dashboard/jobs/[id]/ — it does
+// not stand beside it. Same arrangement as the sibling project-detail port.
 //
 // ── CHROME DROPPED ─────────────────────────────────────────────────
 // The donor file carries its own sidebar, topbar, SVG sprite, `.layout`,
@@ -20,46 +19,33 @@
 // as a fragment, so they stay DIRECT children of `.content`: the donor's reveal
 // cascade walks `.content > *`.
 //
-// Also dropped, for the same reason: the donor's 42-symbol sprite (the shell
-// sprite's copies of the eight symbols used here — i-file, i-users, i-phone,
-// i-msg, i-pin, i-cal, i-userplus, i-plus — are character-identical), the nav
-// burger / backdrop (the shell owns the drawer), FLUID SCALE, the sidebar
-// cascade and the graph-paper parallax (shell-behavior.ts, same donor numbers).
-// The donor's `.banner-close` dismiss IIFE is dropped too: this page renders no
-// Lead Center banner, so its `querySelectorAll` matched nothing.
+// ── THE FIXTURE IS GONE — THIS IS THE REAL JOB ─────────────────────
+// The port shipped with the donor's demo content ("Roof tear-off & reroof —
+// 4812 Maple Ave") rendering for every id. It now renders the Job row behind
+// `[id]`: title, client, address, span, status, crew, calendar events, change
+// orders, photos and expenses, read by ../job-detail-blueprint/job-detail-load.ts
+// and handed down as one `record`. The handheld build reads the same record, so
+// the two editions cannot describe different jobs.
 //
-// ── THE FIXTURE IS THE CONTENT ─────────────────────────────────────
-// UNLIKE the project-detail port, which wired the donor's layout to the real
-// record, this page ships the donor's demo content verbatim — the explicit call
-// for this port. The "Roof tear-off & reroof — 4812 Maple Ave" job, its crew,
-// change orders, photos and expenses all come from ./job-detail-data.ts and no
-// Job row is read. The route still resolves `[id]` so every existing link and
-// `revalidatePath('/dashboard/jobs/<id>')` keeps working; the id is simply not
-// used to select content. See ./job-detail-data.ts.
+// Every control writes through an action that already existed — see the header
+// of ./use-job-detail-actions.ts for the mapping. Nothing on this page is a
+// decoration that pretends to work: a section with no rows draws a dashed
+// drawing-note instead, and a role that `requireManager` would reject
+// (SALES / ESTIMATOR) gets the record with the write controls withheld.
 //
 // ── DONOR SCRIPT → REACT ───────────────────────────────────────────
 // The donor drives everything through `innerHTML` re-renders (`renderTabs()`,
 // `renderView()`, `renderBadge()`) off two module-level variables, `tab` and
-// `status`, plus an in-place mutation of `CHANGES[i].st` on Approve. Those are
-// three pieces of component state here; the emitted markup, class names and
-// ordering are the donor's, element for element.
+// `status`. `tab` is component state here; `status` is the record's, flipped
+// optimistically by the picker and then re-read from the database.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import type { Route } from "next";
+import Link from "next/link";
 import s from "./job-detail.module.css";
 import { useJobDetailMotion } from "./job-detail-motion";
-import {
-  ST,
-  INITIAL_STATUS,
-  STATUS_BUTTONS,
-  EVENTS,
-  CREW,
-  CHANGES,
-  PHOTOS,
-  EXPENSES,
-  JOB,
-  fmt,
-  type StatusKey,
-} from "./job-detail-data";
+import { useJobDetailActions, type PhotoKind } from "./use-job-detail-actions";
+import { ST, STATUS_BUTTONS, fmt, type JobDetailRecord } from "./job-detail-data";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -70,28 +56,49 @@ function cx(...names: Array<string | false | null | undefined>): string {
     .join(" ");
 }
 
-/** Donor: `const TABS = [...]` — id, label, and a count thunk (null on Overview). */
 type TabKey = "overview" | "schedule" | "crew" | "changes" | "photos" | "expenses";
-const TABS: Array<[TabKey, string, number | null]> = [
-  ["overview", "Overview", null],
-  ["schedule", "Schedule", EVENTS.length],
-  ["crew", "Crew", CREW.length],
-  ["changes", "Changes", CHANGES.length],
-  ["photos", "Photos", PHOTOS.length],
-  ["expenses", "Expenses", EXPENSES.length],
+
+const PHOTO_KINDS: Array<[PhotoKind, string]> = [
+  ["BEFORE", "Before"],
+  ["PROGRESS", "Progress"],
+  ["AFTER", "After"],
 ];
 
-export function JobDetailContent() {
-  // Donor: `let tab = 'overview'`, `let status = 'prog'`, and `CHANGES[i].st`
-  // mutated in place by the Approve handler.
+function Ic({ id }: { id: string }) {
+  return (
+    <svg className={cx("ic")} aria-hidden="true">
+      <use href={`#${id}`} />
+    </svg>
+  );
+}
+
+/** DESIGN.md's empty state: a note on the drawing, 1.5px dashed. */
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return <div className={cx("jd-empty")}>{children}</div>;
+}
+
+export function JobDetailContent({ record }: { record: JobDetailRecord }) {
   const [tab, setTab] = useState<TabKey>("overview");
-  const [status, setStatus] = useState<StatusKey>(INITIAL_STATUS);
-  const [approved, setApproved] = useState<number[]>([]);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [photoKind, setPhotoKind] = useState<PhotoKind>("BEFORE");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const a = useJobDetailActions(record.id, record.booking, record.status);
 
   useJobDetailMotion(s.btn);
 
-  const changes = CHANGES.map((c, i) => (approved.includes(i) ? { ...c, st: "ok" as const } : c));
-  const expTotal = EXPENSES.reduce((a, e) => a + e.amt, 0);
+  const expTotal = record.expenses.reduce((sum, e) => sum + e.amount, 0);
+  const scheduled = record.events.length > 0;
+
+  // Donor: `const TABS = [...]` — id, label, and a count thunk (null on Overview).
+  const TABS: Array<[TabKey, string, number | null]> = [
+    ["overview", "Overview", null],
+    ["schedule", "Schedule", record.events.length],
+    ["crew", "Crew", record.crew.length],
+    ["changes", "Changes", record.changes.length],
+    ["photos", "Photos", record.photos.length],
+    ["expenses", "Expenses", record.expenses.length],
+  ];
 
   return (
     <>
@@ -100,10 +107,10 @@ export function JobDetailContent() {
         <div>
           <div className={cx("kicker", "jd-kick")}>
             Job status ·{" "}
-            <span className={cx("jd-st", ST[status].cls)}>{ST[status].l}</span>
+            <span className={cx("jd-st", ST[a.status].cls)}>{ST[a.status].l}</span>
           </div>
-          <h1 className={cx("page-title")}>{JOB.title}</h1>
-          <div className={cx("jd-dates")}>{JOB.dates}</div>
+          <h1 className={cx("page-title")}>{record.title}</h1>
+          <div className={cx("jd-dates")}>{record.dates}</div>
         </div>
       </div>
 
@@ -123,13 +130,30 @@ export function JobDetailContent() {
             </button>
           ))}
         </div>
-        <button className={cx("btn", "btn-ghost", "jd-vp")} type="button">
-          <svg className={cx("ic")}>
-            <use href="#i-file" />
-          </svg>
-          View proposal
-        </button>
+        {/* THE PROPOSAL SECTION IS THE LINK, and it exists only when
+            `Job.proposalId` resolved. No proposal — no button, not a disabled
+            one: there is nothing to open. */}
+        {record.proposal && (
+          <Link
+            className={cx("btn", "btn-ghost", "jd-vp")}
+            href={`/dashboard/proposals/${record.proposal.id}` as Route}
+          >
+            <Ic id="i-file" />
+            View proposal · {fmt(record.proposal.total)}
+          </Link>
+        )}
       </div>
+
+      {/* Write failures land here rather than in an alert() — one line, in the
+          page's own voice, dismissible. */}
+      {a.error && (
+        <div className={cx("jd-err")} role="alert">
+          <span>{a.error}</span>
+          <button type="button" onClick={a.dismissError} aria-label="Dismiss">
+            <Ic id="i-x" />
+          </button>
+        </div>
+      )}
 
       {/* ВИД */}
       <div>
@@ -140,50 +164,58 @@ export function JobDetailContent() {
                 <h2 className={cx("jd-t")}>Overview</h2>
               </div>
 
-              <div className={cx("jd-status")}>
-                <div className={cx("jd-sec-l")}>Set up the status</div>
-                <div className={cx("jd-status-row")}>
-                  {STATUS_BUTTONS.map(([key, label]) => (
-                    <button
-                      key={key}
-                      className={cx("jd-sbtn", `jd-sbtn--${key}`, status === key && "on")}
-                      type="button"
-                      onClick={() => setStatus(key)}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              {record.canWrite && (
+                <div className={cx("jd-status")}>
+                  <div className={cx("jd-sec-l")}>Set up the status</div>
+                  <div className={cx("jd-status-row")}>
+                    {STATUS_BUTTONS.map(([key, label]) => (
+                      <button
+                        key={key}
+                        className={cx("jd-sbtn", `jd-sbtn--${key}`, a.status === key && "on")}
+                        type="button"
+                        aria-pressed={a.status === key}
+                        disabled={a.busy?.kind === "status"}
+                        onClick={() => a.pickStatus(key)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className={cx("jd-fields")}>
                 <div className={cx("jd-f")}>
                   <span>Client</span>
-                  <b>{JOB.client}</b>
+                  <b>{record.clientName ?? "—"}</b>
                 </div>
                 <div className={cx("jd-f")}>
                   <span>Crew</span>
-                  <b>{CREW.length} assigned</b>
+                  <b>{record.crew.length} assigned</b>
                 </div>
                 <div className={cx("jd-f")}>
                   <span>Expenses</span>
                   <b>
-                    {fmt(expTotal)} · {EXPENSES.length}
+                    {fmt(expTotal)} · {record.expenses.length}
                   </b>
                 </div>
                 <div className={cx("jd-f")}>
                   <span>Dates</span>
-                  <b>{JOB.fieldDates}</b>
+                  <b>{record.fieldDates}</b>
                 </div>
               </div>
 
               <div className={cx("jd-sec")}>
                 <div className={cx("jd-sec-l")}>Scope of work</div>
-                <p>{JOB.scopeOfWork}</p>
+                {record.scopeOfWork ? (
+                  <p>{record.scopeOfWork}</p>
+                ) : (
+                  <EmptyNote>No scope recorded on this job.</EmptyNote>
+                )}
               </div>
               <div className={cx("jd-sec")}>
                 <div className={cx("jd-sec-l")}>Notes</div>
-                <p>{JOB.notes}</p>
+                {record.notes ? <p>{record.notes}</p> : <EmptyNote>No notes yet.</EmptyNote>}
               </div>
             </section>
 
@@ -191,30 +223,38 @@ export function JobDetailContent() {
               <div className={cx("jd-h")}>
                 <h2 className={cx("jd-t")}>Client contact</h2>
               </div>
-              <div className={cx("jd-c-row")}>
-                <svg className={cx("ic")}>
-                  <use href="#i-users" />
-                </svg>
-                {JOB.contact.name}
-              </div>
-              <div className={cx("jd-c-row", "mono")}>
-                <svg className={cx("ic")}>
-                  <use href="#i-phone" />
-                </svg>
-                <a href={JOB.contact.phoneHref}>{JOB.contact.phone}</a>
-              </div>
-              <div className={cx("jd-c-row", "mono")}>
-                <svg className={cx("ic")}>
-                  <use href="#i-msg" />
-                </svg>
-                <a href={`mailto:${JOB.contact.email}`}>{JOB.contact.email}</a>
-              </div>
-              <div className={cx("jd-c-row")}>
-                <svg className={cx("ic")}>
-                  <use href="#i-pin" />
-                </svg>
-                {JOB.contact.address}
-              </div>
+              {record.contact ? (
+                <>
+                  <div className={cx("jd-c-row")}>
+                    <Ic id="i-users" />
+                    {record.contact.name}
+                  </div>
+                  {record.contact.phone && (
+                    <div className={cx("jd-c-row", "mono")}>
+                      <Ic id="i-phone" />
+                      {record.contact.phoneHref ? (
+                        <a href={record.contact.phoneHref}>{record.contact.phone}</a>
+                      ) : (
+                        record.contact.phone
+                      )}
+                    </div>
+                  )}
+                  {record.contact.email && (
+                    <div className={cx("jd-c-row", "mono")}>
+                      <Ic id="i-msg" />
+                      <a href={`mailto:${record.contact.email}`}>{record.contact.email}</a>
+                    </div>
+                  )}
+                  {record.contact.address && (
+                    <div className={cx("jd-c-row")}>
+                      <Ic id="i-pin" />
+                      {record.contact.address}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <EmptyNote>No client linked to this job.</EmptyNote>
+              )}
             </section>
           </div>
         )}
@@ -223,26 +263,49 @@ export function JobDetailContent() {
           <section className={cx("card")}>
             <div className={cx("jd-h")}>
               <h2 className={cx("jd-t")}>Schedule</h2>
-              <span className={cx("jd-s")}>{EVENTS.length} on the calendar</span>
+              <span className={cx("jd-s")}>
+                {record.events.length} on the calendar
+              </span>
             </div>
-            {EVENTS.map((e) => (
-              <div className={cx("jd-row")} key={e.t}>
-                <div>
-                  <div className={cx("jd-row-n")}>{e.t}</div>
-                  <div className={cx("jd-row-m")}>
-                    {e.d} · {e.m}
+            {record.events.length === 0 ? (
+              <EmptyNote>Nothing on the calendar for this job yet.</EmptyNote>
+            ) : (
+              record.events.map((e) => (
+                <div className={cx("jd-row")} key={e.id}>
+                  <div>
+                    <div className={cx("jd-row-n")}>{e.title}</div>
+                    <div className={cx("jd-row-m")}>
+                      {e.when}
+                      {e.meta ? ` · ${e.meta}` : ""}
+                    </div>
                   </div>
                 </div>
+              ))
+            )}
+            {record.canWrite && (
+              <div className={cx("jd-total", "jd-total--foot")}>
+                {/* A div, not a span: `.jd-total span` is the "TOTAL" label. */}
+                <div className={cx("jd-note")}>
+                  {scheduled ? "Already booked" : `Books ${record.booking.label}`}
+                </div>
+                {scheduled ? (
+                  <Link className={cx("btn", "btn-ghost")} href="/dashboard/calendar">
+                    <Ic id="i-cal" />
+                    On the schedule
+                  </Link>
+                ) : (
+                  <button
+                    className={cx("btn", "btn-ghost")}
+                    type="button"
+                    disabled={a.busy?.kind === "schedule"}
+                    onClick={() => a.addToSchedule(record.title)}
+                  >
+                    <Ic id="i-cal" />
+                    {a.busy?.kind === "schedule" ? "Adding…" : "Add to schedule"}
+                  </button>
+                )}
               </div>
-            ))}
-            <div className={cx("jd-total", "jd-total--foot")}>
-              <button className={cx("btn", "btn-ghost")} type="button">
-                <svg className={cx("ic")}>
-                  <use href="#i-cal" />
-                </svg>
-                Add to schedule
-              </button>
-            </div>
+            )}
           </section>
         )}
 
@@ -252,27 +315,89 @@ export function JobDetailContent() {
               <h2 className={cx("jd-t")}>Crew</h2>
               <span className={cx("jd-s")}>confirm via portal link</span>
             </div>
-            {CREW.map((w) => (
-              <div className={cx("jd-row")} key={w.n}>
-                <div>
-                  <div className={cx("jd-row-n")}>{w.n}</div>
-                  <div className={cx("jd-row-m")}>
-                    {w.r} · {w.ph}
+            {record.crew.length === 0 ? (
+              <EmptyNote>Nobody is on this job yet.</EmptyNote>
+            ) : (
+              record.crew.map((w) => (
+                <div className={cx("jd-row")} key={w.assignmentId}>
+                  <div>
+                    <div className={cx("jd-row-n")}>{w.name}</div>
+                    <div className={cx("jd-row-m")}>{w.meta}</div>
+                  </div>
+                  <div className={cx("jd-row-act")}>
+                    <span
+                      className={cx(
+                        "jd-b",
+                        w.state === "ok" ? "jd-b--ok" : w.state === "no" ? "jd-b--no" : "jd-b--wait",
+                      )}
+                    >
+                      {w.state === "ok" ? "Confirmed" : w.state === "no" ? "Declined" : "Pending"}
+                    </span>
+                    {record.canWrite && (
+                      <button
+                        className={cx("btn", "btn-ghost", "jd-x")}
+                        type="button"
+                        aria-label={`Take ${w.name} off this job`}
+                        disabled={
+                          a.busy?.kind === "unassign" && a.busy.id === w.assignmentId
+                        }
+                        onClick={() => a.unassign(w.assignmentId)}
+                      >
+                        <Ic id="i-trash" />
+                      </button>
+                    )}
                   </div>
                 </div>
-                <span className={cx("jd-b", w.st === "ok" ? "jd-b--ok" : "jd-b--wait")}>
-                  {w.st === "ok" ? "Confirmed" : "Pending"}
-                </span>
-              </div>
-            ))}
-            <div className={cx("jd-total", "jd-total--foot")}>
-              <button className={cx("btn", "btn-ghost")} type="button">
-                <svg className={cx("ic")}>
-                  <use href="#i-userplus" />
-                </svg>
-                Assign worker
-              </button>
-            </div>
+              ))
+            )}
+            {record.canWrite && (
+              <>
+                <div className={cx("jd-total", "jd-total--foot")}>
+                  <div className={cx("jd-note")}>
+                    {record.roster.length} on the roster
+                  </div>
+                  <button
+                    className={cx("btn", "btn-ghost")}
+                    type="button"
+                    aria-expanded={rosterOpen}
+                    onClick={() => setRosterOpen((o) => !o)}
+                  >
+                    <Ic id={rosterOpen ? "i-x" : "i-userplus"} />
+                    {rosterOpen ? "Close" : "Assign worker"}
+                  </button>
+                </div>
+                {rosterOpen &&
+                  (record.roster.length === 0 ? (
+                    <EmptyNote>
+                      Everyone on the roster is already on this job.{" "}
+                      <Link className={cx("jd-link")} href="/dashboard/workers">
+                        Add a worker
+                      </Link>
+                      .
+                    </EmptyNote>
+                  ) : (
+                    <div className={cx("jd-pick")} role="list">
+                      {record.roster.map((w) => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          role="listitem"
+                          className={cx("jd-pick-row")}
+                          disabled={a.busy?.kind === "assign" && a.busy.id === w.id}
+                          onClick={async () => {
+                            const ok = await a.assign(w.id);
+                            if (ok) setRosterOpen(false);
+                          }}
+                        >
+                          <span className={cx("jd-row-n")}>{w.name}</span>
+                          {w.meta && <span className={cx("jd-row-m")}>{w.meta}</span>}
+                          <Ic id="i-plus" />
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+              </>
+            )}
           </section>
         )}
 
@@ -282,34 +407,68 @@ export function JobDetailContent() {
               <h2 className={cx("jd-t")}>Change orders</h2>
               <span className={cx("jd-s")}>client-signed extras</span>
             </div>
-            {changes.map((c, i) => (
-              <div className={cx("jd-corow")} key={c.id}>
-                <div>
-                  <div className={cx("jd-row-n")}>
-                    {c.id} · {c.t}
-                  </div>
-                  <div className={cx("jd-row-m")}>{c.m}</div>
-                </div>
-                <span className={cx("jd-amt")}>{fmt(c.amt)}</span>
-                {c.st === "ok" ? (
-                  <>
-                    <span></span>
-                    <span className={cx("jd-b", "jd-b--ok")}>Approved</span>
-                  </>
-                ) : (
-                  <>
-                    <span className={cx("jd-b", "jd-b--warn")}>Pending</span>
-                    <button
-                      className={cx("btn", "btn-primary")}
-                      type="button"
-                      onClick={() => setApproved((a) => (a.includes(i) ? a : [...a, i]))}
+            {record.changes.length === 0 ? (
+              <EmptyNote>
+                No change orders on this job. They are raised from the proposal or the
+                job, then signed by the client.
+              </EmptyNote>
+            ) : (
+              record.changes.map((c) => {
+                const working = a.busy?.kind === "change" && a.busy.id === c.id;
+                return (
+                  <div className={cx("jd-corow")} key={c.id}>
+                    <div>
+                      <div className={cx("jd-row-n")}>
+                        {c.ref} · {c.title}
+                      </div>
+                      <div className={cx("jd-row-m")}>{c.meta}</div>
+                    </div>
+                    <span className={cx("jd-amt")}>{fmt(c.amount)}</span>
+                    <span
+                      className={cx(
+                        "jd-b",
+                        c.state === "ok"
+                          ? "jd-b--ok"
+                          : c.state === "no"
+                            ? "jd-b--no"
+                            : c.state === "sent"
+                              ? "jd-b--warn"
+                              : "jd-b--wait",
+                      )}
                     >
-                      Approve
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
+                      {c.state === "ok"
+                        ? "Approved"
+                        : c.state === "no"
+                          ? "Declined"
+                          : c.state === "sent"
+                            ? "Pending"
+                            : "Draft"}
+                    </span>
+                    {record.canWrite && c.state === "draft" && (
+                      <button
+                        className={cx("btn", "btn-primary")}
+                        type="button"
+                        disabled={working}
+                        onClick={() => a.sendChange(c.id)}
+                      >
+                        {working ? "Sending…" : "Send"}
+                      </button>
+                    )}
+                    {record.canWrite && c.state === "sent" && (
+                      <button
+                        className={cx("btn", "btn-primary")}
+                        type="button"
+                        disabled={working}
+                        onClick={() => a.approveChange(c.id, c.publicToken)}
+                      >
+                        {working ? "Saving…" : "Mark approved"}
+                      </button>
+                    )}
+                    {(!record.canWrite || c.state === "ok" || c.state === "no") && <span />}
+                  </div>
+                );
+              })
+            )}
           </section>
         )}
 
@@ -319,24 +478,64 @@ export function JobDetailContent() {
               <h2 className={cx("jd-t")}>Photos</h2>
               <span className={cx("jd-s")}>Before · Progress · After</span>
             </div>
-            <div className={cx("jd-photos")}>
-              {PHOTOS.map((p) => (
-                <div className={cx("jd-ph")} key={p.c}>
-                  <div className={cx("jd-ph-img")}>
-                    <span className={cx("jd-ph-k")}>{p.k}</span>
+            {record.photos.length === 0 ? (
+              <EmptyNote>No photos on this job yet.</EmptyNote>
+            ) : (
+              <div className={cx("jd-photos")}>
+                {record.photos.map((p) => (
+                  <div className={cx("jd-ph")} key={p.id}>
+                    <div className={cx("jd-ph-img")}>
+                      {/* A JobPhoto url is a data: URL whenever Vercel Blob is
+                          not configured (uploadJobPhoto's fallback), which
+                          next/image cannot take — so a plain img. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.url} alt={p.caption} />
+                      <span className={cx("jd-ph-k")}>{p.kind}</span>
+                    </div>
+                    <div className={cx("jd-ph-c")}>{p.caption}</div>
                   </div>
-                  <div className={cx("jd-ph-c")}>{p.c}</div>
+                ))}
+              </div>
+            )}
+            {record.canWrite && (
+              <div className={cx("jd-total", "jd-total--foot14")}>
+                <div className={cx("jd-status-row")}>
+                  {PHOTO_KINDS.map(([key, label]) => (
+                    <button
+                      key={key}
+                      className={cx("jd-sbtn", photoKind === key && "on", "jd-sbtn--sch")}
+                      type="button"
+                      aria-pressed={photoKind === key}
+                      onClick={() => setPhotoKind(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className={cx("jd-total", "jd-total--foot14")}>
-              <button className={cx("btn", "btn-ghost")} type="button">
-                <svg className={cx("ic")}>
-                  <use href="#i-plus" />
-                </svg>
-                Upload
-              </button>
-            </div>
+                <input
+                  ref={fileRef}
+                  className={cx("jd-file")}
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    // Cleared before the await: the same file picked twice in a
+                    // row fires no change event otherwise.
+                    e.target.value = "";
+                    if (file) await a.upload(file, photoKind);
+                  }}
+                />
+                <button
+                  className={cx("btn", "btn-ghost")}
+                  type="button"
+                  disabled={a.busy?.kind === "upload"}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Ic id="i-plus" />
+                  {a.busy?.kind === "upload" ? "Uploading…" : "Upload"}
+                </button>
+              </div>
+            )}
           </section>
         )}
 
@@ -346,19 +545,25 @@ export function JobDetailContent() {
               <h2 className={cx("jd-t")}>Expenses</h2>
               <span className={cx("jd-s")}>logged on this job</span>
             </div>
-            {EXPENSES.map((e) => (
-              <div className={cx("jd-row")} key={e.v}>
-                <div>
-                  <div className={cx("jd-row-n")}>{e.v}</div>
-                  <div className={cx("jd-row-m")}>{e.m}</div>
+            {record.expenses.length === 0 ? (
+              <EmptyNote>Nothing logged against this job yet.</EmptyNote>
+            ) : (
+              <>
+                {record.expenses.map((e) => (
+                  <div className={cx("jd-row")} key={e.id}>
+                    <div>
+                      <div className={cx("jd-row-n")}>{e.vendor}</div>
+                      <div className={cx("jd-row-m")}>{e.meta}</div>
+                    </div>
+                    <span className={cx("jd-amt")}>{fmt(e.amount)}</span>
+                  </div>
+                ))}
+                <div className={cx("jd-total")}>
+                  <span>Total</span>
+                  <b>{fmt(expTotal)}</b>
                 </div>
-                <span className={cx("jd-amt")}>{fmt(e.amt)}</span>
-              </div>
-            ))}
-            <div className={cx("jd-total")}>
-              <span>Total</span>
-              <b>{fmt(expTotal)}</b>
-            </div>
+              </>
+            )}
           </section>
         )}
       </div>

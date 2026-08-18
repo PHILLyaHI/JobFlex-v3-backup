@@ -3,9 +3,11 @@
 // Blueprint projects — page CONTENT only. The donor's `.content` children,
 // verbatim; the sidebar, topbar and sprite come from the shared shell
 // (components/v3/blueprint-shell), which persists across navigation. The
-// dynamic regions (#pjChips, #pjGrid and #pMenu) are left empty exactly like
-// the donor and filled by the ported script on mount — same architecture,
-// same timing.
+// dynamic regions (#pjChips and #pjGrid) are left empty exactly like the donor
+// and filled by the ported script on mount — same architecture, same timing.
+// The donor's third empty region, `#pMenu`, is dropped: nothing in the port
+// ever filled it and no rule ever styled it, so it was a permanently empty
+// node sitting in the reveal cascade.
 //
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
@@ -20,7 +22,7 @@ import type { Project } from "./projects-data";
  *   component. The behavior module takes it as its starting state and then
  *   keeps itself in step with the database through `createProject`.
  */
-export function ProjectsContent({ projects }: { projects?: Project[] }) {
+export function ProjectsContent({ projects }: { projects: Project[] }) {
   // The rows reach `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a
   // re-run tears the page down and replays the whole reveal cascade — so the
@@ -65,7 +67,6 @@ export function ProjectsContent({ projects }: { projects?: Project[] }) {
         <br />
         Bundle related jobs together to track multi-phase builds and shared budgets.
       </div>
-      <div className="pmenu" id="pMenu"></div>
 
       {/* CREATE DIALOG — opened by #newProjectBtn, wired in projects-behavior.
           Static markup (not injected) so it is server-rendered like the rest of

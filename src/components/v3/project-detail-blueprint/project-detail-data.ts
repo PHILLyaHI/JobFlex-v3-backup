@@ -56,6 +56,64 @@ export interface PdAvailJob {
   clientName: string | null;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   ATTACHING A PROPOSAL — what the schema actually allows (2026-08-15)
+
+   The attach control on this page attaches PROPOSALS, not jobs. There is no
+   `Proposal.projectId` column and no server action that writes one: the
+   proposal builder's Basics block carries a project picker, but it is local
+   state and says so in its own source ("Project selection is local-only — the
+   Proposal model has no projectId column yet"). Prisma changes are out of
+   scope, so the link cannot be direct.
+
+   What DOES exist is the chain the data model already draws:
+
+       Proposal ──< Job.proposalId          Job.projectId >── Project
+
+   So a proposal is "on" a project when its JOBS are, and attaching one is
+   `attachJob(projectId, jobId)` — the existing action, unchanged — run over
+   the jobs that proposal owns. That is the whole of the write.
+
+   The consequence is honest and has to be shown rather than hidden: a proposal
+   with no job yet has nothing to link, and one whose jobs already sit on some
+   other project is spoken for. Both still appear in the list — the reader asked
+   "which of my proposals can go on this project", and an answer that silently
+   drops two thirds of the book is not an answer — but they arrive carrying
+   `blocked`, and the row says why instead of offering a button that would lie.
+   ══════════════════════════════════════════════════════════════════════════ */
+export interface PdAvailProposal {
+  id: string;
+  title: string;
+  /** Raw Prisma Proposal.status: DRAFT | SENT | VIEWED | ACCEPTED | … */
+  status: string;
+  total: number;
+  clientName: string | null;
+  /** The proposal's jobs that sit on no project — exactly what attaching moves.
+   *  Empty means the row cannot be attached, and `blocked` says why. */
+  linkJobIds: string[];
+  /** Why this proposal cannot be attached, or null when it can. */
+  blocked: string | null;
+}
+
+/** Attachable rows first, each group keeping the server's own order (most
+ *  recently touched first). A list that opens on six rows you cannot use reads
+ *  as an empty list. */
+export function attachableFirst(list: PdAvailProposal[]): PdAvailProposal[] {
+  return [...list].sort((a, b) => Number(Boolean(a.blocked)) - Number(Boolean(b.blocked)));
+}
+
+/** The row's mono annotation: who it is for, what it is worth, and what
+ *  attaching would actually move. */
+export function proposalMeta(p: PdAvailProposal, money: (n: number) => string): string {
+  const jobs = p.linkJobIds.length;
+  const bits = [
+    p.clientName ?? "No client",
+    money(p.total),
+    p.blocked ?? (jobs === 1 ? "1 job" : `${jobs} jobs`),
+  ];
+  return bits.join(" · ");
+}
+
 /**
  * Prisma's four job states onto the donor's three.
  *

@@ -51,7 +51,12 @@ export function WorkersContent({ entries }: { entries: WorkerEntry[] }) {
       {/* HEADER BAND: Crew / Roster / N on the books / M active */}
       <div className="wk-head">
         <div>
-          <div className="kicker wk-crumbs" id="wkCrumbs"></div>
+          {/* The kicker is the one word "Crew". It used to be a live
+              breadcrumb — Crew / Roster / N on the books / N active — repainted
+              on every write; the counts it carried are the stat tiles directly
+              below it, so the kicker was reading them out twice. Static markup
+              now, which also means it no longer paints in after mount. */}
+          <div className="kicker wk-crumbs" id="wkCrumbs"><span>Crew</span></div>
           <h1 className="page-title">Workers</h1>
         </div>
         <div className="wk-head-r">

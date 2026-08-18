@@ -1,5 +1,7 @@
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { parseChannel } from "@/lib/followUps/copy";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { StaggerGrid } from "@/components/ui/StaggerGrid";
@@ -11,17 +13,16 @@ export default async function FollowUpsPage() {
   const sinceWeek = new Date();
   sinceWeek.setDate(sinceWeek.getDate() - 7);
 
-  const [rules, templates, pending, completedThisWeek] = await Promise.all([
+  const [rules, pending, completedThisWeek] = await Promise.all([
     db.followUpRule.findMany({ where: { organizationId }, orderBy: { name: "asc" } }),
-    db.emailTemplate.findMany({
-      where: { organizationId },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, subject: true, body: true },
-    }),
+    // `FollowUp` has no `proposal` relation — only a `proposalId` scalar — so
+    // the titles come from a second lookup, the way the CRM pages do it. The
+    // `include: { proposal }` this used to carry was hidden behind an `as any`
+    // and threw at runtime on every render ("Unknown field `proposal` for
+    // include statement on model `FollowUp`"), which is why the page 500'd.
     db.followUp.findMany({
       where: { organizationId, completedAt: null },
       orderBy: { runAt: "asc" },
-      include: { proposal: { select: { title: true } } } as any,
       take: 20,
     }),
     db.followUp.count({
@@ -29,22 +30,35 @@ export default async function FollowUpsPage() {
     }),
   ]);
 
-  // Map template name per rule
-  const tplById = new Map(templates.map((t) => [t.id, t.name]));
-
+  // A rule's send copy is derived from its trigger now (src/lib/followUps/copy.ts),
+  // so the only per-rule choice left is the channel — which is what the
+  // `template` column carries.
   const ruleRows = rules.map((r) => ({
     id: r.id,
     name: r.name,
     triggerStatus: r.triggerStatus,
     delayMinutes: r.delayMinutes,
     enabled: r.enabled,
-    templateId: r.template ?? null,
-    templateName: r.template ? tplById.get(r.template) ?? null : null,
+    channel: parseChannel(r.template),
   }));
 
-  const pendingRows = pending.map((p: any) => ({
+  const proposalIds = Array.from(
+    new Set(pending.map((p) => p.proposalId).filter((id): id is string => Boolean(id))),
+  );
+  const titleById = new Map(
+    proposalIds.length
+      ? (
+          await db.proposal.findMany({
+            where: { id: { in: proposalIds }, organizationId },
+            select: { id: true, title: true },
+          })
+        ).map((p) => [p.id, p.title])
+      : [],
+  );
+
+  const pendingRows = pending.map((p) => ({
     id: p.id,
-    proposalTitle: p.proposal?.title ?? null,
+    proposalTitle: p.proposalId ? (titleById.get(p.proposalId) ?? null) : null,
     runAt: p.runAt,
     note: p.note,
   }));
@@ -78,7 +92,7 @@ export default async function FollowUpsPage() {
       <FollowUpsClient
         rules={ruleRows}
         pending={pendingRows}
-        templates={templates}
+        smsEnabled={isTwilioEnabled()}
       />
     </>
   );

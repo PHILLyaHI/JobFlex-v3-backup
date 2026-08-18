@@ -1,30 +1,24 @@
-// Mobile leads (mobile-leads-v2) — demo fixture.
+// Mobile leads (mobile-leads-v2) — shape, vocabulary and pure helpers.
 //
-// Carried over VERBATIM from the desktop leads donor fixture
-// (src/components/v3/leads-blueprint/leads-data.ts) so the handheld composition
-// is judged against the same pipeline as the desktop sheet: every field name,
-// string, number and null is unchanged. Seattle-area contractor texture —
-// Bothell / Everett / Woodinville / Redmond / Kirkland / Sammamish / Kenmore /
-// Bellevue / Mill Creek, roofing + fencing + decking + gutters + siding.
+// This module holds NO records. The pipeline and the live Lead Center offers
+// are read from the database in `leads-source.ts` (the desktop sheet's own
+// query, org-scoped, sales-slice aware) and every write goes through the shared
+// lead server actions. What stays here is the stuff that is not data: the row
+// shape, the stage list, the status vocabulary, the source labels and the
+// formatters the handheld cards use.
 //
-// States the fixture makes reachable, on purpose:
-//  · T. Ortiz (613) has email: null      → the row sheet's DISABLED "Send email"
-//  · four leads are already Ivan's       → the DISABLED "Assign to me" row
-//  · three leads have assignee: null     → the em-dash absence on the row card
-//  · 2 WON + 1 LOST                      → a real win rate in the masthead
-//  · ARCHIVED is in the status list but held by nobody → the "No matches" empty
-//    state is one tap away
-//  · offer o1 has email: null, o2 has phone: null → the contact line falls back
-//  · imported / pasted leads land with spec: null, conf: 0 → the dashed
-//    "Unsorted" trade badge
-//
-// This is a design surface: the data layer is out of scope, so nothing here
-// touches Prisma or a server action. The arrays are mutated at runtime (accept /
-// decline / move / delete / import), so the component clones both seeds per
-// mount and a remount starts from the donor's state.
+// (It previously carried the donor's 13-lead demo fixture, two demo offers and
+// three demo CSV rows. Those were removed when the surface was wired to the
+// data layer — a mock row on a page that also renders real ones is a lie.)
+
+// The Incoming test is imported rather than restated: the two editions of this
+// page must agree on what "incoming" means, and a duplicated predicate is how
+// they stop agreeing.
+import { isPlatformIncoming } from "@/components/v3/leads-blueprint/leads-data";
 
 export type Lead = {
-  id: number;
+  /** Prisma cuid — the id every lead server action takes. */
+  id: string;
   name: string;
   email: string | null;
   phone: string | null;
@@ -35,6 +29,8 @@ export type Lead = {
   status: string;
   source: string;
   assignee: string | null;
+  /** Assigned to, or claimed by, the signed-in user. Drives "Already yours". */
+  mine: boolean;
   age: string;
   desc: string;
 };
@@ -59,6 +55,8 @@ export type StagedRow = {
   email: string | null;
   phone: string | null;
   project: string | null;
+  /** Carried through to importLeads, which stores it on the created row. */
+  description: string | null;
   source: string;
 };
 
@@ -82,40 +80,12 @@ export const LEAD_STATUSES = ['ALL', 'NEW', 'ROUTED', 'CLAIMED', 'CONTACTED', 'Q
 
 export const SRC: Record<string, string> = { MANUAL: 'Manual entry', EMAIL: 'Email paste', FACEBOOK: 'Facebook', IMPORT: 'Imported', FORM: 'Homeowner form', LEAD_CENTER: 'Lead center' };
 
-/** Donor: `let seq = 700` — the id counter for imported/accepted rows. */
-export const SEQ_START = 700;
-
-export const LEADS_SEED: Lead[] = [
-  { id: 601, name: 'M. Alvarez',   email: 'm.alvarez@mail.com',   phone: '(425) 555-0111', city: 'Bothell, WA',     project: 'Asphalt reroof',         spec: 'Roofing', conf: 0.94, status: 'NEW',       source: 'FORM',        assignee: null,     age: '2h ago', desc: 'Two layers of shingles, curling on the south slope. Wants a quote this week.' },
-  { id: 602, name: 'J. Whitfield', email: 'j.whitfield@mail.com', phone: '(425) 555-0112', city: 'Everett, WA',     project: 'Metal roof repair',      spec: 'Roofing', conf: 0.88, status: 'ROUTED',    source: 'LEAD_CENTER', assignee: 'Marcus', age: '3h ago', desc: 'Leak above the garage after the last storm. Metal panels, single story.' },
-  { id: 603, name: 'T. Bishop',    email: 't.bishop@mail.com',    phone: '(425) 555-0113', city: 'Woodinville, WA', project: 'Skylight install',       spec: 'Roofing', conf: 0.79, status: 'CLAIMED',   source: 'FORM',        assignee: 'Ivan',   age: '6h ago', desc: 'Two fixed skylights over the kitchen.' },
-  { id: 604, name: 'R. Okafor',    email: 'r.okafor@mail.com',    phone: '(425) 555-0114', city: 'Redmond, WA',     project: 'Gutter replacement',     spec: 'Gutters', conf: 0.91, status: 'CONTACTED', source: 'FACEBOOK',    assignee: 'Marcus', age: '1d ago', desc: 'Full perimeter, wants guards included.' },
-  { id: 605, name: 'M. Henderson', email: 'm.henderson@mail.com', phone: '(425) 555-0132', city: 'Bothell, WA',     project: 'Asphalt reroof',         spec: 'Roofing', conf: 0.96, status: 'QUOTED',    source: 'FORM',        assignee: 'Ivan',   age: '2d ago', desc: 'Estimate sent, waiting on the decision.' },
-  { id: 606, name: 'D. Reyes',     email: 'd.reyes@mail.com',     phone: '(425) 555-0148', city: 'Kirkland, WA',    project: 'Cedar fence, 140 ft',    spec: 'Fencing', conf: 0.93, status: 'WON',       source: 'MANUAL',      assignee: 'Ivan',   age: '4d ago', desc: 'Signed; deposit received.' },
-  { id: 607, name: 'S. Rao',       email: 's.rao@mail.com',       phone: '(425) 555-0116', city: 'Sammamish, WA',   project: 'Vinyl fence, 160 ft',    spec: 'Fencing', conf: 0.85, status: 'NEW',       source: 'FACEBOOK',    assignee: null,     age: '5h ago', desc: 'Corner lot, wants privacy panels along the street side.' },
-  { id: 608, name: 'K. Sorensen',  email: 'k.sorensen@mail.com',  phone: '(425) 555-0117', city: 'Kirkland, WA',    project: 'Cedar fence, 90 ft',     spec: 'Fencing', conf: 0.9,  status: 'WON',       source: 'FORM',        assignee: 'Sofia',  age: '1w ago', desc: 'Completed and paid.' },
-  { id: 609, name: 'L. Wong',      email: 'l.wong@mail.com',      phone: '(425) 555-0118', city: 'Sammamish, WA',   project: 'Pergola build',          spec: 'Decking', conf: 0.72, status: 'CONTACTED', source: 'IMPORT',      assignee: 'Sofia',  age: '6d ago', desc: 'Cedar posts, 12x14 footprint.' },
-  { id: 610, name: 'P. Delgado',   email: 'p.delgado@mail.com',   phone: '(425) 555-0119', city: 'Kenmore, WA',     project: 'Vinyl fence, 220 ft',    spec: 'Fencing', conf: 0.81, status: 'LOST',      source: 'EMAIL',       assignee: 'Marcus', age: '2w ago', desc: 'Went with another shop on price.' },
-  { id: 611, name: 'A. Kim',       email: 'a.kim@mail.com',       phone: '(425) 555-0177', city: 'Bellevue, WA',    project: 'Composite deck rebuild', spec: 'Decking', conf: 0.95, status: 'QUOTED',    source: 'FORM',        assignee: 'Ivan',   age: '3d ago', desc: 'Estimate accepted, scheduling next.' },
-  { id: 612, name: 'S. Patel',     email: 's.patel@mail.com',     phone: '(425) 555-0120', city: 'Mill Creek, WA',  project: 'Siding replacement',     spec: 'Siding',  conf: 0.87, status: 'CLAIMED',   source: 'MANUAL',      assignee: 'Marcus', age: '1w ago', desc: 'Four-plex, property manager contact.' },
-  { id: 613, name: 'T. Ortiz',     email: null,                   phone: '(425) 555-0122', city: 'Bothell, WA',     project: 'Roof inspection',        spec: 'Roofing', conf: 0.68, status: 'ROUTED',    source: 'LEAD_CENTER', assignee: null,     age: '9h ago', desc: 'Phone-in inquiry, no email on file.' }
-];
-
-// Lead Center offers: a 24-hour window, counted down in hours/minutes.
-export const OFFERS_SEED: Offer[] = [
-  { id: 'o1', name: 'B. Cole',     email: null, phone: '(425) 555-0201', city: 'Bothell, WA', project: 'Fence gate + repair', spec: 'Fencing', conf: 0.89, attempt: 1, mins: 22 * 60 + 14, age: '1h ago', desc: 'Gate sags and drags; 40 ft of adjoining fence needs repair.' },
-  { id: 'o2', name: 'H. Nakamura', email: 'h.nakamura@mail.com', phone: null, city: 'Redmond, WA', project: 'Deck resurfacing', spec: 'Decking', conf: 0.76, attempt: 2, mins: 3 * 60 + 41, age: '4h ago', desc: 'Frame is solid, boards need replacing. About 320 sq ft.' }
-];
-
 /**
  * The desktop sheet pages 20 at a time. A handheld row is three lines tall, so
  * 8 — the same reasoning that took the clients book from 12 to 8 and the
  * proposals ledger from 8 to 6.
  */
 export const PAGE_SIZE = 8;
-
-/** The signed-in shop owner, per the shell's account block. */
-export const ME = 'Ivan';
 
 export type TabKey = 'all' | 'pipeline' | 'incoming';
 
@@ -133,15 +103,60 @@ export const METHODS: Array<{ key: MethodKey; label: string; icon: string }> = [
   { key: 'file', label: 'CSV', icon: 'i-file' }
 ];
 
-/** The three demo rows the desktop dropzone stages on tap, verbatim. */
-export const CSV_DEMO: Array<[string, string, string]> = [
-  ['N. Ivanov', 'n.ivanov@mail.com', 'Chain-link fence, 90 ft'],
-  ['C. Ferreira', 'c.ferreira@mail.com', 'Chain-link gate'],
-  ['D. Pham', 'd.pham@mail.com', 'Gutter guards']
-];
-
 export function srcLabel(v: string | null): string {
   return v ? SRC[v] || v : 'Direct';
+}
+
+/**
+ * PASTE AN EMAIL → ONE LEAD.
+ *
+ * On a phone the paste tab is used the way its name says: you are looking at an
+ * enquiry in your mail app, you copy it, you paste it. That is one lead, not a
+ * list — so this reads the WHOLE blob for a contact and keeps the text as the
+ * note, exactly as the classic import bench does
+ * (app/(dashboard)/dashboard/leads/import-leads.tsx). The desktop sheet's
+ * line-per-lead split stays where it belongs: on a desk, next to a spreadsheet.
+ *
+ * Returns null for an empty paste — there is nothing to add and nothing to say.
+ */
+export function parsePastedEmail(raw: string): StagedRow | null {
+  const t = raw.trim();
+  if (!t) return null;
+  const email = t.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)?.[0] ?? null;
+  // `\(?` before the first digit, which the classic bench's pattern omits: US
+  // numbers are written "(206) 555-0455" more often than not, and without it the
+  // match starts one character late and the area code lands as "206)".
+  const phone = t.match(/\+?\(?\d[\d\s().-]{7,}\d/)?.[0]?.trim() ?? null;
+  return {
+    name: guessSenderName(t, email),
+    email,
+    phone,
+    // Project type is a guess nobody can make from prose. It is left blank and
+    // the lead lands as a general enquiry, ready to sort on the board.
+    project: null,
+    // The email itself is the most valuable thing in the paste; keep it.
+    description: t.length > 320 ? t.slice(0, 320) + '…' : t,
+    source: 'EMAIL',
+  };
+}
+
+/**
+ * "From: Dana Whitfield" wins; failing that the first line, if it looks like a
+ * name rather than a header; failing that the local part of the address,
+ * title-cased. The classic bench's ladder, verbatim.
+ */
+function guessSenderName(text: string, email: string | null): string {
+  const fromLine = text.match(/^\s*(?:from|name)\s*:\s*([^<\n]+)/im);
+  if (fromLine) return fromLine[1].trim();
+  const firstLine = text.split('\n').map((l) => l.trim()).find(Boolean);
+  if (firstLine && !firstLine.includes('@') && firstLine.length <= 60) return firstLine;
+  if (email) {
+    return email
+      .split('@')[0]
+      .replace(/[._-]+/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  return 'Unknown sender';
 }
 
 /** ROUTED -> "Routed", ALL -> "All statuses". Status keys are SCREAMING_CASE. */
@@ -173,9 +188,15 @@ export function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** The Incoming tab: leads routed to the shop, plus anything brand new. */
+/**
+ * The Incoming tab: the LEAD CENTER triage queue — platform offers and the
+ * leads the platform routed here. Leads the shop entered itself (by hand,
+ * pasted, imported) are not something to accept or decline; they go straight to
+ * the pipeline. The rule and its history live with the desktop sheet, and both
+ * editions call the same function so they cannot drift.
+ */
 export function isIncoming(l: Lead): boolean {
-  return l.status === 'NEW' || l.status === 'ROUTED';
+  return isPlatformIncoming(l);
 }
 
 /** Still moving — everything the Pipeline board draws. */
@@ -208,4 +229,18 @@ export function matchesQuery(l: Lead, query: string): boolean {
       .toLowerCase()
       .indexOf(q) !== -1
   );
+}
+
+/**
+ * Server-action failures are written for the user ("You can only update your
+ * own leads", "That lead is already claimed by someone else"). Surface that
+ * text; fall back to a generic line for anything unrecognisable. Same rule as
+ * the desktop sheet's `actionError`.
+ */
+export function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : '';
+  if (!msg || msg.toLowerCase().includes('fetch failed')) {
+    return 'Something went wrong. Check your connection and try again.';
+  }
+  return msg;
 }

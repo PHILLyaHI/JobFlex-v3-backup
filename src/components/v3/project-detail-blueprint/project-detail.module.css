@@ -202,10 +202,19 @@
 :global(.jf-blueprint .content) .pd-tab.on { background: var(--ink); color: var(--paper); }
 :global(.jf-blueprint .content) .pd-bar .btn { margin-left: auto; }
 
-:global(.jf-blueprint .content) .pd-attach { border: 1.5px dashed var(--blueprint); border-radius: var(--radius);
-  padding: 16px 18px; }
-:global(.jf-blueprint .content) .pd-attach-h { margin-bottom: 10px; }
-:global(.jf-blueprint .content) .pd-attach-t { font-size: 12.5px; font-weight: 800; }
+/* ── ATTACH ────────────────────────────────────────────────────────────────
+   The donor's inline `.pd-attach` disclosure is gone (owner, 2026-08-15): the
+   control opens the house dialog now, and the dialog's frame — position, scrim,
+   box, head, body, foot — comes from the always-on proposals module's `.pmdl`
+   set, so nothing about the chrome is restated here. What IS here is only the
+   list inside it, which is this page's own.
+
+   The candidate rows keep the donor's `.pd-av` names and its type — 12.5px/800
+   name over a mono annotation — but not its single-line flex row: a proposal
+   carries a title, a client, a figure and a job tally, and four things do not
+   fit beside a button in a 380px dialog. Two grid rows instead, button pinned
+   right and spanning both, so the button's edge is the list's right margin at
+   every row length. */
 :global(.jf-blueprint .content) .pd-av { display: flex; align-items: center; gap: 12px; padding: 9px 2px;
   border-bottom: 1px dashed rgba(10,10,10,.16); }
 :global(.jf-blueprint .content) .pd-av:last-child { border-bottom: none; }
@@ -213,6 +222,35 @@
 :global(.jf-blueprint .content) .pd-av-m { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
   letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
 :global(.jf-blueprint .content) .pd-av .btn { padding: 6px 13px; font-size: 10.5px; }
+
+/* The list is the scrolling half of the dialog: a shop with thirty proposals
+   must not push the foot bar off the screen. --app-h, never a bare vh. */
+:global(.jf-blueprint .content) .pd-attach-list { max-height: min(420px, calc(var(--app-h, 100vh) - 260px)); }
+:global(.jf-blueprint .content) .pd-attach-list .pd-av {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 12px;
+  padding: 11px 2px;
+}
+:global(.jf-blueprint .content) .pd-attach-list .pd-av-n { grid-column: 1; grid-row: 1; line-height: 1.3;
+  overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .pd-attach-list .pd-av-m { grid-column: 1; grid-row: 2; white-space: normal;
+  line-height: 1.4; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .pd-attach-list .pd-av .btn { grid-column: 2; grid-row: 1 / span 2; }
+/* A proposal with nothing to link is greyed but still READ: the mono line under
+   it is the reason, and hiding the row would leave the reader wondering where
+   their proposal went. */
+:global(.jf-blueprint .content) .pd-attach-list .pd-av--off .pd-av-n { color: var(--muted); }
+:global(.jf-blueprint .content) .pd-attach-list .pd-av--off .pd-av-m { color: var(--muted-light); }
+/* A refused write, in the danger tone — a grey line here would read as "nothing
+   to show" rather than "that failed". */
+:global(.jf-blueprint .content) .pd-attach-err {
+  margin-bottom: 12px; padding: 9px 11px;
+  border: 1.5px solid var(--danger); border-left-width: 6px; border-radius: var(--radius);
+  background: var(--danger-soft); color: var(--danger);
+  font-size: 12px; font-weight: 700; line-height: 1.45;
+}
 :global(.jf-blueprint .content) .pd-empty { padding: 12px 2px; font-family: var(--font-mono); font-size: 11px;
   font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
   color: var(--muted); }

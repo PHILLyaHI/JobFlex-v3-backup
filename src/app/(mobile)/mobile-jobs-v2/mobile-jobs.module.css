@@ -439,7 +439,12 @@
   transition: background 0.12s;
 }
 .jrow:last-child { border-bottom: none; }
+/* The card is the door to the record, so it takes the pointer and the focus
+   ring a control is owed — it was a div with a hover tint and no destination
+   until the row itself became the tap target. */
+.jrow { cursor: pointer; }
 .jrow:active { background: var(--paper-deep); }
+.jrow:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
 /* EVERY child is pinned to an explicit grid-COLUMN as well as a grid-row.
    A child given only a grid-row is placed in the definite-row pass, before the
    auto items get a turn, so it can claim the wrong column and shove a sibling
@@ -475,12 +480,21 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+/* THE ⋮ IS 32px DRAWN, 44px TAPPABLE — the clients book's rule, brought here.
+   It used to be a 44px box, which made a secondary control the second-heaviest
+   object on the row after the avatar and put a hard frame right where the title
+   wants to run. The drawn box shrank; the TARGET did not — `::after` pushes an
+   invisible 44×44 hit area out from the button's own centre, so the thumb still
+   gets the house minimum while the card gets its right edge back. The card
+   underneath is itself a tap target now, and these two must not overlap by
+   accident: the pseudo-element is bounded, not a blanket `inset: -100px`. */
 .jopen {
+  position: relative;
   grid-column: 3;
   grid-row: 1;
   align-self: start;
-  width: 44px; height: 44px;
-  margin: -4px -6px 0 0;
+  width: 32px; height: 32px;
+  margin: -1px -2px 0 0;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
@@ -488,8 +502,15 @@
   flex-shrink: 0;
   transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
 }
+.jopen::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+}
 .jopen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
-.jopen .ic { width: 18px; height: 18px; }
+.jopen .ic { width: 16px; height: 16px; }
 /* Lines 2 and 3 span the whole card so the mono meta and the status badge
    share one left edge, instead of indenting under the title column. */
 .jmeta {
@@ -680,6 +701,28 @@
 .jmenuItemT { display: block; font-size: 15px; font-weight: 700; }
 .jmenuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
 .jmenuItemDanger .jmenuItemT { color: var(--danger); }
+/* A write that failed says so INSIDE the sheet it failed in, on the danger
+   palette's soft fill — the sheet stays open, so the row can be tried again. */
+.sheetErr {
+  margin: 12px var(--pad-x) 0;
+  padding: 11px 12px;
+  border: 1.5px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  font-size: 13px; font-weight: 700;
+  color: var(--danger);
+  line-height: 1.45;
+}
+/* The empty-roster line in the crew sheet: a note on the drawing, not a row. */
+.sheetNote {
+  margin: 16px var(--pad-x);
+  padding: 16px 14px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  font-size: 13.5px; font-weight: 500;
+  color: var(--muted);
+  line-height: 1.5;
+}
 .sheetCancel {
   min-height: 52px;
   margin: 12px var(--pad-x) 14px;
@@ -721,6 +764,137 @@
 .fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
 .fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
 .fld.invalid .pinput { border-color: var(--danger); background: var(--danger-soft); }
+/* ---- SELECT (Client, Attach proposal) ----------------------------------
+   A native <select> on purpose: on a handheld it opens the OS picker, which is
+   a better long-list control than anything drawn here and is ≥44px by
+   definition. The chrome is stripped so it takes the same 2px ink frame as
+   every other field, and the caret is redrawn from the sprite. */
+.selWrap { position: relative; display: flex; }
+.pselect {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 40px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.pselect:disabled { color: var(--muted-faint); cursor: default; }
+.selCaret {
+  position: absolute;
+  right: 12px; top: 50%;
+  transform: translateY(-50%);
+  width: 15px; height: 15px;
+  color: var(--muted);
+  pointer-events: none;
+}
+/* ---- CREW COMBOBOX -----------------------------------------------------
+   Neither a plain select nor a free-text line: a roster pick has to produce a
+   real worker id (that is the only thing the create action can staff a job
+   by), and a sub who is on nobody's roster still has to be nameable. So the
+   field is an input that filters the roster underneath it, and both kinds of
+   answer land as chips. */
+.combo { position: relative; }
+.comboBox { position: relative; display: flex; }
+.comboInput { padding-right: 46px; }
+.comboCaret {
+  position: absolute;
+  right: 4px; top: 50%;
+  transform: translateY(-50%);
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+}
+.comboCaret .ic { width: 15px; height: 15px; transition: transform 0.2s var(--ease-out); }
+.combo.open .comboCaret .ic { transform: rotate(180deg); }
+/* Same panel geometry as the filter dropdown — hard frame, 4px offset stamp, no
+   blur, bounded scroll so a 40-person roster cannot swallow the sheet — but IN
+   FLOW rather than absolutely positioned. The field lives inside `.sheetBody`,
+   which scrolls, and a scroll container clips its own overflow: an absolute
+   panel hanging off the last field of the form was cut in half by the sheet's
+   own edge. Opening it pushes the form instead, which the body then scrolls. */
+.comboMenu {
+  display: none;
+  margin-top: 6px;
+  max-height: 216px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+.combo.open .comboMenu { display: block; animation: comboIn 0.18s var(--ease-out) both; }
+@keyframes comboIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.comboMenu::-webkit-scrollbar { width: 6px; }
+.comboMenu::-webkit-scrollbar-track { background: transparent; }
+.comboMenu::-webkit-scrollbar-thumb { background: var(--muted-faint); border-radius: 3px; }
+.comboMenu { scrollbar-width: thin; scrollbar-color: var(--muted-faint) transparent; }
+.comboItem {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--hair-soft);
+  font-size: 14.5px; font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  transition: background 0.12s;
+}
+.comboItem:last-child { border-bottom: none; }
+.comboItem:active { background: var(--paper-deep); }
+.comboItemNew { color: var(--blueprint); }
+.comboAv {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 11px; font-weight: 900;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.comboAv .ic { width: 13px; height: 13px; }
+/* An off-roster name is an unfilled field on a drawing, so it takes the dashed
+   annotation box rather than an initialled plate. */
+.comboAvNew { border-style: dashed; border-color: var(--blueprint); background: none; color: var(--blueprint); }
+.comboEmpty {
+  padding: 16px 12px;
+  font-size: 13px; font-weight: 500;
+  color: var(--muted-light);
+  line-height: 1.45;
+}
+/* Picked crew, as framed plates under the field. */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 34px;
+  padding: 0 3px 0 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 700;
+  color: var(--ink);
+}
+/* Off-roster: dashed, because it is a note rather than a dispatched worker. */
+.chipFree { border-style: dashed; border-color: var(--blueprint); background: none; color: var(--blueprint); }
+.chipX {
+  position: relative;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  color: inherit;
+  flex-shrink: 0;
+}
+/* 28px drawn, 44px tappable — the ⋮'s rule, same reason. */
+.chipX::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+}
+.chipX .ic { width: 13px; height: 13px; }
 /* Starts / Ends. Intrinsic, so it is two columns from 320px up and never needs
    a breakpoint of its own. */
 .formRow {

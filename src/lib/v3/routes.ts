@@ -267,8 +267,9 @@ export const V3_PORTED_ROUTES = {
   // jobflex-page-styler + mobile-app-ui-design — handheld rebuild of the JOB
   // DETAIL surface, fluid 320–768px, on the shared MobileNav chrome. Stands
   // BESIDE the desktop /dashboard/jobs/[id] (src/components/v3/
-  // job-detail-blueprint/*), which is untouched and serves every width; this
-  // is a preview URL, keyed by id, not a second live entry point.
+  // job-detail-blueprint/*), which serves its own build above 768px and this
+  // one below it; this is a preview URL, keyed by id, that always draws the
+  // handheld composition whatever the width.
   //
   // Composition: page head (kicker + status badge, caps H1, mono date line) →
   // the six-tab bar re-cut as a horizontally scrolling ink-framed rail that
@@ -279,8 +280,11 @@ export const V3_PORTED_ROUTES = {
   // an amount / badge / Approve strip) → a thumb-zone action bar carrying
   // "View proposal", the one action the desktop head shows on all six tabs.
   //
-  // FIXTURE, NOT DATA: the desktop port's own job-detail-data.ts is imported
-  // verbatim, so the two pages can only disagree about layout. No server
+  // REAL DATA, ONE READ: both this URL and /dashboard/jobs/[id] load the Job
+  // behind `[id]` through job-detail-blueprint/job-detail-load.ts, so the two
+  // pages can only disagree about layout. Writes reuse the existing actions
+  // (updateJob / createJobEvent / assignWorker / unassignAssignment /
+  // uploadJobPhoto / sendChangeOrder / approveChangeOrderPublic) — no new
   // action, API route or Prisma change.
   //
   // Styles are a PLAIN stylesheet with a uniform `.jf-mobile-job-detail` root

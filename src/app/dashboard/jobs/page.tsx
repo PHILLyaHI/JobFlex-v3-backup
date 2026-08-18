@@ -19,7 +19,14 @@ import type { Metadata } from "next";
 import { requireOrg, isWorkerRole, isOwnerOrManager, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { JobsContent } from "@/components/v3/jobs-blueprint/jobs-content";
-import { toDay, type Job, type JobClientOption, type JobCrewOption, type JobStatus } from "@/components/v3/jobs-blueprint/jobs-data";
+import {
+  toDay,
+  type Job,
+  type JobClientOption,
+  type JobCrewOption,
+  type JobProposalOption,
+  type JobStatus,
+} from "@/components/v3/jobs-blueprint/jobs-data";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +65,7 @@ export default async function JobsPage() {
     workerId = wp?.id ?? null;
   }
 
-  const [jobs, clientRows, workerRows] = await Promise.all([
+  const [jobs, clientRows, workerRows, proposalRows] = await Promise.all([
     db.job.findMany({
       where: isWorker
         ? { organizationId, assignments: { some: { workerId: workerId ?? "__none__" } } }
@@ -85,6 +92,27 @@ export default async function JobsPage() {
           orderBy: { displayName: "asc" },
           select: { id: true, displayName: true },
         }),
+    // The create dialog's OPTIONAL "Attach proposal" picker (`Job.proposalId`,
+    // the same relation the projects board's attach flow writes). Managers
+    // only — an installer creating their own job has no business browsing the
+    // org's paperwork, and the picker is simply absent for them.
+    isWorker
+      ? Promise.resolve([])
+      : db.proposal.findMany({
+          where: { organizationId },
+          orderBy: { createdAt: "desc" },
+          // Enough to search through without shipping the whole archive to the
+          // client; the field is a filter, not a browser.
+          take: 200,
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            total: true,
+            clientId: true,
+            client: { select: { name: true } },
+          },
+        }),
   ]);
 
   const entries: Job[] = jobs.map((j) => ({
@@ -95,6 +123,9 @@ export default async function JobsPage() {
     start: toDay(j.startsAt),
     end: toDay(j.endsAt),
     crew: j.assignments.map((a) => a.worker.displayName),
+    // The row menu's crew editor writes with these: `assignWorker` takes the
+    // worker id, `unassignAssignment` takes the assignment id.
+    assignments: j.assignments.map((a) => ({ id: a.id, workerId: a.worker.id })),
   }));
 
   const clients: JobClientOption[] = clientRows.map((c) => ({ id: c.id, name: c.name }));
@@ -102,6 +133,22 @@ export default async function JobsPage() {
     id: w.id,
     name: w.displayName,
   }));
+  const proposals: JobProposalOption[] = proposalRows.map((p) => ({
+    id: p.id,
+    title: p.title,
+    clientId: p.clientId,
+    client: p.client?.name ?? null,
+    status: p.status,
+    total: p.total,
+  }));
 
-  return <JobsContent entries={entries} clients={clients} crew={crew} canManage={canManage} />;
+  return (
+    <JobsContent
+      entries={entries}
+      clients={clients}
+      crew={crew}
+      proposals={proposals}
+      canManage={canManage}
+    />
+  );
 }

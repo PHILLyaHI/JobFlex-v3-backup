@@ -37,6 +37,16 @@ const trimOrNull = z
     return t.length === 0 ? null : t;
   });
 
+// Notes is the one column that must survive a form that does not carry it.
+// Every other field is written by every caller, so `undefined -> null` is a
+// correct erase; notes is edited from the client record only, and the inline
+// builder sheet never sends it. Returning `undefined` for an absent key makes
+// Prisma SKIP the column instead of blanking what somebody typed elsewhere.
+const notesInput = z
+  .string()
+  .optional()
+  .transform((v) => (v === undefined ? undefined : v.trim() || null));
+
 const clientInput = z.object({
   name: z.string().min(1, "Name is required").max(120),
   email: trimOrNull,
@@ -45,6 +55,7 @@ const clientInput = z.object({
   city: trimOrNull,
   state: trimOrNull,
   zip: trimOrNull,
+  notes: notesInput,
 });
 
 export type ClientInput = z.infer<typeof clientInput>;

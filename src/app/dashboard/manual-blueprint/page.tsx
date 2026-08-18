@@ -17,14 +17,25 @@
 // shell's PAGE_STYLES map — this page carries its own self-scoped module
 // instead (see the scoping note at the top of manual-blueprint.module.css).
 //
-// Content is a fixture by design: the data layer stays out of scope until the
-// layout is signed off. Save, Save & send and the draft-state chip are UI
-// state and write nothing, and the page says so rather than faking success.
+// ── NO LONGER A FIXTURE ─────────────────────────────────────────────
+// The demo client, the seeded roof job and its five line items are gone. The
+// page reads the org's real clients, projects and saved defaults, opens EMPTY,
+// and Save / Save & send write through the existing `saveProposal` /
+// `sendProposal` actions. Two URL parameters drive it:
+//
+//   ?client=<id>    the record to file against, the spelling every estimator
+//                   already receives from the estimator picker;
+//   ?proposal=<id>  an existing proposal to reopen. Written into the URL by the
+//                   page itself after the first successful save, so navigating
+//                   away and back finds the row instead of a blank sheet.
+//
+// See manual-blueprint-bridge.ts for what round-trips and what does not.
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { auth } from "@/lib/auth";
+import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { ManualBlueprintContent } from "@/components/v3/manual-card-lab/manual-blueprint/manual-blueprint-content";
+import { loadManualBuilder } from "@/components/v3/manual-card-lab/manual-blueprint/manual-blueprint-load";
 
 export const dynamic = "force-dynamic";
 
@@ -34,11 +45,35 @@ export const metadata: Metadata = {
     "Build a proposal by hand down one column, in the house blueprint system.",
 };
 
-export default async function ManualBlueprintPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/auth/login?next=%2Fdashboard%2Fmanual-blueprint");
+/** First value only — `?client=a&client=b` is a malformed link, not a choice. */
+function one(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export default async function ManualBlueprintPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  let ctx;
+  try {
+    ctx = await requireOrg();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      redirect("/auth/login?next=%2Fdashboard%2Fmanual-blueprint");
+    }
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <ManualBlueprintContent />;
+  const params = await searchParams;
+  const data = await loadManualBuilder({
+    organizationId: ctx.organizationId,
+    role: ctx.role,
+    userId: ctx.user.id,
+    clientId: one(params.client),
+    proposalId: one(params.proposal),
+  });
+
+  return <ManualBlueprintContent data={data} />;
 }

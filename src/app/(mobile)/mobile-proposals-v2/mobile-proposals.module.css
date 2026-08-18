@@ -342,13 +342,25 @@
      column past a third and shove the panel out of its own frame. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  /* PLACEMENT (2026-08-15). The menu used to hang off the bottom of the phone
+     whenever the ledger under the bar was short: an absolutely positioned box
+     does not lengthen the `.scroll` container it overflows, so with an empty
+     list there was nothing to scroll and the lower half of the panel was
+     unreachable. `--menu-max-h` is written by useAnchoredMenu with the room
+     actually left under (or over) the trigger, and `[data-place="up"]` below
+     flips the panel when there is more room above. Viewport height only via
+     --app-h — never a bare vh. */
+  max-height: var(--menu-max-h, calc(var(--app-h, 100dvh) * 0.6));
+  overflow-y: auto;
   visibility: hidden;
   opacity: 0;
   transform: translateY(-6px);
   transition: opacity 0.18s ease, transform 0.18s var(--ease-out), visibility 0.18s;
 }
+.dd[data-place="up"] .ddMenu { top: auto; bottom: calc(100% + 6px); transform: translateY(6px); }
 .dd.open .ddMenu { visibility: visible; opacity: 1; transform: none; }
+.dd[data-place="up"].open .ddMenu { transform: none; }
 /* A cell, not a row: label over count, centred. The dividers are border-TOP
    and border-LEFT with the first row and first column cleared — that way the
    block reads as one drawn table at ANY item count and never doubles a line
@@ -496,9 +508,17 @@
   margin-left: auto;
   white-space: nowrap;
 }
+/* THE ⋮ IS 32px DRAWN, 44px TAPPABLE — the clients row's pattern, verbatim
+   (mobile-clients.module.css `.crowOpen`). The 44px drawn box made a secondary
+   control the heaviest object on the row and put a hard frame right where the
+   proposal title wants to run; the box shrank, the TARGET did not. `::after`
+   pushes an invisible 44×44 hit area out from the button's own centre, bounded
+   rather than a blanket `inset: -100px`, so it cannot swallow taps meant for
+   anything beside it. */
 .prowOpen {
-  width: 44px; height: 44px;
-  margin: -6px -6px 0 0;
+  position: relative;
+  width: 32px; height: 32px;
+  margin: -2px -2px 0 0;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
@@ -506,8 +526,15 @@
   flex-shrink: 0;
   transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
 }
+.prowOpen::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+}
 .prowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
-.prowOpen .ic { width: 18px; height: 18px; }
+.prowOpen .ic { width: 16px; height: 16px; }
 /* ============================================================
    PAGER + EMPTY STATE
    ============================================================ */
@@ -737,6 +764,36 @@
   color: var(--muted-light);
 }
 .photoBox .ic { width: 20px; height: 20px; }
+/* The box is a <label> wrapping a hidden <input type="file">, so the whole
+   116px area is the picker's hit target — well past the 44px minimum. */
+.photoBox { cursor: pointer; overflow: hidden; }
+.photoBoxFilled { border-style: solid; border-color: var(--ink); background: var(--paper); }
+.photoBox img { width: 100%; height: 100%; min-height: 116px; object-fit: cover; display: block; }
+
+/* What a write did, or why it refused. Sits above the sheet scrim and clear of
+   the home indicator; it reports, it never asks, so it takes no tap target. */
+.note {
+  position: fixed;
+  left: 12px; right: 12px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  z-index: 90;
+  padding: 12px 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 3px 3px 0 rgba(10, 10, 10, 0.35);
+  font-size: 13.5px; font-weight: 600; line-height: 1.4;
+  animation: noteIn 0.24s var(--ease) both;
+}
+.noteBad { background: var(--danger); border-color: var(--ink); }
+@keyframes noteIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .note { animation: none; }
+}
 .psheetFoot {
   padding: var(--card-pad);
   border-top: 1.5px solid var(--ink);

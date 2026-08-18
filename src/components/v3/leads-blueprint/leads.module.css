@@ -638,8 +638,11 @@
 .bp :global(.content .lead-name) { font-size: 12.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bp :global(.content .lead-job) { margin-top: 3px; font-size: 11px; font-weight: 500; color: var(--muted-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bp :global(.content .lead-meta) { margin-top: 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.bp :global(.content .lead-val) { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--blueprint); }
-.bp :global(.content .lead-age) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light); }
+/* The assignee is user text in a ~160px column: it gets `min-width: 0` so the
+   flex row can shrink it, and an ellipsis so it yields to the age stamp
+   instead of pushing it out of the card. */
+.bp :global(.content .lead-val) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--blueprint); }
+.bp :global(.content .lead-age) { flex: 0 0 auto; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light); }
 .bp :global(.content .lead-empty) {
   border: 1.5px dashed var(--muted-faint);
   border-radius: var(--radius);
@@ -1477,6 +1480,47 @@
 .bp :global(.content .lead-card.picked) { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.05); }
 .bp :global(.content .lead-val.none) { font-weight: 500; color: var(--muted-light); }
 
+/* BOARD RAIL — the board's horizontal scroll control.
+   An annotation strip above the drawing, not a toolbar: a mono caption on the
+   left, the visible-range reading beside it, and the two chips hard right where
+   the pager's are. The chips ARE the pager chip (32px, 1.5px ink frame, hover
+   lift onto a 2px hard shadow, 0.3 opacity when dead) — same control, same
+   geometry, so the sheet has one prev/next vocabulary. */
+.bp :global(.content .brail) {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 10px;
+}
+.bp :global(.content .brail.is-hidden) { display: none; }
+.bp :global(.content .brail-lbl) {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+}
+.bp :global(.content .brail-of) {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.12em; color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.bp :global(.content .brail-btns) { margin-left: auto; display: flex; gap: 8px; }
+.bp :global(.content .brail-btn) {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, opacity 0.12s;
+}
+.bp :global(.content .brail-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .brail-btn:active) { transform: none; box-shadow: none; }
+.bp :global(.content .brail-btn[disabled]) { opacity: 0.3; pointer-events: none; }
+/* One chevron symbol, turned — the pager's own trick, restated because that
+   rule is scoped to .pager-btn. */
+.bp :global(.content .brail-btn .ic) { width: 14px; height: 14px; }
+.bp :global(.content .brail-btn .ic.rot-l) { transform: rotate(90deg); }
+.bp :global(.content .brail-btn .ic.rot-r) { transform: rotate(-90deg); }
+/* The board scrolls in whole columns, so the scrollbar under it is noise. */
+.bp :global(.content .stage-board) { scrollbar-width: none; }
+.bp :global(.content .stage-board::-webkit-scrollbar) { height: 0; width: 0; }
+
 /* IMPORT */
 .bp :global(.content .imeth) { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .bp :global(.content .imeth-btn) {
@@ -1632,6 +1676,8 @@
      tap-to-move flow (tap a card, tap a column header) needs both ends of the
      move reachable without a horizontal scroll. */
   .bp :global(.content .stage-board) { display: grid; grid-auto-flow: row; grid-auto-columns: unset; overflow-x: hidden; }
+  /* The board stacks here, so there is no sideways travel to control. */
+  .bp :global(.content .brail) { display: none; }
   .bp :global(.content .stage-col) { min-width: 0; border-right: none; border-bottom: 1.5px solid var(--ink); }
   .bp :global(.content .stage-col:nth-child(2n)) { border-right: none; }
   .bp :global(.content .stage-col:last-child) { border-right: none; border-bottom: none; }
@@ -1701,3 +1747,39 @@
   color: var(--blueprint-dark);
   opacity: 1;
 }
+
+
+/* ============================================================
+   USER TEXT NEVER BREAKS LAYOUT — leads table
+   ------------------------------------------------------------
+   `.ptable` is auto-layout, so every column is sized from the MIN-CONTENT
+   width of its cells. A 200-character unbroken lead name has no break
+   opportunity, so its min-content width is the whole string, and the table
+   grows to 3500px inside a 1259px card — status, age and the delete button
+   go off screen with it.
+
+   `min-width: 0` (already on .cname and its text column) is not the fix: it
+   lets the flex child shrink, but the TABLE still asks for min-content.
+   Neither is `white-space: nowrap; text-overflow: ellipsis` — clipping the
+   paint leaves min-content exactly where it was; that was tried here and the
+   table still blew out. `overflow-wrap: anywhere` is the one value that
+   lowers min-content, and the line clamp then keeps the wrapped result to a
+   single row's worth of height. The untruncated string lives in `title=`.
+
+   These rules sit at the very end of the file on purpose: the "legibility of
+   the small type" block above re-declares the same selectors, and at equal
+   specificity the last one wins.
+   ============================================================ */
+.bp :global(.content .cname .pt-title) {
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* No clamp on these three: the contact line carries an inline `display:block`
+   the row builder writes (an inline style beats a stylesheet `display`, so a
+   -webkit-box here would silently not apply), and the project cell keeps the
+   specialty tag inline beside it — turning the span into a block would drop
+   the tag onto its own line. Wrapping alone is enough; only min-content has
+   to come down. */
+.bp :global(.content .cname .pt-sub),
+.bp :global(.content .ptable td .pt-sub),
+.bp :global(.content .ptable td .pt-mono) { overflow-wrap: anywhere; }

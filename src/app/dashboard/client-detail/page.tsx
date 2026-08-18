@@ -26,7 +26,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
-import { ClientDetailContent } from "@/components/v3/client-detail-blueprint/client-detail-content";
+import { ClientDetailViewportSwitch } from "@/components/v3/client-detail-blueprint/client-detail-viewport-switch";
 import { loadClientDetail } from "@/components/v3/client-detail-blueprint/client-detail-load";
 
 export const dynamic = "force-dynamic";
@@ -57,5 +57,10 @@ export default async function ClientDetailPage({
   }
 
   const view = await loadClientDetail(id, organizationId);
-  return <ClientDetailContent view={view} />;
+  // The PAGE owns the viewport switch (see the switch component's header): the
+  // record is reached from the handheld clients book, so it needs the fleet's
+  // mobile nav below 768px, and the loaded view cannot reach a props-less
+  // component mounted by the layout. Above 768px this is exactly the desktop
+  // page it has always been.
+  return <ClientDetailViewportSwitch view={view} />;
 }

@@ -38,10 +38,13 @@
 // code, and a caveat pinned beside the actions reads as part of the actions.
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import { type ProposalFilter, bucketOf, money } from "./client-detail-data";
-import type { ClientDetailView } from "./client-detail-load";
+import type { ClientDetailMiss, ClientDetailRecord, ClientDetailView } from "./client-detail-load";
 import {
   Btn,
+  ClampedName,
   EmptyNote,
   Fact,
   Ic,
@@ -68,8 +71,65 @@ const FILTERS: { value: ProposalFilter; label: string }[] = [
   { value: "lost", label: "Lost" },
 ];
 
+/**
+ * The switch, and the only reason this file has two components.
+ *
+ * A record with no row behind it used to be drawn by handing the SAME component
+ * an invented client. Now the two cases are two different pages, and the split
+ * has to happen above the first hook — an early return inside `ClientRecord`
+ * would sit after `useState`, which is the one place React forbids it.
+ */
 export function ClientDetailContent({ view }: { view: ClientDetailView }) {
+  if (!view.found) return <ClientMissing view={view} />;
+  return <ClientRecordPage view={view} />;
+}
+
+/**
+ * Nothing to show, said plainly.
+ *
+ * Two readings, because they need two different next steps: arriving with no id
+ * at all is a route you can only reach by typing it, so it points at the book;
+ * an id that resolved to nothing is a link that has gone stale, and saying so is
+ * what stops the reader hunting for a record that is not there.
+ */
+function ClientMissing({ view }: { view: ClientDetailMiss }) {
+  const router = useRouter();
+  useReveal();
+  const missing = view.reason === "missing";
+  return (
+    <div className={styles.page}>
+      <div className={cx("page-head", styles.head)} data-rv="">
+        <div className={styles.headMain}>
+          <div className="kicker">Client</div>
+          <h1 className={cx("page-title", styles.title)}>
+            {missing ? "Record not found" : "No client selected"}
+          </h1>
+        </div>
+        <div className={styles.headRight}>
+          <div className={styles.actions}>
+            <Btn tone="primary" icon="users" onClick={() => router.push("/dashboard/clients" as Route)}>
+              Back to clients
+            </Btn>
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.stack}>
+        <Panel title="Client record">
+          <EmptyNote kicker={missing ? "Nothing behind this link" : "Nothing to open"}>
+            {missing
+              ? "This client is no longer on your books — the record was deleted, or the link points at one that was never yours. Open the client book and pick a record."
+              : "This page draws one client at a time. Open a record from the client book and it will be shown here."}
+          </EmptyNote>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
   const { clientId, client: CLIENT, proposals: PROPOSALS, payments: PAYMENTS, activity: ACTIVITY } = view;
+  const router = useRouter();
   const [filter, setFilter] = useState<ProposalFilter>("all");
   const editRef = useRef<EditHandle | null>(null);
   const messageRef = useRef<MessageHandle | null>(null);
@@ -112,10 +172,18 @@ export function ClientDetailContent({ view }: { view: ClientDetailView }) {
   // and listens on the document — the topbar's own New Estimate button opens
   // the same dialog the same way, minus the client.
   const newProposal = useCallback(() => {
-    document.dispatchEvent(
-      new CustomEvent("jf:estimator-picker", { detail: clientId ? { clientId } : undefined }),
-    );
+    document.dispatchEvent(new CustomEvent("jf:estimator-picker", { detail: { clientId } }));
   }, [clientId]);
+
+  /** The ledger rows were `<button>`s with no handler — twelve pixels of hover
+   *  feedback on a control that did nothing. Each row is a real proposal id, so
+   *  it opens that proposal. Client-side push, like every other door out of a
+   *  blueprint page (see clients-behavior.ts on why a hard load replays the
+   *  entrance). */
+  const openProposal = useCallback(
+    (id: string) => router.push(`/dashboard/proposals/${id}` as Route),
+    [router],
+  );
 
   // The band prints the address as ONE SENTENCE and the form edits the four
   // columns it was built from, so the raw values travel from the server beside
@@ -129,9 +197,15 @@ export function ClientDetailContent({ view }: { view: ClientDetailView }) {
     <div className={styles.page}>
       {/* MASTHEAD --------------------------------------------------- */}
       <div className={cx("page-head", styles.head)} data-rv="">
-        <div>
-          <div className="kicker">Client · {CLIENT.city}</div>
-          <h1 className="page-title">{CLIENT.name}</h1>
+        {/* `min-width: 0` on the title column and `overflow-wrap: anywhere` on
+            the H1: a flex child defaults to its content's min-content width, so
+            an unbroken 200-character name would otherwise widen the head past
+            the viewport and take the horizontal scrollbar with it. */}
+        <div className={styles.headMain}>
+          <div className={cx("kicker", styles.kickerText)}>Client · {CLIENT.city}</div>
+          <h1 className={cx("page-title", styles.title)} title={CLIENT.name}>
+            {CLIENT.name}
+          </h1>
         </div>
         <div className={styles.headRight}>
           <div className={styles.actions}>
@@ -158,7 +232,9 @@ export function ClientDetailContent({ view }: { view: ClientDetailView }) {
                   {CLIENT.initials}
                 </span>
                 <span className={styles.company}>
-                  {CLIENT.company}
+                  <span className={styles.companyName} title={CLIENT.company}>
+                    {CLIENT.company}
+                  </span>
                   <span className={styles.companySub}>Last contact {CLIENT.lastContact}</span>
                 </span>
               </div>
@@ -230,12 +306,27 @@ export function ClientDetailContent({ view }: { view: ClientDetailView }) {
         >
           {rows.length === 0 ? (
             <EmptyNote kicker="Nothing in this state">
-              No proposals on {CLIENT.name}&rsquo;s record are marked {filter}.
+              {/* The name is CLAMPED inside the sentence. A client whose name is
+                  a 200-character paste — an imported book will always have one —
+                  used to push this line, and with it the card, past the right
+                  edge of the page. One line, an ellipsis, the full value on
+                  hover; the sentence keeps its shape whatever it is given. */}
+              {/* The possessive stays welded to the closing tag: JSX joins two
+                  text lines with a space, and a space before an apostrophe is
+                  a typographic error the reader sees before they read it. */}
+              No proposals on <ClampedName>{CLIENT.name}</ClampedName>&rsquo;s record are marked{" "}
+              {filter}.
             </EmptyNote>
           ) : (
             <div className={styles.ledger}>
               {rows.map((p) => (
-                <button key={p.id} type="button" className={styles.lRow}>
+                <button
+                  key={p.id}
+                  type="button"
+                  className={styles.lRow}
+                  onClick={() => openProposal(p.id)}
+                  aria-label={`Open ${p.title}`}
+                >
                   <span className={styles.lMain}>
                     <span className={styles.lTitle}>{p.title}</span>
                     <span className={styles.lMeta}>

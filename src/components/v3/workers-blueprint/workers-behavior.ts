@@ -185,14 +185,9 @@ export function initWorkersContent(
   }
 
   // ================= RENDER =================
-  function renderCrumbs() {
-    const c = counts();
-    const host = $("#wkCrumbs");
-    if (!host) return;
-    host.innerHTML =
-      '<span>Crew</span><i>/</i><span>Roster</span><i>/</i><span><b>' + c.all + '</b> on the books</span>' +
-      (c.active > 0 ? '<i>/</i><span><b>' + c.active + '</b> active</span>' : '');
-  }
+  // (The kicker is the static word "Crew", written in workers-content.tsx.
+  //  It was a live Crew / Roster / N on the books / N active breadcrumb here;
+  //  the counts it repeated live in the stat tiles right below it.)
   function renderTiles() {
     const c = counts();
     const tiles = [
@@ -305,16 +300,60 @@ export function initWorkersContent(
     if (arriving) staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".wk-row")));
     renderEmptyState();
   }
+  /** The OS asked for less motion — every entrance below is skipped. */
+  function reduced() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  /** Open / swap / close the worker sheet.
+   *
+   *  Selecting a row used to be a single frame with three hard cuts in it: the
+   *  grid gained a 360px column (the roster SNAPPED narrower and every row
+   *  reflowed at once), `.wk-insp` went from `display:none` to fully painted,
+   *  and picking a different worker overwrote the sheet's innerHTML with no
+   *  transition. Nothing on this page had a transition declared at all.
+   *
+   *  Now the second track is always in the template — at 0px — so
+   *  `grid-template-columns` is INTERPOLABLE (a 1→2 track change is not) and
+   *  the roster glides to its narrower width on the system's 320ms ease-out.
+   *  `.wk-insp` is the clipping track; the framed `.insp-panel` inside it holds
+   *  a fixed width so its contents never reflow mid-open, and it is pinned to
+   *  the right edge, so it is uncovered like a drawer rather than unrolled.
+   *  Three motions, one cause, one curve:
+   *    open  — track 0→360 + panel fade/slide from the right (300ms)
+   *    swap  — track already open, so only the sheet's content cross-fades
+   *    close — track 360→0 while the panel fades out over it (190ms)
+   */
   function renderInspector() {
     const insp = $("#wkInsp");
     const space = $("#wkSpace");
     if (!insp || !space) return;
     const e = workersData.find(function (x) { return x.id === wk.selected; });
-    if (!e) { insp.classList.add('is-hidden'); insp.innerHTML = ''; space.classList.remove('with-insp'); return; }
+    const wasOpen = space.classList.contains('with-insp');
+
+    if (!e) {
+      if (!wasOpen) { insp.classList.add('is-hidden'); insp.innerHTML = ''; return; }
+      space.classList.remove('with-insp');
+      const leaving = insp.querySelector<HTMLElement>('.insp-panel');
+      if (reduced() || !leaving) { insp.classList.add('is-hidden'); insp.innerHTML = ''; return; }
+      // Emptying the panel now would leave the roster growing into a hole, so
+      // it fades out over the closing track and is unmounted after it.
+      leaving.classList.add('insp-leave');
+      after(340, () => {
+        // Re-selected mid-close: the panel on screen belongs to that selection.
+        if (space.classList.contains('with-insp')) return;
+        insp.classList.add('is-hidden');
+        insp.innerHTML = '';
+      });
+      return;
+    }
+
     insp.classList.remove('is-hidden');
     space.classList.add('with-insp');
+    const enterCls = reduced() ? '' : wasOpen ? ' insp-swap' : ' insp-enter';
     const link = portalLink(e.token);
     insp.innerHTML =
+      '<div class="insp-panel' + enterCls + '">' +
       '<div class="insp-head">' +
         '<span class="wk-mono">' + escapeText(monogram(e.name)) + '</span>' +
         '<span><span class="insp-name" style="display:block">' + escapeText(e.name) + '</span>' +
@@ -365,9 +404,21 @@ export function initWorkersContent(
           '<button class="btn btn-ghost btn--sm" type="button" data-act="edit"><svg class="ic"><use href="#i-pen"/></svg>Edit</button>' +
           '<button class="btn btn-ghost btn--sm btn--danger" type="button" data-act="ask-remove"><svg class="ic"><use href="#i-trash"/></svg>Remove</button>' +
         '</div>' +
+      '</div>' +
       '</div>';
+
+    // Two frames, so the panel's opacity 0 / offset is a COMMITTED style before
+    // the class comes off — otherwise the browser coalesces both into one
+    // computation and there is nothing to transition from. Same pattern as
+    // `staggerFields` below.
+    if (!enterCls) return;
+    const panel = insp.querySelector<HTMLElement>('.insp-panel');
+    if (!panel) return;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => panel.classList.remove('insp-enter', 'insp-swap')),
+    );
   }
-  function renderWorkers(arriving = false) { renderCrumbs(); renderTiles(); renderList(arriving); renderInspector(); }
+  function renderWorkers(arriving = false) { renderTiles(); renderList(arriving); renderInspector(); }
 
   /** Selecting a row changes ONE class on ONE node. Re-rendering the list for
    *  it would replace the button under the user's finger mid-click. */
@@ -453,6 +504,34 @@ export function initWorkersContent(
         el.removeEventListener("transitionend", te);
       });
     });
+  }
+
+  /** The worker exists, the invite email does not.
+   *
+   *  The roster behind the dialog is already correct (the row is in, the tiles
+   *  are counted) — what is missing is the one thing the manager thought they
+   *  were buying with that button, so the dialog holds its ground and says so.
+   *  It hands over the portal link at the same time: that link IS the invite,
+   *  and copying it into a text message is a working way out of a broken
+   *  mailer. Amber, not red — the write succeeded. */
+  function showUndelivered(reason: string | null, link: string) {
+    const title = $("#inviteTitle");
+    const body = $("#inviteBody");
+    if (!body) return;
+    if (title) title.textContent = 'Invite not emailed';
+    body.innerHTML =
+      '<div class="mf-warn" role="alert">' +
+        '<div class="mf-warn-t">The worker is on the roster — the invite email did not go out.</div>' +
+        '<p>' + escapeText(reason || 'The invite email could not be sent.') + '</p>' +
+      '</div>' +
+      '<div class="mf link-box"><div class="kpi-lbl">Send them this link instead</div>' +
+        '<div class="link-row"><span class="link-url">' + escapeText(link) + '</span>' +
+        '<button class="link-btn" type="button" data-act="copy-link" data-link="' + escapeAttr(link) + '" aria-label="Copy link"><svg class="ic"><use href="#i-dup"/></svg></button></div></div>' +
+      '<div class="mf-note">The link works now. Re-inviting from the roster will try the email again.</div>' +
+      '<div class="mdl-foot" style="margin:16px -17px -16px">' +
+        '<button class="btn btn-primary btn--sm" type="button" data-mdl="invite">Done</button>' +
+      '</div>';
+    staggerFields(body);
   }
 
   function inviteError(msg: string | null) {
@@ -628,6 +707,8 @@ export function initWorkersContent(
 
     /** Set to the new profile's id when an invite creates a row. */
     let arrivedId: string | null = null;
+    /** Set when the worker was created but the invite EMAIL did not go out. */
+    let undelivered: { reason: string | null; link: string } | null = null;
 
     setSaving($("#inviteMdl"), true, editingId ? 'Saving…' : 'Sending…', '');
     try {
@@ -673,11 +754,18 @@ export function initWorkersContent(
           jobs: [],
         });
         arrivedId = created.id;
+        // The write succeeded; the EMAIL is a separate outcome and the action
+        // now reports it. A failed send used to be invisible here — the dialog
+        // closed and the roster said "invited" for a worker who was never told.
+        if (!created.emailSent) {
+          undelivered = { reason: created.emailError, link: portalLink(created.token) };
+        }
       }
       setSaving($("#inviteMdl"), false, '', editingId ? 'Save changes' : 'Send invite');
-      closeWkMdl('invite');
+      // The dialog stays open on an undelivered invite so the manager reads why
+      // and leaves with the link in hand.
+      if (!undelivered) closeWkMdl('invite');
 
-      renderCrumbs();
       renderTiles();
       renderCount();
       if (editingId) {
@@ -701,6 +789,7 @@ export function initWorkersContent(
       }
       renderEmptyState();
       renderInspector();
+      if (undelivered) showUndelivered(undelivered.reason, undelivered.link);
     } catch (err) {
       setSaving($("#inviteMdl"), false, '', editingId ? 'Save changes' : 'Send invite');
       inviteError(actionError(err));
@@ -734,7 +823,6 @@ export function initWorkersContent(
       const commit = () => {
         workersData = workersData.filter(function (x) { return x.id !== id; });
         if (wk.selected === id) wk.selected = null;
-        renderCrumbs();
         renderTiles();
         renderCount();
         repaintFolios();

@@ -34,8 +34,8 @@
 //    rows, one danger row
 //  · the delete-confirm dialog as a sheet
 //  · the whole Import panel as a sheet: 3-method switch, manual form with
-//    required-field validation, email paste + its parser, CSV dropzone, the
-//    staged list with per-row remove, and the commit
+//    required-field validation, email paste + its parser, CSV dropzone, and —
+//    for CSV only — the staged tray with per-row remove and the batch commit
 //
 // What changes versus the desktop sheet, and why:
 //  · The 6-column table cannot survive 320px, so each record becomes a three
@@ -50,32 +50,55 @@
 //    are tallied on the board's foot, filterable in All leads, and still
 //    destinations in the move sheet.
 //  · Page size 20 → 8: a handheld row is three lines tall.
+//  · NO STAGING TRAY for by-hand and paste (2026-08-15). A tray is a desk idea —
+//    build a batch, review it, send it. On a phone you are adding the person in
+//    front of you, so "Add lead" writes the record and closes the sheet. The CSV
+//    tab keeps the tray, because a file genuinely is a batch. The desktop sheet
+//    is unchanged: all three of its methods still stage.
+//  · Incoming is Lead Center ONLY (2026-08-15). It used to be every NEW/ROUTED
+//    lead, which meant a CSV import asked you to accept or decline your own
+//    typing. See isPlatformIncoming in the desktop leads-data.ts.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// DATA. This surface is NOT a fixture. The pipeline and the live Lead Center
+// offers are read from the database through `leads-source.ts` (the desktop
+// sheet's own org-scoped query) on mount, and every control writes through the
+// shared lead server actions:
+//   move stage      → updateLeadStatus        accept a routed lead → claimLead
+//   decline         → updateLeadStatus(LOST)  assign to me         → claimLead
+//   delete          → deleteLead              commit staged rows   → importLeads
+//   accept an offer → acceptLeadOffer         pass an offer        → declineLeadOffer
+// Writes are optimistic and rolled back on refusal — the actions are org-scoped
+// and gate sales reps to their own slice, so a refusal is real and its message
+// (written for the user) is shown rather than swallowed.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-leads.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { useAnchoredMenu } from "@/components/v3/mobile-shell/use-anchored-menu";
 import { lockScroll } from "@/lib/scrollLock";
+import { claimLead, deleteLead, importLeads, updateLeadStatus } from "@/actions/leads";
+import { acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
+// The classic import bench's CSV parser, shared with the desktop sheet rather
+// than re-written: same quote handling, same header sniffing, same column
+// guesses, so a file that stages five rows there stages the same five here.
+import { parseCsvRows } from "@/components/v3/leads-blueprint/leads-data";
+import { loadMobileLeads } from "./leads-source";
 import {
-  CSV_DEMO,
-  LEADS_SEED,
   LEAD_STATUSES,
-  ME,
   METHODS,
-  OFFERS_SEED,
   PAGE_SIZE,
-  SEQ_START,
   STAGES,
   TABS,
   WORKING_STAGES,
+  actionError,
   clock,
   initials,
   isInPlay,
   isIncoming,
   matchesQuery,
+  parsePastedEmail,
   pct,
   srcLabel,
   statusLabel,
@@ -152,17 +175,19 @@ type MenuRow = {
 };
 
 export function MobileLeads() {
+  const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const filterRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
-  /* Runtime mutations clone the seeds per mount, so a remount starts from the
-     donor's state instead of inheriting the last session's pipeline. */
-  const seqRef = useRef(SEQ_START);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const [data, setData] = useState<Lead[]>(() => LEADS_SEED.map((l) => ({ ...l })));
-  const [offers, setOffers] = useState<Offer[]>(() => OFFERS_SEED.map((o) => ({ ...o })));
+  const [data, setData] = useState<Lead[]>([]);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  /** The signed-in user's display name — the row sheet's ownership copy. */
+  const [me, setMe] = useState("You");
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const [tab, setTab] = useState<TabKey>("all");
   const [status, setStatus] = useState<string>("ALL");
@@ -170,18 +195,83 @@ export function MobileLeads() {
   const [page, setPage] = useState(1);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const [sheetId, setSheetId] = useState<number | null>(null);
-  const [moveId, setMoveId] = useState<number | null>(null);
-  const [delId, setDelId] = useState<number | null>(null);
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const [moveId, setMoveId] = useState<string | null>(null);
+  const [delId, setDelId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [method, setMethod] = useState<MethodKey>("manual");
   const [staged, setStaged] = useState<StagedRow[]>([]);
-  const [landedId, setLandedId] = useState<number | null>(null);
+  const [landedId, setLandedId] = useState<string | null>(null);
 
   /* ---- add-leads form ---- */
   const [form, setForm] = useState({ name: "", email: "", phone: "", project: "" });
   const [nameErr, setNameErr] = useState(false);
   const [paste, setPaste] = useState("");
+  const [fileErr, setFileErr] = useState<string | null>(null);
+  const [impErr, setImpErr] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  /* ---------- the failure surface ---------------------------------------
+     Refusals that have no sheet of their own (a stage move the server said no
+     to, an accept that lost its race) land in one fixed line. */
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  /* One write per record at a time: a second tap on a card whose first write is
+     still in flight would race its own rollback. */
+  const busyRef = useRef<Set<string>>(new Set());
+  const claim = (id: string) => {
+    if (busyRef.current.has(id)) return false;
+    busyRef.current.add(id);
+    return true;
+  };
+  const release = (id: string) => busyRef.current.delete(id);
+
+  /* ---------- the read --------------------------------------------------
+     The viewport switch mounts this component with NO props, so the rows are
+     fetched here rather than handed down. Every write reloads after it lands
+     (an import returns a count, an accepted offer materializes server-side —
+     neither can be reconstructed on the client). */
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  // Returns the snapshot as well as applying it: a direct add has to work out
+  // WHICH row is the one it just created, and importLeads only answers with a
+  // count.
+  const reload = useCallback(async () => {
+    try {
+      const snap = await loadMobileLeads();
+      if (!aliveRef.current) return null;
+      setData(snap.leads);
+      setOffers(snap.offers);
+      setMe(snap.me);
+      setLoadErr(null);
+      return snap;
+    } catch (err) {
+      if (aliveRef.current) setLoadErr(actionError(err));
+      return null;
+    } finally {
+      if (aliveRef.current) setLoading(false);
+    }
+  }, []);
+
+  // The read is awaited inside the effect rather than called from its body:
+  // nothing about it is synchronous, and it must not look like it is.
+  useEffect(() => {
+    (async () => {
+      await reload();
+    })();
+  }, [reload]);
 
   /* ---------- a card leaves before the list re-flows --------------------
      The desktop fades an inbox card out over 220ms and mutates afterwards.
@@ -230,8 +320,11 @@ export function MobileLeads() {
     };
   }, []);
 
-  /* ---------- Motion: reveal on load + adaptive reveal on scroll -------- */
+  /* ---------- Motion: reveal on load + adaptive reveal on scroll --------
+     Runs once the first read has landed: the blocks it cascades do not exist
+     while the page is still loading. */
   useEffect(() => {
+    if (loading) return;
     if (prefersReducedMotion()) return;
     const host = scrollRef.current;
     const content = contentRef.current;
@@ -283,7 +376,7 @@ export function MobileLeads() {
       io.disconnect();
       host.removeEventListener("scroll", onScroll);
     };
-  }, []);
+  }, [loading]);
 
   /* ---------- Motion: graph-paper parallax ----------------------------- */
   useEffect(() => {
@@ -336,15 +429,23 @@ export function MobileLeads() {
     return () => document.removeEventListener("keydown", onKey);
   }, [filterOpen, delId, moveId, addOpen, sheetId]);
 
-  /* ---------- Filter dropdown: close on outside pointerdown ------------- */
+  /* ---------- Filter dropdown: placement + outside pointerdown -----------
+     The menu is absolutely positioned, so it does not lengthen the scroller it
+     overflows: with an EMPTY ledger under the bar the page has no scroll room
+     and a downward menu is simply unreachable. The shared hook measures the
+     room above and below the button and flips / caps accordingly. Its anchor is
+     the same `.dd` node the outside-click test needs, so the hit test comes
+     from the hook rather than a second ref on one element. */
+  const filterMenu = useAnchoredMenu(filterOpen);
+  const filterHit = filterMenu.contains;
   useEffect(() => {
     if (!filterOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (!filterRef.current?.contains(e.target as Node)) setFilterOpen(false);
+      if (!filterHit(e.target as Node)) setFilterOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
-  }, [filterOpen]);
+  }, [filterOpen, filterHit]);
 
   /* ---------- Paging returns you to the top of the ledger ---------------
      In an effect, not the click handler: the ref must not be read during
@@ -417,72 +518,144 @@ export function MobileLeads() {
     setPage(1);
   };
 
-  /* ---------- mutations ------------------------------------------------ */
+  /* ---------- mutations ------------------------------------------------
+     Optimistic, then persisted. The lead actions are org-scoped and gate sales
+     reps to their own slice, so a refusal is real: the record goes back to what
+     it was and the action's own message is shown. */
+
   /** The card lands at the END of its new stage — exactly where the desktop
       drop-slot sat — so the section it joins reads chronologically. */
-  const moveTo = (id: number, st: string) => {
+  const moveTo = async (id: string, st: string) => {
     setMoveId(null);
+    const lead = data.find((l) => l.id === id);
+    if (!lead || lead.status === st) return;
+    if (!claim(id)) return;
+    const from = lead.status;
     setData((prev) => {
-      const lead = prev.find((l) => l.id === id);
-      if (!lead || lead.status === st) return prev;
+      const rec = prev.find((l) => l.id === id);
+      if (!rec) return prev;
       const rest = prev.filter((l) => l.id !== id);
-      rest.push({ ...lead, status: st });
+      rest.push({ ...rec, status: st });
       return rest;
     });
     setLandedId(id);
+    try {
+      await updateLeadStatus(id, st);
+    } catch (err) {
+      setData((prev) => prev.map((l) => (l.id === id ? { ...l, status: from } : l)));
+      setToast(actionError(err));
+    } finally {
+      release(id);
+    }
   };
 
-  const patchLead = (id: number, fn: (l: Lead) => Lead) =>
+  const patchLead = (id: string, fn: (l: Lead) => Lead) =>
     setData((prev) => prev.map((l) => (l.id === id ? fn({ ...l }) : l)));
 
+  /** Take the lead: claimLead stamps CLAIMED plus who took it and when, which
+      is why it is not just updateLeadStatus(id, "CLAIMED"). */
+  const takeLead = async (l: Lead) => {
+    if (!claim(l.id)) return;
+    const before = l;
+    patchLead(l.id, (x) => ({ ...x, status: "CLAIMED", assignee: me, mine: true }));
+    setLandedId(l.id);
+    try {
+      await claimLead(l.id);
+    } catch (err) {
+      patchLead(before.id, () => ({ ...before }));
+      setToast(actionError(err));
+    } finally {
+      release(l.id);
+    }
+  };
+
+  /** Accepting a platform offer materializes the org Lead server-side, so the
+      new row can only come back from a re-read. */
   const acceptOffer = (o: Offer) =>
     fadeOut(`o:${o.id}`, () => {
-      setOffers((prev) => prev.filter((x) => x.id !== o.id));
-      seqRef.current += 1;
-      const rec: Lead = {
-        id: seqRef.current,
-        name: o.name,
-        email: o.email,
-        phone: o.phone,
-        city: o.city,
-        project: o.project,
-        spec: o.spec,
-        conf: o.conf,
-        status: "CLAIMED",
-        source: "LEAD_CENTER",
-        assignee: ME,
-        age: "now",
-        desc: o.desc,
-      };
-      setData((prev) => [rec, ...prev]);
-      setLandedId(rec.id);
+      void (async () => {
+        if (!claim(o.id)) return;
+        setOffers((prev) => prev.filter((x) => x.id !== o.id));
+        try {
+          await acceptLeadOffer(o.id);
+          await reload();
+          setTab("all");
+        } catch (err) {
+          setOffers((prev) => (prev.some((x) => x.id === o.id) ? prev : [o, ...prev]));
+          setToast(actionError(err));
+        } finally {
+          release(o.id);
+        }
+      })();
     });
 
+  /** Pass advances the platform cascade to the next shop. */
   const passOffer = (o: Offer) =>
-    fadeOut(`o:${o.id}`, () => setOffers((prev) => prev.filter((x) => x.id !== o.id)));
+    fadeOut(`o:${o.id}`, () => {
+      void (async () => {
+        if (!claim(o.id)) return;
+        setOffers((prev) => prev.filter((x) => x.id !== o.id));
+        try {
+          await declineLeadOffer(o.id);
+        } catch (err) {
+          setOffers((prev) => (prev.some((x) => x.id === o.id) ? prev : [o, ...prev]));
+          setToast(actionError(err));
+        } finally {
+          release(o.id);
+        }
+      })();
+    });
 
+  /** Incoming triage: accept is a claim, decline is the LOST transition — the
+      same pair the desktop Incoming tab runs. */
   const decideLead = (l: Lead, accept: boolean) =>
     fadeOut(`l:${l.id}`, () => {
-      patchLead(l.id, (x) => ({
-        ...x,
-        status: accept ? "CLAIMED" : "LOST",
-        assignee: accept ? ME : x.assignee,
-      }));
-      if (accept) setLandedId(l.id);
+      if (accept) {
+        void takeLead(l);
+        return;
+      }
+      void (async () => {
+        if (!claim(l.id)) return;
+        const from = l.status;
+        patchLead(l.id, (x) => ({ ...x, status: "LOST" }));
+        try {
+          await updateLeadStatus(l.id, "LOST");
+        } catch (err) {
+          patchLead(l.id, (x) => ({ ...x, status: from }));
+          setToast(actionError(err));
+        } finally {
+          release(l.id);
+        }
+      })();
     });
 
-  const confirmDelete = () => {
+  /** deleteLead is manager-gated on the server, so a sales rep gets a real
+      refusal — which keeps the record and says why. */
+  const confirmDelete = async () => {
     const id = delId;
-    setDelId(null);
-    if (id === null) return;
-    setData((prev) => prev.filter((l) => l.id !== id));
-    setPage(1);
+    if (id === null || deleting) return;
+    const before = data;
+    setDeleting(true);
+    try {
+      await deleteLead(id);
+      setData((prev) => prev.filter((l) => l.id !== id));
+      setDelId(null);
+      setPage(1);
+    } catch (err) {
+      setData(before);
+      setDelId(null);
+      setToast(actionError(err));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   /* ---------- add leads ------------------------------------------------ */
   const openAdd = (m: MethodKey) => {
     setMethod(m);
     setNameErr(false);
+    setImpErr(null);
+    setFileErr(null);
     setAddOpen(true);
     // Focus after the slide settles — focusing mid-transform makes the
     // keyboard fight the animation.
@@ -491,7 +664,53 @@ export function MobileLeads() {
     }
   };
 
-  const stageManual = (e: React.FormEvent) => {
+  /* ---------- ONE lead, in one step (by hand / paste) --------------------
+     A staging tray is a DESK idea: you build a batch, look it over, then send
+     it. On a phone you are adding the person standing in front of you, so
+     "Add lead" writes the record and gets out of the way — no tray, no second
+     confirmation, no half-finished state to come back to. Only the CSV tab
+     keeps the tray, because a file genuinely IS a batch and its rows are worth
+     reviewing before they land.
+
+     There is no separate server action for this: importLeads takes an array, so
+     one lead is an array of one — same quota check, same NEW status, same owner
+     notification as every other row that reaches the pipeline. */
+  const addOne = async (row: StagedRow): Promise<boolean> => {
+    if (importing) return false;
+    setImpErr(null);
+    setImporting(true);
+    const before = new Set(data.map((l) => l.id));
+    try {
+      await importLeads([
+        {
+          name: row.name,
+          email: row.email,
+          phone: row.phone,
+          projectType: row.project,
+          description: row.description,
+          source: row.source as "MANUAL" | "EMAIL" | "IMPORT",
+        },
+      ]);
+      setAddOpen(false);
+      setTab("all");
+      clearFilters();
+      // The confirmation is the record itself: the ledger is cleared of filters
+      // and the new row — the one id that was not there a moment ago — takes the
+      // page's single blue flash. importLeads returns a count, so this is the
+      // only way to know which row is the new one.
+      const snap = await reload();
+      const fresh = snap?.leads.find((l) => !before.has(l.id));
+      if (fresh) setLandedId(fresh.id);
+      return true;
+    } catch (err) {
+      setImpErr(actionError(err));
+      return false;
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const addManual = (e: React.FormEvent) => {
     e.preventDefault();
     const name = form.name.trim();
     if (!name) {
@@ -499,97 +718,79 @@ export function MobileLeads() {
       nameRef.current?.focus();
       return;
     }
-    setStaged((prev) => [
-      ...prev,
-      {
+    void (async () => {
+      const ok = await addOne({
         name,
         email: form.email.trim() || null,
         phone: form.phone.trim() || null,
         project: form.project.trim() || null,
+        description: null,
         source: "MANUAL",
-      },
-    ]);
-    setForm({ name: "", email: "", phone: "", project: "" });
-    nameRef.current?.focus();
+      });
+      // The form is only cleared once the row is really in the pipeline — a
+      // quota refusal must not also eat what was typed.
+      if (ok) setForm({ name: "", email: "", phone: "", project: "" });
+    })();
   };
 
-  /** The donor's parser, verbatim: pull an email and a phone out of each line,
-      then treat what is left as name / project. */
-  const stagePaste = () => {
-    const text = paste.trim();
-    if (!text) {
+  /** One paste is one enquiry: the parser reads the whole blob for a name, an
+      email and a phone, and keeps the text as the lead's note. */
+  const addPaste = () => {
+    const row = parsePastedEmail(paste);
+    if (!row) {
       pasteRef.current?.focus();
       return;
     }
-    const rows: StagedRow[] = [];
-    text
-      .split("\n")
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .forEach((line) => {
-        const mail = line.match(/[\w.+-]+@[\w-]+\.[\w.]+/);
-        const tel = line.match(/\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
-        let rest = line;
-        if (mail) rest = rest.replace(mail[0], " ");
-        if (tel) rest = rest.replace(tel[0], " ");
-        const parts = rest
-          .split(/\s{2,}|\t|,|—|–/)
-          .map((x) => x.trim())
-          .filter(Boolean);
-        rows.push({
-          name: parts[0] || "Unnamed lead",
-          email: mail ? mail[0] : null,
-          phone: tel ? tel[0] : null,
-          project: parts[1] || null,
-          source: "EMAIL",
-        });
-      });
-    setStaged((prev) => [...prev, ...rows]);
-    setPaste("");
+    void (async () => {
+      if (await addOne(row)) setPaste("");
+    })();
   };
 
-  const stageCsv = () =>
-    setStaged((prev) => [
-      ...prev,
-      ...CSV_DEMO.map(([name, email, project]) => ({
-        name,
-        email,
-        phone: null,
-        project,
-        source: "IMPORT",
-      })),
-    ]);
+  /** The dropzone stages whatever is actually in the chosen file. Nothing here
+      touches the database — the batch still has to be sent with the commit. */
+  const readCsv = (file: File) => {
+    setFileErr(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const rows = parseCsvRows(String(reader.result ?? ""));
+      if (!rows.length) {
+        setFileErr(`Couldn't find any rows in ${file.name}.`);
+        return;
+      }
+      setStaged((prev) => [...prev, ...rows]);
+    };
+    reader.onerror = () => setFileErr("That file couldn't be read.");
+    reader.readAsText(file);
+  };
 
-  const commitStaged = () => {
-    if (!staged.length) return;
-    const rows = staged.map((r) => {
-      seqRef.current += 1;
-      const rec: Lead = {
-        id: seqRef.current,
-        name: r.name,
-        email: r.email,
-        phone: r.phone,
-        city: "—",
-        project: r.project || "General inquiry",
-        spec: null,
-        conf: 0,
-        status: "NEW",
-        source: r.source,
-        assignee: null,
-        age: "now",
-        desc: "",
-      };
-      return rec;
-    });
-    // The donor unshifts each staged row in turn, so the LAST one ends up at
-    // the top of the ledger. Reversed here for the same order in one write —
-    // and the flash lands on whichever row is now on top.
-    setData((prev) => [...rows.slice().reverse(), ...prev]);
-    setStaged([]);
-    setAddOpen(false);
-    setTab("all");
-    clearFilters();
-    setLandedId(rows[rows.length - 1].id);
+  /** The CSV tray's commit — the one place a BATCH is still sent. importLeads
+      enforces the plan's lead quota across the whole batch and creates every row
+      as NEW; it returns a count, not rows, so the pipeline is re-read after. */
+  const commitStaged = async () => {
+    if (!staged.length || importing) return;
+    setImpErr(null);
+    setImporting(true);
+    try {
+      await importLeads(
+        staged.map((r) => ({
+          name: r.name,
+          email: r.email,
+          phone: r.phone,
+          projectType: r.project,
+          description: r.description,
+          source: r.source as "MANUAL" | "EMAIL" | "IMPORT",
+        })),
+      );
+      setStaged([]);
+      setAddOpen(false);
+      setTab("all");
+      clearFilters();
+      await reload();
+    } catch (err) {
+      setImpErr(actionError(err));
+    } finally {
+      setImporting(false);
+    }
   };
 
   /* ---------- row sheet ------------------------------------------------ */
@@ -604,9 +805,9 @@ export function MobileLeads() {
         sub: l.email ?? "No email on file", disabled: !l.email },
       { act: "move", icon: "i-board", tone: styles.lmiWarn, title: "Move stage",
         sub: `Now ${statusLabel(l.status).toLowerCase()} — pick a new one` },
-      { act: "mine", icon: "i-userplus", title: l.assignee === ME ? "Already yours" : "Assign to me",
-        sub: l.assignee === ME ? "You own this lead" : l.assignee ? `Owned by ${l.assignee}` : "Nobody owns it yet",
-        disabled: l.assignee === ME },
+      { act: "mine", icon: "i-userplus", title: l.mine ? "Already yours" : "Assign to me",
+        sub: l.mine ? "You own this lead" : l.assignee ? `Owned by ${l.assignee}` : "Nobody owns it yet",
+        disabled: l.mine },
       { act: "del", icon: "i-trash", tone: styles.lmiDanger, title: "Delete lead",
         sub: "Removes the record permanently", danger: true },
     ];
@@ -616,12 +817,12 @@ export function MobileLeads() {
     const l = sheetLead;
     setSheetId(null);
     if (!l) return;
-    if (act === "move") setMoveId(l.id);
+    if (act === "open") router.push(`/dashboard/leads/${l.id}`);
+    else if (act === "call" && l.phone) window.location.assign(`tel:${l.phone.replace(/[^\d+]/g, "")}`);
+    else if (act === "mail" && l.email) window.location.assign(`mailto:${l.email}`);
+    else if (act === "move") setMoveId(l.id);
     else if (act === "del") setDelId(l.id);
-    else if (act === "mine") {
-      patchLead(l.id, (x) => ({ ...x, assignee: ME }));
-      setLandedId(l.id);
-    }
+    else if (act === "mine") void takeLead(l);
   };
 
   const anyOverlay = sheetLead !== null || moveLeadRec !== null || delLead !== null || addOpen;
@@ -633,13 +834,15 @@ export function MobileLeads() {
   const delDrag = useSheetDrag(delLead !== null, () => setDelId(null));
   const addDrag = useSheetDrag(addOpen, () => setAddOpen(false));
 
-  /* Only the manual pane is a real form, so only it can be reached with form=. */
+  /* Only the manual pane is a real form, so only it can be reached with form=.
+     By hand and Paste commit ONE lead on the spot; CSV opens the picker and its
+     rows are sent from the tray's own button. */
   const footPrimary =
     method === "manual"
-      ? { label: "Add to list", type: "submit" as const, onClick: undefined }
+      ? { label: importing ? "Adding…" : "Add lead", type: "submit" as const, onClick: undefined }
       : method === "email"
-        ? { label: "Add to list", type: "button" as const, onClick: stagePaste }
-        : { label: "Choose CSV", type: "button" as const, onClick: stageCsv };
+        ? { label: importing ? "Adding…" : "Add lead", type: "button" as const, onClick: addPaste }
+        : { label: "Choose CSV", type: "button" as const, onClick: () => fileRef.current?.click() };
 
   return (
     <div className={styles.app} onClick={onRootClick}>
@@ -659,13 +862,34 @@ export function MobileLeads() {
                 onClick={() => openAdd("manual")}>
                 <Icon id="i-plus" />New lead
               </button>
+              {/* "Import" opens the CSV pane, not the paste pane: paste is now a
+                  one-lead action and belongs behind New lead's own tab strip. */}
               <button className={`${styles.btn} ${styles.btnGhost}`} type="button"
-                onClick={() => openAdd("email")}>
+                onClick={() => openAdd("file")}>
                 <Icon id="i-file" />Import
               </button>
             </div>
           </div>
 
+          {/* The read has to land before anything below can be true, so the
+              masthead, the tabs and the ledger wait on it rather than flashing
+              a pipeline of zeroes. */}
+          {loading ? (
+            <div className={styles.lempty}>
+              <div className={styles.lemptyT}>Loading pipeline</div>
+              <div className={styles.lemptyS}>Reading your leads and any offers reserved for your shop.</div>
+            </div>
+          ) : loadErr ? (
+            <div className={styles.lempty}>
+              <div className={styles.lemptyT}>Couldn&apos;t load the pipeline</div>
+              <div className={styles.lemptyS}>{loadErr}</div>
+              <button className={styles.lemptyA} type="button"
+                onClick={() => { setLoading(true); void reload(); }}>
+                <Icon id="i-rotate" />Try again
+              </button>
+            </div>
+          ) : (
+          <>
           {/* MASTHEAD — one numeral, mono kicker, EXACTLY two annotations.
               key on tab so the 320ms slide-in replays on a tab change. */}
           <div className={`${styles.lmast} ${styles.slide}`} key={tab}>
@@ -726,7 +950,7 @@ export function MobileLeads() {
                 ) : null}
               </label>
 
-              <div className={`${styles.dd} ${filterOpen ? styles.open : ""}`} ref={filterRef}>
+              <div className={`${styles.dd} ${filterOpen ? styles.open : ""}`} {...filterMenu.anchorProps}>
                 <button className={styles.ddBtn} type="button" aria-haspopup="listbox"
                   aria-expanded={filterOpen} onClick={() => setFilterOpen((v) => !v)}>
                   <Icon id="i-filter" />
@@ -736,7 +960,7 @@ export function MobileLeads() {
                   </span>
                   <Icon id="i-chev" className={`${styles.ic} ${styles.ddCaret}`} />
                 </button>
-                <div className={styles.ddMenu} role="listbox">
+                <div className={styles.ddMenu} role="listbox" {...filterMenu.menuProps}>
                   {LEAD_STATUSES.map((st) => (
                     <button key={st} className={`${styles.ddItem} ${status === st ? styles.active : ""}`}
                       type="button" role="option" aria-selected={status === st}
@@ -789,6 +1013,25 @@ export function MobileLeads() {
                       <Icon id="i-dots" />
                     </button>
                     <div className={styles.lwhere}>{l.project} · {l.city}</div>
+                    {/* PARITY WITH THE DESKTOP TABLE. Its first column reads
+                        "name / contact · source"; the card had the name and
+                        dropped the other two, which took the only way to tell a
+                        pasted enquiry from a platform lead off the handheld
+                        ledger. Contact carries the left (it is what you act on),
+                        source holds the right edge and never wraps. */}
+                    <div className={styles.lcontact}>
+                      <span
+                        className={`${styles.lcontactV} ${l.email || l.phone ? "" : styles.isNone}`}
+                      >
+                        {/* ONE contact, email first — the desktop table's own
+                            choice. Printing both put a half-truncated phone
+                            after the email on a 390px card, and a half phone
+                            number is worse than no phone number. Both are on
+                            the row sheet, one tap away. */}
+                        {l.email || l.phone || "No contact on file"}
+                      </span>
+                      <span className={styles.lsrc}>{srcLabel(l.source)}</span>
+                    </div>
                     <div className={styles.lrowFoot}>
                       <span className={styles.lrowBadges}>
                         <span className={`${styles.pstatus} ${STATUS_TONE[l.status] ?? ""}`}>{l.status}</span>
@@ -880,7 +1123,8 @@ export function MobileLeads() {
               <div className={styles.lempty}>
                 <div className={styles.lemptyT}>You&apos;re all caught up</div>
                 <div className={styles.lemptyS}>
-                  Leads routed to you — and fresh enquiries — show up here to accept or decline.
+                  Leads the lead center routes to your shop land here to accept or decline. Leads
+                  you add yourself go straight to the pipeline.
                 </div>
                 <button className={styles.lemptyA} type="button" onClick={() => openAdd("manual")}>
                   <Icon id="i-plus" />New lead
@@ -975,6 +1219,8 @@ export function MobileLeads() {
               </div>
             )
           )}
+          </>
+          )}
         </div>
       </main>
 
@@ -1031,7 +1277,7 @@ export function MobileLeads() {
             return (
               <button key={s.key} className={`${styles.sheetOpt} ${current ? styles.current : ""}`}
                 type="button" disabled={current || !moveLeadRec}
-                onClick={() => moveLeadRec && moveTo(moveLeadRec.id, s.key)}>
+                onClick={() => moveLeadRec && void moveTo(moveLeadRec.id, s.key)}>
                 <span className={styles.sheetOptN}>{String(i + 1).padStart(2, "0")}</span>
                 {s.label}
                 {current ? <Icon id="i-check" /> : null}
@@ -1059,8 +1305,9 @@ export function MobileLeads() {
           <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setDelId(null)}>
             Cancel
           </button>
-          <button className={`${styles.btn} ${styles.btnDanger}`} type="button" onClick={confirmDelete}>
-            <Icon id="i-trash" />Delete
+          <button className={`${styles.btn} ${styles.btnDanger}`} type="button"
+            disabled={deleting} onClick={() => void confirmDelete()}>
+            <Icon id="i-trash" />{deleting ? "Deleting…" : "Delete"}
           </button>
         </div>
       </div>
@@ -1078,15 +1325,21 @@ export function MobileLeads() {
         <div className={styles.imeth}>
           {METHODS.map((m) => (
             <button key={m.key} className={`${styles.imethBtn} ${method === m.key ? styles.active : ""}`}
-              type="button" aria-pressed={method === m.key} onClick={() => setMethod(m.key)}>
+              type="button" aria-pressed={method === m.key}
+              onClick={() => { setMethod(m.key); setImpErr(null); setFileErr(null); }}>
               <Icon id={m.icon} />{m.label}
             </button>
           ))}
         </div>
 
         <div className={styles.sheetBody}>
+          {/* importLeads refuses when the write would blow the plan's lead
+              quota. One error line for all three methods — the refusal is the
+              same refusal whether it came from one lead or forty. */}
+          {impErr ? <span className={styles.fldErr} role="alert">{impErr}</span> : null}
+
           {method === "manual" ? (
-            <form className={styles.formBody} id="mlManual" noValidate onSubmit={stageManual}>
+            <form className={styles.formBody} id="mlManual" noValidate onSubmit={addManual}>
               <div className={`${styles.fld} ${nameErr ? styles.invalid : ""}`}>
                 <label className={styles.fldLbl} htmlFor="mlName">
                   Name<span className={styles.req}>*</span>
@@ -1135,7 +1388,7 @@ export function MobileLeads() {
                   placeholder={"Paste the full email here — we'll pull out the name, email and phone we can find."}
                   onChange={(e) => setPaste(e.target.value)} />
                 <span className={styles.fldHint}>
-                  One lead per line. Review what was found below before you add it.
+                  One enquiry, one lead. The email text is kept on the record as its note.
                 </span>
               </div>
             </div>
@@ -1143,21 +1396,41 @@ export function MobileLeads() {
 
           {method === "file" ? (
             <div className={styles.formBody}>
-              <button className={styles.dropzone} type="button" onClick={stageCsv}>
+              <button className={styles.dropzone} type="button" onClick={() => fileRef.current?.click()}>
                 <Icon id="i-file" />
                 <span className={styles.dropzoneTxt}>Tap to choose a CSV</span>
               </button>
+              {/* The real picker behind the drawn dropzone — it stages whatever
+                  is in the file, not a demo batch. */}
+              <input
+                ref={fileRef}
+                className={styles.fileInput}
+                type="file"
+                accept=".csv,.txt,text/csv,text/plain"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) readCsv(file);
+                  // Let the same file be chosen twice in a row.
+                  e.target.value = "";
+                }}
+              />
+              {fileErr ? <span className={styles.fldErr} role="alert">{fileErr}</span> : null}
             </div>
           ) : null}
 
-          {/* What will land when you commit — reviewable, removable */}
-          {staged.length ? (
+          {/* The CSV tray — the only staged flow left. A file IS a batch, and
+              its rows are worth reading before they land; a lead typed or
+              pasted on a phone is not, so those two commit on the spot. */}
+          {method === "file" && staged.length ? (
             <div className={styles.staged}>
               <div className={styles.stagedHead}>
                 <span className={styles.stagedTitle}>Ready to add</span>
-                <button className={styles.stagedGo} type="button" onClick={commitStaged}>
+                <button className={styles.stagedGo} type="button" disabled={importing}
+                  onClick={() => void commitStaged()}>
                   <Icon id="i-check" />
-                  Add {staged.length} {staged.length === 1 ? "lead" : "leads"}
+                  {importing
+                    ? "Adding…"
+                    : `Add ${staged.length} ${staged.length === 1 ? "lead" : "leads"}`}
                 </button>
               </div>
               {staged.map((r, i) => (
@@ -1185,10 +1458,24 @@ export function MobileLeads() {
             Cancel
           </button>
           <button className={`${styles.btn} ${styles.btnPrimary}`} type={footPrimary.type}
+            disabled={importing}
             form={method === "manual" ? "mlManual" : undefined} onClick={footPrimary.onClick}>
             <Icon id="i-plus" />{footPrimary.label}
           </button>
         </div>
+      </div>
+
+      {/* ============ THE FAILURE LINE ============
+          A write the server refused, where there is no sheet to hold the
+          message: a stage move outside a sales rep's slice, an offer that
+          expired between the render and the tap. */}
+      <div className={`${styles.mlToast} ${toast ? "" : styles.mlToastHidden}`}
+        role="alert" aria-live="assertive">
+        <span className={styles.mlToastTxt}>{toast}</span>
+        <button className={styles.mlToastX} type="button" aria-label="Dismiss"
+          onClick={() => setToast(null)}>
+          <Icon id="i-x" />
+        </button>
       </div>
     </div>
   );

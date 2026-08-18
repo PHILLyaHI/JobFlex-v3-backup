@@ -29,7 +29,6 @@ import {
   coverState,
   installmentValue,
   money,
-  pct,
   round2,
 } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
@@ -105,7 +104,6 @@ export function PaymentBlock({
   // remainder.
   const covered = round2(values.reduce((sum, v) => sum + v, 0));
   const ratio = total > 0 ? Math.min(covered / total, 1) : 0;
-  const coverPct = exact ? 100 : total > 0 ? (covered / total) * 100 : 0;
 
   const note =
     state === "under"
@@ -116,31 +114,15 @@ export function PaymentBlock({
 
   return (
     <div className={m.payment}>
+      {/* ONE COVERAGE READING, NOT TWO. A "%-filled" chip used to sit on this
+          line restating what the meter at the foot of the block already says
+          in money — the same fact in two units, eight rows apart, and the one
+          in the header was the weaker of the two (a percentage of a figure it
+          did not print). The meter keeps the job: it states the shortfall or
+          the overage in dollars, which is the unit the shortfall is actually
+          settled in. The per-row percentage INPUTS are untouched. */}
       <div className={m.schedHead}>
         <h3 className={m.schedTitle}>Payment schedule</h3>
-        {/* THE MISSING GUARDRAIL. Nothing used to say the percentages have to
-            sum to 100 — type 30/30/30 and the schedule was silently a third
-            short. Stated in the unit the rows are typed in, at the head of the
-            rows that are typed. */}
-        {state !== "none" ? (
-          <span
-            className={cx(
-              m.cover,
-              exact && m.coverExact,
-              state === "under" && m.coverUnder,
-              state === "over" && m.coverOver,
-            )}
-            title={
-              exact
-                ? "The stages add up to the grand total."
-                : "The stages must add up to 100% of the grand total."
-            }
-          >
-            {exact ? "100%" : pct(coverPct)}
-            {exact ? <Ic name="check" /> : null}
-            <span className={m.sr}> of the grand total scheduled</span>
-          </span>
-        ) : null}
       </div>
 
       {installments.map((inst, i) => (

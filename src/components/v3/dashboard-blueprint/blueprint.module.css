@@ -449,14 +449,37 @@
   color: var(--ink-soft);
   line-height: 1.45;
 }
+/* A real control, not underlined prose: an amber plate sitting one tint deeper
+   than the banner it is on (warning-soft composited over the banner's own
+   warning-soft), which inverts to a solid amber stamp on hover. */
 .bp :global(.banner-link) {
-  font-weight: 800;
+  display: inline-flex; align-items: center; gap: 7px;
+  vertical-align: -1px;
+  margin-left: 3px;
+  padding: 5px 10px;
+  border: 1.5px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--warning);
-  border-bottom: 1.5px solid var(--warning);
-  padding-bottom: 1px;
-  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s, border-color 0.15s,
+    transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.banner-link:hover) { color: var(--warning-dark); border-bottom-color: var(--warning-dark); }
+.bp :global(.banner-link .ic) {
+  width: 12px; height: 12px;
+  transition: transform 0.18s var(--ease);
+}
+.bp :global(.banner-link:hover) {
+  color: var(--paper);
+  background: var(--warning);
+  border-color: var(--warning);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--warning-dark);
+}
+.bp :global(.banner-link:hover .ic) { transform: translate(2px, -2px); }
+.bp :global(.banner-link:active) { transform: translate(0, 0); box-shadow: none; }
 .bp :global(.banner-close) {
   margin-left: auto;
   width: 32px; height: 32px;
@@ -841,6 +864,28 @@
 .bp :global(.card-foot-btn .ic) { width: 13px; height: 13px; }
 .bp :global(.list .card-foot-btn) { display: none; margin-top: 10px; }
 .bp :global(.list.has-more .card-foot-btn) { display: flex; }
+
+/* This Week's own footer: the day-carrying action and the plain destination,
+   one axis, equal weight in width and unequal in tone. */
+.bp :global(.week-foot) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+.bp :global(.week-foot .card-foot-btn) { margin-top: 0; }
+.bp :global(.card-foot-btn--new) {
+  border-color: var(--blueprint);
+  color: var(--blueprint);
+}
+.bp :global(.card-foot-btn--new:hover) {
+  background: var(--blueprint);
+  color: #fff;
+  box-shadow: 2px 2px 0 var(--blueprint-dark);
+}
+/* A plus is not a direction — it grows on hover instead of flying off like the
+   "go somewhere" arrows do. */
+.bp :global(.card-foot-btn--new:hover .ic) { transform: scale(1.12); }
 
 /* PIPELINE / LEAD FLOW */
 .bp :global(.section-head) {

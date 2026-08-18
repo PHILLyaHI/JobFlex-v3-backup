@@ -7,8 +7,12 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
-import { renderTemplate } from "@/lib/email/render";
-import { PRESET_PREVIEW_VARS } from "@/lib/email/presets";
+import {
+  FOLLOW_UP_CHANNELS,
+  TEXT_NEEDS_TWILIO,
+  triggerMoment,
+  type FollowUpChannel,
+} from "@/lib/followUps/copy";
 
 interface Props {
   open: boolean;
@@ -19,16 +23,18 @@ interface Props {
     triggerStatus: string;
     delayMinutes: number;
     enabled: boolean;
-    templateId: string | null;
+    channel: FollowUpChannel;
   }) => Promise<void>;
-  templates: { id: string; name: string; subject: string; body: string }[];
+  /** A configured Twilio number. Without one, TEXT is offered disabled with the
+   *  same sentence the client message composer shows. */
+  smsEnabled?: boolean;
   existing?: {
     id: string;
     name: string;
     triggerStatus: string;
     delayMinutes: number;
     enabled: boolean;
-    templateId: string | null;
+    channel: FollowUpChannel;
   } | null;
 }
 
@@ -38,7 +44,7 @@ export function NewFollowUpRuleSheet({
   open,
   onClose,
   onSubmit,
-  templates,
+  smsEnabled = false,
   existing,
 }: Props) {
   const [name, setName] = React.useState(existing?.name ?? "");
@@ -50,9 +56,8 @@ export function NewFollowUpRuleSheet({
     existing ? delayToValue(existing.delayMinutes).unit : "hours",
   );
   const [enabled, setEnabled] = React.useState(existing?.enabled ?? true);
-  const [templateId, setTemplateId] = React.useState(existing?.templateId ?? "");
+  const [channel, setChannel] = React.useState<FollowUpChannel>(existing?.channel ?? "EMAIL");
   const [busy, setBusy] = React.useState(false);
-  const selected = templates.find((t) => t.id === templateId);
 
   React.useEffect(() => {
     if (!open) return;
@@ -62,7 +67,7 @@ export function NewFollowUpRuleSheet({
     setDelayValue(d.value);
     setDelayUnit(d.unit);
     setEnabled(existing?.enabled ?? true);
-    setTemplateId(existing?.templateId ?? "");
+    setChannel(existing?.channel ?? "EMAIL");
   }, [open, existing]);
 
   async function submit() {
@@ -78,7 +83,7 @@ export function NewFollowUpRuleSheet({
         triggerStatus,
         delayMinutes: toMinutes(delayValue, delayUnit),
         enabled,
-        templateId: templateId || null,
+        channel,
       });
       onClose();
       toast.success(existing ? "Rule updated" : "Rule created");
@@ -143,42 +148,31 @@ export function NewFollowUpRuleSheet({
         </div>
         <div>
           <Select
-            label="Email template"
-            value={templateId}
-            onChange={(e) => setTemplateId(e.target.value)}
+            label="Send by"
+            value={channel}
+            onChange={(e) => setChannel(e.target.value as FollowUpChannel)}
           >
-            <option value="">— None (activity only) —</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
+            {FOLLOW_UP_CHANNELS.map((c) => (
+              <option key={c.value} value={c.value} disabled={c.value === "TEXT" && !smsEnabled}>
+                {c.label}
               </option>
             ))}
           </Select>
           <div className="mt-1.5 flex items-center justify-between gap-2">
             <span className="text-[10.5px] text-[color:var(--ink-muted)]">
-              {selected ? "Here's how it'll read." : "No template — nothing is emailed, just logged."}
+              {channel === "TEXT" && !smsEnabled
+                ? TEXT_NEEDS_TWILIO
+                : `Wording is written for "${triggerMoment(triggerStatus)}".`}
             </span>
             <Link
-              href={"/dashboard/settings/email" as never}
+              href={"/dashboard/crm" as never}
               className="inline-flex items-center gap-1 text-[10.5px] font-medium text-[color:var(--accent-ink)] hover:underline"
             >
               <Sparkles className="h-3 w-3" />
-              {templates.length === 0 ? "Create from a preset" : "Design templates"}
+              Preview it
             </Link>
           </div>
         </div>
-
-        {selected && (
-          <div className="rounded-[var(--r-lg)] hairline bg-white overflow-hidden">
-            <div className="quiet-caps px-4 pt-3">Preview · demo data</div>
-            <div className="px-4 pb-2 font-display text-[15px] tracking-[-0.01em] text-[color:var(--ink)]">
-              {renderTemplate(selected.subject, PRESET_PREVIEW_VARS)}
-            </div>
-            <div className="max-h-40 overflow-y-auto border-t border-[color:var(--ink-line)] px-4 py-3 whitespace-pre-wrap text-[12px] leading-relaxed text-[color:var(--ink-soft)]">
-              {renderTemplate(selected.body, PRESET_PREVIEW_VARS)}
-            </div>
-          </div>
-        )}
 
         <label className="flex items-center gap-2 text-[13px]">
           <input

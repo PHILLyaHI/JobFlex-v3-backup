@@ -2,6 +2,13 @@
 
 // MOBILE SMART PROPOSAL (mobile-advanced-ai-v2) — Blueprint system, handheld build.
 //
+// This is the phone experience of the REAL /dashboard/advanced-ai route: the
+// responsive shell swaps the desktop console for this component at ≤768px. It
+// was a fixture until 2026-08-13; it now runs the same server actions the
+// desktop does (analyze → generate → refine → save → convert) and holds its
+// line items in the SHARED console model (lib/estimate/console-model), so the
+// two surfaces cannot disagree about the money chain or the materials list.
+//
 // Archetype C: a COMPOSER / WIZARD. The desktop surface is a tall intake console
 // (three numbered steps stacked in one card) that swaps itself for a two-column
 // estimate studio once a job has been priced. Neither half survives 320px as
@@ -13,71 +20,153 @@
 //   Steps validate on Next and nothing is lost going backwards. The desktop's
 //   three steps gain a fourth — Review — because on a phone you cannot see what
 //   you are about to price, and each recap row jumps back to the step that owns
-//   it.
+//   it. Step 3 also carries the photo dropzone: a phone is the only device that
+//   has the job in its hand, so pictures are cheaper to give here than anywhere.
 //
 //   GENERATION — the donor's one-line status ticker becomes the peak moment of
-//   the flow: the four stages are drawn as a checklist that ticks through on the
-//   donor's exact 620ms interval.
+//   the flow: four stages drawn as a checklist. The narration is driven by the
+//   REAL request, not a timer that pretends: the intake gate resolving raises
+//   the floor, a slow dwell creeps up to the last stage and HOLDS there, and
+//   only the estimate actually arriving lands the studio. It can never finish
+//   ahead of the work or outlive it.
 //
 //   STUDIO — the desktop's `st-grid` (main column + 330px sidebar) unstacks into
-//   one column: masthead, identity, scope, materials, labor, assumptions,
+//   one column: masthead, identity, scope, materials, labor, materials request,
 //   totals, refine. The 6-column line-item tables cannot be shown at 320px and
 //   columns are NOT hidden: every line becomes a three-line row card, and
 //   editing moves into a form sheet with real 15px inputs instead of 32px
 //   inline cells.
 //
 // Every component / region / behaviour of the desktop sheet is covered:
-//  · project types, the "Other work" free-text field, location + State select
+//  · project types, the "Other work" free-text field (which IS the projectType
+//    the actions price), location + State select, site photos
 //  · the brief textarea and all four sample briefs
-//  · the narrated generation, with the donor's stages and timing
-//  · scope, materials, labor, assumptions, totals, margin, client price
-//  · add / edit / duplicate / move / remove line
+//  · the narrated generation
+//  · scope, materials, labor, the shoppable materials request, assumptions,
+//    totals, margin, discount, tax, client price
+//  · add / edit / duplicate / move / remove line, with a row-level ✕ as well
 //  · refine → real computed diff → Discard or Apply, and Undo after Apply
-//  · Start over (two-tap confirm) and Convert to proposal (flash confirmation)
+//  · Start over (two-tap confirm) and Save as proposal
 //
 // What changes versus the desktop, and why:
 //  · The location field runs REAL Google Places suggestions, through the same
 //    blueprint-shell/places-suggest module the desktop pages use, wrapped for
-//    React by mobile-shell/address-field. It was a local gazetteer while the
-//    layout was being built; the owner asked for the real thing on 2026-07-30.
-//    cityOnly, because this field prices a region rather than locating a roof.
-//  · The state <select> is a bottom-sheet picker (mobile-shell/state-picker).
-//    A native select coloured its own options through the placeholder — the
-//    whole list read washed out until a value was picked — and ignores row
-//    height entirely on a phone. See that file's header for the full reasoning.
+//    React by mobile-shell/address-field. cityOnly, because this field prices a
+//    region rather than locating a roof.
+//  · The state <select> is a bottom-sheet picker (mobile-shell/state-picker),
+//    and the state it returns seeds the tax rate through ./state-tax.
 //  · The "⋮" affordances become bottom sheets — no hover on touch, and
 //    CLAUDE.md prefers sheets over modals.
-//  · The margin number input gains ± steppers: a 44px target beats a spinner.
-//
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+//  · The margin / discount / tax numbers gain ± steppers: a 44px target beats a
+//    spinner.
+//  · Failures are a BANNER on the page, not a toast: this surface is pinned
+//    (position:fixed, its own z-layer) and a phone user who just waited 40
+//    seconds for a price must never be shown an empty studio with no reason.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-advanced-ai.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { AddressField } from "@/components/v3/mobile-shell/address-field";
 import { StatePicker } from "@/components/v3/mobile-shell/state-picker";
+import { stateTaxPct } from "./state-tax";
 import { lockScroll } from "@/lib/scrollLock";
+import { PROJECT_TYPES, SAMPLES, STAGES, STATES } from "./advanced-ai-data";
 import {
-  PROJECT_TYPES,
-  SAMPLES,
-  STAGES,
-  STATES,
-  cloneSeed,
+  briefWithAnswers,
+  computeTotals,
+  discountFromSchema,
+  discountToSchema,
+  estimateFromLines,
   lineTotal,
-  sumOf,
-  type Group,
-  type Line,
-} from "./advanced-ai-data";
+  linesFromEstimate,
+  materialsRequest,
+  materialsRequestTotal,
+  mergeRefined,
+  newLineId,
+  NO_DISCOUNT,
+  unitOptionsFor,
+  type ClarifyAnswer,
+  type ConsoleLine,
+  type DiscountState,
+  type LineGroup,
+} from "@/lib/estimate/console-model";
+import { merchantUrl, usableImageUrl } from "@/lib/merchantLinks";
+import { isPlanLimitError } from "@/lib/planLimits";
+import {
+  analyzeEstimatePrompt,
+  convertEstimateToProposal,
+  generateAdvancedEstimate,
+  refineAdvancedEstimate,
+  saveEstimate,
+} from "@/actions/advancedEstimator";
+import type { ClarifyQuestion, GeneratedEstimate } from "@/lib/estimatorSchema";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+/** Unit prices are shopped to the cent — rounding them would misquote the shelf. */
+const cash = (n: number) =>
+  `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 const STEP_COUNT = 4;
 const STEP_NAMES = ["Project type", "Location", "The brief", "Review"];
+
+/** A hand-typed figure has to be absurd before it is refused, but it does have a ceiling. */
+const MAX_MONEY = 9_999_999;
+const MAX_QTY = 999_999;
+
+// ── Site photos ─────────────────────────────────────────────────────────────
+// Read in the browser, sent as base64 data URLs on the request that prices the
+// job, and never uploaded or persisted anywhere. The server caps at 6 photos
+// and ~8M characters each (advancedEstimator.safePhotos), so anything over that
+// would be silently DROPPED — we downscale first rather than let a 12MP phone
+// frame disappear without the contractor knowing it was ignored.
+const MAX_PHOTOS = 6;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_EDGE = 1600;
+const MAX_URL_CHARS = 7_500_000;
+
+type Photo = { id: string; name: string; url: string; bytes: number };
+
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result ?? ""));
+    fr.onerror = () => reject(new Error("Could not read that file"));
+    fr.readAsDataURL(file);
+  });
+}
+
+/**
+ * Downscale to a 1600px long edge and re-encode as JPEG. Keeps a whole camera
+ * roll comfortably under the server's per-photo ceiling and cuts the token cost
+ * of the vision call by an order of magnitude. Formats the canvas cannot decode
+ * (HEIC on most browsers) fall through to the raw data URL.
+ */
+async function readPhoto(file: File): Promise<string> {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no 2d context");
+    ctx.drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    const url = canvas.toDataURL("image/jpeg", 0.82);
+    if (!url.startsWith("data:image/jpeg;base64,")) throw new Error("encode failed");
+    return url;
+  } catch {
+    return fileToDataUrl(file);
+  }
+}
 
 function Icon({ id, className }: { id: string; className?: string }) {
   return (
@@ -125,6 +214,31 @@ function CountUp({ value, className }: { value: number; className?: string }) {
   );
 }
 
+/** Product thumbnail with the house fallback — see components/materials/MaterialThumb. */
+function Thumb({ src, alt }: { src?: string; alt: string }) {
+  // The URL that failed, not a boolean: a refine can re-shop this row onto a
+  // new image, and a bare `failed` flag would keep the fallback showing for a
+  // picture that was never tried. No reset effect needed either.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const usable = usableImageUrl(src);
+  return (
+    <span className={styles.mthumb}>
+      {usable && failedSrc !== usable ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          className={styles.mthumbImg}
+          src={usable}
+          alt={alt}
+          loading="lazy"
+          onError={() => setFailedSrc(usable)}
+        />
+      ) : (
+        <Icon id="i-advanced-ai-box" className={styles.mthumbIc} />
+      )}
+    </span>
+  );
+}
+
 type Delta = {
   kind: "add" | "chg" | "rem";
   group: string;
@@ -133,8 +247,30 @@ type Delta = {
   to?: string;
   note?: string;
 };
-type Snapshot = { materials: Line[]; labor: Line[]; scope: string };
-type Pending = { instructions: string; deltas: Delta[] };
+type Snapshot = {
+  lines: ConsoleLine[];
+  scope: string;
+  assumptions: string[];
+  title: string;
+  discount: DiscountState;
+  timelineDays: number | null;
+  history: string[];
+};
+type Pending = {
+  instructions: string;
+  deltas: Delta[];
+  warnings: string[];
+  data: GeneratedEstimate;
+};
+
+type Banner = {
+  tone: "danger" | "warning" | "info";
+  title: string;
+  body: string;
+  list?: string[];
+  href?: string;
+  cta?: string;
+};
 
 type MenuRow = {
   act: string;
@@ -146,9 +282,27 @@ type MenuRow = {
   danger?: boolean;
 };
 
-const clone = (list: Line[]) => list.map((l) => ({ ...l }));
+const clone = (list: ConsoleLine[]) => list.map((l) => ({ ...l }));
+const groupLabel = (g: LineGroup) => (g === "materials" ? "Materials" : "Labor");
+/** The search text a retail link is resolved against: what it is, and how big. */
+const buyQuery = (l: { name: string; dimensions?: string }) =>
+  [l.name, l.dimensions].filter(Boolean).join(" ").trim();
+const buyUrlFor = (l: ConsoleLine) =>
+  l.group === "materials" ? merchantUrl(l.store, buyQuery(l), l.productUrl) : null;
+
+const errText = (err: unknown) =>
+  (err as { message?: string })?.message?.trim() || "Something went wrong. Try again.";
+
+const PLAN_LIMIT_BANNER = (body: string): Banner => ({
+  tone: "danger",
+  title: "You've reached your plan limit",
+  body,
+  href: "/dashboard/subscription",
+  cta: "See plans",
+});
 
 export function MobileSmartProposal() {
+  const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -157,6 +311,25 @@ export function MobileSmartProposal() {
   const [step, setStep] = useState(1);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
   const [stageIdx, setStageIdx] = useState(0);
+  /* The last square has to FILL before the narration is replaced by the studio.
+     Without a beat that says "finished", the checklist simply vanishes on the
+     step it was still working — which reads as the run being cancelled. */
+  const [genDone, setGenDone] = useState(false);
+  /* Every generate gets a ticket. A response holding a stale ticket — the user
+     unmounted, or started over and fired a second run — is dropped rather than
+     landing an estimate nobody is waiting for. */
+  const runSeq = useRef(0);
+  /* The intake gate's questions, and the promise `generate()` parks on while
+     the sheet is open. The resolver lives in a ref so answering cannot race a
+     re-render — the awaiting call resumes exactly once. */
+  const [clarify, setClarify] = useState<ClarifyQuestion[] | null>(null);
+  const clarifyResolve = useRef<((v: ClarifyAnswer[] | null) => void) | null>(null);
+  const [clarifyAns, setClarifyAns] = useState<Record<string, string>>({});
+  const [clarifyCustom, setClarifyCustom] = useState<Record<string, boolean>>({});
+  /* The Escape ladder is bound above where `settleClarify` is declared, so it
+     reaches it through a ref rather than forcing the pipeline's functions to
+     move up here away from the code they belong with. */
+  const settleClarifyRef = useRef<(v: ClarifyAnswer[] | null) => void>(() => {});
 
   /* ---------- intake input (never cleared by going back) ---------------- */
   const [type, setType] = useState<string | null>(null);
@@ -164,30 +337,52 @@ export function MobileSmartProposal() {
   const [locText, setLocText] = useState("");
   const [locState, setLocState] = useState("");
   const [brief, setBrief] = useState("");
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [photoErr, setPhotoErr] = useState("");
+  const [dragOver, setDragOver] = useState(false);
   const [errType, setErrType] = useState(false);
   const [errOther, setErrOther] = useState(false);
   const [errBrief, setErrBrief] = useState(false);
+  const libRef = useRef<HTMLInputElement>(null);
+  const camRef = useRef<HTMLInputElement>(null);
 
   /* ---------- estimate -------------------------------------------------- */
-  const [materials, setMaterials] = useState<Line[]>([]);
-  const [labor, setLabor] = useState<Line[]>([]);
+  const [lines, setLines] = useState<ConsoleLine[]>([]);
+  const [title, setTitle] = useState("");
   const [scope, setScope] = useState("");
   const [assumptions, setAssumptions] = useState<string[]>([]);
+  const [timelineDays, setTimelineDays] = useState<number | null>(null);
   const [margin, setMargin] = useState(18);
+  const [discount, setDiscount] = useState<DiscountState>(NO_DISCOUNT);
+  /* Tax is DERIVED, not synced: `null` means "follow the state picked in
+     intake", any number means the contractor has overridden it. Deriving it
+     rather than mirroring the state into an effect is what keeps the two from
+     fighting — an effect that re-set the rate on every `locState` change would
+     also clobber a hand-typed rate, and costs a render besides. */
+  const [taxOverride, setTaxOverride] = useState<number | null>(null);
+  /* The location string the estimate was actually priced against — the intake
+     gate normalizes "bothel wa" to "Bothell, WA", and refine / save must use
+     what was priced, not what was typed. */
+  const [locUsed, setLocUsed] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
   const [pending, setPending] = useState<Pending | null>(null);
-  const [undo, setUndo] = useState<Snapshot | null>(null);
+  const [undoSnap, setUndoSnap] = useState<Snapshot | null>(null);
   const [refineTxt, setRefineTxt] = useState("");
   const [errRefine, setErrRefine] = useState(false);
-  const seq = useRef(100);
+
+  /* ---------- request state --------------------------------------------- */
+  const [refineBusy, setRefineBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [banner, setBanner] = useState<Banner | null>(null);
 
   /* ---------- transient confirmations ----------------------------------- */
   const [confirmReset, setConfirmReset] = useState(false);
-  const [converted, setConverted] = useState(false);
+  const [armedDel, setArmedDel] = useState<string | null>(null);
   const [landedId, setLandedId] = useState<string | null>(null);
 
   /* ---------- sheets ---------------------------------------------------- */
-  const [sheetRef2, setSheetRef2] = useState<{ grp: Group; id: string } | null>(null);
-  const [editRef, setEditRef] = useState<{ grp: Group; id: string } | null>(null);
+  const [sheetRef2, setSheetRef2] = useState<string | null>(null);
+  const [editRef, setEditRef] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", qty: "1", unit: "each", price: "0" });
   const [nameErr, setNameErr] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -195,10 +390,8 @@ export function MobileSmartProposal() {
   /* ---------- viewport height -------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
      changes innerHeight mid-scroll, so the real value is republished rather
-     than trusting a bare 100vh/100dvh. This is the React form of the donor's
-     FLUID SCALE module — no root zoom, since the composition here is already
-     the handheld one. It also keeps the sticky commit foot above the software
-     keyboard, which every step of this wizard raises. */
+     than trusting a bare 100vh/100dvh. It also keeps the sticky commit foot
+     above the software keyboard, which every step of this wizard raises. */
   useEffect(() => {
     const apply = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
@@ -215,6 +408,9 @@ export function MobileSmartProposal() {
       releaseScroll();
     };
   }, []);
+
+  /* A response that arrives after this component is gone must not set state. */
+  useEffect(() => () => { runSeq.current += 1; }, []);
 
   /* ---------- Motion: reveal on load + adaptive reveal on scroll --------- */
   useEffect(() => {
@@ -294,8 +490,10 @@ export function MobileSmartProposal() {
     if (prefersReducedMotion()) return;
     const sel = [
       styles.btn, styles.ptype, styles.sample, styles.revEdit,
-      styles.stAct, styles.addLine, styles.lrowOpen, styles.marginBtn,
+      styles.addLine, styles.lrowOpen, styles.lrowDel, styles.marginBtn,
       styles.rfBtn, styles.menuItem, styles.sheetCancel, styles.lemptyA,
+      styles.dzBtn, styles.thumbX, styles.unitChip, styles.discBtn,
+      styles.mbuy, styles.bBtn, styles.asmX, styles.llinkBtn,
     ].map((c) => `.${c}`).join(", ");
     const el = (e.target as HTMLElement).closest<HTMLElement>(sel);
     if (!el) return;
@@ -309,69 +507,81 @@ export function MobileSmartProposal() {
      The drawer is not listed: MobileNav binds its own Escape while open, so the
      two listeners cannot both claim one key press. */
   useEffect(() => {
-    if (!sheetRef2 && !editRef) return;
+    if (!sheetRef2 && !editRef && !clarify) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (editRef) setEditRef(null);
-      else setSheetRef2(null);
+      else if (sheetRef2) setSheetRef2(null);
+      // Escape on the questions is backing OUT of the run, not "generate
+      // anyway" — a stray key press must never spend a model call.
+      else settleClarifyRef.current(null);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [sheetRef2, editRef]);
+  }, [sheetRef2, editRef, clarify]);
 
-  /* ---------- generation: the donor's 620ms narration --------------------
-     One timer per stage rather than one interval, so an unmount mid-flight
-     cannot fire into a detached tree. The landing happens INSIDE the last
-     timeout — never synchronously in the effect body, which would cascade a
-     render. Four ticks × 620ms is the donor's exact runtime. */
+  /* ---------- generation narration --------------------------------------
+     Driven by the real request, not by a script. Two things move the checklist:
+     an observable checkpoint (the intake gate returning raises the floor to
+     stage 2), and a slow dwell that creeps forward and then HOLDS on the last
+     stage for as long as the model takes. Nothing here can tick past the end,
+     and nothing here lands the studio — only the estimate arriving does that,
+     so the narration can neither finish early nor outlive the work.
+
+     THE BUG THIS FIXES: stage 0 used to creep on a 2400ms timer that raced the
+     gate. `analyzeEstimatePrompt` takes several seconds, so "Reading the brief"
+     reliably ticked itself done — and the SECOND square lit — while the brief
+     was still being read. Every mark after that was narrating a phase that had
+     not started. Stage 0 now carries dwellMs: 0 and has no timer at all: it
+     ends when the gate actually returns, which is the one boundary this client
+     can observe. */
   useEffect(() => {
-    if (phase !== "busy") return;
-    const id = window.setTimeout(() => {
-      if (stageIdx + 1 < STAGES.length) {
-        setStageIdx(stageIdx + 1);
-        return;
-      }
-      const seed = cloneSeed();
-      setMaterials(seed.materials);
-      setLabor(seed.labor);
-      setScope(seed.scope);
-      setAssumptions(seed.assumptions);
-      setUndo(null);
-      setPending(null);
-      setRefineTxt("");
-      setPhase("studio");
-    }, 620);
+    if (phase !== "busy" || genDone) return;
+    const last = STAGES.length - 1;
+    if (stageIdx >= last) return;
+    const dwell = STAGES[stageIdx]?.dwellMs ?? 0;
+    if (!dwell) return;
+    const id = window.setTimeout(() => setStageIdx((i) => Math.min(last, i + 1)), dwell);
     return () => window.clearTimeout(id);
-  }, [phase, stageIdx]);
+  }, [phase, stageIdx, genDone]);
 
   /* Landing on the studio starts at the top of the document. */
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [phase]);
 
-  /* The two-tap "Start over" window, and the "Proposal created" flash. */
+  /* The two-tap confirm windows. */
   useEffect(() => {
     if (!confirmReset) return;
     const t = window.setTimeout(() => setConfirmReset(false), 3000);
     return () => window.clearTimeout(t);
   }, [confirmReset]);
   useEffect(() => {
-    if (!converted) return;
-    const t = window.setTimeout(() => setConverted(false), 1800);
+    if (!armedDel) return;
+    const t = window.setTimeout(() => setArmedDel(null), 3000);
     return () => window.clearTimeout(t);
-  }, [converted]);
+  }, [armedDel]);
   useEffect(() => {
     if (!landedId) return;
     const t = window.setTimeout(() => setLandedId(null), 700);
     return () => window.clearTimeout(t);
   }, [landedId]);
 
-  /* ---------- derived --------------------------------------------------- */
-  const matTotal = useMemo(() => sumOf(materials), [materials]);
-  const labTotal = useMemo(() => sumOf(labor), [labor]);
-  const subtotal = matTotal + labTotal;
-  const marginCash = subtotal * (margin / 100);
-  const clientPrice = subtotal + marginCash;
+  /* ---------- derived ----------------------------------------------------
+     Every figure on this page comes out of computeTotals, so the handheld and
+     the desktop console cannot drift on the cost → margin → discount → tax
+     chain. Nothing below re-does that arithmetic locally. */
+  /* 0 until a state is picked — the counter's documented resting value. Base
+     state rate only; county and city are excluded. See ./state-tax.ts. */
+  const taxAuto = stateTaxPct(locState);
+  const taxPct = taxOverride ?? taxAuto;
+  const taxTouched = taxOverride !== null;
+  const totals = useMemo(
+    () => computeTotals({ lines, discount, taxPct, marginPct: margin }),
+    [lines, discount, taxPct, margin],
+  );
+  const reqRows = useMemo(() => materialsRequest(lines), [lines]);
+  const reqTotal = useMemo(() => materialsRequestTotal(reqRows), [reqRows]);
 
   const typeRow = PROJECT_TYPES.find((t) => t.id === type);
   const typeLabel =
@@ -379,11 +589,10 @@ export function MobileSmartProposal() {
   const where = locText.trim()
     ? `${locText.trim()}${locState ? `, ${locState}` : ""}`
     : "";
-  const estTitle = brief.trim().split("\n")[0].slice(0, 90) || "New estimate";
+  const estTitle = title.trim() || brief.trim().split("\n")[0].slice(0, 90) || "New estimate";
 
-  const listOf = (grp: Group) => (grp === "materials" ? materials : labor);
-  const setListOf = (grp: Group, next: Line[]) =>
-    grp === "materials" ? setMaterials(next) : setLabor(next);
+  const listOf = (grp: LineGroup) => lines.filter((l) => l.group === grp);
+  const findLine = (id: string | null) => (id ? lines.find((l) => l.id === id) ?? null : null);
 
   /* ---------- wizard ---------------------------------------------------- */
   const validate = (n: number) => {
@@ -398,8 +607,8 @@ export function MobileSmartProposal() {
       }
       return true;
     }
-    // Step 2 has no required field: the donor prices without a location too, it
-    // just skips the regional adjustment. The Review step says so out loud.
+    // Step 2 has no required field: the estimator prices without a location
+    // too, it just skips the regional adjustment. Review says so out loud.
     if (n === 3) {
       if (!brief.trim()) {
         setErrBrief(true);
@@ -417,23 +626,238 @@ export function MobileSmartProposal() {
   const next = () => {
     if (!validate(step)) return;
     if (step < STEP_COUNT) goStep(step + 1);
-    else generate();
+    else void generate();
   };
-  const generate = () => {
+
+  /* ---------- photos ----------------------------------------------------- */
+  const photoBytes = photos.reduce((n, p) => n + p.bytes, 0);
+
+  const addFiles = useCallback(
+    async (files: FileList | File[]) => {
+      setPhotoErr("");
+      const picked = Array.from(files);
+      if (!picked.length) return;
+      const images = picked.filter((f) => f.type.startsWith("image/"));
+      if (images.length !== picked.length) {
+        setPhotoErr("Images only — the rest of what you picked was skipped.");
+      }
+      const accepted: Photo[] = [];
+      let room = MAX_PHOTOS - photos.length;
+      for (const file of images) {
+        if (room <= 0) {
+          setPhotoErr(`Up to ${MAX_PHOTOS} photos — the extras were skipped.`);
+          break;
+        }
+        if (file.size > MAX_FILE_BYTES) {
+          setPhotoErr(`“${file.name}” is over ${mb(MAX_FILE_BYTES)} and was skipped.`);
+          continue;
+        }
+        try {
+          const url = await readPhoto(file);
+          if (url.length > MAX_URL_CHARS) {
+            setPhotoErr(`“${file.name}” is too large to send and was skipped.`);
+            continue;
+          }
+          accepted.push({
+            id: newLineId("ph"),
+            name: file.name || "Photo",
+            url,
+            // The data URL is what actually travels, so that is what is counted.
+            bytes: Math.round((url.length * 3) / 4),
+          });
+          room -= 1;
+        } catch {
+          setPhotoErr(`Couldn't read “${file.name}”.`);
+        }
+      }
+      if (accepted.length) setPhotos((prev) => prev.concat(accepted));
+    },
+    [photos.length],
+  );
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer?.files?.length) void addFiles(e.dataTransfer.files);
+  };
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) void addFiles(e.target.files);
+    // Same file twice in a row must still fire a change event.
+    e.target.value = "";
+  };
+
+  /* ---------- the real pipeline ------------------------------------------ */
+
+  /** Bounce back to Review with a readable reason. Never a blank studio. */
+  const failTo = (b: Banner) => {
+    setPhase("intake");
+    setDir("back");
+    setStep(STEP_COUNT);
+    setBanner(b);
+  };
+
+  const landEstimate = (
+    est: GeneratedEstimate,
+    opts: { disabled: boolean; location: string; hints: string[] },
+  ) => {
+    setLines(linesFromEstimate(est));
+    setTitle(est.title || estTitle);
+    setScope(est.scope || brief.trim());
+    setAssumptions(est.assumptions);
+    setTimelineDays(est.estimatedTimelineDays ?? null);
+    setDiscount(discountFromSchema(est.discount));
+    setLocUsed(opts.location);
+    setUndoSnap(null);
+    setPending(null);
+    setHistory([]);
+    setRefineTxt("");
+    setBanner(
+      opts.disabled
+        ? {
+            tone: "warning",
+            title: "AI is switched off — this is a sample",
+            body:
+              "No OPENAI_API_KEY is configured, so the estimator returned placeholder lines instead of pricing your brief. Everything below still edits and converts, but the numbers are not real.",
+          }
+        : opts.hints.length
+          ? {
+              tone: "info",
+              title: "The brief was thin — the AI had to assume",
+              body:
+                "It priced the job anyway. Answering any of these in “Change the estimate” will tighten it:",
+              list: opts.hints,
+            }
+          : null,
+    );
+    setPhase("studio");
+  };
+
+  /**
+   * Park generation on the questions sheet.
+   *
+   * Resolves with the answered pairs (possibly empty — "Generate anyway"), or
+   * null when the contractor backed out of the run entirely.
+   */
+  const askClarify = (questions: ClarifyQuestion[]): Promise<ClarifyAnswer[] | null> =>
+    new Promise((resolve) => {
+      clarifyResolve.current = resolve;
+      setClarifyAns({});
+      setClarifyCustom({});
+      setClarify(questions);
+    });
+
+  /** Settle the sheet exactly once — a second press cannot resume the run twice. */
+  const settleClarify = (value: ClarifyAnswer[] | null) => {
+    const resolve = clarifyResolve.current;
+    if (!resolve) return;
+    clarifyResolve.current = null;
+    setClarify(null);
+    resolve(value);
+  };
+  // Published for the Escape ladder, which is bound above this declaration.
+  // In an effect, not during render — a ref written while rendering is the
+  // "cannot update ref during render" trap.
+  useEffect(() => {
+    settleClarifyRef.current = settleClarify;
+  });
+
+  const generate = async () => {
     if (!validate(1) || !validate(3)) {
       goStep(!type || (type === "other" && !otherWork.trim()) ? 1 : 3);
       return;
     }
-    setStageIdx(0);
-    setPhase("busy");
-  };
+    const ticket = (runSeq.current += 1);
+    const stale = () => runSeq.current !== ticket;
 
-  const pickSample = (i: number) => {
-    setBrief(SAMPLES[i]);
-    setErrBrief(false);
-    if (!type) {
-      setType(i === 1 ? "fence" : i === 2 ? "deck" : i === 3 ? "gutters" : "roof");
-      setErrType(false);
+    const projectType = typeLabel;
+    const typedBrief = brief.trim();
+    const photoUrls = photos.map((p) => p.url);
+
+    setBanner(null);
+    setStageIdx(0);
+    setGenDone(false);
+    setPhase("busy");
+
+    try {
+      // Intake gate: corrects the location and tells us whether the brief was
+      // thin enough that the estimate rests on assumptions.
+      let location = where;
+      let hints: string[] = [];
+      const gate = await analyzeEstimatePrompt({
+        projectType,
+        description: typedBrief,
+        location: where || undefined,
+        photos: photoUrls,
+      });
+      if (stale()) return;
+      if (!gate.ok) {
+        // The gate is the ONLY place a plan limit or an entitlement failure is
+        // cheap to catch — it runs before the expensive call. Anything else it
+        // reports is non-fatal: generation is still worth attempting.
+        if (gate.code === "PLAN_LIMIT_REACHED") {
+          failTo(PLAN_LIMIT_BANNER(gate.error));
+          return;
+        }
+        failTo({ tone: "danger", title: "Couldn't start the estimate", body: gate.error });
+        return;
+      }
+      if (gate.data.correctedLocation) location = gate.data.correctedLocation;
+
+      // ── The thin-brief gate ────────────────────────────────────────
+      // The gate already decided; asking here spends that decision instead of
+      // discarding it into a post-hoc "the AI had to assume" note, and costs no
+      // extra model call. The narration steps back to Review while the sheet is
+      // up, because the checklist would be narrating work that is paused.
+      let description = typedBrief;
+      if (!gate.data.enoughDetail && gate.data.questions.length > 0) {
+        setPhase("intake");
+        setDir("back");
+        setStep(STEP_COUNT);
+        const answers = await askClarify(gate.data.questions);
+        if (stale()) return;
+        // Backed out — nothing is priced and the brief is untouched.
+        if (answers === null) return;
+        description = briefWithAnswers(typedBrief, answers);
+        // Whatever they left blank still rides along to the studio banner, so
+        // "Generate anyway" surfaces exactly the gaps it always did.
+        const answered = new Set(answers.map((a) => a.question));
+        hints = gate.data.questions
+          .filter((q) => !answered.has(q.question))
+          .map((q) => q.question);
+        setBanner(null);
+        setStageIdx(0);
+        setGenDone(false);
+        setPhase("busy");
+      }
+
+      // Observable progress: the brief has been read.
+      setStageIdx((i) => Math.max(i, 1));
+
+      const res = await generateAdvancedEstimate({
+        projectType,
+        description,
+        location: location || undefined,
+        photos: photoUrls,
+      });
+      if (stale()) return;
+      if (!res.ok) {
+        failTo(
+          res.code === "PLAN_LIMIT_REACHED"
+            ? PLAN_LIMIT_BANNER(res.error)
+            : { tone: "danger", title: "Couldn't price the job", body: res.error },
+        );
+        return;
+      }
+      // Fill the last square and hold it for a beat, so the checklist reads as
+      // finished rather than vanishing on the step it was still working.
+      setStageIdx(STAGES.length - 1);
+      setGenDone(true);
+      await new Promise((r) => setTimeout(r, prefersReducedMotion() ? 0 : 620));
+      if (stale()) return;
+      landEstimate(res.data, { disabled: Boolean(res.disabled), location, hints });
+    } catch (err) {
+      if (stale()) return;
+      failTo({ tone: "danger", title: "Couldn't price the job", body: errText(err) });
     }
   };
 
@@ -442,33 +866,49 @@ export function MobileSmartProposal() {
       setConfirmReset(true);
       return;
     }
+    // Any request still in flight loses its ticket, so it cannot land on top
+    // of a fresh intake. A run parked on the questions sheet is resolved too —
+    // otherwise its `await` never returns and the closure is held forever.
+    runSeq.current += 1;
+    settleClarify(null);
     setConfirmReset(false);
-    setMaterials([]);
-    setLabor([]);
+    setLines([]);
+    setTitle("");
     setScope("");
     setAssumptions([]);
+    setTimelineDays(null);
+    setDiscount(NO_DISCOUNT);
     setPending(null);
-    setUndo(null);
+    setUndoSnap(null);
+    setHistory([]);
     setRefineTxt("");
+    setBanner(null);
     setPhase("intake");
     setDir("back");
     setStep(1);
   };
 
   /* ---------- line editing ---------------------------------------------- */
-  const addLine = (grp: Group) => {
-    seq.current += 1;
-    const line: Line = { id: `n${seq.current}`, name: "New line", qty: 1, unit: "each", price: 0, link: false };
-    setListOf(grp, listOf(grp).concat(line));
+  const addLine = (grp: LineGroup) => {
+    const line: ConsoleLine = {
+      id: newLineId(grp === "labor" ? "l" : "m"),
+      group: grp,
+      name: "New line",
+      qty: 1,
+      unit: grp === "labor" ? "hour" : "each",
+      price: 0,
+      retailPrice: null,
+    };
+    setLines((prev) => prev.concat(line));
     setLandedId(line.id);
-    openEdit(grp, line);
+    openEdit(line);
   };
 
-  const openEdit = (grp: Group, line: Line) => {
+  const openEdit = (line: ConsoleLine) => {
     setSheetRef2(null);
     setForm({ name: line.name, qty: String(line.qty), unit: line.unit, price: String(line.price) });
     setNameErr(false);
-    setEditRef({ grp, id: line.id });
+    setEditRef(line.id);
     window.setTimeout(() => nameRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
   };
 
@@ -480,143 +920,328 @@ export function MobileSmartProposal() {
       nameRef.current?.focus();
       return;
     }
-    const target = editRef;
-    if (!target) return;
-    setListOf(
-      target.grp,
-      listOf(target.grp).map((l) =>
-        l.id === target.id
+    const id = editRef;
+    if (!id) return;
+    setLines((prev) =>
+      prev.map((l) =>
+        l.id === id
           ? {
               ...l,
               name,
-              qty: Math.max(0, parseFloat(form.qty) || 0),
-              unit: form.unit.trim() || "each",
-              price: Math.max(0, parseFloat(form.price) || 0),
+              qty: Math.min(MAX_QTY, Math.max(0, parseFloat(form.qty) || 0)),
+              unit: form.unit.trim() || (l.group === "labor" ? "hour" : "each"),
+              price: Math.min(MAX_MONEY, Math.max(0, parseFloat(form.price) || 0)),
             }
           : l,
       ),
     );
-    setLandedId(target.id);
+    setLandedId(id);
     setEditRef(null);
   };
 
-  /* ---------- refine: compute the real diff, wait for confirmation ------- */
-  const applyRefine = () => {
+  /** Two-tap, like Start over: a mis-tap on a 30px control must not destroy a line. */
+  const removeLine = (id: string) => {
+    if (armedDel !== id) {
+      setArmedDel(id);
+      return;
+    }
+    setArmedDel(null);
+    setLines((prev) => prev.filter((l) => l.id !== id));
+  };
+
+  /* ---------- refine: the real AI edit, reviewed before it lands --------- */
+  const buildDeltas = (prev: ConsoleLine[], next: GeneratedEstimate): Delta[] => {
+    const after = linesFromEstimate(next);
+    const before = new Map(prev.map((l) => [l.id, l]));
+    const afterIds = new Set(after.map((l) => l.id));
+    const out: Delta[] = [];
+    for (const l of after) {
+      const o = before.get(l.id);
+      const group = groupLabel(l.group);
+      if (!o) {
+        out.push({
+          kind: "add",
+          group,
+          title: l.name,
+          note: `${l.qty} ${l.unit} × ${money(l.price)} — added`,
+        });
+        continue;
+      }
+      if (o.name !== l.name) {
+        out.push({ kind: "chg", group, title: o.name, note: "Renamed", from: o.name, to: l.name });
+      }
+      if (o.qty !== l.qty || o.unit !== l.unit) {
+        out.push({
+          kind: "chg", group, title: l.name, note: "Quantity",
+          from: `${o.qty} ${o.unit}`, to: `${l.qty} ${l.unit}`,
+        });
+      }
+      if (Math.abs(o.price - l.price) > 0.005) {
+        out.push({
+          kind: "chg", group, title: l.name, note: "Price",
+          from: money(o.price), to: money(l.price),
+        });
+      }
+    }
+    for (const l of prev) {
+      if (!afterIds.has(l.id)) {
+        out.push({
+          kind: "rem",
+          group: groupLabel(l.group),
+          title: l.name,
+          note: "Removed from the estimate",
+        });
+      }
+    }
+    const nextDiscount = discountFromSchema(next.discount);
+    if (nextDiscount.mode !== discount.mode || nextDiscount.value !== discount.value) {
+      out.push({
+        kind: nextDiscount.value ? "chg" : "rem",
+        group: "Order",
+        title: "Discount",
+        note: nextDiscount.value
+          ? `Set to ${nextDiscount.mode === "pct" ? `${nextDiscount.value}%` : money(nextDiscount.value)}`
+          : "Discount removed",
+      });
+    }
+    if ((next.scope || "").trim() && (next.scope || "").trim() !== scope.trim()) {
+      out.push({ kind: "chg", group: "Estimate", title: "Scope of work", note: "Rewritten" });
+    }
+    return out;
+  };
+
+  const runRefine = async () => {
     const text = refineTxt.trim();
     if (!text) {
       setErrRefine(true);
       return;
     }
-    const deltas: Delta[] = [];
-    const m1 = materials.find((l) => l.id === "m1");
-    if (m1) {
-      deltas.push({
-        kind: "chg", group: "Materials", title: m1.name,
-        from: money(m1.price), to: money(Math.round(m1.price * 1.12)), note: "Unit price",
+    if (refineBusy) return;
+    setRefineBusy(true);
+    setBanner(null);
+    try {
+      const res = await refineAdvancedEstimate({
+        projectType: typeLabel,
+        location: locUsed || undefined,
+        instructions: text,
+        history: history.slice(-5),
+        assumptions,
+        current: estimateFromLines(lines, {
+          title: estTitle,
+          scope,
+          assumptions,
+          estimatedTimelineDays: timelineDays ?? undefined,
+          discount: discountToSchema(discount),
+        }),
       });
+      if (!res.ok) {
+        setBanner(
+          res.code === "PLAN_LIMIT_REACHED"
+            ? PLAN_LIMIT_BANNER(res.error)
+            : { tone: "danger", title: "Couldn't apply that change", body: res.error },
+        );
+        return;
+      }
+      if (res.disabled) {
+        setBanner({
+          tone: "warning",
+          title: "AI is switched off",
+          body: "Add OPENAI_API_KEY to apply written changes. Nothing was altered.",
+        });
+        return;
+      }
+      const deltas = buildDeltas(lines, res.data);
+      if (deltas.length === 0 && res.warnings.length === 0) {
+        setBanner({
+          tone: "info",
+          title: "Nothing changed",
+          body: "The AI reported no edits for that request — try naming the line or the number you want moved.",
+        });
+        return;
+      }
+      setPending({ instructions: text, deltas, warnings: res.warnings, data: res.data });
+    } catch (err) {
+      setBanner({ tone: "danger", title: "Couldn't apply that change", body: errText(err) });
+    } finally {
+      setRefineBusy(false);
     }
-    const l3 = labor.find((l) => l.id === "l3");
-    if (l3) {
-      deltas.push({
-        kind: "chg", group: "Labor", title: l3.name,
-        from: money(l3.price), to: money(l3.price + 8), note: "Unit price",
-      });
-    }
-    deltas.push({
-      kind: "add", group: "Materials", title: "Starter strip shingles",
-      note: `6 bundle × ${money(38)} — added`,
-    });
-    if (materials.some((l) => l.id === "m6")) {
-      deltas.push({
-        kind: "rem", group: "Materials", title: "Roofing nails, coil",
-        note: "Rolled into labor — removed",
-      });
-    }
-    setPending({ instructions: text, deltas });
   };
 
   const commitPending = () => {
-    setUndo({ materials: clone(materials), labor: clone(labor), scope });
-    seq.current += 1;
-    setMaterials((prev) =>
-      prev
-        .map((l) => (l.id === "m1" ? { ...l, price: Math.round(l.price * 1.12) } : l))
-        .concat({ id: `m${seq.current}`, name: "Starter strip shingles", qty: 6, unit: "bundle", price: 38, link: true })
-        .filter((l) => l.id !== "m6"),
-    );
-    setLabor((prev) => prev.map((l) => (l.id === "l3" ? { ...l, price: l.price + 8 } : l)));
+    const p = pending;
+    if (!p) return;
+    setUndoSnap({
+      lines: clone(lines),
+      scope,
+      assumptions,
+      title,
+      discount,
+      timelineDays,
+      history,
+    });
+    // mergeRefined keeps each line's retail price unless the server actually
+    // re-shopped it, so the materials request keeps quoting the real shelf.
+    setLines(mergeRefined(lines, p.data));
+    setTitle(p.data.title || title);
+    setScope(p.data.scope || scope);
+    setAssumptions(p.data.assumptions);
+    setTimelineDays(p.data.estimatedTimelineDays ?? timelineDays);
+    setDiscount(discountFromSchema(p.data.discount));
+    setHistory((h) => [...h, p.instructions].slice(-8));
     setPending(null);
     setRefineTxt("");
+    if (p.warnings.length) {
+      setBanner({
+        tone: "warning",
+        title: "Applied, with caveats",
+        body: "Check these lines before you send the proposal:",
+        list: p.warnings,
+      });
+    }
   };
 
   const runUndo = () => {
-    if (!undo) return;
-    setMaterials(clone(undo.materials));
-    setLabor(clone(undo.labor));
-    setScope(undo.scope);
-    setUndo(null);
+    const s = undoSnap;
+    if (!s) return;
+    setLines(clone(s.lines));
+    setScope(s.scope);
+    setAssumptions(s.assumptions);
+    setTitle(s.title);
+    setDiscount(s.discount);
+    setTimelineDays(s.timelineDays);
+    setHistory(s.history);
+    setUndoSnap(null);
+    setBanner(null);
+  };
+
+  /* ---------- save → proposal -------------------------------------------- */
+  const saveAsProposal = async () => {
+    if (saveBusy || !lines.length) return;
+    setSaveBusy(true);
+    setBanner(null);
+    const payload = estimateFromLines(lines, {
+      title: estTitle,
+      scope,
+      assumptions,
+      estimatedTimelineDays: timelineDays ?? undefined,
+      discount: discountToSchema(discount),
+    });
+    try {
+      await saveEstimate({
+        projectType: typeLabel,
+        location: locUsed || null,
+        data: payload,
+      });
+      const res = await convertEstimateToProposal({
+        projectType: typeLabel,
+        title: payload.title,
+        scope: payload.scope,
+        materials: payload.materials,
+        labor: payload.labor,
+        assumptions,
+        location: locUsed || undefined,
+        discount: payload.discount ?? null,
+      });
+      // router.push, never location.assign — a hard nav replays the blueprint
+      // entrance and the user sees the page build itself twice.
+      router.push(`/dashboard/proposals/${res.id}`);
+    } catch (err) {
+      setSaveBusy(false);
+      setBanner(
+        isPlanLimitError(err)
+          ? PLAN_LIMIT_BANNER(errText(err))
+          : { tone: "danger", title: "Couldn't create the proposal", body: errText(err) },
+      );
+    }
   };
 
   /* ---------- row actions sheet ----------------------------------------- */
-  const sheetLine = sheetRef2 ? listOf(sheetRef2.grp).find((l) => l.id === sheetRef2.id) ?? null : null;
-  const editLine = editRef ? listOf(editRef.grp).find((l) => l.id === editRef.id) ?? null : null;
+  const sheetLine = findLine(sheetRef2);
+  const editLine = findLine(editRef);
+  const sheetBuy = sheetLine ? buyUrlFor(sheetLine) : null;
 
   const menuRows = useMemo<MenuRow[]>(() => {
-    if (!sheetRef2 || !sheetLine) return [];
-    const other: Group = sheetRef2.grp === "materials" ? "labor" : "materials";
+    if (!sheetLine) return [];
+    const other: LineGroup = sheetLine.group === "materials" ? "labor" : "materials";
     return [
       { act: "edit", icon: "i-file", tone: styles.miBp, title: "Edit line",
         sub: "Description, quantity and price" },
       { act: "link", icon: "i-arrow", tone: styles.miSky, title: "Open retail link",
-        sub: sheetLine.link ? "Jumps to the supplier listing" : "No retail source on this line",
-        disabled: !sheetLine.link },
+        sub: sheetBuy
+          ? `Opens ${sheetLine.store ?? "the listing"} in a new tab`
+          : "No retail source on this line",
+        disabled: !sheetBuy },
       { act: "dup", icon: "i-copy", title: "Duplicate line", sub: "Copies it in below" },
       { act: "move", icon: "i-rotate", tone: styles.miWarn,
         title: other === "labor" ? "Move to labor" : "Move to materials",
-        sub: `Re-files it under ${other === "labor" ? "Labor" : "Materials"}` },
+        sub: `Re-files it under ${groupLabel(other)}` },
       { act: "del", icon: "i-trash", tone: styles.miDanger, title: "Remove line",
         sub: "Deletes it from the estimate", danger: true },
     ];
-  }, [sheetRef2, sheetLine]);
+  }, [sheetLine, sheetBuy]);
 
   const runMenu = (act: string) => {
-    if (!sheetRef2 || !sheetLine) return;
-    const { grp, id } = sheetRef2;
+    if (!sheetLine) return;
+    const id = sheetLine.id;
     if (act === "edit") {
-      openEdit(grp, sheetLine);
+      openEdit(sheetLine);
+      return;
+    }
+    if (act === "link") {
+      if (sheetBuy) window.open(sheetBuy, "_blank", "noopener,noreferrer");
+      setSheetRef2(null);
       return;
     }
     setSheetRef2(null);
     if (act === "dup") {
-      seq.current += 1;
-      const copy: Line = { ...sheetLine, id: `d${seq.current}` };
-      const list = listOf(grp);
-      const at = list.findIndex((l) => l.id === id);
-      setListOf(grp, list.slice(0, at + 1).concat(copy, list.slice(at + 1)));
+      const copy: ConsoleLine = { ...sheetLine, id: newLineId("d"), badge: undefined };
+      setLines((prev) => {
+        const at = prev.findIndex((l) => l.id === id);
+        return prev.slice(0, at + 1).concat(copy, prev.slice(at + 1));
+      });
       setLandedId(copy.id);
     } else if (act === "move") {
-      const other: Group = grp === "materials" ? "labor" : "materials";
-      setListOf(grp, listOf(grp).filter((l) => l.id !== id));
-      setListOf(other, listOf(other).concat({ ...sheetLine }));
+      const other: LineGroup = sheetLine.group === "materials" ? "labor" : "materials";
+      setLines((prev) =>
+        prev
+          .filter((l) => l.id !== id)
+          .concat({ ...sheetLine, group: other, unit: unitOptionsFor(other)[0] }),
+      );
       setLandedId(id);
     } else if (act === "del") {
-      setListOf(grp, listOf(grp).filter((l) => l.id !== id));
+      setLines((prev) => prev.filter((l) => l.id !== id));
     }
-    // "link" is inert by design: this surface makes no network calls.
   };
 
-  const anyOverlay = Boolean(sheetLine) || Boolean(editLine);
+  const anyOverlay = Boolean(sheetLine) || Boolean(editLine) || Boolean(clarify);
 
   // Swipe-down dismissal, one gesture per sheet, on the same setters the
   // Escape ladder uses.
   const actionsDrag = useSheetDrag(Boolean(sheetLine), () => setSheetRef2(null));
   const editDrag = useSheetDrag(Boolean(editLine), () => setEditRef(null));
+  // Swiping the questions away is backing out of the run, the same as the
+  // scrim and Escape — never a silent "generate anyway", which would spend a
+  // model call on a gesture.
+  const clarifyDrag = useSheetDrag(Boolean(clarify), () => settleClarify(null));
+
+  /** The answered pairs, in question order, blanks dropped. */
+  const clarifyPairs = (): ClarifyAnswer[] =>
+    (clarify ?? [])
+      .filter((q) => (clarifyAns[q.id] ?? "").trim())
+      .map((q) => ({ question: q.question, answer: (clarifyAns[q.id] ?? "").trim() }));
   const stepCls = `${styles.step} ${dir === "fwd" ? styles.stepFwd : styles.stepBack}`;
+  const editUnits = useMemo(() => {
+    if (!editLine) return [] as string[];
+    const base = unitOptionsFor(editLine.group).slice();
+    // Whatever the AI actually returned stays offered, even when it is off-list
+    // ("square", "lot") — dropping it would silently retype the line.
+    return base.includes(form.unit) || !form.unit ? base : base.concat(form.unit);
+  }, [editLine, form.unit]);
 
   /* ---------- one ledger, drawn as row cards ---------------------------- */
-  const renderLedger = (grp: Group, label: string) => {
+  const renderLedger = (grp: LineGroup, label: string) => {
     const list = listOf(grp);
-    const total = grp === "materials" ? matTotal : labTotal;
+    const total = grp === "materials" ? totals.materials : totals.labor;
     return (
       <section className={styles.card}>
         <div className={styles.cardHead}>
@@ -640,6 +1265,8 @@ export function MobileSmartProposal() {
           <div className={styles.lines}>
             {list.map((l, i) => {
               const t = lineTotal(l);
+              const buy = buyUrlFor(l);
+              const armed = armedDel === l.id;
               return (
                 <div
                   key={l.id}
@@ -652,29 +1279,55 @@ export function MobileSmartProposal() {
                   <button
                     className={styles.lname}
                     type="button"
-                    onClick={() => openEdit(grp, l)}
+                    onClick={() => openEdit(l)}
                   >
-                    <span className={styles.lnameT}>{l.name}</span>
+                    <span className={styles.lnameT}>
+                      {l.name}
+                      {l.badge ? <span className={styles.lbadge}>{l.badge}</span> : null}
+                    </span>
                     <span className={styles.lmeta}>
                       {l.qty} {l.unit} × {money(l.price)}
                     </span>
                   </button>
-                  <button
-                    className={styles.lrowOpen}
-                    type="button"
-                    aria-label={`Actions for ${l.name}`}
-                    onClick={() => setSheetRef2({ grp, id: l.id })}
-                  >
-                    <Icon id="i-dots" />
-                  </button>
+                  <div className={styles.lrowActs}>
+                    {/* Removal used to be three taps deep in the ⋮ sheet. It is
+                        one tap here — and two to commit, like Start over. */}
+                    <button
+                      className={`${styles.lrowDel} ${armed ? styles.isArmed : ""}`}
+                      type="button"
+                      aria-label={armed ? `Tap again to remove ${l.name}` : `Remove ${l.name}`}
+                      title={armed ? "Tap again to remove" : "Remove line"}
+                      onClick={() => removeLine(l.id)}
+                    >
+                      <Icon id={armed ? "i-trash" : "i-x"} />
+                    </button>
+                    <button
+                      className={styles.lrowOpen}
+                      type="button"
+                      aria-label={`Actions for ${l.name}`}
+                      onClick={() => setSheetRef2(l.id)}
+                    >
+                      <Icon id="i-dots" />
+                    </button>
+                  </div>
                   <div className={styles.lfoot}>
-                    {l.link ? (
-                      <span className={styles.llink}>
-                        Retail link<Icon id="i-arrow" />
-                      </span>
-                    ) : (
+                    {/* "Own supply" is dropped on LABOR at the owner's request:
+                        a labour line has no supply to source, so the badge was
+                        only ever noise there. Materials keep it — on a
+                        shopping list, "not a retail link" is real information. */}
+                    {buy ? (
+                      <a
+                        className={styles.llinkBtn}
+                        href={buy}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {l.store ? `Buy at ${l.store}` : "Retail link"}
+                        <Icon id="i-arrow" />
+                      </a>
+                    ) : grp === "materials" ? (
                       <span className={styles.lown}>Own supply</span>
-                    )}
+                    ) : null}
                     <span className={`${styles.ltotal} ${t ? "" : styles.isZero}`}>
                       {t ? money(t) : "—"}
                     </span>
@@ -726,9 +1379,44 @@ export function MobileSmartProposal() {
           {/* PAGE HEAD — no action buttons: the wizard's commit pair lives in
               the sticky foot, in the thumb zone, where it belongs. */}
           <div className={styles.pageHead}>
-            <div className={styles.kicker}>Sales · Estimating</div>
             <h1 className={styles.pageTitle}>Smart Proposal</h1>
           </div>
+
+          {/* THE ONE PLACE A FAILURE IS REPORTED. A toast cannot be trusted on a
+              surface that pins itself over the app, and "nothing happened" is
+              never an acceptable answer to a 40-second wait. */}
+          {banner ? (
+            <div
+              className={`${styles.banner} ${
+                banner.tone === "danger"
+                  ? styles.bDanger
+                  : banner.tone === "warning"
+                    ? styles.bWarn
+                    : styles.bInfo
+              }`}
+              role="status"
+            >
+              <div className={styles.bTitle}>{banner.title}</div>
+              <div className={styles.bBody}>{banner.body}</div>
+              {banner.list?.length ? (
+                <ul className={styles.bList}>
+                  {banner.list.map((q) => (
+                    <li key={q}>{q}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className={styles.bActs}>
+                {banner.href ? (
+                  <a className={styles.bBtn} href={banner.href}>
+                    {banner.cta ?? "Open"}
+                  </a>
+                ) : null}
+                <button className={styles.bBtn} type="button" onClick={() => setBanner(null)}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {phase !== "studio" ? (
             <>
@@ -784,6 +1472,9 @@ export function MobileSmartProposal() {
                         <span className={styles.fldErr}>Pick the kind of work first</span>
                       ) : null}
 
+                      {/* Not a label: this text IS the project type the estimator
+                          prices against, so "Skylights" gets skylight materials
+                          rather than a generic "Other work" bill. */}
                       {type === "other" ? (
                         <div className={`${styles.fld} ${errOther ? styles.invalid : ""}`}>
                           <label className={styles.fldLbl} htmlFor="maOther">
@@ -802,6 +1493,9 @@ export function MobileSmartProposal() {
                               if (e.target.value.trim()) setErrOther(false);
                             }}
                           />
+                          <span className={styles.fldHint}>
+                            This is what the AI prices — name the trade, not the customer.
+                          </span>
                           {errOther ? (
                             <span className={styles.fldErr}>Say what the work is</span>
                           ) : null}
@@ -819,8 +1513,9 @@ export function MobileSmartProposal() {
                       <div>
                         <h2 className={styles.stepH}>Location</h2>
                         <p className={styles.stepHint}>
-                          Regional pricing. Pick a town and the state fills itself in. Optional —
-                          skip it and the estimate is priced without a regional adjustment.
+                          Regional pricing and the sales-tax rate. Pick a town and the state fills
+                          itself in. Optional — skip it and the estimate is priced without a
+                          regional adjustment.
                         </p>
                       </div>
                     </div>
@@ -854,6 +1549,11 @@ export function MobileSmartProposal() {
                           onChange={setLocState}
                           options={STATES}
                         />
+                        <span className={styles.fldHint}>
+                          {locState
+                            ? `Seeds the tax rate at ${stateTaxPct(locState)}% — the ${locState} base rate, editable in Totals.`
+                            : "Seeds the sales-tax rate in the estimate's Totals."}
+                        </span>
                       </div>
                     </div>
                   </>
@@ -892,12 +1592,99 @@ export function MobileSmartProposal() {
                           <span className={styles.fldErr}>Describe the job before pricing it</span>
                         ) : null}
                       </div>
+
+                      {/* PHOTOS — the phone is the only device holding the job.
+                          Tap to choose or shoot, drop on a tablet, read to data
+                          URLs here and sent on the request that prices the work. */}
+                      <div className={styles.fld}>
+                        <span className={styles.fldLbl}>Site photos</span>
+                        <div
+                          className={`${styles.dz} ${dragOver ? styles.dzOver : ""}`}
+                          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                          onDragLeave={() => setDragOver(false)}
+                          onDrop={onDrop}
+                        >
+                          <Icon id="i-imgplus" className={styles.dzIc} />
+                          <div className={styles.dzT}>Show it the job</div>
+                          <div className={styles.dzS}>
+                            Up to {MAX_PHOTOS} photos. The AI reads them for materials, condition
+                            and access — they are never uploaded or stored.
+                          </div>
+                          <div className={styles.dzActs}>
+                            <button
+                              className={styles.dzBtn}
+                              type="button"
+                              onClick={() => camRef.current?.click()}
+                            >
+                              <Icon id="i-imgplus" />Take a photo
+                            </button>
+                            <button
+                              className={styles.dzBtn}
+                              type="button"
+                              onClick={() => libRef.current?.click()}
+                            >
+                              <Icon id="i-folder" />Choose photos
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          ref={camRef}
+                          className={styles.fileIn}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={onPick}
+                        />
+                        <input
+                          ref={libRef}
+                          className={styles.fileIn}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={onPick}
+                        />
+
+                        {photos.length ? (
+                          <>
+                            <div className={styles.thumbs}>
+                              {photos.map((p) => (
+                                <div className={styles.thumb} key={p.id}>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img className={styles.thumbImg} src={p.url} alt={p.name} />
+                                  <button
+                                    className={styles.thumbX}
+                                    type="button"
+                                    aria-label={`Remove ${p.name}`}
+                                    onClick={() =>
+                                      setPhotos((prev) => prev.filter((q) => q.id !== p.id))
+                                    }
+                                  >
+                                    <Icon id="i-x" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            <span className={styles.fldHint}>
+                              {photos.length} of {MAX_PHOTOS} · {mb(photoBytes)} sent with the brief
+                            </span>
+                          </>
+                        ) : null}
+                        {photoErr ? <span className={styles.fldErr}>{photoErr}</span> : null}
+                      </div>
+
                       <div className={styles.fld}>
                         <span className={styles.fldLbl}>Start from an example</span>
                         <div className={styles.samples}>
                           {SAMPLES.map((s, i) => (
                             <button key={s} className={styles.sample} type="button"
-                              onClick={() => pickSample(i)}>
+                              onClick={() => {
+                                setBrief(s);
+                                setErrBrief(false);
+                                if (!type) {
+                                  setType(i === 1 ? "fence" : i === 2 ? "deck" : i === 3 ? "gutters" : "roof");
+                                  setErrType(false);
+                                }
+                              }}>
                               {s}
                             </button>
                           ))}
@@ -918,7 +1705,7 @@ export function MobileSmartProposal() {
                         </h2>
                         <p className={styles.stepHint}>
                           {phase === "busy"
-                            ? "Materials are priced at retail, labor is costed per unit, and the scope is written last."
+                            ? "Materials are priced against live retail listings, labor is costed per unit, and the scope is written last."
                             : "This is what gets priced. Tap any line to go back and change it."}
                         </p>
                       </div>
@@ -926,24 +1713,54 @@ export function MobileSmartProposal() {
                     <div className={styles.stepBody}>
                       {phase === "busy" ? (
                         <ul className={styles.stages}>
-                          {STAGES.map((s, i) => (
-                            <li
-                              key={s}
-                              className={`${styles.stage} ${i < stageIdx ? styles.isDone : ""} ${i === stageIdx ? styles.isNow : ""}`}
-                            >
-                              <span className={styles.stageIc}>
-                                {i < stageIdx ? <Icon id="i-check" /> : null}
-                              </span>
-                              {s}
-                            </li>
-                          ))}
+                          {STAGES.map((s, i) => {
+                            const done = genDone || i < stageIdx;
+                            const now = !genDone && i === stageIdx;
+                            return (
+                              <li
+                                key={s.label}
+                                className={`${styles.stage} ${done ? styles.isDone : ""} ${now ? styles.isNow : ""}`}
+                              >
+                                {/* The square's outline is SVG, not a CSS border:
+                                    the ACTIVE state walks a dash around that
+                                    outline, which `border` cannot do. Both rects
+                                    are always mounted so advancing a step is a
+                                    paint, never a remount that restarts the walk
+                                    on the square that is already running. */}
+                                <span className={styles.stageIc} aria-hidden="true">
+                                  <svg className={styles.stageRing} viewBox="0 0 26 26">
+                                    <rect
+                                      className={styles.stageRingTrack}
+                                      x="1" y="1" width="24" height="24"
+                                    />
+                                    <rect
+                                      className={styles.stageRingRun}
+                                      x="1" y="1" width="24" height="24"
+                                    />
+                                  </svg>
+                                  <Icon id="i-check" />
+                                </span>
+                                {s.label}
+                              </li>
+                            );
+                          })}
                         </ul>
                       ) : (
-                        <div className={styles.review}>
+                        /* Rows sit directly in the step card — a bordered recap
+                           box inside a bordered step card was a card in a card. */
+                        <div className={styles.revList}>
                           {[
                             { n: 1, l: "Project type", v: typeLabel, miss: "Not picked" },
                             { n: 2, l: "Location", v: where, miss: "Not set — priced without a regional adjustment" },
                             { n: 3, l: "The brief", v: brief.trim(), miss: "Empty" },
+                            {
+                              n: 3,
+                              l: "Photos",
+                              v: photos.length
+                                ? `${photos.length} attached · read by the AI, not stored`
+                                : "",
+                              miss: "None — the AI prices from the words alone",
+                            },
                           ].map((r) => (
                             <div className={styles.revRow} key={r.l}>
                               <div className={styles.revLbl}>{r.l}</div>
@@ -970,14 +1787,10 @@ export function MobileSmartProposal() {
                   without knowing which job it belongs to. */}
               <section className={styles.sthead} key="sthead">
                 <div className={styles.stKicker}>
-                  {typeLabel || "Estimate"}{where ? ` · ${where}` : ""}
+                  {typeLabel || "Estimate"}{locUsed ? ` · ${locUsed}` : ""}
+                  {timelineDays ? ` · ${timelineDays} day${timelineDays === 1 ? "" : "s"}` : ""}
                 </div>
                 <h2 className={styles.stTitle}>{estTitle}</h2>
-                <div className={styles.stActs}>
-                  <button className={styles.stAct} type="button" disabled={!undo} onClick={runUndo}>
-                    <Icon id="i-rotate" />Undo last change
-                  </button>
-                </div>
               </section>
 
               {/* MASTHEAD — one numeral, mono kicker, EXACTLY two annotations.
@@ -988,8 +1801,8 @@ export function MobileSmartProposal() {
                     Client price
                     <span className={styles.smastRule} />
                   </div>
-                  {clientPrice ? (
-                    <CountUp value={clientPrice} className={styles.smastVal} />
+                  {totals.clientPrice ? (
+                    <CountUp value={totals.clientPrice} className={styles.smastVal} />
                   ) : (
                     <div className={`${styles.smastVal} ${styles.isZero}`}>—</div>
                   )}
@@ -997,14 +1810,14 @@ export function MobileSmartProposal() {
                 <div className={styles.smastCnt}>
                   <div className={styles.smastSub}>
                     <div className={styles.smastSubL}>Materials</div>
-                    <div className={`${styles.smastSubV} ${matTotal ? "" : styles.isZero}`}>
-                      {matTotal ? money(matTotal) : "—"}
+                    <div className={`${styles.smastSubV} ${totals.materials ? "" : styles.isZero}`}>
+                      {totals.materials ? money(totals.materials) : "—"}
                     </div>
                   </div>
                   <div className={styles.smastSub}>
                     <div className={styles.smastSubL}>Labor</div>
-                    <div className={`${styles.smastSubV} ${labTotal ? "" : styles.isZero}`}>
-                      {labTotal ? money(labTotal) : "—"}
+                    <div className={`${styles.smastSubV} ${totals.labor ? "" : styles.isZero}`}>
+                      {totals.labor ? money(totals.labor) : "—"}
                     </div>
                   </div>
                 </div>
@@ -1028,22 +1841,75 @@ export function MobileSmartProposal() {
               {renderLedger("materials", "Materials")}
               {renderLedger("labor", "Labor")}
 
-              {/* ASSUMPTIONS */}
-              <section className={styles.card} key="assump">
-                <div className={styles.cardHead}>
-                  <span className={styles.cardLbl}>Assumptions</span>
-                </div>
-                <ul className={styles.assump}>
-                  {assumptions.map((a, i) => (
-                    <li key={a} className={styles.rowIn} style={{ animationDelay: `${i * 45}ms` }}>
-                      {a}
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              {/* MATERIALS REQUEST — derived from the very lines above via
+                  materialsRequest(), never a second copy. Delete a line and its
+                  row goes; change a quantity and this follows; override a price
+                  and the REAL shelf price keeps being quoted with the override
+                  beside it, because claiming Home Depot sells it for whatever
+                  was typed is the one thing a purchasing list must not do. */}
+              {reqRows.length ? (
+                <section className={styles.card} key="mreq">
+                  <div className={styles.cardHead}>
+                    <span className={styles.cardLbl}>Materials request</span>
+                    <span className={styles.cardSum}>{reqRows.length} items</span>
+                  </div>
+                  <div className={styles.mrows}>
+                    {reqRows.map((r) => {
+                      const buy = merchantUrl(r.store, buyQuery(r), r.productUrl);
+                      return (
+                        <div className={styles.mrow} key={r.id}>
+                          <Thumb src={r.imageUrl} alt={r.name} />
+                          <div className={styles.mbody}>
+                            <div className={styles.mname}>{r.name}</div>
+                            <div className={styles.mmeta}>
+                              {r.dimensions ? <span>{r.dimensions}</span> : null}
+                              {r.store ? (
+                                <span>{r.store}</span>
+                              ) : (
+                                <span className={styles.mUnshopped}>Not shopped</span>
+                              )}
+                            </div>
+                            <div className={styles.mline}>
+                              <span className={styles.mqty}>
+                                {r.qty} {r.unit} ×{" "}
+                                {r.overridden && r.retailUnitPrice != null ? (
+                                  <>
+                                    {cash(r.retailUnitPrice)}
+                                    <em className={styles.mover}>({cash(r.unitPrice)} billed)</em>
+                                  </>
+                                ) : (
+                                  cash(r.unitPrice)
+                                )}
+                              </span>
+                              <span className={styles.mtotal}>{money(r.total)}</span>
+                            </div>
+                          </div>
+                          {buy ? (
+                            <a
+                              className={styles.mbuy}
+                              href={buy}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Icon id="i-arrow" />
+                              Buy at {r.store ?? "the retailer"}
+                            </a>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className={styles.cardFoot}>
+                    <div className={styles.mreqTotal}>
+                      <span>Request total</span>
+                      <b>{money(reqTotal)}</b>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
 
               {/* TOTALS — an estimate sheet: right-aligned tabular numerals and
-                  a ruled total row. */}
+                  a ruled total row. Every figure is computeTotals'. */}
               <section className={styles.card} key="totals">
                 <div className={styles.cardHead}>
                   <span className={styles.cardLbl}>Totals</span>
@@ -1051,8 +1917,8 @@ export function MobileSmartProposal() {
                 <div className={styles.cardPad}>
                   <div className={styles.totRow}>
                     <span className={styles.totLbl}>Subtotal</span>
-                    <span className={`${styles.totVal} ${subtotal ? "" : styles.isZero}`}>
-                      {subtotal ? money(subtotal) : "—"}
+                    <span className={`${styles.totVal} ${totals.subtotal ? "" : styles.isZero}`}>
+                      {totals.subtotal ? money(totals.subtotal) : "—"}
                     </span>
                   </div>
                   <div className={styles.marginBox}>
@@ -1080,34 +1946,189 @@ export function MobileSmartProposal() {
                     </div>
                     <div className={styles.marginRow}>
                       <span className={styles.marginAdd}>Added to the client price</span>
-                      <span className={`${styles.totVal} ${marginCash ? "" : styles.isZero}`}>
-                        {marginCash ? money(marginCash) : "—"}
+                      <span className={`${styles.totVal} ${totals.marginCash ? "" : styles.isZero}`}>
+                        {totals.marginCash ? money(totals.marginCash) : "—"}
                       </span>
                     </div>
                   </div>
-                  <div className={`${styles.totRow} ${styles.totGrand}`}>
+                  <div className={styles.totRow}>
                     <span className={styles.totLbl}>Client price</span>
-                    <span className={`${styles.totGrandVal} ${clientPrice ? "" : styles.isZero}`}>
-                      {clientPrice ? money(clientPrice) : "—"}
+                    <span className={`${styles.totVal} ${totals.clientPrice ? "" : styles.isZero}`}>
+                      {totals.clientPrice ? money(totals.clientPrice) : "—"}
+                    </span>
+                  </div>
+
+                  {/* DISCOUNT — order-level, exactly as the schema holds it, so
+                      it converts 1:1 into the proposal's Discount row instead of
+                      being smeared across line prices. The %/$ pair is the unit
+                      the counter is counting in. */}
+                  <div className={styles.marginBox}>
+                    <div className={styles.marginRow}>
+                      <span className={styles.fldLbl}>Discount</span>
+                      <span className={styles.marginCtl}>
+                        <button
+                          className={styles.marginBtn}
+                          type="button"
+                          aria-label="Lower the discount"
+                          onClick={() =>
+                            setDiscount((d) => ({
+                              ...d,
+                              value: Math.max(0, Math.round((d.value - (d.mode === "pct" ? 1 : 25)) * 100) / 100),
+                            }))
+                          }
+                        >
+                          −
+                        </button>
+                        <input
+                          className={styles.marginIn}
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          max={discount.mode === "pct" ? 100 : MAX_MONEY}
+                          step={discount.mode === "pct" ? 1 : 25}
+                          aria-label={discount.mode === "pct" ? "Discount percent" : "Discount amount in dollars"}
+                          value={discount.value}
+                          onChange={(e) =>
+                            setDiscount((d) => ({
+                              ...d,
+                              value: Math.max(
+                                0,
+                                Math.min(d.mode === "pct" ? 100 : MAX_MONEY, Number(e.target.value) || 0),
+                              ),
+                            }))
+                          }
+                        />
+                        <button
+                          className={styles.marginBtn}
+                          type="button"
+                          aria-label="Raise the discount"
+                          onClick={() =>
+                            setDiscount((d) => ({
+                              ...d,
+                              value: Math.min(
+                                d.mode === "pct" ? 100 : MAX_MONEY,
+                                Math.round((d.value + (d.mode === "pct" ? 1 : 25)) * 100) / 100,
+                              ),
+                            }))
+                          }
+                        >
+                          +
+                        </button>
+                      </span>
+                    </div>
+                    <div className={styles.marginRow}>
+                      <span className={styles.discToggle} role="group" aria-label="Discount unit">
+                        <button
+                          className={`${styles.discBtn} ${discount.mode === "pct" ? styles.on : ""}`}
+                          type="button"
+                          aria-pressed={discount.mode === "pct"}
+                          onClick={() => setDiscount((d) => ({ ...d, mode: "pct" }))}
+                        >
+                          %
+                        </button>
+                        <button
+                          className={`${styles.discBtn} ${discount.mode === "amt" ? styles.on : ""}`}
+                          type="button"
+                          aria-pressed={discount.mode === "amt"}
+                          onClick={() => setDiscount((d) => ({ ...d, mode: "amt" }))}
+                        >
+                          $
+                        </button>
+                      </span>
+                      <span className={`${styles.totVal} ${totals.discountCash ? styles.isCredit : styles.isZero}`}>
+                        {totals.discountCash ? `−${money(totals.discountCash)}` : "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* TAX — rests at 0 and fills from the state picked in
+                      intake; the % is drawn INSIDE the field so the number
+                      always reads as a rate and never as an amount. Editable,
+                      because the auto-fill is a base state rate and excludes
+                      county/city — see ./state-tax.ts. Charged on the
+                      DISCOUNTED price, which is what the customer pays for. */}
+                  <div className={styles.marginBox}>
+                    <div className={styles.marginRow}>
+                      <span className={styles.fldLbl}>Tax</span>
+                      <span className={styles.marginCtl}>
+                        <button
+                          className={styles.marginBtn}
+                          type="button"
+                          aria-label="Lower the tax rate"
+                          onClick={() =>
+                            setTaxOverride(Math.max(0, Math.round((taxPct - 0.5) * 1000) / 1000))
+                          }
+                        >
+                          −
+                        </button>
+                        <span className={styles.taxField}>
+                          <input
+                            className={`${styles.marginIn} ${styles.taxIn}`}
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            max={20}
+                            step={0.25}
+                            aria-label="Tax rate percent"
+                            value={taxPct}
+                            onChange={(e) =>
+                              setTaxOverride(Math.max(0, Math.min(20, Number(e.target.value) || 0)))
+                            }
+                          />
+                          <span className={styles.taxPct} aria-hidden="true">%</span>
+                        </span>
+                        <button
+                          className={styles.marginBtn}
+                          type="button"
+                          aria-label="Raise the tax rate"
+                          onClick={() =>
+                            setTaxOverride(Math.min(20, Math.round((taxPct + 0.5) * 1000) / 1000))
+                          }
+                        >
+                          +
+                        </button>
+                      </span>
+                    </div>
+                    <div className={styles.marginRow}>
+                      <span className={styles.marginAdd}>
+                        {locState && !taxTouched
+                          ? `${locState} base rate · excludes county and city`
+                          : "Charged on the discounted price"}
+                      </span>
+                      <span className={`${styles.totVal} ${totals.taxCash ? "" : styles.isZero}`}>
+                        {totals.taxCash ? money(totals.taxCash) : "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={`${styles.totRow} ${styles.totGrand}`}>
+                    <span className={styles.totLbl}>Total due</span>
+                    <span className={`${styles.totGrandVal} ${totals.total ? "" : styles.isZero}`}>
+                      {totals.total ? money(totals.total) : "—"}
                     </span>
                   </div>
                 </div>
               </section>
 
-              {/* REFINE — plain words in, a real diff out, nothing applied
-                  until it is confirmed. */}
+              {/* CHANGE THE ESTIMATE — plain words in, a real AI edit out,
+                  nothing applied until the diff is confirmed. Undo sits beside
+                  Apply, and the assumptions the estimate rests on sit under
+                  both, because they are the other half of the same instruction
+                  the model is given. */}
               <section className={styles.card} key="refine">
                 <div className={styles.cardHead}>
-                  <span className={styles.cardLbl}>{pending ? "Review changes" : "Refine"}</span>
+                  <span className={styles.cardLbl}>
+                    {pending ? "Review changes" : "Change the estimate"}
+                  </span>
                 </div>
                 <div className={styles.cardPad}>
                   {pending ? (
                     <>
                       <div className={styles.rfNote}>“{pending.instructions}”</div>
                       <ul className={styles.diffList}>
-                        {pending.deltas.map((d) => (
+                        {pending.deltas.map((d, i) => (
                           <li
-                            key={`${d.kind}-${d.title}`}
+                            key={`${d.kind}-${d.title}-${i}`}
                             className={`${styles.diffItem} ${
                               d.kind === "add" ? styles.diffAdd : d.kind === "rem" ? styles.diffRem : styles.diffChg
                             }`}
@@ -1125,6 +2146,12 @@ export function MobileSmartProposal() {
                             </div>
                           </li>
                         ))}
+                        {pending.warnings.map((w) => (
+                          <li key={w} className={`${styles.diffItem} ${styles.diffChg}`}>
+                            <div className={styles.diffGrp}>Check this</div>
+                            <div className={styles.diffT}>{w}</div>
+                          </li>
+                        ))}
                       </ul>
                       <div className={styles.rfAct}>
                         <button className={styles.rfBtn} type="button" onClick={() => setPending(null)}>
@@ -1138,13 +2165,16 @@ export function MobileSmartProposal() {
                   ) : (
                     <>
                       <div className={styles.rfNote}>
-                        Ask for a change in plain words — the estimate is re-priced and shown as a
-                        diff before anything is applied.
+                        Ask for a change in plain words — add a line, re-spec a material, drop one,
+                        or take money off. It is re-priced and shown as a diff before anything is
+                        applied.
                       </div>
                       <div className={`${styles.fld} ${errRefine ? styles.invalid : ""}`}>
                         <textarea
                           className={`${styles.area} ${styles.rfArea}`}
                           aria-label="Describe the change"
+                          maxLength={4000}
+                          disabled={refineBusy}
                           placeholder="e.g. Use 30-year shingles instead of 25-year, drop the ridge vents, add a 10% discount…"
                           value={refineTxt}
                           aria-invalid={errRefine}
@@ -1158,10 +2188,53 @@ export function MobileSmartProposal() {
                         ) : null}
                       </div>
                       <div className={styles.rfAct}>
-                        <button className={styles.rfBtn} type="button" onClick={applyRefine}>
-                          <Icon id="i-bulb" />Apply changes
+                        <button
+                          className={styles.rfBtn}
+                          type="button"
+                          disabled={refineBusy}
+                          onClick={() => void runRefine()}
+                        >
+                          <Icon id="i-bulb" />
+                          {refineBusy ? "Working…" : "Apply changes"}
+                        </button>
+                        <button
+                          className={`${styles.rfBtn} ${styles.rfBtnWarn}`}
+                          type="button"
+                          disabled={!undoSnap || refineBusy}
+                          onClick={runUndo}
+                        >
+                          <Icon id="i-rotate" />Undo last change
                         </button>
                       </div>
+
+                      <div className={styles.asmHead}>
+                        <span className={styles.cardLbl}>Assumptions</span>
+                        <span className={styles.asmCount}>{assumptions.length}</span>
+                      </div>
+                      {assumptions.length ? (
+                        <ul className={styles.assump}>
+                          {assumptions.map((a, i) => (
+                            <li key={`${a}-${i}`}>
+                              <span className={styles.asmT}>{a}</span>
+                              <button
+                                className={styles.asmX}
+                                type="button"
+                                aria-label={`Remove assumption: ${a}`}
+                                onClick={() =>
+                                  setAssumptions((list) => list.filter((_, j) => j !== i))
+                                }
+                              >
+                                <Icon id="i-x" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className={styles.asmEmpty}>
+                          No assumptions left. The next change request will be applied on the
+                          estimate alone.
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -1179,16 +2252,21 @@ export function MobileSmartProposal() {
         {phase === "studio" ? (
           <>
             <button
-              className={`${styles.btn} ${styles.btnGhost} ${confirmReset ? styles.isArmed : ""}`}
+              className={`${styles.btn} ${styles.btnDanger} ${confirmReset ? styles.isArmed : ""}`}
               type="button"
+              disabled={saveBusy}
               onClick={startOver}
             >
               <Icon id="i-x" />{confirmReset ? "Really?" : "Start over"}
             </button>
-            <button className={`${styles.btn} ${styles.btnPrimary}`} type="button"
-              onClick={() => setConverted(true)}>
-              <Icon id={converted ? "i-check" : "i-file"} />
-              {converted ? "Proposal created" : "Convert to proposal"}
+            <button
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              type="button"
+              disabled={saveBusy || lines.length === 0}
+              onClick={() => void saveAsProposal()}
+            >
+              <Icon id={saveBusy ? "i-rotate" : "i-file"} />
+              {saveBusy ? "Creating…" : "Save as proposal"}
             </button>
           </>
         ) : (
@@ -1216,18 +2294,22 @@ export function MobileSmartProposal() {
       {/* ============ SHEET SCRIM (shared by both sheets) ============ */}
       <div
         className={`${styles.scrim} ${anyOverlay ? styles.on : ""}`}
-        onClick={() => { setSheetRef2(null); setEditRef(null); }}
+        onClick={() => { setSheetRef2(null); setEditRef(null); settleClarify(null); }}
         aria-hidden="true"
       />
 
       {/* ============ LINE ACTIONS SHEET ============ */}
+      {/* `inert`, not aria-hidden: a closed sheet still holds real focusable
+          controls, and aria-hidden over a focused input is a console warning
+          and a genuine screen-reader trap. inert hides it from AT, takes it out
+          of the tab order, AND blows away any focus left inside it. */}
       <div className={`${styles.sheet} ${sheetLine ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-label="Line actions" aria-hidden={!sheetLine} {...actionsDrag.sheetProps}>
+        aria-label="Line actions" inert={!sheetLine} {...actionsDrag.sheetProps}>
         <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
         <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>
-            {sheetLine && sheetRef2
-              ? `${sheetRef2.grp === "materials" ? "Materials" : "Labor"} · ${sheetLine.qty} ${sheetLine.unit} · ${money(lineTotal(sheetLine))}`
+            {sheetLine
+              ? `${groupLabel(sheetLine.group)} · ${sheetLine.qty} ${sheetLine.unit} · ${money(lineTotal(sheetLine))}`
               : "Line · —"}
           </div>
           <div className={styles.sheetTitle}>{sheetLine?.name ?? "Actions"}</div>
@@ -1252,14 +2334,15 @@ export function MobileSmartProposal() {
 
       {/* ============ LINE EDIT SHEET ============
           The desktop edits in place through 32px table cells. At 320px those
-          cells are unusable, so the same four fields move into a form sheet
-          with the house 15px inputs and the submit pair in a beige foot. */}
+          cells are unusable, so the same fields move into a form sheet with the
+          house 15px inputs and the submit pair in a beige foot. Quantity is
+          unit-bearing: "8" alone could be eight hours or eight square feet. */}
       <div className={`${styles.sheet} ${editLine ? styles.on : ""}`} role="dialog" aria-modal="true"
-        aria-labelledby="maEditTitle" aria-hidden={!editLine} {...editDrag.sheetProps}>
+        aria-labelledby="maEditTitle" inert={!editLine} {...editDrag.sheetProps}>
         <div className={styles.sheetGrab} {...editDrag.handleProps} />
         <div className={styles.sheetHead} {...editDrag.handleProps}>
           <div className={styles.sheetKicker}>
-            {editRef?.grp === "labor" ? "Labor / line" : "Materials / line"}
+            {editLine?.group === "labor" ? "Labor / line" : "Materials / line"}
           </div>
           <div className={styles.sheetTitle} id="maEditTitle">Edit line</div>
         </div>
@@ -1279,28 +2362,40 @@ export function MobileSmartProposal() {
             {nameErr ? <span className={styles.fldErr} id="maNameErr">Give the line a description</span> : null}
           </div>
 
-          <div className={styles.fldRow}>
-            <div className={styles.fld}>
-              <label className={styles.fldLbl} htmlFor="maQty">Quantity</label>
-              <input className={`${styles.pinput} ${styles.isNum}`} id="maQty" type="number"
-                inputMode="decimal" min={0} step={0.5} value={form.qty}
-                onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} />
-            </div>
-            <div className={styles.fld}>
-              <label className={styles.fldLbl} htmlFor="maUnit">Unit</label>
-              <input className={styles.pinput} id="maUnit" type="text" placeholder="square"
-                autoComplete="off" value={form.unit}
-                onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} />
+          <div className={styles.fld}>
+            <label className={styles.fldLbl} htmlFor="maQty">Quantity</label>
+            <input className={`${styles.pinput} ${styles.isNum}`} id="maQty" type="number"
+              inputMode="decimal" min={0} max={MAX_QTY} step={0.5} value={form.qty}
+              onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} />
+            <div className={styles.unitChips} role="group" aria-label="Unit">
+              {editUnits.map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  className={`${styles.unitChip} ${form.unit === u ? styles.on : ""}`}
+                  aria-pressed={form.unit === u}
+                  onClick={() => setForm((f) => ({ ...f, unit: u }))}
+                >
+                  per {u}
+                </button>
+              ))}
             </div>
           </div>
 
           <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="maPrice">Unit price</label>
+            <label className={styles.fldLbl} htmlFor="maPrice">Price</label>
             <input className={`${styles.pinput} ${styles.isNum}`} id="maPrice" type="number"
-              inputMode="decimal" min={0} step={1} value={form.price}
+              inputMode="decimal" min={0} max={MAX_MONEY} step={1} value={form.price}
               onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} />
             <span className={styles.fldHint}>
-              Line total {money((parseFloat(form.qty) || 0) * (parseFloat(form.price) || 0))}
+              Line total {money(
+                Math.min(MAX_QTY, Math.max(0, parseFloat(form.qty) || 0)) *
+                  Math.min(MAX_MONEY, Math.max(0, parseFloat(form.price) || 0)),
+              )}
+              {editLine?.retailPrice != null &&
+              Math.abs(editLine.retailPrice - (parseFloat(form.price) || 0)) > 0.005
+                ? ` · retail is ${cash(editLine.retailPrice)}`
+                : ""}
             </span>
           </div>
         </form>
@@ -1312,6 +2407,106 @@ export function MobileSmartProposal() {
           <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="maEditForm">
             <Icon id="i-check" />Save line
           </button>
+        </div>
+      </div>
+
+      {/* ============ INTAKE QUESTIONS SHEET ============
+          Shown BEFORE anything is priced, when the intake gate judged the brief
+          too thin. `analyzeEstimatePrompt` already ran and already decided, so
+          asking here spends that decision rather than discarding it into a
+          post-hoc "the AI had to assume" banner — and costs no extra model
+          call. Every question takes a custom answer, so the options can never
+          trap a job that does not fit them, and "Generate anyway" is always one
+          tap away: the gate advises, it never blocks. */}
+      <div className={`${styles.sheet} ${clarify ? styles.on : ""}`} role="dialog" aria-modal="true"
+        aria-labelledby="maClarifyTitle" inert={!clarify} {...clarifyDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...clarifyDrag.handleProps} />
+        <div className={styles.sheetHead} {...clarifyDrag.handleProps}>
+          <div className={styles.sheetKicker}>Smart Proposal · Intake</div>
+          <div className={styles.sheetTitle} id="maClarifyTitle">A few quick questions</div>
+          <p className={styles.clqSub}>
+            The brief is thin for this kind of job. Answer what you can and it gets priced
+            against real numbers instead of assumptions.
+          </p>
+        </div>
+        <div className={`${styles.sheetBody} ${styles.clqBody}`}>
+          {(clarify ?? []).map((q, i) => {
+            const value = clarifyAns[q.id] ?? "";
+            const isCustom = Boolean(clarifyCustom[q.id]);
+            // An option-less "select" is unanswerable; the server already
+            // downgrades those, and this is the second belt.
+            const kind =
+              q.kind === "select" && q.options && q.options.length > 0
+                ? "select"
+                : q.kind === "number"
+                  ? "number"
+                  : "text";
+            return (
+              <div className={styles.clqQ} key={q.id}>
+                <span className={styles.clqN} aria-hidden="true">{i + 1}</span>
+                <div className={styles.clqBd}>
+                  <label className={styles.clqLbl} htmlFor={`maClq-${q.id}`}>{q.question}</label>
+
+                  {kind === "select" && q.options ? (
+                    <div className={styles.clqOpts}>
+                      {q.options.map((opt) => (
+                        <button key={opt} type="button"
+                          className={`${styles.clqOpt} ${!isCustom && value === opt ? styles.on : ""}`}
+                          aria-pressed={!isCustom && value === opt}
+                          onClick={() => {
+                            setClarifyCustom((c) => ({ ...c, [q.id]: false }));
+                            setClarifyAns((a) => ({ ...a, [q.id]: opt }));
+                          }}>
+                          {opt}
+                        </button>
+                      ))}
+                      <button type="button"
+                        className={`${styles.clqOpt} ${styles.clqOptOther} ${isCustom ? styles.on : ""}`}
+                        aria-pressed={isCustom}
+                        onClick={() => {
+                          setClarifyCustom((c) => ({ ...c, [q.id]: true }));
+                          setClarifyAns((a) => ({ ...a, [q.id]: "" }));
+                        }}>
+                        Something else
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {kind === "number" && !isCustom ? (
+                    <div className={styles.clqNumRow}>
+                      <input id={`maClq-${q.id}`} type="number" inputMode="decimal"
+                        className={`${styles.pinput} ${styles.isNum} ${styles.clqNum}`}
+                        value={value} placeholder={q.placeholder ?? "0"}
+                        onChange={(e) => setClarifyAns((a) => ({ ...a, [q.id]: e.target.value }))} />
+                      {q.unit ? <span className={styles.clqUnit}>{q.unit}</span> : null}
+                    </div>
+                  ) : null}
+
+                  {kind === "text" || isCustom ? (
+                    <textarea id={`maClq-${q.id}`} className={styles.clqTa} rows={2}
+                      value={value} placeholder={q.placeholder ?? "Type your answer…"}
+                      onChange={(e) => setClarifyAns((a) => ({ ...a, [q.id]: e.target.value }))} />
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className={styles.clqFoot}>
+          <span className={styles.clqCount} role="status" aria-live="polite">
+            {clarifyPairs().length} of {(clarify ?? []).length} answered
+          </span>
+          <div className={styles.clqActs}>
+            <button className={`${styles.btn} ${styles.btnGhost}`} type="button"
+              onClick={() => settleClarify([])}>
+              Generate anyway
+            </button>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="button"
+              disabled={clarifyPairs().length === 0}
+              onClick={() => settleClarify(clarifyPairs())}>
+              <Icon id="i-check" />Use answers
+            </button>
+          </div>
         </div>
       </div>
     </div>

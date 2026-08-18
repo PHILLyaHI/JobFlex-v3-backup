@@ -35,6 +35,21 @@ const installmentSchema = z.object({
   isPercent: z.boolean(),
 });
 
+// One order-level discount, the same shape `convertEstimateToProposal` already
+// materialises (a Discount row plus Proposal.discountTotal). ADDITIVE and
+// tri-state on purpose:
+//   undefined — the key was not sent. Nothing about the proposal's discount is
+//               read or written, so every caller that predates this field
+//               (proposal-builder-a, the estimators) behaves exactly as before.
+//   null      — "no discount", written: the total drops the discount and any
+//               existing Discount rows are cleared.
+//   object    — the discount to apply.
+const discountSchema = z.object({
+  label: z.string().default("Discount"),
+  amount: z.number().min(0),
+  isPercent: z.boolean(),
+});
+
 const proposalInput = z.object({
   id: z.string().optional(),
   title: z.string().min(1),
@@ -46,6 +61,7 @@ const proposalInput = z.object({
   taxRate: z.number().min(0).max(1).default(0),
   lineItems: z.array(lineItemSchema).default([]),
   installments: z.array(installmentSchema).default([]),
+  discount: discountSchema.nullish(),
   materialMarkupPct: z.number().min(0).max(500).optional(),
   laborMarkupPct: z.number().min(0).max(500).optional(),
   overheadPct: z.number().min(0).max(200).optional(),
@@ -55,7 +71,10 @@ const proposalInput = z.object({
 type ProposalInput = z.infer<typeof proposalInput>;
 
 function computeTotals(
-  input: Pick<ProposalInput, "lineItems" | "taxRate" | "materialMarkupPct" | "laborMarkupPct">,
+  input: Pick<
+    ProposalInput,
+    "lineItems" | "taxRate" | "materialMarkupPct" | "laborMarkupPct" | "discount"
+  >,
 ) {
   // Subtotal is the client-facing SELL price: each line's cost marked up by the
   // material/labor markup %s. sellUnitPrice returns the raw unitPrice at 0% (and
@@ -65,14 +84,29 @@ function computeTotals(
     laborMarkupPct: input.laborMarkupPct ?? 0,
   };
   const subtotal = input.lineItems.reduce((a, l) => a + l.quantity * sellUnitPrice(l, rates), 0);
-  const taxTotal = subtotal * input.taxRate;
-  return { subtotal, taxTotal, total: subtotal + taxTotal };
+  // Discount comes off BEFORE tax, so tax is charged on what the client owes
+  // rather than on a figure nobody pays — the same order the builder's own
+  // ledger prints, and the order convertEstimateToProposal already uses. Capped
+  // at the subtotal: a discount larger than the job would produce a negative
+  // tax and a total that climbs as the discount grows.
+  const d = input.discount;
+  const discountTotal = d
+    ? Math.min(d.isPercent ? (subtotal * Math.min(d.amount, 100)) / 100 : d.amount, subtotal)
+    : 0;
+  const taxable = subtotal - discountTotal;
+  const taxTotal = taxable * input.taxRate;
+  // With no discount sent this is byte-for-byte the previous arithmetic.
+  return { subtotal, discountTotal, taxTotal, total: taxable + taxTotal };
 }
 
 export async function saveProposal(raw: unknown) {
   const { organizationId, user, proposalScope } = await requireProposalStaff();
   const data = proposalInput.parse(raw);
-  const { subtotal, taxTotal, total } = computeTotals(data);
+  const { subtotal, discountTotal, taxTotal, total } = computeTotals(data);
+  // Only callers that SENT the key own the proposal's discount — see the
+  // tri-state note on discountSchema. `undefined` leaves both the column and
+  // the Discount rows exactly as they were.
+  const writesDiscount = data.discount !== undefined;
   // Markup rates used to bake the SELL price into each persisted line, so every
   // downstream reader (portal, PDF) shows sell prices that sum to the subtotal.
   const markupRates = {
@@ -99,6 +133,7 @@ export async function saveProposal(raw: unknown) {
         overheadPct: data.overheadPct ?? undefined,
         profitPct: data.profitPct ?? undefined,
         subtotal,
+        ...(writesDiscount ? { discountTotal } : {}),
         taxTotal,
         total,
       },
@@ -129,6 +164,19 @@ export async function saveProposal(raw: unknown) {
           dimensions: l.dimensions ?? null,
         },
       });
+    }
+    if (writesDiscount) {
+      await db.discount.deleteMany({ where: { proposalId } });
+      if (data.discount) {
+        await db.discount.create({
+          data: {
+            proposalId,
+            label: data.discount.label,
+            amount: data.discount.amount,
+            isPercent: data.discount.isPercent,
+          },
+        });
+      }
     }
     await db.installment.deleteMany({ where: { proposalId } });
     for (let idx = 0; idx < data.installments.length; idx += 1) {
@@ -182,6 +230,7 @@ export async function saveProposal(raw: unknown) {
       overheadPct: data.overheadPct ?? 0,
       profitPct: data.profitPct ?? 0,
       subtotal,
+      discountTotal,
       taxTotal,
       total,
       status: ProposalStatus.DRAFT,
@@ -197,6 +246,19 @@ export async function saveProposal(raw: unknown) {
       installments: {
         create: data.installments.map((i, idx) => ({ ...i, position: idx })),
       },
+      ...(data.discount
+        ? {
+            discounts: {
+              create: [
+                {
+                  label: data.discount.label,
+                  amount: data.discount.amount,
+                  isPercent: data.discount.isPercent,
+                },
+              ],
+            },
+          }
+        : {}),
     },
   });
 

@@ -17,6 +17,12 @@ export type JobStatus = "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED";
 
 export type JobTab = { key: "ALL" | JobStatus; label: string };
 
+/** One live JobAssignment row. `crew` below is what the table PRINTS; this is
+ *  what the row menu's crew editor WRITES with — `assignWorker` takes the
+ *  worker profile id, `unassignAssignment` takes the assignment id, so a
+ *  toggle needs both and neither can be derived from a display name. */
+export type JobAssignmentRef = { id: string; workerId: string };
+
 export type Job = {
   id: string;
   title: string;
@@ -29,6 +35,9 @@ export type Job = {
   end: string | null;
   /** Display names of the assigned crew. */
   crew: string[];
+  /** The same crew as ids. Absent on the fixture rows (mock routes make no
+   *  writes); the live board always carries it, in `crew` order. */
+  assignments?: JobAssignmentRef[];
 };
 
 /** A client the create dialog can attach the new job to. */
@@ -36,6 +45,25 @@ export type JobClientOption = { id: string; name: string };
 
 /** A worker the create dialog can staff the new job with. */
 export type JobCrewOption = { id: string; name: string };
+
+/** A proposal the create dialog can attach the new job to (`Job.proposalId`).
+ *  Optional on every job — a job created with none simply has none. */
+export type JobProposalOption = {
+  id: string;
+  title: string;
+  /** Client on the proposal, so picking one can carry its client across. */
+  clientId: string | null;
+  client: string | null;
+  /** Raw status ("DRAFT" / "SENT" / "ACCEPTED" …) — the picker's annotation. */
+  status: string;
+  total: number;
+};
+
+/** "$12,400" — the picker's money plate. Whole dollars: the annotation line is
+ *  a glance, not an invoice. */
+export function money(n: number): string {
+  return "$" + Math.round(n || 0).toLocaleString("en-US");
+}
 
 export const JOB_TABS: JobTab[] = [
   { key: "ALL", label: "All" },

@@ -12,17 +12,26 @@
 // radii and Inter 900 caps stay, rather than the mobile skill's soft-shadow /
 // rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is the ORG'S REAL CALENDAR, read by the same builder the desktop
+// /dashboard/calendar page awaits (app/dashboard/calendar/calendar-query.ts).
+// It used to be the donor demo fixture "until the layout is signed off" — but
+// ResponsiveDashboardShell maps /dashboard/calendar → MobileCalendar, so that
+// fixture was what a real contractor saw on a real phone. Creating an event is
+// a real write as of 2026-08-15 (the three guarded create actions the desktop
+// sheet uses); editing, completing, pushing and deleting are still local to the
+// mount.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
 // its own redirect-to-login like the other design routes. The redirect target
 // is the literal path — the shared V3_PORTED_ROUTES key for this surface is
-// registered separately.
+// registered separately. `buildCalendarSeed` re-checks the session through
+// `requireOrg()`, which is also what supplies the org and role scoping.
 
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { buildCalendarSeed } from "@/app/dashboard/calendar/calendar-query";
+import type { CalendarSeed } from "@/components/v3/calendar-blueprint/calendar-data";
 import { MobileCalendar } from "./mobile-calendar";
 
 export const dynamic = "force-dynamic";
@@ -43,10 +52,16 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileCalendarV2Page() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect(`/auth/login?next=${encodeURIComponent("/mobile-calendar-v2")}`);
+  let seed: CalendarSeed;
+  try {
+    seed = await buildCalendarSeed();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      redirect(`/auth/login?next=${encodeURIComponent("/mobile-calendar-v2")}`);
+    }
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <MobileCalendar />;
+  return <MobileCalendar data={seed} />;
 }

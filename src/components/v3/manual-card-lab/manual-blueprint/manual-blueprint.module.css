@@ -584,6 +584,28 @@
   box-shadow: 1px 1px 0 var(--ink);
 }
 
+/* UNAVAILABLE, not gone. The bar's two actions are disabled while a
+   write is in flight and while the sheet is missing a title or a
+   named line, and the page keeps them on screen and readable rather
+   than hiding them — a control that disappears mid-form is harder
+   to reason about than one that is visibly unavailable and carries
+   its reason in `title`.
+
+   The device is the drawing's own "not drawn yet": the plate flattens
+   (no offset shadow, no lift, no press) and the whole button drops to
+   the muted ink. Opacity alone would take the border below AA against
+   paper, which the sunlight commitment does not allow. */
+:global(.jf-blueprint) .btn:disabled,
+:global(.jf-blueprint) .btn:disabled:hover,
+:global(.jf-blueprint) .btn:disabled:active {
+  color: var(--muted);
+  background: var(--paper);
+  border-color: var(--muted);
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
 /* INK BORDER, by request. The primary used to tint its border to
    match its own fill, which is the standard way to make a solid
    button read as one shape — and it is the wrong way round in this
@@ -1079,15 +1101,43 @@
    read as accidental gaps between three floating labels rather
    than as three ruled cells.
 
-   The bottom rule is new. With only a top edge and two verticals
-   the table had three open-ended columns running off the foot of
-   the card; the fourth side closes it and gives the labels a
-   baseline to sit on. */
+   FULL BLEED, so the table is DRAWN INTO THE CARD rather than
+   floating inside it. The rules used to stop 24px short of the
+   frame at both ends — a horizontal line that ends in mid-air
+   reads as an unfinished drawing, and on a page whose whole
+   argument is "engineering document" that is the one thing a rule
+   must not do. Negative margins of exactly `--mb-pad` take the row
+   out to the card's own border; the outer cells take that padding
+   back so the LABELS stay on the card's content edges and only the
+   rules move. */
 :global(.jf-blueprint) .switchRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-left: calc(-1 * var(--mb-pad));
+  margin-right: calc(-1 * var(--mb-pad));
   border-top: 2px solid var(--ink);
   border-bottom: 2px solid var(--ink);
+}
+
+/* WHEN THE TABLE IS THE LAST THING IN THE CARD (card 06 — "What
+   prints"), its bottom rule is deleted and the row runs on to the
+   card's own bottom border instead. Two parallel ink rules 24px
+   apart — the table's foot and the card's frame — was a closed box
+   inside a closed box, and it left the three verticals stopping
+   short of the frame they were pointing at. Now the columns run
+   into the card's edge and the FRAME closes the table, which is
+   one line doing two jobs instead of two lines doing one.
+
+   Structural, not a class: card 11's copy of this row is followed
+   by the two PDF buttons, so it is not `:last-child` there and
+   keeps the foot rule it still needs. */
+:global(.jf-blueprint) .toggles:last-child > .switchRow:last-child {
+  margin-bottom: calc(-1 * var(--mb-pad));
+  border-bottom: none;
+}
+
+:global(.jf-blueprint) .toggles:last-child > .switchRow:last-child > .toggleCell {
+  padding-bottom: var(--mb-pad);
 }
 
 /* Declares its own box: `.bp button` strips border, background and
@@ -1112,17 +1162,16 @@
   cursor: pointer;
 }
 
-/* The outer cells lose their outer padding so the first switch and
-   the last label sit on the card's own content edges. A cell inset
-   from the frame would make the row read as a floating box rather
-   than as part of the card. */
+/* The outer cells take back the bleed, so the first switch and the
+   last label still sit on the card's own content edges while the
+   rules above and below run all the way to the frame. */
 :global(.jf-blueprint) .switchRow > .toggleCell:first-child {
-  padding-left: 0;
+  padding-left: var(--mb-pad);
   border-left: none;
 }
 
 :global(.jf-blueprint) .switchRow > .toggleCell:last-child {
-  padding-right: 0;
+  padding-right: var(--mb-pad);
 }
 
 /* One step down from `.toggleText` (15px): a label with a third of
@@ -1805,6 +1854,20 @@
   margin-top: 28px;
 }
 
+/* THE APPROACH TO THE SIGNATURE. 28px is the gap BETWEEN two rules
+   that belong together; it is not the gap between the sentence a
+   client has just read and the place they put their name. The
+   acceptance block on the PDF is two rows deep (client, then the
+   contractor), so the pair needs to read as one plate set apart
+   from the paragraph above it rather than as a third paragraph
+   that happens to have lines under it.
+   `.pdfProse + .signRow` is the FIRST of the two rows and only
+   ever occurs on the sheet — card 10's copy sets its prose with
+   `.sheetProse`, so this cannot reach it. */
+:global(.jf-blueprint) .pdfProse + .signRow {
+  margin-top: 52px;
+}
+
 :global(.jf-blueprint) .signLine {
   padding-top: 8px;
   border-top: 1.5px solid var(--ink);
@@ -1828,9 +1891,10 @@
    There is ONE document, in two media. Nothing below is a
    "print version" of a screen element; the screen preview and
    the printed page are the same DOM, and the @media print layer
-   at the foot of this file changes only the page furniture
-   (static bands become fixed bands, so Chrome repeats them) and
-   removes the app around it. A second markup tree for paper is
+   at the foot of this file only removes the app around the sheet
+   and releases the clips the app is built out of. The running
+   bands repeat because of the markup (a <thead> and a <tfoot>),
+   not because of a print rule. A second markup tree for paper is
    two documents to keep in agreement, and they never stay in
    agreement.
 
@@ -2170,9 +2234,29 @@
   color: var(--ink);
 }
 
+/* ── THE PAGED FRAME ──────────────────────────────────────────
+   A layout table with one column, carrying the document in its
+   single body cell and the two running bands in <thead>/<tfoot>.
+   It is the one construction Chrome will REPEAT on every printed
+   sheet while still reserving the band's height in the text area
+   (see the note in bp-pdf.tsx for the three approaches that do
+   not). On screen it is a plain stack and reads as one, which is
+   why it can be there at all times rather than only for print. */
+:global(.jf-blueprint) .pdfPaged {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+:global(.jf-blueprint) .pdfPaged td {
+  padding: 0;
+  vertical-align: top;
+  text-align: left;
+}
+
 /* ── PAGE FURNITURE ───────────────────────────────────────────
-   Static here, `position: fixed` under print — which is what makes
-   Chrome repeat them on every sheet. */
+   The bands themselves. In flow in both media — what changes
+   between them is only how often the browser draws them. */
 :global(.jf-blueprint) .pdfRunHead {
   display: flex;
   align-items: flex-start;
@@ -2223,9 +2307,11 @@
   color: var(--muted);
 }
 
-/* The flow's own clearance from the fixed bands. Zero on screen —
-   the bands are in the flow there — and given real values by the
-   print layer, where they are not. */
+/* The flow's own clearance from the running bands — zero in both
+   media now that the bands sit in table groups that reserve their
+   own height on every sheet. The two modifier classes are kept
+   because the print layer still zeroes them explicitly, and
+   because which bands are on is a fact worth carrying in the DOM. */
 :global(.jf-blueprint) .pdfFlow {
   padding-top: 0;
   padding-bottom: 0;
@@ -2546,6 +2632,91 @@
   }
 }
 
+/* ============================================================
+   HANDHELD (≤768px)
+
+   This route serves BOTH viewports from one URL — it is the
+   destination of the proposals page's "Manual proposal" button and
+   of the estimator picker's "Manual" card on a phone as well as on
+   a desk — so the two rules CLAUDE.md scopes to mobile surfaces
+   apply here, and did not before:
+
+   1. NOTHING PANS THE PAGE. Card 03 is a seven-column priced table
+      on a fixed grid; at 390px it is ~860px wide, and with the
+      column as one flow that width belonged to the SCROLLER, so
+      dragging the table sideways carried cards 01, 02 and 04 off
+      the screen with it. The table now scrolls inside its own box
+      and the column stands still. `overscroll-behavior-x: contain`
+      is what stops a swipe that reaches the end of the table from
+      continuing into the browser's back gesture.
+
+      Applied via a FLAG on the card (`wide`) rather than to every
+      card body: the other ten are intrinsic and would gain a
+      scroll container they never need — and a scroll container
+      clips, which would cut the two pickers' popovers off.
+
+   2. 44px TARGETS. The 36px control height documented at the top
+      of this file is the fleet's DESKTOP density and is argued
+      there on that basis. On a phone the floor is 44, so every
+      control that is touched — the two bar actions, the text
+      fields, the pickers and the borrowed select — is raised for
+      the handheld width only. The card padding and the type scale
+      are untouched: this is a target-size change, not a second
+      layout.
+   ============================================================ */
+
+@media (max-width: 768px) {
+
+  :global(.jf-blueprint) .bodyWide {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  :global(.jf-blueprint) .btn {
+    min-height: 44px;
+  }
+
+  :global(.jf-blueprint) .input {
+    height: 44px;
+    line-height: 44px;
+  }
+
+  :global(.jf-blueprint) .page .selWrap :global(.bp-sel-in) {
+    height: 44px;
+  }
+
+  :global(.jf-blueprint) .pickTrigger {
+    min-height: 44px;
+  }
+
+  :global(.jf-blueprint) .iconBtn {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* The masthead's three annotations are a right-aligned column on
+     the desk, hanging off the title. At 390 they have the measure
+     to themselves, so they read left with the heading they belong
+     to instead of as a ragged right edge. */
+  :global(.jf-blueprint) .meta {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  /* The bar is the one persistent device and it must not wrap: the
+     total keeps the left, the two actions keep the right, and the
+     actions shrink to their labels rather than the total losing
+     its digits. */
+  :global(.jf-blueprint) .bar {
+    gap: 12px;
+  }
+
+  :global(.jf-blueprint) .barActions {
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   :global(.jf-blueprint) .btn,
   :global(.jf-blueprint) .btn:hover,
@@ -2590,6 +2761,28 @@
     zoom: 1 !important;
   }
 
+  /* ── THE CLIP, REMOVED ───────────────────────────────────────
+     THIS IS THE RULE THAT MAKES A MULTI-PAGE PDF POSSIBLE, and it
+     was the bug: the app is built as a fixed-height frame with its
+     own internal scroller — the shell root and `.layout` are
+     `height: var(--app-h)` and the root is `overflow: hidden`, so
+     the ONE screenful the contractor can see is the entire box as
+     far as layout is concerned.
+     A scroll container is monolithic in paged media: it does not
+     fragment, it prints what fits and drops the rest. A four-page
+     proposal was therefore saving as one page of content followed
+     by empty sheets carrying nothing but the running bands, with
+     no symptom anywhere on screen. Paper has no viewport and no
+     scrollbar, so every height and every clip between <html> and
+     the sheet is released here. */
+  :global(html),
+  :global(body) {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
   /* THE APPLICATION, REMOVED. Chrome would otherwise print the
      sidebar down the left of page one. */
   :global(.jf-blueprint) :global(.sb),
@@ -2598,8 +2791,28 @@
     display: none !important;
   }
 
+  /* The two fixed decorations of the app: the paper grain on
+     <body> and the graph-paper grid behind `.main`. Both are
+     `position: fixed`, which in paged media means both would be
+     painted on EVERY sheet of the client's contract. */
+  :global(body)::before,
+  :global(.jf-blueprint) :global(.main)::before {
+    display: none !important;
+  }
+
+  :global(.jf-blueprint) {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
   :global(.jf-blueprint) :global(.layout) {
     display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   :global(.jf-blueprint) :global(.main),
@@ -2607,6 +2820,9 @@
     padding: 0 !important;
     margin: 0 !important;
     max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
   }
 
@@ -2719,33 +2935,21 @@
     will-change: auto !important;
   }
 
-  /* THE PAGE FURNITURE. Fixed boxes are laid out against the page
-     box in paged media and are painted on every page — this is the
-     mechanism that gives a multi-page proposal a letterhead and an
-     identifying foot on sheet three as well as sheet one. The flow
-     is padded by hand to clear them, because a fixed box is out of
-     flow and will otherwise print straight through the text. */
-  :global(.jf-blueprint) .pdfRunHead {
-    position: fixed !important;
-    top: 0;
-    left: 0;
-    right: 0;
-  }
+  /* THE PAGE FURNITURE repeats because it is a <thead> and a
+     <tfoot>, which is a property of the markup rather than of this
+     stylesheet — so there is nothing to switch on here, and that is
+     the point. The rules that used to live at this spot made the
+     bands `position: fixed` and padded the flow to clear them; that
+     repeated the letterhead on every sheet and cleared it on
+     exactly one. Both are gone.
 
-  :global(.jf-blueprint) .pdfRunFoot {
-    position: fixed !important;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    margin-top: 0 !important;
-  }
-
-  :global(.jf-blueprint) .pdfFlowHead {
-    padding-top: 16mm !important;
-  }
-
+     What remains is the hand padding, explicitly zeroed: the cell
+     reserves the band's height now, and a second clearance on top
+     of it is a blank strip at the head of page one only. */
+  :global(.jf-blueprint) .pdfFlowHead,
   :global(.jf-blueprint) .pdfFlowFoot {
-    padding-bottom: 11mm !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
   }
 
   /* The cover is a PAGE, not a tall block: its screen min-height
@@ -2757,18 +2961,44 @@
     break-after: page;
   }
 
+  /* The document's own title stays with section 01. A sheet whose
+     only content is the job name is not a page, it is an accident. */
   :global(.jf-blueprint) .pdfDocHead {
     padding-top: 0 !important;
+    break-after: avoid;
   }
 
-  /* Rows are the fallback break point inside a section that is too
-     long to hold together — never mid-row, which would put a line
-     item's name on one page and its price on the next. */
+  /* ── THE PAGINATION RULE, IN FULL ────────────────────────────
+     A SECTION IS THE ATOMIC UNIT. If the next section does not fit
+     in what is left of the page, the WHOLE section moves to the
+     next one — a client reading "05 PAYMENT SCHEDULE" and two of
+     its four instalments at the foot of page two has to turn the
+     sheet to find out what they are agreeing to pay, and a section
+     split at an arbitrary line is the single thing that makes a
+     printed proposal look like a print-out.
+     `break-inside: avoid` states exactly that, and the exception is
+     built into the property rather than bolted on: a fragmentainer
+     that cannot hold the box even when empty breaks it anyway, so a
+     section that is by itself taller than a page — a long scope, a
+     long set of terms, a forty-line schedule — still flows across
+     sheets instead of being clipped or pushed off the end.
+     The `!important` is not decoration. This has to beat the row
+     rules below in the one place they meet, and it has to survive
+     the screen rule of the same specificity. */
+  :global(.jf-blueprint) .pdfSection {
+    break-inside: avoid !important;
+  }
+
+  /* Rows are the fallback break point INSIDE a section too long to
+     hold together — the only breaks that happen inside a section,
+     and never mid-row, which would put a line item's name on one
+     page and its price on the next. */
   :global(.jf-blueprint) .printRow,
   :global(.jf-blueprint) .sumRow,
   :global(.jf-blueprint) .pdfPayRow,
   :global(.jf-blueprint) .pdfFileRow,
   :global(.jf-blueprint) .pdfSecHead,
+  :global(.jf-blueprint) .pdfMetaPair,
   :global(.jf-blueprint) .signRow {
     break-inside: avoid;
   }
@@ -2777,6 +3007,18 @@
      section rule cannot catch on its own. */
   :global(.jf-blueprint) .pdfSecHead {
     break-after: avoid;
+  }
+
+  /* The totals block is a chain of rows that reads as one figure:
+     "Subtotal / Tax / TOTAL" split across a fold is the arithmetic
+     of the job made hard to check. */
+  :global(.jf-blueprint) .sumTotal {
+    break-before: avoid;
+  }
+
+  /* Nor does a qualifying footnote leave the thing it qualifies. */
+  :global(.jf-blueprint) .pdfFine {
+    break-before: avoid;
   }
 
   :global(.jf-blueprint) .pdfProse {

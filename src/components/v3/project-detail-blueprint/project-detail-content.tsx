@@ -34,20 +34,23 @@
 // the server action the old drawer called — still does the writing.
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { attachJob } from "@/actions/projects";
+import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { money } from "@/lib/format";
 import { useProjectDetailMotion } from "./project-detail-motion";
 import {
   MO,
   MOFULL,
-  type PdAvailJob,
+  type PdAvailProposal,
   type PdJob,
   type PdProject,
+  attachableFirst,
   badgeMod,
   bucketOf,
   labelOf,
   monthKey,
+  proposalMeta,
   shortDate,
 } from "./project-detail-data";
 import s from "./project-detail.module.css";
@@ -65,72 +68,128 @@ type View = "list" | "calendar" | "gantt";
 /** Donor: `let listF = 'all'`. */
 type ListFilter = "all" | "done" | "prog" | "sch";
 
+/** `?view=` — read so a link can open the record straight on its schedule or
+ *  its gantt, at either width (the handheld build reads the same key).
+ *  Anything unrecognised falls back to the donor's own default, the list. */
+function viewFromParam(raw: string | null): View {
+  return raw === "calendar" || raw === "gantt" ? raw : "list";
+}
+
 const DAY_MS = 86400000;
 
 export function ProjectDetailContent({
   project,
   jobs,
-  availableJobs,
+  availableProposals,
 }: {
   project: PdProject;
   jobs: PdJob[];
-  availableJobs: PdAvailJob[];
+  availableProposals: PdAvailProposal[];
 }) {
   const router = useRouter();
+  const search = useSearchParams();
   const [, startTransition] = useTransition();
 
-  // Donor: `let view = 'list'; let listF = 'all', calF = 'all';`
-  const [view, setView] = useState<View>("list");
+  // Donor: `let view = 'list'; let listF = 'all', calF = 'all';` — seeded from
+  // `?view=` so a deep link opens the right tab, then owned by the tab bar.
+  const [view, setView] = useState<View>(() => viewFromParam(search.get("view")));
   const [listF, setListF] = useState<ListFilter>("all");
   const [calF, setCalF] = useState<string>("all");
-  const [attachOpen, setAttachOpen] = useState(false);
 
-  // The donor attaches by splicing AVAIL and pushing into JOBS. Here the
-  // authoritative lists are the server's, so the optimistic move is a set of
-  // ids laid OVER them: once `router.refresh()` lands, the job is already in
-  // `jobs` and gone from `availableJobs`, and the id turns inert on its own.
+  // The optimistic move is a set of PROPOSAL ids laid over the server's list:
+  // once `router.refresh()` lands, that proposal's jobs are in `jobs` and it is
+  // gone from `availableProposals`, and the id turns inert on its own.
   const [moved, setMoved] = useState<string[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   // The donor has no failure state — its attach cannot fail. A refused write
-  // (permissions, a deleted job) says so in the panel rather than silently
+  // (permissions, a deleted record) says so in the dialog rather than silently
   // rolling the row back.
   const [attachErr, setAttachErr] = useState<string | null>(null);
 
   useProjectDetailMotion({ btnClass: s.btn, cellClass: s.kpi, valClass: s["kpi-val"] });
 
-  const shownAvail = useMemo(
-    () => availableJobs.filter((j) => !moved.includes(j.id)),
-    [availableJobs, moved],
-  );
-  const shownJobs = useMemo<PdJob[]>(() => {
-    const have = new Set(jobs.map((j) => j.id));
-    // `endsAt: null` on the optimistic row: the page's available-jobs query
-    // selects no end date, and widening it would be a data-layer change. The
-    // row is replaced by the real one as soon as the refresh lands.
-    const pending = availableJobs
-      .filter((j) => moved.includes(j.id) && !have.has(j.id))
-      .map<PdJob>((j) => ({
-        id: j.id,
-        title: j.title,
-        status: j.status,
-        startsAt: j.startsAt,
-        endsAt: null,
-        clientName: j.clientName,
-      }));
-    return [...jobs, ...pending];
-  }, [jobs, availableJobs, moved]);
+  /* ── the attach DIALOG ───────────────────────────────────────────────────
+     Was an inline expanding panel under the tab bar; it is a house dialog now
+     (owner, 2026-08-15). The motion helpers are imperative — `closeMdl` needs
+     the exit keyframes to play before `.open` comes off, and a React render
+     that unmounted the box would cut the exit — so the element is driven
+     through a ref, exactly as client-detail's two dialogs are. */
+  const attachRef = useRef<HTMLDivElement>(null);
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const [attachOpen, setAttachOpen] = useState(false);
 
+  const after = useCallback((ms: number, fn: () => void) => {
+    const id = setTimeout(() => {
+      timers.current.delete(id);
+      fn();
+    }, ms);
+    timers.current.add(id);
+  }, []);
+
+  const closeAttach = useCallback(() => {
+    if (attachRef.current) closeMdl(attachRef.current, after);
+    setAttachOpen(false);
+  }, [after]);
+
+  const openAttach = useCallback(() => {
+    if (!attachRef.current) return;
+    setAttachErr(null);
+    openMdl(attachRef.current);
+    setAttachOpen(true);
+  }, []);
+
+  useEffect(() => {
+    const set = timers.current;
+    return () => {
+      set.forEach(clearTimeout);
+      set.clear();
+    };
+  }, []);
+
+  // Escape closes, and stops there: the shell binds its own Escape for the
+  // command palette and the handheld drawer, and one key press must not
+  // dismiss two things.
+  useEffect(() => {
+    if (!attachOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      closeAttach();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [attachOpen, closeAttach]);
+
+  const shownAvail = useMemo(
+    () => attachableFirst(availableProposals.filter((p) => !moved.includes(p.id))),
+    [availableProposals, moved],
+  );
+  /* No optimistic job row any more. The old panel attached ONE job and could
+     splice a stand-in for it out of `availableJobs`; a proposal carries n jobs
+     whose titles this page never reads, so inventing rows for them would mean
+     widening the query to serve 300ms of placeholder. The attached proposal
+     leaves the dialog list the instant it is picked (that is what `moved`
+     does), and the jobs arrive with the refresh. */
+  const shownJobs = jobs;
+
+  /** Attach a PROPOSAL: move every one of its project-less jobs onto this
+   *  project through the existing `attachJob` action. Sequential rather than
+   *  `Promise.all` — each call revalidates the same two paths, and a partial
+   *  failure should stop rather than race. */
   const onAttach = useCallback(
-    async (id: string) => {
+    async (p: PdAvailProposal) => {
+      if (p.blocked || !p.linkJobIds.length) return;
       setAttachErr(null);
-      setBusyId(id);
-      setMoved((m) => [...m, id]);
+      setBusyId(p.id);
+      setMoved((m) => [...m, p.id]);
       try {
-        await attachJob(project.id, id);
+        for (const jobId of p.linkJobIds) {
+          await attachJob(project.id, jobId);
+        }
         startTransition(() => router.refresh());
       } catch (err) {
-        setMoved((m) => m.filter((x) => x !== id));
-        setAttachErr(err instanceof Error ? err.message : "Could not attach that job");
+        setMoved((m) => m.filter((x) => x !== p.id));
+        setAttachErr(err instanceof Error ? err.message : "Could not attach that proposal");
       } finally {
         setBusyId(null);
       }
@@ -199,48 +258,72 @@ export function ProjectDetailContent({
             Gantt
           </button>
         </div>
-        <button
-          className={cx("btn", "btn-ghost")}
-          type="button"
-          onClick={() => setAttachOpen((o) => !o)}
-        >
+        <button className={cx("btn", "btn-ghost")} type="button" onClick={openAttach}>
           <svg className={cx("ic")}>
             <use href="#i-plus" />
           </svg>
-          Attach job
+          Attach proposal
         </button>
       </div>
 
-      {/* Kept MOUNTED and toggled with `hidden`, exactly like the donor: the
-          reveal observer is still watching it, so opening the panel fades it up
-          instead of popping it in. */}
-      <div className={cx("pd-attach")} hidden={!attachOpen}>
-        <div className={cx("pd-attach-h")}>
-          <span className={cx("pd-attach-t")}>Attach a job &mdash; unassigned in your shop</span>
-        </div>
-        <div>
-          {attachErr && <div className={cx("pd-empty")}>{attachErr}</div>}
-          {shownAvail.length ? (
-            shownAvail.map((j) => (
-              <div className={cx("pd-av")} key={j.id}>
-                <span className={cx("pd-av-n")}>{j.title}</span>
-                <span className={cx("pd-av-m")}>
-                  {j.clientName ?? "Unassigned"}
-                  {j.startsAt ? " · starts " + shortDate(j.startsAt) : " · unscheduled"}
-                </span>
-                <button
-                  className={cx("btn", "btn-primary")}
-                  type="button"
-                  disabled={busyId === j.id}
-                  onClick={() => onAttach(j.id)}
-                >
-                  Attach
-                </button>
-              </div>
-            ))
-          ) : (
-            <div className={cx("pd-empty")}>Nothing left to attach</div>
-          )}
+      {/* ATTACH DIALOG — was an inline expanding panel under the tab bar
+          (owner, 2026-08-15). It wears `mdl pmdl`, the house dialog frame the
+          always-on proposals module publishes, so it opens and closes on the
+          same motion contract as every other dialog in the app and introduces
+          no new vocabulary. What it lists changed too: PROPOSALS, not jobs —
+          see the note above `PdAvailProposal` in ./project-detail-data.ts for
+          what the schema allows and why some rows arrive blocked. */}
+      <div
+        className={cx("mdl", "pmdl")}
+        ref={attachRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pdAttachTitle"
+      >
+        <div className={cx("mdl-bg")} onClick={closeAttach} />
+        <div className={cx("mdl-box")}>
+          <div className={cx("mdl-head", "mdl-head--row")}>
+            <span id="pdAttachTitle">Attach a proposal</span>
+            <button
+              className={cx("mdl-x")}
+              type="button"
+              onClick={closeAttach}
+              aria-label="Close dialog"
+            >
+              <svg className={cx("ic")}>
+                <use href="#i-x" />
+              </svg>
+            </button>
+          </div>
+          <div className={cx("mdl-txt")}>
+            Picking one files its jobs under {project.name}.
+          </div>
+          <div className={cx("mdl-body", "pd-attach-list")}>
+            {attachErr && <div className={cx("pd-attach-err")}>{attachErr}</div>}
+            {shownAvail.length ? (
+              shownAvail.map((p) => (
+                <div className={cx("pd-av", p.blocked && "pd-av--off")} key={p.id}>
+                  <span className={cx("pd-av-n")}>{p.title}</span>
+                  <span className={cx("pd-av-m")}>{proposalMeta(p, money)}</span>
+                  <button
+                    className={cx("btn", "btn-primary")}
+                    type="button"
+                    disabled={Boolean(p.blocked) || busyId === p.id}
+                    onClick={() => onAttach(p)}
+                  >
+                    {busyId === p.id ? "Attaching" : "Attach"}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className={cx("pd-empty")}>No proposals left</div>
+            )}
+          </div>
+          <div className={cx("mdl-foot")}>
+            <button className={cx("btn", "btn-ghost")} type="button" onClick={closeAttach}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
 

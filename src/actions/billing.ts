@@ -40,6 +40,8 @@ export async function setOrgPlan(planSlug: string) {
   });
   revalidatePath("/dashboard/settings/account");
   revalidatePath("/dashboard/subscription");
+  // The sidebar now lands on the blueprint route; both must refresh.
+  revalidatePath("/dashboard/subscription-blueprint");
   revalidatePath("/dashboard");
   return { ok: true };
 }

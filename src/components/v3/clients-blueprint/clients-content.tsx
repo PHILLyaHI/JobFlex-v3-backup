@@ -22,7 +22,7 @@ import type { Client } from "./clients-data";
  *   component. The behavior module takes it as its starting state and then
  *   keeps itself in step with the database through the client server actions.
  */
-export function ClientsContent({ entries }: { entries?: Client[] }) {
+export function ClientsContent({ entries }: { entries: Client[] }) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
   // tears the page down and replays the whole reveal cascade — so the init has
@@ -123,11 +123,18 @@ export function ClientsContent({ entries }: { entries?: Client[] }) {
               <label className="fld-lbl" htmlFor="cfName">
                 Client name<span className="req">*</span>
               </label>
+              {/* 120 is the action's own cap (`z.string().max(120)`), enforced
+                  where the reader can see it. Without it a longer name reaches
+                  the server, is refused there, and the refusal arrives as a raw
+                  Zod dump in the error plate — a 400-character JSON blob where
+                  a sentence belongs. `maxLength` also covers PASTE, which is
+                  how a name that long gets into a field in the first place. */}
               <input
                 className="pinput"
                 id="cfName"
                 name="name"
                 type="text"
+                maxLength={120}
                 placeholder="D. Reyes"
                 autoComplete="off"
               />
@@ -177,6 +184,24 @@ export function ClientsContent({ entries }: { entries?: Client[] }) {
               <span className="fld-hint">City, state — the Location column and the address on their proposals.</span>
             </div>
 
+            {/* Notes writes `Client.notes`, a real column both actions carry.
+                It is the ONE field here whose absence is not an erase: the
+                schema hands an omitted key back as `undefined`, so a form that
+                never shows the box leaves what is on file alone. This one does
+                show it, so it round-trips — the box is filled from the record
+                on open and what comes back is what gets stored. */}
+            <div className="fld">
+              <label className="fld-lbl" htmlFor="cfNotes">Notes</label>
+              <textarea
+                className="pinput ptextarea"
+                id="cfNotes"
+                name="notes"
+                rows={3}
+                placeholder="Gate code, access hours, who to ask for on site…"
+              />
+              <span className="fld-hint">Internal — never printed on a proposal.</span>
+            </div>
+
             <div className="fld" id="cfVipFld">
               <span className="fld-lbl">Account</span>
               <button className="fchk" type="button" id="cfVip" aria-pressed="false">
@@ -206,6 +231,18 @@ export function ClientsContent({ entries }: { entries?: Client[] }) {
               </svg>
               <span data-save-lbl>Create client</span>
             </button>
+          </div>
+
+          {/* The house busy widget — the pulsing blueprint square and mono
+              plate the Smart Proposal refine card uses (`.sp-busy`), published
+              here for the dialog. It is ARMED, not shown: `clients-behavior`
+              only reveals it if the dialog is still not interactive ~300ms
+              after it opens, or if a write is still in flight then. A fast
+              open and a fast save never paint it, which is the point — a
+              spinner that flashes on every action is noise. */}
+          <div className="mdl-busy is-hidden" id="cNewBusy" role="status" aria-live="polite">
+            <span className="mdl-busy-dot" aria-hidden="true"></span>
+            <span data-busy-lbl>Loading</span>
           </div>
         </div>
       </div>

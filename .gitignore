@@ -45,3 +45,17 @@ tsconfig.tsbuildinfo
 # fingerprint. Both are regenerated on demand and neither describes the app.
 .playwright-mcp/
 port-fingerprint.json
+
+# ad-pipeline working artifacts (regenerable via marketing/ads/v2-real-ui/scripts)
+marketing/ads/v2-real-ui/rec/
+marketing/ads/v2-real-ui/debug/
+marketing/ads/v2-real-ui/probe/
+marketing/ads/v2-real-ui/check/
+marketing/ads/v2-real-ui/preview/
+marketing/ads/v2-real-ui/delivery/
+marketing/ads/v2-real-ui/shots/
+marketing/ads/v2-real-ui/assets/
+marketing/ads/v2-real-ui/download-page.html
+marketing/ad-batch-v2-review.html
+marketing/jobflex-ad-pack.zip
+.shots/

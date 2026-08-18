@@ -100,6 +100,7 @@ export function revalidatePlanSurfaces(): void {
     "/admin/plans",
     "/pricing",
     "/dashboard/subscription",
+    "/dashboard/subscription-blueprint",
     "/dashboard/settings/account",
     "/v3/company/subscription",
   ]) {

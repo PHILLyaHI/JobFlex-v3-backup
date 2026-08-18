@@ -1320,8 +1320,23 @@
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
   background: var(--acc, var(--muted-faint));
 }
-.bp :global(.content .jtable .j-title) { font-size: 13.5px; font-weight: 700; line-height: 1.25; }
-.bp :global(.content .jtable .j-client) { margin-top: 3px; font-size: 12px; color: var(--muted); }
+/* User text never breaks layout. A job title is whatever the owner typed —
+   a 200-character unbroken string included — and this is an auto-layout
+   table, so the cell's MIN-CONTENT width is what sizes the column. Only
+   `overflow-wrap: anywhere` shrinks min-content (`break-word` does not), so
+   without it one pasted string widens the JOB column past the card and
+   shoves status / when / crew / actions off screen. The clamp keeps the
+   wrapped result to two lines; the full string stays in the row's title. */
+.bp :global(.content .jtable .j-title) {
+  font-size: 13.5px; font-weight: 700; line-height: 1.25;
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.bp :global(.content .jtable .j-client) {
+  margin-top: 3px; font-size: 12px; color: var(--muted);
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
 .bp :global(.content .jtable .j-date) { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .bp :global(.content .jtable .j-rel) { margin-top: 3px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 .bp :global(.content .j-unsched) { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted-faint); }
@@ -1358,8 +1373,20 @@
 .bp :global(.content .jcard)::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--acc, var(--muted-faint)); }
 .bp :global(.content .jcard:active) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
 .bp :global(.content .jcard-top) { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.bp :global(.content .jcard-t) { font-size: 14.5px; font-weight: 800; line-height: 1.3; }
-.bp :global(.content .jcard-c) { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+/* User text never breaks layout — the card version of the table rule above.
+   The text column carries `min-width: 0` in the markup; `overflow-wrap` is
+   what actually lets an unbroken string break, and the clamp keeps a pasted
+   name from turning one card into a wall of text. */
+.bp :global(.content .jcard-t) {
+  font-size: 14.5px; font-weight: 800; line-height: 1.3;
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.bp :global(.content .jcard-c) {
+  margin-top: 4px; font-size: 12.5px; color: var(--muted);
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
 .bp :global(.content .jcard-bot) { margin-top: 13px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .bp :global(.content .jcard-when) { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--muted); }
 .bp :global(.content .jcard-when .ic) { width: 14px; height: 14px; color: var(--muted-light); }
@@ -1446,9 +1473,57 @@
 .bp :global(.content .fseg-btn[data-v="COMPLETED"] .fseg-dot) { background: var(--success); }
 .bp :global(.content .fseg-btn[data-v="CANCELED"] .fseg-dot) { background: var(--danger); }
 
+/* An optional field says so on its own label, in the annotation layer — the
+   alternative is a required-marker on everything else, which is louder. */
+.bp :global(.content .fld-lbl .fld-opt) { margin-left: 6px; letter-spacing: 0.1em; color: var(--muted-light); text-transform: uppercase; }
+
+/* COMBOBOX (client, attach-proposal) — the field is a plain .pinput with a
+   drawn caret in its right gutter; the LIST is the published `.bp-sug` popup
+   from dashboard-blueprint/blueprint-global.css, appended to <body> by
+   ./combo.ts. Nothing about the list is restated here: one treatment per
+   control, published once (decisions.md). The caret matches `.bp-sel::after`
+   stroke for stroke so a combobox and a select read as the same family. */
+.bp :global(.content .jcombo) { position: relative; display: block; min-width: 0; }
+.bp :global(.content .jcombo .pinput) { padding-right: 32px; }
+.bp :global(.content .jcombo-caret) {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer;
+}
+.bp :global(.content .jcombo-caret::after) {
+  content: ''; width: 6px; height: 6px;
+  border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+  transition: border-color 0.12s;
+}
+.bp :global(.content .jcombo:hover .jcombo-caret::after),
+.bp :global(.content .jcombo:focus-within .jcombo-caret::after) { border-color: var(--ink); }
+
+/* A dialog that explains itself before it asks (schedule / crew / delete).
+   Sits in the .mdl-body grid, so it needs no margin of its own. */
+.bp :global(.content .mdl-lede) { font-size: 12.5px; font-weight: 600; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.bp :global(.content .mdl-lede b) { font-weight: 800; color: var(--ink); }
+.bp :global(.content .mdl-lede--warn) { padding: 9px 11px; border: 1.5px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft); color: var(--danger); font-weight: 700; }
+/* The three row-menu dialogs ask for one thing each — the create dialog's
+   520px would frame them in empty paper. */
+.bp :global(.content .mdl-box--slim) { width: min(420px, 100%); }
+
+/* The one irreversible button on this page. Filled, not outlined: it must not
+   look like the ghost sitting next to it. */
+.bp :global(.content .btn-danger) { background: var(--danger); border-color: var(--ink); color: #fff; }
+.bp :global(.content .btn-danger .ic) { color: #fff; }
+.bp :global(.content .btn-danger:hover) { background: color-mix(in srgb, var(--danger) 86%, #000000); }
+
 /* foot — the beige action bar the system uses for every card's actions */
 .bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 12px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); }
 .bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
+
+/* The WHOLE ROW is the door into the job record (jobs-behavior's `openRecord`),
+   so it has to say so. The row already lifted to --paper-deep on hover, which
+   was advertising a target that did nothing. */
+.bp :global(.content .jtable tbody tr.prow) { cursor: pointer; }
+/* …but the two controls inside it own their own clicks. */
+.bp :global(.content .jtable .j-acts) { cursor: default; }
 
 @media (max-width: 860px) {
   .bp :global(.content .jdesk) { display: none; }
@@ -1464,6 +1539,11 @@
   .bp :global(.content .fseg-btn) { min-height: 40px; padding: 0 13px; }
   .bp :global(.content .mdl-foot) { padding: 12px 14px calc(12px + var(--safe-bottom, 0px)); }
   .bp :global(.content .mdl-foot .btn) { height: 44px; }
+  /* the caret keeps a 44px target, and the slim dialogs dock full-width like
+     the create sheet rather than floating at 420px */
+  .bp :global(.content .jcombo-caret) { width: 44px; }
+  .bp :global(.content .jcombo .pinput) { padding-right: 46px; }
+  .bp :global(.content .mdl-box--slim) { width: 100%; }
 }
 
 /* ================= SERVER-ACTION FEEDBACK =================

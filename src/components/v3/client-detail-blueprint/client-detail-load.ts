@@ -1,11 +1,13 @@
 // CLIENT DETAIL / BLUEPRINT — the server read.
 //
 // This is the file that turns the page from a design preview into a record.
-// Everything it returns has the SAME SHAPE as the fixture in
-// ./client-detail-data.ts, so the content component never learns which one it
-// is rendering — the fixture stays the fallback for `/dashboard/client-detail`
-// with no id, which is how the composition is still reviewable without a
-// database row to point at.
+//
+// THERE IS NO LONGER A FIXTURE FALLBACK. The loader used to answer a missing or
+// unresolvable `?client=` id with an invented client — name, address, billing
+// note, six proposals, six payments, eight activity lines — so a stale link, a
+// typo, or an id belonging to another org rendered a fabricated person as
+// though the org owned the record. It now returns a NOT-FOUND view and the page
+// draws an empty state. Nothing on this surface is invented.
 //
 // The query is the archived classic record page's, verbatim in intent:
 // `client.findUnique` with proposals, payments, activities and tags, then an
@@ -22,10 +24,7 @@
 
 import { db } from "@/lib/db";
 import {
-  ACTIVITY,
-  CLIENT,
-  PAYMENTS,
-  PROPOSALS,
+  splitAddress,
   type ActivityRow,
   type ClientRecord,
   type PaymentRow,
@@ -34,11 +33,17 @@ import {
   type ProposalStatus,
 } from "./client-detail-data";
 
-export type ClientDetailView = {
-  /** The real row's id, or null when the fixture is standing in. Every action
-   *  on the page is gated on this: no id, no writes, and the buttons say so
-   *  rather than failing at the server. */
-  clientId: string | null;
+/** The page has nothing to draw, and WHY decides the words on the empty state:
+ *  `none` is the bare route with no id in the URL, `missing` is an id that
+ *  resolved to nothing in this org (deleted, mistyped, or another org's). */
+export type ClientDetailMiss = { found: false; reason: "none" | "missing" };
+
+export type ClientDetailRecord = {
+  found: true;
+  /** The real row's id. Every write on the page goes through it, and the type
+   *  guarantees it exists — the old nullable id was how a fixture could sit in
+   *  the record's chair with its Save button quietly switched off. */
+  clientId: string;
   client: ClientRecord;
   proposals: ProposalRow[];
   payments: PaymentRow[];
@@ -55,12 +60,22 @@ export type ClientDetailView = {
     name: string;
     email: string;
     phone: string;
+    /** Street line. See splitAddress() — the second line travels separately. */
     address: string;
+    /** Suite / unit / "leave at the side gate". Stored as the SECOND LINE of
+     *  the same `address` column: Client has no address2 field and this page
+     *  does not add schema. A newline is the one separator that survives a
+     *  round trip — splitting on commas is how "Suite B, Building 2" gets
+     *  quietly rearranged by an edit nobody made. */
+    address2: string;
     city: string;
     state: string;
     zip: string;
+    notes: string;
   };
 };
+
+export type ClientDetailView = ClientDetailRecord | ClientDetailMiss;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -159,34 +174,20 @@ const ACTIVITY_ICON: Record<string, string> = {
   JOB: "jobs",
 };
 
-/** The fixture, for the id-less preview route. Exported as a function so the
- *  caller cannot accidentally hold a reference and mutate the module constant. */
-export function fixtureView(): ClientDetailView {
-  return {
-    clientId: null,
-    client: CLIENT,
-    proposals: PROPOSALS,
-    payments: PAYMENTS,
-    activity: ACTIVITY,
-    // The preview has nothing to write to, so the Edit dialog opens against
-    // blanks and its Save is inert — `clientId: null` is what stops it.
-    editable: { name: CLIENT.name, email: "", phone: "", address: "", city: "", state: "", zip: "" },
-  };
-}
-
 /**
  * Read one client for the record page.
  *
  * @param id  the `?client=` param the clients list puts in the URL.
  * @param organizationId  the caller's org. A client from another org is treated
- *   as absent, not as forbidden — the page has no id to leak and the fixture is
- *   a harmless thing to show.
+ *   as absent, not as forbidden — answering "missing" for a row that exists in
+ *   someone else's org is what stops this page confirming an id by the shape of
+ *   its error.
  */
 export async function loadClientDetail(
   id: string | undefined,
   organizationId: string,
 ): Promise<ClientDetailView> {
-  if (!id) return fixtureView();
+  if (!id) return { found: false, reason: "none" };
 
   const row = await db.client.findUnique({
     where: { id },
@@ -197,9 +198,12 @@ export async function loadClientDetail(
       tags: { include: { tag: true } },
     },
   });
-  if (!row || row.organizationId !== organizationId || row.deletedAt) return fixtureView();
+  if (!row || row.organizationId !== organizationId || row.deletedAt) {
+    return { found: false, reason: "missing" };
+  }
 
   const lastActivity = row.activities[0]?.createdAt ?? row.updatedAt;
+  const addr = splitAddress(row.address);
 
   const client: ClientRecord = {
     // Not rendered — the masthead is titled by the person, not by a filing
@@ -213,7 +217,11 @@ export async function loadClientDetail(
     company: row.name,
     email: row.email ?? "—",
     phone: row.phone ?? "—",
-    address: [row.address, row.city, row.state, row.zip].filter(Boolean).join(", ") || "—",
+    // The two address lines read as one sentence here: the newline that keeps
+    // them separable in the database would collapse to a space in HTML, which
+    // would print "Suite B Seattle" with nothing between them.
+    address:
+      [addr.line1, addr.line2, row.city, row.state, row.zip].filter(Boolean).join(", ") || "—",
     city: [row.city, row.state].filter(Boolean).join(", ") || "—",
     since: dateLong(row.createdAt),
     lastContact: dateLong(lastActivity),
@@ -228,16 +236,19 @@ export async function loadClientDetail(
   };
 
   return {
+    found: true,
     clientId: row.id,
     client,
     editable: {
       name: row.name,
       email: row.email ?? "",
       phone: row.phone ?? "",
-      address: row.address ?? "",
+      address: addr.line1,
+      address2: addr.line2,
       city: row.city ?? "",
       state: row.state ?? "",
       zip: row.zip ?? "",
+      notes: row.notes ?? "",
     },
     proposals: row.proposals.map((p) => ({
       id: p.id,

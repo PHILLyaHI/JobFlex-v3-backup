@@ -15,12 +15,17 @@
 import { createClient, updateClient } from "@/actions/clients";
 import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
-import { CLIENTS_SEED, PAGE_SIZE, type Client } from "./clients-data";
+import { PAGE_SIZE, type Client } from "./clients-data";
 
 export type ClientsContentOptions = {
-  /** The org's real client book, read server-side. Omit to fall back to the
-   *  donor fixture (the standalone mock route has no session to read from). */
-  entries?: Client[];
+  /** The org's real client book, read server-side. REQUIRED. It used to be
+   *  optional, falling back to the donor fixture for "the standalone mock
+   *  route" — a route that no longer exists (src/app/dashboard/clients/page.tsx
+   *  is the only mount, and it always reads the book). An optional seed on a
+   *  live surface is a fixture waiting for the first caller who forgets the
+   *  prop, so the type now refuses to be mounted without a book. An EMPTY
+   *  array is a perfectly good book: it draws #clientsEmpty. */
+  entries: Client[];
   /** Next's client-side router push, handed down from clients-content.tsx.
    *
    *  This page opened the client record with `window.location.assign()`, which
@@ -64,7 +69,7 @@ function esc(v: string): string {
 
 export function initClientsContent(
   content: HTMLElement,
-  options: ClientsContentOptions = {},
+  options: ClientsContentOptions,
 ): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
@@ -97,11 +102,11 @@ export function initClientsContent(
   const $ = (sel: string) => root.querySelector<HTMLElement>(sel);
   const $$ = (sel: string) => Array.from(root.querySelectorAll<HTMLElement>(sel));
 
-  // The org's real book when the page passed one; otherwise a per-mount COPY of
-  // the donor fixture. The copy matters: the seed is a module-level constant, so
-  // the dialog writing into it directly would leak every created client into the
-  // next visit to the page (and into any other importer of CLIENTS_SEED).
-  const clientsData: Client[] = (options.entries ?? CLIENTS_SEED).map((c) => ({
+  // A per-mount COPY of the org's book. The copy matters: the dialog writes
+  // into this array as clients are created and edited, and mutating the prop
+  // the server component handed down would leave React holding a value that no
+  // longer matches what it rendered.
+  const clientsData: Client[] = options.entries.map((c) => ({
     ...c,
     tags: [...c.tags],
   }));
@@ -318,18 +323,30 @@ export function initClientsContent(
       '<tr class="prow" data-id="' +
       esc(c.id) +
       '">' +
+      // The three text cells are single-line and ellipsised (see the
+      // `#clientsCard` overflow block in clients.module.css): a 200-character
+      // name with no spaces in it used to widen the column past the card and
+      // take the page's horizontal scrollbar with it. `title` is what keeps
+      // the clipped tail reachable — the full value is one hover away, and
+      // the whole record is one click away.
       '<td><div class="cname"><span class="cav">' +
       esc(initials(c.name)) +
       "</span>" +
-      '<span><span class="cname-line"><span class="pt-title">' +
+      '<span class="cname-stack"><span class="cname-line"><span class="pt-title" title="' +
+      esc(c.name) +
+      '">' +
       esc(c.name) +
       "</span>" +
       (c.vip ? '<span class="ctag ctag--vip">VIP</span>' : "") +
       "</span>" +
-      '<span class="cmail">' +
+      '<span class="cmail" title="' +
+      esc(c.email || "") +
+      '">' +
       esc(c.email || "—") +
       "</span></span></div></td>" +
-      '<td><span class="pt-sub">' +
+      '<td><span class="pt-sub" title="' +
+      esc(c.address || "") +
+      '">' +
       esc(c.address || "—") +
       "</span></td>" +
       "<td>" +
@@ -526,9 +543,38 @@ export function initClientsContent(
   const cForm = root.querySelector<HTMLFormElement>("#cNewForm");
   if (cDlg && cForm) {
     const inp = (sel: string) => root.querySelector<HTMLInputElement>(sel);
+    const txt = (sel: string) => root.querySelector<HTMLTextAreaElement>(sel);
     const vipBtn = $("#cfVip");
     let draftVip = false;
     let restoreFocus: HTMLElement | null = null;
+
+    /* ---- BUSY PLATE ---------------------------------------------------
+       Armed on a 300ms fuse, never shown outright. Two callers arm it: the
+       open path (cleared on the frame the first field takes focus) and the
+       write (cleared when the action settles). Anything that finishes inside
+       300ms — which is every open on a warm page, and most saves — clears the
+       fuse before it burns, so the dialog does not flash a spinner at a
+       reader who never had to wait. What it replaces is the frozen box: a
+       dialog that is open, empty and not yet typeable with nothing on it
+       saying so. */
+    let busyFuse = 0;
+    function showBusy(on: boolean, label?: string) {
+      const box = $("#cNewBusy");
+      if (!box) return;
+      if (label) {
+        const lbl = box.querySelector<HTMLElement>("[data-busy-lbl]");
+        if (lbl) lbl.textContent = label;
+      }
+      box.classList.toggle("is-hidden", !on);
+    }
+    function armBusy(label: string) {
+      window.clearTimeout(busyFuse);
+      busyFuse = window.setTimeout(() => showBusy(true, label), 300);
+    }
+    function clearBusy() {
+      window.clearTimeout(busyFuse);
+      showBusy(false);
+    }
 
     function markErr(on: boolean) {
       cDlg!.querySelector<HTMLElement>('[data-fld="name"]')?.classList.toggle("is-err", on);
@@ -579,6 +625,11 @@ export function initClientsContent(
       if (phone) phone.value = entry?.phone || "";
       const addr = inp("#cfAddress");
       if (addr) addr.value = entry ? entry.address : "";
+      // Filled from the record, so a save sends back what is on file rather
+      // than an empty box — `notes` is the one column a blank field would
+      // erase if the form pretended it had nothing to say about it.
+      const notes = txt("#cfNotes");
+      if (notes) notes.value = entry?.notes || "";
       // VIP is an org tag written by createClient only; updateClient has no
       // path to it, so the flag is hidden rather than shown doing nothing.
       draftVip = false;
@@ -591,10 +642,17 @@ export function initClientsContent(
 
     function openDlg(entry: Client | null) {
       restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      // Armed BEFORE the fill, so the plate covers everything between the
+      // click and a typeable field. On a warm page that whole span is one
+      // frame and the fuse is cleared long before it burns.
+      armBusy("Opening");
       fillDlg(entry);
       openMdl(cDlg!);
       // land on the first field, not on the dialog frame
-      requestAnimationFrame(() => inp("#cfName")?.focus());
+      requestAnimationFrame(() => {
+        inp("#cfName")?.focus();
+        clearBusy();
+      });
     }
 
     function closeDlg() {
@@ -603,6 +661,7 @@ export function initClientsContent(
       // keyboard stranded inside a dialog that is already on its way out.
       if (!closeMdl(cDlg!, after)) return;
       markErr(false);
+      clearBusy();
       restoreFocus?.focus();
     }
 
@@ -700,15 +759,18 @@ export function initClientsContent(
       }
       const editingId = cstate.editing;
       const entry = editingId ? clientsData.find((x) => x.id === editingId) || null : null;
+      const notes = (txt("#cfNotes")?.value || "").trim();
       const payload = {
         name,
         email: (inp("#cfEmail")?.value || "").trim(),
         phone: (inp("#cfPhone")?.value || "").trim(),
+        notes,
         ...locationParts(entry, inp("#cfAddress")?.value || ""),
       };
 
       dlgError(null);
       setSaving(true);
+      armBusy(editingId ? "Saving" : "Creating");
       try {
         if (editingId) {
           const saved = await updateClient(editingId, payload);
@@ -721,12 +783,17 @@ export function initClientsContent(
             entry.state = saved.state;
             entry.zip = saved.zip;
             entry.address = locationLabel(saved);
+            // `notes` is not in the action's returned shape, so the row keeps
+            // what was just sent — the same value the next server read will
+            // hand back.
+            entry.notes = notes || null;
             entry.updated = new Date().toLocaleDateString("en-US", {
               month: "short",
               day: "2-digit",
             });
           }
           setSaving(false);
+          clearBusy();
           closeDlg();
           after(MDL_EXIT_MS, resetDlg);
           // One record changed, so one row is repainted. Rebuilding the table
@@ -753,12 +820,14 @@ export function initClientsContent(
             city: created.city,
             state: created.state,
             zip: created.zip,
+            notes: notes || null,
           });
           // Drop back to All, so a client created while a tag filter was active
           // is actually visible — they land in the first row.
           cstate.filter = "ALL";
           cstate.page = 1;
           setSaving(false);
+          clearBusy();
           closeDlg();
           // Clear the form only once the box has finished animating out — reset
           // it on the same frame and you watch the fields blank while the
@@ -769,6 +838,7 @@ export function initClientsContent(
         }
       } catch (err) {
         setSaving(false);
+        clearBusy();
         dlgError(actionError(err));
       }
     }

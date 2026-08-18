@@ -129,15 +129,10 @@
 /* ============================================================
    PAGE HEAD
    ============================================================ */
+/* No `.kicker` any more. The head used to carry a dotted "CRM" eyebrow above
+   the title; it named the section the drawer item already named, and on a
+   390px head that is a whole line of type spent on it. */
 .pageHead { padding-top: 2px; }
-.kicker {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 11.5px; font-weight: 800;
-  letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 9px;
-}
-.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
 .pageTitle {
   font-size: var(--fs-h1); font-weight: 900;
   letter-spacing: -0.03em; text-transform: uppercase;
@@ -163,13 +158,33 @@
 }
 .btn .ic { width: 18px; height: 18px; }
 .btn:active { transform: translate(1px, 1px); box-shadow: none; }
+/* A refused button has to LOOK refused. The message sheet's Send is off until
+   the org has connected a Gmail and something has been typed, and a full-weight
+   blue plate that does nothing when tapped is read as a broken button rather
+   than a gated one — the note above it is doing the explaining, this is what
+   makes the reader look for it. */
+.btn:disabled { opacity: 0.4; }
+.btn:disabled:active { transform: none; }
 /* The only FILLED controls on the surface. Everything else is flat — a fill on
    every button flattens the hierarchy (owner's call, 2026-07-29). */
 .btnPrimary { background: var(--blueprint); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
 .btnGhost { background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); }
 /* ============================================================
-   MASTHEAD — one numeral + mono kicker + EXACTLY two annotations.
-   All three are computed, so deleting a client moves them.
+   MASTHEAD — ONE numeral, ONE line of type under it, and the
+   three-cell annotation strip beneath that.
+
+   The band carries exactly one caption on the figure. An earlier
+   version had two — a mono kicker above the numeral AND a label
+   below it — which captioned the same number twice and spent a
+   row of the fold doing it. The kicker went; the label stayed.
+
+   The strip is the fleet's sub-stat table, the same plate as
+   mobile-proposals-v2's masthead (.pmastCnt / .pmastSub): a
+   recessed ground under a 1.5px ink rule, cells divided by ink
+   verticals, mono caps over a heavy tabular numeral. Three cells
+   here where proposals has two, so the type is a size down and
+   the cell padding is its own clamp rather than --card-pad —
+   at 320px three --card-pad cells leave no room for the numeral.
    ============================================================ */
 .cmast {
   border: var(--border);
@@ -179,37 +194,53 @@
   overflow: hidden;
 }
 .cmastTop { padding: var(--card-pad); }
-.cmastLbl {
-  display: flex; align-items: center; gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 11.5px; font-weight: 600;
-  letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 12px;
-}
-.cmastRule { flex: 1; height: 1.5px; background: var(--hair); }
 .cmastVal {
+  display: block;
   font-size: var(--fs-mast); font-weight: 900;
   letter-spacing: -0.005em; line-height: 0.92;
   color: var(--blueprint);
   font-variant-numeric: tabular-nums;
 }
+/* The drawing-annotation layer: mono caps, muted, sitting under the figure the
+   way a dimension label sits under a measured span. Never Inter — a sans label
+   at this size competes with the numeral instead of captioning it. */
+.cmastLbl {
+  margin-top: 11px;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+}
 .cmastCnt {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-top: 1.5px solid var(--ink);
   background: var(--paper-deep);
 }
-.cmastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+.cmastSub {
+  min-width: 0;
+  padding: 10px clamp(8px, 3vw, 16px) 11px;
+  border-right: 1.5px solid var(--ink);
+}
 .cmastSub:last-child { border-right: none; }
 .cmastSubL {
   font-family: var(--font-mono);
-  font-size: 12px; font-weight: 600;
+  font-size: 10.5px; font-weight: 600;
   letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 7px;
+  margin-bottom: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cmastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
+/* AVG DEAL is the wide one and it is money, so it can be any length. It WRAPS
+   rather than clipping — a masthead figure with its tail cut off is a wrong
+   number, not a shortened one — and `anywhere` is what actually lowers the
+   cell's min-content width so the grid track can hold it. */
+.cmastSubV {
+  font-size: clamp(15px, 4.7vw, 21px); font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.005em; font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
 /* ============================================================
    FIND BAR — search over the book, plus the tag filter as ONE
    dropdown. The desktop chip rail cannot survive 320px, and with
@@ -233,6 +264,20 @@
   color: var(--ink);
 }
 .srchInput::placeholder { color: var(--muted-light); }
+/* TWO CLEAR BUTTONS, ONE FIELD. `type="search"` is kept — it is what gives a
+   phone keyboard its Search return key — but WebKit and Blink draw their own
+   ✕ inside it the moment there is a value, which landed beside the house
+   `.srchX` as a second, differently-coloured cross. The native one is switched
+   off; the drawn one stays, because it is the only one that can wear the
+   system's own weight and hit box. */
+.srchInput::-webkit-search-cancel-button,
+.srchInput::-webkit-search-decoration,
+.srchInput::-webkit-search-results-button,
+.srchInput::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
 .srchX {
   width: 34px; height: 34px;
   margin-right: -8px;
@@ -284,10 +329,17 @@
      padding:0 so the CELL borders below are the grid's rules, with no gutter
      between a cell edge and the menu frame. */
   display: grid;
-  /* minmax(0, 1fr): plain 1fr floors at auto, so one long user-typed tag could
-     push its column past a third and shove the panel out of its own frame.
+  /* THE COLUMN COUNT FOLLOWS THE OPTIONS, capped at the fleet's three.
+     Everywhere else in the fleet the option list is a fixed six-to-nine, so a
+     flat `repeat(3, …)` always draws a full table. Here the list is DATA — All,
+     VIP, then one cell per org tag — and on a book with no tags it is two
+     options, which the flat grid drew as a 119px cell beside a 238px one: the
+     ragged-edge rule below hands a lone last cell the rest of its row, and with
+     two options that IS the panel. Two options are two halves.
+     minmax(0, 1fr): plain 1fr floors at auto, so one long user-typed tag could
+     push its column past its share and shove the panel out of its own frame.
      Tags come from free text in the create form, so this is reachable. */
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--dd-cols, 3), minmax(0, 1fr));
   padding: 0;
   overflow: hidden;
   max-height: 60vh;
@@ -329,6 +381,17 @@
    any option count. Matches the announcements filter menu. */
 .ddItem:last-child:nth-child(3n + 1) { grid-column: 1 / -1; }
 .ddItem:last-child:nth-child(3n + 2) { grid-column: 2 / -1; }
+/* TWO OPTIONS — the resting state of a book with no org tags. The rules above
+   are written for three columns, so both have to be re-cut rather than merely
+   switched off: the second cell is the one that carries the divider, and the
+   span that completes a ragged 3-wide row is exactly what unbalances a 2-wide
+   one. Same drawn table, two cells wide. */
+.ddMenu[data-cols="2"] { --dd-cols: 2; }
+.ddMenu[data-cols="2"] .ddItem:nth-child(-n + 2) { border-top: none; }
+.ddMenu[data-cols="2"] .ddItem:nth-child(2n + 1) { border-left: none; }
+.ddMenu[data-cols="2"] .ddItem:nth-child(2n) { border-left: 1.5px solid var(--hair); }
+.ddMenu[data-cols="2"] .ddItem:last-child:nth-child(2n + 1) { grid-column: 1 / -1; }
+.ddMenu[data-cols="2"] .ddItem:last-child:nth-child(2n) { grid-column: auto; }
 .ddItem:active { background: var(--paper-deep); }
 .ddItem.active { color: var(--blueprint); font-weight: 800; background: var(--paper-deep); }
 .ddItem .ic {
@@ -366,7 +429,12 @@
   transition: background 0.12s;
 }
 .crow:last-child { border-bottom: none; }
+/* The card is the door to the record, so it takes the pointer and the focus
+   ring a control is owed — it was a div with a hover tint and no destination
+   until the row itself became the tap target. */
+.crow { cursor: pointer; }
 .crow:active { background: var(--paper-deep); }
+.crow:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
 /* EVERY child is pinned to an explicit cell. Giving .cav and .crowOpen a
    `grid-row` but no `grid-column` let auto-placement drop the ⋮ button into
    column 2 and push the name out to column 3 — the name rendered hard right
@@ -386,6 +454,14 @@
   flex-shrink: 0;
 }
 .cav.isVip { background: var(--blueprint); color: #fff; border-color: var(--blueprint); }
+/* A name is arbitrary text, and arbitrary text is sometimes 200 unbroken
+   characters of it. `overflow-wrap: anywhere` alone kept the CARD intact but
+   turned one row into a nine-line paragraph, which costs every other row on
+   the page its scannability to serve the outlier. Two lines then an ellipsis:
+   the column can still be narrower than the longest word, and a real name —
+   which is what nearly every row holds — is never touched, because two lines
+   is more than any of them need. The full value is on the card's `title` and
+   one tap away in the record. */
 .cname {
   grid-column: 2;
   grid-row: 1;
@@ -395,23 +471,43 @@
   align-self: end;
   min-width: 0;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 .cwhere {
   grid-column: 2;
   grid-row: 2;
   align-self: start;
+  min-width: 0;
   margin-top: 4px;
   font-family: var(--font-mono);
   font-size: 11.5px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--muted-light);
+  /* One line: the location is a "City, ST" plate, so a second line of it is
+     always a data problem rather than a place worth reading. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* THE ⋮ IS 32px DRAWN, 44px TAPPABLE. It used to be a 44px box, which made a
+   secondary control the second-heaviest object on the row after the avatar and
+   put a hard frame right where the name wants to run. The drawn box shrank; the
+   TARGET did not — `::after` pushes an invisible 44×44 hit area out from the
+   button's own centre, so the thumb still gets the house minimum while the card
+   gets its right edge back. The card underneath is itself a tap target now, and
+   these two must not overlap by accident: the pseudo-element is bounded, not a
+   blanket `inset: -100px`. */
 .crowOpen {
+  position: relative;
   grid-column: 3;
   grid-row: 1 / 3;
   align-self: start;
-  width: 44px; height: 44px;
-  margin: -4px -6px 0 0;
+  width: 32px; height: 32px;
+  margin: -1px -2px 0 0;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
@@ -419,8 +515,15 @@
   flex-shrink: 0;
   transition: background 0.12s, box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
 }
+.crowOpen::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+}
 .crowOpen:active { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
-.crowOpen .ic { width: 18px; height: 18px; }
+.crowOpen .ic { width: 16px; height: 16px; }
 /* Row 3 spans the whole card so tags start at the left grid edge and the
    pipeline figure closes at the far right.
    Two groups, not one wrapping flex line: with three tags plus a count plus an
@@ -438,9 +541,14 @@
 }
 .crowTags {
   display: flex; align-items: center; flex-wrap: wrap;
-  gap: 6px;
+  /* 6px between two framed chips, 9px on the cross axis so a wrapped second
+     line of them clears the first — and the mono count that closes the group
+     gets its own breathing room from .cprop's margin, because 6px between a
+     bordered plate and bare type reads as half of what it is. */
+  gap: 9px 6px;
   min-width: 0;
 }
+.tag + .cprop { margin-left: 3px; }
 .crowFigs {
   display: flex; align-items: baseline; gap: 9px;
   justify-self: end;
@@ -458,15 +566,25 @@
 /* VIP is an account state, so it takes the ink plate — the strongest mark on
    the row, and never a status colour (those are reserved for statuses). */
 .tag.isVip { border-color: var(--ink); background: var(--ink); color: var(--paper); }
-.tag.isNone { border-style: dashed; color: var(--muted-light); }
-/* No margin-left:auto any more — .crowFigs owns the right-hand placement. */
+/* THE PROPOSAL COUNT, as an annotation and not a plate.
+   Two things had to be true at once: the row cannot carry a dashed "NO TAGS"
+   chip (a plate announcing the absence of a plate, and the most repeated object
+   on a book where most rows carry no tags), and it cannot lose the count that
+   used to sit left of the amount. The count takes the vacated slot in the tag
+   group — so the left of the row is always saying something about the record —
+   and it is drawn in the mono annotation layer rather than as a second framed
+   chip, which keeps the row's only figure-weight type on the money. */
 .cprop {
   font-family: var(--font-mono);
-  font-size: 11.5px; font-weight: 600;
-  letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* No margin-left:auto — .crowFigs owns the right-hand placement, and the amount
+   is the only thing in it: two mono figures on one baseline read as one figure
+   with a prefix, which is why the count sits with the tags instead. */
 .cpipe {
   font-size: 20px; font-weight: 900;
   letter-spacing: -0.005em;
@@ -559,7 +677,21 @@
   color: var(--muted);
   margin-bottom: 6px;
 }
-.sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
+/* The sheet is titled with the client's NAME, so it inherits the row's
+   problem: 200 unbroken characters would push the sheet wider than the
+   viewport and take the page's horizontal scroll with it. Two lines, then
+   cut. */
+.sheetTitle {
+  font-size: 18px; font-weight: 900;
+  letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
 .sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 /* Row menu items: icon in a 26px tonal box, title + sub, one disabled and one
    danger present. */
@@ -588,8 +720,16 @@
 .cmiOk { border-color: var(--success); background: var(--success-soft); color: var(--success); }
 .cmiWarn { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
 .cmiDanger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
-.cmenuItemT { display: block; font-size: 15px; font-weight: 700; }
-.cmenuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
+/* The menu rows carry the client's name and their EMAIL as sub-copy, both of
+   which are arbitrary text. The flex row needs the `min-width: 0` or its item
+   re-floors at the longest word and widens the sheet. */
+.cmenuItem > span:last-child { min-width: 0; }
+.cmenuItemT { display: block; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.cmenuItemS {
+  display: block; margin-top: 3px;
+  font-size: 12.5px; font-weight: 500; color: var(--muted-light);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .cmenuItemDanger .cmenuItemT { color: var(--danger); }
 .sheetCancel {
   min-height: 52px;
@@ -625,6 +765,16 @@
 }
 .pinput::placeholder { color: var(--muted-faint); }
 .pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
+/* Notes. Wears `.pinput` for the frame and overrides only the box model — a
+   second input treatment for the same control is what the house rules forbid.
+   `resize: vertical`: the horizontal axis belongs to the sheet. */
+.ptextarea {
+  min-height: 96px;
+  padding: 12px;
+  line-height: 1.45;
+  resize: vertical;
+  font-family: inherit;
+}
 .fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
 .fldErr { margin-top: 7px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
 .fld.invalid .pinput { border-color: var(--danger); background: var(--danger-soft); }
@@ -665,6 +815,27 @@
 }
 /* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
    reachable without scrolling the form to its end. */
+/* BUSY PLATE — the sheet's own "still working" cover, mounted only once the
+   300ms fuse in mobile-clients.tsx has burned. The mark is the system's
+   pulsing blueprint SQUARE (the same widget the Smart Proposal refine card
+   uses as `.sp-busy`), not a round spinner: this house draws hard geometry. */
+.sheetBusy {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+.sheetBusyDot {
+  width: 12px; height: 12px; flex: 0 0 auto;
+  background: var(--blueprint);
+  animation: busyPulse 1s infinite var(--ease);
+}
+
 .formFoot {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
@@ -674,6 +845,55 @@
   border-top: 1.5px solid var(--ink);
   background: var(--paper-deep);
   flex-shrink: 0;
+}
+/* An anchor wearing `.btn` has no `disabled`, so "nothing typed yet" is drawn
+   rather than declared — half opacity and the pointer switched off, with the
+   click cancelled in the handler so a keyboard activation is refused too. */
+.btnOff { opacity: 0.45; pointer-events: none; }
+/* ============================================================
+   MESSAGE SHEET — the record page's composer, in the sheet frame.
+   Two channels, the gates that say why one is off, and the webmail
+   handoff that needs no integration at all.
+   ============================================================ */
+.msgChips { display: flex; flex-wrap: wrap; gap: 10px; }
+.msgChip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46px;
+  padding: 0 16px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 12.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s, border-color 0.12s, transform 0.12s var(--ease);
+}
+.msgChip .ic { width: 16px; height: 16px; }
+.msgChip:active { transform: translate(1px, 1px); }
+/* The chosen channel takes the ink plate — the same "this is the state you are
+   in" mark the VIP tag wears, and never a status colour. */
+.msgChipOn { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+/* THE GATES. A note, not an error: nothing has gone wrong, something is simply
+   not set up, and the line names the page that sets it up. */
+.msgNote {
+  padding: 11px 12px;
+  border-left: 3px solid var(--blueprint);
+  background: var(--paper-deep);
+  font-size: 13px; font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.msgLink { color: var(--blueprint); font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
+/* Inline, not the full-cover `.sheetBusy`: the channel chooser above it is
+   usable while the reach read is in flight, so covering the sheet would take
+   away a control that works. */
+.msgBusy {
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
 }
 /* ============================================================
    MOTION SYSTEM — BALANCED (package 02, the standard)
@@ -701,6 +921,12 @@
   100% { background: transparent; }
 }
 .landed { animation: landFlash 0.6s var(--ease-out); }
+/* The busy plate's mark — a pulse, not a rotation: the system's loading sign
+   is a blueprint square dimming and coming back, never a spinning ring. */
+@keyframes busyPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
 /* Scoped to the page — the global kill switch stays the app's business */
 @media (prefers-reduced-motion: reduce) {
   .app *,
@@ -725,8 +951,11 @@
   .formFoot { grid-template-columns: 1fr; }
 }
 @media (max-width: 360px) {
-  .cmastCnt { grid-template-columns: 1fr; }
-  .cmastSub { border-right: none; border-bottom: 1.5px solid var(--ink); }
-  .cmastSub:last-child { border-bottom: none; }
+  /* The three-cell strip STAYS three cells at 320px — unstacking it would turn
+     one plate into three rows and push the first client below the fold, which
+     is the cost the band was trimmed to avoid. It gives up letter-spacing and
+     side padding instead; the clamps on the label and the numeral do the rest. */
+  .cmastSub { padding-left: 8px; padding-right: 8px; }
+  .cmastSubL { font-size: 10px; letter-spacing: 0.06em; }
   .cav { width: 34px; height: 34px; font-size: 12px; }
 }

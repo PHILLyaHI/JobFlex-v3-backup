@@ -170,6 +170,25 @@ export function LeadsContent({ leads, offers }: { leads: Lead[]; offers: Offer[]
             the full seven-stage pipeline, so this board carries two columns
             the dashboard's five-stage summary omits (Won, Lost). */}
         <div id="boardView" className="is-hidden">
+          {/* Seven columns at a 206px floor overflow every desktop content
+              width, and a trackpad-less mouse has no way to push a horizontally
+              scrolling grid. The rail is that control: one column of travel per
+              click, disabled at each end, and hidden outright when the board
+              already fits (and on handhelds, where the board stacks). Filled by
+              leads-behavior.ts — the buttons are static markup so their
+              listeners survive every board re-render. */}
+          <div className="brail is-hidden" id="lRail">
+            <span className="brail-lbl">Pipeline stages</span>
+            <span className="brail-of" id="lRailOf"></span>
+            <div className="brail-btns">
+              <button className="brail-btn" type="button" data-brail="prev" aria-label="Scroll stages left" aria-controls="lBoard" disabled>
+                <svg className="ic rot-l"><use href="#i-chev" /></svg>
+              </button>
+              <button className="brail-btn" type="button" data-brail="next" aria-label="Scroll stages right" aria-controls="lBoard">
+                <svg className="ic rot-r"><use href="#i-chev" /></svg>
+              </button>
+            </div>
+          </div>
           <div className="stage-board" id="lBoard">
             {STAGES.map((st) => (
               <div className="stage-col" data-stage={st.key} key={st.key}>
@@ -185,11 +204,15 @@ export function LeadsContent({ leads, offers }: { leads: Lead[]; offers: Offer[]
         </div>
       </section>
 
-      {/* TAB: INCOMING */}
+      {/* TAB: INCOMING
+          Lead Center ONLY — live platform offers and the leads the platform
+          routed to this shop. Leads the contractor entered themselves (by hand,
+          pasted, imported) go straight to the pipeline; they are not something
+          to accept or decline. See isPlatformIncoming in leads-data.ts. */}
       <section className="ppanel is-hidden" data-panel="incoming">
         <div className="inbox-grid" id="inboxGrid"></div>
         <div className="pempty is-hidden" id="inboxEmpty">
-          <b>{"You're all caught up"}</b><br />Leads routed to you — and fresh inquiries — show up here to accept or decline.
+          <b>{"You're all caught up"}</b><br />Leads the lead center routes to your shop land here to accept or decline. Leads you add yourself go straight to the pipeline.
         </div>
       </section>
 
@@ -271,8 +294,6 @@ export function LeadsContent({ leads, offers }: { leads: Lead[]; offers: Offer[]
           </div>
         </div>
       </section>
-
-      <div className="pmenu" id="pMenu"></div>
 
       <div className="mdl" id="mdl">
         <div className="mdl-bg" data-mdl="close"></div>

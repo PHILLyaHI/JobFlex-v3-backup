@@ -325,11 +325,19 @@ async function statusFor(
  * Skips the count query entirely when the resource is unlimited. `needed` is
  * the headroom required (bulk creates like CSV imports pass their row count).
  */
+// 2026-08-14 (owner's call): quota enforcement disabled app-wide together with
+// the entitlements gates (src/lib/entitlements.ts) — no "Plan limit reached"
+// upsells anywhere. Flip to false to restore the engine untouched below.
+const LIMITS_DISABLED = true;
+
 export async function checkPlanLimit(
   organizationId: string,
   resource: LimitResource,
   needed = 1,
 ): Promise<LimitStatus> {
+  if (LIMITS_DISABLED) {
+    return { resource, limit: null, used: 0, remaining: null, allowed: true };
+  }
   const { limits, cycleStart } = await resolvePlan(organizationId);
   return statusFor(limits, cycleStart, organizationId, resource, needed);
 }
@@ -371,6 +379,15 @@ export async function enforcePlanLimit(
  * queries), so it is cheap enough for per-render use (sidebar counters).
  */
 export async function getOrgLimitUsage(organizationId: string): Promise<LimitStatus[]> {
+  if (LIMITS_DISABLED) {
+    return LIMIT_DEFS.map((d) => ({
+      resource: d.key,
+      limit: null,
+      used: 0,
+      remaining: null,
+      allowed: true,
+    }));
+  }
   const { limits, cycleStart } = await resolvePlan(organizationId);
   return Promise.all(
     LIMIT_DEFS.map((d) => statusFor(limits, cycleStart, organizationId, d.key)),

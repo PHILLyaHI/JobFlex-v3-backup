@@ -26,8 +26,8 @@
 // ComponentType>`: keyed by an EXACT pathname, rendering a component that takes
 // no props. Neither half fits this route. It is dynamic — /dashboard/projects/
 // cmomfzw8m001fyb33mz3lis5d — so no literal key can match it; and its handheld
-// build needs the project, its jobs and the attachable-job candidates, which
-// are read in the page's server component and cannot reach a props-less
+// build needs the project, its jobs and the attachable-proposal candidates,
+// which are read in the page's server component and cannot reach a props-less
 // component mounted by the layout. Fetching them again from the client would
 // mean a new API route or a new server action, and the data layer is out of
 // scope.
@@ -42,8 +42,9 @@
 import dynamic from "next/dynamic";
 import { useSyncExternalStore } from "react";
 import { ProjectDetailContent } from "@/components/v3/project-detail-blueprint/project-detail-content";
+import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
 import type {
-  PdAvailJob,
+  PdAvailProposal,
   PdJob,
   PdProject,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
@@ -85,9 +86,19 @@ const getServerSnapshot = () => false;
 export function ProjectDetailViewportSwitch(props: {
   project: PdProject;
   jobs: PdJob[];
-  availableJobs: PdAvailJob[];
+  availableProposals: PdAvailProposal[];
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  if (isHandheld) return <MobileProjectDetail {...props} />;
+  // The handheld half is a lazy chunk, so it inherits the deploy-skew failure
+  // the shell's surfaces have: a build that lands while this tab is open turns
+  // the import into a 404 and the 404 into "a client-side exception has
+  // occurred". The boundary spends one reload on it. See the boundary's header.
+  if (isHandheld) {
+    return (
+      <ChunkRecoveryBoundary>
+        <MobileProjectDetail {...props} />
+      </ChunkRecoveryBoundary>
+    );
+  }
   return <ProjectDetailContent {...props} />;
 }

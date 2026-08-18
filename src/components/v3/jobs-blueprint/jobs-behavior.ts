@@ -20,21 +20,26 @@
 // the sidebar entry cascade, the sliding active-item indicator, the
 // graph-paper parallax on `.main`, and press feedback on shell controls.
 
-import { createJob, updateJob } from "@/actions/jobs";
+import { createJob, deleteJob, scheduleJobFromTray, updateJob } from "@/actions/jobs";
+import { createClient } from "@/actions/clients";
+import { assignWorker, unassignAssignment } from "@/actions/workers";
 import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
+import { attachCombo, type ComboItem } from "./combo";
 import {
   JOB_TABS,
   ACCENT,
   JOBS_SEED,
   PAGE_SIZE,
+  money,
   parseDay,
   rangeLabel,
   relLabel,
   type Job,
   type JobClientOption,
   type JobCrewOption,
+  type JobProposalOption,
   type JobStatus,
 } from "./jobs-data";
 
@@ -46,9 +51,24 @@ export type JobsContentOptions = {
   clients?: JobClientOption[];
   /** Workers the create dialog can staff it with. */
   crew?: JobCrewOption[];
+  /** Proposals the create dialog can attach the job to (`Job.proposalId`). */
+  proposals?: JobProposalOption[];
   /** Owner/manager — gates the row menu's status writes. `updateJob` calls
    *  `requireManager`, so for anyone else the items are not offered at all. */
   canManage?: boolean;
+  /**
+   * Next's client-side router push, handed down from jobs-content.tsx.
+   *
+   * The job record at /dashboard/jobs/<id> is a blueprint page whose entrance
+   * cascade is armed from a LAYOUT EFFECT (blueprint-shell/use-blueprint-content),
+   * and that timing only beats the paint on a CLIENT-SIDE navigation. A
+   * `location.assign()` paints the server HTML in full, then drops it to
+   * opacity 0 and replays the entrance — the "it shows one version, then the
+   * real one" double take — and tears the shared shell down on the way.
+   *
+   * Optional: the standalone mock route mounts with no router and falls back.
+   */
+  navigate?: (href: string) => void;
 };
 
 /** Server actions reject with an Error whose message is written for the user
@@ -158,9 +178,17 @@ export function initJobsContent(
   });
 
   // ================= JOBS: DATA =================
-  const jobsData: Job[] = (options.entries ?? JOBS_SEED).map((j) => ({ ...j, crew: [...j.crew] }));
-  const clientOptions: JobClientOption[] = options.clients ?? [];
+  const jobsData: Job[] = (options.entries ?? JOBS_SEED).map((j) => ({
+    ...j,
+    crew: [...j.crew],
+    assignments: (j.assignments ?? []).map((a) => ({ ...a })),
+  }));
+  // Not `const`: a client typed into the create dialog is created through the
+  // existing `createClient` action and joins the book, so the next job can pick
+  // them from the list without a page reload.
+  const clientOptions: JobClientOption[] = (options.clients ?? []).slice();
   const crewOptions: JobCrewOption[] = options.crew ?? [];
+  const proposalOptions: JobProposalOption[] = options.proposals ?? [];
   const canManage = options.canManage ?? false;
 
   const jstate = { tab: "ALL" as "ALL" | JobStatus, page: 1, menuId: null as string | null };
@@ -203,6 +231,15 @@ export function initJobsContent(
   }
   function jobHref(id: string) {
     return "/dashboard/jobs/" + encodeURIComponent(id);
+  }
+  /** ONE door out of this page, for the same reason jobHref is one string:
+   *  three call sites (the whole row, the arrow, the menu's "Open job") that
+   *  must all navigate the same WAY, not just to the same place. See
+   *  `navigate` on JobsContentOptions for why the way matters. */
+  function openRecord(id: string) {
+    const href = jobHref(id);
+    if (options.navigate) options.navigate(href);
+    else window.location.assign(href);
   }
 
   // ================= RENDER =================
@@ -252,10 +289,16 @@ export function initJobsContent(
       '" style="--acc:' +
       ACCENT[j.status] +
       '">' +
-      '<td><div class="j-title">' +
+      // `title` carries the untruncated text — both lines are line-clamped so a
+      // pasted 200-character job name cannot widen the column past the card.
+      '<td><div class="j-title" title="' +
+      esc(j.title) +
+      '">' +
       esc(j.title) +
       "</div>" +
-      '<div class="j-client">' +
+      '<div class="j-client" title="' +
+      esc(j.client || "No client") +
+      '">' +
       esc(j.client || "No client") +
       "</div></td>" +
       '<td data-cell="status">' +
@@ -291,7 +334,7 @@ export function initJobsContent(
     return (
       '<span class="pstatus jst--' +
       j.status.toLowerCase() +
-      '"><span class="jst-dot"></span>' +
+      '">' +
       statusLabel(j.status) +
       "</span>"
     );
@@ -313,10 +356,14 @@ export function initJobsContent(
       ACCENT[j.status] +
       '">' +
       '<div class="jcard-top"><div style="min-width:0">' +
-      '<div class="jcard-t">' +
+      '<div class="jcard-t" title="' +
+      esc(j.title) +
+      '">' +
       esc(j.title) +
       "</div>" +
-      '<div class="jcard-c">' +
+      '<div class="jcard-c" title="' +
+      esc(j.client || "No client") +
+      '">' +
       esc(j.client || "No client") +
       "</div></div>" +
       '<span class="pstatus jst--' +
@@ -324,11 +371,17 @@ export function initJobsContent(
       '" data-cell="status">' +
       statusLabel(j.status) +
       "</span></div>" +
+      // Both slots carry `data-cell` so a schedule or crew write can be patched
+      // into the card in place, the way the status pill already is.
       '<div class="jcard-bot">' +
-      '<span class="jcard-when"><svg class="ic"><use href="#i-cal"/></svg>' +
+      '<span class="jcard-when" data-cell="when"><svg class="ic"><use href="#i-cal"/></svg>' +
       (range || "Unscheduled") +
       "</span>" +
+      // Empty rather than absent: an inline span with no children takes no
+      // space in the `space-between` row, and the patch has somewhere to land.
+      '<span data-cell="crew">' +
       (j.crew.length ? crewStack(j.crew) : "") +
+      "</span>" +
       "</div></a></li>"
     );
   }
@@ -428,11 +481,30 @@ export function initJobsContent(
   }
 
   // ================= ROW MENU =================
-  // The donor drew a bare arrow and nothing else. The actions behind it are the
-  // classic detail page's status control (`updateJob`), which is the only write
-  // this surface can make on an existing job — everything else (photos,
-  // expenses, crew changes) lives on /dashboard/jobs/<id> and is one click away
-  // through "Open job".
+  // The donor drew a bare arrow and nothing else. What sits behind the dots is
+  // the row's whole vocabulary: open the record, put it on the calendar
+  // (scheduleJobFromTray / updateJob), staff it (assignWorker /
+  // unassignAssignment), move its status (updateJob) and delete it (deleteJob).
+  // Everything deeper — photos, expenses, change orders — lives on
+  // /dashboard/jobs/<id> and is one click away through "Open job".
+  //
+  // ── WHY THIS MENU LOOKED DEAD ──────────────────────────────────────
+  // Two faults, both in the port, both invisible in the markup:
+  //
+  // 1. The reveal cascade below claims every `.content` child — it skipped
+  //    `.mdl` and nothing else — so `#pMenu` was handed `.rv` (opacity: 0,
+  //    translateY(14px)) with a 360ms transition delay. A `display: none`
+  //    element never intersects, so the IntersectionObserver never granted it
+  //    `.rv-in`: the first click on the dots produced NOTHING for the better
+  //    part of a second, and then a menu faded up out of nowhere.
+  // 2. `openMenu` read the FLUID SCALE zoom off `.content`. The zoom lives on
+  //    the shell root (`.jf-blueprint`) — decisions.md — so the read returned
+  //    "" → NaN → 1, and the un-zoomed viewport maths placed the box ~420px
+  //    left of the dots that opened it, over the Schedule column.
+  //
+  // Fix 1 is the filter in the motion IIFE; fix 2 is the zoom read in
+  // `openMenu`, which is now the clients page's — the one that was already
+  // correct. proposals-behavior.ts:860 still carries fault 2.
   const pMenu = $("#pMenu");
 
   function menuItem(
@@ -467,6 +539,7 @@ export function initJobsContent(
 
   function menuBody(j: Job) {
     const done = j.status === "COMPLETED";
+    const range = rangeLabel(j);
     return (
       '<div class="pmenu-head"><div class="pmenu-title">' +
       esc(j.title) +
@@ -478,6 +551,22 @@ export function initJobsContent(
       menuItem("i-arrow", "pmi--bp", "Open job", "Schedule, crew, photos", "open") +
       (canManage
         ? '<div class="pmenu-div"></div>' +
+          menuItem(
+            "i-cal",
+            "pmi--bp",
+            range ? "Reschedule" : "Schedule",
+            range ? esc(range) : "Not on the calendar yet",
+            "sched",
+          ) +
+          menuItem(
+            "i-userplus",
+            "",
+            "Assign crew",
+            j.crew.length ? esc(j.crew.join(", ")) : "Nobody dispatched yet",
+            "crew",
+            !crewOptions.length,
+          ) +
+          '<div class="pmenu-div"></div>' +
           menuItem(
             "i-clock",
             "pmi--warn",
@@ -511,7 +600,8 @@ export function initJobsContent(
             "st:CANCELED",
             j.status === "CANCELED",
             true,
-          )
+          ) +
+          menuItem("i-trash", "pmi--danger", "Delete job", "Removes it for good", "del", false, true)
         : "") +
       '<div class="pmenu-err is-hidden" data-menu-err role="alert"></div>'
     );
@@ -523,19 +613,30 @@ export function initJobsContent(
     jstate.menuId = id;
     pMenu.innerHTML = menuBody(j);
     pMenu.classList.add("open");
-    // The donor zooms document.documentElement; the port zooms the page root.
-    const z = parseFloat(root.style.getPropertyValue("zoom")) || 1;
+    // FLUID SCALE zooms the SHELL ROOT (`.jf-blueprint`), not `.content` and
+    // not documentElement — reading it anywhere else returns "", parses to NaN
+    // and silently falls back to 1 (decisions.md). That fallback is what put
+    // this menu ~420px left of the dots at every viewport but 1728px.
+    const host = root.closest<HTMLElement>(".jf-blueprint");
+    const zRaw = host ? parseFloat(getComputedStyle(host).zoom) : 1;
+    const z = isFinite(zRaw) && zRaw > 0 ? zRaw : 1;
     const vw = window.innerWidth / z;
     const vh = window.innerHeight / z;
+    // getBoundingClientRect reports ZOOMED pixels; `left`/`top` are written in
+    // the menu's own unzoomed space, so the anchor is divided by the live zoom
+    // too — every popover placement on these pages does this.
     const r = btn.getBoundingClientRect();
+    const rRight = r.right / z;
+    const rTop = r.top / z;
+    const rBottom = r.bottom / z;
     const mw = 254;
-    let left = Math.min(r.right - mw, vw - mw - 12);
+    let left = Math.min(rRight - mw, vw - mw - 12);
     left = Math.max(12, left);
     pMenu.style.left = left + "px";
     pMenu.style.top = "0px";
     const mh = pMenu.offsetHeight;
-    let top = r.bottom + 6;
-    if (top + mh > vh - 12) top = Math.max(12, r.top - mh - 6);
+    let top = rBottom + 6;
+    if (top + mh > vh - 12) top = Math.max(12, rTop - mh - 6);
     pMenu.style.top = top + "px";
   }
   function closeMenu() {
@@ -597,6 +698,67 @@ export function initJobsContent(
     }
   }
 
+  /** The schedule changed. Same contract as applyStatus: patch the two cells
+   *  that print it, never re-render the list around the menu the user is in. */
+  function applySchedule(j: Job, start: string | null, end: string | null) {
+    j.start = start;
+    j.end = end && end !== start ? end : null;
+    const rowEl = root.querySelector<HTMLElement>('#jobsBody .prow[data-id="' + sel(j.id) + '"]');
+    const cell = rowEl?.querySelector<HTMLElement>('[data-cell="when"]');
+    if (cell) cell.innerHTML = whenHtml(j);
+    const cardEl = root.querySelector<HTMLElement>('#jobsCards .jcard[data-id="' + sel(j.id) + '"]');
+    const chip = cardEl?.querySelector<HTMLElement>("[data-cell=\"when\"]");
+    if (chip) {
+      chip.innerHTML =
+        '<svg class="ic"><use href="#i-cal"/></svg>' + (rangeLabel(j) || "Unscheduled");
+    }
+  }
+
+  /** The crew changed. The table cell and the card's avatar stack both print
+   *  `crewStack`, so both are rewritten from the same string. */
+  function applyCrew(j: Job) {
+    const rowEl = root.querySelector<HTMLElement>('#jobsBody .prow[data-id="' + sel(j.id) + '"]');
+    const cell = rowEl?.querySelector<HTMLElement>('[data-cell="crew"]');
+    if (cell) cell.innerHTML = crewStack(j.crew);
+    const cardEl = root.querySelector<HTMLElement>('#jobsCards .jcard[data-id="' + sel(j.id) + '"]');
+    const slot = cardEl?.querySelector<HTMLElement>('[data-cell="crew"]');
+    if (slot) slot.innerHTML = j.crew.length ? crewStack(j.crew) : "";
+  }
+
+  /** The job is gone. The row fades out alone and the rows below FLIP up to
+   *  close the gap — nothing else on the page moves. */
+  function dropJob(id: string) {
+    const at = jobsData.findIndex((x) => x.id === id);
+    if (at !== -1) jobsData.splice(at, 1);
+    patchTabCounts();
+    const rowEl = root.querySelector<HTMLElement>('#jobsBody .prow[data-id="' + sel(id) + '"]');
+    const cardEl = root.querySelector<HTMLElement>('#jobsCards .jcard[data-id="' + sel(id) + '"]');
+    if (rowEl) {
+      leaveRow(
+        rowEl,
+        () => {
+          // Bookkeeping only, NOT a re-render — see applyStatus.
+          jstate.page = Math.min(jstate.page, pageCount());
+          syncEmpty();
+          renderPager();
+        },
+        after,
+      );
+    } else {
+      syncEmpty();
+      renderPager();
+    }
+    if (cardEl?.parentElement) leaveRow(cardEl.parentElement, () => {}, after);
+  }
+
+  // The row menu's three dialogs live further down (they need the same frame
+  // plumbing as the create dialog). The menu is wired first, so it reaches them
+  // through these — assigned in the dialog section, null on a mount where the
+  // markup is missing.
+  let openSchedDlg: ((j: Job) => void) | null = null;
+  let openCrewDlg: ((j: Job) => void) | null = null;
+  let openDelDlg: ((j: Job) => void) | null = null;
+
   let statusBusy = false;
   async function runStatus(id: string, next: JobStatus, item: HTMLElement) {
     if (statusBusy) return;
@@ -641,15 +803,68 @@ export function initJobsContent(
       const act = item.dataset.mact || "";
       const id = jstate.menuId;
       if (!id) return;
-      if (act === "open") {
-        closeMenu();
-        window.location.assign(jobHref(id));
-        return;
-      }
+      // The status items write in place and keep the menu open on a refusal,
+      // so they are the only ones that do NOT close it up front.
       if (act.startsWith("st:")) {
         void runStatus(id, act.slice(3) as JobStatus, item);
+        return;
       }
+      const j = jobsData.find((x) => x.id === id) ?? null;
+      closeMenu();
+      if (!j) return;
+      if (act === "open") openRecord(j.id);
+      else if (act === "sched") openSchedDlg?.(j);
+      else if (act === "crew") openCrewDlg?.(j);
+      else if (act === "del") openDelDlg?.(j);
       return;
+    }
+
+    // Modified and non-primary clicks belong to the browser: ⌘/ctrl-click,
+    // shift-click and middle-click on the row's arrow must still open a new
+    // tab, and swallowing them here would break that.
+    const ev = e as MouseEvent;
+    const plainClick =
+      ev.button === 0 && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && !ev.altKey;
+
+    // The arrow stays a real <a> with a real href — that is what keeps
+    // "copy link address" and new-tab working — but a plain left click is
+    // claimed so it goes through openRecord like the other two doors.
+    const arrow = target.closest<HTMLElement>("#jobsBody a.pt-open");
+    if (arrow && plainClick) {
+      const id = arrow.closest<HTMLElement>(".prow")?.dataset.id;
+      if (id) {
+        e.preventDefault();
+        closeMenu();
+        openRecord(id);
+        return;
+      }
+    }
+    // The narrow-viewport card is one big anchor. Same treatment, same reason:
+    // it stays a real <a> for new-tab and copy-link, and a plain left click
+    // goes through the one door.
+    const card = target.closest<HTMLElement>("#jobsCards a.jcard");
+    if (card && plainClick && card.dataset.id) {
+      e.preventDefault();
+      closeMenu();
+      openRecord(card.dataset.id);
+      return;
+    }
+
+    // The WHOLE ROW is the door into the record, not just the 15px arrow at
+    // the far right. The row has advertised itself as a target since the port
+    // (it lifts to --paper-deep on hover) while doing nothing, which is worse
+    // than a row that looks inert. Excluded: anything that already owns its
+    // click — the dots trigger and the arrow anchor both sit inside `.j-acts`
+    // and are matched by the `a, button` test, which is what keeps the kebab
+    // from ALSO navigating.
+    const row = target.closest<HTMLElement>("#jobsBody .prow");
+    if (row && !target.closest("a, button") && plainClick) {
+      const id = row.dataset.id;
+      if (id) {
+        closeMenu();
+        openRecord(id);
+        return;
+      }
     }
     if (!pMenu?.contains(target)) closeMenu();
   });
@@ -727,16 +942,89 @@ export function initJobsContent(
       });
     }
 
-    /** The org's real clients, filled once — the select is the only place the
-     *  dialog can produce the `clientId` createJob links by. */
-    function fillClients() {
-      const box = root.querySelector<HTMLSelectElement>("#jfClient");
-      if (!box) return;
-      box.innerHTML =
-        '<option value="">— No client —</option>' +
-        clientOptions
-          .map((c) => '<option value="' + esc(c.id) + '">' + esc(c.name) + "</option>")
-          .join("");
+    /** The client field is a COMBOBOX: it produces the `clientId` createJob
+     *  links by when a row is picked, and it accepts a name that is not in the
+     *  book yet. What happens to free text is decided at submit — see
+     *  `resolveClient`. */
+    let pickedClientId: string | null = null;
+    let pickedProposalId: string | null = null;
+
+    function clientItems(): ComboItem[] {
+      return clientOptions.map((c) => ({ id: c.id, label: c.name, icon: "i-user" }));
+    }
+    function proposalItems(): ComboItem[] {
+      return proposalOptions.map((p) => ({
+        id: p.id,
+        label: p.title,
+        sub: [p.client || "No client", statusLabel(p.status), money(p.total)].join(" · "),
+        icon: "i-file",
+      }));
+    }
+
+    const clientInput = inp("#jfClient");
+    if (clientInput) {
+      disposers.push(
+        attachCombo({
+          input: clientInput,
+          toggle: $("#jfClientCaret"),
+          icon: "i-user",
+          emptyText: "No client by that name — it will be added",
+          items: clientItems,
+          onPick: (it) => {
+            pickedClientId = it ? it.id : null;
+          },
+        }),
+      );
+    }
+    const proposalInput = inp("#jfProposal");
+    if (proposalInput) {
+      disposers.push(
+        attachCombo({
+          input: proposalInput,
+          toggle: $("#jfProposalCaret"),
+          icon: "i-file",
+          emptyText: "No matching proposal",
+          // A Job.proposalId can only point at a row that exists, so free text
+          // here is not a value — the field clears itself and the job is
+          // created with no proposal, which is a perfectly good outcome.
+          strict: true,
+          items: proposalItems,
+          onPick: (it) => {
+            pickedProposalId = it ? it.id : null;
+            if (!it) return;
+            // Picking the paperwork fills in who it is for, but never
+            // overwrites a client the user already chose.
+            const p = proposalOptions.find((x) => x.id === it.id);
+            if (p?.clientId && clientInput && !clientInput.value.trim()) {
+              clientInput.value = p.client || "";
+              pickedClientId = p.clientId;
+            }
+          },
+        }),
+      );
+    }
+
+    /**
+     * Turn whatever is in the client field into the id `createJob` wants.
+     *
+     * Three outcomes: empty → no client; a name already in the book (picked, or
+     * typed exactly) → that id; anything else → a new Client through the
+     * EXISTING `createClient` action, because `Job` has no client-name column
+     * and `createJob` links by id only. The new client joins `clientOptions` so
+     * the next job can pick them without a reload.
+     */
+    async function resolveClient(): Promise<string | null> {
+      const typed = (clientInput?.value || "").trim();
+      if (!typed) return null;
+      const known =
+        (pickedClientId && clientOptions.find((c) => c.id === pickedClientId)) ||
+        clientOptions.find((c) => c.name.toLowerCase() === typed.toLowerCase());
+      if (known && known.name.toLowerCase() === typed.toLowerCase()) return known.id;
+      const made = await createClient({ name: typed });
+      clientOptions.push({ id: made.id, name: made.name });
+      clientOptions.sort((a, b) => a.name.localeCompare(b.name));
+      pickedClientId = made.id;
+      return made.id;
     }
     /** The org's real roster as toggles. Installers get no list at all (the
      *  server auto-assigns them and refuses anyone else), so the field goes. */
@@ -782,13 +1070,17 @@ export function initJobsContent(
       jForm!.reset();
       draftStatus = "SCHEDULED";
       draftCrew = [];
+      // `form.reset()` restores the DEFAULT value of an input, which for the
+      // two comboboxes is the empty string they were rendered with — but the
+      // ids they produced are module state and have to be dropped by hand.
+      pickedClientId = null;
+      pickedProposalId = null;
       paintStatus();
       paintCrew();
       markErr(false);
       dlgError("");
     }
 
-    fillClients();
     fillCrew();
 
     if (newJobBtn) on(newJobBtn, "click", openDlg);
@@ -859,22 +1151,34 @@ export function initJobsContent(
       }
       const startRaw = inp("#jfStart")?.value || "";
       const endRaw = inp("#jfEnd")?.value || "";
-      const clientSel = root.querySelector<HTMLSelectElement>("#jfClient");
-      const clientId = clientSel?.value || null;
-      const clientName = clientId
-        ? clientOptions.find((c) => c.id === clientId)?.name ?? null
-        : null;
       const startsAt = dayAt(startRaw, 9);
       const endsAt = dayAt(endRaw || startRaw, 17);
       const workerIds = draftCrew.slice();
+      // Read the proposal back off the field rather than trusting the stored
+      // id alone: a value typed over and left un-picked must not attach.
+      const proposalTyped = (proposalInput?.value || "").trim();
+      const proposalId =
+        pickedProposalId &&
+        proposalOptions.find((p) => p.id === pickedProposalId)?.title === proposalTyped
+          ? pickedProposalId
+          : null;
 
       setSaving(true);
       dlgError("");
       void (async () => {
         try {
+          // A client typed but not in the book is created first — the job
+          // cannot carry a name, only an id. Its own refusal message (plan
+          // limit, wrong role) lands in the dialog like any other.
+          const clientId = await resolveClient();
+          if (!alive) return;
+          const clientName = clientId
+            ? clientOptions.find((c) => c.id === clientId)?.name ?? null
+            : null;
           const res = await createJob({
             title,
             clientId,
+            proposalId,
             status: draftStatus,
             startsAt,
             endsAt: startsAt ? endsAt : null,
@@ -883,6 +1187,11 @@ export function initJobsContent(
           if (!alive) return;
           // Optimistic insert with the id the server just minted, so the row's
           // Open link points at the real record without a round trip.
+          // `assignments` comes back from the action rather than being guessed
+          // from workerIds: the row menu's crew editor unassigns by ASSIGNMENT
+          // id, and a job created in this session would otherwise be the one
+          // row on the board whose crew could be added to but never removed.
+          const made = res.assignments ?? [];
           jobsData.unshift({
             id: res.id,
             title,
@@ -890,9 +1199,10 @@ export function initJobsContent(
             status: draftStatus,
             start: startRaw || null,
             end: endRaw && endRaw !== startRaw ? endRaw : null,
-            crew: workerIds
-              .map((id) => crewOptions.find((w) => w.id === id)?.name)
+            crew: made
+              .map((a) => crewOptions.find((w) => w.id === a.workerId)?.name)
               .filter((n): n is string => !!n),
+            assignments: made.map((a) => ({ id: a.id, workerId: a.workerId })),
           });
           // Drop back to All, so a job created while a status tab was active is
           // actually visible — it lands in the first row.
@@ -916,6 +1226,344 @@ export function initJobsContent(
         }
       })();
     });
+  }
+
+  // ================= ROW-MENU DIALOGS =================
+  // Schedule, crew and delete each need the create dialog's frame plumbing —
+  // open/close motion, an Escape that closes one layer, a busy button, an error
+  // box carrying the action's own words. That is the same shape three times, so
+  // it is written once here and handed a spec, rather than three near-copies
+  // drifting apart (decisions.md: never create parallel style sets for
+  // identical blocks — the same is true of their behavior).
+  type RowDlg = {
+    el: HTMLElement;
+    open: (j: Job) => void;
+    close: () => void;
+    busy: (on: boolean) => void;
+    error: (msg: string) => void;
+    /** The job the dialog is currently about. */
+    job: () => Job | null;
+  };
+
+  function makeRowDlg(spec: {
+    id: string;
+    okId: string;
+    errId: string;
+    idleLabel: string;
+    busyLabel: string;
+    /** Fill the dialog's own fields for this job. */
+    paint: (j: Job) => void;
+  }): RowDlg | null {
+    const el = $("#" + spec.id);
+    if (!el) return null;
+    let current: Job | null = null;
+    let restore: HTMLElement | null = null;
+    let working = false;
+
+    const error = (msg: string) => {
+      const box = $("#" + spec.errId);
+      if (!box) return;
+      box.textContent = msg || "";
+      box.classList.toggle("is-hidden", !msg);
+    };
+    const busy = (on: boolean) => {
+      working = on;
+      const btn = root.querySelector<HTMLButtonElement>("#" + spec.okId);
+      if (!btn) return;
+      btn.disabled = on;
+      btn.classList.toggle("is-busy", on);
+      const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+      if (lbl) lbl.textContent = on ? spec.busyLabel : spec.idleLabel;
+    };
+    const close = () => {
+      if (!closeMdl(el, after)) return;
+      current = null;
+      restore?.focus();
+    };
+    const open = (j: Job) => {
+      current = j;
+      restore = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      error("");
+      busy(false);
+      spec.paint(j);
+      openMdl(el);
+    };
+
+    on(el, "click", (e) => {
+      if ((e.target as HTMLElement).closest('[data-mdl="close"]') && !working) close();
+    });
+    on(document, "keydown", (e) => {
+      const ev = e as KeyboardEvent;
+      if (ev.key !== "Escape" || !el.classList.contains("open")) return;
+      ev.preventDefault();
+      if (!working) close();
+    });
+
+    return { el, open, close, busy, error, job: () => current };
+  }
+
+  // ── SCHEDULE ────────────────────────────────────────────────────
+  const schedDlg = makeRowDlg({
+    id: "jSched",
+    okId: "jSchedOk",
+    errId: "jSchedErr",
+    idleLabel: "Save schedule",
+    busyLabel: "Saving…",
+    paint: (j) => {
+      const who = $("#jSchedWho");
+      if (who) {
+        who.innerHTML = "<b>" + esc(j.title) + "</b> · " + esc(j.client || "No client");
+      }
+      const hint = $("#jSchedHint");
+      if (hint) {
+        hint.textContent = j.start
+          ? "Moves the job's own window. Leave Ends empty for a single day."
+          : "Puts the job on the calendar at 9am and creates its event.";
+      }
+      const title = $("#jSchedTitle");
+      if (title) title.textContent = j.start ? "Reschedule job" : "Schedule job";
+      const s = root.querySelector<HTMLInputElement>("#jsStart");
+      const e = root.querySelector<HTMLInputElement>("#jsEnd");
+      if (s) s.value = j.start || "";
+      if (e) e.value = j.end || "";
+      $("#jSched")?.querySelector('[data-fld="schedStart"]')?.classList.remove("is-err");
+    },
+  });
+  if (schedDlg) {
+    // The two date fields get the same month-grid popover the create dialog's
+    // do — the native control's panel is an OS surface CSS cannot reach.
+    disposers.push(
+      initDatePopovers(root, [
+        { sel: "#jsStart", icon: "i-clock", label: "Starts" },
+        { sel: "#jsEnd", icon: "i-hourglass", label: "Ends" },
+      ]),
+    );
+    openSchedDlg = schedDlg.open;
+    const schedForm = root.querySelector<HTMLFormElement>("#jSchedForm");
+    if (schedForm) {
+      on(schedForm, "submit", (e) => {
+        e.preventDefault();
+        const j = schedDlg.job();
+        if (!j) return;
+        const startEl = root.querySelector<HTMLInputElement>("#jsStart");
+        const endEl = root.querySelector<HTMLInputElement>("#jsEnd");
+        const start = (startEl?.value || "").trim();
+        const end = (endEl?.value || "").trim();
+        const fld = schedDlg.el.querySelector<HTMLElement>('[data-fld="schedStart"]');
+        if (!start) {
+          fld?.classList.add("is-err");
+          startEl?.focus();
+          return;
+        }
+        fld?.classList.remove("is-err");
+        const wasUnscheduled = !j.start;
+        schedDlg.busy(true);
+        schedDlg.error("");
+        void (async () => {
+          try {
+            if (wasUnscheduled) {
+              // Nothing on the calendar yet: the dispatch tray's action is the
+              // one that creates the JobEvent as well as setting the window,
+              // so the job actually appears on /dashboard/calendar.
+              //
+              // It is handed a full INSTANT, not the "YYYY-MM-DD" day: the
+              // action does `new Date(dateISO)`, which reads a bare day as UTC
+              // midnight, and its `setHours(9, …)` then lands on the PREVIOUS
+              // day in every negative-offset timezone. Verified — a job
+              // scheduled for Sep 15 got a Sep 14 calendar event. (The calendar
+              // page's own drag-to-tray caller passes a bare day and still
+              // carries this.)
+              await scheduleJobFromTray(j.id, (dayAtLocal(start, 9) as Date).toISOString());
+              // It defaults to a 9am–2pm single day; widen it only if the user
+              // asked for a span, rather than firing a second write every time.
+              if (end && end !== start) {
+                await updateJob(j.id, {
+                  startsAt: dayAtLocal(start, 9),
+                  endsAt: dayAtLocal(end, 17),
+                });
+              }
+            } else {
+              // Already on the calendar: move the job's own window. Calling the
+              // tray action again would mint a SECOND JobEvent for the same job.
+              await updateJob(j.id, {
+                startsAt: dayAtLocal(start, 9),
+                endsAt: dayAtLocal(end || start, 17),
+              });
+            }
+            if (!alive) return;
+            applySchedule(j, start, end || null);
+            schedDlg.busy(false);
+            schedDlg.close();
+          } catch (err) {
+            if (!alive) return;
+            schedDlg.busy(false);
+            schedDlg.error(actionError(err));
+          }
+        })();
+      });
+    }
+  }
+
+  // ── ASSIGN CREW ─────────────────────────────────────────────────
+  const crewDlg = makeRowDlg({
+    id: "jCrew",
+    okId: "jCrewOk",
+    errId: "jCrewErr",
+    idleLabel: "Save crew",
+    busyLabel: "Saving…",
+    paint: (j) => {
+      const who = $("#jCrewWho");
+      if (who) {
+        who.innerHTML = "<b>" + esc(j.title) + "</b> · " + esc(j.client || "No client");
+      }
+      draftRoster = (j.assignments ?? []).map((a) => a.workerId);
+      const box = $("#jCrewList");
+      if (box) {
+        box.innerHTML = crewOptions.length
+          ? crewOptions
+              .map(
+                (w) =>
+                  '<button class="fseg-btn" type="button" data-w="' +
+                  esc(w.id) +
+                  '" aria-pressed="false">' +
+                  esc(w.name) +
+                  "</button>",
+              )
+              .join("")
+          : '<span class="fld-hint">No workers on the roster yet.</span>';
+      }
+      paintRoster();
+    },
+  });
+  /** Worker ids toggled on in the crew dialog. Diffed against the job's live
+   *  assignments on save — nothing is written until then. */
+  let draftRoster: string[] = [];
+  function paintRoster() {
+    $$("#jCrewList .fseg-btn").forEach((b) => {
+      const isOn = draftRoster.indexOf(b.dataset.w || "") !== -1;
+      b.classList.toggle("on", isOn);
+      b.setAttribute("aria-pressed", isOn ? "true" : "false");
+    });
+  }
+  if (crewDlg) {
+    openCrewDlg = crewDlg.open;
+    on(crewDlg.el, "click", (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("#jCrewList .fseg-btn");
+      if (!b) return;
+      const id = b.dataset.w || "";
+      const at = draftRoster.indexOf(id);
+      if (at === -1) draftRoster.push(id);
+      else draftRoster.splice(at, 1);
+      paintRoster();
+    });
+    const crewForm = root.querySelector<HTMLFormElement>("#jCrewForm");
+    if (crewForm) {
+      on(crewForm, "submit", (e) => {
+        e.preventDefault();
+        const j = crewDlg.job();
+        if (!j) return;
+        const live = j.assignments ?? [];
+        const added = draftRoster.filter((w) => !live.some((a) => a.workerId === w));
+        const removed = live.filter((a) => draftRoster.indexOf(a.workerId) === -1);
+        if (!added.length && !removed.length) {
+          crewDlg.close();
+          return;
+        }
+        crewDlg.busy(true);
+        crewDlg.error("");
+        void (async () => {
+          try {
+            // Sequential, not Promise.all: SQLite serialises writes anyway, and
+            // a partial failure here has to leave the local state describing
+            // exactly what landed.
+            for (const a of removed) {
+              await unassignAssignment(a.id);
+              const at = (j.assignments ?? []).findIndex((x) => x.id === a.id);
+              if (at !== -1) j.assignments!.splice(at, 1);
+            }
+            for (const workerId of added) {
+              await assignWorker(j.id, workerId);
+            }
+            if (!alive) return;
+            // `assignWorker` returns nothing, so the new assignment ids are not
+            // known until the next server read. The names are what the board
+            // PRINTS, and they are known; the ids are only needed to unassign,
+            // and a row added in this session can be removed again after a
+            // reload. Recorded with an empty id so the diff above still sees it.
+            for (const workerId of added) {
+              (j.assignments ??= []).push({ id: "", workerId });
+            }
+            j.crew = (j.assignments ?? [])
+              .map((a) => crewOptions.find((w) => w.id === a.workerId)?.name)
+              .filter((n): n is string => !!n);
+            applyCrew(j);
+            crewDlg.busy(false);
+            crewDlg.close();
+          } catch (err) {
+            if (!alive) return;
+            j.crew = (j.assignments ?? [])
+              .map((a) => crewOptions.find((w) => w.id === a.workerId)?.name)
+              .filter((n): n is string => !!n);
+            applyCrew(j);
+            crewDlg.busy(false);
+            crewDlg.error(actionError(err));
+          }
+        })();
+      });
+    }
+  }
+
+  // ── DELETE ──────────────────────────────────────────────────────
+  const delDlg = makeRowDlg({
+    id: "jDel",
+    okId: "jDelOk",
+    errId: "jDelErr",
+    idleLabel: "Delete job",
+    busyLabel: "Deleting…",
+    paint: (j) => {
+      const who = $("#jDelWho");
+      if (who) {
+        who.innerHTML =
+          "Delete <b>" + esc(j.title) + "</b> for " + esc(j.client || "no client") + "?";
+      }
+    },
+  });
+  if (delDlg) {
+    openDelDlg = delDlg.open;
+    const ok = root.querySelector<HTMLButtonElement>("#jDelOk");
+    if (ok) {
+      on(ok, "click", () => {
+        const j = delDlg.job();
+        if (!j) return;
+        delDlg.busy(true);
+        delDlg.error("");
+        void (async () => {
+          try {
+            await deleteJob(j.id);
+            if (!alive) return;
+            delDlg.busy(false);
+            delDlg.close();
+            // After the box is gone, so the row's exit is not competing with the
+            // dialog's own.
+            after(MDL_EXIT_MS, () => dropJob(j.id));
+          } catch (err) {
+            if (!alive) return;
+            delDlg.busy(false);
+            delDlg.error(actionError(err));
+          }
+        })();
+      });
+    }
+  }
+
+  /** Module-level twin of the create dialog's `dayAt`: the row dialogs live
+   *  outside that block and need the same 9am / 5pm local anchoring, for the
+   *  same reason (UTC midnight reads as the previous day west of Greenwich). */
+  function dayAtLocal(v: string, hour: number): Date | null {
+    const d = parseDay(v);
+    if (!d) return null;
+    d.setHours(hour, 0, 0, 0);
+    return d;
   }
 
   // ================= INITIALIZATION =================
@@ -947,11 +1595,17 @@ export function initJobsContent(
         },
         { passive: true },
       );
-    // `.mdl` is skipped: it is a `.content` child only because the port moved
-    // the dialog inside the mounted root, and `.rv` would strand the fixed
-    // overlay at `opacity: 0` until it happened to intersect the viewport.
+    // `.mdl` and `.pmenu` are skipped: both are `.content` children only
+    // because the port moved them inside the mounted root, and both are
+    // `display: none` until opened. `.rv` would strand a fixed overlay at
+    // `opacity: 0` — an element with no box never intersects, so the observer
+    // below never grants it `.rv-in`, and the FIRST open of the row menu
+    // produced nothing for ~800ms (a 360ms cascade delay plus the 420ms fade)
+    // before a box faded up out of nowhere, 420px from the dots that asked for
+    // it. That was half of "the three dots do nothing"; the other half was the
+    // zoom read in openMenu.
     const blocks = (Array.from(root.children) as HTMLElement[]).filter(
-      (el) => !el.classList.contains("mdl"),
+      (el) => !el.classList.contains("mdl") && !el.classList.contains("pmenu"),
     );
     blocks.forEach((el, i) => {
       el.classList.add("rv");

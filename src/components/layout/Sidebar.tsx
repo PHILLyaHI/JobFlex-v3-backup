@@ -98,7 +98,9 @@ const groups: NavGroup[] = [
   {
     title: "Account",
     items: [
-      { href: "/dashboard/subscription", label: "Subscription", icon: <CreditCard className="h-4 w-4" /> },
+      // Repointed 2026-08-13 to the NEW design (blueprint above 768px, the
+      // handheld build below). The old view still answers /dashboard/subscription.
+      { href: "/dashboard/subscription-blueprint", label: "Subscription", icon: <CreditCard className="h-4 w-4" /> },
       { href: "/dashboard/settings", label: "Settings", icon: <Settings className="h-4 w-4" /> },
     ],
   },
@@ -174,7 +176,7 @@ function navGroupsFor(role: string | null | undefined): NavGroup[] {
   if (role === "OWNER") return groups;
   return groups.map((g) =>
     g.title === "Account"
-      ? { ...g, items: g.items.filter((i) => i.href !== "/dashboard/subscription") }
+      ? { ...g, items: g.items.filter((i) => i.href !== "/dashboard/subscription-blueprint") }
       : g,
   );
 }

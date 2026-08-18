@@ -33,18 +33,23 @@ export const FEATURE_LABELS: Record<Feature, string> = {
 };
 
 // Minimum plan that unlocks each feature.
+// 2026-08-14 (owner's call): every feature unlocked on every plan — plan-gating
+// upsells removed app-wide. To restore gating, put the old minimums back
+// (unlimited_proposals/ai_proposals/advanced_estimator/proposal_templates/
+// follow_ups/csv_export: PROFESSIONAL · pdf_export: STARTER ·
+// sms_notifications/multi_org/custom_domain/white_label: ENTERPRISE).
 export const MINIMUM_PLAN_FOR: Record<Feature, Plan> = {
-  unlimited_proposals: "PROFESSIONAL",
-  ai_proposals: "PROFESSIONAL",
-  advanced_estimator: "PROFESSIONAL",
-  proposal_templates: "PROFESSIONAL",
-  pdf_export: "STARTER",
-  follow_ups: "PROFESSIONAL",
-  sms_notifications: "ENTERPRISE",
-  csv_export: "PROFESSIONAL",
-  multi_org: "ENTERPRISE",
-  custom_domain: "ENTERPRISE",
-  white_label: "ENTERPRISE",
+  unlimited_proposals: "FREE",
+  ai_proposals: "FREE",
+  advanced_estimator: "FREE",
+  proposal_templates: "FREE",
+  pdf_export: "FREE",
+  follow_ups: "FREE",
+  sms_notifications: "FREE",
+  csv_export: "FREE",
+  multi_org: "FREE",
+  custom_domain: "FREE",
+  white_label: "FREE",
 };
 
 const RANK: Record<Plan, number> = {

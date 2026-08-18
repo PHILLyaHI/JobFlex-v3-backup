@@ -68,7 +68,7 @@ export function NavLimitCounter({
             )}
           </p>
           <Link
-            href={"/dashboard/subscription" as never}
+            href={"/dashboard/subscription-blueprint" as never}
             className="inline-flex items-center gap-1 text-[12px] font-semibold text-[color:var(--accent)] hover:underline underline-offset-2"
           >
             Upgrade for more

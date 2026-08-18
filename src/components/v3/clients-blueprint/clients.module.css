@@ -1321,6 +1321,97 @@
 .bp :global(.content .cname-line) { display: flex; align-items: center; gap: 7px; }
 .bp :global(.content .cmail) { margin-top: 3px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--muted); }
 
+/* ------------------------------------------------------------------
+   ROW OVERFLOW — a name or an email is arbitrary text, and arbitrary
+   text is sometimes 200 unbroken characters of it.
+
+   Nothing above caps a cell, so the client book was sized by its worst
+   record: one pasted address bar in the Name column widened the Client
+   column, which widened the table, which pushed a horizontal scrollbar
+   onto the whole page and dragged the topbar and the masthead sideways
+   with it. Two rules together stop that.
+
+   1. `table-layout: fixed` on THIS table only (`#clientsCard`, never the
+      bare `.ptable` — this sheet is loaded by the shared shell, so an
+      unscoped rule here would re-size the Proposals, Jobs and Workers
+      ledgers too). Column widths are then read off the header row and a
+      cell can no longer vote on them.
+   2. Single-line ellipsis on the three free-text cells. Every flex
+      ancestor between the cell and the text needs `min-width: 0` or the
+      default `min-width: auto` re-floors the box at its content and the
+      ellipsis never fires.
+
+   The clipped tail is not lost: `rowHtml` puts the full value on
+   `title`, and the row opens the record. Break-anywhere was the other
+   candidate and lost — a 200-character name wraps to nine lines and
+   turns one row into a paragraph, which costs every OTHER row on the
+   page its scannability to serve the outlier.
+   ------------------------------------------------------------------ */
+.bp :global(.content #clientsCard .ptable) { table-layout: fixed; }
+/* Widths are DESKTOP-only. Below 860px the sheet already hides three columns
+   and re-sizes the rest (see "Proposals: mobile fixes"); an ID selector here
+   outranks those class rules, so it must not be in scope when they are.
+
+   The ACTION column is the one that cannot be a percentage. It holds two
+   30px controls and a 6px gap — 66px that do not scale with the table — so a
+   6% track was 80px at the 1728 reference and 33px at the narrow end, and
+   `table-layout: fixed` does not let a cell argue: the second control simply
+   ran past the card's right border and `overflow: hidden` sheared it off.
+   It is a fixed 100px now (12px + 66px + 16px, with slack), and CLIENT is the
+   auto column so the fixed track comes out of the name — the one cell on the
+   row that is already ellipsised and has a `title` — and never out of the
+   controls. One auto column in the fixed algorithm takes exactly the
+   remainder, so the six tracks below still describe the whole sheet. */
+@media (min-width: 861px) {
+  .bp :global(.content #clientsCard .ptable th:nth-child(1)) { width: auto; }
+  .bp :global(.content #clientsCard .ptable th:nth-child(2)) { width: 17%; }
+  .bp :global(.content #clientsCard .ptable th:nth-child(3)) { width: 16%; }
+  .bp :global(.content #clientsCard .ptable th:nth-child(4)) { width: 8%; }
+  .bp :global(.content #clientsCard .ptable th:nth-child(5)) { width: 10%; }
+  .bp :global(.content #clientsCard .ptable th:nth-child(6)) { width: 9%; }
+  .bp :global(.content #clientsCard .ptable th:nth-child(7)) { width: 100px; }
+  /* 16px on the right keeps the arrow on the same margin as every other
+     cell's text; the left side gives way instead, because nothing is aligned
+     to it. */
+  .bp :global(.content #clientsCard .ptable th:nth-child(7)),
+  .bp :global(.content #clientsCard .ptable td:nth-child(7)) { padding-left: 12px; padding-right: 16px; }
+}
+/* The controls keep their size at every width — a squeezed track shrinks the
+   name, never the tap target. */
+.bp :global(.content #clientsCard .pt-acts .pt-open) { flex: 0 0 auto; }
+/* 769–860px — the band between the desktop widths above and the handheld
+   build, which takes this URL over at ≤768. The shared mobile rule sizes the
+   action track for the donor's ONE control (34px) and the clients sheet has
+   two, at 26px each; scoped to #clientsCard so the Proposals, Jobs and
+   Workers ledgers that share this stylesheet keep the donor's number. */
+@media (max-width: 860px) {
+  .bp :global(.content #clientsCard .ptable th:nth-child(7)),
+  .bp :global(.content #clientsCard .ptable td:nth-child(7)) { width: 76px; padding-left: 8px; padding-right: 8px; }
+}
+/* The avatar keeps its 34px; the text stack takes the rest and is allowed
+   to be narrower than the words inside it. */
+.bp :global(.content #clientsCard .cname) { min-width: 0; }
+.bp :global(.content #clientsCard .cname-stack) { min-width: 0; flex: 1 1 auto; }
+.bp :global(.content #clientsCard .cname-line) { min-width: 0; }
+.bp :global(.content #clientsCard .pt-title),
+.bp :global(.content #clientsCard .cmail),
+.bp :global(.content #clientsCard .pt-sub) {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* VIP is a fixed 40px plate and must survive the squeeze — the NAME gives
+   way, never the flag on the account. */
+.bp :global(.content #clientsCard .cname-line .ctag) { flex: 0 0 auto; }
+/* Tags already wrap onto their own lines; a single unbroken label still has
+   to be cut off at the column edge. Clipped rather than ellipsised — the plate
+   is an inline-flex box, whose text sits in an anonymous item that
+   `text-overflow` cannot reach, and losing the frame to chase an ellipsis on a
+   6-character label is the worse trade. */
+.bp :global(.content #clientsCard .ctag) { max-width: 100%; overflow: hidden; }
+
 /* labels: VIP next to the name, the rest in the Tags column */
 .bp :global(.content .ctag) {
   display: inline-flex; align-items: center;
@@ -1385,6 +1476,17 @@
 .bp :global(.content .fld-lbl) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .fld-lbl .req) { margin-left: 4px; color: var(--blueprint); }
 .bp :global(.content .mdl .pinput) { width: 100%; height: 38px; }
+/* Notes. Wears `.pinput` for the frame and overrides only the box model — a
+   parallel input treatment for the same control is what decisions.md forbids.
+   `resize: vertical` because the horizontal axis is the dialog's to decide. */
+.bp :global(.content .mdl .ptextarea) {
+  height: auto;
+  min-height: 78px;
+  padding: 9px 11px;
+  line-height: 1.45;
+  resize: vertical;
+  font-family: inherit;
+}
 .bp :global(.content .fld-hint) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--muted-light); }
 .bp :global(.content .fld-err) { display: none; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--danger); }
 .bp :global(.content .fld.is-err .pinput) { border-color: var(--danger); box-shadow: 2px 2px 0 rgba(168, 50, 50, 0.22); }
@@ -1406,6 +1508,40 @@
 /* foot — the beige action bar the system uses for every card's actions */
 .bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 12px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); }
 .bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
+
+/* BUSY PLATE — the dialog's own "still working" cover, armed on a 300ms fuse
+   by clients-behavior.ts. Declarations are the Smart Proposal refine card's
+   `.sp-busy` / `.sp-busy-dot` verbatim (the pulsing blueprint SQUARE the
+   system uses in place of a round spinner, on the `spPulse` keyframe already
+   published in dashboard-blueprint/blueprint-global.css) — the same widget,
+   not a second one invented for this box. It covers the whole dialog rather
+   than sitting beside a field, because what it stands in for is a box that is
+   open and not yet usable. */
+.bp :global(.content .mdl-busy) {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex; align-items: center; justify-content: center; gap: 11px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.bp :global(.content .mdl-busy.is-hidden) { display: none; }
+.bp :global(.content .mdl-busy-dot) {
+  width: 10px; height: 10px; flex: 0 0 auto;
+  background: var(--blueprint);
+  animation: spPulse 1s infinite var(--ease);
+}
+/* Declared IN this module: Lightning CSS hashes animation-name references in
+   a module, so pointing at blueprint-global.css's spPulse silently resolves
+   to nothing and the dot never pulses. Same-file declaration hashes both
+   sides consistently (see advanced-ai.module.css for the precedent). */
+@keyframes spPulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.content .mdl-busy-dot) { animation: none; }
+}
 
 @media (max-width: 860px) {
   .bp :global(.content .cav) { width: 30px; height: 30px; font-size: 11px; }

@@ -12,8 +12,12 @@
 // radii and Inter 900 caps stay, rather than the mobile skill's soft-shadow /
 // rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is LIVE: the component reads the signed-in org's rows through
+// `getCrmSnapshot()` (./crm-snapshot.ts) — the same org-scoped Prisma queries
+// the desktop /dashboard/crm sheet runs — and writes through the existing
+// follow-up and lead server actions. It is mounted props-less both here and
+// from the ≤768px branch of the responsive dashboard shell, which is why the
+// read is an action rather than a page-level query handed down as props.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
 // its own redirect-to-login like the other design routes. The redirect target

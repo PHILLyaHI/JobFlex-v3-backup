@@ -149,6 +149,38 @@ secondary columns + `table-layout: fixed`), a kanban as vertical sections
 where cards move on tap, and a palette half a shade cooler
 (`--paper: #f6f5f1`) — warm paper reads yellower on phones.
 
+## User text never breaks layout
+
+Every string the contractor typed is hostile input to the composition. Client
+names, job titles and project scopes arrive with no spaces in them often
+enough that a 200-character unbroken run is a real row, not a hypothesis. One
+of those inside an auto-layout table or an `auto-fit` grid widens the column
+to the whole string and shoves status / when / crew / actions off screen.
+
+1. **Every flex or grid child holding user text gets `min-width: 0`.** Its
+   default minimum is `min-content`, so the child refuses to shrink and the
+   parent grows instead. Necessary, never sufficient.
+2. **`overflow-wrap: anywhere`, not `break-word`.** Only `anywhere` shrinks
+   the element's min-content size, and min-content is the number the table
+   column and the grid track are actually sized from. `break-word` wraps the
+   paint and leaves the blowout exactly where it was.
+3. **Truncate or wrap, by context — and pick one.** Fixed-height table rows
+   and the ~160px kanban cards truncate (`white-space: nowrap; overflow:
+   hidden; text-overflow: ellipsis`), and the row builder writes the full
+   string into `title=` so a clipped name is never a dead end. Cards that can
+   grow wrap instead: `overflow-wrap: anywhere` plus `-webkit-line-clamp`, so
+   one pasted name cannot stretch a card past its row-mates.
+4. **H1 and page titles wrap, never truncate.** `overflow-wrap: break-word`
+   on the heading — a clipped page title reads as a rendering bug.
+5. **Empty-state copy clamps the name it interpolates.** "No proposals for
+   <name> yet" with a 200-character name is a wall of text where one line of
+   copy belongs; clamp the sentence to two lines.
+
+Verify before calling the page done: paste a 200-character unbroken string
+into a title and read the page at 1440 and 390. What you are looking for is
+`scrollWidth > clientWidth` on anything that is not deliberately
+`overflow-x: auto`.
+
 ## Delivery
 
 - Mock: `$SCRATCH/jobflex-<page>-blueprint.html` — one self-contained

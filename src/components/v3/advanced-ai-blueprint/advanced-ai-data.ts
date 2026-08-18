@@ -1,15 +1,16 @@
-// SMART PROPOSAL · ESTIMATE — BLUEPRINT · the donor's fixture, verbatim.
+// SMART PROPOSAL · ESTIMATE — BLUEPRINT · copy, lists and the donor fixture.
 //
-// Every string and number below is copied character-for-character from the
-// `// ================= ДАННЫЕ =================` block of
-// `jobflex-smartproposal-estimate-blueprint (8).html`. The donor's `·` /
-// `×` / `—` escapes are written as the literal characters they denote
-// (·, ×, —), which is the same text.
+// ── WHO STILL READS THE FIXTURE ────────────────────────────────────
+// `/dashboard/advanced-ai` is LIVE: it calls the real estimator actions and
+// renders whatever comes back, so MAT / LAB / ASM / DISCOUNT / KEEP_CHANGES /
+// DIFF_ROWS and the fixture half of ESTIMATE no longer reach the desktop page.
+// They stay exported because `components/v3/mobile-smart-estimate` — a separate
+// handheld surface, not this page's twin — imports them as its demo content.
+// Deleting them here would break that page, so they are left exactly as the
+// donor wrote them. Everything the live console reads is below them.
 //
-// This is a FIXTURE, not a query. The page it replaces ran the org's real
-// estimate console; shipping the donor's demo content verbatim was the explicit
-// call for this port, so the "Cedar privacy fence — 128 ft" estimate is what
-// renders. See the header of ./advanced-ai-content.tsx.
+// The donor's `·` / `×` / `—` escapes are written as the literal characters
+// they denote (·, ×, —), which is the same text.
 
 export type MatRow = {
   id: string;
@@ -206,3 +207,55 @@ export const moneyU = (n: number): string =>
 /** Donor: `function sum(a) { return a.reduce((t, r) => t + r.q * r.u, 0) }`. */
 export const sum = (a: Array<{ q: number; u: number }>): number =>
   a.reduce((t, r) => t + r.q * r.u, 0);
+
+/* ============================================================
+   LIVE CONSOLE — everything below is read by the wired page.
+   ============================================================ */
+
+/** Signed money, for the discount line (which is the only negative one). */
+export const moneySigned = (n: number): string => (n > 0 ? "−" : "") + money(Math.abs(n));
+
+/**
+ * The generation overlay's checklist.
+ *
+ * `analyze` is its own stage because it is the one boundary the client can
+ * actually observe — `analyzeEstimatePrompt` resolves before
+ * `generateAdvancedEstimate` is called. The three inside `generate` are a
+ * single server round trip with no progress events, so they advance on a dwell
+ * and then HOLD on "Building the estimate" until the promise settles. Nothing
+ * here claims progress that has not happened; the last stage simply waits.
+ */
+export const GEN_STAGES: { id: string; label: string; dwellMs: number }[] = [
+  { id: "brief", label: "Reading the brief", dwellMs: 0 },
+  { id: "plan", label: "Planning materials", dwellMs: 7000 },
+  { id: "price", label: "Live pricing", dwellMs: 14000 },
+  { id: "build", label: "Building the estimate", dwellMs: 0 },
+];
+
+export const GEN_DONE = "Smart Proposal generated";
+
+/** Copy the wired estimate panel owns (the fixture's ESTIMATE is mobile-only). */
+export const LIVE = {
+  kicker: "Smart Proposal · Estimate",
+  refinePlaceholder:
+    "Type it like a text — add, remove, or swap anything. The numbers update after you review.",
+  /** Step 1's free-text branch, revealed by "Other work". */
+  otherLabel: "What kind of work?",
+  otherPlaceholder: "Skylights, pergola, storm repair…",
+  otherError: "Say what the work is",
+  photos: {
+    h: "Site photos",
+    hint: "Optional. Read by the estimator to price what is actually there.",
+    cta: "Drop photos here, or click to choose",
+    /** The one thing a contractor must be able to read before dropping a photo. */
+    privacy: "Photos are read once to price this job. Nothing is uploaded or stored.",
+  },
+} as const;
+
+/** Client-side photo guards. The server caps again (MAX_PHOTOS / MAX_PHOTO_CHARS). */
+export const PHOTO_MAX_COUNT = 6;
+export const PHOTO_MAX_TOTAL_BYTES = 18 * 1024 * 1024;
+
+/** A price field accepts nothing wider than the money cells can paint. */
+export const MAX_MONEY = 9_999_999;
+export const MAX_QTY = 999_999;

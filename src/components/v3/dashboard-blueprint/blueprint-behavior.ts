@@ -23,12 +23,26 @@ import { updateLeadStatus } from "@/actions/leads";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
   LEAD_STAGES,
+  leadProfileMissing,
   type BoardLead,
   type ChartRange,
   type DashboardData,
 } from "./blueprint-data";
 
 const SVGNS = "http://www.w3.org/2000/svg";
+
+/** The week strip's picked day, announced to the React layer that renders the
+ *  card footer. `detail` is the day's ISO key ("2026-08-13"). */
+export const WEEK_DAY_EVENT = "jf:dashboard-weekday";
+
+/** The day the strip opens on: today when the week contains it, otherwise the
+ *  first cell. Shared with the content component so the footer's link is
+ *  already pointing at the right day on the very first paint. */
+export function initialWeekIso(data: DashboardData): string {
+  return data.week.days.some((d) => d.iso === data.week.todayIso)
+    ? data.week.todayIso
+    : (data.week.days[0]?.iso ?? "");
+}
 
 /** The classic CompleteLeadProfileBanner snoozed the Lead Center nudge for a
  *  week in localStorage, deliberately not in the schema. Same key, same window,
@@ -136,16 +150,8 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
       // is not part of the reveal cascade's block list below.
       banner.remove();
     } else {
-      const gap = data.leadProfile;
       const missing = $("#bannerMissing");
-      if (missing) {
-        missing.textContent =
-          gap.needsAddress && gap.needsTrades
-            ? "your business address and the trades you take"
-            : gap.needsAddress
-              ? "your business address"
-              : "the trades you take";
-      }
+      if (missing) missing.textContent = leadProfileMissing(data.leadProfile);
       const close = banner.querySelector<HTMLElement>(".banner-close");
       close?.addEventListener("click", () => {
         try {
@@ -195,9 +201,7 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
   });
 
   // ================= RENDER =================
-  let selectedIso = data.week.days.some((d) => d.iso === data.week.todayIso)
-    ? data.week.todayIso
-    : (data.week.days[0]?.iso ?? "");
+  let selectedIso = initialWeekIso(data);
 
   function renderWeekHead() {
     const range = $("#weekRange");
@@ -235,7 +239,7 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
     const list = $("#weekList");
     if (!list) return;
     const evs = (data.week.events[iso] || []).slice().sort((a, b) => a.m - b.m);
-    let html = evs.length
+    list.innerHTML = evs.length
       ? evs
           .map(
             (e) =>
@@ -247,12 +251,20 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
           )
           .join("")
       : '<div class="empty">Nothing scheduled for this day.</div>';
-    html +=
-      '<a class="card-foot-btn" href="/dashboard/calendar">Go to Calendar<svg class="ic"><use href="#i-arrow"/></svg></a>';
-    list.innerHTML = html;
     list.classList.add("scrollable");
-    list.classList.toggle("has-more", evs.length > 10);
+    // No `has-more` here: the card's own footer carries "Go to Calendar" on
+    // every state now, so the >10-rows inline copy the other lists grow past
+    // ten rows would only say it a second time.
+    renderWeekFoot(iso);
     if (arriving) staggerIn(Array.from(list.querySelectorAll<HTMLElement>(".sched-row, .empty")));
+  }
+
+  /** Tell the React layer which day the strip is on, so the card footer's
+   *  "Schedule a job" opens the calendar ON that day with the new-event
+   *  composer up — a picked day the link dropped was a day the user had to find
+   *  again. */
+  function renderWeekFoot(iso: string) {
+    window.dispatchEvent(new CustomEvent(WEEK_DAY_EVENT, { detail: iso }));
   }
 
   function renderJobs() {

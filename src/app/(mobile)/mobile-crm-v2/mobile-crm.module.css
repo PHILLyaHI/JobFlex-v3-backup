@@ -132,15 +132,11 @@
    page's one create action belongs in the head, like the New
    client action on the clients surface.
    ============================================================ */
+/* No `.kicker` any more. The head used to carry a dotted "PIPELINE" eyebrow
+   above a title that already says which section this is — it named the section
+   twice and cost a line of thumb-height at the top of every scroll. Same trim
+   the mobile Clients head got. */
 .pageHead { padding-top: 2px; }
-.kicker {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 11.5px; font-weight: 800;
-  letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 9px;
-}
-.kicker::before { content: ""; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
 .pageTitle {
   font-size: var(--fs-h1); font-weight: 900;
   letter-spacing: -0.03em; text-transform: uppercase;
@@ -208,7 +204,14 @@
   border-top: 1.5px solid var(--ink);
   background: var(--paper-deep);
 }
-.cmastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); }
+/* Stat cells: label and figure are ONE stack, centred together, so the number
+   sits squarely under its words at any value. Flush-left looked wrong for two
+   reasons at once — a short figure ("1") bunched at the left edge of a wide
+   label, and the two faces do not share a left side bearing, so a tabular "1"
+   sat ~1px right of its label's first letter while a "0" sat ~1px left of it.
+   Centring both removes the bearing question entirely: mono glyphs and tabular
+   figures are each centred in their own advance, so their ink centres agree. */
+.cmastSub { padding: 11px var(--card-pad) 12px; border-right: 1.5px solid var(--ink); text-align: center; }
 .cmastSub:last-child { border-right: none; }
 .cmastSubL {
   font-family: var(--font-mono);
@@ -216,6 +219,9 @@
   letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 7px;
+  /* letter-spacing pays out AFTER the last glyph too, which would drag the
+     centred label a half-space left of the figure below it. Cancel exactly. */
+  margin-right: -0.1em;
 }
 .cmastSubV { font-size: 23px; font-weight: 800; letter-spacing: -0.005em; font-variant-numeric: tabular-nums; }
 @keyframes mastIn {
@@ -986,6 +992,71 @@
   color: var(--muted);
   pointer-events: none;
 }
+/* ============================================================
+   PREVIEW — what the client receives.
+   The desktop puts this card to the RIGHT of the rules; at 390px
+   there is no "right of", so it goes under them. The email itself
+   is an iframe: it is a whole document with its own <style> and its
+   own 560px measure, and inlining it would let this stylesheet leak
+   in and stop the preview being truthful. It is authored at its
+   natural 600px and scaled to the column in JS.
+   ============================================================ */
+.prevCard {
+  margin-top: 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.prevHead { padding: var(--card-pad); }
+.prevTitles { margin-bottom: 12px; }
+.prevTitle {
+  font-size: 15px; font-weight: 900;
+  letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--ink);
+}
+.prevSub {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+/* Graph paper under the message, like a drawing board — the email sits ON the
+   blueprint rather than floating on nothing. Height is set inline from the
+   rendered document, scaled to the column. */
+.prevStage {
+  position: relative;
+  overflow: hidden;
+  border-top: 2px solid var(--ink);
+  background-color: var(--paper-deep);
+  background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.prevFrame { display: block; width: 600px; border: 0; transform-origin: top left; background: transparent; }
+/* A text has no document, just the words — so no iframe. The bubble uses the
+   blueprint's own frame vocabulary, not an iMessage pastiche. */
+.prevSms { padding: 18px var(--card-pad) 22px; }
+.prevSmsHd {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.prevSmsBub {
+  max-width: 300px;
+  padding: 13px 15px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-size: 14.5px; line-height: 1.55; color: var(--ink);
+}
+.prevSmsWarn { margin-top: 14px; font-size: 12px; font-weight: 700; color: var(--warning); }
+
 .fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
 .fldHint code {
   font-family: var(--font-mono);

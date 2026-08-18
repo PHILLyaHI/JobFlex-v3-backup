@@ -25,7 +25,7 @@ import type { CrmContentData } from "./crm-data";
  *   The behavior module takes them as its starting state and then keeps itself
  *   in step with the database through the follow-up server actions.
  */
-export function CrmContent({ data }: { data?: CrmContentData }) {
+export function CrmContent({ data }: { data: CrmContentData }) {
   const router = useRouter();
 
   // The payload reaches `init` through refs, NOT through the callback's deps.
@@ -154,35 +154,54 @@ export function CrmContent({ data }: { data?: CrmContentData }) {
         </div>
       </section>
 
-      {/* ========== WORKFLOWS ========== */}
+      {/* ========== WORKFLOWS ==========
+          Two cards side by side: the rules on the left, and to their RIGHT the
+          message that actually goes out. The preview is not decoration — it is
+          rendered by the same module the dispatcher sends from
+          (src/lib/followUps/copy.ts + lib/email/renderEmail), so what a
+          contractor approves here is byte-for-byte what the homeowner opens. */}
       <section className="ppanel is-hidden" data-panel="workflows">
-        <div className="card">
-          <div className="card-head">
-            <div className="card-titles">
-              <div className="card-title">Follow-up rules</div>
-              <div className="card-sub">
-                Auto-schedule a follow-up when a proposal hits a status. Variables like{" "}
-                <code>{"{{client_name}}"}</code> and <code>{"{{link}}"}</code> are substituted at
-                send.
+        <div className="wf-cols">
+          <div className="card">
+            <div className="card-head">
+              <div className="card-titles">
+                <div className="card-title">Follow-up rules</div>
+                <div className="card-sub">
+                  Auto-schedule a follow-up when a proposal hits a status. The wording is written
+                  for that moment and filled in with the client&rsquo;s own details at send.
+                </div>
               </div>
+              <button className="btn btn-ghost newrule-btn" type="button" id="newRuleBtn">
+                <svg className="ic">
+                  <use href="#i-plus" />
+                </svg>
+                New rule
+              </button>
             </div>
-            <button className="btn btn-ghost newrule-btn" type="button" id="newRuleBtn">
-              <svg className="ic">
-                <use href="#i-plus" />
-              </svg>
-              New rule
-            </button>
+            <div className="rule-form is-hidden" id="ruleForm"></div>
+            {/* Toggle / delete run straight against the database; when the action
+                refuses (rule CRUD is manager-only) the reason lands here rather
+                than the row silently snapping back. */}
+            <div className="mf-err mf-err--boxed is-hidden" id="rulesErr" role="alert"></div>
+            <ul className="rules" id="rulesList"></ul>
+            <div className="pempty is-hidden" id="rulesEmpty">
+              <b>No rules yet</b>
+              <br />
+              Create one to start automating reminders.
+            </div>
           </div>
-          <div className="rule-form is-hidden" id="ruleForm"></div>
-          {/* Toggle / delete run straight against the database; when the action
-              refuses (rule CRUD is manager-only) the reason lands here rather
-              than the row silently snapping back. */}
-          <div className="mf-err mf-err--boxed is-hidden" id="rulesErr" role="alert"></div>
-          <ul className="rules" id="rulesList"></ul>
-          <div className="pempty is-hidden" id="rulesEmpty">
-            <b>No rules yet</b>
-            <br />
-            Create one to start automating reminders.
+
+          <div className="card prev-card">
+            <div className="card-head">
+              <div className="card-titles">
+                <div className="card-title">What they receive</div>
+                <div className="card-sub" id="prevSub"></div>
+              </div>
+              <span className="bp-sel prev-pick">
+                <select className="bp-sel-in" id="prevTrigger" aria-label="Preview moment"></select>
+              </span>
+            </div>
+            <div className="prev-stage" id="prevStage"></div>
           </div>
         </div>
       </section>

@@ -342,49 +342,12 @@
   color: var(--ink);
 }
 
-/* ── THE COVERAGE READOUT ────────────────────────────────────
-   Nothing used to say the percentages have to sum to 100. Type
-   30/30/30 and the schedule was silently a third short. This is
-   the same coverState reading the meter below prints, moved to
-   where the percentages are actually TYPED — the header of the
-   rows — and stated in the unit those rows are typed in.
-
-   Mono because it is a drawn annotation on a control, and one of
-   only three mono things on this card. Status tones because
-   coverage IS a status; this is the sanctioned spend. */
-:global(.jf-blueprint) .cover {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  cursor: help;
-}
-
-:global(.jf-blueprint) .coverExact {
-  color: var(--success-dark);
-}
-
-:global(.jf-blueprint) .coverUnder {
-  color: var(--warning-dark);
-}
-
-:global(.jf-blueprint) .coverOver {
-  color: var(--danger);
-}
-
-/* (0,3,1) to beat `.bp :global(svg.ic)`. */
-:global(.jf-blueprint) .payment .cover :global(svg.ic) {
-  width: 12px;
-  height: 12px;
-  flex: none;
-}
+/* ── THE COVERAGE READOUT IS GONE FROM THIS LINE ─────────────
+   The `%-filled` chip that used to sit at the right of the heading
+   (`.cover` and its three status tones) is deleted, not hidden —
+   see the note in bp-money.tsx. The coverage meter at the foot of
+   the block is the single reading now, and it reports in dollars.
+   ============================================================ */
 
 /* ── THE ROWS ────────────────────────────────────────────────
    FOUR columns, and the order is the argument: everything the
@@ -396,12 +359,19 @@
 
    The 168px figure column is the receipt's amount column repeated,
    so the two blocks' right edges are the same rule twice. */
+/* FULL BLEED, for the same reason the print switches on card 06
+   are: a rule that stops 24px short of the frame at both ends is a
+   line floating in the middle of a drawing. The row keeps its
+   negative margin and takes the padding straight back, so every
+   control stays exactly where it was and only the hairline between
+   two stages grows out to the card's own border. */
 :global(.jf-blueprint) .instRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 124px 34px 168px;
   align-items: center;
   gap: 10px;
-  padding: 8px 0;
+  margin: 0 calc(-1 * var(--mb-pad, 24px));
+  padding: 8px var(--mb-pad, 24px);
   border-top: 1.5px solid var(--mb-rule, rgba(10, 10, 10, 0.08));
 }
 
@@ -808,6 +778,25 @@
 
   :global(.jf-blueprint) .row {
     grid-template-columns: minmax(0, 1fr) 112px 140px;
+  }
+}
+
+/* HANDHELD: THE ROW FOLDS, IT DOES NOT SHRINK.
+   124 + 34 + 168 + three 10px gaps is 356px of fixed track against
+   ~300px of card at 390. The stage NAME was the flexible column,
+   so it took the whole shortfall and the one thing that says which
+   payment this is went to zero. Folded, the name owns line one at
+   full measure and the three numeric cells sit under it — and the
+   money column still lands hard right, on the same axis as the
+   figure in every other card. */
+@media (max-width: 640px) {
+  :global(.jf-blueprint) .instRow {
+    grid-template-columns: 108px 34px minmax(0, 1fr);
+    row-gap: 8px;
+  }
+
+  :global(.jf-blueprint) .instRow > input {
+    grid-column: 1 / -1;
   }
 }
 

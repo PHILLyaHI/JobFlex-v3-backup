@@ -167,9 +167,29 @@ export function Fact({
       <span className={styles.label}>{label}</span>
       <span className={styles.factVal}>
         {icon ? <Ic name={icon} /> : null}
-        <span className={styles.factText}>{value}</span>
+        {/* `title` because these are the cells that hold pasted values — a
+            200-character email exists in every imported client book. The text
+            breaks anywhere rather than truncating, so nothing is hidden, but
+            the tooltip gives the whole value in one piece for copying. */}
+        <span className={styles.factText} title={value}>
+          {value}
+        </span>
       </span>
     </div>
+  );
+}
+
+/** A client's name printed INSIDE a sentence — the empty states and the dialog
+ *  titles. One line, ellipsised at a readable measure, full value on hover.
+ *
+ *  Not the same treatment as a fact cell: a fact is the value's own slot and can
+ *  wrap for as many lines as it needs, whereas a name in a sentence that wraps
+ *  to nine lines destroys the sentence around it. */
+export function ClampedName({ children }: { children: string }) {
+  return (
+    <span className={styles.inlineName} title={children}>
+      {children}
+    </span>
   );
 }
 

@@ -1,53 +1,26 @@
-// Mobile projects (mobile-projects-v2) — demo fixture.
+// Mobile projects (mobile-projects-v2) — row shape, statuses and the pure
+// helpers the handheld book derives its labels from.
 //
-// Carried over VERBATIM from the desktop projects donor fixture
-// (src/components/v3/projects-blueprint/projects-data.ts): same eight records,
-// same values, same field names, so the handheld composition is judged against
-// the same content as the desktop sheet. Seattle-area contractor texture:
-// subdivisions, property-manager turnovers, commercial metal roof, cedar
-// fencing; budgets $41,200–$486,000.
-//
-// The states the page's edge cases hang off, all present in the seed:
-//  · all three statuses (4 active / 2 on hold / 2 completed)
-//  · one record with NO description (p7 Mill Creek) → the sheet's "no scope"
-//    line
-//  · one record with NO dates at all (p8 Kirkland) → the mono window line's
-//    fallback AND the row sheet's disabled "Open schedule"
-//  · two records already at 100% (p6, p7) → the done colourway on the progress
-//    rule, and the disabled "Mark completed"
-//  · one record at 0% (p5 Willow Park) → the empty progress rule
-// Two further states are reachable at runtime rather than in the seed, and by
-// design: a project created with the Budget field left blank has budget 0 (the
-// em-dash figure) and jobCount 0 (the "no jobs yet" window line) — exactly what
-// the desktop create dialog produces.
-//
-// This is a design surface: the data layer is out of scope, so nothing here
-// touches Prisma or a server action. The array is mutated at runtime by the row
-// sheet (complete / hold / delete) and by the create form, so the component
-// clones this seed per mount.
+// The eight-record demo fixture that used to live here is GONE. The book is
+// read from the database through `listProjects()` in @/actions/projects — the
+// same org-scoped query, ARCHIVED exclusion, ordering and job roll-up the
+// desktop page's server component runs — and every write goes through
+// `createProject` / `updateProject` / `archiveProject`. Nothing below is
+// record-shaped: types, the status vocabulary, the filter option list and four
+// pure functions.
 
 export type Project = {
   id: string;
   name: string;
   description: string | null;
   status: string;
+  /** The card's short "Jul 08" plate, formatted server-side in UTC. */
   startsAt: string | null;
   endsAt: string | null;
   budget: number;
   jobCount: number;
   completedJobs: number;
 };
-
-export const PROJECTS_SEED: Project[] = [
-  { id: 'p1', name: 'Alder Ridge — Phase 2',      description: 'Eleven-home subdivision: roofs, gutters and perimeter fencing under one budget.', status: 'ACTIVE',    startsAt: 'Jul 08', endsAt: 'Sep 26', budget: 486000, jobCount: 14, completedJobs: 6 },
-  { id: 'p2', name: 'Cascade PM — Q3 turnovers',  description: 'Rolling unit turnovers for the property manager: siding patches, deck seal, gutter clears.', status: 'ACTIVE', startsAt: 'Jul 01', endsAt: 'Sep 30', budget: 128400, jobCount: 9, completedJobs: 5 },
-  { id: 'p3', name: 'Henderson remodel',          description: 'Full reroof plus deck rebuild on a single property, staged over three visits.', status: 'ACTIVE',    startsAt: 'Jul 22', endsAt: 'Aug 15', budget: 62800,  jobCount: 4,  completedJobs: 1 },
-  { id: 'p4', name: 'Northgate LLC — warehouse',  description: 'Commercial metal roof: panel replacement and skylight retrofit across two buildings.', status: 'ON_HOLD', startsAt: 'Jun 12', endsAt: 'Aug 30', budget: 214500, jobCount: 7,  completedJobs: 2 },
-  { id: 'p5', name: 'Willow Park fencing',        description: 'Cedar privacy fencing for eight lots, shared materials drop.', status: 'ACTIVE',   startsAt: 'Aug 04', endsAt: 'Sep 12', budget: 74300,  jobCount: 8,  completedJobs: 0 },
-  { id: 'p6', name: 'Cypress Ln rebuild',         description: 'Storm damage repair: reroof, gutters, fence gate.', status: 'COMPLETED', startsAt: 'May 06', endsAt: 'Jun 28', budget: 41200,  jobCount: 5,  completedJobs: 5 },
-  { id: 'p7', name: 'Mill Creek four-plex',       description: null, status: 'COMPLETED', startsAt: 'Apr 15', endsAt: 'Jun 02', budget: 96700,  jobCount: 6,  completedJobs: 6 },
-  { id: 'p8', name: 'Kirkland deck series',       description: 'Three composite decks for repeat clients on the same street.', status: 'ON_HOLD', startsAt: null, endsAt: null, budget: 58900, jobCount: 3, completedJobs: 1 }
-];
 
 /** The desktop statuses, verbatim and in the desktop's order. */
 export const STATUSES = ['ACTIVE', 'ON_HOLD', 'COMPLETED'];
@@ -72,9 +45,9 @@ export type FilterKey =
  * on the same grounds the clients page added VIP and Untagged: both are states
  * the book actually holds, both are things you go looking for on a phone, and
  * both fill the 3-column menu to exact rows instead of leaving an orphan cell.
- *  · Unscheduled — no dates on the record (p8). It is also what disables the
- *    row sheet's schedule action, so the filter and the sheet agree.
- *  · Not started — nothing closed out yet (p5).
+ *  · Unscheduled — no dates on the record. It is also what disables the row
+ *    sheet's schedule action, so the filter and the sheet agree.
+ *  · Not started — nothing closed out yet.
  */
 export const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'ALL', label: 'All projects' },
@@ -119,9 +92,8 @@ export function filterCount(list: Project[], key: FilterKey): number {
 
 /**
  * The row's mono annotation line: the delivery window and the job tally in one
- * drawing-annotation string. Both halves degrade on their own, because the
- * fixture holds a record with no dates and the create form makes records with
- * no jobs.
+ * drawing-annotation string. Both halves degrade on their own: a project can
+ * carry no window, and a freshly created one has no jobs attached yet.
  */
 export function windowLabel(p: Project): string {
   const dates = p.startsAt && p.endsAt ? `${p.startsAt} → ${p.endsAt}` : 'No dates set';
@@ -129,13 +101,41 @@ export function windowLabel(p: Project): string {
   return `${dates} · ${jobs}`;
 }
 
-/** "2026-08-04" → "Aug 04", the fixture's display format.
- *  Parsed field by field on purpose: `new Date("2026-08-04")` is read as UTC
- *  midnight and renders as the previous day in every negative-offset timezone —
- *  which is every US timezone this product ships to. */
-export function shortDate(v: string): string | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+/** The shape the two schedule fields hand to `createProject`. Anything else is
+ *  sent as null rather than guessed at. */
+export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/* ── the schedule fields' wire format ──────────────────────────────────────
+   The same pair components/v3/shared/date-popover.ts publishes for the desktop
+   dialog's date control, restated here rather than imported: that module's entry
+   point pulls in a 9KB global stylesheet anchored under `.jf-blueprint .content`
+   — chrome this page is not inside — and dragging it into the handheld chunk to
+   reach two three-line functions is not a trade worth making. The FORMAT is the
+   contract, and it is the one `createProject`'s zod coercion reads. */
+
+function pad2(n: number): string {
+  return n < 10 ? '0' + n : String(n);
+}
+
+/**
+ * "YYYY-MM-DD" built from LOCAL calendar fields. `toISOString()` would be wrong
+ * for the same reason `new Date("2026-07-30")` is wrong on the way back in: it
+ * goes through UTC, and in every negative-offset timezone that shifts the date
+ * by a day.
+ */
+export function toISODate(d: Date): string {
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+
+/** Inverse of `toISODate`. Returns null for anything that is not a real day. */
+export function fromISODate(v: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.trim());
   if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const d = new Date(y, mo, day);
+  // `new Date(2026, 1, 31)` silently rolls forward to March 3 — round-tripping
+  // the fields is what rejects an impossible date instead of moving it.
+  return d.getFullYear() === y && d.getMonth() === mo && d.getDate() === day ? d : null;
 }

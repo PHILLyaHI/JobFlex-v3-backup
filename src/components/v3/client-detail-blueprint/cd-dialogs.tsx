@@ -19,12 +19,19 @@
 // remove.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { updateClient } from "@/actions/clients";
 import { clientChannels, messageClient, type ClientChannel } from "@/actions/clientMessage";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
-import { Ic, cx } from "./cd-ui";
+import { joinAddress } from "./client-detail-data";
+import { ClampedName, Ic, cx } from "./cd-ui";
 import styles from "./client-detail.module.css";
+
+/** Where the two gates send the reader. Both are real routes. */
+const PHONE_ROUTE = "/dashboard/phone" as Route;
+const GMAIL_ROUTE = "/dashboard/settings/gmail" as Route;
 
 /** Server actions reject with text written for the reader ("Name is required",
  *  "Client not found"). Show that; fall back only for the transport failures
@@ -33,6 +40,22 @@ function actionError(err: unknown): string {
   const msg = err instanceof Error ? err.message.trim() : "";
   if (!msg || msg.toLowerCase().includes("fetch failed")) {
     return "Something went wrong. Check your connection and try again.";
+  }
+  // A zod `.parse` throw arrives as a JSON ARRAY of issues, and printing it
+  // raw puts `[{"code":"too_big","maximum":120,…}]` in front of a contractor.
+  // The reachable one here is a client name longer than the column allows —
+  // imported books have them — so the issue's own message is what shows.
+  if (msg.startsWith("[")) {
+    try {
+      const issues = JSON.parse(msg) as { message?: string; path?: (string | number)[] }[];
+      const first = issues.find((i) => i?.message);
+      if (first?.message) {
+        const field = first.path?.[0];
+        return field ? `${String(field)}: ${first.message}` : first.message;
+      }
+    } catch {
+      // Not JSON after all — fall through and show what came back.
+    }
   }
   return msg;
 }
@@ -94,6 +117,58 @@ function useMdl(onOpen?: () => void) {
   return { ref, open, close, isOpen };
 }
 
+/**
+ * True once `pending` has been true for `delay` ms, and false the instant it
+ * stops.
+ *
+ * A dialog whose contents arrive in 40ms must not flash a spinner — that reads
+ * as a page fault, not as loading. A dialog whose contents take a second must
+ * not sit empty, because an empty sheet reads as broken. 300ms is the gap the
+ * house uses between "instant" and "say something".
+ */
+function useSlowFlag(pending: boolean, delay = 300): boolean {
+  const [slow, setSlow] = useState(false);
+  // The reset lives in the CLEANUP rather than in the body: a synchronous
+  // setState in an effect body is a cascading render (and the lint rule that
+  // says so), while a cleanup that fires when `pending` goes false is exactly
+  // the moment the flag should drop.
+  useEffect(() => {
+    if (!pending) return;
+    const id = setTimeout(() => setSlow(true), delay);
+    return () => {
+      clearTimeout(id);
+      setSlow(false);
+    };
+  }, [pending, delay]);
+  return slow;
+}
+
+/** The house loading mark: a pulsing blueprint square beside a mono caption
+ *  (the `.sp-busy` pattern from the estimate console). `spPulse` is published
+ *  in dashboard-blueprint/blueprint-global.css. */
+function Busy({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={styles.busy} role="status" aria-live="polite">
+      <span className={styles.busyDot} aria-hidden="true" />
+      {children}
+    </div>
+  );
+}
+
+/** ≤768px, live. The handheld branches below are LAYOUT decisions read from
+ *  the viewport, never from a user agent string. */
+function useHandheld(): boolean {
+  const [handheld, setHandheld] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const sync = () => setHandheld(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return handheld;
+}
+
 /* ============================================================
    EDIT — the client's own particulars
    ============================================================ */
@@ -102,22 +177,38 @@ export type ClientEditValues = {
   name: string;
   email: string;
   phone: string;
+  /** Street line. */
   address: string;
+  /** Unit / suite / access note — the second line of the same column. NOT
+   *  editable here: the form has no box for it, but the value is carried in and
+   *  re-joined on save so an existing second line survives an edit. */
+  address2: string;
   city: string;
   state: string;
   zip: string;
+  notes: string;
 };
 
 export type EditHandle = { open: () => void };
 
 /**
- * The fields are exactly `updateClient`'s zod schema and nothing more.
+ * ONE ADDRESS FIELD, matching the create form.
  *
- * The band above this dialog also shows tags, "Client since" and "Last
- * contact", and none of them are editable here on purpose: the first is an
- * org-scoped join table with no write path in src/actions/clients.ts, and the
- * other two are derived timestamps. A field that silently discards what was
- * typed into it is worse than no field.
+ * The dialog used to ask for street / city / state / ZIP in four boxes while
+ * every other client form in the app asks for one address. Two shapes for one
+ * fact is how a book ends up with half its rows parsed and half not, so this
+ * one asks the way the create form asks: an address, and the free-text notes
+ * that were previously readable on the page but not editable anywhere.
+ *
+ * THREE THINGS TRAVEL WITHOUT A BOX: city, state and zip — columns on the row
+ * that the band above prints — and the address's SECOND LINE. `updateClient`
+ * writes every key it is handed, so dropping any of them from the payload would
+ * blank a column on the first save. `values.address2` is still seeded from the
+ * record and still re-joined by `joinAddress` on submit; there is simply no
+ * input bound to it any more (owner's call — a "Suite, unit, or access note"
+ * box is a line the handheld form has no room for and the create form never
+ * offered). A record that already carries a second line keeps it, and keeps
+ * printing it in the particulars band.
  */
 export function ClientEditDialog({
   clientId,
@@ -152,8 +243,10 @@ export function ClientEditDialog({
     handleRef.current = { open: openMdlDialog };
   }, [handleRef, openMdlDialog]);
 
-  const set = (k: keyof ClientEditValues) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setValues((v) => ({ ...v, [k]: e.target.value }));
+  const set =
+    (k: keyof ClientEditValues) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setValues((v) => ({ ...v, [k]: e.target.value }));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -161,7 +254,8 @@ export function ClientEditDialog({
     setBusy(true);
     setError(null);
     try {
-      await updateClient(clientId, values);
+      const { address, address2, ...rest } = values;
+      await updateClient(clientId, { ...rest, address: joinAddress(address, address2) });
       close();
       // The page is a server component reading the row it just changed, so the
       // refresh IS the update — no local copy of the client to keep in step.
@@ -184,7 +278,7 @@ export function ClientEditDialog({
           </button>
         </div>
 
-        <form className="mdl-body" onSubmit={submit} noValidate>
+        <form className={cx("mdl-body", styles.mdlScroll)} onSubmit={submit} noValidate>
           <div className="mf">
             <label className="mf-lbl" htmlFor="cdName">
               Client name
@@ -230,39 +324,30 @@ export function ClientEditDialog({
 
           <div className="mf">
             <label className="mf-lbl" htmlFor="cdAddress">
-              Street
+              Address
             </label>
             <input
               className="mf-in"
               id="cdAddress"
               value={values.address}
               onChange={set("address")}
+              placeholder="14208 NE 182nd St, Woodinville, WA 98072"
               autoComplete="off"
             />
           </div>
 
-          {/* City / state / zip on one line because that is how the three are
-              read on an envelope, and because the band above prints them as
-              one sentence. */}
-          <div className={styles.mdlRow3}>
-            <div className="mf">
-              <label className="mf-lbl" htmlFor="cdCity">
-                City
-              </label>
-              <input className="mf-in" id="cdCity" value={values.city} onChange={set("city")} autoComplete="off" />
-            </div>
-            <div className="mf">
-              <label className="mf-lbl" htmlFor="cdState">
-                State
-              </label>
-              <input className="mf-in" id="cdState" value={values.state} onChange={set("state")} autoComplete="off" />
-            </div>
-            <div className="mf">
-              <label className="mf-lbl" htmlFor="cdZip">
-                ZIP
-              </label>
-              <input className="mf-in" id="cdZip" value={values.zip} onChange={set("zip")} autoComplete="off" />
-            </div>
+          <div className="mf">
+            <label className="mf-lbl" htmlFor="cdNotes">
+              Notes
+            </label>
+            <textarea
+              className={cx("mf-in", styles.mdlArea)}
+              id="cdNotes"
+              value={values.notes}
+              onChange={set("notes")}
+              rows={4}
+              placeholder="Gate code, dog in the yard, prefers texts after 5…"
+            />
           </div>
         </form>
 
@@ -288,18 +373,50 @@ export function ClientEditDialog({
 }
 
 /* ============================================================
-   MESSAGE — one composer, two channels
+   MESSAGE — one composer, two channels, three ways out
    ============================================================ */
 
 export type MessageHandle = { open: () => void };
 
+/** Gmail's and Outlook's documented compose deep links. Everything is
+ *  percent-encoded: a subject with an ampersand in it would otherwise start a
+ *  new query parameter and truncate itself. */
+function gmailCompose(to: string, subject: string, body: string): string {
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(
+    subject,
+  )}&body=${encodeURIComponent(body)}`;
+}
+
+function outlookCompose(to: string, subject: string, body: string): string {
+  return `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
+    to,
+  )}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+/** `sms:` takes the number in the path and the text in the query. The stray
+ *  `?&` is deliberate — it is the form iOS has always parsed, and Android
+ *  ignores the empty first parameter. */
+function smsLink(phone: string, body: string): string {
+  return `sms:${phone.replace(/[^\d+]/g, "")}?&body=${encodeURIComponent(body)}`;
+}
+
 /**
  * Email or text, chosen at the top of the box.
  *
- * The channels are READ FROM THE SERVER when the dialog opens rather than
- * inferred from the props: whether the org has a Twilio number is not something
- * the record page knows, and a Text tab that only fails after the message is
- * typed is worse than one that says why it is off before a word is written.
+ * THE CHANNELS ARE READ FROM THE SERVER when the dialog opens rather than
+ * inferred from the props: whether the org has a Twilio number or a connected
+ * Gmail is not something the record page knows, and a channel that only fails
+ * after the message is typed is worse than one that says why it is off before a
+ * word is written. While that read is in flight the body shows the house
+ * spinner rather than an empty sheet — but only after 300ms, so a fast answer
+ * never flashes one.
+ *
+ * THREE WAYS OUT, and which ones exist depends on what is configured:
+ *   · in-app send — email through the org's connected Gmail, SMS through Twilio;
+ *   · webmail handoff — a prefilled Gmail or Outlook compose in a new tab, which
+ *     needs no integration at all and is the answer for an org that has not
+ *     connected anything;
+ *   · the phone's own messenger — on handheld, an `sms:` link, same reasoning.
  */
 export function ClientMessageDialog({
   clientId,
@@ -311,6 +428,7 @@ export function ClientMessageDialog({
   handleRef: React.RefObject<MessageHandle | null>;
 }) {
   const router = useRouter();
+  const handheld = useHandheld();
   const [channel, setChannel] = useState<ClientChannel>("email");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -321,8 +439,14 @@ export function ClientMessageDialog({
     email: string | null;
     phone: string | null;
     smsConfigured: boolean;
+    emailConfigured: boolean;
   } | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  // Only true between opening the dialog and the channels landing. `error`
+  // ends the wait too — a failed read must not spin forever.
+  const [loading, setLoading] = useState(false);
+  const slow = useSlowFlag(loading);
 
   const seed = useCallback(() => {
     setSubject("");
@@ -331,6 +455,7 @@ export function ClientMessageDialog({
     setSent(null);
     setReach(null);
     if (clientId) {
+      setLoading(true);
       clientChannels(clientId)
         .then((r) => {
           setReach(r);
@@ -339,7 +464,8 @@ export function ClientMessageDialog({
           // fallback for a client with no address on file.
           setChannel(r.email ? "email" : "sms");
         })
-        .catch((err) => setError(actionError(err)));
+        .catch((err) => setError(actionError(err)))
+        .finally(() => setLoading(false));
     }
     requestAnimationFrame(() => requestAnimationFrame(() => bodyRef.current?.focus()));
   }, [clientId]);
@@ -352,22 +478,30 @@ export function ClientMessageDialog({
     handleRef.current = { open: openMdlDialog };
   }, [handleRef, openMdlDialog]);
 
-  // Why the SELECTED channel cannot be used, or null. One string, shown under
-  // the composer and used to hold the Send button off — see the note on the
-  // chips about why this is not a `disabled` attribute on them.
-  const blocked =
+  const email = reach?.email ?? "";
+  const phone = reach?.phone ?? "";
+
+  // WHAT EACH CHANNEL CAN DO, separated into "is there an address at all" and
+  // "can this app do the sending". The first kills the composer — there is
+  // nowhere to type to. The second only kills the in-app Send, because the
+  // handoff routes below need no integration.
+  const emailReachable = !reach || !!reach.email;
+  const smsReachable = !reach || !!reach.phone;
+  const emailSendable = !!reach?.email && !!reach.emailConfigured;
+  // On handheld the send is the phone's own messenger, which does not care
+  // whether the org rents a Twilio number.
+  const smsSendable = !!reach?.phone && (handheld || !!reach.smsConfigured);
+
+  const composerOff =
     channel === "email"
-      ? reach && !reach.email
-        ? `${clientName} has no email on file — add one with Edit.`
-        : null
-      : reach && !reach.phone
-        ? `${clientName} has no phone number on file — add one with Edit.`
-        : reach && !reach.smsConfigured
-          ? "Texting needs a Twilio number. Set one up on the Phone page."
-          : null;
+      ? !emailReachable
+      : !smsReachable || (!handheld && !!reach && !reach.smsConfigured);
+
+  const canSend =
+    channel === "email" ? emailSendable : !!reach?.phone && !!reach.smsConfigured;
 
   async function send() {
-    if (busy || !clientId || blocked) return;
+    if (busy || !clientId || !canSend) return;
     setBusy(true);
     setError(null);
     try {
@@ -392,18 +526,22 @@ export function ClientMessageDialog({
     }
   }
 
+  const subjectLine = subject.trim() || "A message about your project";
+
   return (
     <div className="mdl pmdl" ref={mdlRef} role="dialog" aria-modal="true" aria-labelledby="cdMsgTitle">
       <div className="mdl-bg" onClick={close} />
       <div className={cx("mdl-box", styles.mdlWide)}>
         <div className="mdl-head mdl-head--row">
-          <span id="cdMsgTitle">Message {clientName}</span>
+          <span id="cdMsgTitle" className={styles.mdlTitle}>
+            Message <ClampedName>{clientName}</ClampedName>
+          </span>
           <button className="mdl-x" type="button" onClick={close} aria-label="Close dialog">
             <Ic name="x" />
           </button>
         </div>
 
-        <div className="mdl-body">
+        <div className={cx("mdl-body", styles.mdlScroll)}>
           {/* The channel is a two-button group, not a select: there are exactly
               two and both are worth reading at a glance.
 
@@ -413,63 +551,142 @@ export function ClientMessageDialog({
               only renders for the SELECTED channel, so disabling the one with
               the problem is exactly how you hide the answer from the person
               looking for it. Selecting it shows the reason and it is the Send
-              button that stays off. */}
-          <div className={styles.chips} role="group" aria-label="Send by">
-            <button
-              type="button"
-              aria-pressed={channel === "email"}
-              className={cx(styles.chip, channel === "email" && styles.chipOn)}
-              onClick={() => setChannel("email")}
-            >
-              Email
-            </button>
-            <button
-              type="button"
-              aria-pressed={channel === "sms"}
-              className={cx(styles.chip, channel === "sms" && styles.chipOn)}
-              onClick={() => setChannel("sms")}
-            >
-              Text
-            </button>
-          </div>
+              button that stays off.
 
-          {channel === "email" ? (
-            <div className="mf">
-              <label className="mf-lbl" htmlFor="cdSubject">
-                Subject
-              </label>
-              <input
-                className="mf-in"
-                id="cdSubject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="About your roof proposal"
-                autoComplete="off"
-              />
+              The group carries its own LABEL and its own bottom margin. It used
+              to sit flush against the field label under it, and two stacked
+              labels 6px apart read as one control with two names. */}
+          <div className={styles.chanBlock}>
+            <span className={styles.chanLbl} id="cdChanLbl">
+              Send by
+            </span>
+            <div className={styles.chips} role="group" aria-labelledby="cdChanLbl">
+              <button
+                type="button"
+                aria-pressed={channel === "email"}
+                className={cx(styles.chip, channel === "email" && styles.chipOn)}
+                onClick={() => setChannel("email")}
+              >
+                Email
+              </button>
+              <button
+                type="button"
+                aria-pressed={channel === "sms"}
+                className={cx(styles.chip, channel === "sms" && styles.chipOn)}
+                onClick={() => setChannel("sms")}
+              >
+                Text
+              </button>
             </div>
-          ) : null}
-
-          <div className="mf">
-            <label className="mf-lbl" htmlFor="cdBody">
-              Message
-            </label>
-            <textarea
-              className={cx("mf-in", styles.mdlArea)}
-              id="cdBody"
-              ref={bodyRef}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              rows={6}
-              placeholder={
-                channel === "email"
-                  ? "Hi — following up on the garage re-roof…"
-                  : "Hi — following up on the garage re-roof."
-              }
-            />
           </div>
 
-          {blocked ? <div className="mf-note">{blocked}</div> : null}
-          {sent ? <div className="mf-note">{sent}</div> : null}
+          {loading ? (
+            slow ? (
+              <Busy>Checking how this client can be reached…</Busy>
+            ) : null
+          ) : (
+            <>
+              {channel === "email" ? (
+                <div className="mf">
+                  <label className="mf-lbl" htmlFor="cdSubject">
+                    Subject
+                  </label>
+                  <input
+                    className="mf-in"
+                    id="cdSubject"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="About your roof proposal"
+                    autoComplete="off"
+                    disabled={composerOff}
+                  />
+                </div>
+              ) : null}
+
+              <div className="mf">
+                <label className="mf-lbl" htmlFor="cdBody">
+                  Message
+                </label>
+                <textarea
+                  className={cx("mf-in", styles.mdlArea)}
+                  id="cdBody"
+                  ref={bodyRef}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  rows={6}
+                  placeholder={
+                    channel === "email"
+                      ? "Hi — following up on the garage re-roof…"
+                      : "Hi — following up on the garage re-roof."
+                  }
+                  disabled={composerOff}
+                />
+              </div>
+
+              {/* THE GATES. One line each, and every one of them names the page
+                  that fixes it — a warning that does not say where to go is a
+                  dead end with punctuation. */}
+              {channel === "email" && reach && !reach.email ? (
+                <div className="mf-note">
+                  <ClampedName>{clientName}</ClampedName> has no email on file — add one with Edit.
+                </div>
+              ) : null}
+
+              {channel === "email" && reach?.email && !reach.emailConfigured ? (
+                <div className="mf-note">
+                  <Link className={styles.noteLink} href={GMAIL_ROUTE}>
+                    Connect your Gmail in Settings
+                  </Link>{" "}
+                  to send email from JobFlex. Until then, open a draft in Gmail or Outlook below.
+                </div>
+              ) : null}
+
+              {channel === "sms" && reach && !reach.phone ? (
+                <div className="mf-note">
+                  <ClampedName>{clientName}</ClampedName> has no phone number on file — add one with Edit.
+                </div>
+              ) : null}
+
+              {channel === "sms" && reach?.phone && !reach.smsConfigured ? (
+                <div className="mf-note">
+                  Texting needs a Twilio number set up —{" "}
+                  <Link className={styles.noteLink} href={PHONE_ROUTE}>
+                    set one up on the Phone page
+                  </Link>
+                  {handheld ? ". Meanwhile, Open in Messages hands this to your phone." : "."}
+                </div>
+              ) : null}
+
+              {/* THE HANDOFF. Needs no integration, so it is offered whether or
+                  not the org has connected anything — it is the same message,
+                  composed in the reader's own mail client. */}
+              {channel === "email" && reach?.email ? (
+                <div className={styles.handoff}>
+                  <span className={styles.chanLbl}>Or open a draft in</span>
+                  <div className={styles.chips}>
+                    <a
+                      className={styles.chip}
+                      href={gmailCompose(email, subjectLine, body)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Gmail
+                    </a>
+                    <a
+                      className={styles.chip}
+                      href={outlookCompose(email, subjectLine, body)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Outlook
+                    </a>
+                  </div>
+                </div>
+              ) : null}
+
+              {sent ? <div className="mf-note">{sent}</div> : null}
+            </>
+          )}
         </div>
 
         {error ? <div className="mf-err mf-err--boxed">{error}</div> : null}
@@ -478,15 +695,36 @@ export function ClientMessageDialog({
           <button className="btn btn-ghost" type="button" onClick={close}>
             Close
           </button>
-          <button
-            className={cx("btn", "btn-primary", busy && "is-busy")}
-            type="button"
-            onClick={send}
-            disabled={busy || !!blocked || body.trim().length === 0}
-          >
-            <Ic name="send" />
-            {busy ? "Sending…" : channel === "email" ? "Send email" : "Send text"}
-          </button>
+
+          {/* On handheld the text channel leaves the app: the send button is an
+              `sms:` link so the phone's own messenger opens with the number and
+              the typed message already in it. Nothing is logged against the
+              record for that route — the send happens outside the app, and a
+              log entry for a message the contractor might still cancel would be
+              a fiction on the client's file. */}
+          {channel === "sms" && handheld && smsSendable ? (
+            <a
+              className={cx("btn", "btn-primary", body.trim().length === 0 && "is-busy")}
+              href={smsLink(phone, body)}
+              aria-disabled={body.trim().length === 0}
+              onClick={(e) => {
+                if (body.trim().length === 0) e.preventDefault();
+              }}
+            >
+              <Ic name="send" />
+              Open in Messages
+            </a>
+          ) : (
+            <button
+              className={cx("btn", "btn-primary", busy && "is-busy")}
+              type="button"
+              onClick={send}
+              disabled={busy || loading || !canSend || body.trim().length === 0}
+            >
+              <Ic name="send" />
+              {busy ? "Sending…" : channel === "email" ? "Send email" : "Send text"}
+            </button>
+          )}
         </div>
       </div>
     </div>

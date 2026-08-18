@@ -17,8 +17,12 @@
 // page's own `.app` grid — the same division of labour BlueprintShell has with
 // the desktop pages.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is REAL: the component reads the org's pipeline and its live Lead
+// Center offers on mount through ./leads-source (the desktop sheet's own
+// org-scoped query) and writes through the shared lead server actions. It is
+// mounted here AND, at ≤768px, by the viewport switch on /dashboard/leads —
+// which renders it with no props, which is why the read lives in the component
+// rather than in this page.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
 // its own redirect-to-login like the other design routes. The literal path is

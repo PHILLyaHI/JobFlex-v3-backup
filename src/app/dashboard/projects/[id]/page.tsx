@@ -10,10 +10,16 @@
 // (dashboard) route group on the classic layout; a static segment outranks a
 // dynamic one, so /dashboard/projects/new is unaffected.
 //
-// THE QUERY IS THE CLASSIC PAGE'S, UNCHANGED — same findUnique with the same
-// job include and ordering, the same org check, the same unassigned-job
-// candidate list. Only the markup and the styles are new. `attachJob`, the
-// server action the old drawer called, is still the one that writes.
+// THE PROJECT QUERY IS THE CLASSIC PAGE'S, UNCHANGED — same findUnique with the
+// same job include and ordering, the same org check. Only the markup and the
+// styles are new, and `attachJob` — the server action the old drawer called —
+// is still the one and only thing that writes.
+//
+// WHAT CHANGED (2026-08-15): the attach control attaches PROPOSALS, so the
+// unassigned-JOB candidate list this page used to read is replaced by the
+// attachable-PROPOSAL list below. No new action, no new route, no schema
+// change: see the note above `PdAvailProposal` in project-detail-data.ts for
+// why the link runs through the proposal's jobs and what that costs.
 
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
@@ -64,19 +70,42 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   if (!project || project.organizationId !== organizationId) notFound();
 
-  // Jobs in this org with no project assigned — candidates to attach.
-  const availableJobs = await db.job.findMany({
-    where: { organizationId, projectId: null, status: { not: "CANCELED" } },
+  // Attach candidates: the org's proposals, with the jobs each one owns, so the
+  // page can say which are linkable and why the rest are not. `take` is the
+  // same ceiling the job list carried.
+  const proposals = await db.proposal.findMany({
+    where: { organizationId },
     select: {
       id: true,
       title: true,
       status: true,
-      startsAt: true,
+      total: true,
       client: { select: { name: true } },
+      jobs: { select: { id: true, projectId: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { updatedAt: "desc" },
     take: 100,
   });
+
+  const availableProposals = proposals
+    // Already on THIS project — it is attached, not attachable.
+    .filter((p) => !p.jobs.some((j) => j.projectId === project.id))
+    .map((p) => {
+      const linkJobIds = p.jobs.filter((j) => !j.projectId).map((j) => j.id);
+      return {
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        total: p.total,
+        clientName: p.client?.name ?? null,
+        linkJobIds,
+        blocked: linkJobIds.length
+          ? null
+          : p.jobs.length
+            ? "On another project"
+            : "No job to link yet",
+      };
+    });
 
   return (
     <ProjectDetailViewportSwitch
@@ -95,13 +124,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         endsAt: j.endsAt,
         clientName: j.client?.name ?? null,
       }))}
-      availableJobs={availableJobs.map((j) => ({
-        id: j.id,
-        title: j.title,
-        status: j.status,
-        startsAt: j.startsAt,
-        clientName: j.client?.name ?? null,
-      }))}
+      availableProposals={availableProposals}
     />
   );
 }

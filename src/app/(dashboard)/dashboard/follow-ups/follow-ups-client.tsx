@@ -8,12 +8,13 @@ import { NewFollowUpRuleSheet } from "@/components/comms/NewFollowUpRuleSheet";
 import { upsertFollowUpRule } from "@/actions/followUps";
 
 interface Props {
-  rules: (FollowUpRuleRow & { templateId: string | null })[];
+  rules: FollowUpRuleRow[];
   pending: PendingFollowUp[];
-  templates: { id: string; name: string; subject: string; body: string }[];
+  /** A configured Twilio number — gates the TEXT channel in the sheet. */
+  smsEnabled: boolean;
 }
 
-export function FollowUpsClient({ rules, pending, templates }: Props) {
+export function FollowUpsClient({ rules, pending, smsEnabled }: Props) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -49,7 +50,7 @@ export function FollowUpsClient({ rules, pending, templates }: Props) {
           setSheetOpen(false);
           setEditingId(null);
         }}
-        templates={templates}
+        smsEnabled={smsEnabled}
         existing={
           existing
             ? {
@@ -58,7 +59,7 @@ export function FollowUpsClient({ rules, pending, templates }: Props) {
                 triggerStatus: existing.triggerStatus,
                 delayMinutes: existing.delayMinutes,
                 enabled: existing.enabled,
-                templateId: existing.templateId,
+                channel: existing.channel,
               }
             : null
         }

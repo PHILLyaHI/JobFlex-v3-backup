@@ -5,9 +5,17 @@ import { requireManager, requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendOrgEmail } from "@/lib/email/orgSend";
-import { renderTemplate } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
-import { buildFollowUp, isBareUrlParagraph } from "@/lib/email/build/client";
+import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
+import {
+  delayLabel,
+  encodeChannel,
+  encodeDispatch,
+  followUpEmailDoc,
+  followUpSmsText,
+  parseChannel,
+  parseDispatch,
+} from "@/lib/followUps/copy";
 
 const ruleInput = z.object({
   id: z.string().optional(),
@@ -15,12 +23,23 @@ const ruleInput = z.object({
   triggerStatus: z.string(),
   delayMinutes: z.number().min(1),
   enabled: z.boolean().default(true),
-  templateId: z.string().nullable().optional(),
+  /** EMAIL or TEXT. Stored in the `template` column — see
+   *  src/lib/followUps/copy.ts for why that column carries the channel now. */
+  channel: z.enum(["EMAIL", "TEXT"]).default("EMAIL"),
 });
 
 export async function upsertFollowUpRule(raw: unknown) {
   const { organizationId } = await requireManager();
   const data = ruleInput.parse(raw);
+
+  // A rule can only promise what this deployment can actually deliver. Offering
+  // TEXT in the editor is gated on the same flag, but the server is the one that
+  // has to refuse — otherwise a rule quietly stops sending the day the number
+  // is removed.
+  if (data.channel === "TEXT" && !isTwilioEnabled()) {
+    throw new Error("Texting needs a Twilio number — set one up on the Phone page.");
+  }
+  const channel = encodeChannel(data.channel);
 
   if (data.id) {
     const existing = await db.followUpRule.findUnique({ where: { id: data.id } });
@@ -32,10 +51,11 @@ export async function upsertFollowUpRule(raw: unknown) {
         triggerStatus: data.triggerStatus,
         delayMinutes: data.delayMinutes,
         enabled: data.enabled,
-        template: data.templateId ?? null,
+        template: channel,
       },
     });
     revalidatePath("/dashboard/follow-ups");
+    revalidatePath("/dashboard/crm");
     return { id: updated.id };
   }
 
@@ -46,10 +66,11 @@ export async function upsertFollowUpRule(raw: unknown) {
       triggerStatus: data.triggerStatus,
       delayMinutes: data.delayMinutes,
       enabled: data.enabled,
-      template: data.templateId ?? null,
+      template: channel,
     },
   });
   revalidatePath("/dashboard/follow-ups");
+  revalidatePath("/dashboard/crm");
   return { id: created.id };
 }
 
@@ -91,7 +112,11 @@ export async function scheduleFollowUpsFor(proposalId: string, newStatus: string
         proposalId: proposal.id,
         runAt,
         note: `${r.name} · ${r.triggerStatus} + ${r.delayMinutes}m`,
-        templateId: r.template,
+        // The queued row has to survive the rule being edited or deleted before
+        // it fires, so it carries its own copy of what to send and how.
+        // `templateId` is a free-form String? with no foreign key — see
+        // src/lib/followUps/copy.ts.
+        templateId: encodeDispatch(parseChannel(r.template), r.triggerStatus),
       },
     });
     scheduled++;
@@ -135,6 +160,16 @@ export async function markFollowUpDone(id: string) {
   revalidatePath("/dashboard/crm/queue");
 }
 
+/** `scheduleFollowUpsFor` writes the delay into the note as "… + 2880m", which
+ *  is the only record of how long the rule waited once the row is queued. The
+ *  prose says it out loud ("we sent this over 2 days ago"), so it is read back
+ *  here rather than guessed. A row from before this change, or a hand-made one,
+ *  just gets the neutral fallback. */
+function delayFromNote(note: string | null): string {
+  const m = note ? /\+\s*(\d+)m\s*$/.exec(note) : null;
+  return m ? delayLabel(Number(m[1])) : "a few days";
+}
+
 async function dispatchOne(id: string): Promise<boolean> {
   const fu = await db.followUp.findUnique({
     where: { id },
@@ -144,7 +179,11 @@ async function dispatchOne(id: string): Promise<boolean> {
   });
   if (!fu) return false;
 
-  // Find the matching rule to locate the template (if any)
+  // What to say and how to send it were both stamped onto the row when the rule
+  // scheduled it, so editing or deleting the rule afterwards cannot change a
+  // follow-up that is already in the queue.
+  const { channel, trigger } = parseDispatch(fu.templateId);
+
   const proposal = fu.proposalId
     ? await db.proposal.findUnique({
         where: { id: fu.proposalId },
@@ -164,55 +203,42 @@ async function dispatchOne(id: string): Promise<boolean> {
       })
     : null;
 
-  if (proposal?.client?.email) {
-    // Prefer the exact template the rule chose; else any "reminder" template the
-    // org has; else the built-in default copy below.
-    const tpl = fu.templateId
-      ? await db.emailTemplate.findFirst({
-          where: { id: fu.templateId, organizationId: fu.organizationId },
-        })
-      : await db.emailTemplate.findFirst({
-          where: { organizationId: fu.organizationId, category: "reminder" },
-        });
-    // No {{link}} line in the fallback — buildFollowUp's CTA button already
-    // carries the portal link (Task 5 fix round 1, Finding A).
-    const body =
-      tpl?.body ??
-      `Hi {{client_name}},\n\nCircling back on our recent proposal. Still ready to review whenever you are.\n\n— {{org}}`;
-    const appUrl = await appBaseUrl();
-    const vars = {
-      client_name: proposal.client.name,
-      total: String(proposal.total),
-      link: `${appUrl}/portal/q/${proposal.publicId}`,
-      org: proposal.organization.name,
-      title: proposal.title,
-    };
-    const prose = renderTemplate(body, vars)
-      .split(/\n{2,}/)
-      .map((p) => p.replace(/\n/g, " ").trim())
-      .filter((p) => p && !isBareUrlParagraph(p));
+  /** What actually left the building, for the activity log. */
+  let outcome: { kind: "EMAIL" | "TEXT"; to: string } | null = null;
 
-    const { subject: subj, html } = renderEmail(
-      buildFollowUp({
-        org: {
-          name: proposal.organization.name,
-          logoUrl: proposal.organization.logoUrl,
-          phone: proposal.organization.phone,
-        },
-        title: proposal.title,
-        total: proposal.total,
-        validUntil: proposal.validUntil,
-        href: `${appUrl}/portal/q/${proposal.publicId}`,
-        prose,
-      }),
-    );
-    // Sends via the org's connected Gmail when opted in, else Resend/SMTP with
-    // the contractor as reply-to.
-    await sendOrgEmail(proposal.organization, {
-      to: proposal.client.email,
-      subject: subj,
-      html,
-    });
+  if (proposal) {
+    const appUrl = await appBaseUrl();
+    const ctx = {
+      orgName: proposal.organization.name,
+      orgLogoUrl: proposal.organization.logoUrl,
+      orgPhone: proposal.organization.phone,
+      clientName: proposal.client?.name ?? "there",
+      title: proposal.title,
+      total: proposal.total,
+      validUntil: proposal.validUntil,
+      href: `${appUrl}/portal/q/${proposal.publicId}`,
+      delayLabel: delayFromNote(fu.note),
+    };
+
+    // TEXT falls back to email when the number was removed after the rule was
+    // written — a follow-up that goes nowhere is worse than one that arrives on
+    // the other channel.
+    const canText = channel === "TEXT" && isTwilioEnabled() && Boolean(proposal.client?.phone);
+
+    if (canText && proposal.client?.phone) {
+      const res = await sendSMS(proposal.client.phone, followUpSmsText(trigger ?? "SENT", ctx));
+      if (!res.skipped) outcome = { kind: "TEXT", to: proposal.client.phone };
+    } else if (proposal.client?.email) {
+      const { subject: subj, html } = renderEmail(followUpEmailDoc(trigger ?? "SENT", ctx));
+      // Sends via the org's connected Gmail when opted in, else Resend/SMTP with
+      // the contractor as reply-to.
+      await sendOrgEmail(proposal.organization, {
+        to: proposal.client.email,
+        subject: subj,
+        html,
+      });
+      outcome = { kind: "EMAIL", to: proposal.client.email };
+    }
   }
 
   await db.followUp.update({
@@ -224,8 +250,10 @@ async function dispatchOne(id: string): Promise<boolean> {
     data: {
       organizationId: fu.organizationId,
       proposalId: fu.proposalId,
-      kind: "EMAIL",
-      summary: "Follow-up dispatched",
+      kind: outcome?.kind ?? "EMAIL",
+      summary: outcome
+        ? `Follow-up ${outcome.kind === "TEXT" ? "texted" : "emailed"} to ${outcome.to}`
+        : "Follow-up closed — no reachable contact",
     },
   });
 

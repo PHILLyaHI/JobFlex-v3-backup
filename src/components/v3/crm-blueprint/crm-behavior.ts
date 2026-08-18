@@ -36,17 +36,22 @@ import {
   upsertFollowUpRule,
 } from "@/actions/followUps";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { renderEmail } from "@/lib/email/renderEmail";
 import {
-  CRM_LEADS,
-  ACTIVITY_FEED,
-  CUSTOMERS_DATA,
+  FOLLOW_UP_CHANNELS,
+  TEXT_NEEDS_TWILIO,
+  channelLabel,
+  delayLabel,
+  followUpEmailDoc,
+  followUpSmsText,
+  previewContext,
+  triggerMoment,
+  type FollowUpChannel,
+} from "@/lib/followUps/copy";
+import {
   STATUS_ORDER,
   STATUS_CLS,
   TRIGGERS,
-  SEED_STATS,
-  SEED_TEMPLATES,
-  RULES_SEED,
-  QUEUE_SEED,
   Q_PAGE,
   type ActivityItem,
   type CrmContentData,
@@ -55,13 +60,12 @@ import {
   type Customer,
   type FollowUpRule,
   type QueueItem,
-  type TemplateOption,
 } from "./crm-data";
 
 export type CrmContentOptions = {
-  /** The org's real CRM rows, read server-side. Omit to fall back to the donor
-   *  fixture (the standalone mock render has no session to read from). */
-  data?: CrmContentData;
+  /** The org's real CRM rows, read server-side. REQUIRED — there is no fixture
+   *  fallback any more, so the sheet cannot paint demo records. */
+  data: CrmContentData;
   /** Client-side navigation, supplied by the React wrapper (this module has no
    *  router of its own). Omit and the overview's cross-links stay inert. */
   navigate?: (href: string) => void;
@@ -89,10 +93,7 @@ function escapeAttr(v: string): string {
     .replace(/>/g, "&gt;");
 }
 
-export function initCrmContent(
-  content: HTMLElement,
-  options: CrmContentOptions = {},
-): () => void {
+export function initCrmContent(content: HTMLElement, options: CrmContentOptions): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
   const root = content;
@@ -162,19 +163,20 @@ export function initCrmContent(
   };
 
   // ================= CRM: STATE =================
-  // The org's real rows when the page supplies them, the donor fixture
-  // otherwise. Either way they are CLONED, because rule create/edit/toggle/
-  // delete and queue done/send mutate them in place: the server actions are the
-  // source of truth, and these arrays mirror them so the sheet repaints the
-  // moment one returns instead of waiting on a round trip through the router.
+  // The org's real rows, read in the page's server component. They are CLONED,
+  // because rule create/edit/toggle/delete and queue done/send mutate them in
+  // place: the server actions are the source of truth, and these arrays mirror
+  // them so the sheet repaints the moment one returns instead of waiting on a
+  // round trip through the router.
   const live = options.data;
-  const stats: CrmStats = { ...(live?.stats ?? SEED_STATS) };
-  const freshData: CrmLead[] = (live?.fresh ?? CRM_LEADS).map((l) => ({ ...l }));
-  const activityData: ActivityItem[] = (live?.activity ?? ACTIVITY_FEED).map((a) => ({ ...a }));
-  const customersData: Customer[] = (live?.customers ?? CUSTOMERS_DATA).map((c) => ({ ...c }));
-  const templatesData: TemplateOption[] = (live?.templates ?? SEED_TEMPLATES).map((t) => ({ ...t }));
-  let rulesData: FollowUpRule[] = (live?.rules ?? RULES_SEED).map((r) => ({ ...r }));
-  let queueData: QueueItem[] = (live?.queue ?? QUEUE_SEED).map((q) => ({ ...q }));
+  const stats: CrmStats = { ...live.stats };
+  const freshData: CrmLead[] = live.fresh.map((l) => ({ ...l }));
+  const activityData: ActivityItem[] = live.activity.map((a) => ({ ...a }));
+  const customersData: Customer[] = live.customers.map((c) => ({ ...c }));
+  let rulesData: FollowUpRule[] = live.rules.map((r) => ({ ...r }));
+  let queueData: QueueItem[] = live.queue.map((q) => ({ ...q }));
+  const orgBrand = { ...live.org };
+  const smsEnabled = live.smsEnabled;
 
   /** True while any write is in flight, so a double click cannot fire twice. */
   const crm = {
@@ -187,14 +189,13 @@ export function initCrmContent(
     savingRule: false,
     busyRule: null as string | null,
     busyQueue: null as string | null,
+    /** What the preview card is showing. Seeded from the first rule, then
+     *  driven by whichever rule form is open — change the trigger in the form
+     *  and the card beside it re-renders. */
+    prevTrigger: rulesData[0]?.triggerStatus ?? "SENT",
+    prevChannel: (rulesData[0]?.channel ?? "EMAIL") as FollowUpChannel,
+    prevDelay: rulesData[0]?.delayMinutes ?? 60 * 24 * 2,
   };
-
-  /** `template` stores an EmailTemplate id; the row shows its NAME. */
-  function templateLabel(id: string | null): string | null {
-    if (!id) return null;
-    const t = templatesData.find((x) => x.id === id);
-    return t ? t.name : id;
-  }
 
   function showErr(sel: string, msg: string | null) {
     const box = $(sel);
@@ -530,7 +531,6 @@ export function initCrmContent(
               }) || ({} as { label?: string })
             ).label || r.triggerStatus;
           const busy = crm.busyRule === r.id ? " disabled" : "";
-          const tpl = templateLabel(r.template);
           return (
             '<li data-rule="' +
             escapeAttr(r.id) +
@@ -547,8 +547,12 @@ export function initCrmContent(
             escapeAttr(trig) +
             "</b> · Delay: <b>" +
             humanDelay(r.delayMinutes) +
+            "</b> · Sends: <b>" +
+            channelLabel(r.channel) +
             "</b></div>" +
-            (tpl ? '<div class="rule-tpl">Template: <code>' + escapeAttr(tpl) + "</code></div>" : "") +
+            '<div class="rule-tpl">' +
+            escapeAttr(triggerMoment(r.triggerStatus)) +
+            "</div>" +
             "</div>" +
             '<div class="rule-act">' +
             '<button class="tgl' +
@@ -604,33 +608,29 @@ export function initCrmContent(
       '<label><span class="rf-lbl">Delay (days)</span><input class="rf-in" type="number" min="1" data-f="days" value="' +
       days +
       '"></label>' +
-      // The template list is the org's real EmailTemplate rows. The option
-      // VALUE is the row id, because that is what `FollowUpRule.template`
-      // stores and what dispatchOne() looks the copy up by at send time —
-      // the classic RuleForm's contract, unchanged.
-      '<label><span class="rf-lbl">Template</span><span class="bp-sel"><select class="bp-sel-in" data-f="template"' +
-      (r && r.template ? "" : ' data-empty="1"') +
-      ">" +
-      '<option value="">None</option>' +
-      templatesData
-        .map(function (t) {
-          return (
-            '<option value="' +
-            escapeAttr(t.id) +
-            '"' +
-            (r && r.template === t.id ? " selected" : "") +
-            ">" +
-            escapeAttr(t.name) +
-            "</option>"
-          );
-        })
-        .join("") +
+      // The rule has no template any more — the wording is derived from the
+      // trigger. The one remaining choice is HOW it reaches the client, and
+      // TEXT is only offered when this deployment has a Twilio number (the
+      // server refuses it either way).
+      '<label><span class="rf-lbl">Send by</span><span class="bp-sel"><select class="bp-sel-in" data-f="channel">' +
+      FOLLOW_UP_CHANNELS.map(function (c) {
+        return (
+          '<option value="' +
+          c.value +
+          '"' +
+          (c.value === "TEXT" && !smsEnabled ? " disabled" : "") +
+          ((r ? r.channel : "EMAIL") === c.value ? " selected" : "") +
+          ">" +
+          c.label +
+          "</option>"
+        );
+      }).join("") +
       "</select></span></label>" +
       "</div>" +
       '<div class="rf-note">' +
-      (templatesData.length
-        ? "No template sends the default reminder copy."
-        : "No templates saved yet — this rule will send the default reminder copy.") +
+      (smsEnabled
+        ? "The card on the right is the message this rule sends."
+        : TEXT_NEEDS_TWILIO + " Email works now — see the card on the right.") +
       "</div>" +
       '<div class="mf-err is-hidden" data-rf-err role="alert"></div>' +
       '<div class="rf-act">' +
@@ -638,6 +638,112 @@ export function initCrmContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="cancel-rule">Cancel</button>' +
       "</div></div>"
     );
+  }
+
+  // ================= PREVIEW =================
+  // The card to the right of the rules. It renders the REAL message: the doc
+  // comes from src/lib/followUps/copy.ts and the HTML from
+  // lib/email/renderEmail — the same two calls dispatchOne() makes. Change the
+  // trigger (here or in an open rule form) and this repaints.
+  //
+  // The email goes in an iframe because it is a whole document with its own
+  // <style> block and its own 560px measure; inlining it would let the app's
+  // stylesheet leak in and stop the preview from being truthful. Scripts are
+  // sandboxed off; `allow-same-origin` is kept only so the frame's own height
+  // can be measured after it paints.
+  let prevFrame: HTMLIFrameElement | null = null;
+  let prevDocHeight = 900;
+
+  function previewCtx() {
+    const ctx = previewContext(orgBrand.name, crm.prevDelay);
+    ctx.orgPhone = orgBrand.phone;
+    ctx.orgLogoUrl = orgBrand.logoUrl;
+    return ctx;
+  }
+
+  /** The email frame is authored at its natural 600px and scaled down to the
+   *  column, so the layout stays the one the client will actually see.
+   *
+   *  The document is re-measured on every fit, not just on load: the first
+   *  render happens while the Workflows panel is still `display: none`, where
+   *  the frame has no layout and reports nothing — so the height has to be
+   *  taken again the moment the panel is shown. `body.scrollHeight` is the
+   *  body's own content height here (the email is shorter than the frame), not
+   *  the frame's viewport. +12 keeps the card's offset shadow and bottom border
+   *  inside the stage rather than shaved off by it. */
+  function fitPreviewFrame() {
+    const stage = $("#prevStage");
+    if (!stage || !prevFrame || !stage.contains(prevFrame)) return;
+    const w = stage.clientWidth;
+    if (!w) return;
+    const h = prevFrame.contentDocument?.body?.scrollHeight;
+    if (h) prevDocHeight = h + 12;
+    const s = Math.min(1, w / 600);
+    prevFrame.style.height = prevDocHeight + "px";
+    prevFrame.style.transform = "scale(" + s + ")";
+    stage.style.height = Math.round(prevDocHeight * s) + "px";
+  }
+
+  function renderPreview() {
+    const sel = $("#prevTrigger");
+    if (sel instanceof HTMLSelectElement) {
+      if (!sel.options.length) {
+        sel.innerHTML = TRIGGERS.map(function (t) {
+          return '<option value="' + t.value + '">' + t.label + "</option>";
+        }).join("");
+      }
+      sel.value = crm.prevTrigger;
+    }
+
+    const sub = $("#prevSub");
+    if (sub) {
+      const trig =
+        TRIGGERS.find(function (t) {
+          return t.value === crm.prevTrigger;
+        })?.label ?? crm.prevTrigger;
+      sub.textContent =
+        channelLabel(crm.prevChannel) +
+        " · " +
+        delayLabel(crm.prevDelay) +
+        " after " +
+        trig.toLowerCase();
+    }
+
+    const stage = $("#prevStage");
+    if (!stage) return;
+    const ctx = previewCtx();
+
+    if (crm.prevChannel === "TEXT") {
+      prevFrame = null;
+      stage.style.height = "";
+      stage.innerHTML =
+        '<div class="prev-sms"><div class="prev-sms-hd">' +
+        escapeAttr(orgBrand.name) +
+        '</div><div class="prev-sms-bub">' +
+        escapeAttr(followUpSmsText(crm.prevTrigger, ctx)) +
+        "</div>" +
+        (smsEnabled
+          ? ""
+          : '<div class="prev-sms-warn">' + TEXT_NEEDS_TWILIO + "</div>") +
+        "</div>";
+      return;
+    }
+
+    const { html } = renderEmail(followUpEmailDoc(crm.prevTrigger, ctx));
+    if (!prevFrame || !stage.contains(prevFrame)) {
+      stage.innerHTML = "";
+      const frame = document.createElement("iframe");
+      frame.className = "prev-frame";
+      frame.title = "Follow-up email preview";
+      frame.setAttribute("sandbox", "allow-same-origin");
+      frame.addEventListener("load", function () {
+        fitPreviewFrame();
+      });
+      stage.appendChild(frame);
+      prevFrame = frame;
+    }
+    prevFrame.srcdoc = html;
+    fitPreviewFrame();
   }
 
   // ================= QUEUE =================
@@ -744,6 +850,7 @@ export function initCrmContent(
     renderCbChips();
     renderCbTable();
     renderRules();
+    renderPreview();
     renderQueue();
   }
 
@@ -774,6 +881,9 @@ export function initCrmContent(
       p.classList.toggle("is-hidden", p.dataset.panel !== name);
     });
     playPanelStagger(name);
+    // The preview frame was scaled against a zero-width stage while the panel
+    // was `display: none`; measure it now that it has a column to fit.
+    if (name === "workflows") fitPreviewFrame();
   }
 
   const crmTabs = $("#crmTabs");
@@ -827,20 +937,74 @@ export function initCrmContent(
     on(newRuleBtn, "click", function () {
       crm.creating = true;
       crm.editing = null;
+      // A brand-new rule opens on the defaults its form ships, so the preview
+      // beside it starts on the same message.
+      syncPreviewFromForm("SENT", "EMAIL", 60 * 24 * 2);
       renderRules();
     });
   }
 
-  // The shared select treatment greys a placeholder through `data-empty="1"`.
-  // Template is the one select here that can legitimately be empty (it ships a
-  // "None" option), so the flag has to be kept in sync or the value stays grey
-  // after the user picks one. Delegated on `root` so it also covers the edit
-  // form, which is re-rendered into a rules <li> rather than #ruleForm.
+  /** One place the preview's state is set, so the card and the form can never
+   *  disagree about which message is being previewed. */
+  function syncPreviewFromForm(trigger: string, channel: FollowUpChannel, delayMinutes: number) {
+    crm.prevTrigger = trigger;
+    crm.prevChannel = channel;
+    crm.prevDelay = delayMinutes;
+    renderPreview();
+  }
+
+  // The shared select treatment greys a placeholder through `data-empty="1"`,
+  // so the flag has to be kept in sync or a chosen value stays grey. Delegated
+  // on `root` so it also covers the edit form, which is re-rendered into a
+  // rules <li> rather than #ruleForm — and so the rule form's own trigger /
+  // channel selects can drive the preview card next to them.
   on(root, "change", function (e) {
     const el = e.target;
-    if (!(el instanceof HTMLSelectElement) || !el.classList.contains("bp-sel-in")) return;
-    if (el.value) el.removeAttribute("data-empty");
-    else el.setAttribute("data-empty", "1");
+    if (!(el instanceof HTMLSelectElement)) return;
+
+    if (el.classList.contains("bp-sel-in")) {
+      if (el.value) el.removeAttribute("data-empty");
+      else el.setAttribute("data-empty", "1");
+    }
+
+    if (el.id === "prevTrigger") {
+      crm.prevTrigger = el.value;
+      renderPreview();
+      return;
+    }
+
+    const form = el.closest<HTMLElement>("[data-form]");
+    if (!form) return;
+    const field = (f: string) =>
+      form.querySelector<HTMLInputElement | HTMLSelectElement>('[data-f="' + f + '"]');
+    if (el.dataset.f === "trigger" || el.dataset.f === "channel") {
+      syncPreviewFromForm(
+        field("trigger")?.value || "SENT",
+        (field("channel")?.value as FollowUpChannel) || "EMAIL",
+        Math.max(1, parseInt(field("days")?.value ?? "", 10) || 1) * 60 * 24,
+      );
+    }
+  });
+
+  // The delay is an <input>, not a <select> — the prose says it out loud ("we
+  // sent this over 2 days ago"), so the preview follows it as it is typed.
+  on(root, "input", function (e) {
+    const el = e.target;
+    if (!(el instanceof HTMLInputElement) || el.dataset.f !== "days") return;
+    const form = el.closest<HTMLElement>("[data-form]");
+    if (!form) return;
+    const field = (f: string) =>
+      form.querySelector<HTMLInputElement | HTMLSelectElement>('[data-f="' + f + '"]');
+    syncPreviewFromForm(
+      field("trigger")?.value || "SENT",
+      (field("channel")?.value as FollowUpChannel) || "EMAIL",
+      Math.max(1, parseInt(el.value, 10) || 1) * 60 * 24,
+    );
+  });
+
+  // The frame is scaled to its column, so a window resize has to re-fit it.
+  on(window, "resize", function () {
+    fitPreviewFrame();
   });
 
   /** Button label + disabled state while an action is in flight. */
@@ -890,6 +1054,10 @@ export function initCrmContent(
       crm.editing = ruleLi.dataset.rule || null;
       crm.creating = false;
       showErr("#rulesErr", null);
+      const editing = rulesData.find((x) => x.id === crm.editing);
+      if (editing) {
+        syncPreviewFromForm(editing.triggerStatus, editing.channel, editing.delayMinutes);
+      }
       renderRules();
       return;
     }
@@ -1012,7 +1180,7 @@ export function initCrmContent(
       // A new rule starts active, exactly as the donor's form implied; an edit
       // must not silently re-enable a rule the user switched off.
       enabled: existing ? existing.enabled : true,
-      templateId: get("template") || null,
+      channel: (get("channel") || "EMAIL") as FollowUpChannel,
     };
 
     crm.savingRule = true;
@@ -1025,7 +1193,7 @@ export function initCrmContent(
           name: payload.name,
           triggerStatus: payload.triggerStatus,
           delayMinutes: payload.delayMinutes,
-          template: payload.templateId,
+          channel: payload.channel,
         });
         crm.editing = null;
       } else {
@@ -1035,7 +1203,7 @@ export function initCrmContent(
           triggerStatus: payload.triggerStatus,
           delayMinutes: payload.delayMinutes,
           enabled: payload.enabled,
-          template: payload.templateId,
+          channel: payload.channel,
         });
         crm.creating = false;
       }
@@ -1044,6 +1212,8 @@ export function initCrmContent(
       rulesData.sort((a, b) => a.name.localeCompare(b.name));
       crm.savingRule = false;
       renderRules();
+      // The card keeps showing the rule that was just saved.
+      syncPreviewFromForm(payload.triggerStatus, payload.channel, payload.delayMinutes);
     } catch (err) {
       crm.savingRule = false;
       setBtnBusy(btn, false, "Save rule");

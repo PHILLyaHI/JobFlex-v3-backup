@@ -44,7 +44,9 @@ import {
   duplicateProposal,
   sendProposal,
   updateProposalStatus,
+  uploadProposalPhoto,
 } from "@/actions/proposals";
+import { notifyPaymentReminder } from "@/actions/notify";
 import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { MDL_EXIT_MS, closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
@@ -53,7 +55,6 @@ import {
   PAGE_ACC,
   PAGE_ALL,
   PAGE_DONE,
-  PROPOSALS_SEED,
   cloneRows,
   statusPlate,
   type Installment,
@@ -61,8 +62,8 @@ import {
 } from "./proposals-data";
 
 export type ProposalsContentOptions = {
-  /** The org's real proposal book, read server-side. Omit to fall back to the
-   *  donor fixture (a mount with no session to read from). */
+  /** The org's real proposal book, read server-side. There is no fixture to
+   *  fall back to any more — an omitted book renders the real empty states. */
   rows?: ProposalRow[];
 };
 
@@ -135,7 +136,7 @@ export function initProposalsContent(
   });
 
   // Runtime state — cloned per mount so edits never leak between navigations.
-  let proposalsData: ProposalRow[] = cloneRows(options.rows ?? PROPOSALS_SEED);
+  let proposalsData: ProposalRow[] = cloneRows(options.rows ?? []);
 
   // Dismiss Lead Center banners (smooth height + gap collapse) — inert on this
   // page (no banner in the markup), kept for donor parity with shared shells.
@@ -396,7 +397,15 @@ export function initProposalsContent(
   function syncAllChrome() {
     const { rows, pages } = allSlice();
     $("#allCard")?.classList.toggle("is-hidden", rows.length === 0);
-    $("#allEmpty")?.classList.toggle("is-hidden", rows.length !== 0);
+    const empty = $("#allEmpty");
+    empty?.classList.toggle("is-hidden", rows.length !== 0);
+    // An empty BOOK and an empty FILTER are different situations and the copy
+    // has to say which — "no match" on a brand new org reads as a broken page.
+    if (empty && rows.length === 0) {
+      empty.textContent = book().length
+        ? "No proposals match this filter"
+        : "No proposals yet — start one with Smart Proposal or Manual proposal above";
+    }
     renderPager($("#allPager"), pstate.pageAll, pages, "all");
   }
   function renderAll(stagger = false) {
@@ -440,7 +449,14 @@ export function initProposalsContent(
               '<td class="td-price"><span class="pt-money">' +
               fmtMoney(instDollars(p, inst)) +
               "</span></td>" +
-              '<td class="td-remind"><button class="btn btn-ghost btn--sm" type="button" data-flash="Sent"><svg class="ic"><use href="#i-bell"/></svg>Remind</button></td>' +
+              // Real: mails the client this instalment's reminder through
+              // notifyPaymentReminder(). Disabled when the client has no email,
+              // because the action would refuse anyway.
+              '<td class="td-remind"><button class="btn btn-ghost btn--sm" type="button" data-act="remind" data-inst="' +
+              esc(inst.id) +
+              '"' +
+              (p.clientEmail ? "" : " disabled") +
+              '><svg class="ic"><use href="#i-bell"/></svg>Remind</button></td>' +
               "</tr>",
           )
           .join("") +
@@ -488,13 +504,23 @@ export function initProposalsContent(
       payBlock +
       '<div class="pjob-foot">' +
       '<div class="pjob-foot-l">' +
-      '<button class="btn btn-ghost btn--sm" type="button" data-flash="Scheduled"><svg class="ic"><use href="#i-cal"/></svg>Schedule</button>' +
-      '<button class="btn btn--accent btn--sm" type="button" data-flash="Requested"><svg class="ic"><use href="#i-msg"/></svg>Request payment</button>' +
+      // Real: the scheduling surface. An anchor, not a handler, so ⌘-click and
+      // "open in new tab" behave — the same shape the Pressroom edition uses.
+      '<a class="btn btn-ghost btn--sm" href="/dashboard/calendar"><svg class="ic"><use href="#i-cal"/></svg>Schedule</a>' +
+      // Real: mails the client a payment request for the outstanding balance
+      // (notifyPaymentReminder with no instalment = the whole total).
+      '<button class="btn btn--accent btn--sm" type="button" data-act="request"' +
+      (p.clientEmail ? "" : " disabled") +
+      '><svg class="ic"><use href="#i-msg"/></svg>Request payment</button>' +
       // Real: opens the same materials sheet the row menu opens.
       '<button class="btn btn-ghost btn--sm" type="button" data-act="materials"><svg class="ic"><use href="#i-box"/></svg>Materials · ' +
       (p.mat || 0) +
       "</button>" +
-      '<button class="btn btn-ghost btn--sm" type="button" data-flash="Drafted"><svg class="ic"><use href="#i-file"/></svg>Change order</button>' +
+      // "Change order" was here and did nothing but flash "Drafted": the change
+      // order data layer exists (actions/changeOrders.ts) but its only UI —
+      // ChangeOrderList / NewChangeOrderSheet — is not mounted on any reachable
+      // route, so there is nowhere honest to send this click. Removed rather
+      // than left as decoration. See the audit note in the page header.
       // Real: the client-facing page for this proposal.
       '<a class="btn btn-ghost btn--sm" href="/portal/q/' +
       encodeURIComponent(p.publicId) +
@@ -529,9 +555,34 @@ export function initProposalsContent(
     $("#doneEmpty")?.classList.toggle("is-hidden", rows.length !== 0);
     renderPager($("#donePager"), pstate.pageDone, pages, "done");
   }
+  /** A dashed drop box per slot, showing what is already on the record. The
+   *  input is a real <input type="file">, so the click opens the picker and the
+   *  change handler uploads through uploadProposalPhoto(). */
+  function photoBoxHtml(p: ProposalRow, slot: "before" | "after") {
+    const shots = slot === "before" ? p.before : p.after;
+    const last = shots[shots.length - 1];
+    const label = slot === "before" ? "Before" : "After";
+    return (
+      '<div><div class="kpi-lbl">' +
+      label +
+      '</div><label class="photo-box' +
+      (last ? " photo-box--filled" : "") +
+      '">' +
+      (last
+        ? '<img src="' + esc(last.url) + '" alt="' + esc(label + " photo") + '">'
+        : '<svg class="ic"><use href="#i-imgadd"/></svg>Add ' + label.toLowerCase()) +
+      '<input type="file" accept="image/*" hidden data-photo="' +
+      slot +
+      '"></label></div>'
+    );
+  }
+
   function doneCardHtml(p: ProposalRow) {
     const insts = p.inst || [];
-    const dep = insts.length ? instDollars(p, insts[0]) : Math.round(p.total * 0.3);
+    // The donor invented a deposit (30% of the total) when a proposal had no
+    // payment schedule. A proposal with no instalments genuinely has no
+    // deposit on record, so print the em dash rather than a plausible number.
+    const dep = insts.length ? fmtMoney(instDollars(p, insts[0])) : "—";
     const checks = insts
       .map(
         (inst) =>
@@ -561,8 +612,10 @@ export function initProposalsContent(
       "</div>" +
       '<div class="pcols pcols--sheet">' +
       '<div class="pcol"><div class="kpi-lbl">Deposit</div><div class="pcol-val">' +
-      fmtMoney(dep) +
-      '</div><div class="pcol-sub">Locked in</div></div>' +
+      dep +
+      '</div><div class="pcol-sub">' +
+      (insts.length ? "Locked in" : "No payment schedule") +
+      "</div></div>" +
       '<div class="pcol"><div class="kpi-lbl">Start</div><div class="pcol-val">' +
       esc(p.accepted || "—") +
       '</div><div class="pcol-sub">Work began</div></div>' +
@@ -575,15 +628,21 @@ export function initProposalsContent(
       checks +
       "</div>" +
       '<div class="psheet-photos">' +
-      '<div><div class="kpi-lbl">Before</div><button class="photo-box" type="button" data-flash="Added"><svg class="ic"><use href="#i-imgadd"/></svg>Add before</button></div>' +
-      '<div><div class="kpi-lbl">After</div><button class="photo-box" type="button" data-flash="Added"><svg class="ic"><use href="#i-imgadd"/></svg>Add after</button></div>' +
+      photoBoxHtml(p, "before") +
+      photoBoxHtml(p, "after") +
       "</div>" +
       "</div>" +
       '<div class="psheet-foot">' +
       '<div class="psheet-send">' +
-      '<span class="kpi-lbl">Send paid receipt to</span>' +
-      '<input class="pinput" type="email" placeholder="client@example.com">' +
-      '<button class="btn btn-primary btn--sm" type="button" data-act="receipt"><svg class="ic"><use href="#i-send"/></svg>Send receipt</button>' +
+      // The donor's "Send paid receipt to <email>" box was decoration: there is
+      // no receipt transport in the app (no builder in lib/email/build, no
+      // action), so the input and its Send button were removed rather than left
+      // pretending to mail something. The proposal PDF — the document a paid
+      // client actually asks for — is a real route, so that is what ships here.
+      '<span class="kpi-lbl">Paid record</span>' +
+      '<a class="btn btn-primary btn--sm" href="/api/proposals/' +
+      encodeURIComponent(p.id) +
+      '/pdf" target="_blank" rel="noopener noreferrer"><svg class="ic"><use href="#i-download"/></svg>Download PDF</a>' +
       "</div>" +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Unmark as paid</button>' +
       "</div>" +
@@ -1035,22 +1094,32 @@ export function initProposalsContent(
         void runStatus(p, "ACCEPTED", card, "done");
         return;
       }
-      if (kind === "receipt") {
-        const input = act.closest<HTMLElement>(".psheet-send")?.querySelector<HTMLInputElement>(".pinput");
-        if (input && !input.value.trim()) {
-          input.focus();
-          return;
-        }
-        flashBtn(act, "Sent");
-        if (input) input.value = "";
+      // Both of these mail the client through notifyPaymentReminder(): the
+      // instalment row sends that line, the footer button sends the whole
+      // outstanding balance (the action falls back to the proposal total when
+      // it cannot find the instalment).
+      if (kind === "remind" && p) {
+        void runReminder(p, act.dataset.inst ?? "", act);
+        return;
+      }
+      if (kind === "request" && p) {
+        void runReminder(p, "", act);
         return;
       }
     }
+  });
 
-    const fl = target.closest<HTMLElement>("[data-flash]");
-    if (fl) {
-      flashBtn(fl, fl.dataset.flash || "");
-    }
+  // Completion photos — a real <input type="file"> inside each dashed box.
+  on(document, "change", (e) => {
+    const input = e.target as HTMLInputElement;
+    if (!input || input.type !== "file" || !input.dataset.photo) return;
+    const slot = input.dataset.photo === "after" ? "after" : "before";
+    const card = input.closest<HTMLElement>("[data-id]");
+    const p = byId(card?.dataset.id ?? null);
+    const file = input.files?.[0];
+    input.value = "";
+    if (!p || !file) return;
+    void runPhotoUpload(p, slot, file, input.closest<HTMLElement>(".photo-box"));
   });
 
   function menuBtnFor(id: string): HTMLElement | null {
@@ -1242,6 +1311,81 @@ export function initProposalsContent(
     return new Date()
       .toLocaleDateString("en-US", { month: "short", day: "2-digit" })
       .toUpperCase();
+  }
+
+  /**
+   * Remind / Request payment. One action for both: notifyPaymentReminder mails
+   * the client the branded reminder with a link to the public page. An empty
+   * `installmentId` is the whole balance — the action's own fallback, not a
+   * trick — which is exactly what "Request payment" means on a contract card.
+   *
+   * The action is requireManager()-gated, so a SALES / ESTIMATOR caller gets a
+   * refusal here rather than a silent no-op; it also RETURNS a skip reason
+   * instead of throwing, so a skipped send has to be reported too.
+   */
+  async function runReminder(p: ProposalRow, installmentId: string, btn: HTMLElement) {
+    if (pstate.writing) return;
+    pstate.writing = true;
+    (btn as HTMLButtonElement).disabled = true;
+    try {
+      const res = await notifyPaymentReminder({ proposalId: p.id, installmentId });
+      if (res && "skipped" in res && res.skipped) {
+        showAlert(
+          "Nothing sent",
+          res.reason === "no-client-email"
+            ? "This client has no email on file. Add an address to the client record and try again."
+            : "That proposal is no longer available to you. Reload the page.",
+        );
+      } else {
+        flashBtn(btn, "Sent");
+      }
+    } catch (err) {
+      showAlert("Couldn't send", actionError(err));
+    } finally {
+      pstate.writing = false;
+      (btn as HTMLButtonElement).disabled = false;
+    }
+  }
+
+  /** Before / After completion shot → uploadProposalPhoto(). The action stores
+   *  it on the proposal (Vercel Blob when configured, inline data URL if not)
+   *  and returns the persisted record, which is what the box then shows. */
+  async function runPhotoUpload(
+    p: ProposalRow,
+    slot: "before" | "after",
+    file: File,
+    box: HTMLElement | null,
+  ) {
+    if (pstate.writing) return;
+    pstate.writing = true;
+    box?.classList.add("is-busy");
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result));
+        fr.onerror = () => reject(new Error("Couldn't read that file."));
+        fr.readAsDataURL(file);
+      });
+      const photo = await uploadProposalPhoto(p.id, dataUrl, file.name, slot);
+      if (slot === "before") p.before = [...p.before, photo];
+      else p.after = [...p.after, photo];
+      if (box) {
+        box.classList.add("photo-box--filled");
+        const img = document.createElement("img");
+        img.src = photo.url;
+        img.alt = slot === "before" ? "Before photo" : "After photo";
+        box.querySelectorAll("svg, img").forEach((n) => n.remove());
+        box.childNodes.forEach((n) => {
+          if (n.nodeType === Node.TEXT_NODE) n.textContent = "";
+        });
+        box.prepend(img);
+      }
+    } catch (err) {
+      showAlert("Couldn't add the photo", actionError(err));
+    } finally {
+      pstate.writing = false;
+      box?.classList.remove("is-busy");
+    }
   }
 
   // ================= INITIALIZATION =================

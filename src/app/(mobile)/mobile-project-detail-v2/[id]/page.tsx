@@ -7,11 +7,12 @@
 // src/components/v3/mobile-project-detail/project-detail-viewport-switch.tsx —
 // one implementation, two entry points, nothing copied between them.
 //
-// THE QUERY IS THE LIVE PAGE'S, UNCHANGED — the same findUnique with the same
-// job include and ordering, the same org check and the same unassigned-job
-// candidate list as src/app/dashboard/projects/[id]/page.tsx. No Prisma, server
-// action or API-route change: the data layer is out of scope, so this route
-// reuses the reads as they are and `attachJob` still does every write.
+// THE QUERIES ARE THE LIVE PAGE'S, character for character — the same
+// findUnique with the same job include and ordering, the same org check, and
+// the same attachable-proposal list as src/app/dashboard/projects/[id]/page.tsx.
+// They are restated rather than shared because a `db` call cannot live in the
+// module the client component imports its shapes from. No Prisma change, no new
+// server action and no new API route: `attachJob` still does every write.
 //
 // Auth: middleware only matches /dashboard and /admin, so this route enforces
 // its own redirect-to-login like every other (mobile) design route.
@@ -70,19 +71,41 @@ export default async function MobileProjectDetailV2Page({
 
   if (!project || project.organizationId !== organizationId) notFound();
 
-  // Jobs in this org with no project assigned — candidates to attach.
-  const availableJobs = await db.job.findMany({
-    where: { organizationId, projectId: null, status: { not: "CANCELED" } },
+  // Attach candidates: the org's proposals, with the jobs each one owns, so the
+  // sheet can say which are linkable and why the rest are not.
+  const proposals = await db.proposal.findMany({
+    where: { organizationId },
     select: {
       id: true,
       title: true,
       status: true,
-      startsAt: true,
+      total: true,
       client: { select: { name: true } },
+      jobs: { select: { id: true, projectId: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { updatedAt: "desc" },
     take: 100,
   });
+
+  const availableProposals = proposals
+    // Already on THIS project — it is attached, not attachable.
+    .filter((p) => !p.jobs.some((j) => j.projectId === project.id))
+    .map((p) => {
+      const linkJobIds = p.jobs.filter((j) => !j.projectId).map((j) => j.id);
+      return {
+        id: p.id,
+        title: p.title,
+        status: p.status,
+        total: p.total,
+        clientName: p.client?.name ?? null,
+        linkJobIds,
+        blocked: linkJobIds.length
+          ? null
+          : p.jobs.length
+            ? "On another project"
+            : "No job to link yet",
+      };
+    });
 
   return (
     <MobileProjectDetail
@@ -101,13 +124,7 @@ export default async function MobileProjectDetailV2Page({
         endsAt: j.endsAt,
         clientName: j.client?.name ?? null,
       }))}
-      availableJobs={availableJobs.map((j) => ({
-        id: j.id,
-        title: j.title,
-        status: j.status,
-        startsAt: j.startsAt,
-        clientName: j.client?.name ?? null,
-      }))}
+      availableProposals={availableProposals}
     />
   );
 }

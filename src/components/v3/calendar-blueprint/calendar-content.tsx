@@ -21,6 +21,8 @@
 // page-local sprite is needed.
 
 import { useCallback, useRef } from "react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initCalendarContent } from "./calendar-behavior";
 import type { CalendarSeed } from "./calendar-data";
@@ -41,9 +43,21 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
   // module owns the calendar and keeps itself in step with the database through
   // the server actions.
   const seedRef = useRef(seed);
+  // Same contract as the seed, and for the same reason: it reaches `init`
+  // through a ref rather than through the dependency array, so the callback's
+  // identity never changes and the entrance cascade is never replayed.
+  // `useRouter` returns the same object for the life of the mount. The behavior
+  // module opens a job record with it — see `navigate` in calendar-behavior.ts
+  // for why a client-side push and not a document load.
+  const router = useRouter();
+  const routerRef = useRef(router);
 
   const init = useCallback(
-    (content: HTMLElement) => initCalendarContent(content, { seed: seedRef.current }),
+    (content: HTMLElement) =>
+      initCalendarContent(content, {
+        seed: seedRef.current,
+        navigate: (href) => routerRef.current.push(href as Route),
+      }),
     [],
   );
   useBlueprintContent(init);

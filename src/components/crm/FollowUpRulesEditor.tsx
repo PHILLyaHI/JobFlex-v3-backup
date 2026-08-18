@@ -12,8 +12,13 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Toggle } from "@/components/settings/Toggle";
 import { toast } from "@/components/ui/Toast";
-import { renderTemplate } from "@/lib/email/render";
-import { PRESET_PREVIEW_VARS } from "@/lib/email/presets";
+import {
+  FOLLOW_UP_CHANNELS,
+  TEXT_NEEDS_TWILIO,
+  channelLabel,
+  triggerMoment,
+  type FollowUpChannel,
+} from "@/lib/followUps/copy";
 import {
   upsertFollowUpRule,
   setFollowUpRuleEnabled,
@@ -26,14 +31,9 @@ export interface RuleRow {
   triggerStatus: string;
   delayMinutes: number;
   enabled: boolean;
-  template: string | null;
-}
-
-export interface TemplateOption {
-  id: string;
-  name: string;
-  subject: string;
-  body: string;
+  /** Email or text. The rule has no template any more — its wording comes from
+   *  the trigger (src/lib/followUps/copy.ts). */
+  channel: FollowUpChannel;
 }
 
 const TRIGGER_OPTIONS = [
@@ -44,7 +44,13 @@ const TRIGGER_OPTIONS = [
   { value: "DECLINED", label: "Proposal declined" },
 ];
 
-export function FollowUpRulesEditor({ rules, templates = [] }: { rules: RuleRow[]; templates?: TemplateOption[] }) {
+export function FollowUpRulesEditor({
+  rules,
+  smsEnabled = false,
+}: {
+  rules: RuleRow[];
+  smsEnabled?: boolean;
+}) {
   const router = useRouter();
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
@@ -87,9 +93,8 @@ export function FollowUpRulesEditor({ rules, templates = [] }: { rules: RuleRow[
         <div>
           <CardTitle>Follow-up rules</CardTitle>
           <CardSubtitle>
-            Auto-schedule a follow-up when a proposal hits a status. Variables like{" "}
-            <code className="font-mono text-[10.5px]">{"{{client_name}}"}</code> and{" "}
-            <code className="font-mono text-[10.5px]">{"{{link}}"}</code> are substituted at send.
+            Auto-schedule a follow-up when a proposal hits a status. The wording is written for
+            that moment and filled in with the client&rsquo;s own details at send.
           </CardSubtitle>
         </div>
         <Button
@@ -122,7 +127,7 @@ export function FollowUpRulesEditor({ rules, templates = [] }: { rules: RuleRow[
           <RuleForm
             key="new"
             rule={null}
-            templates={templates}
+            smsEnabled={smsEnabled}
             onCancel={() => setCreating(false)}
             onSaved={() => {
               setCreating(false);
@@ -146,7 +151,7 @@ export function FollowUpRulesEditor({ rules, templates = [] }: { rules: RuleRow[
               {editingId === r.id ? (
                 <RuleForm
                   rule={r}
-                  templates={templates}
+                  smsEnabled={smsEnabled}
                   onCancel={() => setEditingId(null)}
                   onSaved={() => {
                     setEditingId(null);
@@ -167,13 +172,13 @@ export function FollowUpRulesEditor({ rules, templates = [] }: { rules: RuleRow[
                       <span className="text-[color:var(--ink-soft)]">{r.triggerStatus}</span> · Delay:{" "}
                       <span className="text-[color:var(--ink-soft)]">
                         {humanDelay(r.delayMinutes)}
-                      </span>
+                      </span>{" "}
+                      · Sends:{" "}
+                      <span className="text-[color:var(--ink-soft)]">{channelLabel(r.channel)}</span>
                     </div>
-                    {r.template && (
-                      <div className="text-[10.5px] text-[color:var(--ink-muted)] mt-1">
-                        Template: <code className="font-mono">{r.template}</code>
-                      </div>
-                    )}
+                    <div className="text-[10.5px] text-[color:var(--ink-muted)] mt-1">
+                      {triggerMoment(r.triggerStatus)}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Toggle
@@ -233,12 +238,12 @@ function humanDelay(minutes: number): string {
 
 function RuleForm({
   rule,
-  templates,
+  smsEnabled,
   onCancel,
   onSaved,
 }: {
   rule: RuleRow | null;
-  templates: TemplateOption[];
+  smsEnabled: boolean;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -248,9 +253,8 @@ function RuleForm({
     rule ? Math.max(1, Math.round(rule.delayMinutes / 60 / 24)) : 2,
   );
   const [enabled, setEnabled] = React.useState(rule?.enabled ?? true);
-  const [template, setTemplate] = React.useState(rule?.template ?? "");
+  const [channel, setChannel] = React.useState<FollowUpChannel>(rule?.channel ?? "EMAIL");
   const [busy, setBusy] = React.useState(false);
-  const selected = templates.find((t) => t.id === template);
 
   async function save() {
     if (!name.trim()) {
@@ -265,7 +269,7 @@ function RuleForm({
         triggerStatus: trigger,
         delayMinutes: delayDays * 60 * 24,
         enabled,
-        templateId: template.trim() || null,
+        channel,
       });
       toast.success(rule ? "Rule updated" : "Rule created");
       onSaved();
@@ -314,40 +318,30 @@ function RuleForm({
           </div>
           <div className="md:col-span-12 space-y-2">
             <Select
-              label="Email template"
-              value={template}
-              onChange={(e) => setTemplate(e.target.value)}
+              label="Send by"
+              value={channel}
+              onChange={(e) => setChannel(e.target.value as FollowUpChannel)}
             >
-              <option value="">— None (sends default reminder copy) —</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
+              {FOLLOW_UP_CHANNELS.map((c) => (
+                <option key={c.value} value={c.value} disabled={c.value === "TEXT" && !smsEnabled}>
+                  {c.label}
                 </option>
               ))}
             </Select>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10.5px] text-[color:var(--ink-muted)]">
-                {selected ? "Preview below — uses demo data at send time." : templates.length === 0 ? "No templates saved yet." : "No template — sends default copy."}
+                {channel === "TEXT" && !smsEnabled
+                  ? TEXT_NEEDS_TWILIO
+                  : `Wording is written for "${triggerMoment(trigger)}".`}
               </span>
               <Link
-                href={"/dashboard/settings/email" as never}
+                href={"/dashboard/crm" as never}
                 className="inline-flex items-center gap-1 text-[10.5px] font-medium text-[color:var(--accent-ink)] hover:underline"
               >
                 <Sparkles className="h-3 w-3" />
-                {templates.length === 0 ? "Create from a preset" : "Manage templates"}
+                Preview it
               </Link>
             </div>
-            {selected && (
-              <div className="rounded-[var(--r-lg)] hairline bg-white overflow-hidden">
-                <div className="quiet-caps px-4 pt-3 text-[color:var(--ink-muted)]">Preview · demo data</div>
-                <div className="px-4 pb-2 font-display text-[15px] tracking-[-0.01em] text-[color:var(--ink)]">
-                  {renderTemplate(selected.subject, PRESET_PREVIEW_VARS)}
-                </div>
-                <div className="max-h-36 overflow-y-auto border-t border-[color:var(--ink-line)] px-4 py-3 whitespace-pre-wrap text-[12px] leading-relaxed text-[color:var(--ink-soft)]">
-                  {renderTemplate(selected.body, PRESET_PREVIEW_VARS)}
-                </div>
-              </div>
-            )}
           </div>
         </div>
         <div className="mt-4 flex items-center justify-between gap-3">

@@ -15,12 +15,14 @@ import { createProject } from "@/actions/projects";
 import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
-import { PROJECTS_SEED, STATUSES, type Project } from "./projects-data";
+import { STATUSES, type Project } from "./projects-data";
 
 export type ProjectsContentOptions = {
-  /** The org's real project book, read server-side. Omit to fall back to the
-   *  donor fixture (the standalone mock routes have no session to read from). */
-  projects?: Project[];
+  /** The org's real project book, read server-side in
+   *  src/app/dashboard/projects/page.tsx. REQUIRED — there is no fixture to
+   *  fall back to, and an empty book renders the empty state rather than
+   *  demo rows. */
+  projects: Project[];
 };
 
 /** `createProject` rejects with an Error whose message is written for the user
@@ -50,7 +52,7 @@ const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function initProjectsContent(
   content: HTMLElement,
-  options: ProjectsContentOptions = {},
+  options: ProjectsContentOptions,
 ): () => void {
   // Scoped to `.content`, which the shared shell owns and re-fills on every
   // navigation. `.main` lives in the shell, above this element.
@@ -112,11 +114,11 @@ export function initProjectsContent(
   });
 
   // ================= PROJECTS: DATA =================
-  // The org's real project book when the page supplied one (the normal path),
-  // otherwise a per-mount COPY of the donor fixture. The copy matters: the seed
-  // is a module-level constant, and mutating it directly would leak every
-  // created project into the next visit to the page.
-  const projectsData: Project[] = (options.projects ?? PROJECTS_SEED).map((p) => ({ ...p }));
+  // The org's real project book, read in the page's server component. Copied
+  // per mount because the create dialog unshifts the created row onto it —
+  // mutating the array React handed down would leave a stale row behind on the
+  // next render pass.
+  const projectsData: Project[] = options.projects.map((p) => ({ ...p }));
 
   const pjstate = { filter: "ALL" };
 
@@ -193,7 +195,10 @@ export function initProjectsContent(
       '">' +
       '<div class="pjc-head">' +
       '<div style="min-width:0">' +
-      '<div class="pjc-name">' +
+      // `title` carries the untruncated name — .pjc-name is clamped to 2 lines.
+      '<div class="pjc-name" title="' +
+      esc(p.name) +
+      '">' +
       esc(p.name) +
       "</div>" +
       (p.description ? '<p class="pjc-desc">' + esc(p.description) + "</p>" : "") +

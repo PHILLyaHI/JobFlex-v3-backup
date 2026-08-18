@@ -1,14 +1,14 @@
-// Mobile calendar (mobile-calendar-v2) — demo fixture.
+// Mobile calendar (mobile-calendar-v2) — types, live book and formatters.
 //
-// Carried over VERBATIM from the desktop calendar donor fixture
-// (src/components/v3/calendar-blueprint/calendar-data.ts): every id, title,
-// date, status, phone number, address, tray job, inbox row and link option is
-// the same value under the same field name, so the handheld composition is
-// judged against the same content as the desktop sheet. Seattle-area
-// contractor texture (Bothell / Kirkland / Redmond / Woodinville / Mill Creek
-// / Sammamish / Lynnwood / Everett).
+// This module USED TO BE a Seattle-area demo fixture carried over verbatim from
+// the desktop donor. It is not any more. `ResponsiveDashboardShell` maps
+// /dashboard/calendar → `MobileCalendar`, so every one of those hardcoded
+// events was what a real contractor saw on a real phone on their real
+// calendar. The fixture rows are gone; what is left is the SHAPE they had, and
+// a book that the org's actual calendar is installed into.
 //
-// Two mechanical adaptations, both forced by the mobile shell:
+// Two mechanical adaptations survive from the port, both forced by the mobile
+// shell:
 //  · KIND_IC.blocked points at `i-calendar-ban` instead of `i-ban`. The shared
 //    mobile sprite carries 48 symbols and `i-ban` is not one of them, so the
 //    page ships that one symbol itself under the collision-proof prefix.
@@ -17,27 +17,36 @@
 //    constants that drove its pixel maths have nothing to drive. SNAP_MIN
 //    stays — the create form still snaps its times.
 //
-// States every branch of the UI needs, and where they live in this seed:
-//  · no phone      → e3, e5, e6, e7, e9, e10, e11, e12, e13, e14 (disabled
-//                    "Call client" row in the actions sheet)
-//  · no address    → e5 "Shop maintenance" (disabled "Get directions")
-//  · already done  → e9, e10 COMPLETED (disabled "Mark completed")
-//  · not a job     → e2, e7, e12 appointments + e5 blocked (status is a job
-//                    concept, so "Mark completed" is disabled for them too)
-//  · no client     → e5 (the row falls back to its kind label)
-//  · canceled      → e14 (the fourth status tone)
-//  · a crew member with an empty week → w4 Ivan (dashed note on his team card)
-//  · a day with nothing on it → any empty cell (agenda's "Nothing scheduled")
+// ── Why the book is module state and not a prop ───────────────────────────
+// `TODAY`, `workersData`, `OWNER` and `LINK_OPTIONS` are read from MODULE
+// SCOPE by helpers that are themselves module scope on purpose — `EventRow`
+// and `metaRowsFor` are declared outside the component so a keystroke in the
+// search box cannot remount (and re-animate) every row. Threading a book
+// through them would mean a prop on every row and a parameter on every
+// formatter. Instead the four bindings are `let`/mutable and
+// `installCalendarBook()` writes them once, synchronously, before the view's
+// first render reads them. ES module named imports are LIVE bindings, so every
+// importer sees the installed values with no call-site change.
 //
-// This is a design surface: the data layer is out of scope, so nothing here
-// touches Prisma or a server action. The arrays are mutated at runtime
-// (reschedule, create, delete, complete, confirm, schedule-from-tray), so the
-// component clones these seeds per mount and no mutation leaks between mounts.
+// The calendar is a singleton surface — one mount, one org, one session — so a
+// module-level book has no second writer to race with. `installCalendarBook`
+// is identity-guarded, so re-renders are free.
 
 export type CalKind = "job" | "appointment" | "blocked";
 
 export type CalEvent = {
+  /** DOM identity. On real data it carries a KIND PREFIX (`apt:…`, `block:…`,
+   *  bare for a JobEvent) because the three tables have independent id spaces
+   *  and one array holds all three. `rid` below is the un-prefixed key the
+   *  server actions want. */
   id: string;
+  /** Database primary key, present on every row the server read produced and on
+   *  every row a wired create pushes back. Absent only on a purely local row. */
+  rid?: string;
+  /** JobEvent only: the Job that owns the status and the crew roster. This is
+   *  what "Open job" navigates to; a jobless event (appointment, blocked time,
+   *  or the optional-job path in createJobEvent) has none. */
+  jobId?: string | null;
   kind: CalKind;
   title: string;
   start: Date;
@@ -60,57 +69,74 @@ export type TrayJob = { id: string; title: string; client: string; city: string;
 export type InboxItem = { id: string; title: string; worker: string; when: string };
 export type JobStatus = { value: string; label: string };
 
-/** Wednesday, 22 July 2026 — the donor's frozen "today". */
-export const TODAY = new Date(2026, 6, 22);
+/**
+ * The day the calendar opens on and measures "today" against.
+ *
+ * A `let`, not a `const`: it is the server's real date once
+ * `installCalendarBook` has run. Midnight-normalised, which is what `sameDay`
+ * and the `atMins` defaults assume. Until then it is the client's own midnight,
+ * so a render that somehow beats the install still shows a real month rather
+ * than a fixture's frozen July.
+ */
+export let TODAY: Date = midnight(new Date());
 
 export const JOB_STATUSES: JobStatus[] = [
   { value: "SCHEDULED", label: "Scheduled" }, { value: "IN_PROGRESS", label: "In progress" },
   { value: "COMPLETED", label: "Completed" }, { value: "CANCELED", label: "Canceled" },
 ];
 
-export const workersData: CalWorker[] = [
-  { id: "w1", name: "Marcus B.", role: "Lead installer" },
-  { id: "w2", name: "Sofia R.",  role: "Estimator" },
-  { id: "w3", name: "Dan K.",    role: "Installer" },
-  { id: "w4", name: "Ivan",      role: "Owner" },
-];
+/** Team-view rows and the crew picker. WorkerProfile ids once installed —
+ *  the id space the assignment actions accept. Mutated IN PLACE by
+ *  `installCalendarBook` so importers keep their reference. */
+export const workersData: CalWorker[] = [];
 
-function iso(y: number, m: number, d: number, h: number, min?: number) {
-  return new Date(y, m, d, h, min || 0);
+/** Whoever owns the shop — an empty crew on a blocked event means "my time".
+ *  A `let` for the same reason as TODAY: it is derived from the installed
+ *  roster, and the roster is not known at module-evaluation time. */
+export let OWNER: CalWorker = { id: "", name: "You", role: "Owner" };
+
+function midnight(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-/** Event = jobEvent | appointment | blocked (CalendarEvent from EventChip). */
-export const EVENTS_SEED: CalEvent[] = [
-  { id: 'e1',  kind: 'job',         title: 'Roof tear-off — 4812 Maple Ave', start: iso(2026, 6, 22, 7, 0),  end: iso(2026, 6, 22, 15, 0), status: 'IN_PROGRESS', workers: ['w1', 'w3'], client: 'M. Henderson', phone: '(425) 555-0132', addr: '4812 Maple Ave, Bothell', scope: 'Tear off two layers, install synthetic underlayment and architectural shingles.', notes: 'Dumpster drops at 7:00.' },
-  { id: 'e2',  kind: 'appointment', title: 'Estimate visit — S. Rao',        start: iso(2026, 6, 22, 16, 0), end: iso(2026, 6, 22, 17, 0), status: 'SCHEDULED',   workers: ['w2'], client: 'S. Rao', phone: '(425) 555-0116', addr: 'Sammamish, WA', notes: 'Corner lot, wants privacy panels.' },
-  { id: 'e3',  kind: 'job',         title: 'Dumpster swap — Maple Ave',      start: iso(2026, 6, 22, 13, 0), end: iso(2026, 6, 22, 14, 0), status: 'SCHEDULED',   workers: ['w3'], client: 'M. Henderson', addr: '4812 Maple Ave, Bothell' },
-  { id: 'e4',  kind: 'job',         title: 'Fence repair — 1409 Fern St',    start: iso(2026, 6, 23, 8, 0),  end: iso(2026, 6, 23, 12, 0), status: 'SCHEDULED',   workers: ['w1'], client: 'K. Nguyen', phone: '(425) 555-0170', addr: '1409 Fern St, Bothell' },
-  { id: 'e5',  kind: 'blocked',     title: 'Shop maintenance',               start: iso(2026, 6, 23, 15, 0), end: iso(2026, 6, 23, 17, 0), status: 'SCHEDULED',   workers: ['w3'] },
-  { id: 'e6',  kind: 'job',         title: 'Asphalt reroof — Henderson',     start: iso(2026, 6, 24, 7, 0),  end: iso(2026, 6, 24, 16, 0), status: 'SCHEDULED',   workers: ['w1', 'w3'], client: 'M. Henderson', addr: '4812 Maple Ave, Bothell' },
-  { id: 'e7',  kind: 'appointment', title: 'Walkthrough — A. Kim',           start: iso(2026, 6, 24, 11, 0), end: iso(2026, 6, 24, 12, 0), status: 'SCHEDULED',   workers: ['w2'], client: 'A. Kim', addr: 'Bellevue, WA' },
-  { id: 'e8',  kind: 'job',         title: 'Cedar fence — 902 Alder Ct',     start: iso(2026, 6, 25, 8, 0),  end: iso(2026, 6, 25, 17, 0), status: 'SCHEDULED',   workers: ['w1'], client: 'D. Reyes', phone: '(425) 555-0148', addr: '902 Alder Ct, Kirkland' },
-  { id: 'e9',  kind: 'job',         title: 'Deck power wash — 55 Cedar Loop', start: iso(2026, 6, 20, 9, 0), end: iso(2026, 6, 20, 13, 0), status: 'COMPLETED',   workers: ['w3'], client: 'R. Tran', addr: '55 Cedar Loop, Bothell' },
-  { id: 'e10', kind: 'job',         title: 'Gutter guards — Redmond',        start: iso(2026, 6, 17, 9, 0),  end: iso(2026, 6, 17, 14, 0), status: 'COMPLETED',   workers: ['w1'], client: 'D. Pham', addr: 'Redmond, WA' },
-  { id: 'e11', kind: 'job',         title: 'Skylight install — 210 Fir St',  start: iso(2026, 6, 28, 8, 0),  end: iso(2026, 6, 28, 12, 0), status: 'SCHEDULED',   workers: ['w3'], client: 'K. Marsh', addr: '210 Fir St, Woodinville' },
-  { id: 'e12', kind: 'appointment', title: 'Site check — Cascade PM',        start: iso(2026, 6, 29, 10, 0), end: iso(2026, 6, 29, 11, 0), status: 'SCHEDULED',   workers: ['w2'], client: 'Cascade PM', addr: 'Redmond, WA' },
-  { id: 'e13', kind: 'job',         title: 'Siding patch — Mill Creek',      start: iso(2026, 6, 30, 8, 0),  end: iso(2026, 6, 30, 15, 0), status: 'SCHEDULED',   workers: ['w1', 'w3'], client: 'S. Patel', addr: 'Mill Creek, WA' },
-  { id: 'e14', kind: 'job',         title: 'Punch list — Cypress Ln',        start: iso(2026, 6, 14, 9, 0),  end: iso(2026, 6, 14, 12, 0), status: 'CANCELED',    workers: ['w1'], client: 'C. Ferreira', addr: '61 Cypress Ln, Bothell' },
-];
+/**
+ * The org's calendar, as the page's server read hands it over. Structurally the
+ * desktop `CalendarSeed` — the handheld build consumes the same object rather
+ * than a second, drifting shape.
+ */
+export type CalendarBook = {
+  /** ISO. The server's real "today". */
+  today: string;
+  events: CalEvent[];
+  workers: CalWorker[];
+  tray: TrayJob[];
+  inbox: InboxItem[];
+  links: LinkOption[];
+  createKinds: CalKind[];
+  canManage: boolean;
+};
 
-/** Unscheduled work for the tray (DispatchableJob). */
-export const TRAY_SEED: TrayJob[] = [
-  { id: 'u1', title: 'Gutter replacement', client: 'R. Okafor', city: 'Redmond', duration: '4h' },
-  { id: 'u2', title: 'Pergola build',      client: 'L. Wong',   city: 'Sammamish', duration: '2d' },
-  { id: 'u3', title: 'Chain-link fence',   client: 'N. Ivanov', city: 'Lynnwood', duration: '1d' },
-  { id: 'u4', title: 'Roof inspection',    client: 'T. Ortiz',  city: 'Bothell',  duration: '2h' },
-];
+/** The book last installed — the identity guard, so a re-render is a no-op. */
+let installed: CalendarBook | null = null;
 
-/** Crew assignments awaiting confirmation (AppointmentAssignment). */
-export const INBOX_SEED: InboxItem[] = [
-  { id: 'a1', title: 'Asphalt reroof — Henderson', worker: 'Marcus B.', when: 'Jul 24 · 7:00 AM' },
-  { id: 'a2', title: 'Cedar fence — 902 Alder Ct', worker: 'Dan K.',    when: 'Jul 25 · 8:00 AM' },
-  { id: 'a3', title: 'Siding patch — Mill Creek',  worker: 'Marcus B.', when: 'Jul 30 · 8:00 AM' },
-];
+/**
+ * Point the module-scope bindings at a real org's calendar.
+ *
+ * Called from the view's render, BEFORE any hook or module helper reads them.
+ * Idempotent on object identity: React can render the same book as often as it
+ * likes for the cost of one comparison.
+ */
+export function installCalendarBook(book: CalendarBook): void {
+  if (installed === book) return;
+  installed = book;
+  TODAY = midnight(new Date(book.today));
+  workersData.splice(0, workersData.length, ...book.workers);
+  OWNER =
+    book.workers.find((w) => /owner/i.test(w.role)) ??
+    book.workers[book.workers.length - 1] ??
+    { id: "", name: "You", role: "Owner" };
+  LINK_OPTIONS.splice(0, LINK_OPTIONS.length, ...book.links);
+}
 
 /** Create-form times snap to this many minutes. */
 export const SNAP_MIN = 15;
@@ -123,12 +149,15 @@ export const KIND_LABEL: Record<CalKind, string> = {
   job: 'Job event', appointment: 'Appointment', blocked: 'Blocked time',
 };
 
-/** Link targets for the "link a record" picker. A job event links to work
- *  (jobs, proposals); an appointment is a meeting, so it also links to the
- *  people it can be about — leads and clients. */
+/** Link targets for the "link a record" picker. The seed carries all four
+ *  kinds; which of them a given event kind may actually reach is `LINK_TABS`. */
 export type LinkKind = "job" | "proposal" | "lead" | "client";
 export type LinkOption = {
+  /** Prefixed on real data (`job:…`, `lead:…`) for the same reason
+   *  `CalEvent.id` is: four tables, one picker. */
   id: string;
+  /** Database primary key — what the create actions take. */
+  rid?: string;
   kind: LinkKind;
   title: string;
   client: string;
@@ -136,33 +165,50 @@ export type LinkOption = {
   meta: string;
 };
 
-/** Which record kinds each event kind may link to, in order. */
+/**
+ * Which record kinds each event kind may link to.
+ *
+ * ONE kind each, and not the desktop's wider sets (owner, 2026-08-15). A JOB
+ * event is delivery: it hangs off a Job, and the proposal path — which
+ * get-or-CREATES a job as a side effect of scheduling — is not something a
+ * one-handed phone form should be able to trigger by accident. A VISIT is the
+ * sales call that happens BEFORE any of that exists, so it links the LEAD it is
+ * about. Blocked time links nothing; it is not about a record.
+ */
 export const LINK_TABS: Record<string, LinkKind[]> = {
-  job: ["job", "proposal"],
-  appointment: ["lead", "client", "proposal"],
+  job: ["job"],
+  appointment: ["lead"],
+};
+
+/** The field label per event kind — "Linked record" said nothing about which. */
+export const LINK_FIELD_LABEL: Record<string, string> = {
+  job: "Linked job",
+  appointment: "Linked lead",
 };
 
 export const LINK_LABEL: Record<LinkKind, string> = {
   job: "Job", proposal: "Proposal", lead: "Lead", client: "Client",
 };
 
-export const LINK_OPTIONS: LinkOption[] = [
-  { id: 'u1', kind: 'job',      title: 'Gutter replacement',    client: 'R. Okafor',   status: 'scheduled', meta: 'Redmond · 4h' },
-  { id: 'u2', kind: 'job',      title: 'Pergola build',         client: 'L. Wong',     status: 'scheduled', meta: 'Sammamish · 2d' },
-  { id: 'u3', kind: 'job',      title: 'Chain-link fence',      client: 'N. Ivanov',   status: 'scheduled', meta: 'Lynnwood · 1d' },
-  { id: 'u4', kind: 'job',      title: 'Roof inspection',       client: 'T. Ortiz',    status: 'scheduled', meta: 'Bothell · 2h' },
-  { id: 'p1', kind: 'proposal', title: 'Cedar privacy fence',   client: 'D. Reyes',    status: 'sent',      meta: 'Kirkland · $8,400' },
-  { id: 'p2', kind: 'proposal', title: 'Full reroof — GAF HDZ', client: 'A. Kim',      status: 'viewed',    meta: 'Bellevue · $24,600' },
-  { id: 'p3', kind: 'proposal', title: 'Deck rebuild',          client: 'S. Patel',    status: 'draft',     meta: 'Mill Creek · $11,200' },
-  { id: 'p4', kind: 'proposal', title: 'Gutter guards',         client: 'D. Pham',     status: 'accepted',  meta: 'Redmond · $1,600' },
-  { id: 'l1', kind: 'lead',     title: 'S. Rao',                client: 'S. Rao',      status: 'new',       meta: 'Sammamish · privacy panels' },
-  { id: 'l2', kind: 'lead',     title: 'B. Whitaker',           client: 'B. Whitaker', status: 'contacted', meta: 'Kenmore · gutter quote' },
-  { id: 'l3', kind: 'lead',     title: 'Northgate Rentals',     client: 'Northgate Rentals', status: 'qualified', meta: 'Everett · 4 units' },
-  { id: 'c1', kind: 'client',   title: 'M. Henderson',          client: 'M. Henderson', status: 'active',   meta: '4812 Maple Ave, Bothell' },
-  { id: 'c2', kind: 'client',   title: 'K. Nguyen',             client: 'K. Nguyen',   status: 'active',    meta: '1409 Fern St, Bothell' },
-  { id: 'c3', kind: 'client',   title: 'Cascade PM',            client: 'Cascade PM',  status: 'active',    meta: 'Redmond · property mgr' },
-  { id: 'c4', kind: 'client',   title: 'R. Tran',               client: 'R. Tran',     status: 'active',    meta: '55 Cedar Loop, Bothell' },
-];
+/**
+ * The un-prefixed database key an action wants, split by kind.
+ *
+ * The desktop's `linkPayload` verbatim, so a phone and a laptop cannot send two
+ * different shapes for the same picked row.
+ */
+export function linkPayload(opt: LinkOption | null | undefined) {
+  const rid = opt ? opt.rid ?? opt.id : null;
+  return {
+    jobId: opt?.kind === "job" ? rid : null,
+    proposalId: opt?.kind === "proposal" ? rid : null,
+    leadId: opt?.kind === "lead" ? rid : null,
+    clientId: opt?.kind === "client" ? rid : null,
+  };
+}
+
+/** The org's linkable records. Mutated in place by `installCalendarBook` for
+ *  the same reason as `workersData`: importers hold the array, not a copy. */
+export const LINK_OPTIONS: LinkOption[] = [];
 
 /* ============================================================
    VIEWS AND FILTERING
@@ -316,9 +362,6 @@ export function workerName(id: string): string {
   return workersData.find((w) => w.id === id)?.name ?? id;
 }
 
-/** Whoever owns the shop — an empty crew on a blocked event means "my time". */
-export const OWNER = workersData.find((w) => w.role === "Owner") ?? workersData[workersData.length - 1];
-
 /** "Marcus B. +1" — the whole crew never fits on a 320px row. */
 export function crewLabel(e: CalEvent): string {
   if (e.kind === "blocked" && (e.selfOnly || !e.workers.length)) return "Just me";
@@ -359,12 +402,52 @@ export function byStart(a: CalEvent, b: CalEvent): number {
 /** How many day chips a month cell shows before it prints "+N". */
 export const MG_CAP = 3;
 
-/** <input type="date"> / <input type="time"> wire format. */
+/**
+ * Wire format for the two form fields: "YYYY-MM-DD" and "HH:MM", 24-hour.
+ *
+ * The native `<input type="date">` / `<input type="time">` controls that used to
+ * own these strings are gone (see the `.dpk` / `.tpk` blocks in the stylesheet),
+ * but the STRINGS did not change — the house panels write exactly what the
+ * native controls wrote, so `fromInputs` and the save path never learned that
+ * the control underneath them was replaced.
+ */
 export function toDateInput(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 export function toTimeInput(d: Date): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+/** Inverse of `toDateInput`. Null for anything that is not a real day —
+ *  `new Date(2026, 1, 31)` rolls forward to March, so the fields are
+ *  round-tripped rather than trusted. */
+export function fromDateInput(v: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const d = new Date(y, mo, day);
+  return d.getFullYear() === y && d.getMonth() === mo && d.getDate() === day ? d : null;
+}
+/** Inverse of `toTimeInput`, as minutes past midnight. Null when unparseable. */
+export function fromTimeInput(v: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+}
+export function minsToTimeInput(mins: number): string {
+  const m = ((mins % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+/** "7:00 AM" — how a time reads on the field face and in the panel's foot. */
+export function fmtMins(mins: number): string {
+  const m = ((mins % 1440) + 1440) % 1440;
+  const h24 = Math.floor(m / 60);
+  const h = h24 % 12 || 12;
+  return `${h}:${String(m % 60).padStart(2, "0")} ${h24 >= 12 ? "PM" : "AM"}`;
 }
 /** Rebuilds a Date from the two native inputs. Invalid text falls back to the
  *  day it was opened on, so a half-typed date can never produce Invalid Date. */

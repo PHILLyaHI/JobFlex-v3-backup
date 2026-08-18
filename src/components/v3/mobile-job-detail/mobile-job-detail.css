@@ -280,28 +280,10 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
   border-radius: 50%;
   flex-shrink: 0;
 }
-/* The status badge. Base tone is the warning palette (the fixture opens
-   In progress); the three modifiers repaint all three tones together. */
-.jf-mobile-job-detail .mjd-st {
-  display: inline-flex;
-  padding: 2px 9px;
-  border: 1.5px solid var(--warning);
-  border-radius: var(--radius);
-  color: var(--warning);
-  background: var(--warning-soft);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-}
-.jf-mobile-job-detail .mjd-st--sch {
-  border-color: var(--blueprint); color: var(--blueprint); background: var(--blueprint-soft);
-}
-.jf-mobile-job-detail .mjd-st--done {
-  border-color: var(--success); color: var(--success); background: var(--success-soft);
-}
-.jf-mobile-job-detail .mjd-st--can {
-  border-color: var(--danger); color: var(--danger); background: var(--danger-soft);
-}
+/* The head's status badge (`.mjd-st` + its three tone modifiers) was removed
+   at the owner's request along with the "Job status ·" kicker. The status
+   tones still ship — on `.mjd-sbtn`, the Overview card's picker, which is the
+   control that actually owns the value. */
 .jf-mobile-job-detail .mjd-title {
   font-size: var(--fs-h1);
   font-weight: 900;
@@ -336,45 +318,33 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
    active tab is scrolled into view on selection, so the state is never
    parked off-screen.
    ============================================================ */
-.jf-mobile-job-detail .mjd-tabwrap {
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  /* The rail scrolls edge to edge even though the content column is inset —
-     a rail that stops short of the screen edge does not read as scrollable. */
-  margin: 0 calc(var(--pad-x) * -1);
-  padding: 0 var(--pad-x);
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-x: contain;
-}
-.jf-mobile-job-detail .mjd-tabwrap::-webkit-scrollbar { width: 0; height: 0; }
-.jf-mobile-job-detail .mjd-tabs {
-  display: inline-flex;
-  width: max-content;
+/* Now a DROPDOWN, at the owner's request — it was a six-tab rail that
+   scrolled horizontally. The closed face is the frame the rail used to be:
+   full-bleed of the content column, 2px ink, ink-filled when open so the
+   button and the list read as one object. */
+.jf-mobile-job-detail .mjd-picker { position: relative; }
+.jf-mobile-job-detail .mjd-pickbtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 14px;
   border: var(--border);
   border-radius: var(--radius);
   background: var(--sheet);
-  overflow: hidden;
-}
-.jf-mobile-job-detail .mjd-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--tap);
-  padding: 0 16px;
-  background: transparent;
   font-family: var(--font);
   font-size: 12.5px;
   font-weight: 800;
   letter-spacing: 0.04em;
-  white-space: nowrap;
   color: var(--ink);
-  border-right: 1.5px solid var(--ink);
+  text-align: left;
   transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out);
 }
-.jf-mobile-job-detail .mjd-tab:last-child { border-right: none; }
-.jf-mobile-job-detail .mjd-tab.mjd-on { background: var(--ink); color: var(--paper); }
-.jf-mobile-job-detail .mjd-tab i {
+.jf-mobile-job-detail .mjd-pickbtn.mjd-open { background: var(--ink); color: var(--paper); }
+.jf-mobile-job-detail .mjd-picklabel { flex: 1; min-width: 0; }
+.jf-mobile-job-detail .mjd-pickbtn i,
+.jf-mobile-job-detail .mjd-pickitem i {
   font-style: normal;
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -382,7 +352,57 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.jf-mobile-job-detail .mjd-tab.mjd-on i { color: rgba(242, 240, 235, 0.65); }
+.jf-mobile-job-detail .mjd-pickbtn.mjd-open i { color: rgba(242, 240, 235, 0.65); }
+/* A drawn chevron — two strokes meeting at a point, the same ink weight the
+   rest of the system uses, rather than a glyph. */
+.jf-mobile-job-detail .mjd-pickcaret {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.18s var(--ease-out);
+}
+.jf-mobile-job-detail .mjd-pickbtn.mjd-open .mjd-pickcaret {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.jf-mobile-job-detail .mjd-picklist {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 4px 4px 0 var(--ink);
+  overflow: hidden;
+}
+.jf-mobile-job-detail .mjd-pickitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 14px;
+  background: transparent;
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  text-align: left;
+  border-bottom: 1.5px solid var(--ink);
+  transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out);
+}
+.jf-mobile-job-detail .mjd-picklist li:last-child .mjd-pickitem { border-bottom: none; }
+.jf-mobile-job-detail .mjd-pickitem.mjd-on { background: var(--ink); color: var(--paper); }
+.jf-mobile-job-detail .mjd-pickitem.mjd-on i { color: rgba(242, 240, 235, 0.65); }
 
 /* ============================================================
    VIEW + CARDS
@@ -614,6 +634,11 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
 .jf-mobile-job-detail .mjd-b--warn {
   border-color: var(--warning); color: var(--warning); background: var(--warning-soft);
 }
+/* DECLINED — a crew list that prints a decline as "Pending" is a crew list
+   that gets somebody stood up, so it gets the danger tones of its own. */
+.jf-mobile-job-detail .mjd-b--no {
+  border-color: var(--danger); color: var(--danger); background: var(--danger-soft);
+}
 
 .jf-mobile-job-detail .mjd-amt {
   flex-shrink: 0;
@@ -677,9 +702,143 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
   font-variant-numeric: tabular-nums;
 }
 /* The desktop writes these footers inline as `border-top: none` with 8px /
-   14px of top padding. Same values, as classes. */
-.jf-mobile-job-detail .mjd-foot { border-top: none; padding-top: 12px; }
-.jf-mobile-job-detail .mjd-foot14 { border-top: none; padding-top: 14px; }
+   14px of top padding. Same values, as classes.
+   They STACK here: each now carries an annotation (or the photo-kind picker)
+   above a full-width action, and `space-between` on a 320px row would put a
+   mono line and a block button shoulder to shoulder. */
+.jf-mobile-job-detail .mjd-foot,
+.jf-mobile-job-detail .mjd-foot14 {
+  border-top: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.jf-mobile-job-detail .mjd-foot { padding-top: 12px; }
+.jf-mobile-job-detail .mjd-foot14 { padding-top: 14px; }
+
+/* ============================================================
+   THE REAL RECORD'S OWN FURNITURE
+   Classes the fixture never needed: nothing was ever empty, nothing
+   could fail, and nobody was assignable. Same tokens, same weights,
+   same offsets as everything above — and every control still clears
+   the 44px touch floor through --tap.
+   ============================================================ */
+
+/* Empty state — DESIGN.md: "a note on a drawing", 1.5px dashed. */
+.jf-mobile-job-detail .mjd-empty {
+  border: 1.5px dashed rgba(10, 10, 10, 0.28);
+  border-radius: var(--radius);
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.jf-mobile-job-detail .mjd-link {
+  color: var(--blueprint);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Write failure — DESIGN.md's message-banner shape: base-amber frame with a
+   6px left edge, soft fill over paper, no ink frame and no offset shadow. */
+.jf-mobile-job-detail .mjd-err {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 2px solid var(--warning);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  padding: 12px 12px 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: #96691a;
+}
+.jf-mobile-job-detail .mjd-err span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.jf-mobile-job-detail .mjd-err button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin: calc(var(--tap) / -2 + 11px) -8px;
+  color: inherit;
+}
+
+/* The mono annotation above a footer action ("Books Aug 18 · 9:00 AM …").
+   A div and not a span: `.mjd-total span` is the TOTAL label. */
+.jf-mobile-job-detail .mjd-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* Crew row: the badge and the remove control as one group on the right. */
+.jf-mobile-job-detail .mjd-row-act {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+/* Icon-only, and square at the touch floor — a 34px desktop cell button is
+   not a target on a phone. */
+.jf-mobile-job-detail .mjd-x {
+  width: var(--tap);
+  min-width: var(--tap);
+  padding: 0;
+}
+
+/* Roster picker — the org's real workers, offered under the Crew footer.
+   A framed list inside the card, not a floating menu: it never has to escape
+   a scroller, and every row is a full-width target. */
+.jf-mobile-job-detail .mjd-pick {
+  margin-top: 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  overflow: hidden;
+}
+.jf-mobile-job-detail .mjd-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px dashed var(--dash);
+}
+.jf-mobile-job-detail .mjd-pick-row:last-child { border-bottom: none; }
+.jf-mobile-job-detail .mjd-pick-id { flex: 1; min-width: 0; }
+.jf-mobile-job-detail .mjd-pick-id .mjd-row-n,
+.jf-mobile-job-detail .mjd-pick-id .mjd-row-m { display: block; }
+.jf-mobile-job-detail .mjd-pick-row .mjd-ic { flex-shrink: 0; color: var(--blueprint); }
+
+/* The file input is the Upload button's mechanism, never its face. */
+.jf-mobile-job-detail .mjd-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A disabled control is mid-write, not decoration — it dims and stops lifting. */
+.jf-mobile-job-detail .mjd-btn:disabled,
+.jf-mobile-job-detail .mjd-sbtn:disabled,
+.jf-mobile-job-detail .mjd-pick-row:disabled { opacity: 0.55; }
+.jf-mobile-job-detail .mjd-btn:disabled:active { transform: none; box-shadow: none; }
 
 /* ============================================================
    PHOTOS — the desktop's 4-up at 2-up, aspect and hatch unchanged
@@ -703,6 +862,17 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
     rgba(24, 84, 160, 0.1) 0 1px,
     transparent 1px 7px
   );
+}
+/* The hatch was the whole plate while this page drew a fixture. A real
+   JobPhoto covers it and the hatch stays behind, so a slow or broken image
+   reads as the drawing's own plate rather than as a hole. */
+.jf-mobile-job-detail .mjd-ph-img img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .jf-mobile-job-detail .mjd-ph-k {
   position: absolute;
@@ -762,8 +932,10 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
   }
   .jf-mobile-job-detail .mjd-btn-primary:hover { background: var(--blueprint-dark); }
   .jf-mobile-job-detail .mjd-btn-ghost:hover { background: var(--paper-deep); }
-  .jf-mobile-job-detail .mjd-tab:hover:not(.mjd-on) { background: rgba(10, 10, 10, 0.05); }
+  .jf-mobile-job-detail .mjd-pickitem:hover:not(.mjd-on) { background: rgba(10, 10, 10, 0.05); }
+  .jf-mobile-job-detail .mjd-pickbtn:hover:not(.mjd-open) { background: var(--paper-deep); }
   .jf-mobile-job-detail .mjd-sbtn:hover:not(.mjd-on) { background: rgba(10, 10, 10, 0.05); }
+  .jf-mobile-job-detail .mjd-pick-row:hover:not(:disabled) { background: rgba(10, 10, 10, 0.05); }
 }
 .jf-mobile-job-detail .mjd-btn:active {
   transform: translate(-1px, -1px);

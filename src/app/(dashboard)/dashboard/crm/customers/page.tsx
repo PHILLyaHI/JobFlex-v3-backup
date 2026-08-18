@@ -1,11 +1,8 @@
-import Link from "next/link";
-import { motion } from "framer-motion";
 import { Users } from "lucide-react";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Badge";
-import { money, relative } from "@/lib/format";
+import { Card } from "@/components/ui/Card";
+import { money } from "@/lib/format";
 import { CustomerBookTable } from "@/components/crm/CustomerBookTable";
 
 export default async function CustomerBookPage() {

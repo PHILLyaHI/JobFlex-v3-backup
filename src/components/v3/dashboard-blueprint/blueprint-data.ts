@@ -50,16 +50,44 @@ export type ChartDataset = {
 export type ChartRange = "7d" | "30d" | "90d";
 
 /** What the Lead Center banner is nagging about. `null` when the org is
- *  already matchable, or the viewer is not an owner/admin. */
-export type LeadProfileGap = { needsAddress: boolean; needsTrades: boolean };
+ *  already matchable, or the viewer is not an owner/admin. A matchable org has
+ *  all three: a set-up company, a geocoded address, and at least one trade. */
+export type LeadProfileGap = {
+  needsCompany: boolean;
+  needsAddress: boolean;
+  needsTrades: boolean;
+};
+
+/**
+ * "your company details, your business address and the trades you take" — the
+ * banner names what is actually missing, and has to read as English for one,
+ * two or three pieces. Both editions build the sentence here so the phone and
+ * the desktop sheet can never word the same gap differently.
+ */
+export function leadProfileMissing(gap: LeadProfileGap): string {
+  const parts: string[] = [];
+  if (gap.needsCompany) parts.push("your company details");
+  if (gap.needsAddress) parts.push("your business address");
+  if (gap.needsTrades) parts.push("the trades you take");
+  if (parts.length < 2) return parts[0] ?? "";
+  return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+}
 
 /** The whole page, read server-side. Every region on the sheet is filled from
  *  this — there is no local seed left to fall back to. */
 export type DashboardData = {
   /** "Good Evening · Jul 22" — built on the server's clock. */
   greeting: string;
+  /** The signed-in identity. The desktop sidebar reads its own copy from the
+   *  layout; the handheld build replaces the whole shell, so its drawer footer
+   *  has no other source and used to print the donor's "Ivan / Owner". */
+  viewer: { name: string; role: string };
   leadProfile: LeadProfileGap | null;
   kpis: { revenue: string; pipeline: string; openProposals: string; newLeads: string };
+  /** The same four figures unformatted. The handheld build counts them up and
+   *  compacts them ("$132K"), which it cannot do from a formatted string
+   *  without parsing money back out of it. */
+  kpiRaw: { revenue: number; pipeline: number; openProposals: number; newLeads: number };
   chart: Record<ChartRange, ChartDataset>;
   activities: ActivityRow[];
   week: {

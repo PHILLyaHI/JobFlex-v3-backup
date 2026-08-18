@@ -21,8 +21,9 @@
 //  · a tap on a row opens the EVENT DETAIL sheet; the "⋮" opens the actions
 //    sheet: 6 tonal rows, three ways to reach a disabled row, one danger row
 //  · the create AND edit forms as a bottom sheet: kind tabs, required-field
-//    validation, all-day switch, status segments, crew picker, the link-a-record
-//    picker with its own search, and the meta read-out on an existing event
+//    validation, all-day switch, status segments, the searchable crew picker,
+//    the kind-aware link-a-record picker, and the meta read-out on an existing
+//    event
 //  · the crew-confirmation inbox and the unscheduled tray as sheets
 //  · BOTH empty states (nothing scheduled / no matches) in all three views
 //
@@ -44,36 +45,54 @@
 //  · The two desktop filter controls become ONE dropdown (house rule), and
 //    single-select: a 320px face can show one value and one count, not "2
 //    selected" plus a chip rail.
-//  · Start/end use the native date and time inputs instead of the desktop's
-//    hand-built pop-over calendars. On a phone that is the OS picker, already
-//    ≥44px, already localised, and it does not fight the sheet for space.
+//  · Date and time are HOUSE panels, not the native inputs. Those opened an OS
+//    sheet no stylesheet can reach — no ink frame, no mono numerals, and a
+//    Material clock dial on Android in the middle of a blueprint form. The date
+//    grid is mobile-projects-v2's control ported over; the clock is its sibling.
 //  · No pager: prev / next / Today IS a calendar's pager, and a range is
 //    already a page.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is the ORG'S REAL CALENDAR. The component takes a `data` book from
+// the standalone page's server read, and when it is mounted PROPS-LESS by
+// ResponsiveDashboardShell on /dashboard/calendar it asks the read-only
+// `getCalendarSeed` action for the same one — the pattern
+// mobile-v2/mobile-dashboard.tsx set.
+//
+// WRITES — where the line currently sits (2026-08-15):
+//  · CREATE is REAL. The form calls the same three guarded actions the desktop
+//    sheet calls (`createJobEvent` / `createAppointment` / `createBlockedTime`,
+//    plus `assignWorker` per crew member) and pushes the row the server returned,
+//    carrying its `rid`. A booking made on a phone survives a reload.
+//  · EDIT, complete, push-to-tomorrow and delete are STILL LOCAL to the mount.
+//    Each needs its own update/delete action plus assignment diffing; they are
+//    honest previews of the interaction until then, not writes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-calendar.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { getCalendarSeed } from "@/app/dashboard/calendar/calendar-actions";
+import { createJobEvent } from "@/actions/jobs";
+import { createAppointment } from "@/actions/appointments";
+import { createBlockedTime } from "@/actions/blockedTime";
+import { assignWorker } from "@/actions/workers";
 import {
   ALL,
   DOW,
   DOW1,
-  EVENTS_SEED,
-  INBOX_SEED,
   JOB_STATUSES,
   KIND_IC,
   KIND_LABEL,
+  LINK_FIELD_LABEL,
   LINK_LABEL,
   LINK_OPTIONS,
   LINK_TABS,
   MG_CAP,
   OWNER,
   TODAY,
-  TRAY_SEED,
   VIEWS,
   addDays,
   addMin,
@@ -84,16 +103,22 @@ import {
   eventHours,
   filterCount,
   filterOptions,
+  installCalendarBook,
   fmtDate,
   fmtDayShort,
   fmtClock,
   fmtMeridiem,
+  fmtMins,
   fmtMonthYear,
   fmtRange,
   fmtWeekRange,
+  fromDateInput,
+  fromTimeInput,
   initials,
+  linkPayload,
   matchesFilter,
   matchesQuery,
+  minsToTimeInput,
   sameDay,
   sameMonth,
   startOfWeek,
@@ -105,6 +130,7 @@ import {
   whoWhere,
   workerName,
   workersData,
+  type CalendarBook,
   type CalEvent,
   type CalKind,
   type InboxItem,
@@ -174,9 +200,14 @@ function EventRow({
 }) {
   const tone = toneKey(e);
   const today = sameDay(e.start, TODAY);
+  // Blocked time is the one kind that is a REFUSAL — nobody can work this slot —
+  // so the row carries the danger rail and wash rather than reading as one more
+  // thing on the schedule. Matches the desktop's rose treatment for the same
+  // rows (WeekGridA / TeamGridA).
+  const blocked = e.kind === "blocked";
   return (
     <div
-      className={`${styles.erow} ${styles.rowIn} ${landed ? styles.landed : ""}`}
+      className={`${styles.erow} ${blocked ? styles.isBlocked : ""} ${styles.rowIn} ${landed ? styles.landed : ""}`}
       style={{ animationDelay: `${i * 45}ms` }}
     >
       {/* Time is the one thing a calendar row is about, so it takes the left
@@ -281,6 +312,380 @@ function EmptyState({
   );
 }
 
+/* ============================================================
+   DATE AND TIME FIELDS — the house pickers.
+
+   The native `<input type="date">` / `<input type="time">` these replace opened
+   an OS panel no stylesheet can reach: no ink frame, no 2px radius, no mono
+   numerals, and on Android a Material clock dial in the middle of a blueprint
+   sheet. Replacing the CONTROL is the only way to style the panel — the same
+   call mobile-projects-v2 made for its create form, whose `DatePanel` this is a
+   port of rather than a second design (see the `.dpk` block in the stylesheet).
+
+   Both fields still hand the form the exact strings the native controls did —
+   "YYYY-MM-DD" and 24-hour "HH:MM" — so `fromInputs()` and the save path never
+   learn that the control underneath them changed.
+   ============================================================ */
+const DPK_DOW = ["S", "M", "T", "W", "T", "F", "S"];
+const DPK_MONTH_YEAR = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
+
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+/** Where a picker panel sits, in viewport coordinates. */
+type PopAt = { left: number; top: number };
+
+/**
+ * Places a panel against the VISUAL viewport and keeps it there.
+ *
+ * The panel is a fixed layer, so nothing else keeps it on screen: it flips above
+ * its field when there is not enough room below, and re-places on scroll because
+ * `.sheetBody` scrolls underneath it. Capture-phase, since the sheet body is an
+ * inner element whose scroll never bubbles to document.
+ */
+function usePanelPlacement(hostRef: React.RefObject<HTMLDivElement | null>, height: number): PopAt | null {
+  const [at, setAt] = useState<PopAt | null>(null);
+  const place = useCallback(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const r = host.getBoundingClientRect();
+    const vv = window.visualViewport;
+    const viewTop = vv?.offsetTop ?? 0;
+    const viewH = vv?.height ?? window.innerHeight;
+    const viewW = vv?.width ?? window.innerWidth;
+    const w = Math.min(300, viewW - 24);
+    const below = viewTop + viewH - r.bottom - 7 - 12;
+    const flip = below < height && r.top - viewTop > below;
+    setAt({
+      left: Math.min(Math.max(12, r.left), viewW - w - 12),
+      top: flip ? Math.max(12, r.top - 7 - height) : r.bottom + 7,
+    });
+  }, [hostRef, height]);
+
+  useEffect(() => {
+    place();
+    const vv = window.visualViewport;
+    document.addEventListener("scroll", place, { capture: true, passive: true });
+    window.addEventListener("resize", place);
+    vv?.addEventListener("resize", place);
+    return () => {
+      document.removeEventListener("scroll", place, { capture: true });
+      window.removeEventListener("resize", place);
+      vv?.removeEventListener("resize", place);
+    };
+  }, [place]);
+
+  return at;
+}
+
+/**
+ * The month grid, MOUNTED only while open.
+ *
+ * That is not an optimisation — it is what lets the panel seed its month from
+ * the field's current value with a plain lazy `useState` initialiser. Kept
+ * mounted, re-seeding on open would be a setState inside an effect, which is a
+ * cascading render (and the lint rule that says so).
+ */
+function DatePanel({
+  hostRef, label, value, onCommit, onDismiss,
+}: {
+  hostRef: React.RefObject<HTMLDivElement | null>;
+  label: string;
+  value: string;
+  onCommit: (v: string) => void;
+  onDismiss: () => void;
+}) {
+  const picked = fromDateInput(value);
+  const [month, setMonth] = useState(() => startOfMonth(picked ?? new Date(TODAY)));
+  // 344px is the panel at its tallest: head + six week rows + the foot bar.
+  const at = usePanelPlacement(hostRef, 344);
+
+  const today = new Date(TODAY);
+  const first = startOfWeek(startOfMonth(month));
+  const cells = Array.from({ length: 42 }, (_, i) => addDays(first, i));
+
+  return (
+    <div className={styles.dpkLayer}>
+      <div className={styles.dpkCatch} onClick={onDismiss} aria-hidden="true" />
+      {at ? (
+        <div
+          className={styles.dpkPop}
+          style={{ left: at.left, top: at.top }}
+          role="dialog"
+          aria-label={`${label} — calendar`}
+        >
+          <div className={styles.dpkCal}>
+            <div className={styles.dpkHead}>
+              <button
+                className={styles.dpkNav}
+                type="button"
+                aria-label="Previous month"
+                onClick={() => setMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              >
+                <Icon id="i-chevl" />
+              </button>
+              <span className={styles.dpkMonth}>{DPK_MONTH_YEAR.format(month)}</span>
+              <button
+                className={styles.dpkNav}
+                type="button"
+                aria-label="Next month"
+                onClick={() => setMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              >
+                <Icon id="i-chevr" />
+              </button>
+            </div>
+            <div className={styles.dpkDow} aria-hidden="true">
+              {DPK_DOW.map((d, i) => (
+                <span key={`${d}${i}`}>{d}</span>
+              ))}
+            </div>
+            <div className={styles.dpkGrid}>
+              {cells.map((d) => {
+                const out = d.getMonth() !== month.getMonth();
+                const isToday = sameDay(d, today);
+                const isSel = Boolean(picked && sameDay(d, picked));
+                return (
+                  <button
+                    key={toDateInput(d)}
+                    className={`${styles.dpkDay} ${out ? styles.dpkOut : ""} ${
+                      isToday ? styles.dpkToday : ""
+                    } ${isSel ? styles.dpkSel : ""}`}
+                    type="button"
+                    aria-current={isToday ? "date" : undefined}
+                    aria-pressed={isSel}
+                    onClick={() => onCommit(toDateInput(d))}
+                  >
+                    {d.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className={styles.dpkFoot}>
+            <span className={styles.dpkVal}>{picked ? fmtDate(picked) : "No date"}</span>
+            <span className={styles.dpkActs}>
+              <button
+                className={styles.dpkAct}
+                type="button"
+                onClick={() => onCommit(toDateInput(today))}
+              >
+                Today
+              </button>
+            </span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DateField({
+  id, label, value, onChange, open, onOpenChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  return (
+    <div className={`${styles.dpk} ${open ? styles.open : ""}`} ref={hostRef}>
+      <span className={styles.dpkLead}>
+        <Icon id="i-cal" />
+      </span>
+      {/* Still a real, typable input whose `.value` is the "YYYY-MM-DD" string
+          the save path already reads — the grid writes it, it does not replace
+          it. Someone who would rather type the date still can. */}
+      <input
+        className={`${styles.pinput} ${styles.dpkIn}`}
+        id={id}
+        type="text"
+        inputMode="numeric"
+        placeholder="YYYY-MM-DD"
+        autoComplete="off"
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button
+        className={styles.dpkTgl}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`${label} — pick a date`}
+        onClick={() => onOpenChange(!open)}
+      >
+        <Icon id="i-chev" />
+      </button>
+      {open ? (
+        <DatePanel
+          hostRef={hostRef}
+          label={label}
+          value={value}
+          onCommit={(v) => {
+            onChange(v);
+            onOpenChange(false);
+          }}
+          onDismiss={() => onOpenChange(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** 12, then 1–11 — the face of a clock, not 0-indexed hours. */
+const TPK_HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+/** SNAP_MIN is 15, so these four ARE the pickable minutes. Offering :07 would be
+ *  offering a value the save path silently moves. */
+const TPK_MINS = [0, 15, 30, 45];
+
+function TimePanel({
+  hostRef, label, mins, onPick, onDismiss,
+}: {
+  hostRef: React.RefObject<HTMLDivElement | null>;
+  label: string;
+  mins: number;
+  onPick: (mins: number) => void;
+  onDismiss: () => void;
+}) {
+  // Three banks (hours / minutes / meridiem) plus the foot: ~300px tall.
+  const at = usePanelPlacement(hostRef, 300);
+  const h24 = Math.floor(mins / 60);
+  const minute = mins % 60;
+  const pm = h24 >= 12;
+  const h12 = h24 % 12 || 12;
+
+  /** Rebuild the value from whichever bank was touched. */
+  const set = (nextH12: number, nextMin: number, nextPm: boolean) => {
+    const base = nextH12 % 12;
+    onPick((base + (nextPm ? 12 : 0)) * 60 + nextMin);
+  };
+
+  return (
+    <div className={styles.dpkLayer}>
+      <div className={styles.dpkCatch} onClick={onDismiss} aria-hidden="true" />
+      {at ? (
+        <div
+          className={styles.dpkPop}
+          style={{ left: at.left, top: at.top }}
+          role="dialog"
+          aria-label={`${label} — clock`}
+        >
+          <div className={styles.tpkBank}>
+            <div className={styles.tpkLbl}>Hour</div>
+            <div className={styles.tpkHours}>
+              {TPK_HOURS.map((h) => (
+                <button
+                  key={h}
+                  className={`${styles.tpkCell} ${h === h12 ? styles.on : ""}`}
+                  type="button"
+                  aria-pressed={h === h12}
+                  onClick={() => set(h, minute, pm)}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={styles.tpkBank}>
+            <div className={styles.tpkLbl}>Minute</div>
+            <div className={styles.tpkMins}>
+              {TPK_MINS.map((m) => (
+                <button
+                  key={m}
+                  className={`${styles.tpkCell} ${m === minute ? styles.on : ""}`}
+                  type="button"
+                  aria-pressed={m === minute}
+                  onClick={() => set(h12, m, pm)}
+                >
+                  :{String(m).padStart(2, "0")}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={styles.tpkBank}>
+            <div className={styles.tpkLbl}>Half</div>
+            <div className={styles.tpkAmpm}>
+              {[false, true].map((isPm) => (
+                <button
+                  key={String(isPm)}
+                  className={`${styles.tpkCell} ${isPm === pm ? styles.on : ""}`}
+                  type="button"
+                  aria-pressed={isPm === pm}
+                  onClick={() => set(h12, minute, isPm)}
+                >
+                  {isPm ? "PM" : "AM"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={styles.dpkFoot}>
+            <span className={styles.dpkVal}>{fmtMins(mins)}</span>
+            <span className={styles.dpkActs}>
+              <button className={styles.dpkAct} type="button" onClick={onDismiss}>
+                Done
+              </button>
+            </span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The time field. Its face is a BUTTON, not an input: unlike a date, a time has
+ * no format worth typing on a phone ("7:00 AM"? "0700"? "7p"?), so the value is
+ * picked and never spelled. `value` stays the 24-hour "HH:MM" wire string.
+ */
+function TimeField({
+  label, value, onChange, open, onOpenChange, describedBy,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  describedBy?: string;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  // A half-typed or absent value must not be able to produce NaN o'clock.
+  const mins = fromTimeInput(value) ?? 8 * 60;
+  return (
+    <div className={`${styles.tpk} ${open ? styles.open : ""}`} ref={hostRef}>
+      <span className={styles.dpkLead}>
+        <Icon id="i-clock" />
+      </span>
+      <button
+        className={styles.tpkFace}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`${label} — ${fmtMins(mins)}`}
+        aria-describedby={describedBy}
+        onClick={() => onOpenChange(!open)}
+      >
+        <span className={styles.tpkVal}>{fmtMins(mins)}</span>
+      </button>
+      <span className={styles.dpkTgl} aria-hidden="true">
+        <Icon id="i-chev" />
+      </span>
+      {open ? (
+        <TimePanel
+          hostRef={hostRef}
+          label={label}
+          mins={mins}
+          onPick={(m) => onChange(minsToTimeInput(m))}
+          onDismiss={() => onOpenChange(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 type FormState = {
   mode: "new" | "edit";
   id: string | null;
@@ -298,20 +703,154 @@ type FormState = {
   fromTray: string | null;
 };
 
-export function MobileCalendar() {
+/** Which picker panel is open. One at a time — two floating layers over one
+ *  bottom sheet is one layer too many on a phone. */
+type PickerKey = "date" | "start" | "end" | null;
+
+/** Server actions reject with an Error whose message is written for the user.
+ *  Surface that text; fall back to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/**
+ * `?date=YYYY-MM-DD` / `?new=1`, read once off `window.location` and then wiped
+ * out of the URL.
+ *
+ * `window.location`, not `useSearchParams()`, for two reasons: this component
+ * is mounted `ssr: false` by the responsive shell, where a Suspense boundary
+ * for the params hook would be ceremony around a value that is only ever read
+ * on the client; and consuming the params means REMOVING them, which the hook
+ * cannot do. A malformed or absent date is a no-op — a bad `?date=` must never
+ * be able to produce an Invalid Date cursor.
+ */
+function readEntryParams(): { date: Date | null; create: boolean } {
+  if (typeof window === "undefined") return { date: null, create: false };
+  let q: URLSearchParams;
+  try {
+    q = new URLSearchParams(window.location.search);
+  } catch {
+    return { date: null, create: false };
+  }
+  const raw = q.get("date");
+  let date: Date | null = null;
+  const m = raw ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw) : null;
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    // Rejects 2026-02-31 and friends: the constructor rolls them over, so the
+    // only proof the date was real is that it survives the round trip.
+    if (
+      !Number.isNaN(d.getTime()) &&
+      d.getFullYear() === Number(m[1]) &&
+      d.getMonth() === Number(m[2]) - 1 &&
+      d.getDate() === Number(m[3])
+    ) {
+      date = d;
+    }
+  }
+  return { date, create: q.get("new") === "1" };
+}
+
+/** Drop `date` / `new` from the address bar without a navigation, so Back does
+ *  not land on the same URL and re-open the create sheet. */
+function clearEntryParams(): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("date") && !url.searchParams.has("new")) return;
+  url.searchParams.delete("date");
+  url.searchParams.delete("new");
+  window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+}
+
+/**
+ * ENTRY — resolves the org's calendar, then draws the sheet.
+ *
+ * Split in two so every hook in the view below runs against a real book and
+ * none of them is conditional. `data` arrives as a prop from the standalone
+ * /mobile-calendar-v2 page; it is ABSENT when `ResponsiveDashboardShell` mounts
+ * this props-less on /dashboard/calendar, and that path asks the read-only
+ * action for the same seed the desktop page reads. Same contract as
+ * mobile-v2/mobile-dashboard.tsx.
+ */
+export function MobileCalendar({ data: seed }: { data?: CalendarBook }) {
+  const [book, setBook] = useState<CalendarBook | null>(seed ?? null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (seed) return;
+    let alive = true;
+    getCalendarSeed()
+      .then((b) => {
+        if (alive) setBook(b);
+      })
+      .catch((err) => {
+        if (alive) setLoadError(actionError(err));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [seed]);
+
+  if (book) return <CalendarBoard book={book} />;
+  return <BootScreen error={loadError} />;
+}
+
+/** Paper hold while the calendar lands, and an honest failure if it does not.
+ *  The shell's own `MobileHold` paints the same cream behind the chunk fetch,
+ *  so the two read as one uninterrupted load. */
+function BootScreen({ error }: { error: string | null }) {
+  if (!error) return <div className={styles.app} />;
+  return (
+    <div className={styles.app}>
+      <main className={styles.scroll}>
+        <div className={styles.content}>
+          <div className={styles.empty}>
+            <div className={styles.emptyT}>Calendar unavailable</div>
+            <div className={styles.emptyS}>{error}</div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function CalendarBoard({ book }: { book: CalendarBook }) {
+  // Points TODAY / workersData / OWNER / LINK_OPTIONS at this org, BEFORE the
+  // state initialisers and module helpers below read them. Identity-guarded, so
+  // every render after the first is a single comparison. See the note at the
+  // top of calendar-data.ts for why the book is module state.
+  installCalendarBook(book);
+
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
-  /* Cloned per mount so runtime mutations never leak between mounts. */
+  /* `?date=` / `?new=1` — read once, at the same moment the cursor is seeded,
+     so the calendar OPENS on the asked-for day rather than jumping to it.
+     A lazy `useState` and not a ref: the value IS needed during render (the two
+     cursors below are seeded from it), which is exactly what a ref must not be
+     used for. There is no setter, so it is a per-mount constant. */
+  const [entry] = useState(readEntryParams);
+
+  /* Cloned per mount so runtime edits never write back through the seed. */
   const [data, setData] = useState<CalEvent[]>(() =>
-    EVENTS_SEED.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end), workers: e.workers.slice() })),
+    book.events.map((e) => ({
+      ...e,
+      start: new Date(e.start),
+      end: new Date(e.end),
+      workers: e.workers.slice(),
+    })),
   );
-  const [tray, setTray] = useState<TrayJob[]>(() => TRAY_SEED.map((j) => ({ ...j })));
-  const [inbox, setInbox] = useState<InboxItem[]>(() => INBOX_SEED.map((r) => ({ ...r })));
+  const [tray, setTray] = useState<TrayJob[]>(() => book.tray.map((j) => ({ ...j })));
+  const [inbox, setInbox] = useState<InboxItem[]>(() => book.inbox.map((r) => ({ ...r })));
 
   const [view, setView] = useState<ViewKey>("month");
-  const [cursor, setCursor] = useState<Date>(() => new Date(TODAY));
-  const [sel, setSel] = useState<Date>(() => new Date(TODAY));
+  const [cursor, setCursor] = useState<Date>(() => new Date(entry.date ?? TODAY));
+  const [sel, setSel] = useState<Date>(() => new Date(entry.date ?? TODAY));
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<string>(ALL);
@@ -320,21 +859,43 @@ export function MobileCalendar() {
 
   const [actId, setActId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
+  // `?new=1` opens the create sheet as part of the FIRST render rather than as
+  // an effect that re-opens it a frame later — the sheet's slide-up should be
+  // the page arriving, not a second thing happening to it.
+  const [formOpen, setFormOpen] = useState(entry.create);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [trayOpen, setTrayOpen] = useState(false);
   const [landedId, setLandedId] = useState<string | null>(null);
-  const seq = useRef(100);
+
+  /* Which kinds this ROLE may create, in tab order. The three create actions
+     have three different guards, so the strip is built from the seed's own list
+     rather than offering all three and letting two of them fail on submit —
+     which is a new problem now that the submit is a real write. An empty list
+     (a role that may create nothing) still falls back to the full set so the
+     form is never a dead end; the server refuses it and the sheet says why. */
+  const createKinds: CalKind[] = book.createKinds.length
+    ? book.createKinds
+    : ["job", "appointment", "blocked"];
 
   /* ---- create / edit form ---- */
   const [form, setForm] = useState<FormState>(() => ({
-    mode: "new", id: null, kind: "job", title: "",
-    date: toDateInput(TODAY), startT: "08:00", endT: "10:00",
+    mode: "new", id: null, kind: createKinds[0], title: "",
+    // Prefilled with `?date=` when there was one, so `?new=1` lands on the day
+    // the caller tapped rather than on today.
+    date: toDateInput(entry.date ?? TODAY), startT: "08:00", endT: "10:00",
     allDay: false, status: "SCHEDULED", crew: [], link: null, notes: "", fromTray: null,
   }));
   const [titleErr, setTitleErr] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkQuery, setLinkQuery] = useState("");
+  const [crewOpen, setCrewOpen] = useState(false);
+  const [crewQuery, setCrewQuery] = useState("");
+  /** Which of the three house pickers (date / start / end) is showing. */
+  const [picker, setPicker] = useState<PickerKey>(null);
+  /** The create is a real server write now, so the form has the two states any
+   *  network form has: in flight, and refused. */
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   /* ---------- viewport height ------------------------------------------
@@ -464,6 +1025,8 @@ export function MobileCalendar() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (filterOpen) setFilterOpen(false);
+      else if (picker) setPicker(null);
+      else if (crewOpen) setCrewOpen(false);
       else if (linkOpen) setLinkOpen(false);
       else if (formOpen) setFormOpen(false);
       else if (trayOpen) setTrayOpen(false);
@@ -473,7 +1036,7 @@ export function MobileCalendar() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [filterOpen, linkOpen, formOpen, trayOpen, inboxOpen, actId, detailId]);
+  }, [filterOpen, picker, crewOpen, linkOpen, formOpen, trayOpen, inboxOpen, actId, detailId]);
 
   /* ---------- Filter dropdown: close on outside pointerdown ------------ */
   useEffect(() => {
@@ -621,6 +1184,12 @@ export function MobileCalendar() {
     const isJob = e.kind === "job";
     const done = e.status === "COMPLETED";
     return [
+      // Only job EVENTS carry a job. An appointment or a block has nothing to
+      // open, so the row states that rather than going missing — a menu whose
+      // rows move between events is a menu you have to re-read every time.
+      { act: "job", icon: "i-jobs", tone: styles.miBp, title: "Open job",
+        sub: e.jobId ? "Full record, crew and photos" : "This event is not attached to a job",
+        disabled: !e.jobId },
       { act: "edit", icon: "i-file", tone: styles.miBp, title: "Edit event",
         sub: "Time, crew, status and notes" },
       { act: "call", icon: "i-phone", tone: styles.miSky, title: "Call client",
@@ -638,10 +1207,23 @@ export function MobileCalendar() {
     ];
   }, [actEvent]);
 
+  /** The jobs board's own href shape (jobs-behavior.ts `jobHref`), so the two
+   *  surfaces cannot disagree about where a job lives. A client-side push, not
+   *  a document load: the destination is a blueprint page whose entrance
+   *  cascade is armed from a layout effect, and a hard load replays it. */
+  const openJob = useCallback(
+    (jobId: string) => router.push(("/dashboard/jobs/" + encodeURIComponent(jobId)) as Route),
+    [router],
+  );
+
   const runMenu = (act: string) => {
     const e = actEvent;
     setActId(null);
     if (!e) return;
+    if (act === "job") {
+      if (e.jobId) openJob(e.jobId);
+      return;
+    }
     if (act === "del") {
       setData((prev) => prev.filter((x) => x.id !== e.id));
       return;
@@ -669,18 +1251,50 @@ export function MobileCalendar() {
     window.setTimeout(() => titleRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
   };
 
-  const openNew = (day?: Date, seed?: TrayJob) => {
-    const base = day ?? sel;
-    setForm({
-      mode: "new", id: null, kind: "job",
-      title: seed ? `${seed.title} — ${seed.client}` : "",
-      date: toDateInput(base), startT: "08:00", endT: seed ? "12:00" : "10:00",
-      allDay: false, status: "SCHEDULED", crew: [], link: seed ? seed.id : null,
-      notes: seed ? `Est. ${seed.duration}` : "", fromTray: seed ? seed.id : null,
-    });
+  /** Every transient the form carries, back to zero. Missing one of these is how
+   *  a picker from the last event comes back open on the next one. */
+  const resetFormChrome = () => {
     setTitleErr(false);
     setLinkOpen(false);
     setLinkQuery("");
+    setCrewOpen(false);
+    setCrewQuery("");
+    setPicker(null);
+    setSaving(false);
+    setSaveErr(null);
+  };
+
+  /**
+   * The ONE way the create/edit sheet closes.
+   *
+   * The sheet has five exits — Escape, the scrim, Cancel, a pull down, a
+   * successful save — and every one of them has to take the form's floating
+   * panels with it. `setFormOpen(false)` on its own leaves the date panel's
+   * full-screen dismiss catcher mounted over a sheet that is no longer there.
+   * A helper, not an effect on `formOpen`: setState inside an effect is a
+   * cascading render, and closing a sheet is an event, not a synchronisation.
+   */
+  const closeForm = () => {
+    setFormOpen(false);
+    setPicker(null);
+    setCrewOpen(false);
+    setLinkOpen(false);
+  };
+
+  const openNew = (day?: Date, seed?: TrayJob) => {
+    const base = day ?? sel;
+    // The tray hands over a JOB, so the form opens on the kind that can link one
+    // — and pre-links it, which is what makes "Schedule" from the tray a single
+    // decision instead of a search the user just did being repeated.
+    const trayLink = seed ? (LINK_OPTIONS.find((o) => o.kind === "job" && (o.rid ?? o.id) === seed.id)?.id ?? null) : null;
+    setForm({
+      mode: "new", id: null, kind: createKinds[0] ?? "job",
+      title: seed ? `${seed.title} — ${seed.client}` : "",
+      date: toDateInput(base), startT: "08:00", endT: seed ? "12:00" : "10:00",
+      allDay: false, status: "SCHEDULED", crew: [], link: trayLink,
+      notes: seed ? `Est. ${seed.duration}` : "", fromTray: seed ? seed.id : null,
+    });
+    resetFormChrome();
     setTrayOpen(false);
     setFormOpen(true);
     focusTitle();
@@ -693,13 +1307,58 @@ export function MobileCalendar() {
       allDay: Boolean(e.allDay), status: e.status, crew: e.workers.slice(),
       link: null, notes: e.notes ?? "", fromTray: null,
     });
-    setTitleErr(false);
-    setLinkOpen(false);
-    setLinkQuery("");
+    resetFormChrome();
     setFormOpen(true);
   };
 
+  /* ---------- ?date= / ?new=1, consumed ---------------------------------
+     Both params were spent during the first render: the cursor and the form's
+     date were seeded from `?date=`, and `formOpen` started true on `?new=1`.
+     All that is left is to take them back out of the address bar, so a Back
+     navigation into this page is the calendar and not the create sheet all
+     over again — and so a stale `?date=` cannot outlive the day it was about.
+     No state is touched here; the sheet is already open. */
+  useEffect(() => {
+    if (entry.create) focusTitle();
+    clearEntryParams();
+    // `entry` is a per-mount constant and `focusTitle` only reads a ref, so
+    // this genuinely runs once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const patchForm = (p: Partial<FormState>) => setForm((f) => ({ ...f, ...p }));
+
+  /**
+   * Moving the START carries the END with it, keeping the span.
+   *
+   * The desktop sheet's `updateStarts` rule. It did not matter while these were
+   * native time inputs — a half-typed "1" was a transient nobody looked at — but
+   * a PICKED time is committed the instant a cell is tapped, so without this the
+   * form sits there reading "Start 3:00 PM / End 10:00 AM" while the user is
+   * still choosing.
+   *
+   * The span is FROZEN when the picker opens, not recomputed per tap. Three taps
+   * (hour, then minute, then AM/PM) are one decision, and the intermediate
+   * values are nonsense: 8–10 AM tapped to "3" is momentarily a seven-hour
+   * 3 AM–10 AM span, and reading the span off THAT is how tapping PM used to
+   * land the end at 10 PM. Frozen, the same three taps give 3–5 PM.
+   */
+  const spanRef = useRef(120);
+  const freezeSpan = () => {
+    const s = fromTimeInput(form.startT);
+    const e = fromTimeInput(form.endT);
+    spanRef.current = s !== null && e !== null && e > s ? e - s : 120;
+  };
+  const setStartT = (v: string) =>
+    setForm((f) => {
+      const next = fromTimeInput(v);
+      const prevEnd = fromTimeInput(f.endT);
+      if (next === null || prevEnd === null || next < prevEnd) return { ...f, startT: v };
+      // 23:45 is the last slot the picker can express, so a late start stops
+      // there rather than silently rolling the end into the next day.
+      const end = Math.min(23 * 60 + 45, next + spanRef.current);
+      return { ...f, startT: v, endT: minsToTimeInput(end) };
+    });
 
   const toggleCrew = (id: string) =>
     setForm((f) => ({
@@ -707,6 +1366,11 @@ export function MobileCalendar() {
       crew: f.crew.includes(id) ? f.crew.filter((x) => x !== id) : [...f.crew, id],
     }));
 
+  /* ---- linked record: ONE kind per event kind -------------------------------
+     A JOB event links a JOB; a VISIT links the LEAD it is about; blocked time
+     links nothing. `LINK_TABS` is the map and it is the only place that decides
+     — the picker reads it rather than carrying a second opinion. */
+  const linkKinds: LinkKind[] = LINK_TABS[form.kind] ?? [];
   const linkRows = useMemo(() => {
     const kinds: LinkKind[] = LINK_TABS[form.kind] ?? [];
     const q = linkQuery.trim().toLowerCase();
@@ -715,9 +1379,37 @@ export function MobileCalendar() {
     );
   }, [form.kind, linkQuery]);
   const linkPick = LINK_OPTIONS.find((o) => o.id === form.link) ?? null;
+  const linkNoun = linkKinds.length === 1 ? LINK_LABEL[linkKinds[0]].toLowerCase() : "record";
 
-  const submitForm = (ev: React.FormEvent) => {
+  /* ---- crew: the desktop WorkerMultiPicker's roster, searchable ---- */
+  const crewRows = useMemo(() => {
+    const q = crewQuery.trim().toLowerCase();
+    if (!q) return workersData;
+    return workersData.filter((w) => `${w.name} ${w.role}`.toLowerCase().includes(q));
+  }, [crewQuery]);
+  const crewPicked = form.crew
+    .map((id) => workersData.find((w) => w.id === id))
+    .filter((w): w is (typeof workersData)[number] => Boolean(w));
+
+  /**
+   * Save.
+   *
+   * CREATING IS A REAL SERVER WRITE (2026-08-15). It used to push a row into
+   * local state and stop there, so a contractor could book a job on a phone,
+   * watch it land on the schedule, pull to refresh and find it had never
+   * existed. It now calls the same three actions the desktop sheet calls —
+   * `createJobEvent` / `createAppointment` / `createBlockedTime`, plus
+   * `assignWorker` per crew member — and only then pushes the returned row,
+   * carrying its real `rid` and `jobId`. No new data layer: these are the
+   * pre-existing, individually guarded actions.
+   *
+   * EDIT is still local. That is a bigger job than a create — it is four update
+   * actions plus assignment diffing against `assignmentIds` — and it is called
+   * out in the report rather than half-done here.
+   */
+  const submitForm = async (ev: React.FormEvent) => {
     ev.preventDefault();
+    if (saving) return;
     const title = form.title.trim();
     if (!title) {
       setTitleErr(true);
@@ -753,34 +1445,97 @@ export function MobileCalendar() {
       );
       setSel(new Date(start));
       setLandedId(id);
-    } else {
-      seq.current += 1;
-      const id = `e${seq.current}`;
-      setData((prev) => [
-        ...prev,
-        {
-          id, kind: form.kind, title, start, end,
-          allDay: form.allDay || undefined,
-          status: form.kind === "job" ? form.status : "SCHEDULED",
-          workers: selfOnly ? [OWNER.id] : form.crew.slice(),
-          client: opt ? opt.client : undefined,
-          selfOnly: selfOnly || undefined,
-          notes: form.notes.trim() || undefined,
-        },
-      ]);
-      if (form.fromTray) setTray((prev) => prev.filter((j) => j.id !== form.fromTray));
-      setCursor(new Date(start));
-      setSel(new Date(start));
-      setLandedId(id);
+      closeForm();
+      return;
     }
-    setFormOpen(false);
+
+    const link = linkPayload(opt);
+    const crew = form.crew.slice();
+    const notes = form.notes.trim() || null;
+    // The three tables have independent id spaces and one array holds all three,
+    // so the DOM id carries a kind prefix — the scheme calendar-query.ts writes.
+    let rowId = "";
+    let rid: string | undefined;
+    let jobId: string | null | undefined;
+
+    setSaveErr(null);
+    setSaving(true);
+    try {
+      if (form.kind === "job") {
+        const res = await createJobEvent({
+          title,
+          jobId: link.jobId,
+          proposalId: link.proposalId,
+          startsAt: start.toISOString(),
+          endsAt: end.toISOString(),
+          notes,
+        });
+        rowId = res.id;
+        rid = res.id;
+        jobId = res.jobId;
+        // Staffing is a JOB-level write, so it only exists once a job does: a
+        // jobless event has nowhere to hang a crew, which is exactly what the
+        // field's hint says while no job is linked.
+        if (res.jobId && crew.length) {
+          for (const w of crew) await assignWorker(res.jobId, w);
+        }
+      } else if (form.kind === "appointment") {
+        const res = await createAppointment({
+          title,
+          leadId: link.leadId,
+          clientId: link.clientId,
+          proposalId: link.proposalId,
+          startsAt: start.toISOString(),
+          endsAt: end.toISOString(),
+          notes,
+          status: "SCHEDULED",
+          workerIds: crew,
+        });
+        rowId = `apt:${res.id}`;
+        rid = res.id;
+      } else {
+        const res = await createBlockedTime({
+          reason: title,
+          startsAt: start.toISOString(),
+          endsAt: end.toISOString(),
+        });
+        rowId = `block:${res.id}`;
+        rid = res.id;
+      }
+    } catch (err) {
+      setSaving(false);
+      setSaveErr(actionError(err));
+      return;
+    }
+    setSaving(false);
+
+    setData((prev) => [
+      ...prev,
+      {
+        id: rowId, rid, jobId, kind: form.kind, title, start, end,
+        allDay: form.allDay || undefined,
+        status: form.kind === "job" ? form.status : "SCHEDULED",
+        // A block is self-owned by construction (`createBlockedTime` takes no
+        // owner), so it lands on the owner's row whatever the form said.
+        workers: form.kind === "blocked" ? (OWNER.id ? [OWNER.id] : []) : crew,
+        client: opt ? opt.client : undefined,
+        selfOnly: form.kind === "blocked" || undefined,
+        notes: form.notes.trim() || undefined,
+      },
+    ]);
+    // Linking a tray job schedules it, so it leaves the unscheduled list.
+    if (form.fromTray) setTray((prev) => prev.filter((j) => j.id !== form.fromTray));
+    setCursor(new Date(start));
+    setSel(new Date(start));
+    setLandedId(rowId);
+    closeForm();
   };
 
   const anyOverlay = Boolean(actEvent) || Boolean(detailEvent) || formOpen || inboxOpen || trayOpen;
   const closeAll = () => {
     setActId(null);
     setDetailId(null);
-    setFormOpen(false);
+    closeForm();
     setInboxOpen(false);
     setTrayOpen(false);
   };
@@ -792,7 +1547,7 @@ export function MobileCalendar() {
   const detailDrag = useSheetDrag(Boolean(detailEvent), () => setDetailId(null));
   const inboxDrag = useSheetDrag(inboxOpen, () => setInboxOpen(false));
   const trayDrag = useSheetDrag(trayOpen, () => setTrayOpen(false));
-  const formDrag = useSheetDrag(formOpen, () => setFormOpen(false));
+  const formDrag = useSheetDrag(formOpen, () => closeForm());
 
   return (
     <div className={styles.app} onClick={onRootClick}>
@@ -1299,6 +2054,34 @@ export function MobileCalendar() {
                   <div className={styles.note}>Nothing noted on this event</div>
                 )}
               </div>
+
+              {/* The way out of the calendar and into the work. Only job events
+                  have a job to open, so on an appointment or a block the row is
+                  simply not there — unlike the actions sheet, this is not a
+                  fixed menu whose shape has to stay learnable. `.mrow` is the
+                  house action row: ≥44px, icon plate, two lines. */}
+              {detailEvent.jobId ? (
+                <div className={styles.dSec}>
+                  <div className={styles.dSecLbl}>Work</div>
+                  <button
+                    className={styles.mrow}
+                    type="button"
+                    onClick={() => {
+                      const id = detailEvent.jobId;
+                      setDetailId(null);
+                      if (id) openJob(id);
+                    }}
+                  >
+                    <span className={`${styles.mrowIc} ${styles.miBp}`}>
+                      <Icon id="i-jobs" />
+                    </span>
+                    <span>
+                      <span className={styles.mrowT}>Open job</span>
+                      <span className={styles.mrowS}>Full record, crew and photos</span>
+                    </span>
+                  </button>
+                </div>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -1438,13 +2221,22 @@ export function MobileCalendar() {
             <div className={styles.fld}>
               <span className={styles.fldLbl}>Kind</span>
               <div className={styles.kinds}>
-                {(["job", "appointment", "blocked"] as CalKind[]).map((k) => (
+                {createKinds.map((k) => (
                   <button
                     key={k}
                     type="button"
                     className={`${styles.kindBtn} ${form.kind === k ? styles.active : ""}`}
                     aria-pressed={form.kind === k}
-                    onClick={() => patchForm({ kind: k, link: null })}
+                    // The kind decides which record the picker links and which
+                    // action the save calls, so a change to it retires the
+                    // record picked under the previous one.
+                    onClick={() => {
+                      patchForm({ kind: k, link: null });
+                      setLinkOpen(false);
+                      setLinkQuery("");
+                      setCrewOpen(false);
+                      setSaveErr(null);
+                    }}
                   >
                     <Icon id={KIND_IC[k]} />
                     {k === "job" ? "Job" : k === "appointment" ? "Visit" : "Blocked"}
@@ -1502,15 +2294,18 @@ export function MobileCalendar() {
             ) : null}
           </div>
 
+          {/* The house month grid, not `<input type="date">` — see the DATE AND
+              TIME FIELDS note at the top of this file. Value is still the
+              "YYYY-MM-DD" string the save path reads. */}
           <div className={styles.fld}>
             <label className={styles.fldLbl} htmlFor="mcalDate">Date</label>
-            <input
-              className={styles.pinput}
+            <DateField
               id="mcalDate"
-              name="date"
-              type="date"
+              label="Date"
               value={form.date}
-              onChange={(e) => patchForm({ date: e.target.value })}
+              onChange={(v) => patchForm({ date: v })}
+              open={picker === "date"}
+              onOpenChange={(o) => setPicker(o ? "date" : null)}
             />
           </div>
 
@@ -1530,32 +2325,37 @@ export function MobileCalendar() {
             </button>
           </div>
 
+          {/* Clock banks, not `<input type="time">`: the native control is an OS
+              spinner on iOS and a Material dial on Android, and neither takes a
+              single house style. Both faces still resolve to 24-hour "HH:MM". */}
           {!form.allDay ? (
             <div className={styles.pair}>
               <div className={styles.fld}>
-                <label className={styles.fldLbl} htmlFor="mcalStart">Start</label>
-                <input
-                  className={styles.pinput}
-                  id="mcalStart"
-                  name="start"
-                  type="time"
-                  step={900}
+                <span className={styles.fldLbl} id="mcalStartLbl">Start</span>
+                <TimeField
+                  label="Start"
                   value={form.startT}
-                  onChange={(e) => patchForm({ startT: e.target.value })}
+                  onChange={setStartT}
+                  open={picker === "start"}
+                  onOpenChange={(o) => {
+                    if (o) freezeSpan();
+                    setPicker(o ? "start" : null);
+                  }}
                 />
               </div>
               <div className={styles.fld}>
-                <label className={styles.fldLbl} htmlFor="mcalEnd">End</label>
-                <input
-                  className={styles.pinput}
-                  id="mcalEnd"
-                  name="end"
-                  type="time"
-                  step={900}
+                <span className={styles.fldLbl} id="mcalEndLbl">End</span>
+                <TimeField
+                  label="End"
                   value={form.endT}
-                  onChange={(e) => patchForm({ endT: e.target.value })}
+                  onChange={(v) => patchForm({ endT: v })}
+                  open={picker === "end"}
+                  onOpenChange={(o) => setPicker(o ? "end" : null)}
+                  describedBy="mcalEndHint"
                 />
-                <span className={styles.fldHint}>Left behind the start, it becomes a 2-hour span.</span>
+                <span className={styles.fldHint} id="mcalEndHint">
+                  Left behind the start, it becomes a 2-hour span.
+                </span>
               </div>
             </div>
           ) : null}
@@ -1579,9 +2379,13 @@ export function MobileCalendar() {
             </div>
           ) : null}
 
-          {form.kind !== "blocked" ? (
+          {/* LINKED RECORD, per kind. A JOB event links a JOB; a VISIT links the
+              LEAD it is about; blocked time links nothing. One kind each, so the
+              picker never asks "which sort of thing?" before "which one?" —
+              `LINK_TABS` is the map and this reads it. */}
+          {linkKinds.length ? (
             <div className={styles.fld}>
-              <span className={styles.fldLbl}>Linked record</span>
+              <span className={styles.fldLbl}>{LINK_FIELD_LABEL[form.kind] ?? "Linked record"}</span>
               <div className={styles.linkBox}>
                 <button
                   className={styles.linkBtn}
@@ -1589,9 +2393,9 @@ export function MobileCalendar() {
                   aria-expanded={linkOpen}
                   onClick={() => setLinkOpen((v) => !v)}
                 >
-                  <Icon id="i-file" />
+                  <Icon id={form.kind === "job" ? "i-jobs" : "i-target"} />
                   <span className={`${styles.linkVal} ${linkPick ? "" : styles.linkNone}`}>
-                    {linkPick ? `${LINK_LABEL[linkPick.kind]} · ${linkPick.title}` : "Not linked"}
+                    {linkPick ? linkPick.title : `No ${linkNoun} linked`}
                   </span>
                   <Icon id="i-chev" className={`${styles.ic} ${styles.linkCaret}`} />
                 </button>
@@ -1603,9 +2407,9 @@ export function MobileCalendar() {
                         className={styles.srchInput}
                         type="search"
                         value={linkQuery}
-                        placeholder="Search records…"
+                        placeholder={`Search ${linkNoun}s…`}
                         autoComplete="off"
-                        aria-label="Search records to link"
+                        aria-label={`Search ${linkNoun}s to link`}
                         onChange={(e) => setLinkQuery(e.target.value)}
                       />
                     </label>
@@ -1640,7 +2444,11 @@ export function MobileCalendar() {
                         </button>
                       ))}
                       {linkRows.length === 0 ? (
-                        <div className={styles.note}>No record matches that search</div>
+                        <div className={styles.note}>
+                          {linkQuery.trim()
+                            ? `No ${linkNoun} matches that search`
+                            : `This org has no ${linkNoun} to link yet`}
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -1649,31 +2457,111 @@ export function MobileCalendar() {
             </div>
           ) : null}
 
+          {/* CREW — the desktop WorkerMultiPicker's semantics on a bottom sheet:
+              search the roster, tap to toggle, chosen crew reads back as
+              removable chips, and the count rides the collapsed face. */}
           <div className={styles.fld}>
             <span className={styles.fldLbl}>Crew</span>
-            <div className={styles.crewList}>
-              {workersData.map((w) => (
-                <button
-                  key={w.id}
-                  className={styles.fchk}
-                  type="button"
-                  aria-pressed={form.crew.includes(w.id)}
-                  onClick={() => toggleCrew(w.id)}
-                >
-                  <span className={styles.fchkBox}>
-                    <Icon id="i-check" />
-                  </span>
-                  {w.name}
-                  <span className={styles.fchkSub}>{w.role}</span>
-                </button>
-              ))}
-            </div>
             {form.kind === "blocked" ? (
-              <span className={styles.fldHint}>
-                Pick a crew member to block <b>their</b> time. Leave it empty and the block is{" "}
-                <b>yours</b> ({OWNER.name}).
-              </span>
-            ) : null}
+              <>
+                <div className={styles.crewStatic}>
+                  <Icon id="i-user" />
+                  <span>Just me · {OWNER.name || "You"}</span>
+                </div>
+                <span className={styles.fldHint}>
+                  Blocked time belongs to whoever creates it — there is no owner to
+                  pick. To block someone else&apos;s day, have them block it.
+                </span>
+              </>
+            ) : (
+              <div className={styles.linkBox}>
+                {crewPicked.length ? (
+                  <div className={styles.crewChips}>
+                    {crewPicked.map((w) => (
+                      <span className={styles.crewChip} key={w.id}>
+                        <span className={styles.crewChipT}>{w.name}</span>
+                        <button
+                          className={styles.crewChipX}
+                          type="button"
+                          aria-label={`Remove ${w.name}`}
+                          onClick={() => toggleCrew(w.id)}
+                        >
+                          <Icon id="i-x" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <button
+                  className={styles.linkBtn}
+                  type="button"
+                  aria-expanded={crewOpen}
+                  onClick={() => setCrewOpen((v) => !v)}
+                >
+                  <Icon id="i-users" />
+                  <span className={`${styles.linkVal} ${crewPicked.length ? "" : styles.linkNone}`}>
+                    {crewPicked.length ? "Add or remove crew" : "Nobody assigned"}
+                  </span>
+                  <span className={styles.crewCount}>
+                    {crewPicked.length} / {workersData.length}
+                  </span>
+                  <Icon id="i-chev" className={`${styles.ic} ${styles.linkCaret}`} />
+                </button>
+                {crewOpen ? (
+                  <div className={styles.linkPanel}>
+                    <label className={styles.linkSrch}>
+                      <Icon id="i-search" />
+                      <input
+                        className={styles.srchInput}
+                        type="search"
+                        value={crewQuery}
+                        placeholder="Search the roster…"
+                        autoComplete="off"
+                        aria-label="Search crew"
+                        onChange={(e) => setCrewQuery(e.target.value)}
+                      />
+                    </label>
+                    <div className={styles.linkList}>
+                      {crewRows.map((w) => (
+                        <button
+                          key={w.id}
+                          className={styles.crewRow}
+                          type="button"
+                          aria-pressed={form.crew.includes(w.id)}
+                          onClick={() => toggleCrew(w.id)}
+                        >
+                          <span className={styles.fchkBox}>
+                            <Icon id="i-check" />
+                          </span>
+                          <span className={styles.crewAv}>{initials(w.name)}</span>
+                          <span className={styles.crewWho}>
+                            <span className={styles.crewName}>{w.name}</span>
+                            <span className={styles.crewRole}>{w.role}</span>
+                          </span>
+                        </button>
+                      ))}
+                      {crewRows.length === 0 ? (
+                        <div className={styles.note}>
+                          {workersData.length
+                            ? "Nobody on the roster matches that"
+                            : "No crew on this org yet — add workers first"}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {/* Staffing is a JOB-level write, so a job event with no job
+                    linked has nowhere to hang a crew. Say so BEFORE the submit
+                    quietly drops it. */}
+                {form.kind === "job" && form.crew.length > 0 ? (
+                  <span className={styles.fldHint}>
+                    {linkPick
+                      ? "Crew get an invite and confirm from the worker portal."
+                      : "Crew need a linked job — pick one above, or this event saves unstaffed."}
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
 
           <div className={styles.fld}>
@@ -1688,16 +2576,41 @@ export function MobileCalendar() {
               onChange={(e) => patchForm({ notes: e.target.value })}
             />
           </div>
+
+          {/* A refusal from the server, in its own words. Above the foot rather
+              than in it, so it cannot be pushed off by the keyboard. */}
+          {saveErr ? (
+            <div className={styles.formErr} role="alert">
+              <Icon id="i-calendar-ban" />
+              <span>{saveErr}</span>
+            </div>
+          ) : null}
         </form>
         {/* The submit pair sits in a beige foot OUTSIDE the scrolling body and
             reaches the form with form=. */}
         <div className={styles.formFoot}>
-          <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setFormOpen(false)}>
+          <button
+            className={`${styles.btn} ${styles.btnGhost}`}
+            type="button"
+            disabled={saving}
+            onClick={closeForm}
+          >
             Cancel
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mcalForm">
+          <button
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            type="submit"
+            form="mcalForm"
+            disabled={saving}
+          >
             <Icon id="i-check" />
-            {form.mode === "edit" ? "Save changes" : form.kind === "blocked" ? "Block time" : "Create event"}
+            {saving
+              ? form.kind === "blocked" ? "Blocking…" : "Creating…"
+              : form.mode === "edit"
+                ? "Save changes"
+                : form.kind === "blocked"
+                  ? "Block time"
+                  : "Create event"}
           </button>
         </div>
       </div>

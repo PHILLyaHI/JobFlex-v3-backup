@@ -27,9 +27,9 @@
 //  · Tab labels are short ("Book", "Rules", "Due"): four columns of a 320px
 //    screen are ~72px each, and "Customer book" / "Follow-up queue" cannot
 //    survive that at 13px.
-//  · A search box is added to the book. Thirteen accounts across two pages
-//    makes finding a named one the real job; it filters the fixture
-//    client-side — no new endpoint.
+//  · A search box is added to the book. Finding a named account is the real
+//    job on a phone; it filters the already-loaded rows client-side — no new
+//    endpoint.
 //  · "Last activity" leaves the row for the sheet, the same call that took
 //    "updated" off the proposals ledger and the clients book.
 //  · Page sizes drop (book 13-unpaged → 8, queue 20 → 6): a handheld record
@@ -37,32 +37,46 @@
 //  · The desktop's per-row Done + Send pair becomes one flat framed Send on the
 //    row; Done and everything else live in the row's sheet.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// DATA: every row, figure and badge below is the signed-in org's own, read
+// through `getCrmSnapshot()` (crm-snapshot.ts) — the same org-scoped Prisma
+// queries the desktop CRM sheet runs. Every write goes to an existing server
+// action (followUps.ts, leads.ts) and the snapshot is re-read afterwards, so
+// what the phone shows is what the database holds.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-crm.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { claimLead, deleteLead } from "@/actions/leads";
 import {
-  ACTIVE_STATUSES,
-  ACTIVITY_FEED,
-  CONVERSATIONS_COUNT,
-  CRM_LEADS,
-  CUSTOMERS_DATA,
-  FRESH_STATUSES,
+  deleteFollowUpRule,
+  markFollowUpDone,
+  runFollowUpNow,
+  setFollowUpRuleEnabled,
+  upsertFollowUpRule,
+} from "@/actions/followUps";
+import { renderEmail } from "@/lib/email/renderEmail";
+import {
+  FOLLOW_UP_CHANNELS,
+  TEXT_NEEDS_TWILIO,
+  channelLabel,
+  delayLabel,
+  followUpEmailDoc,
+  followUpSmsText,
+  previewContext,
+  type FollowUpChannel,
+} from "@/lib/followUps/copy";
+import { getCrmSnapshot } from "./crm-snapshot";
+import {
   LEAD_CLS,
   PAGE_BOOK,
   PAGE_QUEUE,
   QUEUE_FILTERS,
-  QUEUE_SEED,
-  RULES_SEED,
-  RULE_SEQ_START,
   STATUS_CLS,
   STATUS_ORDER,
   TABS,
-  TEMPLATES,
   TRIGGERS,
   humanDelay,
   initials,
@@ -72,13 +86,19 @@ import {
   severity,
   titleCase,
   triggerLabel,
+  type ActivityItem,
   type CrmLead,
+  type CrmStats,
   type Customer,
   type FollowUpRule,
+  type PreviewOrg,
   type QueueFilterKey,
   type QueueItem,
   type TabKey,
 } from "./crm-data";
+
+const EMPTY_STATS: CrmStats = { won: 0, lost: 0, active: 0, conversations: 0 };
+const EMPTY_ORG: PreviewOrg = { name: "Your company", phone: null, logoUrl: null };
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -133,6 +153,97 @@ function CountUp({
   );
 }
 
+/**
+ * What the client receives, rendered live.
+ *
+ * Not a mock-up: the doc comes from src/lib/followUps/copy.ts and the HTML from
+ * lib/email/renderEmail — the same two calls `dispatchOne()` makes before it
+ * hands the message to the transport. Change the trigger and this repaints.
+ *
+ * The email goes in an iframe because it is a whole document with its own
+ * <style> block and its own 560px measure; inlining it would let the page's
+ * stylesheet leak in and stop the preview being truthful. It is authored at its
+ * natural 600px and scaled down to the phone's column, so the layout stays the
+ * one the homeowner will actually see. Scripts are sandboxed off;
+ * `allow-same-origin` is kept only so the frame's height can be measured.
+ */
+function MessagePreview({
+  trigger,
+  channel,
+  delayMinutes,
+  org,
+  smsEnabled,
+}: {
+  trigger: string;
+  channel: FollowUpChannel;
+  delayMinutes: number;
+  org: PreviewOrg;
+  smsEnabled: boolean;
+}) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [docHeight, setDocHeight] = useState(900);
+  const [scale, setScale] = useState(0.6);
+
+  const ctx = useMemo(() => {
+    const c = previewContext(org.name, delayMinutes);
+    c.orgPhone = org.phone;
+    c.orgLogoUrl = org.logoUrl;
+    return c;
+  }, [org, delayMinutes]);
+
+  const html = useMemo(
+    () => (channel === "TEXT" ? null : renderEmail(followUpEmailDoc(trigger, ctx)).html),
+    [channel, trigger, ctx],
+  );
+
+  useEffect(() => {
+    if (channel === "TEXT") return;
+    const measure = () => {
+      const w = stageRef.current?.clientWidth ?? 0;
+      if (w) setScale(Math.min(1, w / 600));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [channel]);
+
+  if (channel === "TEXT") {
+    return (
+      <div className={styles.prevStage}>
+        <div className={styles.prevSms}>
+          <div className={styles.prevSmsHd}>{org.name}</div>
+          <div className={styles.prevSmsBub}>{followUpSmsText(trigger, ctx)}</div>
+          {smsEnabled ? null : <div className={styles.prevSmsWarn}>{TEXT_NEEDS_TWILIO}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={styles.prevStage}
+      ref={stageRef}
+      style={{ height: `${Math.round(docHeight * scale)}px` }}
+    >
+      <iframe
+        ref={frameRef}
+        className={styles.prevFrame}
+        title="Follow-up email preview"
+        sandbox="allow-same-origin"
+        srcDoc={html ?? ""}
+        style={{ height: `${docHeight}px`, transform: `scale(${scale})` }}
+        onLoad={() => {
+          // +12 so the card's own offset shadow and bottom border land inside
+          // the stage rather than being shaved off by it.
+          const h = frameRef.current?.contentDocument?.body?.scrollHeight;
+          if (h) setDocHeight(h + 12);
+        }}
+      />
+    </div>
+  );
+}
+
 type MenuRow = {
   act: string;
   icon: string;
@@ -143,9 +254,9 @@ type MenuRow = {
   danger?: boolean;
 };
 
+/* Every `id` below is a real database row id — Lead.id, Client.id,
+   FollowUpRule.id, FollowUp.id — because every sheet row acts on one. */
 type SheetTarget =
-  /* Leads carry no id in the donor fixture, so the name is the key — it is
-     unique across all fifteen records. */
   | { kind: "lead"; id: string }
   | { kind: "customer"; id: string }
   | { kind: "rule"; id: string }
@@ -192,18 +303,28 @@ function Pager({
 }
 
 export function MobileCrm() {
+  const router = useRouter();
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  /* Clone every seed per mount, so runtime mutations never leak between
-     mounts (the donor's own rule). */
-  const [leads, setLeads] = useState<CrmLead[]>(() => CRM_LEADS.map((l) => ({ ...l })));
-  const [customers, setCustomers] = useState<Customer[]>(() =>
-    CUSTOMERS_DATA.map((c) => ({ ...c })),
-  );
-  const [rules, setRules] = useState<FollowUpRule[]>(() => RULES_SEED.map((r) => ({ ...r })));
-  const [queue, setQueue] = useState<QueueItem[]>(() => QUEUE_SEED.map((q) => ({ ...q })));
-  const [ruleSeq, setRuleSeq] = useState(RULE_SEQ_START);
+  /* ---- live rows, read from the database on mount and after every write ---- */
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  /* The one place a refused or failed write is reported. */
+  const [actionErr, setActionErr] = useState<string | null>(null);
+  const [stats, setStats] = useState<CrmStats>(EMPTY_STATS);
+  const [leads, setLeads] = useState<CrmLead[]>([]);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [rules, setRules] = useState<FollowUpRule[]>([]);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  /* The org's own letterhead + whether this deployment can text at all. Both
+     feed the preview card and the rule form's channel picker. */
+  const [org, setOrg] = useState<PreviewOrg>(EMPTY_ORG);
+  const [smsEnabled, setSmsEnabled] = useState(false);
+  /* One row at a time: the id currently mid-write, so its controls disable. */
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const [tab, setTab] = useState<TabKey>("overview");
   const [bookFilter, setBookFilter] = useState<string>("ALL");
@@ -224,9 +345,106 @@ export function MobileCrm() {
   /* ---- rule form sheet ---- */
   const [ruleOpen, setRuleOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", trigger: "SENT", days: "2", template: "" });
+  const [form, setForm] = useState({ name: "", trigger: "SENT", days: "2", channel: "EMAIL" as FollowUpChannel });
   const [nameErr, setNameErr] = useState(false);
+
+  /* ---- preview card ----
+     What the "What they receive" card is showing. Seeded from the first rule,
+     then driven by the rule sheet — pick a trigger in the form and the card is
+     on that message when the sheet closes. Its own picker steers it too, so the
+     copy is readable without opening the editor. */
+  const [prev, setPrev] = useState<{ trigger: string; channel: FollowUpChannel; days: number }>({
+    trigger: "SENT",
+    channel: "EMAIL",
+    days: 2,
+  });
+  /* One rule seed only — after that the card belongs to whoever is steering it,
+     and a background refresh must not yank it back. */
+  const prevSeeded = useRef(false);
+  const previewRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+
+  /* ---------- the read ---------------------------------------------------
+     One action, the same queries the desktop sheet runs. Called on mount and
+     again after every write, so an optimistic row that the server refused
+     snaps back to the truth instead of lingering. */
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const res = await getCrmSnapshot();
+    if (!alive.current) return;
+    if (!res.ok) {
+      setLoadErr(res.error);
+      return;
+    }
+    setLoadErr(null);
+    setStats(res.data.stats);
+    setLeads(res.data.leads);
+    setActivity(res.data.activity);
+    setCustomers(res.data.customers);
+    setRules(res.data.rules);
+    setOrg(res.data.org);
+    setSmsEnabled(res.data.smsEnabled);
+    if (!prevSeeded.current && res.data.rules.length) {
+      const first = res.data.rules[0];
+      prevSeeded.current = true;
+      setPrev({
+        trigger: first.triggerStatus,
+        channel: first.channel,
+        days: Math.max(1, Math.round(first.delayMinutes / 60 / 24)),
+      });
+    }
+    setQueue(res.data.queue);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await refresh();
+      } catch {
+        if (!cancelled) setLoadErr("Couldn't load the CRM. Pull down to try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
+
+  /** Run a write, report a refusal in the page's own error line, then re-read.
+   *  Server actions here are role-gated (rule CRUD is manager-only, the queue
+   *  is sales-or-manager), so a refusal is a normal outcome, not a crash. */
+  const commit = useCallback(
+    async (id: string | null, run: () => Promise<unknown>) => {
+      setActionErr(null);
+      setBusyId(id);
+      try {
+        await run();
+        await refresh();
+        return true;
+      } catch (err: unknown) {
+        if (alive.current) {
+          setActionErr(err instanceof Error ? err.message : "That didn't go through.");
+          // Undo any optimistic paint: cancelling the pending fade (the effect
+          // cleanup clears its timer) and re-reading the truth.
+          setGone([]);
+          await refresh().catch(() => {});
+        }
+        return false;
+      } finally {
+        if (alive.current) setBusyId(null);
+      }
+    },
+    [refresh],
+  );
 
   /* ---------- viewport height ------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
@@ -340,16 +558,8 @@ export function MobileCrm() {
     el.addEventListener("animationend", () => el.classList.remove(styles.pressed), { once: true });
   }, []);
 
-  /* One blue flash where a row has nothing to navigate to — the donor answered
-     the same rows with an "Opened" stamp on the button. Without it the tap is
-     silent, and a silent tap reads as broken. */
-  const flash = (el: HTMLElement) => {
-    if (prefersReducedMotion()) return;
-    el.classList.remove(styles.landed);
-    void el.offsetWidth;
-    el.classList.add(styles.landed);
-    el.addEventListener("animationend", () => el.classList.remove(styles.landed), { once: true });
-  };
+  /* The donor flashed an "Opened" stamp on the action rows that went nowhere.
+     Every one of them navigates now, so the stamp is gone with them. */
 
   /* ---------- Esc closes what the PAGE owns ---------------------------
      The drawer is not listed: MobileNav owns its own Escape and only binds
@@ -412,17 +622,14 @@ export function MobileCrm() {
   }, [gone]);
 
   /* ---------- derived: Overview ---------------------------------------- */
-  const won = useMemo(() => leads.filter((l) => l.status === "WON").length, [leads]);
-  const lost = useMemo(() => leads.filter((l) => l.status === "LOST").length, [leads]);
-  const active = useMemo(
-    () => leads.filter((l) => ACTIVE_STATUSES.includes(l.status)).length,
-    [leads],
-  );
+  /* Won / lost / active are counted across the WHOLE Lead table server-side —
+     the same figures the desktop stat grid prints. `leads` is only the five
+     newest NEW/ROUTED/CLAIMED rows the Overview lists. */
+  const won = stats.won;
+  const lost = stats.lost;
+  const active = stats.active;
   const rate = won + lost > 0 ? (won / (won + lost)) * 100 : 0;
-  const fresh = useMemo(
-    () => leads.filter((l) => FRESH_STATUSES.includes(l.status)).slice(0, 5),
-    [leads],
-  );
+  const fresh = leads;
   const dueNow = useMemo(() => queue.filter((q) => q.overdue), [queue]);
   const laterOn = useMemo(() => queue.filter((q) => !q.overdue), [queue]);
   const oldest = useMemo(
@@ -527,9 +734,18 @@ export function MobileCrm() {
     rulesOn.length, rules.length, fastest, dueNow.length, laterOn.length, oldest,
   ]);
 
-  /* ---------- What needs you — the donor's action rows ------------------ */
+  /* ---------- What needs you — the donor's action rows ------------------
+     `go` switches a tab on this page; `nav` leaves for another page. Every row
+     does one or the other — none of them is decoration. */
   const actionRows = useMemo(() => {
-    const rows: Array<{ tone: string; icon: string; t: string; h: string; go: TabKey | null }> = [];
+    const rows: Array<{
+      tone: string;
+      icon: string;
+      t: string;
+      h: string;
+      go: TabKey | null;
+      nav?: string;
+    }> = [];
     if (dueNow.length > 0) {
       rows.push({
         tone: styles.toneDanger,
@@ -546,15 +762,17 @@ export function MobileCrm() {
         t: `${active} lead${active === 1 ? "" : "s"} still in motion`,
         h: "Push them forward in the pipeline",
         go: null,
+        nav: "/dashboard/leads",
       });
     }
-    if (CONVERSATIONS_COUNT > 0) {
+    if (stats.conversations > 0) {
       rows.push({
         tone: "",
         icon: "i-msg",
-        t: `${CONVERSATIONS_COUNT} conversation${CONVERSATIONS_COUNT === 1 ? "" : "s"}`,
+        t: `${stats.conversations} conversation${stats.conversations === 1 ? "" : "s"}`,
         h: "Open the shared inbox",
         go: null,
+        nav: "/dashboard/messages",
       });
     }
     rows.push({
@@ -565,14 +783,21 @@ export function MobileCrm() {
       go: "rules",
     });
     return rows;
-  }, [dueNow.length, active]);
+  }, [dueNow.length, active, stats.conversations]);
+
+  /** `typedRoutes` is on, so `push` wants a Route; every href here is a
+   *  literal owned by this module. */
+  const go = useCallback(
+    (href: string) => router.push(href as Parameters<typeof router.push>[0]),
+    [router],
+  );
 
   /* ---------- the row sheet, one per record kind ------------------------ */
   const sheetView = useMemo<{ kicker: string; title: string; rows: MenuRow[] } | null>(() => {
     if (!sheet) return null;
 
     if (sheet.kind === "lead") {
-      const l = leads.find((x) => x.name === sheet.id);
+      const l = leads.find((x) => x.id === sheet.id);
       if (!l) return null;
       const claimed = l.status === "CLAIMED";
       return {
@@ -588,7 +813,7 @@ export function MobileCrm() {
           },
           {
             act: "msg", icon: "i-msg", tone: styles.toneOk, title: "Message assignee",
-            sub: l.assignee ? `Text ${l.assignee}` : "Unassigned — route it first",
+            sub: l.assignee ? `Open the inbox — ${l.assignee}` : "Unassigned — route it first",
             disabled: !l.assignee,
           },
           {
@@ -606,23 +831,21 @@ export function MobileCrm() {
     if (sheet.kind === "customer") {
       const c = customers.find((x) => x.id === sheet.id);
       if (!c) return null;
+      // No "Remove from book" row: a customer joins the book by having a
+      // proposal, and there is no client-delete action in the data layer to
+      // wire it to. A row that only hides itself would be a lie.
       return {
         kicker: `${c.quotes} proposal${c.quotes === 1 ? "" : "s"} · ${money(c.quoted)} quoted · last ${c.last}`,
         title: c.name,
         rows: [
-          { act: "open", icon: "i-user", tone: styles.toneBp, title: "Open customer", sub: "Full record and history" },
+          {
+            act: "open", icon: "i-user", tone: styles.toneBp, title: "Open customer",
+            sub: c.ltv ? `Record, proposals and ${money(c.ltv)} collected` : "Record and proposal history",
+          },
           { act: "prop", icon: "i-fileplus", tone: styles.toneSky, title: "New proposal", sub: `Start one for ${c.name}` },
           {
             act: "mail", icon: "i-mail", tone: styles.toneOk, title: "Send email",
             sub: c.email || "No email on file", disabled: !c.email,
-          },
-          {
-            act: "pay", icon: "i-card", tone: styles.toneWarn, title: "Payment history",
-            sub: c.ltv ? `${money(c.ltv)} collected` : "Nothing paid yet", disabled: c.ltv === 0,
-          },
-          {
-            act: "del", icon: "i-trash", tone: styles.toneDanger, title: "Remove from book",
-            sub: "Removes the record permanently", danger: true,
           },
         ],
       };
@@ -635,10 +858,10 @@ export function MobileCrm() {
         kicker: `${triggerLabel(r.triggerStatus)} · ${humanDelay(r.delayMinutes)} delay`,
         title: r.name,
         rows: [
-          { act: "edit", icon: "i-gear", tone: styles.toneBp, title: "Edit rule", sub: "Trigger, delay and template" },
+          { act: "edit", icon: "i-gear", tone: styles.toneBp, title: "Edit rule", sub: "Trigger, delay and channel" },
           {
-            act: "tpl", icon: "i-file", tone: styles.toneSky, title: "Preview template",
-            sub: r.template ?? "No template attached", disabled: !r.template,
+            act: "preview", icon: "i-file", tone: styles.toneSky, title: "Preview the message",
+            sub: `Shows the ${channelLabel(r.channel).toLowerCase()} this rule sends`,
           },
           {
             act: "flip", icon: "i-rotate", tone: styles.toneOk,
@@ -655,6 +878,8 @@ export function MobileCrm() {
 
     const q = queue.find((x) => x.id === sheet.id);
     if (!q) return null;
+    // Reschedule and Cancel are gone: `FollowUp` has no reschedule or cancel
+    // action, only runFollowUpNow / markFollowUpDone. Both of those are here.
     return {
       kicker: `${q.date} · ${q.rel}`,
       title: q.client,
@@ -662,16 +887,9 @@ export function MobileCrm() {
         { act: "send", icon: "i-send", tone: styles.toneSky, title: "Send now", sub: "Delivers the follow-up and clears it" },
         { act: "done", icon: "i-check", tone: styles.toneOk, title: "Mark done", sub: "Clears it without sending" },
         {
-          act: "open", icon: "i-folder", tone: styles.toneBp, title: "Open project",
-          sub: q.title ?? "No project on this follow-up", disabled: !q.title,
-        },
-        {
-          act: "later", icon: "i-cal", tone: styles.toneWarn, title: "Reschedule",
-          sub: q.overdue ? "Push it out three days" : "Already scheduled", disabled: !q.overdue,
-        },
-        {
-          act: "cancel", icon: "i-trash", tone: styles.toneDanger, title: "Cancel follow-up",
-          sub: "Drops it from the queue", danger: true,
+          act: "open", icon: "i-folder", tone: styles.toneBp, title: "Open proposal",
+          sub: q.proposalId ? (q.title ?? "The proposal this follow-up chases") : "No proposal on this follow-up",
+          disabled: !q.proposalId,
         },
       ],
     };
@@ -679,12 +897,17 @@ export function MobileCrm() {
 
   /* ---------- rule form ----------------------------------------------- */
   const openRule = (r: FollowUpRule | null) => {
+    const days = r ? Math.max(1, Math.round(r.delayMinutes / 60 / 24)) : 2;
     setForm({
       name: r?.name ?? "",
       trigger: r?.triggerStatus ?? "SENT",
-      days: String(r ? Math.max(1, Math.round(r.delayMinutes / 60 / 24)) : 2),
-      template: r?.template ?? "",
+      days: String(days),
+      channel: r?.channel ?? "EMAIL",
     });
+    // The preview under the list follows the form, so closing the sheet leaves
+    // the card on the message the rule being edited actually sends.
+    prevSeeded.current = true;
+    setPrev({ trigger: r?.triggerStatus ?? "SENT", channel: r?.channel ?? "EMAIL", days });
     setEditingId(r?.id ?? null);
     setNameErr(false);
     setSheet(null);
@@ -696,83 +919,121 @@ export function MobileCrm() {
     window.setTimeout(() => nameRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
   };
 
-  const submitRule = (e: React.FormEvent) => {
+  /* Create / update goes through `upsertFollowUpRule` — the same action the
+     desktop sheet and the classic editor call. `channel` is the only per-rule
+     choice left; the wording comes from the trigger. */
+  const submitRule = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     const name = form.name.trim();
     if (!name) {
       setNameErr(true);
       nameRef.current?.focus();
       return;
     }
-    const payload = {
-      name,
-      triggerStatus: form.trigger,
-      delayMinutes: Math.max(1, parseInt(form.days, 10) || 1) * 60 * 24,
-      template: form.template || null,
-    };
-    if (editingId) {
-      setRules((prev) => prev.map((r) => (r.id === editingId ? { ...r, ...payload } : r)));
-      setLandedId(editingId);
-    } else {
-      const id = `r${ruleSeq + 1}`;
-      setRuleSeq((n) => n + 1);
-      setRules((prev) => [...prev, { id, enabled: true, ...payload }]);
-      setLandedId(id);
+    const existing = editingId ? rules.find((r) => r.id === editingId) : null;
+    setSaving(true);
+    const ok = await commit(editingId, () =>
+      upsertFollowUpRule({
+        id: editingId ?? undefined,
+        name,
+        triggerStatus: form.trigger,
+        delayMinutes: Math.max(1, parseInt(form.days, 10) || 1) * 60 * 24,
+        // A new rule starts live; an edit keeps whatever the switch says.
+        enabled: existing ? existing.enabled : true,
+        channel: form.channel,
+      }),
+    );
+    setSaving(false);
+    if (ok) {
+      if (editingId) setLandedId(editingId);
+      setRuleOpen(false);
     }
-    setRuleOpen(false);
   };
 
-  /* ---------- mutations ----------------------------------------------- */
-  const toggleRule = (id: string) =>
-    setRules((prev) => prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
+  /* ---------- mutations — every one of these hits the database ---------- */
+  const toggleRule = (id: string, next: boolean) => {
+    // Paint the flip immediately; `commit` re-reads and corrects if refused.
+    setRules((prev) => prev.map((r) => (r.id === id ? { ...r, enabled: next } : r)));
+    setLandedId(id);
+    return commit(id, () => setFollowUpRuleEnabled(id, next));
+  };
 
-  const dropQueue = (id: string) => setGone((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  /* The row fades for 240ms before it leaves the list — the donor's `.gone`
+     pass — while the server action runs underneath. */
+  const fadeOut = (id: string) => setGone((prev) => (prev.includes(id) ? prev : [...prev, id]));
 
-  const runSheet = (act: string) => {
+  const sendFollowUp = (id: string) => {
+    fadeOut(id);
+    return commit(id, () => runFollowUpNow(id));
+  };
+
+  const runSheet = async (act: string) => {
     const target = sheet;
     setSheet(null);
     if (!target) return;
 
     if (target.kind === "lead") {
+      const lead = leads.find((l) => l.id === target.id);
       if (act === "drop") {
-        setLeads((prev) => prev.filter((l) => l.name !== target.id));
+        await commit(target.id, () => deleteLead(target.id));
       } else if (act === "claim") {
-        setLeads((prev) =>
-          prev.map((l) =>
-            l.name === target.id ? { ...l, status: "CLAIMED", assignee: l.assignee ?? "Ivan" } : l,
-          ),
-        );
         setLandedId(target.id);
+        await commit(target.id, () => claimLead(target.id));
+      } else if (act === "open") {
+        go(`/dashboard/leads/${target.id}`);
+      } else if (act === "msg" && lead?.assignee) {
+        go("/dashboard/messages");
+      } else if (act === "quote") {
+        go("/dashboard/advanced-ai");
       }
       return;
     }
     if (target.kind === "customer") {
-      if (act === "del") {
-        setCustomers((prev) => prev.filter((c) => c.id !== target.id));
-        setBookPage(1);
+      const c = customers.find((x) => x.id === target.id);
+      if (act === "open") {
+        go(`/dashboard/clients/${target.id}`);
+      } else if (act === "prop") {
+        go("/dashboard/proposals/new");
+      } else if (act === "mail" && c?.email) {
+        // Hands off to the phone's mail app. `assign` rather than the router:
+        // mailto: is not an app route. The address is filtered to the addr-spec
+        // charset so nothing can smuggle extra mailto headers through it.
+        window.location.assign(`mailto:${c.email.trim().replace(/[^\w.@+-]/g, "")}`);
       }
       return;
     }
     if (target.kind === "rule") {
+      const r = rules.find((x) => x.id === target.id);
       if (act === "del") {
-        setRules((prev) => prev.filter((r) => r.id !== target.id));
-      } else if (act === "flip") {
-        toggleRule(target.id);
-        setLandedId(target.id);
+        await commit(target.id, () => deleteFollowUpRule(target.id));
+      } else if (act === "flip" && r) {
+        await toggleRule(target.id, !r.enabled);
       } else if (act === "edit") {
-        openRule(rules.find((r) => r.id === target.id) ?? null);
+        openRule(r ?? null);
+      } else if (act === "preview" && r) {
+        prevSeeded.current = true;
+        setPrev({
+          trigger: r.triggerStatus,
+          channel: r.channel,
+          days: Math.max(1, Math.round(r.delayMinutes / 60 / 24)),
+        });
+        previewRef.current?.scrollIntoView({
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+          block: "start",
+        });
       }
       return;
     }
-    if (act === "send" || act === "done" || act === "cancel") {
-      dropQueue(target.id);
-    } else if (act === "later") {
-      setQueue((prev) =>
-        prev.map((q) =>
-          q.id === target.id ? { ...q, overdue: false, days: 0, rel: "in 3 days" } : q,
-        ),
-      );
-      setLandedId(target.id);
+
+    const q = queue.find((x) => x.id === target.id);
+    if (act === "send") {
+      await sendFollowUp(target.id);
+    } else if (act === "done") {
+      fadeOut(target.id);
+      await commit(target.id, () => markFollowUpDone(target.id));
+    } else if (act === "open" && q?.proposalId) {
+      go(`/dashboard/proposals/${q.proposalId}`);
     }
   };
 
@@ -789,6 +1050,9 @@ export function MobileCrm() {
 
   const tabIndex = TABS.findIndex((t) => t.key === tab);
   const anyOverlay = Boolean(sheetView) || ruleOpen;
+  /* Panels wait for the read. Rendering them first would print "Book is
+     empty" / "Queue is clear" over rows that are still in flight. */
+  const ready = !loading && !loadErr;
 
   // Swipe-down dismissal, one gesture per sheet, wired to the close paths the
   // scrim and Cancel already use.
@@ -805,9 +1069,11 @@ export function MobileCrm() {
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>
         <div className={styles.content} ref={contentRef}>
-          {/* PAGE HEAD */}
+          {/* PAGE HEAD
+              No eyebrow. The "Pipeline" kicker named the SECTION above a title
+              that already says which section it is — the same trim the mobile
+              Clients head got. */}
           <div className={styles.pageHead}>
-            <div className={styles.kicker}>Pipeline</div>
             <h1 className={styles.pageTitle}>CRM</h1>
             <div className={styles.pageActions}>
               <button
@@ -860,8 +1126,44 @@ export function MobileCrm() {
             ))}
           </div>
 
+          {/* ---- read state: the panels only paint once the rows are in ---- */}
+          {loading ? (
+            <div className={styles.note} role="status">
+              <div className={styles.noteT}>Loading your CRM…</div>
+              <div className={styles.noteS}>
+                Leads, the customer book, your workflow rules and the follow-up queue.
+              </div>
+            </div>
+          ) : null}
+
+          {!loading && loadErr ? (
+            <div className={styles.empty} role="alert">
+              <div className={styles.emptyT}>Couldn&rsquo;t load the CRM</div>
+              <div className={styles.emptyS}>{loadErr}</div>
+              <button
+                className={styles.emptyA}
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  refresh().finally(() => setLoading(false));
+                }}
+              >
+                <Icon id="i-rotate" />Try again
+              </button>
+            </div>
+          ) : null}
+
+          {/* A write the server refused (rule CRUD is manager-only, the queue
+              is sales-or-manager) reports here rather than silently snapping. */}
+          {actionErr ? (
+            <div className={styles.note} role="alert">
+              <div className={styles.noteT}>That didn&rsquo;t go through</div>
+              <div className={styles.noteS}>{actionErr}</div>
+            </div>
+          ) : null}
+
           {/* ============ TAB: OVERVIEW ============ */}
-          {tab === "overview" && (
+          {ready && tab === "overview" && (
             <div className={styles.card}>
               <div className={styles.cardHead}>
                 <div className={styles.cardTitle}>Fresh leads</div>
@@ -879,11 +1181,11 @@ export function MobileCrm() {
                 <div className={styles.fresh}>
                   {fresh.map((l, i) => (
                     <button
-                      key={l.name}
-                      className={`${styles.fitem} ${styles.rowIn} ${landedId === l.name ? styles.landed : ""}`}
+                      key={l.id}
+                      className={`${styles.fitem} ${styles.rowIn} ${landedId === l.id ? styles.landed : ""}`}
                       style={{ animationDelay: `${i * 45}ms` }}
                       type="button"
-                      onClick={() => setSheet({ kind: "lead", id: l.name })}
+                      onClick={() => setSheet({ kind: "lead", id: l.id })}
                     >
                       <span className={styles.fname}>{l.name}</span>
                       <span className={styles.fbadge}>
@@ -903,7 +1205,7 @@ export function MobileCrm() {
             </div>
           )}
 
-          {tab === "overview" && (
+          {ready && tab === "overview" && (
             <div className={styles.card}>
               <div className={styles.cardHead}>
                 <div className={styles.cardTitle}>What needs you</div>
@@ -915,7 +1217,7 @@ export function MobileCrm() {
                     key={r.t}
                     className={styles.arow}
                     type="button"
-                    onClick={(e) => (r.go ? goTab(r.go) : flash(e.currentTarget))}
+                    onClick={() => (r.go ? goTab(r.go) : r.nav ? go(r.nav) : undefined)}
                   >
                     <span className={`${styles.mIc} ${r.tone}`}>
                       <Icon id={r.icon} />
@@ -931,24 +1233,33 @@ export function MobileCrm() {
             </div>
           )}
 
-          {tab === "overview" && (
+          {ready && tab === "overview" && (
             <div className={styles.card}>
               <div className={styles.cardHead}>
                 <div className={styles.cardTitle}>Recent activity</div>
               </div>
-              <ul className={styles.recent}>
-                {ACTIVITY_FEED.slice(0, 5).map((a) => (
-                  <li className={styles.ritem} key={a.summary}>
-                    <span className={styles.rtxt}>{a.summary}</span>
-                    <span className={styles.rage}>{a.age}</span>
-                  </li>
-                ))}
-              </ul>
+              {activity.length === 0 ? (
+                <div className={styles.note}>
+                  <div className={styles.noteT}>Nothing recorded yet</div>
+                  <div className={styles.noteS}>
+                    Sends, views, payments and status changes are logged here as they happen.
+                  </div>
+                </div>
+              ) : (
+                <ul className={styles.recent}>
+                  {activity.slice(0, 5).map((a) => (
+                    <li className={styles.ritem} key={a.id}>
+                      <span className={styles.rtxt}>{a.summary}</span>
+                      <span className={styles.rage}>{a.age}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 
           {/* ============ TAB: CUSTOMER BOOK ============ */}
-          {tab === "book" && (
+          {ready && tab === "book" && (
             <div className={styles.find}>
               <label className={styles.srch}>
                 <Icon id="i-search" />
@@ -1019,7 +1330,7 @@ export function MobileCrm() {
             </div>
           )}
 
-          {tab === "book" && (
+          {ready && tab === "book" && (
             bookVisible.length === 0 ? (
               <div className={styles.empty}>
                 {customers.length === 0 ? (
@@ -1028,7 +1339,11 @@ export function MobileCrm() {
                     <div className={styles.emptyS}>
                       An account joins the book on its first proposal. Send one and it appears here.
                     </div>
-                    <button className={styles.emptyA} type="button">
+                    <button
+                      className={styles.emptyA}
+                      type="button"
+                      onClick={() => go("/dashboard/proposals/new")}
+                    >
                       <Icon id="i-fileplus" />New proposal
                     </button>
                   </>
@@ -1086,12 +1401,12 @@ export function MobileCrm() {
             )
           )}
 
-          {tab === "book" && (
+          {ready && tab === "book" && (
             <Pager page={bookSafe} total={bookVisible.length} per={PAGE_BOOK} onGo={setBookPage} />
           )}
 
           {/* ============ TAB: WORKFLOWS ============ */}
-          {tab === "rules" && (
+          {ready && tab === "rules" && (
             rules.length === 0 ? (
               <div className={styles.empty}>
                 <div className={styles.emptyT}>No rules yet</div>
@@ -1121,8 +1436,7 @@ export function MobileCrm() {
                       <Icon id="i-dots" />
                     </button>
                     <div className={styles.rmeta}>
-                      {triggerLabel(r.triggerStatus)}
-                      {r.template ? ` · ${r.template}` : " · no template"}
+                      {triggerLabel(r.triggerStatus)} · {channelLabel(r.channel)}
                     </div>
                     <div className={styles.rowFoot}>
                       <span className={styles.rowMeta}>
@@ -1135,8 +1449,9 @@ export function MobileCrm() {
                           className={styles.tgl}
                           type="button"
                           aria-pressed={r.enabled}
+                          disabled={busyId === r.id}
                           aria-label={`${r.enabled ? "Disable" : "Enable"} ${r.name}`}
-                          onClick={() => toggleRule(r.id)}
+                          onClick={() => void toggleRule(r.id, !r.enabled)}
                         >
                           <span className={styles.tglTrack}>
                             <span className={styles.tglKnob} />
@@ -1151,8 +1466,51 @@ export function MobileCrm() {
             )
           )}
 
+          {/* ---- what the client receives ----
+              Below the rules rather than beside them: at 390px there is no
+              "right of". Same render the dispatcher sends, driven by the
+              trigger picked here or in the rule sheet. */}
+          {ready && tab === "rules" && (
+            <div className={styles.prevCard} ref={previewRef}>
+              <div className={styles.prevHead}>
+                <div className={styles.prevTitles}>
+                  <div className={styles.prevTitle}>What they receive</div>
+                  <div className={styles.prevSub}>
+                    {channelLabel(prev.channel)} · {delayLabel(prev.days * 60 * 24)} after{" "}
+                    {triggerLabel(prev.trigger).toLowerCase()}
+                  </div>
+                </div>
+                <span className={styles.pselBox}>
+                  <select
+                    className={styles.psel}
+                    aria-label="Preview moment"
+                    value={prev.trigger}
+                    onChange={(e) => {
+                      prevSeeded.current = true;
+                      setPrev((p) => ({ ...p, trigger: e.target.value }));
+                    }}
+                  >
+                    {TRIGGERS.map((t) => (
+                      <option value={t.value} key={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Icon id="i-chev" className={`${styles.ic} ${styles.pselCaret}`} />
+                </span>
+              </div>
+              <MessagePreview
+                trigger={prev.trigger}
+                channel={prev.channel}
+                delayMinutes={prev.days * 60 * 24}
+                org={org}
+                smsEnabled={smsEnabled}
+              />
+            </div>
+          )}
+
           {/* ============ TAB: FOLLOW-UP QUEUE ============ */}
-          {tab === "queue" && queue.length > 0 && (
+          {ready && tab === "queue" && queue.length > 0 && (
             <div className={`${styles.dd} ${filterOpen ? styles.open : ""}`} ref={filterRef}>
               <button
                 className={styles.ddBtn}
@@ -1191,7 +1549,7 @@ export function MobileCrm() {
             </div>
           )}
 
-          {tab === "queue" && (
+          {ready && tab === "queue" && (
             qVisible.length === 0 ? (
               <div className={styles.empty}>
                 {queue.length === 0 ? (
@@ -1250,7 +1608,12 @@ export function MobileCrm() {
                           <span className={`${styles.sev} ${styles[sev.cls]}`}>{sev.label}</span>
                           <span className={styles.rowMono}>{q.date}</span>
                         </span>
-                        <button className={styles.qsend} type="button" onClick={() => dropQueue(q.id)}>
+                        <button
+                          className={styles.qsend}
+                          type="button"
+                          disabled={busyId === q.id}
+                          onClick={() => void sendFollowUp(q.id)}
+                        >
                           <Icon id="i-send" />Send
                         </button>
                       </div>
@@ -1261,7 +1624,7 @@ export function MobileCrm() {
             )
           )}
 
-          {tab === "queue" && (
+          {ready && tab === "queue" && (
             <Pager page={qSafe} total={qVisible.length} per={PAGE_QUEUE} onGo={setQPage} />
           )}
         </div>
@@ -1379,7 +1742,12 @@ export function MobileCrm() {
                 id="mcrTrigger"
                 name="trigger"
                 value={form.trigger}
-                onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}
+                onChange={(e) => {
+                  const trigger = e.target.value;
+                  setForm((f) => ({ ...f, trigger }));
+                  prevSeeded.current = true;
+                  setPrev((p) => ({ ...p, trigger }));
+                }}
               >
                 {TRIGGERS.map((t) => (
                   <option value={t.value} key={t.value}>
@@ -1403,37 +1771,52 @@ export function MobileCrm() {
               min="1"
               inputMode="numeric"
               value={form.days}
-              onChange={(e) => setForm((f) => ({ ...f, days: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, days: e.target.value }));
+                // The prose says the delay out loud ("we sent this over 2 days
+                // ago"), so the preview follows it as it is typed.
+                prevSeeded.current = true;
+                setPrev((p) => ({ ...p, days: Math.max(1, parseInt(e.target.value, 10) || 1) }));
+              }}
             />
             <span className={styles.fldHint}>
               How long after the trigger the follow-up is scheduled.
             </span>
           </div>
 
+          {/* No template field. A rule's wording is written for its trigger
+              (src/lib/followUps/copy.ts) — the only choice left is how it
+              reaches the client, and TEXT needs a Twilio number, so it is
+              offered disabled until there is one. */}
           <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mcrTemplate">
-              Template
+            <label className={styles.fldLbl} htmlFor="mcrChannel">
+              Send by
             </label>
             <span className={styles.pselBox}>
               <select
                 className={styles.psel}
-                id="mcrTemplate"
-                name="template"
-                value={form.template}
-                onChange={(e) => setForm((f) => ({ ...f, template: e.target.value }))}
+                id="mcrChannel"
+                name="channel"
+                value={form.channel}
+                onChange={(e) => {
+                  const channel = e.target.value as FollowUpChannel;
+                  setForm((f) => ({ ...f, channel }));
+                  prevSeeded.current = true;
+                  setPrev((p) => ({ ...p, channel }));
+                }}
               >
-                <option value="">None</option>
-                {TEMPLATES.map((t) => (
-                  <option value={t} key={t}>
-                    {t}
+                {FOLLOW_UP_CHANNELS.map((c) => (
+                  <option value={c.value} key={c.value} disabled={c.value === "TEXT" && !smsEnabled}>
+                    {c.label}
                   </option>
                 ))}
               </select>
               <Icon id="i-chev" className={`${styles.ic} ${styles.pselCaret}`} />
             </span>
             <span className={styles.fldHint}>
-              Variables like <code>{"{{client_name}}"}</code> and <code>{"{{link}}"}</code> are
-              substituted at send. Leave it on None to write the message yourself.
+              {smsEnabled
+                ? "The preview under the rules list is the message this sends."
+                : TEXT_NEEDS_TWILIO}
             </span>
           </div>
         </form>
@@ -1445,8 +1828,14 @@ export function MobileCrm() {
           >
             Cancel
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mcrRuleForm">
-            <Icon id="i-check" />Save rule
+          <button
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            type="submit"
+            form="mcrRuleForm"
+            disabled={saving}
+          >
+            <Icon id="i-check" />
+            {saving ? "Saving…" : "Save rule"}
           </button>
         </div>
       </div>

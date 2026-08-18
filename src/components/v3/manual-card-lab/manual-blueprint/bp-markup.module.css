@@ -473,10 +473,15 @@
    a third naming of the same thing.
    ============================================================ */
 
+/* ONE ROW, TWO COLUMNS. They stacked, which spent 20px of vertical
+   and an extra eye-drop on two controls that are peers of each
+   other and are read together — "what comes off, what goes on".
+   The 32px column gap is the same distance `.cols` puts between
+   the rail and the plate, so the split reads as a split. */
 :global(.jf-blueprint) .adjust {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 32px;
   margin-top: 4px;
   padding-top: 24px;
   border-top: 1.5px solid var(--hair, rgba(10, 10, 10, 0.12));
@@ -498,8 +503,13 @@
 
 /* Matches `.rateName` exactly — an adjustment names itself in the
    same register as a rate, because in the rail they are peers. */
+/* `flex: 0 1 auto`, not `1 1` — the label used to be told to eat
+   the whole line so the segmented control it shared with would sit
+   hard right. That control is gone from this row, and the one thing
+   still beside the label is the `auto` provenance tag, which
+   belongs against the word "Tax" and not 400px away from it. */
 :global(.jf-blueprint) .adjName {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.3;
@@ -507,25 +517,82 @@
   min-width: 0;
 }
 
-/* The $ / % segmented control, held to two characters' worth of
-   box. `Segmented` with `hideLabel` renders one bare div, and
-   `.segFull` inside the OTHER module would otherwise stretch it
-   across the whole rail for two single-character buttons. */
-:global(.jf-blueprint) .adjTop > div {
-  flex: 0 0 auto;
-  width: 88px;
-}
-
 :global(.jf-blueprint) .adjBody {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
+/* `position: relative` so the unit can sit INSIDE the field's right
+   edge rather than in a box beside it. Shrinkable: at two columns
+   in a narrow card 118px is a ceiling, not a fixed measure. */
 :global(.jf-blueprint) .adjField {
-  flex: 0 0 auto;
+  position: relative;
+  flex: 0 1 118px;
   width: 118px;
+  max-width: 118px;
+  min-width: 74px;
+}
+
+/* Room for the glyph. (0,2,1) beats `.input`'s `padding: 0 10px`
+   (0,2,0), and no affix is passed to NumField any more, so
+   `.hasSuf .input` is never in play to outrank it. */
+:global(.jf-blueprint) .adjField input {
+  padding-right: 30px;
+}
+
+/* ── THE UNIT ────────────────────────────────────────────────
+   26 x 36 visually; the ::before takes the HIT AREA to 44 x 44.
+   The bleed lands in the field's own reserved right padding and in
+   the 12px column gap beside it, so nothing typable is stolen.
+   Verbatim the payment schedule's control — one unit affix on this
+   page, not two that look alike. */
+:global(.jf-blueprint) .unitBtn,
+:global(.jf-blueprint) .unitStatic {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius, 2px);
+}
+
+:global(.jf-blueprint) .unitBtn {
+  cursor: pointer;
+  transition: color 0.14s var(--ease);
+}
+
+:global(.jf-blueprint) .unitStatic {
+  pointer-events: none;
+  color: var(--muted-light, #888);
+}
+
+:global(.jf-blueprint) .unitBtn::before {
+  content: "";
+  position: absolute;
+  inset: -4px -9px;
+}
+
+:global(.jf-blueprint) .unitBtn:hover {
+  color: var(--ink);
+}
+
+:global(.jf-blueprint) .unitBtn:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
 }
 
 /* Same register and same alignment as `.rateAmt` under a slider:
@@ -606,7 +673,8 @@
   :global(.jf-blueprint) .slider:hover .handle,
   :global(.jf-blueprint) .sliderOn .handle,
   :global(.jf-blueprint) .saveBtn,
-  :global(.jf-blueprint) .saveBtn:hover {
+  :global(.jf-blueprint) .saveBtn:hover,
+  :global(.jf-blueprint) .unitBtn {
     transition: none;
   }
 }
