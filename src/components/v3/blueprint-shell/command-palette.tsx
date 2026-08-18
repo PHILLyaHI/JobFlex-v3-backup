@@ -19,7 +19,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-import { NAV_SECTIONS } from "./nav-map";
+import { canOpen, navSectionsFor } from "./nav-map";
+import { useNavRole } from "./nav-role";
 
 type Item = {
   key: string;
@@ -50,9 +51,14 @@ const CREATE: Item[] = [
   },
 ];
 
-function buildItems(): Item[] {
+/** The palette for one role. GO comes from that role's nav — the same
+ *  navSectionsFor() the sidebar and the drawer draw — so a page the sidebar
+ *  hides can never be reachable by typing its name instead. CREATE rows are
+ *  tested individually: they are not nav items, so nothing else would catch a
+ *  worker landing on the proposal builder from a keystroke. */
+function buildItems(role: string | null): Item[] {
   const go: Item[] = [];
-  for (const section of NAV_SECTIONS) {
+  for (const section of navSectionsFor(role)) {
     for (const item of section.items) {
       if (item.href === "#") continue; // surfaces with no page yet stay unlisted
       go.push({
@@ -65,7 +71,7 @@ function buildItems(): Item[] {
       });
     }
   }
-  return go.concat(CREATE);
+  return go.concat(CREATE.filter((item) => canOpen(role, item.href)));
 }
 
 /** Subsequence match, so "prop" finds Proposals and "trbd" finds Trade board. */
@@ -93,7 +99,8 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const items = useMemo(() => buildItems(), []);
+  const role = useNavRole();
+  const items = useMemo(() => buildItems(role), [role]);
   // Rows carry their own "is this the first of its group" flag, computed here
   // rather than by mutating a cursor while mapping — a running variable read and
   // written during render is exactly the pattern React's rules forbid, and it

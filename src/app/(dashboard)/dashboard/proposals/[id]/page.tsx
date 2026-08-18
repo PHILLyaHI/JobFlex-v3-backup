@@ -13,6 +13,11 @@ import { MaterialPurchasingList } from "@/components/materials/MaterialPurchasin
 import { money, longDate } from "@/lib/format";
 import { ExternalLink } from "lucide-react";
 
+// Session-scoped, never static. Declared so the dev server does not fork its
+// static-paths worker for this route — see the workerThreads note in
+// next.config.ts.
+export const dynamic = "force-dynamic";
+
 export default async function ProposalEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { organizationId, role, user } = await requireOrg();

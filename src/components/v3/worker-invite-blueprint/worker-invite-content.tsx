@@ -31,6 +31,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { acceptWorkerInvite, declineWorkerInvite } from "@/actions/workers";
 import { roleLabel } from "@/lib/prismaEnums";
+import { isRedirectError } from "@/lib/redirectError";
 import { WorkerInviteSprite } from "./worker-invite-sprite";
 import "./worker-invite.css";
 
@@ -58,7 +59,11 @@ export function WorkerInviteContent({
   const [stage, setStage] = useState<"intro" | "password" | "joined" | "declined">(
     alreadyDeclined ? "declined" : "intro",
   );
+  // One toggle per field, not one shared flag: revealing what you typed to
+  // check it against the confirm box is the whole point of the control, and a
+  // single flag that unmasks both defeats that.
   const [pwShown, setPwShown] = useState(false);
+  const [confirmShown, setConfirmShown] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "accept" | "decline">(null);
 
@@ -108,6 +113,21 @@ export function WorkerInviteContent({
       router.push("/dashboard/jobs");
       router.refresh();
     } catch (e: unknown) {
+      // The redirect the action performs on success arrives HERE, as a throw:
+      // `redirect()` signals itself by throwing, and the throw crosses the
+      // server-action boundary. Rendering it printed the literal word
+      // NEXT_REDIRECT in the red box for the frame before the router landed on
+      // /dashboard/jobs — an error banner on the happy path.
+      //
+      // Recognised and treated as success, not rethrown: this is a browser
+      // event handler, and the router has already accepted the redirect by the
+      // time we get here, so a rethrow would add nothing but an unhandled
+      // rejection. `busy` deliberately stays set — the button holds its
+      // "Setting up…" state until the navigation lands.
+      if (isRedirectError(e)) {
+        setStage("joined");
+        return;
+      }
       setErr(e instanceof Error ? e.message : "Something went wrong. Try again.");
       setBusy(null);
     }
@@ -171,13 +191,23 @@ export function WorkerInviteContent({
 
                 <label className="fld">
                   <span className="fld-lbl">Confirm password</span>
-                  <input
-                    className="fld-in"
-                    type={pwShown ? "text" : "password"}
-                    placeholder="••••••••"
-                    autoComplete="new-password"
-                    ref={confirmRef}
-                  />
+                  <span className="pw-wrap">
+                    <input
+                      className="fld-in"
+                      type={confirmShown ? "text" : "password"}
+                      placeholder="••••••••"
+                      autoComplete="new-password"
+                      ref={confirmRef}
+                    />
+                    <button
+                      className="pw-toggle"
+                      type="button"
+                      aria-label={confirmShown ? "Hide confirmed password" : "Show confirmed password"}
+                      onClick={() => setConfirmShown((v) => !v)}
+                    >
+                      <svg className="ic"><use href={confirmShown ? "#i-eye-off" : "#i-eye"} /></svg>
+                    </button>
+                  </span>
                 </label>
 
                 <div className="btn-pair">

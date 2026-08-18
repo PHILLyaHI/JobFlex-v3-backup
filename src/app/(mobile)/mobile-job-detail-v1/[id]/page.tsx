@@ -49,10 +49,12 @@ export default async function MobileJobDetailV1Page({
 
   let organizationId: string;
   let role: string;
+  let userId: string;
   try {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
     role = ctx.role;
+    userId = ctx.user.id;
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       redirect(`/auth/login?next=${encodeURIComponent(`/mobile-job-detail-v1/${id}`)}`);
@@ -61,7 +63,10 @@ export default async function MobileJobDetailV1Page({
     throw err;
   }
 
-  const record = await loadJobDetail(id, organizationId, role);
+  // `userId` is what lets the loader take its assignment-scoped branch for a
+  // field worker (the record it returns is narrower — see the loader); for
+  // every other role it is read and ignored.
+  const record = await loadJobDetail(id, organizationId, role, userId);
   if (!record) notFound();
 
   // Keyed on the record — see the note on the same line in

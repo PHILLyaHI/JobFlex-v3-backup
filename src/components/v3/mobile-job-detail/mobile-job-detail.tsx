@@ -28,6 +28,15 @@
 //   ONLY when the job has a linked proposal; with none, the row collapses and
 //   the sheet runs to the bottom edge.
 //
+// ── AND IT IS ALSO THE FIELD WORKER'S RECORD ───────────────────────────────
+// An INSTALLER on a phone gets this build, with `record.viewer === "worker"`:
+// no Changes or Expenses section, no proposal bar, an assignment stamp on the
+// Overview card, and the two office affordances re-cut for the field (the
+// address gains "Get directions", "Add to schedule" becomes "Add to calendar").
+// See the same block in ../job-detail-blueprint/job-detail-content.tsx — the
+// worker record is one prop on the shared components, not a component of its
+// own, so the two audiences cannot drift apart.
+//
 // ── MOTION ─────────────────────────────────────────────────────────────────
 // Balanced: a reveal cascade over the content blocks (adaptive duration below
 // the fold), the graph-paper parallax, a press stamp delegated from the root,
@@ -41,6 +50,8 @@ import type { Route } from "next";
 import Link from "next/link";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import {
+  JD_ASSIGN,
+  ST,
   STATUS_BUTTONS,
   fmt,
   type JobDetailRecord,
@@ -64,8 +75,9 @@ const PHOTO_KINDS: Array<[PhotoKind, string]> = [
 ];
 
 /* The head's status badge (and its `ST_MOD` class map) was removed at the
-   owner's request; `ST` labels went with it. Status itself is unchanged — it
-   is set and shown on the Overview card's picker, which owns the control. */
+   owner's request. Status itself is unchanged — it is set and shown on the
+   Overview card's picker, which owns the control. `ST`'s labels came back for
+   the WORKER edition only, which has no picker to read the status off. */
 
 function Icon({ id }: { id: string }) {
   return (
@@ -102,14 +114,30 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
 
   const expTotal = record.expenses.reduce((sum, e) => sum + e.amount, 0);
   const scheduled = record.events.length > 0;
+  // The field worker's edition — see the block on `JdViewer` in
+  // ../job-detail-blueprint/job-detail-data.ts, and the same three consts in
+  // the desktop component. This build is the one an installer actually uses:
+  // they open the job on a phone, standing in a driveway.
+  const worker = record.viewer === "worker";
+  const assign = record.assignment ? JD_ASSIGN[record.assignment] : null;
 
+  // Money is dropped for the field: Changes and Expenses are the two sections a
+  // worker's record has no columns behind.
   const TABS: Array<[TabKey, string, number | null]> = [
     ["overview", "Overview", null],
     ["schedule", "Schedule", record.events.length],
     ["crew", "Crew", record.crew.length],
-    ["changes", "Changes", record.changes.length],
+    ...(worker
+      ? []
+      : ([["changes", "Changes", record.changes.length]] as Array<
+          [TabKey, string, number | null]
+        >)),
     ["photos", "Photos", record.photos.length],
-    ["expenses", "Expenses", record.expenses.length],
+    ...(worker
+      ? []
+      : ([["expenses", "Expenses", record.expenses.length]] as Array<
+          [TabKey, string, number | null]
+        >)),
   ];
 
   const selectTab = useCallback((k: TabKey) => {
@@ -352,17 +380,40 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                       <span>Crew</span>
                       <b>{record.crew.length} assigned</b>
                     </div>
-                    <div className="mjd-f">
-                      <span>Expenses</span>
-                      <b>
-                        {fmt(expTotal)} · {record.expenses.length}
-                      </b>
-                    </div>
+                    {/* The fourth cell is the one that differs by audience: the
+                        office reads the money on the job, the crew reads where
+                        the job itself stands (they have no picker to read it
+                        off). */}
+                    {worker ? (
+                      <div className="mjd-f">
+                        <span>Status</span>
+                        <b>{ST[a.status].l}</b>
+                      </div>
+                    ) : (
+                      <div className="mjd-f">
+                        <span>Expenses</span>
+                        <b>
+                          {fmt(expTotal)} · {record.expenses.length}
+                        </b>
+                      </div>
+                    )}
                     <div className="mjd-f">
                       <span>Dates</span>
                       <b>{record.fieldDates}</b>
                     </div>
                   </div>
+
+                  {/* THE READER'S OWN STANDING — the first question a crew opens
+                      a work order to answer, so it sits above the scope. */}
+                  {assign && (
+                    <div className="mjd-sec">
+                      <div className="mjd-sec-l">Your assignment</div>
+                      <p>
+                        <span className={`mjd-b mjd-b--${assign.tone}`}>{assign.stamp}</span>{" "}
+                        {assign.line}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mjd-sec">
                     <div className="mjd-sec-l">Scope of work</div>
@@ -416,6 +467,23 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                         <div className="mjd-c-row">
                           <Icon id="i-pin" />
                           {record.contact.address}
+                        </div>
+                      )}
+                      {/* Worker edition only — see `directionsUrl` on the
+                          record. A full-width button rather than a link on the
+                          address: this is the one control on the sheet a crew
+                          taps with gloves on, in a truck. */}
+                      {record.directionsUrl && (
+                        <div className="mjd-total mjd-foot">
+                          <a
+                            className="mjd-btn mjd-btn-primary mjd-btn-block"
+                            href={record.directionsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Icon id="i-arrow" />
+                            Get directions
+                          </a>
                         </div>
                       )}
                     </>
@@ -477,6 +545,25 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                     )}
                   </div>
                 )}
+                {/* The crew's half of the same footer: the office books PEOPLE
+                    onto the job, a worker puts the window in their own phone.
+                    Mutually exclusive with the block above — `calendarUrl` is
+                    set on the worker edition only, and `canWrite` is false
+                    there. */}
+                {record.calendarUrl && (
+                  <div className="mjd-total mjd-foot">
+                    <div className="mjd-note">{record.dates}</div>
+                    <a
+                      className="mjd-btn mjd-btn-ghost mjd-btn-block"
+                      href={record.calendarUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Icon id="i-cal" />
+                      Add to calendar
+                    </a>
+                  </div>
+                )}
               </section>
             )}
 
@@ -496,7 +583,13 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                       key={w.assignmentId}
                     >
                       <div>
-                        <div className="mjd-row-n">{w.name}</div>
+                        {/* `me` is set on the worker edition only — the
+                            reader's own row, so they can check the office put
+                            the right person on the job. */}
+                        <div className="mjd-row-n">
+                          {w.name}
+                          {w.me ? " (you)" : ""}
+                        </div>
                         <div className="mjd-row-m">{w.meta}</div>
                       </div>
                       <div className="mjd-row-act">

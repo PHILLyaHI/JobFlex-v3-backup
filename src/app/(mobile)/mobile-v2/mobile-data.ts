@@ -66,6 +66,10 @@ export const WEEK_CELLS = 5;
 export {
   NAV_SECTIONS,
   activeHref,
+  // The role filter, same re-export rule: this surface's drawer is the third
+  // consumer of the nav map, so it takes the ONE rule from it rather than
+  // growing a fourth opinion about who sees what.
+  navSectionsFor,
   type NavItem,
   type NavSection,
 } from "@/components/v3/blueprint-shell/nav-map";

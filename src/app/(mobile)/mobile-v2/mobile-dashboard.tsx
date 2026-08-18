@@ -45,9 +45,10 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-v2.module.css";
+import { useNavRole } from "@/components/v3/blueprint-shell/nav-role";
 import {
   LEAD_STAGES,
-  NAV_SECTIONS,
+  navSectionsFor,
   activeHref,
   PLOT,
   RANGES,
@@ -755,6 +756,13 @@ function DashboardView({ data }: { data: DashboardData }) {
   const rowDelay = (i: number) => ({ animationDelay: `${i * 45}ms` });
   const rangeLabel = RANGES.find((r) => r.key === range)?.label ?? "";
   const avatar = (data.viewer.name.trim().charAt(0) || "A").toUpperCase();
+  // This surface owns a THIRD copy of the drawer (the desktop sidebar and
+  // components/v3/mobile-shell/mobile-nav are the other two), so it takes the
+  // same role filter rather than drawing the map whole. The RAW role comes from
+  // the provider the blueprint layout mounts — `data.viewer.role` beside it is
+  // already humanised for display and cannot be matched against "INSTALLER".
+  const navRole = useNavRole();
+  const navSections = navSectionsFor(navRole);
   const heroRevenue = data.kpiRaw.revenue;
   const pipeline = compactMoney(data.kpiRaw.pipeline);
 
@@ -1271,7 +1279,7 @@ function DashboardView({ data }: { data: DashboardData }) {
 
         <nav className={styles.sbScroll} ref={navScrollRef}>
           <div className={styles.sbIndicator} ref={indicatorRef} />
-          {NAV_SECTIONS.map((sec) => (
+          {navSections.map((sec) => (
             <div key={sec.label}>
               <div className={styles.sbSecLabel}>{sec.label}</div>
               {sec.items.map((item) => {

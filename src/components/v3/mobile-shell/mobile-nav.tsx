@@ -34,8 +34,16 @@ import Link from "next/link";
 import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { NAV_SECTIONS, activeHref } from "@/components/v3/blueprint-shell/nav-map";
+import {
+  activeHref,
+  canOpen,
+  isLimitedRole,
+  navSectionsFor,
+} from "@/components/v3/blueprint-shell/nav-map";
+import { useNavIdentity } from "@/components/v3/blueprint-shell/nav-role";
+import { SignOutButton } from "@/components/v3/blueprint-shell/sign-out";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
+import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
 import styles from "./mobile-nav.module.css";
 import "@/components/v3/estimators-blueprint/estimators-global.css";
 import { MobileSprite } from "./sprite";
@@ -51,6 +59,22 @@ function Icon({ id }: { id: string }) {
   );
 }
 
+/** Membership.role is a raw enum-ish string; the account row shows it to a
+ *  human. Empty outside the provider rather than guessing "Owner". */
+function roleTitle(role: string | null): string {
+  if (!role) return "";
+  return role.charAt(0) + role.slice(1).toLowerCase();
+}
+
+/** Initials for the account plate — the same rule the desktop sidebar uses. */
+function monogram(name: string): string {
+  const p = name.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
+  if (!p.length) return "?";
+  return p.length === 1
+    ? p[0].slice(0, 2).toUpperCase()
+    : (p[0][0] + p[p.length - 1][0]).toUpperCase();
+}
+
 export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
   const [open, setOpen] = useState(false);
   const navScrollRef = useRef<HTMLElement>(null);
@@ -60,6 +84,21 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
      highlight, which is why the drawer could once change the plate without
      changing the page. */
   const active = activeHref(usePathname() ?? "");
+
+  /* Who is looking, from the provider the blueprint layout mounts. The drawer
+     drew the full 22-item map for everybody until 2026-08-17, so an installer
+     invited as a field worker got a phone-sized copy of the manager's app.
+     Same filter as the desktop sidebar, from the same module — see nav-map's
+     ROLE FILTER header. Outside the provider (the standalone /mobile-*-v2
+     review URLs) the role is null and nothing is filtered, exactly as before. */
+  const { role, name: accountName } = useNavIdentity();
+  const sections = navSectionsFor(role);
+  /* Every engine in the picker lives outside a field worker's allow-list, so
+     for them the handheld New Estimate button could only open a dialog whose
+     every card bounces. Asked of the engine list itself, not a copy of it. */
+  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href));
+  const canOpenSettings = canOpen(role, "/dashboard/settings");
+  const canOpenAccount = canOpen(role, "/dashboard/settings/account");
 
   /* The sliding plate is MEASURED, not guessed: it needs the active link's real
      offsetTop/Height, which only exist once the drawer is laid out. `ready` is
@@ -155,14 +194,16 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
               rather than a labelled button: the mobile topbar has no room for
               a word next to the mark, and every other control up here is an
               icon already. */}
-          <button
-            className={styles.tbarBtn}
-            type="button"
-            aria-label="New estimate"
-            onClick={() => document.dispatchEvent(new CustomEvent("jf:estimator-picker"))}
-          >
-            <Icon id="i-plus" />
-          </button>
+          {canEstimate && (
+            <button
+              className={styles.tbarBtn}
+              type="button"
+              aria-label="New estimate"
+              onClick={() => document.dispatchEvent(new CustomEvent("jf:estimator-picker"))}
+            >
+              <Icon id="i-plus" />
+            </button>
+          )}
           {showSearch ? (
             <button className={styles.tbarBtn} type="button" aria-label="Search">
               <Icon id="i-search" />
@@ -206,7 +247,7 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
 
         <nav className={styles.sbScroll} ref={navScrollRef}>
           <div className={styles.sbIndicator} ref={indicatorRef} />
-          {NAV_SECTIONS.map((sec) => (
+          {sections.map((sec) => (
             <div key={sec.label}>
               <div className={styles.sbSecLabel}>{sec.label}</div>
               {sec.items.map((item) => {
@@ -244,17 +285,56 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
           ))}
         </nav>
 
+        {/* The account row printed the donor's demo identity — the literal
+            strings "I" / "Ivan" / "Owner" — to every signed-in user, and both
+            controls were dead <button>s. It now shows the real session identity
+            when the provider supplies one (the desktop sidebar was fixed the
+            same way, for the same reason: a wrong name is worse than no name),
+            and the settings gear is a real link, dropped for the roles whose
+            gate would bounce it. */}
         <div className={styles.sbFoot}>
-          <button className={styles.sbFootAcc} type="button" title="Account">
-            <span className={styles.sbFootAv}>I</span>
-            <span className={styles.sbFootTxt}>
-              <span className={styles.sbFootName}>Ivan</span>
-              <span className={styles.sbFootRole}>Owner</span>
-            </span>
-          </button>
-          <button className={styles.sbFootIc} type="button" aria-label="Settings">
-            <Icon id="i-gear" />
-          </button>
+          {canOpenAccount ? (
+            <Link
+              className={styles.sbFootAcc}
+              href={"/dashboard/settings/account" as Route}
+              title="Account"
+              onClick={() => setOpen(false)}
+            >
+              <span className={styles.sbFootAv}>{monogram(accountName || "Account")}</span>
+              <span className={styles.sbFootTxt}>
+                <span className={styles.sbFootName}>{accountName || "Account"}</span>
+                <span className={styles.sbFootRole}>{roleTitle(role)}</span>
+              </span>
+            </Link>
+          ) : (
+            <div className={styles.sbFootAcc} title={accountName || "Account"}>
+              <span className={styles.sbFootAv}>{monogram(accountName || "Account")}</span>
+              <span className={styles.sbFootTxt}>
+                <span className={styles.sbFootName}>{accountName || "Account"}</span>
+                <span className={styles.sbFootRole}>{roleTitle(role)}</span>
+              </span>
+            </div>
+          )}
+          {canOpenSettings && (
+            <Link
+              className={styles.sbFootIc}
+              href={"/dashboard/settings" as Route}
+              aria-label="Settings"
+              onClick={() => setOpen(false)}
+            >
+              <Icon id="i-gear" />
+            </Link>
+          )}
+          {/* Sign out — gated roles only, matching the desktop sidebar. The
+              drawer IS the handheld sidebar, so the same rule applies rather
+              than a second answer on phones. */}
+          {isLimitedRole(role) && (
+            <SignOutButton
+              className={`${styles.sbFootIc} ${styles.sbFootOut}`}
+              iconClassName={styles.ic}
+              onDone={() => setOpen(false)}
+            />
+          )}
         </div>
       </aside>
     </>

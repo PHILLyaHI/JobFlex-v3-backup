@@ -21,6 +21,11 @@ function parseSpec(raw: string | null): string[] {
   }
 }
 
+// Session-scoped, never static. Declared so the dev server does not fork its
+// static-paths worker for this route — see the workerThreads note in
+// next.config.ts.
+export const dynamic = "force-dynamic";
+
 export default async function WorkerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { organizationId } = await requireOrg();

@@ -19,7 +19,9 @@ import { usePathname } from "next/navigation";
 // The nav map and the active-item resolver moved to ./nav-map.ts on 2026-07-29
 // so the mobile hamburger drawers could share them instead of carrying a
 // second, href-less copy. Re-exported here for existing importers.
-import { NAV_SECTIONS, activeHref } from "./nav-map";
+import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor } from "./nav-map";
+import { useNavRole } from "./nav-role";
+import { SignOutButton } from "./sign-out";
 
 export { NAV_SECTIONS };
 
@@ -47,6 +49,15 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
   // a wrong name is worse than no name.
   const name = user?.name || "Account";
   const role = user?.role || "";
+  // The RAW role, for the rules. `user.role` above is the humanised copy the
+  // account block prints, so it can't be matched against "INSTALLER".
+  const navRole = useNavRole();
+  const sections = navSectionsFor(navRole);
+  // The footer's two links leave the nav's own surfaces, so they get the same
+  // test everything else does. A limited role that cannot open /dashboard/
+  // settings would otherwise be handed a gear that bounces it back to Jobs.
+  const canOpenSettings = canOpen(navRole, "/dashboard/settings");
+  const canOpenAccount = canOpen(navRole, "/dashboard/settings/account");
 
   return (
     <aside className="sb">
@@ -71,7 +82,7 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
         {/* Fragments, not wrapper elements: the donor keeps labels and links as
             direct children of .sb-scroll, and the indicator measures
             link.offsetTop against it. */}
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <Fragment key={section.label}>
             <div className="sb-sec-label">{section.label}</div>
             {section.items.map((item) =>
@@ -104,29 +115,53 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
           regardless of who was signed in. It is now a real link to the account
           page, and the name, role and monogram come from the session. */}
       <div className="sb-foot">
-        <Link className="sb-foot-acc" href={"/dashboard/settings/account" as Route} title="Account">
-          <span className="sb-foot-av">{monogram(name)}</span>
-          <span className="sb-foot-txt">
-            <span className="sb-foot-name">{name}</span>
-            <span className="sb-foot-role">{role}</span>
-          </span>
-        </Link>
+        {canOpenAccount ? (
+          <Link className="sb-foot-acc" href={"/dashboard/settings/account" as Route} title="Account">
+            <span className="sb-foot-av">{monogram(name)}</span>
+            <span className="sb-foot-txt">
+              <span className="sb-foot-name">{name}</span>
+              <span className="sb-foot-role">{role}</span>
+            </span>
+          </Link>
+        ) : (
+          /* Same plate, no link: a field worker's account page is behind their
+             route gate, and a control that only ever bounces you is worse than
+             a label. The identity itself still belongs here — it is how you
+             check WHICH login you are on before confirming a job. */
+          <div className="sb-foot-acc" title={name}>
+            <span className="sb-foot-av">{monogram(name)}</span>
+            <span className="sb-foot-txt">
+              <span className="sb-foot-name">{name}</span>
+              <span className="sb-foot-role">{role}</span>
+            </span>
+          </div>
+        )}
         {/* The donor's settings page marks this gear active (donor line 1974
             ships it as `class="sb-foot-ic on"`), so it lights up while any
             /dashboard/settings URL is open. The `.sb-foot-ic.on` rule lives in
             settings-blueprint/settings.module.css — it is the one chrome rule
             that page's stylesheet owns, and it only applies while that
             stylesheet is on the shell root. */}
-        <Link
-          className={`sb-foot-ic${pathname.startsWith("/dashboard/settings") ? " on" : ""}`}
-          href={"/dashboard/settings" as Route}
-          title="Settings"
-          aria-label="Settings"
-        >
-          <svg className="ic">
-            <use href="#i-gear" />
-          </svg>
-        </Link>
+        {canOpenSettings && (
+          <Link
+            className={`sb-foot-ic${pathname.startsWith("/dashboard/settings") ? " on" : ""}`}
+            href={"/dashboard/settings" as Route}
+            title="Settings"
+            aria-label="Settings"
+          >
+            <svg className="ic">
+              <use href="#i-gear" />
+            </svg>
+          </Link>
+        )}
+        {/* Sign out — drawn for the gated roles only (owner's call). The
+            blueprint shell carried none, and the app's other one lives in the
+            classic Topbar's account menu, behind pages an installer, sales rep
+            or estimator cannot open. Office roles reach that menu on the
+            classic surfaces, so they do not need a second control here. */}
+        {isLimitedRole(navRole) && (
+          <SignOutButton className="sb-foot-ic sb-foot-out" iconClassName="ic" />
+        )}
       </div>
     </aside>
   );

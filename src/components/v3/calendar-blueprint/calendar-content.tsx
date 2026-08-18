@@ -52,6 +52,12 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
   const router = useRouter();
   const routerRef = useRef(router);
 
+  // Dispatch chrome is manager-only. Same expression the behaviour module uses
+  // (calendar-behavior.ts, `const canManage = seed ? seed.canManage : true`), so
+  // the standalone mock route — which has no session and no seed — keeps the
+  // donor's full toolbar.
+  const canManage = seed ? seed.canManage : true;
+
   const init = useCallback(
     (content: HTMLElement) =>
       initCalendarContent(content, {
@@ -93,7 +99,18 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
           <div className="vsw" id="calViews">
             <button className="vsw-btn active" type="button" data-view="month">Month</button>
             <button className="vsw-btn" type="button" data-view="week">Week</button>
-            <button className="vsw-btn" type="button" data-view="team">Team</button>
+            {/* Team view is a DISPATCH surface: one row per member of the crew,
+                each labelled with their role. The seed's events are role-scoped,
+                but the roster behind this grid is not — so for a field worker
+                (canManage false) it printed a directory of every colleague and
+                what they do, on a page whose whole promise is "your jobs only".
+                Dropped for them, exactly as the production sidebar drops the
+                surfaces a worker has no business in. The behaviour module reads
+                the view off the clicked button and null-guards `#teamCard`, so
+                absent means unreachable, not broken. */}
+            {canManage && (
+              <button className="vsw-btn" type="button" data-view="team">Team</button>
+            )}
           </div>
           <button className="cal-nav has-badge" type="button" id="inboxBtn" aria-label="Crew inbox">
             <svg className="ic">
@@ -124,7 +141,10 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
           </svg>
           <input type="text" id="calSearch" placeholder="Search events…" autoComplete="off" />
         </label>
-        <div className="fdd" id="workerFilter"></div>
+        {/* Same roster, same reason: the Worker dropdown lists every crew
+            member's name and role. `renderFilters` guards on the host being
+            present, so leaving it out simply skips that filter. */}
+        {canManage && <div className="fdd" id="workerFilter"></div>}
         {/* Statuses are four fixed values, so they are direct toggles — a
             dropdown would hide them behind a click for no gain. */}
         <div className="fset" id="statusFilter"></div>

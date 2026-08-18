@@ -849,6 +849,14 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
   const [inbox, setInbox] = useState<InboxItem[]>(() => book.inbox.map((r) => ({ ...r })));
 
   const [view, setView] = useState<ViewKey>("month");
+  // Team is a DISPATCH view: a rail of every crew member with their role, drawn
+  // over the seed's whole `workers` roster. The events in it are role-scoped by
+  // the query, the roster is not — so on a field worker's phone it was a staff
+  // directory sitting behind a tab on the one page that promises "your jobs
+  // only". The seed already carries `canManage`; it was arriving here and going
+  // unread. Matches the desktop toolbar, which drops the same tab (see
+  // components/v3/calendar-blueprint/calendar-content.tsx).
+  const views = book.canManage ? VIEWS : VIEWS.filter((v) => v.key !== "team");
   const [cursor, setCursor] = useState<Date>(() => new Date(entry.date ?? TODAY));
   const [sel, setSel] = useState<Date>(() => new Date(entry.date ?? TODAY));
 
@@ -1596,12 +1604,23 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
               use to go there. The masthead that used to sit here spent a whole
               card on "59h / 14 events / 4 unscheduled" above the schedule
               itself (removed, owner's call 2026-07-30). */}
-          <div className={styles.tabs}>
+          {/* The column count is inline because it is now DATA, not design: the
+              stylesheet's `repeat(3, minmax(0,1fr))` was correct while every
+              role saw three tabs, and would leave a worker a dead third column.
+              The plate's width follows for the same reason — the stylesheet's
+              33.3333% is the three-tab case of this. */}
+          <div
+            className={styles.tabs}
+            style={{ gridTemplateColumns: `repeat(${views.length}, minmax(0, 1fr))` }}
+          >
             <span
               className={styles.tabInd}
-              style={{ transform: `translateX(${VIEWS.findIndex((v) => v.key === view) * 100}%)` }}
+              style={{
+                width: `${100 / views.length}%`,
+                transform: `translateX(${views.findIndex((v) => v.key === view) * 100}%)`,
+              }}
             />
-            {VIEWS.map((v) => (
+            {views.map((v) => (
               <button
                 key={v.key}
                 className={`${styles.tab} ${view === v.key ? styles.active : ""}`}

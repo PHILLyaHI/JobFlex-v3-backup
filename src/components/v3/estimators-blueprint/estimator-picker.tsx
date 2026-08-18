@@ -27,10 +27,12 @@
 // while an /dashboard/estimators* route is on screen. A dialog reachable from
 // every page cannot depend on one page's stylesheet being active.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-import { ENGINES, ACTIVE_COUNT, QUEUED_COUNT, type EngineDiagram } from "./estimators-data";
+import { canOpen } from "@/components/v3/blueprint-shell/nav-map";
+import { useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import { ENGINES, QUEUED_COUNT, type EngineDiagram } from "./estimators-data";
 
 // Split once at module scope — the roster is a constant, so there is nothing
 // for the component to recompute on a render or memoise.
@@ -139,6 +141,16 @@ function prefersReducedMotion() {
 
 export function EstimatorPicker() {
   const router = useRouter();
+  // The engines this role can actually open. Both topbars already hide their
+  // New Estimate button when this comes back empty, so in practice the dialog
+  // never opens on nothing — but the filter lives HERE as well, because the
+  // dialog is also opened from a client record's own "New proposal" button, and
+  // a card that routes somewhere the gate bounces is worse than an absent one.
+  const role = useNavRole();
+  const openEngines = useMemo(
+    () => active.filter((engine) => canOpen(role, engine.href)),
+    [role],
+  );
   // Two flags because the source has two classes. `open` drives the `hidden`
   // attribute (`.estp[hidden] { display: none }`); `on` is added a frame later
   // so the enter transition has a start state to leave from — the source's
@@ -256,7 +268,7 @@ export function EstimatorPicker() {
             New estimate
           </div>
           <span className="estp-kick">
-            {ACTIVE_COUNT} active &middot; {QUEUED_COUNT} queued
+            {openEngines.length} active &middot; {QUEUED_COUNT} queued
           </span>
           <button className="estp-x" type="button" aria-label="Close" onClick={close}>
             <svg className="ic">
@@ -271,7 +283,7 @@ export function EstimatorPicker() {
             to card height and given three unbuildable trades the same visual
             footprint as the four you can actually start. */}
         <div className="estp-grid">
-          {active.map((engine) => (
+          {openEngines.map((engine) => (
             <button
               key={engine.id}
               type="button"

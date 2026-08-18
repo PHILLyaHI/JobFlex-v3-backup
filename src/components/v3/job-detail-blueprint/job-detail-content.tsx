@@ -38,6 +38,26 @@
 // `renderView()`, `renderBadge()`) off two module-level variables, `tab` and
 // `status`. `tab` is component state here; `status` is the record's, flipped
 // optimistically by the picker and then re-read from the database.
+//
+// ── AND IT IS ALSO THE FIELD WORKER'S RECORD ───────────────────────
+// /dashboard/jobs/[id] serves an INSTALLER the same page. It used to serve a
+// separate Tailwind "Field Command" bento, then (briefly, 2026-08-18) a second
+// blueprint component beside this one; both are gone. A worker's record is this
+// component with `record.viewer === "worker"`, which:
+//   · drops the Changes and Expenses TABS — a worker's record carries no money
+//     at all, so those cards could only ever be empty (and the loader does not
+//     select the columns, so there is nothing behind them either);
+//   · drops the proposal link with them — `record.proposal` is null, so the
+//     head button and its total never render;
+//   · adds the one thing only a worker needs: their own standing on the job,
+//     as a stamp on the Overview card;
+//   · turns the two office affordances into field ones — the address becomes
+//     directions, "Add to schedule" (which books a crew) becomes "Add to
+//     calendar" (which books the reader).
+// Everything else is `canWrite`, which was already false for every role
+// `requireManager` rejects: the status picker, the roster, the unassign and
+// upload controls and the change-order buttons were withheld before this
+// component knew what a worker was.
 
 import { useRef, useState } from "react";
 import type { Route } from "next";
@@ -45,7 +65,7 @@ import Link from "next/link";
 import s from "./job-detail.module.css";
 import { useJobDetailMotion } from "./job-detail-motion";
 import { useJobDetailActions, type PhotoKind } from "./use-job-detail-actions";
-import { ST, STATUS_BUTTONS, fmt, type JobDetailRecord } from "./job-detail-data";
+import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord } from "./job-detail-data";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -89,15 +109,27 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
 
   const expTotal = record.expenses.reduce((sum, e) => sum + e.amount, 0);
   const scheduled = record.events.length > 0;
+  const worker = record.viewer === "worker";
+  const assign = record.assignment ? JD_ASSIGN[record.assignment] : null;
 
   // Donor: `const TABS = [...]` — id, label, and a count thunk (null on Overview).
+  // Money is dropped for the field: Changes and Expenses are the two sections a
+  // worker's record has no columns behind.
   const TABS: Array<[TabKey, string, number | null]> = [
     ["overview", "Overview", null],
     ["schedule", "Schedule", record.events.length],
     ["crew", "Crew", record.crew.length],
-    ["changes", "Changes", record.changes.length],
+    ...(worker
+      ? []
+      : ([["changes", "Changes", record.changes.length]] as Array<
+          [TabKey, string, number | null]
+        >)),
     ["photos", "Photos", record.photos.length],
-    ["expenses", "Expenses", record.expenses.length],
+    ...(worker
+      ? []
+      : ([["expenses", "Expenses", record.expenses.length]] as Array<
+          [TabKey, string, number | null]
+        >)),
   ];
 
   return (
@@ -193,17 +225,39 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                   <span>Crew</span>
                   <b>{record.crew.length} assigned</b>
                 </div>
-                <div className={cx("jd-f")}>
-                  <span>Expenses</span>
-                  <b>
-                    {fmt(expTotal)} · {record.expenses.length}
-                  </b>
-                </div>
+                {/* The fourth cell is the one that differs by audience: the
+                    office reads the money on the job, the crew reads where the
+                    job itself stands (they have no picker to read it off). */}
+                {worker ? (
+                  <div className={cx("jd-f")}>
+                    <span>Status</span>
+                    <b>{ST[a.status].l}</b>
+                  </div>
+                ) : (
+                  <div className={cx("jd-f")}>
+                    <span>Expenses</span>
+                    <b>
+                      {fmt(expTotal)} · {record.expenses.length}
+                    </b>
+                  </div>
+                )}
                 <div className={cx("jd-f")}>
                   <span>Dates</span>
                   <b>{record.fieldDates}</b>
                 </div>
               </div>
+
+              {/* THE READER'S OWN STANDING — the first question a crew opens a
+                  work order to answer, so it sits above the scope. */}
+              {assign && (
+                <div className={cx("jd-sec")}>
+                  <div className={cx("jd-sec-l")}>Your assignment</div>
+                  <p>
+                    <span className={cx("jd-b", `jd-b--${assign.tone}`)}>{assign.stamp}</span>{" "}
+                    {assign.line}
+                  </p>
+                </div>
+              )}
 
               <div className={cx("jd-sec")}>
                 <div className={cx("jd-sec-l")}>Scope of work</div>
@@ -249,6 +303,24 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                     <div className={cx("jd-c-row")}>
                       <Ic id="i-pin" />
                       {record.contact.address}
+                    </div>
+                  )}
+                  {/* Worker edition only — see `directionsUrl` on the record.
+                      The address stays plain text above it: a link that opens
+                      Maps should say so, not be discovered by tapping the only
+                      line on the card that looked like a label. */}
+                  {record.directionsUrl && (
+                    <div className={cx("jd-total", "jd-total--foot")}>
+                      <div className={cx("jd-note")}>Opens in Maps</div>
+                      <a
+                        className={cx("btn", "btn-ghost")}
+                        href={record.directionsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Ic id="i-arrow" />
+                        Get directions
+                      </a>
                     </div>
                   )}
                 </>
@@ -306,6 +378,24 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                 )}
               </div>
             )}
+            {/* The crew's half of the same footer: the office books PEOPLE onto
+                the job, a worker puts the window in their own phone. Mutually
+                exclusive with the block above — `calendarUrl` is set on the
+                worker edition only, and `canWrite` is false there. */}
+            {record.calendarUrl && (
+              <div className={cx("jd-total", "jd-total--foot")}>
+                <div className={cx("jd-note")}>{record.dates}</div>
+                <a
+                  className={cx("btn", "btn-ghost")}
+                  href={record.calendarUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Ic id="i-cal" />
+                  Add to calendar
+                </a>
+              </div>
+            )}
           </section>
         )}
 
@@ -321,7 +411,13 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
               record.crew.map((w) => (
                 <div className={cx("jd-row")} key={w.assignmentId}>
                   <div>
-                    <div className={cx("jd-row-n")}>{w.name}</div>
+                    {/* `me` is set on the worker edition only — the reader's own
+                        row, so they can check the office put the right person
+                        on the job. */}
+                    <div className={cx("jd-row-n")}>
+                      {w.name}
+                      {w.me ? " (you)" : ""}
+                    </div>
                     <div className={cx("jd-row-m")}>{w.meta}</div>
                   </div>
                   <div className={cx("jd-row-act")}>

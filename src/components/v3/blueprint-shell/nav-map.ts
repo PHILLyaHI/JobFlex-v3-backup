@@ -14,6 +14,8 @@
 // map". `href: "#"` marks a surface with no page yet; those stay deliberately
 // dead rather than routing somewhere that 404s.
 
+import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
+
 export type NavItem = { label: string; icon: string; href: string };
 export type NavSection = { label: string; items: NavItem[] };
 
@@ -49,11 +51,11 @@ export const NAV_SECTIONS: NavSection[] = [
       // old design is still served at /dashboard/subscription, which nothing
       // links to any more.
       //
-      // NOT role-gated here, and that is a known gap rather than a decision:
-      // the production sidebar (components/layout/Sidebar.tsx) hides this item
-      // from every role except OWNER, but the blueprint shell filters NAV_SECTIONS
-      // by nothing at all — Financials sits one line above under the same rule.
-      // Whoever brings RBAC to this shell owns both.
+      // OWNER-only, enforced by OWNER_ONLY_HREFS below (2026-08-17). The gap
+      // this comment used to record — "the blueprint shell filters NAV_SECTIONS
+      // by nothing at all" — is closed: navSectionsFor() is now the one rule
+      // both shells and the palette read. Financials, one line above, is NOT
+      // owner-only: the production sidebar shows it to every office role.
       { label: "Subscription", icon: "i-card", href: "/dashboard/subscription-blueprint" },
     ],
   },
@@ -109,6 +111,163 @@ const SURFACE_ALIASES: Record<string, string> = {
   "/mobile-referrals-v2": "/dashboard/referrals",
   "/mobile-reports-v2": "/dashboard/reports",
 };
+
+// ── ROLE FILTER ─────────────────────────────────────────────────────────────
+// Added 2026-08-17. Until now the blueprint shell drew NAV_SECTIONS whole for
+// everybody, so an INSTALLER invited as a field worker got the full 22-item
+// sidebar and a drawer to match — every link a route their gate bounces.
+//
+// ONE RULE, THREE SHELLS. The desktop sidebar, the handheld drawer and the
+// command palette all call navSectionsFor(); nothing filters on its own. Two
+// filters would be two truths, which is the same mistake the href-less second
+// nav list made before this module existed.
+//
+// SOURCE OF THE RULES, both halves:
+//   · WHICH surfaces  — @/lib/roleRoutes ROLE_ROUTE_GATES, the same allow-list
+//     the middleware and the (dashboard) layout enforce. Deriving from it (not
+//     restating it) is what makes "the nav never shows a link the route-gate
+//     would bounce" true by construction rather than by review.
+//   · ORDER, GROUPING and LABELS — components/layout/Sidebar.tsx, the
+//     production sidebar's WORKER_GROUPS / SALES_GROUPS / ESTIMATOR_GROUPS.
+//     A worker's Calendar is titled "Schedule" there, so it is here.
+//
+// Nothing is invented: ROLE_NAV may only ever narrow. Any href in a plan that
+// the role's gate does not allow is DROPPED rather than granted — see the
+// filter in navSectionsFor.
+
+/** Items only the organisation OWNER may see, whatever else their role allows.
+ *  Matches the production sidebar, which drops Subscription for every non-owner
+ *  office role; the page itself re-checks with isOwnerRole. */
+const OWNER_ONLY_HREFS = new Set<string>(["/dashboard/subscription-blueprint"]);
+
+/** A limited role's nav, as section titles plus the hrefs they hold. */
+type RoleNavPlan = { label: string; hrefs: string[] }[];
+
+const ROLE_NAV: Record<string, RoleNavPlan> = {
+  // Field workers: their jobs and their schedule, plus the thread back to the
+  // office. Read-only surfaces — every create path is elsewhere.
+  INSTALLER: [
+    {
+      label: "Your work",
+      hrefs: ["/dashboard/jobs", "/dashboard/calendar", "/dashboard/messages"],
+    },
+  ],
+  // Sales reps: the pipeline slice.
+  SALES: [
+    {
+      label: "Pipeline",
+      hrefs: [
+        "/dashboard/leads",
+        "/dashboard/clients",
+        "/dashboard/proposals",
+        "/dashboard/crm",
+      ],
+    },
+    {
+      label: "Day to day",
+      hrefs: ["/dashboard/calendar", "/dashboard/messages", "/dashboard/phone"],
+    },
+  ],
+  // Estimators: proposals plus the estimating engines.
+  ESTIMATOR: [
+    { label: "Estimating", hrefs: ["/dashboard/proposals", "/dashboard/projects"] },
+    {
+      label: "Automation",
+      // Roof and Fence are listed because the production sidebar lists them for
+      // this role. They used to be listed and then DROPPED by the gate filter
+      // below — the blueprint port had moved both surfaces off
+      // /dashboard/advanced-ai/* (which ESTIMATOR holds) onto their own
+      // top-level routes (which it did not). That gap was reconnected in
+      // @/lib/roleRoutes on 2026-08-18, so these two now survive the filter and
+      // the estimator sees the engines its role is named after.
+      hrefs: [
+        "/dashboard/advanced-ai",
+        "/dashboard/roof-estimator",
+        "/dashboard/fence-estimator",
+        "/dashboard/messages",
+      ],
+    },
+  ],
+};
+
+/** Per-role label overrides, from the production sidebar's own wording. */
+const ROLE_LABELS: Record<string, Record<string, string>> = {
+  INSTALLER: { "/dashboard/calendar": "Schedule" },
+};
+
+/** Every item in the master map, by href — the icon and default label source. */
+const ITEM_BY_HREF: Record<string, NavItem> = {};
+for (const section of NAV_SECTIONS) {
+  for (const item of section.items) {
+    if (item.href !== "#") ITEM_BY_HREF[item.href] = item;
+  }
+}
+
+/**
+ * True when `role` may open `href`. The route allow-list decides for the three
+ * limited roles; owner-only items are dropped for everyone else. Office roles
+ * (OWNER / ADMIN / MANAGER and the legacy ACCOUNTANT / USER) have no gate, so
+ * everything else is open to them — the same deny-list shape as
+ * orgContext's isOwnerOrManager.
+ *
+ * Use it for anything that NAVIGATES but is not a nav item: the topbar's New
+ * Estimate engines, the palette's Create rows.
+ */
+export function canOpen(role: string | null | undefined, href: string): boolean {
+  if (href === "#") return false;
+  if (OWNER_ONLY_HREFS.has(href) && role !== "OWNER") return false;
+  const gate = role ? ROLE_ROUTE_GATES[role] : undefined;
+  if (!gate) return true;
+  // Strip a query string before matching: the gate reasons about pathnames.
+  return isPathAllowed(gate, href.split("?")[0]);
+}
+
+/**
+ * True for the roles that carry a route gate — INSTALLER, SALES, ESTIMATOR.
+ * Asked of ROLE_ROUTE_GATES rather than written out again, so a role that gains
+ * or loses a gate does not need a second edit here.
+ *
+ * The shell footer's sign out is drawn for exactly these roles (owner's call,
+ * 2026-08-18): their allow-lists keep them off the account and settings pages
+ * that carry the office roles' own sign out, so the footer is the only place
+ * they can leave the app from.
+ */
+export function isLimitedRole(role: string | null | undefined): boolean {
+  return !!role && !!ROLE_ROUTE_GATES[role];
+}
+
+/**
+ * The nav this role should see. Limited roles get their own grouping from the
+ * production sidebar, intersected with their route gate; office roles get the
+ * full map minus anything owner-only.
+ */
+export function navSectionsFor(role: string | null | undefined): NavSection[] {
+  const plan = role ? ROLE_NAV[role] : undefined;
+  if (plan) {
+    const labels = (role && ROLE_LABELS[role]) || {};
+    return plan
+      .map((group) => ({
+        label: group.label,
+        items: group.hrefs
+          .filter((href) => canOpen(role, href))
+          .map((href) => {
+            const item = ITEM_BY_HREF[href];
+            if (!item) return null;
+            return labels[href] ? { ...item, label: labels[href] } : item;
+          })
+          .filter((item): item is NavItem => item !== null),
+      }))
+      .filter((group) => group.items.length > 0);
+  }
+
+  // Office roles. OWNER sees the map as authored; everyone else loses the
+  // owner-only items, and any section they emptied goes with them.
+  if (role === "OWNER") return NAV_SECTIONS;
+  return NAV_SECTIONS.map((section) => ({
+    label: section.label,
+    items: section.items.filter((item) => canOpen(role, item.href)),
+  })).filter((section) => section.items.length > 0);
+}
 
 /**
  * The nav item that owns this path, by longest-prefix match, so child routes

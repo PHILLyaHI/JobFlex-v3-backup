@@ -11,6 +11,11 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { money, longDate, shortDate } from "@/lib/format";
 import { Phone, Mail, MapPin, Sparkles } from "lucide-react";
 
+// Session-scoped, never static. Declared so the dev server does not fork its
+// static-paths worker for this route — see the workerThreads note in
+// next.config.ts.
+export const dynamic = "force-dynamic";
+
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { organizationId } = await requireOrg();

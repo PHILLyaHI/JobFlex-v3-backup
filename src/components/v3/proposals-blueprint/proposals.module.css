@@ -273,10 +273,27 @@
   border-radius: var(--radius);
   flex-shrink: 0;
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+  /* Sign out wears this class as a <button>, so the UA button styling is
+     neutralised here; the gear link beside it is unaffected. */
+  appearance: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
 }
 .bp :global(.sb-foot-ic:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
 .bp :global(.sb-foot-ic:active) { transform: none; box-shadow: none; }
 .bp :global(.sb-foot-ic .ic) { width: 15px; height: 15px; }
+/* Sign out's hover, twinned with the same rule in the dashboard module — both
+   stylesheets carry the shell chrome, so a rule in only one loses to the other
+   depending on import order. */
+.bp :global(.sb-foot-ic.sb-foot-out:hover) {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+  box-shadow: 2px 2px 0 var(--danger);
+}
 
 /* MAIN */
 .bp :global(.main) {

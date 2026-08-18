@@ -23,6 +23,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
+import { NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
 
 /** CLAUDE.md's handheld target: ≤768px. Matches the mobile modules' own scale. */
@@ -229,11 +230,17 @@ const getServerSnapshot = () => false;
 export function ResponsiveDashboardShell({
   children,
   user,
+  identity,
 }: {
   children: React.ReactNode;
   /** Signed-in identity, read in the server layout and handed to the desktop
    *  sidebar. The handheld shell draws its own account row. */
   user?: { name: string; role: string };
+  /** The same identity with the RAW role, published to every client piece that
+   *  filters by it — the desktop sidebar, the handheld drawer mounted deep
+   *  inside a mobile page, and the command palette. It wraps BOTH branches
+   *  below, because the drawer is inside the handheld one. */
+  identity?: NavIdentity;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const pathname = usePathname();
@@ -247,9 +254,11 @@ export function ResponsiveDashboardShell({
   // whose chunk is missing clears the panel rather than carrying it along.
   if (isHandheld && Handheld) {
     return (
-      <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
-        <Handheld />
-      </ChunkRecoveryBoundary>
+      <NavRoleProvider identity={identity}>
+        <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
+          <Handheld />
+        </ChunkRecoveryBoundary>
+      </NavRoleProvider>
     );
   }
 
@@ -267,8 +276,18 @@ export function ResponsiveDashboardShell({
   // both live in the (dashboard) route group, a different layout that never
   // mounts this shell, so the single-segment pattern matching them is inert;
   // no other route under this layout has a second path segment.
-  if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) return <>{children}</>;
-  if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) return <>{children}</>;
+  // Page-owned handheld branches render their own chrome (which reaches for
+  // MobileNav), so they need the provider just as much as the mapped ones.
+  if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
+    return <NavRoleProvider identity={identity}>{children}</NavRoleProvider>;
+  }
+  if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
+    return <NavRoleProvider identity={identity}>{children}</NavRoleProvider>;
+  }
 
-  return <BlueprintShell user={user}>{children}</BlueprintShell>;
+  return (
+    <NavRoleProvider identity={identity}>
+      <BlueprintShell user={user}>{children}</BlueprintShell>
+    </NavRoleProvider>
+  );
 }

@@ -75,9 +75,73 @@ export type JdCrew = {
   assignmentId: string;
   workerId: string;
   name: string;
-  /** "Crew · (425) 555-0134" — role/specialty and phone where known. */
+  /** "Crew · (425) 555-0134" — role/specialty and phone where known. On the
+   *  worker edition the phone is dropped: specialty only (see the loader). */
   meta: string;
   state: "ok" | "wait" | "no";
+  /** True on the reader's OWN row. Always false for the office — the crew list
+   *  is one of the few places a field worker can check that the office put the
+   *  right person on the job. */
+  me: boolean;
+};
+
+// ── WHO IS READING ────────────────────────────────────────────────────────
+// The record is read by two audiences through the SAME components. `canWrite`
+// (below) already withheld every control a `requireManager` action would
+// reject; `viewer` is the second axis — not "may I write this?" but "may I see
+// it at all?". A field worker's record is a NARROWER set of facts: no money
+// anywhere (no expenses, no change orders, no proposal total), no roster, and a
+// client contact reduced to the name on the door and the address to drive to.
+//
+// The withholding is done in the LOADER — a worker's record carries empty
+// arrays and nulls because those columns were never selected, not because the
+// markup hid them — and `viewer` is what the two editions read to drop the tabs
+// that would otherwise show an empty Change orders card, and to add the one
+// thing only a worker needs: their own standing on the job.
+
+export type JdViewer = "manager" | "worker";
+
+/** The reader's own `JobAssignment.status`. Wider than `JdCrew["state"]` by
+ *  one: to a crew "wrapped" and "confirmed" are not the same news, even though
+ *  the office's crew list draws both as Confirmed. */
+export type JdAssignState = "ok" | "wait" | "no" | "done";
+
+/** The assignment plate's copy. `tone` is the badge modifier WITHOUT its
+ *  edition prefix — desktop renders `jd-b--<tone>`, handheld `mjd-b--<tone>` —
+ *  so one table serves both stylesheets. */
+export const JD_ASSIGN: Record<
+  JdAssignState,
+  { stamp: string; tone: "ok" | "wait" | "no"; line: string }
+> = {
+  ok: {
+    stamp: "Confirmed",
+    tone: "ok",
+    line: "You're on this job. Everything the office has on it is on this sheet.",
+  },
+  wait: {
+    stamp: "Pending",
+    tone: "wait",
+    // There is no accept/decline control on this sheet because there is no
+    // session-scoped action to bind one to: every assignment mutation in
+    // src/actions/workers.ts goes through requireManager(), and the worker's
+    // own path — POST /api/worker/assignment/[assignmentId] — authenticates by
+    // `WorkerProfile.token`, which a dashboard session does not carry. So the
+    // line says where to confirm rather than offering a button that can only
+    // fail. Wiring one would be data-layer work, which needs approval.
+    line:
+      "The office is waiting on your answer. Open the crew link from your invite " +
+      "text or email and tap Accept or Decline there.",
+  },
+  no: {
+    stamp: "Declined",
+    tone: "no",
+    line: "You declined this job. Message your manager if that wasn't intentional.",
+  },
+  done: {
+    stamp: "Complete",
+    tone: "ok",
+    line: "This job is wrapped up. Nothing left on it for the crew.",
+  },
 };
 
 /** One ChangeOrder row. `state` mirrors ChangeOrder.status. */
@@ -138,6 +202,8 @@ export type JobDetailRecord = {
   clientName: string | null;
   scopeOfWork: string | null;
   notes: string | null;
+  /** Phone and email are null on the worker edition — the crew gets the name on
+   *  the door and the address to drive to, and the office keeps the rest. */
   contact: {
     name: string;
     phone: string | null;
@@ -145,6 +211,13 @@ export type JobDetailRecord = {
     email: string | null;
     address: string | null;
   } | null;
+  /** Google Maps for `contact.address`. Worker edition only: the office is at a
+   *  desk, the crew is in a truck. Null when there is no address. */
+  directionsUrl: string | null;
+  /** Google Calendar template for the job's own span. Worker edition only —
+   *  the office books the crew through "Add to schedule", the crew puts the
+   *  window in their own phone. Null when the job has no start. */
+  calendarUrl: string | null;
   /** Null unless `Job.proposalId` resolves. The proposal section renders ONLY
    *  when this is set — no linked proposal, no section. */
   proposal: { id: string; title: string; total: number } | null;
@@ -156,8 +229,16 @@ export type JobDetailRecord = {
   /** Roster minus the workers already on the job. */
   roster: JdWorkerOption[];
   booking: JdBooking;
-  /** False for the SALES / ESTIMATOR roles, which requireManager rejects: the
-   *  page renders as a record and hides the controls rather than offering
-   *  buttons that can only fail. */
+  /** False for the SALES / ESTIMATOR roles, which requireManager rejects, and
+   *  for INSTALLER: the page renders as a record and hides the controls rather
+   *  than offering buttons that can only fail. */
   canWrite: boolean;
+  /** Which audience this record was read for — see the block above `JdViewer`.
+   *  It decides which SECTIONS exist, where `canWrite` decides which CONTROLS
+   *  do; the two are independent (a sales rep is a manager-viewer who cannot
+   *  write, a worker is neither). */
+  viewer: JdViewer;
+  /** The reader's own standing on this job. Set on the worker edition only;
+   *  null for the office, which has no assignment of its own to report. */
+  assignment: JdAssignState | null;
 };

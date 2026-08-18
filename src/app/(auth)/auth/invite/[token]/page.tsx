@@ -41,6 +41,11 @@ function expiresIn(d: Date) {
   return "in under an hour";
 }
 
+// Token-scoped, never static. Declared so the dev server does not fork its
+// static-paths worker for this route — see the workerThreads note in
+// next.config.ts.
+export const dynamic = "force-dynamic";
+
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const invite = await db.invite.findUnique({

@@ -4,6 +4,11 @@ import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ApplicantDetail } from "./applicant-detail";
 
+// Session-scoped, never static. Declared so the dev server does not fork its
+// static-paths worker for this route — see the workerThreads note in
+// next.config.ts.
+export const dynamic = "force-dynamic";
+
 export default async function ApplicantDetailPage({
   params,
 }: {

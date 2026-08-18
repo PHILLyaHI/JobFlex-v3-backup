@@ -35,6 +35,20 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
+    // "Jest worker encountered 2 child process exceptions, exceeding retry
+    // limit" — the dev server's static-paths worker, not app code.
+    //
+    // In dev, Next forks a full child node process (next/dist/server/dev/
+    // next-dev-server.js) to evaluate getStaticPaths for each dynamic route,
+    // with maxRetries: 1. Two child deaths kill that pool for the LIFE of the
+    // server, after which EVERY dynamic route 500s with that message — which is
+    // why /api/auth/[...nextauth] started failing and no role could sign in.
+    // Only a restart cleared it.
+    //
+    // workerThreads runs the same worker on worker_threads instead of a forked
+    // process: one heap, no stdio pipes (so no `write EPIPE`), and no child to
+    // die in the first place.
+    workerThreads: true,
     serverActions: {
       bodySizeLimit: "8mb",
     },

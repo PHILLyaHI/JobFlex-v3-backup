@@ -111,3 +111,11 @@ export const ENGINES: Engine[] = [
 
 export const ACTIVE_COUNT = ENGINES.filter((e) => e.status === "active").length;
 export const QUEUED_COUNT = ENGINES.filter((e) => e.status === "queued").length;
+
+/** Where the live engines go. Exported so the two topbars can ask "can this
+ *  role reach ANY of them?" before drawing a New Estimate button that would
+ *  only open a dialog whose every card bounces. Kept here rather than restated
+ *  at each call site, so adding an engine cannot leave a topbar out of date. */
+export const ACTIVE_ENGINE_HREFS: string[] = ENGINES.filter(
+  (e): e is Engine & { status: "active"; href: string } => e.status === "active",
+).map((e) => e.href);

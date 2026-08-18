@@ -20,16 +20,32 @@
 // fabricated job. Every `revalidatePath('/dashboard/jobs/<id>')` already in
 // src/actions/ now lands on a page that reflects it.
 //
-// ── THE WORKER BRANCH IS PRESERVED ─────────────────────────────────
-// Field workers still get the read-only, assignment-scoped WorkerJobView on
-// REAL data (no expenses, change orders, crew management or messages). That
-// view was the one part of the classic page with its own access rule, so it was
-// carried across rather than dropped with the rest; it renders on the blueprint
-// shell now, in the old design's visual language.
+// ── ONE PAGE, TWO AUDIENCES ────────────────────────────────────────
+// A field worker used to take a whole separate branch here: `WorkerJobView`, a
+// 370-line Tailwind "Field Command" bento with its own query, its own date
+// helpers and its own palette. It was the last pre-blueprint surface on the
+// blueprint field, and on 2026-08-18 it was briefly replaced by a SECOND
+// blueprint component (components/v3/worker-job-blueprint) — a fork of a page
+// that already existed. Both are gone.
+//
+// The worker's record is now the same components as the office's, read for a
+// different audience: `loadJobDetail` takes the role, and for a worker runs its
+// assignment-scoped query — the job is found by
+// `{ id, organizationId, assignments: { some: { workerId } } }`, so a worker
+// still cannot open a job they are not on, and no WorkerProfile is still a 404.
+// It returns the same `JobDetailRecord`, narrower: no expenses, no change
+// orders, no roster, no proposal, no money at all, and a client reduced to the
+// name on the door and the address to drive to. The components read
+// `record.viewer` and drop the two sections and add the assignment stamp. See
+// the "ALSO THE FIELD WORKER'S RECORD" block in job-detail-content.tsx.
+//
+// So this file has ONE branch again, and the handheld chrome question answers
+// itself: the viewport switch below serves every role, and MobileJobDetail
+// brings MobileNav with it.
 
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { requireOrg, isWorkerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { loadJobDetail } from "@/components/v3/job-detail-blueprint/job-detail-load";
 // The VIEWPORT SWITCH, not the desktop content directly: above 768px it is
 // JobDetailContent and at or below it the handheld rebuild in
@@ -38,7 +54,6 @@ import { loadJobDetail } from "@/components/v3/job-detail-blueprint/job-detail-l
 // responsive-dashboard-shell.tsx because this route is dynamic and no literal
 // pathname key can match it — see the header of job-detail-viewport-switch.tsx.
 import { JobDetailViewportSwitch } from "@/components/v3/mobile-job-detail/job-detail-viewport-switch";
-import { WorkerJobView } from "./worker-job-view";
 
 export const dynamic = "force-dynamic";
 
@@ -69,11 +84,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     throw err;
   }
 
-  if (isWorkerRole(role)) {
-    return <WorkerJobView id={id} organizationId={organizationId} userId={userId} />;
-  }
-
-  const record = await loadJobDetail(id, organizationId, role);
+  // `userId` is what lets the loader take its assignment-scoped branch for a
+  // worker; for every other role it is read and ignored.
+  const record = await loadJobDetail(id, organizationId, role, userId);
   if (!record) notFound();
 
   // Keyed on the record: /dashboard/jobs/A → /dashboard/jobs/B reconciles the

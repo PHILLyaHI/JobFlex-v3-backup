@@ -1,3 +1,5 @@
+"use client";
+
 // Blueprint shell — topbar. Donor markup, verbatim.
 //
 // This is the union of both donors' topbars: the newer proposals donor's
@@ -11,7 +13,19 @@
 // A button, not an input: the field never accepted typing, so presenting it as
 // something you type into was the lie. It opens the thing you type into.
 
+import { canOpen } from "./nav-map";
+import { useNavRole } from "./nav-role";
+import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
+
 export function Topbar() {
+  const role = useNavRole();
+  // Every engine the picker offers sits outside a field worker's allow-list, so
+  // the app's most prominent CTA would open a dialog whose every card bounces
+  // them back to Jobs. Asked of the engine list itself so a new engine cannot
+  // leave this behind. The production topbar strips the same controls from
+  // limited roles (components/layout/Topbar.tsx, `stripped`).
+  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href));
+
   const openPalette = () => {
     document.dispatchEvent(new CustomEvent("jf:command-palette"));
   };
@@ -47,12 +61,14 @@ export function Topbar() {
             the engine is a choice: Roof, Fence, Manual or Smart Proposal.
             A dumb dispatcher, like the ⌘K chip beside it — the dialog owns its
             own state and is mounted once in the shell. */}
-        <button className="btn btn-primary" type="button" onClick={openPicker}>
-          <svg className="ic">
-            <use href="#i-plus" />
-          </svg>
-          New Estimate
-        </button>
+        {canEstimate && (
+          <button className="btn btn-primary" type="button" onClick={openPicker}>
+            <svg className="ic">
+              <use href="#i-plus" />
+            </svg>
+            New Estimate
+          </button>
+        )}
         {/* The bell had no handler, and `.bell-dot` was a static CSS dot no
             code ever toggled — so it advertised unread notifications
             permanently, whether or not any existed. Until a notification

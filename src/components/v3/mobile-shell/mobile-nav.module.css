@@ -328,8 +328,26 @@
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
   flex-shrink: 0;
+  /* Sign out renders as a <button> through this class, so the UA button
+     styling has to be neutralised here — the links beside it need none of it. */
+  appearance: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
 }
 .sbFootIc .ic { width: 15px; height: 15px; }
+/* Sign out ends the session, so it takes the danger tone on press/hover while
+   the settings gear beside it stays neutral. --danger is declared by the
+   blueprint page roots; the handheld review URLs that don't declare it fall
+   back to the app-global --rose, which is the same colour. */
+.sbFootOut { --sign-out: var(--danger, var(--rose)); }
+.sbFootOut:hover,
+.sbFootOut:active {
+  border-color: var(--sign-out);
+  color: var(--sign-out);
+}
 @keyframes sbItemIn {
   from { opacity: 0; transform: translateX(-8px); }
   to { opacity: 1; transform: none; }

@@ -12,6 +12,11 @@ import { ClosePostButton } from "./close-post-button";
 import { relative } from "@/lib/format";
 import { ArrowLeft } from "lucide-react";
 
+// Session-scoped, never static. Declared so the dev server does not fork its
+// static-paths worker for this route — see the workerThreads note in
+// next.config.ts.
+export const dynamic = "force-dynamic";
+
 export default async function TradePostDetail({
   params,
 }: {
