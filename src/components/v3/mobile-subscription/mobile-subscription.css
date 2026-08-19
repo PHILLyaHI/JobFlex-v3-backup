@@ -155,7 +155,7 @@
      stylistic sets are part of the house type, not an accident of the
      host, so they are re-stated rather than reset to `normal`. */
   font-feature-settings: "cv11", "ss01", "ss03";
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
 }
 
 /* ── HOST NEUTRALIZATION ─────────────────────────────────────
@@ -759,23 +759,6 @@ body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-}
-/* The free marker, in the head row's right corner. Outline rather than the
-   flag's inverse plate: "Most popular" is a claim and earns the ink fill, while
-   "Free" is a fact about the price beside it — and if a plan is ever both, two
-   solid black plates side by side would fight. */
-.jf-mobile-subscription .jfms-planFree {
-  flex: 0 0 auto;
-  padding: 4px 9px;
-  border: 1.5px solid var(--ink);
-  border-radius: var(--radius);
-  background: var(--paper);
-  color: var(--ink);
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  line-height: 1.35;
 }
 .jf-mobile-subscription .jfms-planPrice {
   display: flex;

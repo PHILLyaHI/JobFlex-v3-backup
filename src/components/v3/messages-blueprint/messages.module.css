@@ -31,7 +31,7 @@
    ============================================================ */
 .bp :global(.content) {
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -63,7 +63,7 @@
   --border: 2px solid var(--ink);
   --border-thin: 1.5px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10,10,10,0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
@@ -122,7 +122,7 @@
 .bp :global(.content .btn:active) { transform: translate(0, 0); box-shadow: none; }
 .bp :global(.content .btn-primary) { background: var(--blueprint); color: #fff; }
 .bp :global(.content .btn-primary:hover) { background: var(--blueprint-dark); }
-.bp :global(.content .btn-ghost) { background: var(--paper); color: var(--ink); }
+.bp :global(.content .btn-ghost) { background: #fff; color: var(--ink); }
 .bp :global(.content .btn-ghost:hover) { background: var(--paper-deep); }
 
 /* ============================================================
@@ -232,7 +232,7 @@
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -262,7 +262,7 @@
    CARDS
    ============================================================ */
 .bp :global(.content .card) {
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   padding: 20px 24px 24px;
@@ -325,22 +325,22 @@
   padding: 9px 12px;
   border: var(--border-thin);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 11px; font-weight: 800;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink);
   cursor: pointer;
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .dd-btn:hover) { background: var(--paper-deep); }
-.bp :global(.content .dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .dd-btn:hover) { background: var(--accent-soft); }
+.bp :global(.content .dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .dd-btn .ic) { width: 13px; height: 13px; color: var(--muted); transition: transform 0.2s var(--ease); }
 .bp :global(.content .dd.open .dd-btn .ic) { transform: rotate(180deg); }
 .bp :global(.content .dd-menu) {
   position: absolute;
   top: calc(100% + 6px); right: 0;
   min-width: 100%;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--ink);
@@ -361,14 +361,14 @@
   white-space: nowrap;
   transition: background 0.12s, color 0.12s;
 }
-.bp :global(.content .dd-item:hover) { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.content .dd-item:hover) { background: var(--accent-soft); color: var(--ink); }
 .bp :global(.content .dd-item.active) { color: var(--blueprint); font-weight: 800; }
 
 /* Chart hover: callout, square dots, tooltip */
 .bp :global(.content .ch-overlay) { cursor: crosshair; }
 .bp :global(.content .ch-guide) { stroke: var(--blueprint); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.15s ease; }
 .bp :global(.content .ch-tipg) { opacity: 0; pointer-events: none; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.15s ease; }
-.bp :global(.content .ch-tip-box) { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+.bp :global(.content .ch-tip-box) { fill: #fff; stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
 .bp :global(.content .ch-tip-text) { font-family: var(--font-mono); font-size: 13px; font-weight: 700; fill: var(--ink); pointer-events: none; }
 .bp :global(.content .chart-wrap) { width: 100%; }
 .bp :global(.content .chart-wrap svg) { width: 100%; height: auto; display: block; }
@@ -381,7 +381,7 @@
 .bp :global(.content .ch-axis) { stroke: var(--ink); stroke-width: 1.5; }
 .bp :global(.content .ch-area) { fill: var(--chart-fill); }
 .bp :global(.content .ch-line) { stroke: var(--blueprint); stroke-width: 2.5; fill: none; }
-.bp :global(.content .ch-dot) { fill: var(--paper); stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
+.bp :global(.content .ch-dot) { fill: #fff; stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
 .bp :global(.content .ch-dot.on) { fill: var(--blueprint); }
 .bp :global(.content .ch-lbl) {
   font-family: var(--font-mono);
@@ -443,13 +443,13 @@
   padding: 10px 4px 9px;
   text-align: center;
   border-right: 1px solid var(--hair);
-  background: var(--paper);
+  background: #fff;
   transition: background 0.12s, box-shadow 0.12s;
   cursor: pointer;
   user-select: none;
 }
 .bp :global(.content .day:last-child) { border-right: none; }
-.bp :global(.content .day:hover) { background: var(--paper-deep); }
+.bp :global(.content .day:hover) { background: var(--accent-soft); }
 .bp :global(.content .day-lbl) {
   font-size: 9.5px; font-weight: 800;
   letter-spacing: 0.16em;
@@ -577,7 +577,7 @@
   color: var(--ink);
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .card-foot-btn .ic) { width: 13px; height: 13px; }
 .bp :global(.content .list .card-foot-btn) { display: none; margin-top: 10px; }
 .bp :global(.content .list.has-more .card-foot-btn) { display: flex; }
@@ -601,7 +601,7 @@
   grid-template-columns: repeat(5, 1fr);
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -703,7 +703,7 @@
 @media (prefers-reduced-motion: reduce) {
   .bp :global(.content *), .bp :global(.content *)::before, .bp :global(.content *)::after { transition: none !important; animation: none !important; }
 }
-.bp :global(.content :focus-visible) { outline: 2px solid var(--sky); outline-offset: 2px; }
+.bp :global(.content :focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* ============================================================
    PROPOSALS PAGE (the shared table / masthead / sheet system this
@@ -717,7 +717,7 @@
   padding: 9px 15px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 13px; font-weight: 700;
   color: var(--muted);
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, border-color 0.12s, color 0.12s;
@@ -739,6 +739,7 @@
   padding: 5px 11px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
+  background: #fff; /* chips sit on the cream page — plate them white (owner, 2026-08-17) */
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
@@ -809,7 +810,7 @@
 .bp :global(.content .pt-open .ic) { width: 14px; height: 14px; }
 
 .bp :global(.content .pstack) { display: flex; flex-direction: column; gap: 18px; }
-.bp :global(.content .pjob) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+.bp :global(.content .pjob) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
 .bp :global(.content .pjob-head) {
   display: flex; align-items: center; justify-content: space-between; gap: 18px;
   padding: 15px 18px;
@@ -871,10 +872,10 @@
   width: 32px; height: 32px;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, opacity 0.12s;
 }
-.bp :global(.content .pager-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .pager-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .pager-btn:active) { transform: none; box-shadow: none; }
 .bp :global(.content .pager-btn[disabled]) { opacity: 0.3; pointer-events: none; }
 .bp :global(.content .pager-btn .ic) { width: 14px; height: 14px; }
@@ -933,19 +934,38 @@
 .bp :global(.content .pmenu) {
   position: fixed; z-index: 60;
   width: 254px;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 4px 4px 0 var(--ink);
   padding: 6px;
   display: none;
 }
-.bp :global(.content .pmenu.open) { display: block; }
+/* Enter per the Motion System's dropdown: fade + 6px slide from the anchor,
+   180ms. Keyframes live in dashboard-blueprint/blueprint-global.css (the
+   modules pipeline rejects @keyframes); `.up` is stamped by openMsgMenu when
+   the menu flips to open ABOVE its trigger, so it always slides FROM the
+   anchor's side. Close stays instant, like every pmenu in the system. */
+.bp :global(.content .pmenu.open) { display: block; animation: pmenuIn 0.18s var(--ease) both; }
+.bp :global(.content .pmenu.open.up) { animation-name: pmenuInUp; }
+/* Compact two-action row (owner requests 2026-08-13): no head, icon + verb
+   only — Edit | Copy on one horizontal axis with a 1.5px vertical divider,
+   and NO offset shadow. The row GEOMETRY (container flex, item padding,
+   the divider) is inline in openMsgMenu/menuItem — the same
+   stale-stylesheet insurance as the ⋯ trigger — so the only rule here is
+   the shadow override for sheets that DID reload; hover states and the
+   icon-box/label treatments are the pre-row .pmenu vocabulary above.
+   Content-sized: openMsgMenu measures offsetWidth for the placement clamp
+   instead of assuming the donor's 254px. */
+.bp :global(.content .pmenu--row) { box-shadow: none; }
 .bp :global(.content .pmenu-head) { padding: 8px 10px 9px; border-bottom: 1.5px solid var(--hair-soft); margin-bottom: 5px; }
 .bp :global(.content .pmenu-title) { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink); }
-.bp :global(.content .pmenu-sub) { font-size: 11.5px; font-weight: 500; color: var(--muted-light); margin-top: 2px; }
+/* One line, ellipsized: the head names the message; it must never wrap the
+   menu taller (the JS already caps the snippet, but 44 chars can still
+   fold at 254px). */
+.bp :global(.content .pmenu-sub) { font-size: 11.5px; font-weight: 500; color: var(--muted-light); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bp :global(.content .pmenu-item) { display: flex; align-items: center; gap: 11px; width: 100%; padding: 8px 10px; border-radius: var(--radius); text-align: left; transition: background 0.12s; }
-.bp :global(.content .pmenu-item:hover) { background: var(--paper-deep); }
+.bp :global(.content .pmenu-item:hover) { background: var(--accent-soft); }
 .bp :global(.content .pmenu-item .ic) { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; }
 .bp :global(.content .pmenu-item-t) { font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1.15; }
 .bp :global(.content .pmenu-item-s) { font-size: 11.5px; font-weight: 500; color: var(--muted); margin-top: 2px; }
@@ -955,7 +975,7 @@
 .bp :global(.content .pmenu-div) { height: 1.5px; background: var(--hair-soft); margin: 5px 4px; }
 
 .bp :global(.content .psheets) { display: flex; flex-direction: column; gap: 22px; }
-.bp :global(.content .psheet) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 4px 4px 0 var(--shadow); }
+.bp :global(.content .psheet) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 4px 4px 0 var(--shadow); }
 .bp :global(.content .psheet-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px 18px; border-bottom: 2px solid var(--hair-soft); }
 .bp :global(.content .psheet-banklbl) { display: block; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-light); margin-bottom: 5px; text-align: right; }
 .bp :global(.content .pt-money.big) { font-size: 23px; font-weight: 900; }
@@ -985,7 +1005,7 @@
   width: 236px; padding: 8px 11px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-family: var(--font); font-size: 12.5px; color: var(--ink);
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -1009,7 +1029,7 @@
   margin: 2px 0 26px;
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   box-shadow: 3px 3px 0 var(--shadow);
   padding: 20px 24px 22px;
 }
@@ -1096,7 +1116,7 @@
   /* ---------- PALETTE: compensating for warm phone screens ---------- */
   .bp :global(.content) {
     --paper: #f6f5f1;
-    --paper-deep: #eeece7;
+    --paper-deep: #ffffff;
     --grid-light: rgba(0, 0, 0, 0.026);
   }
 
@@ -1318,7 +1338,7 @@
 .bp :global(.content .conv) { list-style: none; margin: 0; padding: 0; overflow-y: auto; overflow-x: hidden; flex: 1; }
 .bp :global(.content .conv li) { min-width: 0; }
 .bp :global(.content .conv-row) { display: flex; align-items: flex-start; gap: 11px; width: 100%; min-width: 0; padding: 12px 13px; text-align: left; border-bottom: 1.5px solid var(--hair-soft); transition: background 0.12s; }
-.bp :global(.content .conv-row:hover) { background: var(--paper-deep); }
+.bp :global(.content .conv-row:hover) { background: var(--accent-soft); }
 .bp :global(.content .conv-row.on) { background: rgba(24, 84, 160, 0.07); box-shadow: inset 3px 0 0 var(--blueprint); }
 .bp :global(.content .conv-av) { width: 34px; height: 34px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep); font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
 .bp :global(.content .conv-row.on .conv-av) { background: var(--blueprint); border-color: var(--blueprint-dark); color: #fff; }
@@ -1341,7 +1361,9 @@
 .bp :global(.content .th-clear:hover) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .bp :global(.content .th-clear .ic) { width: 14px; height: 14px; }
 
-.bp :global(.content .th-body) { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 4px;
+/* gap 8px, not the donor's 4px: with a meta line under every own bubble the
+   4px rows read as one dense block (owner asked for more air, 2026-08-12). */
+.bp :global(.content .th-body) { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px;
   background:
     linear-gradient(var(--grid-light) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
@@ -1352,20 +1374,38 @@
 .bp :global(.content .msg) { display: flex; flex-direction: column; max-width: 74%; }
 .bp :global(.content .msg.me) { align-self: flex-end; align-items: flex-end; }
 .bp :global(.content .msg-who) { margin: 6px 0 4px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
-.bp :global(.content .bub) { padding: 9px 12px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper); font-size: 13px; line-height: 1.5; box-shadow: 2px 2px 0 var(--shadow); }
-.bp :global(.content .msg.me .bub) { background: var(--blueprint); border-color: var(--blueprint-dark); color: #fff; box-shadow: 2px 2px 0 rgba(24, 84, 160, 0.25); }
-.bp :global(.content .msg-meta) { margin-top: 4px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-light); }
+/* No offset shadow on chat bubbles (owner request 2026-08-12): the donor
+   stamped its card shadow here too, but dozens of bubbles each casting one
+   read as visual noise, not depth. The 1.5px ink frame carries the edge. */
+.bp :global(.content .bub) { padding: 9px 12px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper); font-size: 13px; line-height: 1.5; }
+.bp :global(.content .msg.me .bub) { background: var(--blueprint); border-color: var(--blueprint-dark); color: #fff; }
+/* A flex row, not the donor's inline text: the ⋯ trigger sits after the
+   time/receipt text and centers on its axis with no vertical-align hacks.
+   Rows without the trigger render identically to the donor's plain line. */
+.bp :global(.content .msg-meta) { margin-top: 4px; font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-light); display: flex; align-items: center; }
 .bp :global(.content .th-empty) { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 30px; }
 .bp :global(.content .th-empty b) { font-size: 17px; font-weight: 900; }
 .bp :global(.content .th-empty span) { margin-top: 8px; font-size: 13px; color: var(--muted); }
 
-.bp :global(.content .th-composer) { display: flex; align-items: flex-end; gap: 9px; padding: 11px 13px; border-top: 2px solid var(--ink); background: var(--paper-deep); flex: 0 0 auto; }
-.bp :global(.content .th-composer textarea) { flex: 1; min-height: 38px; max-height: 130px; padding: 10px 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; line-height: 1.45; color: var(--ink); resize: none; }
+/* `align-items: center`, not the donor's `flex-end`: the single-line field is
+   ~41px tall (line + padding + borders) against the 38px button, so bottom
+   alignment left the button drooping 3px below the field's edge. Centered, the
+   two read as one row; when the field autogrows the button rides its middle. */
+.bp :global(.content .th-composer) { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-top: 2px solid var(--ink); background: var(--paper-deep); flex: 0 0 auto; }
+.bp :global(.content .th-composer textarea) { flex: 1; min-height: 38px; max-height: 130px; padding: 10px 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; line-height: 1.45; color: var(--ink); resize: none; }
 .bp :global(.content .th-composer textarea:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .th-composer textarea)::placeholder { color: var(--muted-faint); }
-.bp :global(.content .send-btn) { width: 38px; height: 38px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--blueprint); color: #fff; box-shadow: 2px 2px 0 var(--ink); transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease); }
+/* No resting shadow (owner request 2026-08-12): flat until hovered, then the
+   standard lift — shadow appears and the button rises toward it. Active drops
+   back flat, which reads as the press.
+   HEIGHT (owner request, same day): `align-self: stretch` + `height: auto`
+   makes the key EXACTLY the field's height — top and bottom edges flush, so
+   it can never sit lower than the field. The cap only bites when the field
+   autogrows multiline: the key stops at 42px and, because a capped stretch
+   item anchors to cross-start, it rides the TOP of the row. */
+.bp :global(.content .send-btn) { width: 40px; height: auto; align-self: stretch; max-height: 42px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--blueprint); color: #fff; transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease); }
 .bp :global(.content .send-btn:hover) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
-.bp :global(.content .send-btn:active) { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+.bp :global(.content .send-btn:active) { transform: none; box-shadow: none; }
 .bp :global(.content .send-btn .ic) { width: 15px; height: 15px; }
 
 /* new-conversation dialog.
@@ -1381,15 +1421,17 @@
 .bp :global(.content .mdl.open) { display: flex; }
 .bp :global(.content:has(.mdl.open)) { z-index: auto; }
 .bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
-.bp :global(.content .mdl-box) { position: relative; width: min(420px, 100%); max-height: 84vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); overflow: hidden; }
+/* No offset shadow (owner request 2026-08-13) — the box also carries an
+   inline `box-shadow: none` in the JSX as stale-sheet insurance. */
+.bp :global(.content .mdl-box) { position: relative; width: min(420px, 100%); max-height: 84vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
 .bp :global(.content .mdl-head) { padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .mdl-title) { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
 .bp :global(.content .mdl-sub) { margin-top: 5px; font-size: 12.5px; color: var(--muted); }
 .bp :global(.content .mdl-body) { padding: 0; overflow-y: auto; flex: 1; }
-.bp :global(.content .mdl-search) { height: 40px; border-bottom: 1.5px solid var(--hair-soft); background: var(--paper); }
+.bp :global(.content .mdl-search) { height: 40px; border-bottom: 1.5px solid var(--hair-soft); background: #fff; }
 .bp :global(.content .members) { list-style: none; margin: 0; padding: 0; }
 .bp :global(.content .members li) { display: flex; align-items: center; gap: 11px; padding: 10px 14px; border-bottom: 1.5px solid var(--hair-soft); cursor: pointer; transition: background 0.12s; }
-.bp :global(.content .members li:hover) { background: var(--paper-deep); }
+.bp :global(.content .members li:hover) { background: var(--accent-soft); }
 .bp :global(.content .members li.on) { background: rgba(24, 84, 160, 0.07); }
 .bp :global(.content .mem-check) { width: 18px; height: 18px; flex: 0 0 auto; border: 1.5px solid var(--ink); border-radius: var(--radius); position: relative; }
 .bp :global(.content .members li.on .mem-check) { background: var(--blueprint); border-color: var(--blueprint); }
@@ -1401,7 +1443,7 @@
 .bp :global(.content .grp-title) { display: block; padding: 13px 14px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .grp-title.is-hidden) { display: none; }
 .bp :global(.content .est-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
-.bp :global(.content .est-in) { width: 100%; height: 36px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink); }
+.bp :global(.content .est-in) { width: 100%; height: 36px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; color: var(--ink); }
 .bp :global(.content .est-in:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); flex: 0 0 auto; }
 .bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
@@ -1419,6 +1461,49 @@
 /* Composer + send button while a write is on the wire. */
 .bp :global(.content .th-composer.is-busy) { opacity: 0.6; pointer-events: none; }
 
+/* MESSAGE ACTIONS + EDITING + READ RECEIPTS — not in the donor (added
+   2026-08-12; reworked three times the same day). The donor's message markup
+   (.msg > .bub + .msg-meta) is untouched apart from the meta line becoming a
+   flex row (rule above). The ⋯ trigger (`.msg-dots`, end of the meta line)
+   is the quiet-action pattern the proposal card bars use: nothing but the
+   dots at rest, in the meta's own tone; the ink frame appears on hover/open.
+   The trigger is revealed by hovering the MESSAGE (or focusing it, or while
+   its menu is open — `.menu-on` on the row); pointers that cannot hover keep
+   it always visible.
+
+   GEOMETRY IS NOT HERE ON PURPOSE. The box (20px), icon size (10px — the
+   dot column must sit inside the meta text's optical band, cap top to
+   baseline; at 13px it poked ~1px past both edges and read as hanging off
+   the line) and centering are inline in the markup (renderThread): three
+   stale-stylesheet incidents on this page mean the trigger must stay
+   correctly placed even when this file hasn't reloaded. Only states and
+   tones live here — a stale sheet degrades to an always-visible quiet
+   button, nothing worse. The edit-mode strip above the composer is styled
+   inline for the same reason. Delivered/Read is plain meta text and needs
+   no rule of its own. */
+.bp :global(.content .msg-dots) {
+  flex: 0 0 auto;
+  border: 1.5px solid transparent; border-radius: var(--radius);
+  color: var(--muted-light);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
+}
+.bp :global(.content .msg:hover .msg-dots),
+.bp :global(.content .msg-dots:focus-visible),
+.bp :global(.content .msg.menu-on .msg-dots) { opacity: 1; }
+.bp :global(.content .msg-dots:hover),
+.bp :global(.content .msg.menu-on .msg-dots) { border-color: var(--ink); background: #fff; color: var(--ink); }
+@media (hover: none) {
+  .bp :global(.content .msg-dots) { opacity: 1; }
+}
+/* Edit-strip Cancel (#editCancel) keeps its look inline in the TSX; only the
+   geometry the ≤860px touch-target rule needs to override lives here. */
+.bp :global(.content .msg-editcancel) { padding: 0; }
+.bp :global(.content .msg.is-editing .bub) { outline: 1.5px dashed var(--blueprint); outline-offset: 2px; }
+/* While editing, the strip and the composer read as ONE block: the strip
+   carries the dashed top rule, so the composer drops its own solid one. */
+.bp :global(.content .th-composer.is-editing) { border-top: 0; }
+
 @media (max-width: 1000px) {
   .bp :global(.content .mx) { grid-template-columns: minmax(0, 1fr); height: auto; }
   .bp :global(.content .mx-list) { max-height: 320px; }
@@ -1426,4 +1511,11 @@
 }
 @media (max-width: 860px) {
   .bp :global(.content .msg) { max-width: 88%; }
+  /* Touch targets. The ⋯ trigger's 20px box is inline in the markup (see the
+     geometry note above); min-* constraints beat inline width/height, so the
+     tap area grows without touching the stale-sheet-safe inline styles. */
+  .bp :global(.content .msg-dots) { min-width: 44px; min-height: 44px; }
+  /* Edit-strip Cancel: padding grows the tap box; the negative right margin
+     hands the 13px back to the bar's own padding so the label doesn't move. */
+  .bp :global(.content .msg-editcancel) { min-height: 44px; min-width: 44px; padding: 0 13px; margin-right: -13px; }
 }

@@ -57,7 +57,6 @@ export function FenceEstimatorContent() {
         <div>
           <div className="kicker">Automation · Estimating</div>
           <h1 className="page-title">Fence studio</h1>
-          <p className="fs-lede">Swap materials, heights, and gates and watch the estimate update live.</p>
         </div>
       </div>
 

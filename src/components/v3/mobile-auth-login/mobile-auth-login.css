@@ -134,8 +134,8 @@ body:has(.jf-mobile-auth-login)::before { content: none; }
   font-family: var(--font);
   background: var(--paper);
   color: var(--ink);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 
   line-height: normal;
   font-feature-settings: normal;

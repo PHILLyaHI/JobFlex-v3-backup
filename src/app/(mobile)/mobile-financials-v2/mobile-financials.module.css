@@ -97,7 +97,7 @@
   background: var(--paper);
   color: var(--ink);
   font-feature-settings: "cv11", "ss01", "ss03";
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
 }
 .app ::selection { background: var(--blueprint); color: #fff; }
 .app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }

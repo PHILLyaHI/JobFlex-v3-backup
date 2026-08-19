@@ -282,7 +282,7 @@ export function renderEmail(doc: EmailDoc): { subject: string; html: string; tex
 }
 </style>
 </head>
-<body style="margin:0;padding:0;background:${C.canvas};font-family:${SANS};-webkit-font-smoothing:antialiased;">
+<body style="margin:0;padding:0;background:${C.canvas};font-family:${SANS};-webkit-font-smoothing: auto;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;">${esc(
     preheader(doc),
   )}&#8203;&#847;&#847;&#847;&#847;&#847;&#847;&#847;&#847;</div>

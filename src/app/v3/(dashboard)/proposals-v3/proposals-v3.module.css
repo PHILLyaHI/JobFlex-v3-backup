@@ -58,8 +58,8 @@
   font-family: var(--font);
   background: var(--paper);
   color: var(--ink);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
 }
 .layout *,

@@ -18,9 +18,9 @@
 //   · DATA and BEHAVIOUR come from the live (dashboard)/dashboard/subscription
 //     view: the admin-managed plan catalog, the limits engine's enforced caps,
 //     real Stripe invoices, the org's referral code, and the real checkout
-//     (usePlanCheckout → /api/checkout/subscription, or setOrgPlan for a free
-//     plan). Where the mockup's control wrote nothing and the live control does
-//     something real, the live behaviour wins. NOTHING here is a fixture.
+//     (usePlanCheckout → /api/checkout/subscription). Where the mockup's
+//     control wrote nothing and the live control does something real, the live
+//     behaviour wins. NOTHING here is a fixture.
 //
 // FIGURES THE MOCKUP SHOWS THAT THE LIVE DATA CANNOT SUPPLY are OMITTED, not
 // invented — on a billing surface a fabricated number is the worst possible
@@ -106,7 +106,6 @@ export interface MobileSubscriptionProps {
   planName: string;
   /** Monthly price of the current plan; null when the slug left the catalog. */
   priceCents: number | null;
-  isFree: boolean;
   /** Lowercase slug used to mark "current" among the plan cards. */
   currentSlug: string;
   /** Active catalog plans, display-ordered — /admin/plans is the only source. */
@@ -221,12 +220,12 @@ function planCaps(p: PlanDTO): Array<{ key: string; label: string; value: number
   }));
 }
 
-/** Tier tone, positional exactly as the live view's is: free plans take the
- *  neutral graphite, paid plans cycle by catalog order. See the CSS note on
- *  why the cycle is blueprint → sky → deep blueprint and not a status hue. */
+/** Tier tone, positional exactly as the live view's is: plans cycle by catalog
+ *  order; a slug outside the catalog takes the neutral graphite. See the CSS
+ *  note on why the cycle is blueprint → sky → deep blueprint and not a status
+ *  hue. */
 function toneClass(plans: PlanDTO[], slug: string): string {
-  const paid = plans.filter((p) => !p.isFree);
-  const idx = paid.findIndex((p) => p.slug === slug);
+  const idx = plans.findIndex((p) => p.slug === slug);
   if (idx < 0) return "jfms-toneFree";
   return ["jfms-toneA", "jfms-toneB", "jfms-toneC"][idx % 3];
 }
@@ -234,7 +233,6 @@ function toneClass(plans: PlanDTO[], slug: string): string {
 export function MobileSubscription({
   planName,
   priceCents,
-  isFree,
   currentSlug,
   plans,
   status,
@@ -328,12 +326,11 @@ export function MobileSubscription({
   }, [sheetOpen]);
 
   /** The sheet's confirm. Same call the live change-plan dialog makes, with
-   *  the same interval argument — a free plan switches directly, a paid plan
-   *  goes to Stripe Checkout. */
+   *  the same interval argument — the plan goes to Stripe Checkout, which
+   *  navigates away. */
   const applyTarget = useCallback(async () => {
     if (!selected) return;
     await start(selected, yearlyAvailable ? interval : "MONTH");
-    if (selected.isFree) setSheetOpen(false); // the paid path navigates away
   }, [selected, start, yearlyAvailable, interval]);
 
   /* ---------- Motion: usage bars draw to their real value -------------- */
@@ -508,7 +505,7 @@ export function MobileSubscription({
               <div className="jfms-heroRow">
                 <span className="jfms-heroPrice">
                   {priceCents !== null ? formatPlanPrice(priceCents) : "—"}
-                  {priceCents !== null ? <i>{priceCadence(isFree, true)}</i> : null}
+                  {priceCents !== null ? <i>{priceCadence(true)}</i> : null}
                 </span>
               </div>
             </div>
@@ -520,7 +517,7 @@ export function MobileSubscription({
               <div className="jfms-heroFact">
                 <span className="jfms-heroFactL">Billing</span>
                 <span className="jfms-heroFactV">
-                  {priceCents === null ? "—" : isFree ? "Free forever" : "Per month"}
+                  {priceCents === null ? "—" : "Per month"}
                 </span>
               </div>
             </div>
@@ -597,20 +594,13 @@ export function MobileSubscription({
                   <div className="jfms-planTop">
                     <div className="jfms-planHeadRow">
                       <div className="jfms-planName">{p.name}</div>
-                      {/* The free marker is a CORNER badge (owner's call,
-                          2026-08-12), not the "forever" annotation that used to
-                          hang under the $0. It says the same thing in the place
-                          the eye already checks for a card's label, and it stops
-                          the free card's price block from reading two lines deep
-                          while every paid card reads one. */}
-                      {p.isFree ? <span className="jfms-planFree">Free</span> : null}
                       {p.highlight && !current ? (
                         <span className="jfms-planFlag">Most popular</span>
                       ) : null}
                     </div>
                     <div className="jfms-planPrice">
                       <b>{formatPlanPrice(p.priceCents)}</b>
-                      {p.isFree ? null : <i>{priceCadence(p.isFree, true)}</i>}
+                      <i>{priceCadence(true)}</i>
                     </div>
                     {p.description ? <p className="jfms-planDesc">{p.description}</p> : null}
                     {caps.length > 0 ? (
@@ -644,7 +634,7 @@ export function MobileSubscription({
                     ) : null}
                   </div>
                   <div className="jfms-planFoot">
-                    {!current && !p.isFree && p.trialDays > 0 ? (
+                    {!current && p.trialDays > 0 ? (
                       <div className="jfms-planTrial">{p.trialDays}-day free trial</div>
                     ) : null}
                     {current ? (
@@ -659,7 +649,7 @@ export function MobileSubscription({
                         disabled={busy}
                         onClick={() => start(p)}
                       >
-                        {pendingSlug === p.slug ? "Working…" : planCtaLabel(p.isFree, p.trialDays)}
+                        {pendingSlug === p.slug ? "Working…" : planCtaLabel(p.trialDays)}
                       </button>
                     )}
                   </div>
@@ -793,11 +783,9 @@ export function MobileSubscription({
                   <span className="jfms-optSub">
                     {p.slug === currentSlug
                       ? "Current plan"
-                      : p.isFree
-                        ? "Free forever"
-                        : p.trialDays > 0
-                          ? `${p.trialDays}-day trial`
-                          : "Billed monthly"}
+                      : p.trialDays > 0
+                        ? `${p.trialDays}-day trial`
+                        : "Billed monthly"}
                   </span>
                 </span>
                 <span className="jfms-optPrice">{formatPlanPrice(p.priceCents)}</span>
@@ -805,7 +793,7 @@ export function MobileSubscription({
             );
           })}
 
-          {selected && !selected.isFree && yearlyAvailable ? (
+          {selected && yearlyAvailable ? (
             <div className="jfms-seg" role="group" aria-label="Billing period">
               <button
                 type="button"
@@ -827,9 +815,7 @@ export function MobileSubscription({
           ) : null}
 
           <p className="jfms-sheetNote">
-            {selected && !selected.isFree
-              ? "Paid plans go through Stripe Checkout — you can apply a promo code there."
-              : "Switching to a free plan takes effect immediately."}
+            Plans go through Stripe Checkout — you can apply a promo code there.
           </p>
         </div>
         <div className="jfms-sheetFoot">
@@ -852,7 +838,7 @@ export function MobileSubscription({
               : selected && selected.slug === currentSlug
                 ? "Current plan"
                 : selected
-                  ? planCtaLabel(selected.isFree, selected.trialDays)
+                  ? planCtaLabel(selected.trialDays)
                   : "Continue"}
           </button>
         </div>

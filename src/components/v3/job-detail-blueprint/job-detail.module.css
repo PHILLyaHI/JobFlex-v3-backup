@@ -360,7 +360,7 @@
 :global(.jf-blueprint .content) .jd-sbtn:focus-visible,
 :global(.jf-blueprint .content) .jd-pick-row:focus-visible,
 :global(.jf-blueprint .content) .jd-file:focus-visible + .btn,
-:global(.jf-blueprint .content) .btn:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+:global(.jf-blueprint .content) .btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   :global(.jf-blueprint .content) .btn,

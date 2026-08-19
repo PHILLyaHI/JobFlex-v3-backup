@@ -11,7 +11,7 @@ export interface AdminUserRow {
   isPlatformAdmin: boolean;
   orgId: string | null;
   orgName: string | null;
-  /** The org's current plan (Subscription.plan), or "FREE" when none. */
+  /** The org's current plan (Subscription.plan), or "NONE" when none. */
   plan: string;
   planStatus: string;
   /** How many members share this org (plan is org-wide, not per-user). */
@@ -76,8 +76,8 @@ export async function listAdminUsers(): Promise<AdminUserRow[]> {
       isPlatformAdmin: u.isPlatformAdmin,
       orgId: org?.id ?? null,
       orgName: org?.name ?? null,
-      plan: sub?.plan ?? "FREE",
-      planStatus: sub?.status ?? "FREE",
+      plan: sub?.plan ?? "NONE",
+      planStatus: sub?.status ?? "NONE",
       orgMemberCount: org ? (countByOrg.get(org.id) ?? 1) : 0,
       createdAt: u.createdAt,
     };

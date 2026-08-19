@@ -191,15 +191,39 @@ export function initFinancialsContent(
         return Math.max(m.revenue, m.expenses);
       }),
     );
+    // A month can close in the red (expenses above revenue). The donor's scale
+    // stopped at $0, so a negative net point was plotted below the axis and
+    // walked out of the card. When any month's net is negative the scale now
+    // grows a negative field: same $-step, up to four extra divisions below
+    // zero, each with its own gridline and a "−$10k"-style label. With no red
+    // months negDivs is 0 and the chart renders exactly as before.
+    const minNet = Math.min.apply(
+      null,
+      [0].concat(
+        monthly.map(function (m) {
+          return m.revenue - m.expenses;
+        }),
+      ),
+    );
     // Floor the scale at $10k a division so a quiet month still has a readable
-    // axis instead of a zero-height grid.
-    const step = Math.max(10000, Math.ceil(max / 4 / 10000) * 10000);
+    // axis instead of a zero-height grid. The step must also cover the deepest
+    // red month in ≤4 divisions, so a catastrophic month widens the step
+    // rather than stacking rows until the grid is unreadable.
+    const step = Math.max(
+      10000,
+      Math.ceil(max / 4 / 10000) * 10000,
+      Math.ceil(-minNet / 4 / 10000) * 10000,
+    );
     const top = step * 4;
+    const negDivs = Math.ceil(-minNet / step); // 0..4 by construction of step
+    const range = top + negDivs * step;
     const iw = W - padL - padR,
       ih = H - padT - padB;
     const gw = iw / monthly.length;
     const bw = Math.min(13, (gw - 8) / 2);
-    const base = padT + ih;
+    // The $0 baseline. With no red months this is the plot bottom (the donor's
+    // `base`); with them it rises to make room for the negative field.
+    const base = padT + (ih * top) / range;
 
     let svg =
       '<svg viewBox="0 0 ' +
@@ -211,9 +235,10 @@ export function initFinancialsContent(
       '<rect width="5" height="5" fill="var(--warning-soft)"/>' +
       '<line x1="0" y1="0" x2="0" y2="5" stroke="var(--warning)" stroke-width="2.6"/></pattern></defs>';
 
-    // grid and scale
-    for (let i = 0; i <= 4; i++) {
-      const y = base - (ih * i) / 4;
+    // grid and scale — negative divisions (if any) carry a typographic minus,
+    // same as the head-stats net readout.
+    for (let i = -negDivs; i <= 4; i++) {
+      const y = base - (ih * i * step) / range;
       svg +=
         '<line class="grid-line" x1="' +
         padL +
@@ -229,7 +254,8 @@ export function initFinancialsContent(
         '" y="' +
         (y + 3) +
         '" text-anchor="end">' +
-        shortMoney(step * i) +
+        (i < 0 ? "−" : "") +
+        shortMoney(step * Math.abs(i)) +
         "</text>";
     }
 
@@ -237,8 +263,8 @@ export function initFinancialsContent(
     monthly.forEach(function (m, i) {
       const x = padL + gw * i;
       const cx = x + gw / 2;
-      const rh = (m.revenue / top) * ih,
-        eh = (m.expenses / top) * ih;
+      const rh = (m.revenue / range) * ih,
+        eh = (m.expenses / range) * ih;
       const rx = cx - bw - 1,
         ex = cx + 1;
       svg +=
@@ -289,7 +315,7 @@ export function initFinancialsContent(
         money(m.revenue - m.expenses) +
         "</title>" +
         "</g>";
-      pts.push([cx, base - ((m.revenue - m.expenses) / top) * ih]);
+      pts.push([cx, base - ((m.revenue - m.expenses) / range) * ih]);
     });
 
     // net-profit line above the bars + dots
@@ -1564,20 +1590,24 @@ export function initFinancialsContent(
       requestAnimationFrame(frame);
     });
 
-    // Press effects
+    // Press effects — delegated to `root` so nodes injected after init
+    // (menu items, JS-rendered buttons, innerHTML re-renders) still press.
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        el.addEventListener("click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        el.addEventListener("animationend", () => el.classList.remove(cls));
+      on(root, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
     pressify(
-      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open",
+      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .fi-tab, .icon-sq, .mdl-x",
       "pressed",
     );
     pressify(".week-strip .day", "day-pressed");

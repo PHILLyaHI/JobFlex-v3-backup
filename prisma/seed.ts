@@ -666,25 +666,31 @@ async function main() {
   // PricingPlan.slug case-insensitively in JS, but everything else assumes
   // lowercase (mixed case previously caused a fail-open limits bug).
   // Checkout still requires an admin to run "Sync to Stripe" on /admin/plans.
+  //
+  // The "free" row is seeded INACTIVE (the Free tier was removed from the
+  // product, 2026-08-17): it never appears on a sales surface, but the row
+  // must exist because limitsEngine reads limits from ALL rows regardless of
+  // `active` — lapsed and no-subscription orgs are enforced at THIS row's caps.
   const plans = [
     {
       slug: "free",
       name: "Free",
-      description: "Try JobFlex — 5 proposals a month, no card required.",
+      description: "Internal cap floor — not sold. Lapsed/no-subscription orgs enforce these limits.",
       priceCents: 0,
       yearlyPriceCents: null as number | null,
       trialDays: 0,
       order: 0,
       highlight: false,
+      active: false,
       features: [
         "5 proposals / month",
         "3 AI estimates / month",
         "Client portal",
         "Online payments",
       ],
-      // FREE's real enforced caps — these were previously display-only fiction.
-      // Lapsed paid subscriptions also drop to THIS row's limits (limitsEngine
-      // isLapsed), so every metered resource needs a cap here.
+      // The enforced caps. Lapsed paid subscriptions also drop to THIS row's
+      // limits (limitsEngine isLapsed), so every metered resource needs a cap
+      // here.
       limits: {
         proposalsCreated: 5,
         estimatorUses: 3,
@@ -710,6 +716,7 @@ async function main() {
       trialDays: 14,
       order: 1,
       highlight: false,
+      active: true,
       features: [
         "Client & lead management",
         "Manual proposals & invoices",
@@ -728,6 +735,7 @@ async function main() {
       trialDays: 14,
       order: 2,
       highlight: true,
+      active: true,
       features: [
         "Everything in Starter",
         "AI proposal generation",
@@ -747,6 +755,7 @@ async function main() {
       trialDays: 14,
       order: 3,
       highlight: false,
+      active: true,
       features: [
         "Everything in Professional",
         "Lead auto-assignment",
@@ -771,12 +780,13 @@ async function main() {
         trialDays: p.trialDays,
         order: p.order,
         highlight: p.highlight,
+        active: p.active,
         features: JSON.stringify(p.features),
         limitsJson: p.limits ? JSON.stringify(p.limits) : null,
       },
     });
   }
-  console.log("   seeded pricing plans: free $0 / starter $29 / professional $79 / enterprise $199 (14-day trial on paid)");
+  console.log("   seeded pricing plans: starter $29 / professional $79 / enterprise $199 (14-day trial) + inactive cap-floor row");
 
   console.log("   seeded follow-up rules:", rule1.id, rule2.id);
   console.log("✓ Seed complete");

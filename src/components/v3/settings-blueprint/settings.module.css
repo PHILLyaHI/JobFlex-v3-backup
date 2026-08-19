@@ -56,7 +56,8 @@
    deleted), F7 (.btn-sm justify-content), F10 (.sel*), F11 (.mask +
    .modal*), F12 (.tg-ic/.tg-on/.tg-off deleted), F13 (.sc-b--rows),
    F14 (the .stab rename above), F15 (.prow-act--pair), F16
-   (.nrow/.nrow-t/.nev-ic), F17 (.colt deleted, .colw/.colw-l added).
+   (.nrow/.nrow-t/.nev-ic), F17 (.colt deleted, .colw/.colw-l added),
+   F19 (.ic--brand — the multi-colour Google mark).
    Each is flagged at its site.
    ============================================================ */
 
@@ -65,7 +66,7 @@
    ============================================================ */
 .bp :global(.content) {
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -97,7 +98,7 @@
   --border: 2px solid var(--ink);
   --border-thin: 1.5px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10,10,10,0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
@@ -119,7 +120,7 @@
 .bp :global(.content .rail-a .ic) { width: 17px; height: 17px; opacity: .7; }
 .bp :global(.content .rail-a:hover) { background: var(--paper-deep); color: var(--ink); }
 .bp :global(.content .rail-a.on) { border-color: var(--ink); box-shadow: 2px 2px 0 var(--shadow); color: var(--ink);
-  font-weight: 700; background: var(--paper); }
+  font-weight: 700; background: #fff; }
 .bp :global(.content .rail-a.on .ic) { opacity: 1; color: var(--blueprint); }
 .bp :global(.content .rail-new) { margin-left: auto; padding: 2px 6px; border: 1.5px solid var(--warning);
   border-radius: var(--radius); background: var(--warning-soft); color: var(--warning);
@@ -135,7 +136,7 @@
   text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .pane-t) { margin-top: 8px; font-size: 26px; font-weight: 900; letter-spacing: -.03em; text-transform: uppercase; }
 
-.bp :global(.content .sc) { border: var(--border); border-radius: var(--radius); background: var(--paper);
+.bp :global(.content .sc) { border: var(--border); border-radius: var(--radius); background: #fff;
   box-shadow: 3px 3px 0 var(--shadow); margin-bottom: 18px; }
 .bp :global(.content .sc-h) { display: flex; align-items: center; gap: 12px; padding: 15px 18px;
   border-bottom: 1.5px solid var(--hair); }
@@ -163,7 +164,7 @@
 .bp :global(.content .fin:disabled) { color: var(--muted); cursor: not-allowed; }
 /* Inert after F10 (every <select class="fin"> became the custom .sel dropdown),
    kept so the donor's `.fin` family ships whole. */
-.bp :global(.content .fin option) { background: var(--paper); }
+.bp :global(.content .fin option) { background: #fff; }
 
 .bp :global(.content .prow) { display: flex; align-items: center; gap: 13px; padding: 14px 0;
   border-bottom: 1.5px solid var(--hair-soft); }
@@ -183,7 +184,7 @@
 .bp :global(.content .tg::after) { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
   background: var(--ink); transition: transform .18s var(--ease-out), background .18s var(--ease); }
 .bp :global(.content .tg[aria-checked="true"]) { background: var(--blueprint); border-color: var(--ink); }
-.bp :global(.content .tg[aria-checked="true"]::after) { transform: translateX(20px); background: var(--paper); }
+.bp :global(.content .tg[aria-checked="true"]::after) { transform: translateX(20px); background: #fff; }
 .bp :global(.content .tg:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 .bp :global(.content .trow) { display: flex; align-items: center; gap: 13px; padding: 12px 0;
   border-bottom: 1.5px solid var(--hair-soft); }
@@ -192,8 +193,12 @@
 .bp :global(.content .trow-n) { display: block; font-size: 13px; font-weight: 700; }
 .bp :global(.content .trow-d) { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); }
 
-.bp :global(.content .plan-big) { font-size: 40px; font-weight: 900; letter-spacing: -.035em; line-height: 1; }
-.bp :global(.content .plan-meta) { margin-top: 12px; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+/* The donor's `.pane-k` kicker above `.plan-big` is gone (owner request);
+   its ~13px line is given back as 6px above the name + 7px extra below, so
+   the name re-centres in the vacated band while `.plan-meta`, the action
+   buttons and the card height all hold their donor positions. */
+.bp :global(.content .plan-big) { margin-top: 6px; font-size: 40px; font-weight: 900; letter-spacing: -.035em; line-height: 1; }
+.bp :global(.content .plan-meta) { margin-top: 19px; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   color: var(--muted); }
 .bp :global(.content .plan-meta span) { display: block; margin-top: 4px; }
 /* F14 — donor `.ptab` renamed `.stab`. `border-collapse: collapse` is the one
@@ -214,7 +219,7 @@
 
 .bp :global(.content .sub) { display: flex; border: var(--border-thin); border-radius: var(--radius); overflow: hidden;
   margin-bottom: 18px; }
-.bp :global(.content .sub-b) { flex: 1; padding: 10px 12px; border-right: 1.5px solid var(--hair); background: var(--paper);
+.bp :global(.content .sub-b) { flex: 1; padding: 10px 12px; border-right: 1.5px solid var(--hair); background: #fff;
   font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
   transition: background .15s var(--ease), color .15s var(--ease); }
 .bp :global(.content .sub-b:last-child) { border-right: none; }
@@ -264,7 +269,7 @@
 .bp :global(.content .nsub) { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); }
 .bp :global(.content .cb) { position: relative; width: 20px; height: 20px; display: inline-grid; place-items: center;
   vertical-align: middle;
-  border: 1.5px solid var(--hair); border-radius: var(--radius); background: var(--paper);
+  border: 1.5px solid var(--hair); border-radius: var(--radius); background: #fff;
   transition: background .16s var(--ease), border-color .16s var(--ease), transform .1s var(--ease); }
 .bp :global(.content .cb::before) { content: ''; position: absolute; inset: -12px; }   /* 44px press zone */
 .bp :global(.content .cb:hover) { border-color: var(--ink); }
@@ -336,6 +341,24 @@
 .bp :global(.content .btn-sm .ic) { width: 13px; height: 13px; }
 .bp :global(.content .badge2.inl) { margin-left: 9px; vertical-align: 2px; }
 
+/* F19 — the Google mark (#i-google) is the one multi-colour icon on the page:
+   the shell's `svg.ic` currentColor stroke smears its four fills, so the
+   stroke dies here (same treatment as the register page's `.ic--brand`).
+   Inside the blue Connect button the G sits on a white tile — Google's own
+   dark-button spec — otherwise the brand colours drown in the blueprint fill. */
+.bp :global(.content .ic--brand) { stroke: none; fill: none; }
+.bp :global(.content .btn .ic--brand) { width: 21px; height: 21px; padding: 3.5px; background: #fff;
+  border-radius: var(--radius); }
+/* Owner request — the payment-method `Default` badge sits in its own flex
+   slot straight after `.prow-b`, hugging the text column at the row's 13px
+   gap instead of riding with the right-edge actions. Same F15 shape as
+   `.prow-act--pair`: the text block stops flexing so the badge follows it,
+   and `.prow-act`'s own `margin-left: auto` absorbs the free space. The
+   badge cannot overlap the text — as a flex sibling it is pushed, never
+   overlapped; on a squeeze the text ellipsises first (`flex: 0 1 auto`). */
+.bp :global(.content .prow > .badge2) { flex-shrink: 0; margin-left: 8px; }
+.bp :global(.content .prow-b:has(+ .badge2)) { flex: 0 1 auto; }
+
 /* ── button state: enables = green, disables = red ── */
 .bp :global(.content .btn-ghost.is-on) { border-color: var(--success); color: var(--success); }
 .bp :global(.content .btn-ghost.is-on:hover) { background: rgba(58,125,68,.09); box-shadow: 3px 3px 0 rgba(58,125,68,.25); }
@@ -349,10 +372,13 @@
 .bp :global(.content .tg) { position: relative; flex-shrink: 0; width: 46px; height: 25px; border: var(--border-thin);
   border-radius: var(--radius); background: rgba(168,50,50,.14); cursor: pointer;
   transition: background .2s var(--ease), border-color .2s var(--ease); }
-.bp :global(.content .tg::after) { content: ''; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
-  background: var(--danger); transition: transform .2s var(--ease-out), background .2s var(--ease); }
+/* top:50% + translateY keeps the knob centred under the shell's fractional
+   zoom — fixed pixel offsets round per-edge and drift visibly upward. */
+.bp :global(.content .tg::after) { content: ''; position: absolute; top: 50%; left: 2px; width: 17px; height: 17px;
+  background: var(--danger); transform: translateY(-50%);
+  transition: transform .2s var(--ease-out), background .2s var(--ease); }
 .bp :global(.content .tg[aria-checked="true"]) { background: rgba(58,125,68,.16); }
-.bp :global(.content .tg[aria-checked="true"]::after) { transform: translateX(21px); background: var(--success); }
+.bp :global(.content .tg[aria-checked="true"]::after) { transform: translate(22px, -50%); background: var(--success); }
 .bp :global(.content .tg:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* ── the matrix: fixed columns, emphatic headers ──
@@ -405,12 +431,11 @@
 .bp :global(.content .sc-b--rows) { padding-top: 4px; padding-bottom: 4px; }
 
 /* F15 — Integrations > Meta business > Connection: the org name and the two
-   buttons share one row, with the buttons held toward the LEFT (right after
-   the text) rather than pinned to the right edge, and they size to their
-   labels instead of stretching to the 152px column width. */
-.bp :global(.content .prow-act--pair) { margin-left: 34px; margin-right: auto; gap: 10px; }
+   buttons share one row. The buttons size to their labels instead of
+   stretching to the 152px column width; the base `.prow-act`'s
+   `margin-left: auto` pins the pair to the RIGHT edge of the row. */
+.bp :global(.content .prow-act--pair) { gap: 10px; }
 .bp :global(.content .prow-act--pair .btn-sm) { width: auto; }
-.bp :global(.content .prow-b:has(+ .prow-act--pair)) { flex: 0 1 auto; }
 
 /* F16 — every notification event gets an icon box before its text. Box, border
    and icon sizes are the donor's `.prow-ic` verbatim; the 13px gap is the
@@ -422,9 +447,12 @@
 .bp :global(.content .nev-ic .ic) { width: 16px; height: 16px; }
 .bp :global(.content .nrow-t) { flex: 1; min-width: 0; }
 
-/* F17 — the per-column "All" control. Type is the deleted `.colt`'s verbatim
-   (mono 9px / 700 / .12em / uppercase) and so is the 7px it sits below
-   `.nhead`; the state colour now lives in the toggle itself. */
+/* F17 — the per-column "All" control: the same square `.cb` checkbox as the
+   column's cells. Type is the deleted `.colt`'s verbatim (mono 9px / 700 /
+   .12em / uppercase) and so is the 7px it sits below `.nhead`.
+   The box + label sit IN FLOW as one group so the th centres the pair as a
+   whole — the channel name above lands exactly midway between the checkbox
+   and the word "All" (the owner's requested alignment). */
 .bp :global(.content .colw) { display: inline-flex; align-items: center; gap: 8px; margin: 7px auto 0; }
 .bp :global(.content .colw-l) { font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--muted); }
@@ -447,7 +475,7 @@
 .bp :global(.content .sel.on .sel-chev) { transform: rotate(180deg); }
 .bp :global(.content .sel-menu) { display: none; position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; right: 0;
   max-height: 232px; overflow-y: auto; border: var(--border); border-radius: var(--radius);
-  background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
+  background: #fff; box-shadow: 3px 3px 0 var(--shadow); }
 .bp :global(.content .sel.on .sel-menu) { display: block; }
 .bp :global(.content .sel-opt) { display: block; width: 100%; padding: 10px 12px; border-bottom: 1.5px solid var(--hair-soft);
   background: none; font-size: 13px; text-align: left;
@@ -468,7 +496,7 @@
   animation: settings_maskIn .18s var(--ease); }
 .bp :global(.content .modal) { position: relative; display: flex; flex-direction: column; width: min(440px, 100%);
   max-height: calc(var(--app-h, 100vh) - 40px); border: var(--border); border-radius: var(--radius);
-  background: var(--paper); box-shadow: 5px 5px 0 var(--ink);
+  background: #fff; box-shadow: 5px 5px 0 var(--ink);
   animation: settings_modalIn .28s var(--ease-out); }
 .bp :global(.content .modal-h) { display: flex; align-items: flex-start; gap: 12px; padding: 15px 17px;
   border-bottom: 1.5px solid var(--hair); }

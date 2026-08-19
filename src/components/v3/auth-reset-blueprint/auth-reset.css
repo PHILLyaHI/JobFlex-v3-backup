@@ -76,7 +76,7 @@
 /* donor: `html, body { min-height: 100% }` — dropped, see the header note. */
 .jf-auth-reset {
   font-family: var(--font); background: var(--paper); color: var(--ink);
-  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto;
 }
 
 /* ── PREFLIGHT / GLOBALS NEUTRALIZATION ──────────────────────────────────────

@@ -32,7 +32,7 @@
    ============================================================ */
 .bp :global(.content) {
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -60,7 +60,7 @@
   --border: 2px solid var(--ink);
   --border-thin: 1.5px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10,10,10,0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
@@ -161,7 +161,7 @@
   max-height: calc(100vh - 140px);
   overflow-y: auto;
   padding: 12px;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--shadow);
@@ -212,7 +212,7 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
-  background: var(--paper);
+  background: #fff;
   border: 1px solid var(--muted-faint);
   border-radius: var(--radius);
 }
@@ -227,7 +227,7 @@
   font-size: 12.5px;
   font-weight: 700;
   color: var(--ink);
-  background: var(--paper);
+  background: #fff;
   border: 1px solid var(--muted-faint);
   border-radius: var(--radius);
 }
@@ -294,7 +294,7 @@
 /* ── Sheet ───────────────────────────────────────────────────── */
 .bp :global(.content .mb-sheet) {
   padding: 18px;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--shadow);
@@ -474,7 +474,7 @@
   position: sticky;
   top: 0;
   padding: 14px;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--shadow);
@@ -619,10 +619,9 @@
   max-height: calc(100vh - 80px);
   overflow-y: auto;
   padding: 18px;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
-  box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.1);
 }
 .bp :global(.content .mdl-head) {
   display: flex;
@@ -678,7 +677,7 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
-  background: var(--paper);
+  background: #fff;
   border: 1px solid var(--muted-faint);
   border-radius: var(--radius);
 }

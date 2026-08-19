@@ -1,6 +1,7 @@
 /* ============================================================
    SUBSCRIPTION — BLUEPRINT
-   /dashboard/subscription-blueprint
+   /dashboard/subscription (promoted 2026-08-12; ported at
+   /dashboard/subscription-blueprint, which no longer exists)
 
    WHAT THIS IS
    A verbatim port of the approved single-file mockup
@@ -10,9 +11,11 @@
    the foot re-declares .dd-menu, .btn .ic and .day on purpose and wins
    by source order. Do not merge, sort, dedupe or reflow anything here.
 
-   /dashboard/subscription (the live surface) is untouched. This is a
-   second route standing beside it until the owner picks one — the same
-   standing convention /dashboard/manual-blueprint records.
+   This port first shipped as a second route beside the live
+   classic-shell surface (the standing convention
+   /dashboard/manual-blueprint records). The owner then promoted it:
+   the donor page ("The Well-Kept Ledger", see git history) was deleted
+   and this page took over /dashboard/subscription.
 
    ── SCOPING ────────────────────────────────────────────────
    A CSS MODULE, unlike the two marketing ports that shipped alongside
@@ -31,12 +34,14 @@
    one literal class the markup does carry is `rv` — see below.
 
    This route is deliberately NOT registered in blueprint-shell's
-   PAGE_STYLES (a port must not edit shell files), so there is no
-   page-level `.bp` activation class to hang :global rules from.
+   PAGE_STYLES (port-era rule: a port must not edit shell files; kept
+   after promotion because a self-scoped module needs no activation
+   class), so there is no page-level `.bp` activation class to hang
+   :global rules from.
 
    ── TOKENS ─────────────────────────────────────────────────
    The source's `:root` block is re-declared on
-   `.jf-blueprint[data-page="subscription-blueprint"]` — the shell root,
+   `.jf-blueprint[data-page="subscription"]` — the shell root,
    gated on the key blueprint-shell's pageKey() writes for this route.
    It shadows the app's tokens inside this subtree and leaks nothing
    outward; globals.css is untouched. Two adaptations, both mandated:
@@ -103,9 +108,10 @@
 /* ============================================================
    DESIGN TOKENS — JobFlex Blueprint System
    ============================================================ */
+:global(.jf-blueprint[data-page="subscription"]),
 :global(.jf-blueprint[data-page="subscription-blueprint"]) {
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -137,7 +143,7 @@
   --border: 2px solid var(--ink);
   --border-thin: 1.5px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10,10,10,0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
@@ -241,7 +247,7 @@
 :global(.jf-blueprint) .icon-btn:hover {
   background: var(--paper-deep);
   transform: translate(-1px, -1px);
-  box-shadow: 2px 2px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
 }
 :global(.jf-blueprint) .icon-btn:active { transform: translate(0, 0); box-shadow: none; }
 :global(.jf-blueprint) .icon-btn .ic { width: 17px; height: 17px; }
@@ -271,7 +277,7 @@
 :global(.jf-blueprint) .btn:active { transform: translate(0, 0); box-shadow: none; }
 :global(.jf-blueprint) .btn-primary { background: var(--blueprint); color: #fff; }
 :global(.jf-blueprint) .btn-primary:hover { background: var(--blueprint-dark); }
-:global(.jf-blueprint) .btn-ghost { background: var(--paper); color: var(--ink); }
+:global(.jf-blueprint) .btn-ghost { background: #fff; color: var(--ink); }
 :global(.jf-blueprint) .btn-ghost:hover { background: var(--paper-deep); }
 
 /* ============================================================
@@ -279,62 +285,8 @@
    ============================================================ */
 
 /* [chrome / shell-supplied — dropped in the port: .content] */
-/* ============================================================
-   LEAD CENTER BANNER
-   ============================================================ */
-:global(.jf-blueprint) .banner {
-  display: flex; align-items: center; gap: 16px;
-  border: 2px solid var(--warning);
-  border-left-width: 6px;
-  border-radius: var(--radius);
-  background: linear-gradient(var(--warning-soft), var(--warning-soft)), var(--paper);
-  padding: 14px 18px;
-}
-:global(.jf-blueprint) .banner.hidden { display: none; }
-:global(.jf-blueprint) .banner.closing {
-  opacity: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-top-width: 0;
-  border-bottom-width: 0;
-  margin-bottom: -22px;
-  overflow: hidden;
-  transition: height 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease, padding 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), margin-bottom 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), border-width 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-:global(.jf-blueprint) svg.ic.banner-pin { width: 26px; height: 26px; color: var(--warning); }
-:global(.jf-blueprint) .banner-body { min-width: 0; }
-:global(.jf-blueprint) .banner-kicker {
-  font-size: 11px; font-weight: 800;
-  letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--warning);
-  margin-bottom: 4px;
-}
-:global(.jf-blueprint) .banner-txt {
-  font-size: 13.5px; font-weight: 500;
-  color: var(--ink-soft);
-  line-height: 1.45;
-}
-:global(.jf-blueprint) .banner-link {
-  font-weight: 800;
-  color: var(--warning);
-  border-bottom: 1.5px solid var(--warning);
-  padding-bottom: 1px;
-  transition: color 0.15s, border-color 0.15s;
-}
-:global(.jf-blueprint) .banner-link:hover { color: var(--warning-dark); border-bottom-color: var(--warning-dark); }
-:global(.jf-blueprint) .banner-close {
-  margin-left: auto;
-  width: 32px; height: 32px;
-  display: flex; align-items: center; justify-content: center;
-  border: 1.5px solid transparent;
-  border-radius: var(--radius);
-  color: var(--muted);
-  flex-shrink: 0;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
-}
-:global(.jf-blueprint) .banner-close:hover { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
-:global(.jf-blueprint) .banner-close .ic { width: 15px; height: 15px; }
-
+/* [.banner (the free-plan-limit upsell) and its dismiss states left with the
+   Free tier, removed 2026-08-17] */
 /* ============================================================
    PAGE HEAD
    ============================================================ */
@@ -374,7 +326,7 @@
   grid-template-columns: repeat(4, 1fr);
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -404,7 +356,7 @@
    CARDS
    ============================================================ */
 :global(.jf-blueprint) .card {
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   padding: 20px 24px 24px;
@@ -467,22 +419,22 @@
   padding: 9px 12px;
   border: var(--border-thin);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 11px; font-weight: 800;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink);
   cursor: pointer;
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-:global(.jf-blueprint) .dd-btn:hover { background: var(--paper-deep); }
-:global(.jf-blueprint) .dd.open .dd-btn { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .dd-btn:hover { background: var(--accent-soft); }
+:global(.jf-blueprint) .dd.open .dd-btn { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 :global(.jf-blueprint) .dd-btn .ic { width: 13px; height: 13px; color: var(--muted); transition: transform 0.2s var(--ease); }
 :global(.jf-blueprint) .dd.open .dd-btn .ic { transform: rotate(180deg); }
 :global(.jf-blueprint) .dd-menu {
   position: absolute;
   top: calc(100% + 6px); right: 0;
   min-width: 100%;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--ink);
@@ -503,14 +455,14 @@
   white-space: nowrap;
   transition: background 0.12s, color 0.12s;
 }
-:global(.jf-blueprint) .dd-item:hover { background: var(--paper-deep); color: var(--ink); }
+:global(.jf-blueprint) .dd-item:hover { background: var(--accent-soft); color: var(--ink); }
 :global(.jf-blueprint) .dd-item.active { color: var(--blueprint); font-weight: 800; }
 
 /* Ховер графика: выноска, квадратные точки, тултип */
 :global(.jf-blueprint) .ch-overlay { cursor: crosshair; }
 :global(.jf-blueprint) .ch-guide { stroke: var(--blueprint); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.15s ease; }
 :global(.jf-blueprint) .ch-tipg { opacity: 0; pointer-events: none; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.15s ease; }
-:global(.jf-blueprint) .ch-tip-box { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+:global(.jf-blueprint) .ch-tip-box { fill: #fff; stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
 :global(.jf-blueprint) .ch-tip-text { font-family: var(--font-mono); font-size: 13px; font-weight: 700; fill: var(--ink); pointer-events: none; }
 :global(.jf-blueprint) .chart-wrap { width: 100%; }
 :global(.jf-blueprint) .chart-wrap svg { width: 100%; height: auto; display: block; }
@@ -523,7 +475,7 @@
 :global(.jf-blueprint) .ch-axis { stroke: var(--ink); stroke-width: 1.5; }
 :global(.jf-blueprint) .ch-area { fill: var(--chart-fill); }
 :global(.jf-blueprint) .ch-line { stroke: var(--blueprint); stroke-width: 2.5; fill: none; }
-:global(.jf-blueprint) .ch-dot { fill: var(--paper); stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
+:global(.jf-blueprint) .ch-dot { fill: #fff; stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
 :global(.jf-blueprint) .ch-dot.on { fill: var(--blueprint); }
 :global(.jf-blueprint) .ch-lbl {
   font-family: var(--font-mono);
@@ -585,13 +537,13 @@
   padding: 10px 4px 9px;
   text-align: center;
   border-right: 1px solid var(--hair);
-  background: var(--paper);
+  background: #fff;
   transition: background 0.12s, box-shadow 0.12s;
   cursor: pointer;
   user-select: none;
 }
 :global(.jf-blueprint) .day:last-child { border-right: none; }
-:global(.jf-blueprint) .day:hover { background: var(--paper-deep); }
+:global(.jf-blueprint) .day:hover { background: var(--accent-soft); }
 :global(.jf-blueprint) .day-lbl {
   font-size: 9.5px; font-weight: 800;
   letter-spacing: 0.16em;
@@ -719,7 +671,7 @@
   color: var(--ink);
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-:global(.jf-blueprint) .card-foot-btn:hover { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .card-foot-btn:hover { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 :global(.jf-blueprint) .card-foot-btn .ic { width: 13px; height: 13px; }
 :global(.jf-blueprint) .list .card-foot-btn { display: none; margin-top: 10px; }
 :global(.jf-blueprint) .list.has-more .card-foot-btn { display: flex; }
@@ -743,7 +695,7 @@
   grid-template-columns: repeat(5, 1fr);
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -898,7 +850,7 @@
 :global(.jf-blueprint) .sub-hero-facts b { font-size: 14px; font-weight: 800; letter-spacing: .02em;
   font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-:global(.jf-blueprint) .spec { display: grid; grid-template-columns: repeat(5, 1fr); }
+:global(.jf-blueprint) .spec { display: grid; grid-template-columns: repeat(4, 1fr); }
 :global(.jf-blueprint) .spec-cell { position: relative; padding: 20px 22px 22px; border-right: 1.5px solid var(--ink); }
 :global(.jf-blueprint) .spec-cell:last-child { border-right: none; }
 :global(.jf-blueprint) .spec-name { font-size: 14px; font-weight: 900; letter-spacing: .08em;
@@ -997,7 +949,8 @@
 @media (max-width: 1220px) {
   :global(.jf-blueprint) .spec { grid-template-columns: repeat(2, 1fr); }
   :global(.jf-blueprint) .spec-cell:nth-child(2n) { border-right: none; }
-  :global(.jf-blueprint) .spec-cell:nth-child(-n+4) { border-bottom: 1.5px solid var(--ink); }
+  /* 4 cards → a 2×2: only the first row is underlined (was -n+4 for 5 cards). */
+  :global(.jf-blueprint) .spec-cell:nth-child(-n+2) { border-bottom: 1.5px solid var(--ink); }
   :global(.jf-blueprint) .row-ub { grid-template-columns: 1fr; }
 }
 @media (max-width: 820px) {
@@ -1027,7 +980,7 @@
   :global(.jf-blueprint) *::before,
   :global(.jf-blueprint) *::after { transition: none !important; animation: none !important; }
 }
-:global(.jf-blueprint) :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+:global(.jf-blueprint) :focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* ============================================================
    MOTION SYSTEM — BALANCED (пакет 02, стандарт)

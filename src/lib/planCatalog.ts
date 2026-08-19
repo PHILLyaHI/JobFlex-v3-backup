@@ -34,18 +34,16 @@ export function formatPlanPrice(cents: number): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
-/** Cadence copy next to a price: "forever" for free, "per month" (or "/mo") for paid. */
-export function priceCadence(isFree: boolean, short = false): string {
-  if (isFree) return "forever";
+/** Cadence copy next to a price: "per month" (or "/mo"). */
+export function priceCadence(short = false): string {
   return short ? "/mo" : "per month";
 }
 
 /**
- * CTA label for a plan's buy button: "Switch to free" for the free plan,
- * "Start N-day trial" when the plan has a trial, else "Subscribe".
+ * CTA label for a plan's buy button: "Start N-day trial" when the plan has a
+ * trial, else "Subscribe".
  */
-export function planCtaLabel(isFree: boolean, trialDays: number): string {
-  if (isFree) return "Switch to free";
+export function planCtaLabel(trialDays: number): string {
   if (trialDays > 0) return `Start ${trialDays}-day trial`;
   return "Subscribe";
 }
@@ -63,8 +61,6 @@ export function featureTierForSlug(slug: string): Plan {
 /** Single home for the built-in tier display labels. */
 export function labelForTier(tier: Plan | string | null | undefined): string {
   switch (tier) {
-    case "FREE":
-      return "Free";
     case "STARTER":
       return "Starter";
     case "PROFESSIONAL":
@@ -72,7 +68,8 @@ export function labelForTier(tier: Plan | string | null | undefined): string {
     case "ENTERPRISE":
       return "Enterprise";
     default:
-      return tier ? titleCaseSlug(tier) : "Free";
+      // No-subscription orgs have no tier to name (the Free tier is gone).
+      return tier ? titleCaseSlug(tier) : "—";
   }
 }
 

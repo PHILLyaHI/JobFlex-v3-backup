@@ -58,19 +58,22 @@ export function ReportsContent({ rollup }: { rollup: ReportsRollup }) {
           <h1 className="page-title">Reports</h1>
         </div>
         <div className="page-actions">
-          <button className="btn btn-ghost" id="exportBtn">
-            <svg className="ic">
-              <use href="#i-file" />
-            </svg>
-            Export
-          </button>
+          {/* Swap (owner request): the period note holds Export's old slot as
+              the page's primary annotation; Export moved into .rp-bar below.
+              The behavior module reaches both by id, so nothing there moves. */}
+          <div className="range-note" id="rangeNote">—</div>
         </div>
       </div>
 
       {/* RANGE */}
       <div className="rp-bar">
         <div className="ranges" id="ranges"></div>
-        <div className="range-note" id="rangeNote">—</div>
+        <button className="btn btn-ghost" id="exportBtn">
+          <svg className="ic">
+            <use href="#i-file" />
+          </svg>
+          Export
+        </button>
       </div>
 
       {/* SUMMARY */}
@@ -126,7 +129,7 @@ export function ReportsContent({ rollup }: { rollup: ReportsRollup }) {
         </div>
         <table className="ptable rp-table">
           <thead>
-            <tr><th>Crew</th><th className="num">Jobs</th><th className="num">Hours</th><th className="num">Revenue</th><th className="num">$/hr</th><th className="num">Rating</th></tr>
+            <tr><th>Crew</th><th>Jobs</th><th>Hours</th><th>Revenue</th><th>$/hr</th><th>Rating</th></tr>
           </thead>
           <tbody id="crewBody"></tbody>
         </table>

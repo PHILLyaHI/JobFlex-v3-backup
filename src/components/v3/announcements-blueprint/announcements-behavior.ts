@@ -24,6 +24,7 @@
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
+import { initSelectPopovers } from "@/components/v3/shared/select-popover";
 import { createAnnouncement, dismissAnnouncement } from "@/actions/announcements";
 import { longDate } from "@/lib/format";
 import { ANN_SEED, PRIORITY, type Announcement, type BannerModel } from "./announcements-data";
@@ -252,7 +253,13 @@ export function initAnnouncementsContent(
       if (el) el.value = '';
     });
     const priority = fieldById("annPriority");
-    if (priority) priority.value = '0';
+    if (priority) {
+      priority.value = '0';
+      // A property write is invisible to listeners — the bubbling change is for
+      // the select popover's trigger label, which follows the value through
+      // events exactly like the preview does.
+      priority.dispatchEvent(new Event('change', { bubbles: true }));
+    }
     renderPreview();
     const dlg = byId("annMdl");
     if (dlg) openMdl(dlg);
@@ -405,6 +412,20 @@ export function initAnnouncementsContent(
     initDatePopovers(root, [{ sel: "#annExpires", icon: "i-hourglass", label: "Expires" }]),
   );
 
+  // Priority field: the same treatment for the select — `.bp-sel` styles the
+  // closed control but the open option list was still the OS menu. The popover
+  // writes through the select and fires bubbling input/change, so the preview
+  // repaint above sees a normal edit. Swatches are the banner accents the
+  // three priorities publish (bnr--p0/p1/p2), so the menu previews the color
+  // the choice will paint.
+  disposers.push(
+    initSelectPopovers(root, [{
+      sel: "#annPriority",
+      label: "Priority",
+      swatches: { "0": "var(--blueprint)", "1": "var(--warning)", "2": "var(--danger)" },
+    }]),
+  );
+
   // The matchMedia polyfill, mobile nav drawer and FLUID SCALE belong to the
   // persistent chrome and live in
   // components/v3/blueprint-shell/shell-behavior.ts.
@@ -515,20 +536,24 @@ export function initAnnouncementsContent(
       requestAnimationFrame(frame);
     });
 
-    // Press effects
+    // Press effects — delegated to `root` so nodes injected after init
+    // (menu items, JS-rendered buttons, innerHTML re-renders) still press.
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        el.addEventListener("click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        el.addEventListener("animationend", () => el.classList.remove(cls));
+      on(root, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
     pressify(
-      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open",
+      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .bnr-x, .mdl-x",
       "pressed",
     );
     pressify(".week-strip .day", "day-pressed");

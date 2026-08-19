@@ -804,18 +804,21 @@ export function initReportsContent(
 
     // Press effects
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        el.addEventListener("click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        el.addEventListener("animationend", () => el.classList.remove(cls));
+      on(root, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
     pressify(
-      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open",
+      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .range, .exp-opt:not(.is-soon), .mdl-x",
       "pressed",
     );
     pressify(".week-strip .day", "day-pressed");

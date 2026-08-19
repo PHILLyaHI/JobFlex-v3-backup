@@ -225,7 +225,7 @@
   font-family: var(--font-mono); font-size: 9px; font-weight: 600;
   letter-spacing: .12em; text-transform: uppercase; }
 :global(.jf-blueprint .content) .sp-in { width: 100%; box-sizing: border-box; height: 35px; padding: 0 9px;
-  border: 1.5px solid rgba(10,10,10,.45); border-radius: var(--radius);
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
   background: #ffffff; font-family: var(--font-mono); font-size: 14px;
   font-weight: 600; color: var(--ink); text-align: right;
   font-variant-numeric: tabular-nums; }
@@ -342,7 +342,7 @@
   letter-spacing: -.015em; font-variant-numeric: tabular-nums; }
 
 :global(.jf-blueprint .content) .sp-scope { width: 100%; box-sizing: border-box; min-height: 128px; resize: vertical;
-  border: 1.5px solid rgba(10,10,10,.45); border-radius: var(--radius);
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
   background: #ffffff; padding: 12px 14px; font-family: var(--font);
   font-size: 15px; line-height: 1.65; font-weight: 600; color: var(--ink); }
 :global(.jf-blueprint .content) .sp-scope:focus { outline: none; border-color: var(--blueprint); }
@@ -421,7 +421,7 @@
   background: #ffffff; }
 
 :global(.jf-blueprint .content) .sp-refine-in { width: 100%; box-sizing: border-box; min-height: 74px; resize: vertical;
-  border: 1.5px solid rgba(10,10,10,.45); border-radius: var(--radius);
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
   background: #ffffff; padding: 11px 13px; font-family: var(--font);
   font-size: 14.5px; line-height: 1.55; font-weight: 600; color: var(--ink); }
 :global(.jf-blueprint .content) .sp-refine-in:focus { outline: none; border-color: var(--blueprint); }
@@ -498,7 +498,7 @@
 
 :global(.jf-blueprint .content) .btn:focus-visible,
 :global(.jf-blueprint .content) .sp-req-link:focus-visible,
-:global(.jf-blueprint .content) .sp-asm-x:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+:global(.jf-blueprint .content) .sp-asm-x:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   :global(.jf-blueprint .content) .btn,
@@ -541,11 +541,11 @@
 :global(.jf-blueprint .content) .est-n {
   width: 30px; height: 30px; flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  border: 2px solid var(--ink); border-radius: var(--radius);
   background: var(--paper);
   font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--ink);
 }
-:global(.jf-blueprint .content) .est-step.done .est-n { background: var(--blueprint); border-color: var(--blueprint-dark); color: #fff; }
+:global(.jf-blueprint .content) .est-step.done .est-n { background: var(--blueprint); color: #fff; }
 :global(.jf-blueprint .content) .est-body { flex: 1; min-width: 0; }
 :global(.jf-blueprint .content) .est-h { font-size: 15px; font-weight: 800; }
 :global(.jf-blueprint .content) .est-hint { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
@@ -554,8 +554,8 @@
 :global(.jf-blueprint .content) .ptype {
   display: inline-flex; align-items: center; gap: 9px;
   height: 42px; padding: 0 14px;
-  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper);
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: #fff; /* controls read white on this page (was var(--paper)); .on keeps its tint */
   font-family: inherit;
   cursor: pointer;
   font-size: 13px; font-weight: 700; color: var(--muted);
@@ -570,11 +570,12 @@
 :global(.jf-blueprint .content) .est-lbl { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
 :global(.jf-blueprint .content) .est-in {
   width: 100%; height: 40px; padding: 0 12px;
-  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper); font-family: var(--font); font-size: 13.5px; color: var(--ink);
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: #fff; /* controls read white on this page (was var(--paper)) */
+  font-family: var(--font); font-size: 13.5px; color: var(--ink);
   transition: border-color 0.12s;
 }
-:global(.jf-blueprint .content) .est-in:focus { outline: none; border-color: var(--ink); }
+:global(.jf-blueprint .content) .est-in:focus { outline: none; border-color: var(--blueprint); }
 :global(.jf-blueprint .content) .est-in::placeholder { color: var(--muted-faint); }
 
 /* — State: a select on the blueprint's own terms —
@@ -602,26 +603,26 @@
   pointer-events: none;
   transition: border-color 0.12s;
 }
-:global(.jf-blueprint .content) .est-selwrap:hover::after,
-:global(.jf-blueprint .content) .est-selwrap:focus-within::after { border-color: var(--ink); }
-:global(.jf-blueprint .content) .est-sel:hover { border-color: var(--ink); }
+:global(.jf-blueprint .content) .est-selwrap:hover::after { border-color: var(--ink); }
+:global(.jf-blueprint .content) .est-selwrap:focus-within::after { border-color: var(--blueprint); }
 /* An unpicked state is a placeholder, not a value. */
 :global(.jf-blueprint .content) .est-sel[data-empty="1"] { color: var(--muted-faint); font-weight: 600; }
 /* The native option list is the OS's to draw; only its text is ours. */
 :global(.jf-blueprint .content) .est-sel option { font-family: var(--font); font-size: 13px; font-weight: 500; color: var(--ink); }
 :global(.jf-blueprint .content) .est-area {
   width: 100%; min-height: 108px; margin-top: 13px; padding: 11px 12px; resize: vertical;
-  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper); font-family: var(--font); font-size: 13.5px; line-height: 1.55; color: var(--ink);
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: #fff; /* controls read white on this page (was var(--paper)) */
+  font-family: var(--font); font-size: 13.5px; line-height: 1.55; color: var(--ink);
 }
-:global(.jf-blueprint .content) .est-area:focus { outline: none; border-color: var(--ink); }
+:global(.jf-blueprint .content) .est-area:focus { outline: none; border-color: var(--blueprint); }
 :global(.jf-blueprint .content) .est-area::placeholder { color: var(--muted-faint); }
 
 :global(.jf-blueprint .content) .samples { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
 :global(.jf-blueprint .content) .sample {
   max-width: 100%; padding: 7px 11px;
   border: 1.5px dashed var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff; /* clickable chip — controls read white on this page (was var(--paper)) */
   font-family: inherit;
   cursor: pointer;
   font-size: 12px; line-height: 1.35; text-align: left; color: var(--muted);

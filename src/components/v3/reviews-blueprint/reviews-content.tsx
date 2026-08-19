@@ -60,7 +60,7 @@ export function ReviewsContent({
           <h1 className="page-title">Reviews</h1>
         </div>
         <div className="page-actions">
-          <button className="btn btn-primary btn--sm" type="button" id="rvReqBtn">
+          <button className="btn btn-primary" type="button" id="rvReqBtn">
             <svg className="ic">
               <use href="#i-plus" />
             </svg>

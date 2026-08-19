@@ -401,7 +401,6 @@ export const PLAN_CARD: CardHead = {
 };
 
 export interface PlanSummary {
-  readonly kicker: string;
   readonly name: string;
   readonly nextBill: string;
   readonly seats: string;
@@ -410,7 +409,6 @@ export interface PlanSummary {
 }
 
 export const PLAN_SUMMARY: PlanSummary = {
-  kicker: 'Plan',
   name: 'Professional',
   nextBill: 'Next bill · August 1, 2026',
   seats: 'Seats used · 3 of 5',
@@ -426,7 +424,7 @@ export const PAYMENT_METHODS_CARD: CardHead = {
 export interface PaymentMethod {
   readonly icon: IconName;
   readonly name: string;
-  /** Rendered inline inside `.prow-n` as `.badge2 .inl`. */
+  /** Rendered in its own flex slot straight after the `.prow-b` text block. */
   readonly badge?: Badge;
   readonly desc: string;
   readonly action: ActionSpec;

@@ -173,8 +173,8 @@ body:has(.jf-mobile-auth-register)::before { content: none; }
     linear-gradient(var(--grid-light) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
   background-size: 24px 24px;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;

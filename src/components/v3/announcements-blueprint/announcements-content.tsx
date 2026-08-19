@@ -102,7 +102,6 @@ export function AnnouncementsContent({ entries }: { entries?: Announcement[] } =
           <div className="mdl-head">
             <div>
               <div className="mdl-title">New announcement</div>
-              <div className="mdl-sub">Shows as a banner above every dashboard page. Choose priority carefully.</div>
             </div>
             {/* Corner dismiss. `data-mdl="close"` is the same hook the backdrop
                 and Cancel already use, so the delegated handler in

@@ -19,7 +19,7 @@ const STATUS_TONES: Record<
   PAST_DUE: "danger",
   CANCELED: "danger",
   EXPIRED: "danger",
-  FREE: "neutral",
+  INACTIVE: "neutral",
 };
 
 export default async function AccountSettingsPage() {
@@ -38,7 +38,9 @@ export default async function AccountSettingsPage() {
   const { plan: planDto, rawPlan } = planContext;
   const planName = planDto?.name ?? titleCaseSlug(rawPlan);
   const currentSlug = planDto?.slug ?? rawPlan.toLowerCase();
-  const status = sub?.status ?? "FREE";
+  // No subscription row → shown as "inactive" (absence of a subscription is
+  // no longer presented as a free plan).
+  const status = sub?.status ?? "INACTIVE";
 
   return (
     <>

@@ -341,7 +341,8 @@ export function initFenceEstimatorContent(
     const demoTgl = $('#demoTgl');
     if (!matList || !heights || !demoTgl) return;
     matList.innerHTML = MATERIALS.map(function (m) {
-      return '<li class="' + (fs.material === m.id ? 'on' : '') + '" data-mat="' + m.id + '">' +
+      return '<li class="' + (fs.material === m.id ? 'on' : '') + '" data-mat="' + m.id +
+        '" role="option" tabindex="0" aria-selected="' + (fs.material === m.id ? 'true' : 'false') + '">' +
         '<span class="mat-sw" style="background:' + m.color + '"></span>' +
         '<span class="mat-name">' + m.label + '</span>' +
         '<span class="mat-rate">' + money(m.base) + '/lf</span></li>';
@@ -399,6 +400,18 @@ export function initFenceEstimatorContent(
     leaveRow(row, commit, afterMs, { leaveClass: 'row--leaving' });
   }
 
+  /** One pick path for mouse and keyboard. The list is patched in place (no
+   *  re-render), so `aria-selected` must move with the `on` class. */
+  function pickMaterial(m: HTMLElement) {
+    fs.material = m.dataset.mat || '';
+    $$('#matList [data-mat]').forEach(function (li) {
+      const picked = li === m;
+      li.classList.toggle('on', picked);
+      li.setAttribute('aria-selected', picked ? 'true' : 'false');
+    });
+    renderFigures();
+  }
+
   // ================= EVENTS =================
   on(document, 'click', function (e) {
     if (!(e.target instanceof Element)) return;
@@ -419,9 +432,7 @@ export function initFenceEstimatorContent(
     // what made choosing a material re-cascade the whole material list.
     const m = target.closest<HTMLElement>('[data-mat]');
     if (m) {
-      fs.material = m.dataset.mat || '';
-      $$('#matList [data-mat]').forEach(function (li) { li.classList.toggle('on', li === m); });
-      renderFigures();
+      pickMaterial(m);
       return;
     }
     const h = target.closest<HTMLElement>('[data-h]');
@@ -629,6 +640,19 @@ export function initFenceEstimatorContent(
       void convertToProposal(conv);
     }
   });
+  // Enter/Space on a material row selects it exactly like a click — the rows
+  // are focusable options, not buttons, so the key path is wired by hand.
+  on(document, 'keydown', function (e) {
+    const ev = e as KeyboardEvent;
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    if (!(ev.target instanceof Element)) return;
+    const m = ev.target.closest<HTMLElement>('[data-mat]');
+    if (m) {
+      ev.preventDefault(); // Space must select, not scroll the page.
+      pickMaterial(m);
+    }
+  });
+
   on(document, 'input', function (e) {
     const t = e.target;
     if (!(t instanceof HTMLInputElement)) return;
@@ -1515,19 +1539,23 @@ export function initFenceEstimatorContent(
       requestAnimationFrame(frame);
     });
 
-    // Press effects
+    // Press effects — delegated to `root` so nodes injected after init
+    // (menu items, JS-rendered buttons, innerHTML re-renders) still press.
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        el.addEventListener('click', () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        el.addEventListener('animationend', () => el.classList.remove(cls));
+      on(root, 'click', (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, 'animationend', (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
-    pressify('.btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open', 'pressed');
+    pressify('.btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .tool, .zoom-btn, .seg-btn, .vsw-btn, .fs-find, .tp-item, .row-x', 'pressed');
     pressify('.week-strip .day', 'day-pressed');
 
     // (Graph-paper parallax lives in the shell — it owns .main.)

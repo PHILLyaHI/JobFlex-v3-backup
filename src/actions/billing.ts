@@ -6,10 +6,12 @@ import { isStripeEnabled, getStripe } from "@/lib/sdk/stripe";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 
 /**
- * Directly assign the org a plan from the catalog. Two legitimate uses:
- * downgrading to the free plan, and the Stripe-disabled dev/demo fallback.
- * Paid plans with Stripe configured MUST go through checkout — without this
- * guard any owner could self-grant a paid tier without paying.
+ * Directly assign the org a plan from the catalog. One legitimate use since
+ * the Free tier was removed (2026-08-17): the Stripe-disabled dev/demo
+ * fallback. Paid plans with Stripe configured MUST go through checkout —
+ * without this guard any owner could self-grant a paid tier without paying.
+ * (The isFree branches below stay: they keep any admin-created $0 plan and
+ * legacy FREE-status rows behaving sanely.)
  */
 export async function setOrgPlan(planSlug: string) {
   const { organizationId } = await requireOwner();
@@ -40,7 +42,7 @@ export async function setOrgPlan(planSlug: string) {
   });
   revalidatePath("/dashboard/settings/account");
   revalidatePath("/dashboard/subscription");
-  // The sidebar now lands on the blueprint route; both must refresh.
+  // The responsive staging build still serves this surface too; both refresh.
   revalidatePath("/dashboard/subscription-blueprint");
   revalidatePath("/dashboard");
   return { ok: true };

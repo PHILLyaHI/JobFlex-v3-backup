@@ -282,7 +282,35 @@ export function initTradeContent(
   const inp = (sel: string) => root.querySelector<HTMLInputElement>(sel);
   const postMdl = $("#postMdl");
   const postBodyEl = root.querySelector<HTMLTextAreaElement>("#postBody");
-  const postCatEl = root.querySelector<HTMLSelectElement>("#postCat");
+
+  // ---- Category dropdown (#postCatDd) — the fleet `.dd` pattern standing in
+  // for the old native <select>. The picked key lives here, not in the DOM.
+  const catDd = $("#postCatDd");
+  let postCat = "question";
+
+  function closeCatDd() {
+    if (!catDd) return;
+    catDd.classList.remove("open");
+    catDd.querySelector(".dd-btn")?.setAttribute("aria-expanded", "false");
+  }
+
+  function setPostCat(key: string) {
+    postCat = key;
+    if (!catDd) return;
+    catDd.querySelectorAll<HTMLElement>(".dd-item").forEach((item) => {
+      const onIt = item.dataset.pcat === key;
+      item.classList.toggle("active", onIt);
+      item.setAttribute("aria-selected", String(onIt));
+      if (!onIt) return;
+      const label = catDd.querySelector<HTMLElement>(".dd-label");
+      if (label) label.textContent = (item.textContent || "").trim();
+      // The button's swatch follows the picked category's tone, same legend
+      // mark the board chips carry.
+      const dot = catDd.querySelector<HTMLElement>("[data-dd-dot]");
+      const itemDot = item.querySelector<HTMLElement>(".cat-dot");
+      if (dot && itemDot) dot.style.background = itemDot.style.background;
+    });
+  }
 
   // The dialog's enter AND exit both come from mdl-motion / blueprint-global.
   // A bare `classList.add("open")` / `.remove("open")` pair — which this page
@@ -291,11 +319,12 @@ export function initTradeContent(
   // asymmetry is what reads as "there is no close animation".
   function openDialog() {
     const title = inp("#postTitle");
-    if (!title || !postBodyEl || !postCatEl || !postMdl) return;
+    if (!title || !postBodyEl || !postMdl) return;
     if (publishing) return;
     title.value = "";
     postBodyEl.value = "";
-    postCatEl.value = "question";
+    setPostCat("question");
+    closeCatDd();
     dlgError(null);
     openMdl(postMdl);
     title.focus();
@@ -329,7 +358,7 @@ export function initTradeContent(
   async function publish() {
     if (publishing) return;
     const titleEl = inp("#postTitle");
-    if (!titleEl || !postBodyEl || !postCatEl) return;
+    if (!titleEl || !postBodyEl) return;
     const title = titleEl.value.trim();
     const body = postBodyEl.value.trim();
     if (!title) {
@@ -342,7 +371,7 @@ export function initTradeContent(
       postBodyEl.focus();
       return;
     }
-    const cat = postCatEl.value;
+    const cat = postCat;
     dlgError(null);
     setPublishing(true);
     try {
@@ -549,6 +578,23 @@ export function initTradeContent(
       return;
     }
     if (td.menuId) closeMenu();
+    // Category dropdown in the post dialog. Handled BEFORE the `[data-cat]`
+    // chip delegate — its items carry `data-pcat` so a pick can never read as
+    // a board-filter click, but the toggle/pick still has to return early.
+    const catBtn = t.closest<HTMLElement>("#postCatDd .dd-btn");
+    if (catBtn && catDd) {
+      const open = catDd.classList.toggle("open");
+      catBtn.setAttribute("aria-expanded", String(open));
+      return;
+    }
+    const catItem = t.closest<HTMLElement>("#postCatDd .dd-item");
+    if (catItem) {
+      setPostCat(catItem.dataset.pcat || "question");
+      closeCatDd();
+      return;
+    }
+    // Any other click — scrim, fields, Cancel — folds the picker shut.
+    closeCatDd();
     const c = t.closest<HTMLElement>("[data-cat]");
     if (c) {
       td.cat = c.dataset.cat || "all";
@@ -560,7 +606,7 @@ export function initTradeContent(
       // back on every chip click.
       return;
     }
-    if (t.closest("#newPostBtn") || t.closest("#emptyPostBtn")) {
+    if (t.closest("#newPostBtn")) {
       openDialog();
       return;
     }
@@ -574,7 +620,9 @@ export function initTradeContent(
   });
 
   on(document, "keydown", (e) => {
-    if ((e as KeyboardEvent).key === "Escape" && td.menuId) closeMenu();
+    if ((e as KeyboardEvent).key !== "Escape") return;
+    if (td.menuId) closeMenu();
+    closeCatDd();
   });
 
   // ================= INITIALIZATION =================
@@ -693,18 +741,21 @@ export function initTradeContent(
 
     // Press effects
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        el.addEventListener("click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        el.addEventListener("animationend", () => el.classList.remove(cls));
+      on(root, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
     pressify(
-      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open",
+      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .cat, .mdl-x",
       "pressed",
     );
     pressify(".week-strip .day", "day-pressed");

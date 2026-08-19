@@ -111,7 +111,7 @@ body:has(.jf-proposal-portal) {
   background-size: 34px 34px;
 }
 .jf-proposal-portal { font-family: var(--font); color: var(--ink);
-  -webkit-font-smoothing: antialiased; }
+  -webkit-font-smoothing: auto; }
 
 .jf-proposal-portal [hidden] { display: none !important; }
 

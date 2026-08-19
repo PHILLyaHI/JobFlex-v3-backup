@@ -360,7 +360,7 @@ export function MobileReferrals() {
       { act: "mail", icon: "i-mail", tone: styles.rmiSky, title: "Send a message", sub: c.email },
       {
         act: "nudge", icon: "i-send", tone: styles.rmiBp, title: "Nudge to upgrade",
-        sub: upgraded ? "Already on a paid plan" : `Signed up ${c.when}, still free`,
+        sub: upgraded ? "Already on a paid plan" : `Signed up ${c.when}, hasn't upgraded yet`,
         disabled: upgraded,
       },
       {

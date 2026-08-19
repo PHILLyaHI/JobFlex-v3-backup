@@ -79,11 +79,78 @@ export async function postMessage(conversationId: string, body: string) {
   const trimmed = body.trim();
   if (!trimmed) return;
   await enforcePlanLimit(organizationId, "messagesSent");
-  await db.message.create({
+  const m = await db.message.create({
     data: { conversationId: conv.id, authorId: user.id, body: trimmed },
   });
   revalidatePath("/dashboard/messages");
+  // The row id + stamp go back so the client can swap its optimistic `tmp-`
+  // message for the database row — editing needs the real id. Additive:
+  // MessagesInbox awaits this action without reading the return.
+  return { ok: true, id: m.id, ts: m.createdAt.getTime() };
+}
+
+// Author-only body rewrite. No editedAt column and no "(edited)" marker — the
+// owner's call (2026-08-12): editing ships without a schema change. The same
+// participant gate as postMessage does not apply — being the author is the
+// gate, and authorship already implies the poster passed it once. That leans
+// on an invariant that holds today: ConversationParticipant rows are never
+// deleted (createConversation / ensureJobConversation only create,
+// markConversationRead only updates). If a remove-from-thread feature ever
+// lands, add a membership re-check here, or a removed author could still
+// rewrite history in a thread they can no longer see.
+export async function editMessage(messageId: string, body: string) {
+  const { organizationId, user } = await requireOrg();
+  const trimmed = body.trim();
+  if (!trimmed) throw new Error("A message can't be edited to nothing.");
+  const m = await db.message.findUnique({
+    where: { id: messageId },
+    include: { conversation: { select: { organizationId: true } } },
+  });
+  if (!m || m.conversation.organizationId !== organizationId) throw new Error("Not found");
+  if (m.authorId !== user.id) throw new Error("You can only edit your own messages.");
+  await db.message.update({ where: { id: m.id }, data: { body: trimmed } });
+  revalidatePath("/dashboard/messages");
   return { ok: true };
+}
+
+// Read receipts for every thread the caller can see, computed from the same
+// lastReadAt stamps markConversationRead writes — the REAL read state, not a
+// client-side guess. Per conversation: the epoch-ms moment by which every
+// OTHER participant had read the thread (their minimum lastReadAt), or null
+// while at least one of them has never opened it. A viewer's own message is
+// "read" when its timestamp is ≤ that moment. Legacy threads (no participant
+// rows) have no read state to report and return null. The messages page polls
+// this to flip Delivered → Read live.
+export async function getReadReceipts() {
+  const { organizationId, user } = await requireOrg();
+  const convs = await db.conversation.findMany({
+    // Mirrors the visibility rule in the messages page.tsx and
+    // clearAllConversations below — keep the three in sync.
+    where: {
+      organizationId,
+      OR: [
+        { participants: { some: { userId: user.id } } },
+        {
+          AND: [
+            { participants: { none: {} } },
+            { messages: { some: { authorId: user.id } } },
+          ],
+        },
+      ],
+    },
+    select: {
+      id: true,
+      participants: { select: { userId: true, lastReadAt: true } },
+    },
+  });
+  return convs.map((c) => {
+    const others = c.participants.filter((p) => p.userId !== user.id);
+    const readAt =
+      others.length > 0 && others.every((p) => p.lastReadAt)
+        ? Math.min(...others.map((p) => (p.lastReadAt as Date).getTime()))
+        : null;
+    return { id: c.id, readAt };
+  });
 }
 
 // Stamps this thread as read for the caller — drives the unread-messages

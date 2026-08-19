@@ -1,16 +1,24 @@
 // SUBSCRIPTION — BLUEPRINT · the ported <script>.
-// Route: /dashboard/subscription-blueprint.
+// Route: /dashboard/subscription (promoted 2026-08-12; ported at
+// /dashboard/subscription-blueprint, which no longer exists).
 //
 // Every behavior the mockup's single <script> block owns, minus the pieces
 // that belong to the app shell, with one teardown that removes every listener,
 // cancels every rAF and disconnects every IntersectionObserver.
 //
 // PORTED HERE
-//   · banner dismiss (`te`)          — measured height collapse + .hidden
 //   · usage bar fill (`fill`)        — IntersectionObserver, 250ms, then width
 //   · `subLayoutSync`                — billing card matches usage card height
 //   · MOTION SYSTEM "BALANCED":      reveal cascade (scroll-velocity aware),
 //                                    KPI count-up (`frame`), `pressify`
+//
+// The source's banner dismiss (`te`, the measured height collapse) left with
+// the free-plan-limit banner when the Free tier was removed (2026-08-17).
+//
+// ADDED, NOT IN THE SOURCE
+//   · in-page anchor scrolling — the source's hash links native-jump; under
+//     the shell's `.main` scroller + sticky topbar + root zoom that lands
+//     wrong, so the block below scrolls by hand. See its note.
 //
 // DISCARDED, BECAUSE THE SHELL ALREADY DOES IT — verified in
 // blueprint-shell/shell-behavior.ts, not assumed:
@@ -54,44 +62,85 @@ export function initSubscriptionContent(content: HTMLElement): () => void {
   const $ = (sel: string) => content.querySelector<HTMLElement>(sel);
   const $$ = (sel: string) => Array.from(content.querySelectorAll<HTMLElement>(sel));
 
-  // ================= DISMISS THE PLAN-LIMIT BANNER =================
-  // Плавное схлопывание высоты + гэпа — a smooth collapse of the height AND of
-  // the flex gap between blocks (.banner.closing carries
-  // margin-bottom: -22px to cancel .content's gap).
-  //
-  // Imperative, and that is deliberate rather than lazy: the collapse measures
-  // offsetHeight and then transitions to 0, and the reveal cascade writes `rv`
-  // / `rv-in` onto this same element. If `closing` / `hidden` came from React
-  // state the className prop would change mid-transition and React would
-  // rewrite the whole attribute, wiping the cascade's classes and making the
-  // banner vanish instead of collapse. Keeping React's className prop constant
-  // is what keeps the two systems out of each other's way.
-  $$(c("banner-close")).forEach((btn) => {
-    on(btn, "click", () => {
-      const b = btn.closest<HTMLElement>(c("banner"));
-      if (!b || b.classList.contains(styles["closing"])) return;
-      if (reduced()) {
-        b.classList.add(styles["hidden"]);
-        return;
-      }
-      b.style.height = b.offsetHeight + "px";
-      b.style.transitionDelay = "0ms";
-      const r1 = requestAnimationFrame(() => {
-        const r2 = requestAnimationFrame(() => {
-          b.classList.add(styles["closing"]);
-          b.style.height = "0px";
-        });
-        disposers.push(() => cancelAnimationFrame(r2));
-      });
-      disposers.push(() => cancelAnimationFrame(r1));
-      const te = (e: Event) => {
-        if ((e as TransitionEvent).propertyName !== "height") return;
-        b.classList.add(styles["hidden"]);
-        b.removeEventListener("transitionend", te);
+  // ================= IN-PAGE ANCHORS =================
+  // The page's hash links (Upgrade plan / Change plan; the source's third,
+  // the banner's "See plans", left with the free-plan banner)
+  // rely on native fragment navigation, and inside the shell that lands wrong
+  // two ways: the scroll container is `.main` with a sticky 62px topbar the
+  // browser doesn't offset for, and the shell scales its root with CSS `zoom`,
+  // which throws native anchor math off entirely. So the clicks are
+  // intercepted and the scroll is computed by hand against `.main`, zoom
+  // compensated, with the topbar (plus the content gap) as headroom.
+  (function () {
+    const host = content.closest<HTMLElement>(".main");
+    if (!host) return; // outside the shell — native behavior is correct
+
+    // The travel is animated by hand rather than with native smooth scrolling,
+    // for two reasons. Chrome's smooth scroll runs a fixed ~450ms regardless
+    // of distance — over the ~2000px these anchors cover it reads as a jump
+    // cut. And the reveal cascade means every below-the-fold block is parked
+    // at opacity 0 until its IntersectionObserver fires, so the destination
+    // faded in AFTER arrival — which is the "page just reloaded" impression.
+    // So: park every still-hidden block in its final state first, then ease
+    // the scroll over a distance-scaled duration.
+    let rafId = 0;
+    const stopScroll = () => cancelAnimationFrame(rafId);
+    on(host, "wheel", stopScroll, { passive: true }); // the user's hand wins
+    on(host, "touchstart", stopScroll, { passive: true });
+    disposers.push(stopScroll);
+    const animateTo = (to: number) => {
+      stopScroll();
+      const from = host.scrollTop;
+      const dist = to - from;
+      if (!dist) return;
+      const dur = Math.min(900, Math.max(500, Math.abs(dist) * 0.35));
+      let t0: number | null = null;
+      const step = (t: number) => {
+        if (t0 === null) t0 = t;
+        const pr = Math.min(1, (t - t0) / dur);
+        // easeInOutCubic — a gentle launch and a settled landing; the reveal
+        // ease-out (0.22,0.61,0.36,1) is tuned for 420ms entrances, and over
+        // 900ms of travel its long tail feels like the page stalling.
+        const e = pr < 0.5 ? 4 * pr * pr * pr : 1 - Math.pow(-2 * pr + 2, 3) / 2;
+        host.scrollTop = from + dist * e;
+        if (pr < 1) rafId = requestAnimationFrame(step);
       };
-      on(b, "transitionend", te);
+      rafId = requestAnimationFrame(step);
+    };
+
+    $$('a[href^="#"]').forEach((a) => {
+      const id = (a.getAttribute("href") || "").slice(1);
+      if (!id) return;
+      on(a, "click", (e) => {
+        const target = $("#" + id);
+        if (!target) return;
+        e.preventDefault();
+        // Reveal everything the cascade still holds hidden — instantly, not
+        // animated, so the blocks scrolled past (and the destination itself)
+        // are already painted. Done BEFORE measuring: `rv` carries a 14px
+        // translateY that would skew the target's rect.
+        $$(".rv:not(.rv-in), .rv-cell:not(.rv-in)").forEach((el) => {
+          el.style.transitionDuration = "0ms";
+          el.style.transitionDelay = "0ms";
+          el.classList.add("rv-in");
+        });
+        // Both rects are in visual px scaled by the shell's zoom; scrollTop is
+        // in local px — divide the delta by the effective factor to convert.
+        const hostRect = host.getBoundingClientRect();
+        const z = host.offsetWidth ? hostRect.width / host.offsetWidth : 1;
+        const headroom = (host.querySelector<HTMLElement>(".topbar")?.offsetHeight ?? 0) + 22;
+        const raw = host.scrollTop + (target.getBoundingClientRect().top - hostRect.top) / z - headroom;
+        const top = Math.max(0, Math.min(raw, host.scrollHeight - host.clientHeight));
+        if (reduced()) {
+          host.scrollTop = top; // the accessibility commitment: no travel
+        } else {
+          animateTo(top);
+        }
+        // Keep the URL shareable without retriggering the native jump.
+        history.replaceState(null, "", "#" + id);
+      });
     });
-  });
+  })();
 
   // ================= USAGE BARS =================
   // The widths live on data-w and are written to style.width, never to JSX, so
@@ -165,7 +214,7 @@ export function initSubscriptionContent(content: HTMLElement): () => void {
   });
 
   // ================= REDUCED MOTION — the source's own gap, closed =========
-  // The markup carries `rv` (opacity 0, translateY(14px)) on all seven blocks,
+  // The markup carries `rv` (opacity 0, translateY(14px)) on all six blocks,
   // and the motion block below returns early under
   // `prefers-reduced-motion: reduce` — so opening the mockup with reduced
   // motion on gives you a BLANK PAGE: nothing ever adds `rv-in`. That is a bug
@@ -291,13 +340,16 @@ export function initSubscriptionContent(content: HTMLElement): () => void {
 
     // Пресс-эффекты (press feedback).
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        on(el, "click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        on(el, "animationend", () => el.classList.remove(cls));
+      on(content, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !content.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(content, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     pressify(

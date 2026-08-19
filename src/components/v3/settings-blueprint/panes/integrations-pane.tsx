@@ -24,9 +24,11 @@
 //         deliveries, Templates); the donor's ad-hoc inline
 //         `padding-top:4px;padding-bottom:4px` is gone.
 //   F15 — Meta > Connection: org text and the Test event / Disconnect pair share
-//         one row, buttons held toward the LEFT via `.prow-act--pair`.
+//         one row; `.prow-act--pair` keeps the buttons label-sized, pinned to
+//         the RIGHT edge by the base `.prow-act`.
 //   F18 — the "Email is not configured" `.note` lost its standalone
-//         `<section class="sc">` and now closes the Templates card `.sc-b`.
+//         `<section class="sc">`; it now renders above the `.sub` bar while the
+//         Email-templates subtab is active.
 //   F7  — inherited: `.btn-sm` centres its own label (CSS-side).
 
 import { useState } from "react";
@@ -128,6 +130,27 @@ export function IntegrationsPane() {
 
   return (
     <>
+      {/* F18 (moved again) — the "Email is not configured" note now leads the
+          Email-templates subtab: it renders ABOVE the subtab bar, between the
+          pane title and the tabs, not inside the Templates card. */}
+      {sub === "email" ? (
+        <div className="note" style={{ marginBottom: "14px" }}>
+          <svg className="ic">
+            <use href={`#${EMAIL_TEMPLATES_NOTE.icon}`} />
+          </svg>
+          <div>
+            <b>{EMAIL_TEMPLATES_NOTE.title}</b>
+            <span>
+              {EMAIL_TEMPLATES_NOTE.bodyStart}
+              <code>{EMAIL_TEMPLATES_NOTE.code1}</code>
+              {EMAIL_TEMPLATES_NOTE.bodyMid}
+              <code>{EMAIL_TEMPLATES_NOTE.code2}</code>
+              {EMAIL_TEMPLATES_NOTE.bodyEnd}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       {/* ── subtab bar ── */}
       <div className="sub">
         {INTEGRATION_SUBTABS.map((t) => (
@@ -149,9 +172,17 @@ export function IntegrationsPane() {
         <section className="sc">
           <CardHeader card={GMAIL_CONNECTION_CARD} />
           <div className="sc-b">
-            <button className="btn btn-primary" type="button">
+            {/* Real OAuth hand-off — same server route the classic settings page
+                uses; Google redirects back through /api/integrations/gmail/callback. */}
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => {
+                window.location.href = "/api/integrations/gmail/connect";
+              }}
+            >
               {GMAIL_CONNECT_ACTION.icon ? (
-                <svg className="ic">
+                <svg className="ic ic--brand">
                   <use href={`#${GMAIL_CONNECT_ACTION.icon}`} />
                 </svg>
               ) : null}
@@ -347,24 +378,6 @@ export function IntegrationsPane() {
                 </button>
               </div>
             ))}
-
-            {/* F18 — was its own `<section class="sc">` in the donor; it now
-                closes this card body. */}
-            <div className="note" style={{ marginTop: "14px" }}>
-              <svg className="ic">
-                <use href={`#${EMAIL_TEMPLATES_NOTE.icon}`} />
-              </svg>
-              <div>
-                <b>{EMAIL_TEMPLATES_NOTE.title}</b>
-                <span>
-                  {EMAIL_TEMPLATES_NOTE.bodyStart}
-                  <code>{EMAIL_TEMPLATES_NOTE.code1}</code>
-                  {EMAIL_TEMPLATES_NOTE.bodyMid}
-                  <code>{EMAIL_TEMPLATES_NOTE.code2}</code>
-                  {EMAIL_TEMPLATES_NOTE.bodyEnd}
-                </span>
-              </div>
-            </div>
           </div>
         </section>
       </div>

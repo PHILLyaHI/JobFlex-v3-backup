@@ -8,16 +8,14 @@ import { setOrgPlan } from "@/actions/billing";
 export interface CheckoutPlan {
   slug: string;
   name: string;
-  isFree: boolean;
 }
 
 /**
  * Shared "buy this plan" flow, used by both the change-plan dialog and the
  * per-plan buttons on the subscription spectrum.
  *
- * - Free plan → direct DB switch (setOrgPlan), no Stripe.
- * - Paid plan → real Stripe Checkout Session; we redirect to Stripe's hosted
- *   page (where the price + any trial are shown before a card is entered).
+ * - Real Stripe Checkout Session; we redirect to Stripe's hosted page (where
+ *   the price + any trial are shown before a card is entered).
  * - Stripe not configured (503) → demo direct-set so local dev still works.
  *
  * `pendingSlug` is the slug currently in flight, so callers can show a spinner
@@ -30,13 +28,6 @@ export function usePlanCheckout() {
   async function start(plan: CheckoutPlan, interval: "MONTH" | "YEAR" = "MONTH") {
     setPendingSlug(plan.slug);
     try {
-      if (plan.isFree) {
-        await setOrgPlan(plan.slug);
-        toast.success(`Switched to ${plan.name}`);
-        router.refresh();
-        return;
-      }
-
       const res = await fetch("/api/checkout/subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

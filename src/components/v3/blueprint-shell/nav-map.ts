@@ -45,18 +45,19 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Money",
     items: [
       { label: "Financials", icon: "i-bank", href: "/dashboard/financials" },
-      // REPOINTED 2026-08-13 (owner's call): the button now opens the NEW
-      // design at /dashboard/subscription-blueprint — the blueprint port above
-      // 768px, the handheld build at or below it, one switch in that page. The
-      // old design is still served at /dashboard/subscription, which nothing
-      // links to any more.
+      // /dashboard/subscription IS the blueprint page now (owner promoted the
+      // port 2026-08-12; the classic "Well-Kept Ledger" donor was deleted with
+      // it and this URL taken over). The responsive staging build — desktop
+      // fixture above 768px, handheld on REAL data at or below — still stands
+      // at /dashboard/subscription-blueprint until its halves are folded into
+      // the promoted route; nothing links to it.
       //
       // OWNER-only, enforced by OWNER_ONLY_HREFS below (2026-08-17). The gap
       // this comment used to record — "the blueprint shell filters NAV_SECTIONS
       // by nothing at all" — is closed: navSectionsFor() is now the one rule
       // both shells and the palette read. Financials, one line above, is NOT
       // owner-only: the production sidebar shows it to every office role.
-      { label: "Subscription", icon: "i-card", href: "/dashboard/subscription-blueprint" },
+      { label: "Subscription", icon: "i-card", href: "/dashboard/subscription" },
     ],
   },
   {
@@ -138,7 +139,10 @@ const SURFACE_ALIASES: Record<string, string> = {
 /** Items only the organisation OWNER may see, whatever else their role allows.
  *  Matches the production sidebar, which drops Subscription for every non-owner
  *  office role; the page itself re-checks with isOwnerRole. */
-const OWNER_ONLY_HREFS = new Set<string>(["/dashboard/subscription-blueprint"]);
+const OWNER_ONLY_HREFS = new Set<string>([
+  "/dashboard/subscription",
+  "/dashboard/subscription-blueprint",
+]);
 
 /** A limited role's nav, as section titles plus the hrefs they hold. */
 type RoleNavPlan = { label: string; hrefs: string[] }[];

@@ -1,16 +1,20 @@
 // SUBSCRIPTION — BLUEPRINT · page fixtures.
-// Route: /dashboard/subscription-blueprint.
+// Route: /dashboard/subscription (promoted 2026-08-12; ported at
+// /dashboard/subscription-blueprint, which no longer exists).
 //
-// Verbatim from the "ДАННЫЕ СТРАНИЦЫ" (page data) block of the approved
-// mockup, jobflex-subscription-blueprint (8).html. Every figure, plan name,
-// price, invoice number and feature string is copy of record and ships exactly
-// as authored.
+// From the "ДАННЫЕ СТРАНИЦЫ" (page data) block of the approved mockup,
+// jobflex-subscription-blueprint (8).html — with one owner-directed revision
+// (2026-08-17): the Free tier is removed from the product, so the fixture org
+// is on Professional. The plan list, the feature-matrix indexes, the usage
+// caps and the invoice amounts were re-authored for that story; everything
+// else ships as the mockup wrote it.
 //
 // STATIC BY DESIGN. There is no data layer here: no server action, no API
 // route, no Prisma query and — deliberately, on a billing surface — no Stripe
-// call. The live subscription page is /dashboard/subscription; this route is a
-// layout under review, and a mock that silently talked to the real billing
-// system would be the worst possible way to find that out.
+// call. Written while this layout was under review at the staging route; the
+// rationale stands after promotion, because a mock that silently talked to the
+// real billing system would be the worst possible way to find out it was still
+// a mock. Live wiring is a separate, not-yet-assigned task.
 
 export type Plan = {
   slug: string;
@@ -25,56 +29,49 @@ export type Plan = {
 };
 
 export const PLANS: Plan[] = [
-  { slug: "free", name: "Free", mo: 0, cur: true, cta: null },
-  {
-    slug: "professional",
-    name: "Professional",
-    mo: 79,
-    cur: false,
-    cta: "Start 14-day trial",
-    hot: true,
-  },
-  { slug: "advanced", name: "Advanced", mo: 179, cur: false, cta: "Upgrade", hot: false },
+  { slug: "professional", name: "Professional", mo: 79, cur: true, cta: null },
+  { slug: "advanced", name: "Advanced", mo: 179, cur: false, cta: "Upgrade", hot: true },
   { slug: "custom", name: "Build your plan", mo: null, cur: false, cta: "Get started", hot: false },
   { slug: "enterprise", name: "Enterprise", mo: 199, cur: false, cta: "Contact sales", hot: false },
 ];
 
 export type UsageRow = { label: string; used: number; limit: number };
 
+// Professional-tier caps. Proposals are unlimited on Professional (see
+// FEATURES), so the metered rows are the remaining quotas only.
 export const USAGE: UsageRow[] = [
-  { label: "Proposals created", used: 4, limit: 5 },
-  { label: "Smart estimates", used: 3, limit: 3 },
-  { label: "Leads captured", used: 6, limit: 15 },
-  { label: "Jobs", used: 4, limit: 10 },
-  { label: "Messages sent", used: 38, limit: 100 },
-  { label: "Review requests", used: 2, limit: 5 },
+  { label: "Smart estimates", used: 18, limit: 50 },
+  { label: "Leads captured", used: 112, limit: 500 },
+  { label: "Jobs", used: 23, limit: 100 },
+  { label: "Messages sent", used: 412, limit: 1000 },
+  { label: "Review requests", used: 14, limit: 50 },
 ];
 
 export type Invoice = { no: string; date: string; status: string; amt: string };
 
 export const INVOICES: Invoice[] = [
-  { no: "JF-2026-0043", date: "Jul 1, 2026", status: "Paid", amt: "$29.00" },
-  { no: "JF-2026-0042", date: "Jun 1, 2026", status: "Paid", amt: "$29.00" },
-  { no: "JF-2026-0041", date: "May 1, 2026", status: "Paid", amt: "$29.00" },
-  { no: "JF-2026-0040", date: "Apr 1, 2026", status: "Paid", amt: "$29.00" },
+  { no: "JF-2026-0043", date: "Jul 1, 2026", status: "Paid", amt: "$79.00" },
+  { no: "JF-2026-0042", date: "Jun 1, 2026", status: "Paid", amt: "$79.00" },
+  { no: "JF-2026-0041", date: "May 1, 2026", status: "Paid", amt: "$79.00" },
+  { no: "JF-2026-0040", date: "Apr 1, 2026", status: "Paid", amt: "$79.00" },
 ];
 
 /**
  * [feature, firstIncludedTierIndex] — the number is the index into PLANS at
- * which the feature turns on, so 1 = "Professional and up", 2 = "Advanced and
- * up", 4 = "Enterprise only". The "Build your plan" column (index 3) is drawn
+ * which the feature turns on, so 0 = "Professional and up", 1 = "Advanced and
+ * up", 3 = "Enterprise only". The "Build your plan" column (index 2) is drawn
  * as an optional dashed box regardless, by slug.
  */
 export const FEATURES: Array<[string, number]> = [
-  ["Unlimited proposals", 1],
-  ["Smart Proposal drafts", 1],
-  ["Smart estimating · roof & fence", 1],
-  ["Proposal templates", 1],
-  ["Branded PDF export", 1],
-  ["Follow-up automation", 1],
-  ["SMS notifications", 1],
-  ["CSV report exports", 1],
-  ["Multiple organizations", 2],
-  ["Custom domain", 2],
-  ["White-label client portal", 4],
+  ["Unlimited proposals", 0],
+  ["Smart Proposal drafts", 0],
+  ["Smart estimating · roof & fence", 0],
+  ["Proposal templates", 0],
+  ["Branded PDF export", 0],
+  ["Follow-up automation", 0],
+  ["SMS notifications", 0],
+  ["CSV report exports", 0],
+  ["Multiple organizations", 1],
+  ["Custom domain", 1],
+  ["White-label client portal", 3],
 ];

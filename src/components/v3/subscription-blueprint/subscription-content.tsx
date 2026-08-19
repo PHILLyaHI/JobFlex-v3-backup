@@ -1,11 +1,14 @@
 "use client";
 
 // SUBSCRIPTION — BLUEPRINT · the page.
-// Route: /dashboard/subscription-blueprint.
+// Route: /dashboard/subscription (promoted 2026-08-12; ported at
+// /dashboard/subscription-blueprint, which no longer exists).
 //
-// A verbatim port of the approved mockup jobflex-subscription-blueprint (8).html.
-// Not a redesign, not an interpretation: every headline, price, invoice number,
-// legal line and placeholder below is the source's string, unchanged.
+// A port of the approved mockup jobflex-subscription-blueprint (8).html, with
+// one owner-directed revision (2026-08-17): the Free tier is removed from the
+// product, so the plan-limit banner is gone and the fixture org reads as a
+// Professional subscriber (see ./subscription-data.ts). Everything else is the
+// source's string, unchanged.
 //
 // THE CHROME IS NOT PORTED. The mockup ships the whole app shell — a 24-link
 // `aside.sb` with its sliding indicator and account footer, a `header.topbar`
@@ -14,12 +17,13 @@
 // already renders that furniture from src/app/dashboard/layout.tsx and
 // re-porting it would fork the navigation. What ships is the children of
 // `div.content` and nothing else, which is why this component returns a
-// FRAGMENT: the seven blocks are direct children of the shell's `.content`,
+// FRAGMENT: the six blocks are direct children of the shell's `.content`,
 // so its `display: flex; flex-direction: column; gap: 22px` spaces them
 // exactly as `.content` does in the source (the two rules are byte-identical).
 //
-// THE SEVEN BLOCKS, in source order:
-//   .page-head · .banner · .sub-hero · #plans (tier spectrum) ·
+// THE SIX BLOCKS, in source order (the source's second block, the `.banner`
+// free-plan-limit upsell, left with the Free tier):
+//   .page-head · .sub-hero · #plans (tier spectrum) ·
 //   .row-ub (usage + billing) · Refer & earn · Compare all plans
 //
 // NO innerHTML. The source builds `.spec-cell`, `.us-row`, `.inv-row` and the
@@ -31,12 +35,13 @@
 // STATE. Exactly one piece: the Copy button's label. Everything else that
 // moves is imperative and lives in ./subscription-behavior.ts, mounted through
 // the shell's `useBlueprintContent` layout-effect contract so the first paint
-// is already primed. The banner dismissal is imperative on purpose — see the
-// note above it in the behavior module.
+// is already primed.
 //
 // NO DATA LAYER, and on a billing surface that is a decision rather than an
 // omission: no server action, no API route, no Prisma, no Stripe. Every figure
-// is a fixture. The live surface is /dashboard/subscription and is untouched.
+// is a fixture. Since the 2026-08-12 promotion this IS /dashboard/subscription;
+// the data-wired predecessor is deleted (git history has it) and wiring live
+// data into this skin is a separate, not-yet-assigned task.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
@@ -104,7 +109,7 @@ export function SubscriptionContent() {
     ) : (
       <>
         <b>{"$" + mo}</b>
-        <i>{mo ? "/ mo" : "forever"}</i>
+        <i>/ mo</i>
       </>
     );
 
@@ -126,38 +131,17 @@ export function SubscriptionContent() {
         </div>
       </div>
 
-      {/* PLAN LIMIT BANNER */}
-      <div className={cx("banner", RV)}>
-        <svg className={cx("ic", "banner-pin")}>
-          <use href="#i-bulb" />
-        </svg>
-        <div className={cx("banner-body")}>
-          <div className={cx("banner-kicker")}>Plan limit</div>
-          <div className={cx("banner-txt")}>
-            {"Proposals: 4 of 5 used this cycle — Professional removes the cap. "}
-            <a className={cx("banner-link")} href="#plans">
-              See plans
-            </a>
-          </div>
-        </div>
-        <button className={cx("banner-close")} aria-label="Dismiss">
-          <svg className={cx("ic")}>
-            <use href="#i-x" />
-          </svg>
-        </button>
-      </div>
-
       {/* CURRENT PLAN HERO */}
       <section className={cx("sub-hero", RV)}>
         <div className={cx("sub-hero-l")}>
           <div className={cx("sub-hero-meta")}>Your plan · Acct № 2847</div>
-          <div className={cx("sub-hero-name")}>Free</div>
+          <div className={cx("sub-hero-name")}>Professional</div>
           <div className={cx("sub-hero-row")}>
             <span className={cx("sub-hero-price")}>
-              $0<i>/ mo</i>
+              $79<i>/ mo</i>
             </span>
             <span className={cx("sub-hero-sep")}></span>
-            <span className={cx("sub-hero-note")}>No card on file — upgrade any time</span>
+            <span className={cx("sub-hero-note")}>Billed monthly — cancel any time</span>
           </div>
         </div>
         <div className={cx("sub-hero-r")}>
@@ -171,11 +155,11 @@ export function SubscriptionContent() {
             </div>
             <div>
               <span>Seats</span>
-              <b>1 of 1</b>
+              <b>1 of 3</b>
             </div>
             <div>
               <span>Next bill</span>
-              <b>—</b>
+              <b>Aug 1, 2026</b>
             </div>
           </div>
         </div>
@@ -313,7 +297,7 @@ export function SubscriptionContent() {
       </section>
 
       {/* COMPARE ALL PLANS */}
-      <section className={cx("card", "card--flush", RV)}>
+      <section className={cx("card", "card--flush", RV)} id="compare">
         <div className={cx("mx-wrap")}>
           <table className={cx("mx")} id="mxTable">
             <thead>

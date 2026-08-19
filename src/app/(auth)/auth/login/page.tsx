@@ -11,11 +11,11 @@
 // ── REPLACEMENT, NOT A FORK ────────────────────────────────────────────
 // This file REPLACES the previous /auth/login markup in place. It does not
 // ship beside it as `/auth/login-blueprint`. That REVERSES the side-by-side
-// convention asserted in the header of
+// convention once asserted in the header of
 // src/app/dashboard/subscription-blueprint/page.tsx ("the standing repo
-// convention a donor surface is never overwritten by its successor"); for the
-// auth family the instruction is replacement, and that older header comment is
-// now stale for anything ported after it.
+// convention a donor surface is never overwritten by its successor") — a file
+// deleted 2026-08-12 when its port was itself promoted over the donor; for the
+// auth family the instruction was replacement from the start.
 //
 // The old page's `md:hidden` MobileLogin half went with it: the source's own
 // media queries (1000px / 560px / max-height 620px) are what makes this page

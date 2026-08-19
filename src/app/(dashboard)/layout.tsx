@@ -103,13 +103,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
           role={activeRole}
           badges={badgeCounts}
           limits={navLimits}
-          plan={subscription?.plan ?? "FREE"}
+          plan={subscription?.plan}
         />
         <main className="flex-1 min-w-0 min-h-dvh">
           <Topbar
             user={{ name: session.user.name, email: session.user.email ?? "" }}
             memberships={membershipItems}
-            plan={subscription?.plan ?? "FREE"}
+            plan={subscription?.plan}
             isWorker={isWorker}
             limited={isLimited}
           />

@@ -126,7 +126,11 @@ export async function getOrgPlanContext(organizationId: string): Promise<{
     where: { organizationId },
     select: { plan: true },
   });
-  const rawPlan = sub?.plan ?? "FREE";
+  // No subscription row → nothing to display as a plan (the Free tier is no
+  // longer presented; the limits engine still enforces the internal cap-floor
+  // row on its own). Tier stays FREE — the boolean-feature floor is unchanged.
+  if (!sub?.plan) return { tier: "FREE", plan: null, rawPlan: "NONE" };
+  const rawPlan = sub.plan;
   const plan = await getPlanBySlug(rawPlan, { includeInactive: true });
   const upper = rawPlan.toUpperCase();
   const tier: Plan = (PLAN_TIERS as readonly string[]).includes(upper)

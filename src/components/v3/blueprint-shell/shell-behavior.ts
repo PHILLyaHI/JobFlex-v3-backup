@@ -57,7 +57,12 @@ export function initBlueprintShell(root: HTMLElement): ShellHandle {
       MIN = 0.78,
       MAX = 1.35;
     const applyScale = () => {
-      const z = window.innerWidth <= 860 ? 1 : Math.min(MAX, Math.max(MIN, window.innerWidth / BASE));
+      const raw = window.innerWidth <= 860 ? 1 : Math.min(MAX, Math.max(MIN, window.innerWidth / BASE));
+      // Sharpness (owner, 2026-08-18): a zoom like 1.0098 (1745px window) puts
+      // EVERY font on a fractional pixel size and softens all type, while the
+      // ≤2% size difference from true 1:1 is imperceptible. Snap the band to 1
+      // so near-reference windows rasterize text on exact pixels.
+      const z = Math.abs(raw - 1) < 0.02 ? 1 : raw;
       root.style.setProperty("zoom", String(z));
       // 100vh diverges from the real window under zoom != 1 — set it explicitly
       root.style.setProperty("--app-h", window.innerHeight / z + "px");

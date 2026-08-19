@@ -4,9 +4,10 @@
 // CONVENTION (2026-08-11): a re-port REPLACES its predecessor in place — same
 // route path, same component files. It does NOT fork a parallel `-blueprint`
 // route beside the old one. This reverses the earlier side-by-side rule that
-// this header used to assert (and that headers like
-// src/app/dashboard/subscription-blueprint/ still record); /landing and
-// src/components/v3/landing/* are overwritten, never duplicated.
+// this header used to assert (and that the staging route
+// src/app/dashboard/subscription-blueprint/ recorded until its 2026-08-12
+// promotion deleted it); /landing and src/components/v3/landing/* are
+// overwritten, never duplicated.
 //
 // Scope note: that reversal governs ports of THIS donor. src/app/page.tsx is a
 // different, hand-written surface (it has the signed-in redirect), not a

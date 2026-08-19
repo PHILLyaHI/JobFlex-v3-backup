@@ -149,8 +149,8 @@ body:has(.jf-mobile-smart-estimate)::before { content: none; }
 .jf-mobile-smart-estimate {
   font-family: var(--font);
   color: var(--ink);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 
   line-height: normal;
   font-feature-settings: normal;

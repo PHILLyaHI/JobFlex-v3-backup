@@ -114,7 +114,7 @@ export function SubscribersClient({
     {
       key: "plan",
       header: "Plan",
-      render: (r) => <Badge tone={r.plan === "FREE" ? "neutral" : "accent"}>{r.plan.toLowerCase()}</Badge>,
+      render: (r) => <Badge tone={r.plan === "NONE" ? "neutral" : "accent"}>{r.plan.toLowerCase()}</Badge>,
     },
     {
       key: "amount",

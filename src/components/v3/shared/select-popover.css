@@ -1,0 +1,129 @@
+/* Blueprint select field (.spk) — the SHARED layer for the option-list popover
+   built by select-popover.ts. Imported by that module, so a page that wires the
+   control cannot forget the stylesheet.
+
+   A plain global sheet, not a page module, for the reason date-popover.css
+   documents: page modules are hashed per page and one shared control cannot be
+   dressed eight times. Anchored under `.jf-blueprint .content`, `spk-` prefix,
+   no tokens declared — the panel is appended inside `.content`, where each page
+   declares the blueprint token block.
+
+   GEOMETRY — deliberately the family's numbers: 1.5px hairlines, 2px radii,
+   paper-deep hover; no offset shadow, matching the shadowless announcements
+   dialog this shipped inside. The trigger carries the page's
+   own `.bp-sel-in` classes, so its closed look is exactly the select it
+   replaced; only the open list is drawn here.
+
+   MOTION — same "Balanced" band as the date popover: 160ms fade, 6px rise,
+   translate only. */
+
+/* The trigger is a <button> where a <select> stood: same classes, same wrapper,
+   so border / height / chevron all come from the shared and page rules. Only
+   button-vs-select differences are corrected here. */
+.jf-blueprint .content .spk-btn {
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+.jf-blueprint .content .spk-btn .spk-lbl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The wrapper's drawn chevron tracks the open state like it tracks hover. */
+.jf-blueprint .content .spk-open::after {
+  border-color: var(--ink);
+}
+.jf-blueprint .content .spk-open .spk-btn {
+  border-color: var(--ink);
+}
+
+/* --- the panel -------------------------------------------------------
+   Absolutely positioned inside the `.mdl` overlay (see select-popover.ts) —
+   left/top/min-width are written by the module, `display` toggled there too. */
+.jf-blueprint .content .spk-pop {
+  position: absolute;
+  z-index: 10;
+  width: max-content;
+  padding: 4px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.16s ease, transform 0.18s var(--ease-out, cubic-bezier(0.22, 0.61, 0.36, 1));
+}
+.jf-blueprint .content .spk-pop.is-open {
+  opacity: 1;
+  transform: none;
+}
+
+/* One option row: swatch, label, and the check that marks the current value. */
+.jf-blueprint .content .spk-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--ink-soft);
+  transition: background 0.12s, color 0.12s;
+}
+.jf-blueprint .content .spk-item:hover {
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+.jf-blueprint .content .spk-item:focus-visible {
+  outline: 2px solid var(--blueprint);
+  outline-offset: 1px;
+}
+.jf-blueprint .content .spk-item.sel {
+  color: var(--ink);
+  font-weight: 700;
+}
+.jf-blueprint .content .spk-item-lbl {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+.jf-blueprint .content .spk-swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+}
+.jf-blueprint .content .spk-check {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  margin-left: 12px;
+  color: var(--blueprint);
+  visibility: hidden;
+}
+.jf-blueprint .content .spk-item.sel .spk-check {
+  visibility: visible;
+}
+
+/* Handheld — the ≥44px targets the dialogs already switch to at this width. */
+@media (max-width: 860px) {
+  .jf-blueprint .content .spk-item {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-blueprint .content .spk-pop {
+    transition: none;
+    transform: none;
+  }
+  .jf-blueprint .content .spk-item {
+    transition: none;
+  }
+}

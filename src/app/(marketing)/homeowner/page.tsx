@@ -7,10 +7,11 @@
 //
 // CONVENTION (2026-08-11): a re-port REPLACES its predecessor in place — same
 // route path, same component files, never a parallel `-blueprint` route beside
-// the old one. This reverses the earlier side-by-side rule still recorded in
-// headers like src/app/dashboard/subscription-blueprint/page.tsx and
+// the old one. This reverses the earlier side-by-side rule once recorded in
+// headers like src/app/dashboard/subscription-blueprint/page.tsx (deleted
+// 2026-08-12 when its port was promoted; git history has it) and
 // src/app/(auth)/auth/login/page.tsx ("a donor surface is never overwritten by
-// its successor"); those are other agents' files and are left alone.
+// its successor").
 //
 // ROUTE PLACEMENT IS SETTLED (owner decision). This donor targets the MARKETING
 // landing: `(marketing)/homeowner` + `src/components/v3/homeowner-landing/`.

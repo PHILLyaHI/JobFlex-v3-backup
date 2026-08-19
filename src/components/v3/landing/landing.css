@@ -103,7 +103,7 @@ html:has(.jf-landing) { scroll-behavior: smooth; }
 body:has(.jf-landing) { overflow-x: hidden; background-image: none; }
 body:has(.jf-landing)::before { content: none; }
 .jf-landing { font-family: var(--font); background: var(--paper); color: var(--ink);
-  -webkit-font-smoothing: antialiased; overflow-wrap: break-word; }
+  -webkit-font-smoothing: auto; overflow-wrap: break-word; }
 .jf-landing a { text-decoration: none; color: inherit; }
 .jf-landing button { font-family: inherit; color: inherit; border: none; background: none; cursor: pointer;
   touch-action: manipulation; -webkit-tap-highlight-color: rgba(24,84,160,.12); }

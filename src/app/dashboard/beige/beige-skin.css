@@ -1,0 +1,45 @@
+/* Beige preview skin — /dashboard/beige only.
+   A/B copy of the Overview sheet with the pre-2026-08-17 card treatment:
+   paper cards, gray resting shadows, beige controls and zones. The real page
+   was restyled to white; this skin re-applies ONLY the reverted values on top
+   of the live module CSS, so the two routes always share markup, data and
+   behavior. Scoped under `.jf-blueprint .beige-skin` (0,3,0) to out-specify
+   the module's `.bp :global(...)` rules (0,2,0); state rules that would tie
+   are re-asserted explicitly below. Delete the /dashboard/beige folder to
+   retire the preview. */
+
+/* Token layer: bring back the gray resting shadow and the beige zones for
+   every var() use-site inside the sheet. */
+.jf-blueprint .beige-skin {
+  --shadow: rgba(10, 10, 10, 0.06);
+  --paper-deep: #ebe8e1;
+}
+
+/* Big cards back to paper. (box-shadow returns by itself: the module still
+   says `3px 3px 0 var(--shadow)`, only the token was retired.) */
+.jf-blueprint .beige-skin .card,
+.jf-blueprint .beige-skin .kpi-grid,
+.jf-blueprint .beige-skin .stage-board {
+  background: var(--paper);
+}
+/* ...except the deliberately frameless card variant. */
+.jf-blueprint .beige-skin .card--bare {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Controls back to paper. */
+.jf-blueprint .beige-skin .btn-ghost,
+.jf-blueprint .beige-skin .dd-btn,
+.jf-blueprint .beige-skin .dd-menu,
+.jf-blueprint .beige-skin .day {
+  background: var(--paper);
+}
+
+/* Chart internals back to paper fill. */
+.jf-blueprint .beige-skin .ch-tip-box { fill: var(--paper); }
+.jf-blueprint .beige-skin .ch-dot { fill: var(--paper); }
+
+/* Re-assert state fills that tie with the overrides above on specificity. */
+.jf-blueprint .beige-skin .day.today { background: var(--blueprint); }
+.jf-blueprint .beige-skin .ch-dot.on { fill: var(--blueprint); }

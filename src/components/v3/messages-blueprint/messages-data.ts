@@ -20,7 +20,10 @@ export type Member = {
 };
 
 export type Msg = {
-  /** Message row id, or a `tmp-*` id while an optimistic send is on the wire. */
+  /** Message row id; a `tmp-*` id while an optimistic send is on the wire; or
+   *  a `sent-tmp-*` id if a send ever resolves without returning its row
+   *  (normally unreachable — client and server trim identically). The last
+   *  form renders as delivered but is not editable: it has no real row id. */
   id: string;
   /** Author's display name; used for the group-thread run header. */
   who: string;
@@ -54,6 +57,15 @@ export type Conv = {
    * no such feedback loop — reading a message does not change when it arrived.
    */
   ts: number;
+  /**
+   * Read receipt for the viewer's own messages, epoch ms: the moment by which
+   * every OTHER participant had read this thread (min of their lastReadAt
+   * stamps — the ones markConversationRead writes), or null while at least one
+   * hasn't opened it. A message with ts ≤ readAt renders "Read"; later ones
+   * "Delivered". Server-computed (page load + getReadReceipts poll) — the
+   * client never guesses it.
+   */
+  readAt: number | null;
   msgs: Msg[];
 };
 

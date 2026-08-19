@@ -17,7 +17,11 @@ export function FluidScale() {
       MIN = 0.78,
       MAX = 1.35;
     const applyScale = () => {
-      const z = window.innerWidth <= 860 ? 1 : Math.min(MAX, Math.max(MIN, window.innerWidth / BASE));
+      const raw = window.innerWidth <= 860 ? 1 : Math.min(MAX, Math.max(MIN, window.innerWidth / BASE));
+      // Sharpness (owner, 2026-08-18): snap near-1 zooms to exactly 1 — the
+      // ≤2% size delta is imperceptible, but 1:1 rasterizes type on whole
+      // pixels instead of fractional font sizes. Mirrors shell-behavior.ts.
+      const z = Math.abs(raw - 1) < 0.02 ? 1 : raw;
       document.documentElement.style.setProperty("zoom", String(z));
       document.documentElement.style.setProperty("--app-h", window.innerHeight / z + "px");
     };

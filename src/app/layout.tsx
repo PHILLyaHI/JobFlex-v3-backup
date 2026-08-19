@@ -35,7 +35,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${inter.variable} ${jbMono.variable}`}>
       {/* suppressHydrationWarning: browser extensions (e.g. Grammarly) inject
           data-gr-* attributes on <body> before React hydrates — benign mismatch. */}
-      <body className="min-h-dvh antialiased" suppressHydrationWarning>
+      {/* No `antialiased`: default subpixel rendering keeps text crisper
+          (sharpness pass, owner 2026-08-18). */}
+      <body className="min-h-dvh" suppressHydrationWarning>
         <div className="relative z-10">{children}</div>
         {/* Root layout is the one shell every public entry page shares — the
             ?promo/?ref capture must live here to cover them all. Renders null. */}

@@ -24,8 +24,8 @@
 
    GEOMETRY
    Deliberately the calendar's `.dtp` numbers — 24px nav squares, a 7-column
-   grid of 26px mono day cells, 1.5px hairline borders, 2px radii, the 3px 3px 0
-   ink shadow, the beige footer bar. The two controls have to read as one
+   grid of 26px mono day cells, 1.5px hairline borders, 2px radii, the beige
+   footer bar. No offset shadow — the dialogs this opens inside dropped theirs. The two controls have to read as one
    family; only the clock half of the calendar's is missing, because these
    fields carry a date and nothing else.
 
@@ -111,7 +111,6 @@
   border: var(--border);
   border-radius: var(--radius);
   background: var(--paper);
-  box-shadow: 3px 3px 0 var(--ink);
   opacity: 0;
   transform: translateY(-6px);
   transition: opacity 0.16s ease, transform 0.18s var(--ease-out, cubic-bezier(0.22, 0.61, 0.36, 1));

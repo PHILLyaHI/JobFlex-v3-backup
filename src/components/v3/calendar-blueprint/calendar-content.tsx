@@ -90,7 +90,7 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
               <use href="#i-chev" />
             </svg>
           </button>
-          <button className="btn btn-ghost btn--sm" type="button" id="calToday">
+          <button className="btn btn-ghost" type="button" id="calToday">
             Today
           </button>
           <div className="cal-title" id="calTitle">—</div>
@@ -118,7 +118,7 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
             </svg>
             <span className="cal-badge" id="inboxN">0</span>
           </button>
-          <button className="btn btn-primary btn--sm" type="button" id="newEventBtn">
+          <button className="btn btn-primary" type="button" id="newEventBtn">
             <svg className="ic">
               <use href="#i-plus" />
             </svg>

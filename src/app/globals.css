@@ -5,7 +5,7 @@
 :root {
   /* ─── palette (blueprint drafting-paper) ────────── */
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff; /* zoned strips/zebra/hover tint → white (owner, 2026-08-17) */
   --paper-ink: #0a0a0a;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
@@ -32,9 +32,11 @@
   --r-xl: 2px;
   --radius: 2px;
 
-  /* ─── elevation (hard offset, no blur) ────────── */
-  --shadow-sm: 3px 3px 0 rgba(10, 10, 10, 0.06);
-  --shadow-md: 4px 4px 0 rgba(10, 10, 10, 0.08);
+  /* ─── elevation (hard offset, no blur) ──────────
+     Light-gray resting shadows retired app-wide (owner's call, 2026-08-17):
+     cards sit flat on the paper; only interactive ink shadows remain. */
+  --shadow-sm: none;
+  --shadow-md: none;
 
   /* ─── motion ──────────────────────────────────── */
   /* The Motion System "Balanced" curve set (DESIGN.md). `--ease` predates the
@@ -68,7 +70,7 @@ html, body {
   color: var(--ink);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
   text-rendering: optimizeLegibility;
 }
 
@@ -81,22 +83,11 @@ body {
   background-attachment: fixed;
 }
 
-/* Paper grain — extremely subtle */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.18;
-  z-index: 0;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.045 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-  mix-blend-mode: multiply;
-}
-
-.dark body::before {
-  mix-blend-mode: overlay;
-  opacity: 0.5;
-}
+/* Paper grain — RETIRED (sharpness pass, owner 2026-08-18). The fractal-noise
+   body::before overlay sat fixed OVER all content and speckled every glyph,
+   softening text app-wide. Removed rather than dimmed: any noise over type
+   costs crispness. The drafting grid below stays — it is a background under
+   content, not an overlay. */
 
 /* ── Typography primitives ──────────────────────── */
 .font-display {
@@ -113,7 +104,7 @@ body::before {
 
 /* ── Surfaces ───────────────────────────────────── */
 .paper-card {
-  background: var(--paper);
+  background: #ffffff;
   border: 2px solid var(--ink);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm);
@@ -198,7 +189,7 @@ body::before {
   color-scheme: light;
   width: 100%;
   border-radius: var(--r-md);
-  --gmp-mat-color-surface: var(--paper);
+  --gmp-mat-color-surface: #ffffff; /* form field surface — white like the app's inputs (2026-08-17) */
   --gmp-mat-color-on-surface: var(--ink);
   --gmp-mat-color-on-surface-variant: var(--ink-muted);
   --gmp-mat-color-outline: var(--ink-line);

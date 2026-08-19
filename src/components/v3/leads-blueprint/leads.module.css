@@ -37,7 +37,7 @@
    ============================================================ */
 .bp :global(.content) {
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -69,7 +69,7 @@
   --border: 2px solid var(--ink);
   --border-thin: 1.5px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10,10,10,0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
@@ -127,7 +127,7 @@
 .bp :global(.content .btn:active) { transform: translate(0, 0); box-shadow: none; }
 .bp :global(.content .btn-primary) { background: var(--blueprint); color: #fff; }
 .bp :global(.content .btn-primary:hover) { background: var(--blueprint-dark); }
-.bp :global(.content .btn-ghost) { background: var(--paper); color: var(--ink); }
+.bp :global(.content .btn-ghost) { background: #fff; color: var(--ink); }
 .bp :global(.content .btn-ghost:hover) { background: var(--paper-deep); }
 
 /* ============================================================
@@ -237,7 +237,7 @@
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -267,7 +267,7 @@
    CARDS
    ============================================================ */
 .bp :global(.content .card) {
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   padding: 20px 24px 24px;
@@ -330,22 +330,22 @@
   padding: 9px 12px;
   border: var(--border-thin);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 11px; font-weight: 800;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink);
   cursor: pointer;
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .dd-btn:hover) { background: var(--paper-deep); }
-.bp :global(.content .dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .dd-btn:hover) { background: var(--accent-soft); }
+.bp :global(.content .dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .dd-btn .ic) { width: 13px; height: 13px; color: var(--muted); transition: transform 0.2s var(--ease); }
 .bp :global(.content .dd.open .dd-btn .ic) { transform: rotate(180deg); }
 .bp :global(.content .dd-menu) {
   position: absolute;
   top: calc(100% + 6px); right: 0;
   min-width: 100%;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--ink);
@@ -366,14 +366,14 @@
   white-space: nowrap;
   transition: background 0.12s, color 0.12s;
 }
-.bp :global(.content .dd-item:hover) { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.content .dd-item:hover) { background: var(--accent-soft); color: var(--ink); }
 .bp :global(.content .dd-item.active) { color: var(--blueprint); font-weight: 800; }
 
 /* Chart hover: callout, square dots, tooltip */
 .bp :global(.content .ch-overlay) { cursor: crosshair; }
 .bp :global(.content .ch-guide) { stroke: var(--blueprint); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.15s ease; }
 .bp :global(.content .ch-tipg) { opacity: 0; pointer-events: none; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.15s ease; }
-.bp :global(.content .ch-tip-box) { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+.bp :global(.content .ch-tip-box) { fill: #fff; stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
 .bp :global(.content .ch-tip-text) { font-family: var(--font-mono); font-size: 13px; font-weight: 700; fill: var(--ink); pointer-events: none; }
 .bp :global(.content .chart-wrap) { width: 100%; }
 .bp :global(.content .chart-wrap svg) { width: 100%; height: auto; display: block; }
@@ -386,7 +386,7 @@
 .bp :global(.content .ch-axis) { stroke: var(--ink); stroke-width: 1.5; }
 .bp :global(.content .ch-area) { fill: var(--chart-fill); }
 .bp :global(.content .ch-line) { stroke: var(--blueprint); stroke-width: 2.5; fill: none; }
-.bp :global(.content .ch-dot) { fill: var(--paper); stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
+.bp :global(.content .ch-dot) { fill: #fff; stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
 .bp :global(.content .ch-dot.on) { fill: var(--blueprint); }
 .bp :global(.content .ch-lbl) {
   font-family: var(--font-mono);
@@ -448,13 +448,13 @@
   padding: 10px 4px 9px;
   text-align: center;
   border-right: 1px solid var(--hair);
-  background: var(--paper);
+  background: #fff;
   transition: background 0.12s, box-shadow 0.12s;
   cursor: pointer;
   user-select: none;
 }
 .bp :global(.content .day:last-child) { border-right: none; }
-.bp :global(.content .day:hover) { background: var(--paper-deep); }
+.bp :global(.content .day:hover) { background: var(--accent-soft); }
 .bp :global(.content .day-lbl) {
   font-size: 9.5px; font-weight: 800;
   letter-spacing: 0.16em;
@@ -578,7 +578,7 @@
   color: var(--ink);
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .card-foot-btn .ic) { width: 13px; height: 13px; }
 .bp :global(.content .list .card-foot-btn) { display: none; margin-top: 10px; }
 .bp :global(.content .list.has-more .card-foot-btn) { display: flex; }
@@ -602,7 +602,7 @@
   grid-template-columns: repeat(5, 1fr);
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -709,7 +709,7 @@
   .bp :global(.content), .bp :global(.content)::before, .bp :global(.content)::after,
   .bp :global(.content *), .bp :global(.content *)::before, .bp :global(.content *)::after { transition: none !important; animation: none !important; }
 }
-.bp :global(.content :focus-visible) { outline: 2px solid var(--sky); outline-offset: 2px; }
+.bp :global(.content :focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* ============================================================
    PROPOSALS PAGE (shared document primitives the leads page reuses)
@@ -726,7 +726,7 @@
   padding: 9px 15px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 13px; font-weight: 700;
   color: var(--muted);
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, border-color 0.12s, color 0.12s;
@@ -748,6 +748,7 @@
   padding: 5px 11px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
+  background: #fff; /* chips sit on the cream page — plate them white (owner, 2026-08-17) */
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
@@ -818,7 +819,7 @@
 .bp :global(.content .pt-open .ic) { width: 14px; height: 14px; }
 
 .bp :global(.content .pstack) { display: flex; flex-direction: column; gap: 18px; }
-.bp :global(.content .pjob) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+.bp :global(.content .pjob) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
 .bp :global(.content .pjob-head) {
   display: flex; align-items: center; justify-content: space-between; gap: 18px;
   padding: 15px 18px;
@@ -863,6 +864,8 @@
 .bp :global(.content .pjob-foot .pjob-foot-r .btn-primary.btn--sm:hover) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .pjob-foot .pjob-foot-r .btn-primary.btn--sm:active) { transform: none; box-shadow: 2px 2px 0 var(--ink); }
 .bp :global(.content .btn.btn--sm) { height: auto; padding: 4px 8px; font-size: 10.5px; border-width: 1.5px; gap: 5px; }
+/* ~22px tall — the 3px .btn hover offset reads oversized at this height */
+.bp :global(.content .btn.btn--sm:hover) { box-shadow: 2px 2px 0 var(--ink); }
 .bp :global(.content .btn.btn--sm .ic) { width: 18px; height: 18px; }
 
 .bp :global(.content .pempty) {
@@ -880,10 +883,10 @@
   width: 32px; height: 32px;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, opacity 0.12s;
 }
-.bp :global(.content .pager-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .pager-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .pager-btn:active) { transform: none; box-shadow: none; }
 .bp :global(.content .pager-btn[disabled]) { opacity: 0.3; pointer-events: none; }
 .bp :global(.content .pager-btn .ic) { width: 14px; height: 14px; }
@@ -942,7 +945,7 @@
 .bp :global(.content .pmenu) {
   position: fixed; z-index: 60;
   width: 254px;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 4px 4px 0 var(--ink);
@@ -954,7 +957,7 @@
 .bp :global(.content .pmenu-title) { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink); }
 .bp :global(.content .pmenu-sub) { font-size: 11.5px; font-weight: 500; color: var(--muted-light); margin-top: 2px; }
 .bp :global(.content .pmenu-item) { display: flex; align-items: center; gap: 11px; width: 100%; padding: 8px 10px; border-radius: var(--radius); text-align: left; transition: background 0.12s; }
-.bp :global(.content .pmenu-item:hover) { background: var(--paper-deep); }
+.bp :global(.content .pmenu-item:hover) { background: var(--accent-soft); }
 .bp :global(.content .pmenu-item .ic) { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; }
 .bp :global(.content .pmenu-item-t) { font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1.15; }
 .bp :global(.content .pmenu-item-s) { font-size: 11.5px; font-weight: 500; color: var(--muted); margin-top: 2px; }
@@ -964,7 +967,7 @@
 .bp :global(.content .pmenu-div) { height: 1.5px; background: var(--hair-soft); margin: 5px 4px; }
 
 .bp :global(.content .psheets) { display: flex; flex-direction: column; gap: 22px; }
-.bp :global(.content .psheet) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 4px 4px 0 var(--shadow); }
+.bp :global(.content .psheet) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 4px 4px 0 var(--shadow); }
 .bp :global(.content .psheet-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px 18px; border-bottom: 2px solid var(--hair-soft); }
 .bp :global(.content .psheet-banklbl) { display: block; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-light); margin-bottom: 5px; text-align: right; }
 .bp :global(.content .pt-money.big) { font-size: 23px; font-weight: 900; }
@@ -994,7 +997,7 @@
   width: 236px; padding: 8px 11px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-family: var(--font); font-size: 12.5px; color: var(--ink);
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -1012,13 +1015,15 @@
 .bp :global(.content .psheet-send .btn.btn--sm:hover) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .psheet-send .btn.btn--sm:active) { transform: none; box-shadow: 2px 2px 0 var(--ink); }
 .bp :global(.content .psheet-foot > .btn-ghost.btn--sm) { height: 36px; padding: 0 14px; }
+/* 36px tall — must not inherit the bare .btn--sm 2px hover override; 31-44px band = 3px. */
+.bp :global(.content .psheet-foot > .btn-ghost.btn--sm:hover) { box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .psheet-send .kpi-lbl) { max-width: 96px; line-height: 1.6; align-self: center; margin-bottom: 0; }
 
 .bp :global(.content .pmast) {
   margin: 2px 0 26px;
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   box-shadow: 3px 3px 0 var(--shadow);
   padding: 20px 24px 22px;
 }
@@ -1101,7 +1106,7 @@
   /* ---------- PALETTE: compensating for warm phone screens ---------- */
   .bp :global(.content) {
     --paper: #f6f5f1;
-    --paper-deep: #eeece7;
+    --paper-deep: #ffffff;
     --grid-light: rgba(0, 0, 0, 0.026);
   }
 
@@ -1312,7 +1317,7 @@
   display: flex; align-items: center; gap: 9px;
   height: 38px; padding: 0 12px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   transition: border-color 0.12s;
 }
 .bp :global(.content .lsearch:focus-within) { border-color: var(--ink); }
@@ -1351,7 +1356,7 @@
      and any overflow here would trap it inside the panel. With status collapsed
      into a dropdown the panel is short enough not to need it. */
   border: var(--border); border-radius: var(--radius);
-  background: var(--paper); box-shadow: 3px 3px 0 var(--ink);
+  background: #fff; box-shadow: 3px 3px 0 var(--ink);
   padding: 13px 14px 14px;
   /* Opens exactly like .dd-menu: visibility rather than display, so the 180ms
      fade-and-drop can actually run. Absolutely positioned, so the hidden box
@@ -1371,7 +1376,7 @@
   display: inline-flex; align-items: center;
   padding: 4px 9px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 11px; font-weight: 700; color: var(--muted);
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
@@ -1416,7 +1421,7 @@
    screen and squeezed every one-line row in the card onto two. Three fixed
    tracks give each card the width its own content actually needs. */
 .bp :global(.content .inbox-grid) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.bp :global(.content .icard) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+.bp :global(.content .icard) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
 /* The strip is one line, always: the icon and the countdown hold their size and
    the label takes the slack, truncating rather than pushing the timer onto a
    second row. */
@@ -1527,7 +1532,7 @@
   display: inline-flex; align-items: center; gap: 8px;
   height: 38px; padding: 0 14px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 12.5px; font-weight: 700; color: var(--muted);
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
@@ -1554,7 +1559,7 @@
 .bp :global(.content .fld-in), .bp :global(.content .fld-area) {
   width: 100%; padding: 9px 11px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink);
+  background: #fff; font-family: var(--font); font-size: 13px; color: var(--ink);
   transition: border-color 0.12s;
 }
 .bp :global(.content .fld-area) { min-height: 120px; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
@@ -1574,7 +1579,7 @@
 /* Column, not block: the card takes its height from the grid row, and the body
    below the fixed head absorbs whatever is left so the empty note fills the
    card instead of floating at the top of it. */
-.bp :global(.content .staged) { display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+.bp :global(.content .staged) { display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
 .bp :global(.content .staged-head) { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border-bottom: 1.5px solid var(--ink); background: var(--paper-deep); }
 .bp :global(.content .staged-title) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .staged-title b) { font-size: 13px; color: var(--ink); }
@@ -1609,7 +1614,7 @@
 .bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
 .bp :global(.content .mdl.open) { display: flex; }
 .bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
-.bp :global(.content .mdl-box) { position: relative; width: min(380px, 100%); border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); }
+.bp :global(.content .mdl-box) { position: relative; width: min(380px, 100%); border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 5px 5px 0 var(--ink); }
 .bp :global(.content .mdl-head) { padding: 15px 17px 0; font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
 .bp :global(.content .mdl-txt) { padding: 7px 17px 15px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); }

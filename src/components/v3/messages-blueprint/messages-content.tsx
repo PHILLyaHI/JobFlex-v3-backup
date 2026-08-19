@@ -65,7 +65,7 @@ export function MessagesContent({
             <svg className="ic">
               <use href="#i-plus" />
             </svg>
-            New message
+            New chat
           </button>
         </div>
       </div>
@@ -96,6 +96,51 @@ export function MessagesContent({
               only reply in your own threads.", the plan-limit copy). This is
               where the thread's writes surface them instead of failing silent. */}
           <div className="mx-err is-hidden" id="sendErr" role="alert"></div>
+          {/* EDIT MODE STRIP — not in the donor. Shown while one of the viewer's
+              own messages is loaded into the composer for editing
+              (messages-behavior.ts enterEdit/exitEdit); names the mode and
+              offers the keyboard-free way out. Styled INLINE off the donor's
+              tokens on purpose: it must render correctly even when a hot
+              reload delivers markup ahead of stylesheets (the failure mode
+              the owner hit twice). JS toggles style.display directly. */}
+          <div
+            id="editBar"
+            style={{
+              display: "none",
+              flex: "0 0 auto",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 9,
+              padding: "6px 13px",
+              borderTop: "1.5px dashed var(--hair)",
+              background: "var(--paper-deep)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 9.5,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "var(--blueprint)",
+            }}
+          >
+            <span>Editing message</span>
+            {/* padding lives in .msg-editcancel (messages.module.css), not
+                inline: the ≤860px rule must be able to grow the tap box. */}
+            <button
+              type="button"
+              id="editCancel"
+              className="msg-editcancel"
+              style={{
+                border: 0,
+                background: "none",
+                font: "inherit",
+                letterSpacing: "inherit",
+                textTransform: "inherit",
+                color: "var(--muted)",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
           <div className="th-composer" id="thComposer">
             <textarea
               id="msgBox"
@@ -110,13 +155,18 @@ export function MessagesContent({
           </div>
         </div>
       </div>
-      <div className="pmenu" id="pMenu"></div>
+      <div className="pmenu pmenu--row" id="pMenu"></div>
 
       {/* NEW CONVERSATION DIALOG — the donor mounts this beside `.main`; see the
-          file header for why it lands here instead. Markup is verbatim. */}
+          file header for why it lands here instead. Markup is verbatim except
+          two owner requests (2026-08-13): no offset shadow on the box (inline,
+          not only in the stylesheet — this page's CSS module has repeatedly
+          gone stale in the owner's tab while JS chunks refresh fine), and the
+          footer buttons at the page-action height (no `btn--sm`; the base
+          `.btn` 40px — the same box as the page head's "New message"). */}
       <div className="mdl" id="convMdl">
         <div className="mdl-bg" data-mdl="close"></div>
-        <div className="mdl-box">
+        <div className="mdl-box" style={{ boxShadow: "none" }}>
           <div className="mdl-head">
             <div className="mdl-title" id="mdlTitle">New conversation</div>
             <div className="mdl-sub" id="mdlSub">Pick someone on the crew.</div>
@@ -141,13 +191,10 @@ export function MessagesContent({
             <div className="mx-err mx-err--mdl is-hidden" id="convErr" role="alert"></div>
           </div>
           <div className="mdl-foot">
-            <button className="btn btn-ghost btn--sm" type="button" data-mdl="close">
+            <button className="btn btn-ghost" type="button" data-mdl="close">
               Cancel
             </button>
-            <button className="btn btn-primary btn--sm" type="button" id="startBtn" disabled>
-              <svg className="ic">
-                <use href="#i-check" />
-              </svg>
+            <button className="btn btn-primary" type="button" id="startBtn" disabled>
               Start
             </button>
           </div>

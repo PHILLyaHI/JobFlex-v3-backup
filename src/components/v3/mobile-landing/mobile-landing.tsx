@@ -15,10 +15,10 @@
  * retitled or "improved". What changes is composition, and only where a
  * desktop arrangement cannot survive a 320px column:
  *
- *   1. NAV. The desktop bar is brand | links | Sign in | Start free. At 320px
- *      that is five columns in 320px. Here it is brand | Start free | burger,
+ *   1. NAV. The desktop bar is brand | links | Sign in | Get started. At 320px
+ *      that is five columns in 320px. Here it is brand | Get started | burger,
  *      with the three links and Sign in in a drawer that drops out of the
- *      sticky bar. "Start free" stays ON the bar rather than going into the
+ *      sticky bar. "Get started" stays ON the bar rather than going into the
  *      drawer: it is the page's job, and a primary CTA that costs a tap to
  *      find is a primary CTA nobody presses. The width budget is computed in
  *      mobile-landing.css, not estimated.
@@ -120,9 +120,9 @@ export function MobileLanding() {
           </span>
         </a>
 
-        {/* nav "Start free" -> /auth/register */}
+        {/* nav "Get started" -> /auth/register */}
         <Link className="ml-nav-cta" href="/auth/register" onClick={closeMenu}>
-          Start free
+          Get started
           <svg className="ml-ic" aria-hidden="true"><use href="#jfml-i-arrow-r" /></svg>
         </Link>
 

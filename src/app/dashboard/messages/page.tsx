@@ -119,6 +119,15 @@ export default async function MessagesPage({
         ts: m.createdAt.getTime(),
         body: m.body,
       }));
+      // Read receipt for the viewer's OWN messages: the moment by which every
+      // other participant had read the thread (their min lastReadAt), or null
+      // while someone hasn't opened it. Same formula as getReadReceipts in
+      // src/actions/messages.ts, which the client polls — keep in sync.
+      const others = c.participants.filter((p) => p.userId !== userId);
+      const readAt =
+        others.length > 0 && others.every((p) => p.lastReadAt)
+          ? Math.min(...others.map((p) => (p.lastReadAt as Date).getTime()))
+          : null;
       return {
         id: c.id,
         // Prisma also stores "JOB" for crew threads auto-created from a job;
@@ -128,6 +137,7 @@ export default async function MessagesPage({
         job: c.job?.title ?? null,
         unread: unread.get(c.id) ?? 0,
         ts: msgs.length ? msgs[msgs.length - 1].ts : c.createdAt.getTime(),
+        readAt,
         msgs,
       };
     })

@@ -20,8 +20,8 @@ interface AnnouncementBannerProps {
 }
 
 function accentFor(priority: number) {
-  if (priority >= 2) return "#D97706"; // amber for high
-  if (priority === 1) return "#E11D48"; // rose for warn
+  if (priority >= 2) return "#E11D48"; // rose for high
+  if (priority === 1) return "#D97706"; // amber for warn
   return "var(--accent)";
 }
 

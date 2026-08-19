@@ -2,9 +2,9 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { labelForTier } from "@/lib/planCatalog";
 
-export function PlanBadge({ plan = "FREE" }: { plan?: string | null }) {
-  const p = plan ?? "FREE";
-  const paid = p !== "FREE";
+export function PlanBadge({ plan = null }: { plan?: string | null }) {
+  // No subscription → a quiet dash, not a plan name (the Free tier is gone).
+  const paid = plan !== null;
   return (
     <Link
       href={"/dashboard/settings/billing" as any}
@@ -17,7 +17,7 @@ export function PlanBadge({ plan = "FREE" }: { plan?: string | null }) {
         )}
       />
       <span className="text-[10px] tracking-[0.14em] uppercase font-medium text-[color:var(--ink-soft)]">
-        {labelForTier(p)}
+        {labelForTier(plan)}
       </span>
     </Link>
   );

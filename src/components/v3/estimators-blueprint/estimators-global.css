@@ -82,7 +82,7 @@
 
   --border: 2px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10, 10, 10, 0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
@@ -134,8 +134,8 @@
                                           ::-webkit-scrollbar sizing */
   font-family: var(--font);
   color: var(--ink);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
   line-height: normal;
   text-rendering: auto;
@@ -207,7 +207,7 @@
   width: min(860px, 100%);
   max-height: calc(100vh - 56px);
   overflow-y: auto;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   opacity: 0;
@@ -253,7 +253,7 @@
   place-items: center;
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   cursor: pointer;
   transition: background .13s var(--ease);
 }
@@ -277,7 +277,7 @@
   overflow: hidden;
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-family: var(--font);
   color: var(--ink);
   transition: transform .14s var(--ease-out), box-shadow .14s var(--ease-out);
@@ -669,4 +669,4 @@
   .estp *::before,
   .estp *::after { transition: none !important; animation: none !important; }
 }
-.estp :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.estp :focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }

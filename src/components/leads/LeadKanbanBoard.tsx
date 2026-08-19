@@ -363,7 +363,7 @@ function KanbanCard({
       onDragEnd={onDragEnd}
       className={cn(
         "paper-card !shadow-none p-3 cursor-grab active:cursor-grabbing transition-shadow",
-        "hover:shadow-[0_4px_12px_-6px_rgba(17,17,19,0.16)]",
+        "hover:shadow-[2px_2px_0_var(--ink)]",
       )}
     >
       <div className="flex items-start justify-between gap-2">

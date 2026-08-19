@@ -8,8 +8,9 @@
 //         quiet hours to, daily digest) are the custom `Sel` dropdown.
 //   F12 — every `.tg` is the `Toggle` primitive, which renders no child svg.
 //   F16 — each matrix event row leads with a `.nev-ic` icon box.
-//   F17 — the per-column `.colt` "All" badge is a real toggle (`.colw`) that
-//         drives its whole column and reflects whether the column is full.
+//   F17 — the per-column `.colt` "All" badge is a real control (`.colw`) that
+//         drives its whole column and reflects whether the column is full;
+//         it is the same square `Cbx` as the cells beneath it.
 //   F13 — deliberately NOT applied here: neither `.sc-b` on this pane has a
 //         bare `.prow`/`.trow`/`.dlv` list as its direct children (the matrix
 //         card holds `.nwrap` + `.nfoot`, Delivery holds `.fgrid` + wrappers
@@ -121,9 +122,10 @@ export function NotificationsPane() {
                   {NOTIFICATION_CHANNELS.map((channel, ci) => (
                     <th key={channel}>
                       <span className="nhead">{channel}</span>
-                      {/* F17 — the "All" badge is a real toggle now. */}
+                      {/* F17 — the "All" badge is a real control now: the same
+                          square checkbox as the column's cells. */}
                       <span className="colw">
-                        <Toggle
+                        <Cbx
                           checked={columnAllOn(ci)}
                           onChange={(next) => setColumn(ci, next)}
                           ariaLabel={`${NOTIFICATION_COLUMN_LABEL} ${channel}`}

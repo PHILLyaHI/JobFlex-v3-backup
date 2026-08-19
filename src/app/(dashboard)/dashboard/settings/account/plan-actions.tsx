@@ -14,7 +14,6 @@ export interface PlanOption {
   priceCents: number;
   yearlyPriceCents: number | null;
   trialDays: number;
-  isFree: boolean;
 }
 
 export function PlanActions({
@@ -38,7 +37,6 @@ export function PlanActions({
   async function apply() {
     if (!selected) return;
     await start(selected, yearlyAvailable ? interval : "MONTH");
-    if (selected.isFree) setOpen(false); // paid path redirects to Stripe; free just refreshes
   }
 
   return (
@@ -62,7 +60,7 @@ export function PlanActions({
               Cancel
             </Button>
             <Button loading={busy} onClick={apply} disabled={!selected}>
-              {selected ? planCtaLabel(selected.isFree, selected.trialDays) : "Continue"}
+              {selected ? planCtaLabel(selected.trialDays) : "Continue"}
             </Button>
           </>
         }
@@ -71,12 +69,11 @@ export function PlanActions({
           <Select label="Target plan" value={target} onChange={(e) => setTarget(e.target.value)}>
             {plans.map((p) => (
               <option key={p.slug} value={p.slug}>
-                {p.name} — {formatPlanPrice(p.priceCents)}
-                {p.isFree ? "" : "/mo"}
+                {p.name} — {formatPlanPrice(p.priceCents)}/mo
               </option>
             ))}
           </Select>
-          {selected && !selected.isFree && yearlyAvailable && (
+          {selected && yearlyAvailable && (
             <Select
               label="Billing period"
               value={interval}
@@ -88,7 +85,7 @@ export function PlanActions({
               </option>
             </Select>
           )}
-          {selected && !selected.isFree && selected.trialDays > 0 && (
+          {selected && selected.trialDays > 0 && (
             <p className="text-[12px] text-[color:var(--ink-muted)]">
               Starts with a {selected.trialDays}-day free trial — you won&apos;t be charged until it ends.
             </p>

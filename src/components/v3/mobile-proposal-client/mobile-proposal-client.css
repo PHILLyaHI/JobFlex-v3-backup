@@ -192,8 +192,8 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
 .jf-mobile-proposal-client {
   font-family: var(--font);
   color: var(--ink);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
 
   line-height: normal;
   font-feature-settings: normal;

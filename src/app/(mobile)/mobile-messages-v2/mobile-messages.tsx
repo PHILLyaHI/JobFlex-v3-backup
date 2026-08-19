@@ -732,7 +732,7 @@ export function MobileMessages() {
             <h1 className={styles.pageTitle}>Messages</h1>
             <div className={styles.pageActions}>
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={openNew}>
-                <Icon id="i-plus" />New message
+                <Icon id="i-plus" />New chat
               </button>
             </div>
           </div>
@@ -803,7 +803,7 @@ export function MobileMessages() {
                     Nothing in the rail yet. Start a thread with someone on the crew.
                   </div>
                   <button className={styles.cemptyA} type="button" onClick={openNew}>
-                    <Icon id="i-plus" />New message
+                    <Icon id="i-plus" />New chat
                   </button>
                 </>
               ) : (

@@ -25,7 +25,7 @@
  *   nav "About"                 #edge     -> /about
  *   nav "For homeowners"        #features -> /homeowner
  *   nav "Sign in"               #top      -> /auth/login
- *   nav "Start free"            #top      -> /auth/register
+ *   nav "Get started"           #top      -> /auth/register
  *   hero "Start free trial"     #top      -> /auth/register
  *   hero "Or request an estimate" #top    -> /homeowner
  *   footer "Start free trial"   #top      -> /auth/register
@@ -83,7 +83,7 @@ export function LandingContent() {
           <Link href="/homeowner">For homeowners</Link>
         </div>
         <Link className="nav-sign" href="/auth/login">Sign in</Link>
-        <Link className="nav-cta" href="/auth/register">Start free<svg className="ic"><use href="#i-arrow-r" /></svg></Link>
+        <Link className="nav-cta" href="/auth/register">Get started<svg className="ic"><use href="#i-arrow-r" /></svg></Link>
         <button className="burger" type="button" aria-label="Menu" onClick={() => setMenuOpen((v) => !v)}><svg className="ic"><use href="#i-menu" /></svg></button>
         <div className="sprog" aria-hidden="true" />
       </nav>

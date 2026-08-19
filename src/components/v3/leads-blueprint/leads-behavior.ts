@@ -1597,13 +1597,16 @@ export function initLeadsContent(
     // Press effects. The donor also listed `.icon-btn`, `.sb-foot-ic` and
     // `.sb-foot-acc`; those are shell chrome and press from the shell module.
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        on(el, "click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        on(el, "animationend", () => el.classList.remove(cls));
+      on(root, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     pressify(

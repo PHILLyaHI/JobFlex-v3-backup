@@ -97,7 +97,7 @@ export function UsersClient({
     {
       key: "plan",
       header: "Plan",
-      render: (u) => <Badge tone={u.plan === "FREE" ? "neutral" : "accent"}>{u.plan.toLowerCase()}</Badge>,
+      render: (u) => <Badge tone={u.plan === "NONE" ? "neutral" : "accent"}>{u.plan.toLowerCase()}</Badge>,
     },
     {
       key: "status",

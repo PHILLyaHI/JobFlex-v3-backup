@@ -3,8 +3,9 @@
 // REPLACED IN PLACE, not forked. The blueprint mockup
 // `jobflex-auth-reset-blueprint.html` is now what this route renders; the old
 // Tailwind card layout is gone. There is no `/auth/reset-blueprint` twin — the
-// earlier side-by-side convention (see `/dashboard/subscription-blueprint`) is
-// reversed for this port: ported pages replace the surface they redesign.
+// earlier side-by-side convention (the since-deleted staging route
+// `/dashboard/subscription-blueprint` recorded it; git history has the header)
+// is reversed for this port: ported pages replace the surface they redesign.
 //
 // The page body is a client component (query-string token, show/hide password,
 // the form's two states); this file stays a server component so the donor's

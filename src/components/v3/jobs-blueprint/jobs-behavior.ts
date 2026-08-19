@@ -1678,15 +1678,19 @@ export function initJobsContent(
       requestAnimationFrame(frame);
     });
 
-    // Press effects
+    // Press effects — delegated to `root` so nodes injected after init
+    // (menu items, JS-rendered buttons, innerHTML re-renders) still press.
     function pressify(s: string, cls: string) {
-      $$(s).forEach((el) => {
-        el.addEventListener("click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        el.addEventListener("animationend", () => el.classList.remove(cls));
+      on(root, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(s);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(s)) el.classList.remove(cls);
       });
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.

@@ -23,8 +23,46 @@ import { listSubscriptionInvoices } from "@/actions/billing";
 import { getPlanCatalog, getOrgPlanContext } from "@/lib/planCatalogServer";
 import { getOrgLimitUsage } from "@/lib/limitsEngine";
 import { LIMIT_DEFS } from "@/lib/planLimits";
-import { titleCaseSlug } from "@/lib/planCatalog";
-import type { SubscriptionViewProps, UsageRow } from "./subscription-view";
+import { titleCaseSlug, type PlanDTO } from "@/lib/planCatalog";
+import type { SubscriptionInvoice } from "@/actions/billing";
+
+// The result shape. These interfaces lived in ./subscription-view.tsx until
+// 2026-08-13, when that desktop view was superseded by the blueprint page at
+// src/app/dashboard/subscription (which renders SubscriptionContent and owns
+// the /dashboard/subscription URL at every width). The loader survived the
+// move because the /mobile-subscription-v2 preview page feeds from it, so the
+// types it promises now live with it.
+export interface UsageRow {
+  resource: string;
+  label: string;
+  used: number;
+  limit: number;
+}
+
+export interface SubscriptionViewProps {
+  /** Display name of the current plan (catalog name, or title-cased orphan slug). */
+  planName: string;
+  /** Monthly price of the current plan; null when the slug left the catalog. */
+  priceCents: number | null;
+  /** Lowercase slug used to mark "current" in the spectrum + matrix. */
+  currentSlug: string;
+  /** Active catalog plans, display-ordered. */
+  plans: PlanDTO[];
+  status: string;
+  nextBill: string | null;
+  trialEndsAt: string | null;
+  /** The limits engine's enforced caps for this org (unlimited keys omitted). */
+  usage: UsageRow[];
+  invoices: { available: boolean; invoices: SubscriptionInvoice[] };
+  referral: {
+    code: string;
+    shareUrl: string;
+    rewardSummary: string;
+    uses: number;
+    converted: number;
+    pending: number;
+  };
+}
 
 export async function loadSubscriptionData(
   organizationId: string,
@@ -46,7 +84,9 @@ export async function loadSubscriptionData(
     db.referralConversion.count({ where: { codeId: code.id, status: "PENDING" } }),
   ]);
 
-  const status = sub?.status ?? "FREE";
+  // No subscription row → the stamp reads "inactive" (the Free tier is gone,
+  // so absence of a subscription is no longer presented as a free plan).
+  const status = sub?.status ?? "INACTIVE";
   const { plan: planDto, rawPlan } = planContext;
 
   // Only finite caps render as usage bars; unlimited keys are omitted.
@@ -67,7 +107,6 @@ export async function loadSubscriptionData(
   return {
     planName: planDto?.name ?? titleCaseSlug(rawPlan),
     priceCents: planDto ? planDto.priceCents : null,
-    isFree: planDto?.isFree ?? false,
     currentSlug: planDto?.slug ?? rawPlan.toLowerCase(),
     plans,
     status,

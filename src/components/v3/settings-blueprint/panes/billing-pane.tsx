@@ -52,9 +52,9 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-function Badge2({ badge, inline = false }: { badge: Badge; inline?: boolean }) {
+function Badge2({ badge }: { badge: Badge }) {
   return (
-    <span className={`badge2 ${badge.tone}${inline ? " inl" : ""}`}>
+    <span className={`badge2 ${badge.tone}`}>
       <i />
       {badge.label}
     </span>
@@ -96,10 +96,12 @@ function Btn({
   );
 }
 
-/* Donor payment-method row variants, read out of the fixture rather than
+/* Donor payment-method row actions, read out of the fixture rather than
    re-typed: the row that ships with the `Default` badge carries the `Edit`
-   action, the other carries the `Make default` action. Clicking `Make default`
-   moves both. */
+   action, the other carries the `Make default` action. Every row now renders
+   `Edit` (owner request), so the Edit buttons stack in one column; a
+   non-default row adds `Make default` to the left of its Edit. Clicking
+   `Make default` moves the badge and that extra button to the other row. */
 const DEFAULT_METHOD = PAYMENT_METHODS.find((m) => m.badge !== undefined);
 const OTHER_METHOD = PAYMENT_METHODS.find((m) => m.badge === undefined);
 const DEFAULT_BADGE = DEFAULT_METHOD?.badge;
@@ -132,7 +134,6 @@ export function BillingPane() {
             }}
           >
             <div>
-              <div className="pane-k">{PLAN_SUMMARY.kicker}</div>
               <div className="plan-big">{PLAN_SUMMARY.name}</div>
               <div className="plan-meta">
                 {PLAN_SUMMARY.nextBill}
@@ -154,31 +155,29 @@ export function BillingPane() {
         <div className="sc-b sc-b--rows">
           {methods.map((m) => {
             const isDefault = m.name === defaultMethod;
-            const action = isDefault ? DEFAULT_ACTION : MAKE_DEFAULT_ACTION;
             return (
               <div className="prow" key={m.name}>
                 <span className="prow-ic">
                   <Icon name={m.icon} />
                 </span>
                 <span className="prow-b">
-                  <span className="prow-n">
-                    {m.name}
-                    {isDefault && DEFAULT_BADGE ? (
-                      <Badge2 badge={DEFAULT_BADGE} inline />
-                    ) : null}
-                  </span>
+                  <span className="prow-n">{m.name}</span>
                   <span className="prow-d">{m.desc}</span>
                 </span>
+                {isDefault && DEFAULT_BADGE ? (
+                  <Badge2 badge={DEFAULT_BADGE} />
+                ) : null}
                 <span className="prow-act">
-                  {action ? (
+                  {!isDefault && MAKE_DEFAULT_ACTION ? (
                     <Btn
-                      action={action}
+                      action={MAKE_DEFAULT_ACTION}
                       variant="btn-ghost"
                       small
-                      onClick={
-                        isDefault ? undefined : () => setDefaultMethod(m.name)
-                      }
+                      onClick={() => setDefaultMethod(m.name)}
                     />
+                  ) : null}
+                  {DEFAULT_ACTION ? (
+                    <Btn action={DEFAULT_ACTION} variant="btn-ghost" small />
                   ) : null}
                   <button
                     className="icon-sm"

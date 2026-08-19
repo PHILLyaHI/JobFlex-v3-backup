@@ -56,6 +56,17 @@
 
 @keyframes mdlBoxOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px) scale(0.985); } }
 
+/* ── Actions-menu (.pmenu) enter ─────────────────────────────────────
+   The Motion System's dropdown pattern: fade + a 6px slide from the
+   anchor's side, 180ms. `pmenuIn` is the normal opens-below placement;
+   `pmenuInUp` is the flipped opens-above one (the page toggles `.up`).
+   First wired up by Messages (2026-08-12); any page's `.pmenu.open` rule
+   may reference them. Declared here because Lightning CSS rejects
+   @keyframes inside the modules pipeline. */
+@keyframes pmenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+@keyframes pmenuInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
 /* The Smart Proposal · Estimate refine card's "Editing the estimate…" pulse.
    Verbatim from `jobflex-smartproposal-estimate-blueprint (8).html`. Declared
    here for the same reason as the keyframes above: Lightning CSS rejects
@@ -163,7 +174,7 @@ body:has(.jf-blueprint) {
   overflow-y: auto;
   border: 2px solid var(--ink);
   border-radius: var(--r-sm);
-  background: var(--paper);
+  background: #fff; /* controls & their popovers sit white on white cards (owner, 2026-08-17) */
   box-shadow: 4px 4px 0 var(--ink);
   display: none;
 }
@@ -258,7 +269,7 @@ body:has(.jf-blueprint) {
   padding-right: 30px;
   border: 1.5px solid var(--ink-line);
   border-radius: var(--r-sm);
-  background: var(--paper);
+  background: #fff; /* form field — white like the cards it sits in (owner, 2026-08-17) */
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
@@ -268,7 +279,10 @@ body:has(.jf-blueprint) {
   transition: border-color 0.12s;
 }
 .jf-blueprint .bp-sel .bp-sel-in:hover { border-color: var(--ink); }
-.jf-blueprint .bp-sel .bp-sel-in:focus { outline: none; border-color: var(--ink); }
+/* Pointer focus keeps the quiet ink border; keyboard focus gets a real ring. */
+.jf-blueprint .bp-sel .bp-sel-in:focus { border-color: var(--ink); }
+.jf-blueprint .bp-sel .bp-sel-in:focus:not(:focus-visible) { outline: none; }
+.jf-blueprint .bp-sel .bp-sel-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* A drawn chevron: two strokes meeting at a point, matching the ink line weight
    used everywhere else rather than a background-image glyph. */
 .jf-blueprint .bp-sel::after {
@@ -322,7 +336,7 @@ body:has(.jf-blueprint) {
   max-height: calc(var(--app-h, 100vh) * 0.7);
   display: flex; flex-direction: column; overflow: hidden;
   border: 2px solid var(--ink); border-radius: var(--r-sm);
-  background: var(--paper);
+  background: #fff; /* palette is a field+list control — white (owner, 2026-08-17) */
   box-shadow: 5px 5px 0 var(--ink);
   animation: cmdkBoxIn 190ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }

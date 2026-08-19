@@ -32,7 +32,7 @@
    ============================================================ */
 .bp :global(.content) {
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -64,7 +64,7 @@
   --border: 2px solid var(--ink);
   --border-thin: 1.5px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10,10,10,0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
@@ -73,12 +73,10 @@
   --sidebar-w: 264px;
   --topbar-h: 62px;
 
-  /* Filter-row control height. The category chips and the "New post" button
-     share one line in `.td-bar`, so they share one height. Authored as a
-     token rather than repeated as a literal so the pair cannot drift apart
-     again — the button used to inherit `.btn--sm`'s `height: auto`, which
-     resolved a hair SHORTER than the chips (29px vs 30px) and two steps
-     lighter in type. */
+  /* Filter-chip control height. Chips only: the "New post" button on the
+     same line is deliberately NOT on this token — every blue page primary
+     is one size fleet-wide (owner call, 2026-08-12), so it takes the base
+     `.btn` 40px standard instead. */
   --td-ctl-h: 30px;
 
   /* ── Environment restore ─────────────────────────────────────────
@@ -134,7 +132,7 @@
 .bp :global(.content .btn:active) { transform: translate(0, 0); box-shadow: none; }
 .bp :global(.content .btn-primary) { background: var(--blueprint); color: #fff; }
 .bp :global(.content .btn-primary:hover) { background: var(--blueprint-dark); }
-.bp :global(.content .btn-ghost) { background: var(--paper); color: var(--ink); }
+.bp :global(.content .btn-ghost) { background: #fff; color: var(--ink); }
 .bp :global(.content .btn-ghost:hover) { background: var(--paper-deep); }
 
 /* ============================================================
@@ -244,7 +242,7 @@
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -274,7 +272,7 @@
    CARDS
    ============================================================ */
 .bp :global(.content .card) {
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   padding: 20px 24px 24px;
@@ -337,22 +335,22 @@
   padding: 9px 12px;
   border: var(--border-thin);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 11px; font-weight: 800;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink);
   cursor: pointer;
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .dd-btn:hover) { background: var(--paper-deep); }
-.bp :global(.content .dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .dd-btn:hover) { background: var(--accent-soft); }
+.bp :global(.content .dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .dd-btn .ic) { width: 13px; height: 13px; color: var(--muted); transition: transform 0.2s var(--ease); }
 .bp :global(.content .dd.open .dd-btn .ic) { transform: rotate(180deg); }
 .bp :global(.content .dd-menu) {
   position: absolute;
   top: calc(100% + 6px); right: 0;
   min-width: 100%;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--ink);
@@ -373,14 +371,14 @@
   white-space: nowrap;
   transition: background 0.12s, color 0.12s;
 }
-.bp :global(.content .dd-item:hover) { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.content .dd-item:hover) { background: var(--accent-soft); color: var(--ink); }
 .bp :global(.content .dd-item.active) { color: var(--blueprint); font-weight: 800; }
 
 /* Chart hover: callout, square dots, tooltip */
 .bp :global(.content .ch-overlay) { cursor: crosshair; }
 .bp :global(.content .ch-guide) { stroke: var(--blueprint); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.15s ease; }
 .bp :global(.content .ch-tipg) { opacity: 0; pointer-events: none; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.15s ease; }
-.bp :global(.content .ch-tip-box) { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+.bp :global(.content .ch-tip-box) { fill: #fff; stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
 .bp :global(.content .ch-tip-text) { font-family: var(--font-mono); font-size: 13px; font-weight: 700; fill: var(--ink); pointer-events: none; }
 .bp :global(.content .chart-wrap) { width: 100%; }
 .bp :global(.content .chart-wrap svg) { width: 100%; height: auto; display: block; }
@@ -393,7 +391,7 @@
 .bp :global(.content .ch-axis) { stroke: var(--ink); stroke-width: 1.5; }
 .bp :global(.content .ch-area) { fill: var(--chart-fill); }
 .bp :global(.content .ch-line) { stroke: var(--blueprint); stroke-width: 2.5; fill: none; }
-.bp :global(.content .ch-dot) { fill: var(--paper); stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
+.bp :global(.content .ch-dot) { fill: #fff; stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
 .bp :global(.content .ch-dot.on) { fill: var(--blueprint); }
 .bp :global(.content .ch-lbl) {
   font-family: var(--font-mono);
@@ -455,13 +453,13 @@
   padding: 10px 4px 9px;
   text-align: center;
   border-right: 1px solid var(--hair);
-  background: var(--paper);
+  background: #fff;
   transition: background 0.12s, box-shadow 0.12s;
   cursor: pointer;
   user-select: none;
 }
 .bp :global(.content .day:last-child) { border-right: none; }
-.bp :global(.content .day:hover) { background: var(--paper-deep); }
+.bp :global(.content .day:hover) { background: var(--accent-soft); }
 .bp :global(.content .day-lbl) {
   font-size: 9.5px; font-weight: 800;
   letter-spacing: 0.16em;
@@ -589,7 +587,7 @@
   color: var(--ink);
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .card-foot-btn .ic) { width: 13px; height: 13px; }
 .bp :global(.content .list .card-foot-btn) { display: none; margin-top: 10px; }
 .bp :global(.content .list.has-more .card-foot-btn) { display: flex; }
@@ -613,7 +611,7 @@
   grid-template-columns: repeat(5, 1fr);
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -716,7 +714,7 @@
 @media (prefers-reduced-motion: reduce) {
   .bp :global(.content *), .bp :global(.content *)::before, .bp :global(.content *)::after { transition: none !important; animation: none !important; }
 }
-.bp :global(.content :focus-visible) { outline: 2px solid var(--sky); outline-offset: 2px; }
+.bp :global(.content :focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* ============================================================
    PROPOSALS PAGE (the shared table / masthead / sheet system the
@@ -730,7 +728,7 @@
   padding: 9px 15px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 13px; font-weight: 700;
   color: var(--muted);
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, border-color 0.12s, color 0.12s;
@@ -752,6 +750,7 @@
   padding: 5px 11px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
+  background: #fff; /* chips sit on the cream page — plate them white (owner, 2026-08-17) */
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
@@ -822,7 +821,7 @@
 .bp :global(.content .pt-open .ic) { width: 14px; height: 14px; }
 
 .bp :global(.content .pstack) { display: flex; flex-direction: column; gap: 18px; }
-.bp :global(.content .pjob) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+.bp :global(.content .pjob) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
 .bp :global(.content .pjob-head) {
   display: flex; align-items: center; justify-content: space-between; gap: 18px;
   padding: 15px 18px;
@@ -884,10 +883,10 @@
   width: 32px; height: 32px;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, opacity 0.12s;
 }
-.bp :global(.content .pager-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .pager-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .pager-btn:active) { transform: none; box-shadow: none; }
 .bp :global(.content .pager-btn[disabled]) { opacity: 0.3; pointer-events: none; }
 .bp :global(.content .pager-btn .ic) { width: 14px; height: 14px; }
@@ -946,7 +945,7 @@
 .bp :global(.content .pmenu) {
   position: fixed; z-index: 60;
   width: 254px;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 4px 4px 0 var(--ink);
@@ -958,7 +957,7 @@
 .bp :global(.content .pmenu-title) { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink); }
 .bp :global(.content .pmenu-sub) { font-size: 11.5px; font-weight: 500; color: var(--muted-light); margin-top: 2px; }
 .bp :global(.content .pmenu-item) { display: flex; align-items: center; gap: 11px; width: 100%; padding: 8px 10px; border-radius: var(--radius); text-align: left; transition: background 0.12s; }
-.bp :global(.content .pmenu-item:hover) { background: var(--paper-deep); }
+.bp :global(.content .pmenu-item:hover) { background: var(--accent-soft); }
 .bp :global(.content .pmenu-item .ic) { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; }
 .bp :global(.content .pmenu-item-t) { font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1.15; }
 .bp :global(.content .pmenu-item-s) { font-size: 11.5px; font-weight: 500; color: var(--muted); margin-top: 2px; }
@@ -968,7 +967,7 @@
 .bp :global(.content .pmenu-div) { height: 1.5px; background: var(--hair-soft); margin: 5px 4px; }
 
 .bp :global(.content .psheets) { display: flex; flex-direction: column; gap: 22px; }
-.bp :global(.content .psheet) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 4px 4px 0 var(--shadow); }
+.bp :global(.content .psheet) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 4px 4px 0 var(--shadow); }
 .bp :global(.content .psheet-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px 18px; border-bottom: 2px solid var(--hair-soft); }
 .bp :global(.content .psheet-banklbl) { display: block; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-light); margin-bottom: 5px; text-align: right; }
 .bp :global(.content .pt-money.big) { font-size: 23px; font-weight: 900; }
@@ -998,7 +997,7 @@
   width: 236px; padding: 8px 11px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-family: var(--font); font-size: 12.5px; color: var(--ink);
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -1022,7 +1021,7 @@
   margin: 2px 0 26px;
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   box-shadow: 3px 3px 0 var(--shadow);
   padding: 20px 24px 22px;
 }
@@ -1109,7 +1108,7 @@
   /* ---------- PALETTE: compensating for warm phone screens ---------- */
   .bp :global(.content) {
     --paper: #f6f5f1;
-    --paper-deep: #eeece7;
+    --paper-deep: #ffffff;
     --grid-light: rgba(0, 0, 0, 0.026);
   }
 
@@ -1232,6 +1231,8 @@
     line-height: 1.15; font-size: 11px; letter-spacing: 0.06em;
   }
   .bp :global(.content .page-actions .btn .ic) { flex: 0 0 auto; align-self: center; }
+  /* min-height 50px at this width → ≥45px band = 4px hover. */
+  .bp :global(.content .page-actions .btn:hover) { box-shadow: 4px 4px 0 var(--ink); }
 
   /* 3. Period dropdown — on one line with the card title */
   .bp :global(.content .card-head) { flex-wrap: nowrap; align-items: center; gap: 8px; padding: 12px 12px 0; }
@@ -1250,9 +1251,10 @@
   .bp :global(.content .ptable) { table-layout: fixed; width: 100%; }
   .bp :global(.content .ptable th:nth-child(2)), .bp :global(.content .ptable td:nth-child(2)) { width: 84px; }
   .bp :global(.content .ptable th:nth-child(3)), .bp :global(.content .ptable td:nth-child(3)) { width: 78px; }
-  .bp :global(.content .ptable th:nth-child(7)), .bp :global(.content .ptable td:nth-child(7)) { width: 34px; padding-left: 0; padding-right: 8px; }
+  /* Column is the 44px touch-size trigger below plus its 8px right padding. */
+  .bp :global(.content .ptable th:nth-child(7)), .bp :global(.content .ptable td:nth-child(7)) { width: 52px; padding-left: 0; padding-right: 8px; }
   .bp :global(.content .pt-title), .bp :global(.content .pt-sub) { overflow-wrap: anywhere; }
-  .bp :global(.content .pt-open) { width: 26px; height: 26px; }
+  .bp :global(.content .pt-open) { width: 44px; height: 44px; }
 
   /* 5. Contract value and total — left-aligned; payments below */
   .bp :global(.content .pjob-head) { flex-direction: column; align-items: flex-start; gap: 10px; }
@@ -1328,7 +1330,7 @@
   display: inline-flex; align-items: center; gap: 7px;
   height: var(--td-ctl-h); padding: 0 11px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 12px; font-weight: 700; color: var(--muted);
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
@@ -1342,21 +1344,11 @@
 .bp :global(.content .cat-dot) { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; }
 .bp :global(.content .cat-n) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; opacity: 0.7; }
 
-/* "New post" sits on the same line as the category chips, so it is sized off
-   the same control-height token instead of the `.btn--sm` vocabulary it used
-   to carry. `.btn--sm` is `height: auto` + `padding: 4px 8px` + an 18px icon,
-   which resolved to 29px — one pixel SHORTER than the 30px chips beside it,
-   with 10.5px type against the chips' 12px and 8px side padding against their
-   11px. It read as the smallest control on a row it is meant to anchor.
-   Everything else (12px/800 caps, 2px ink border, hard offset shadow on hover)
-   is the base `.btn` treatment, which is the correct vocabulary for the page's
-   primary action. Placed after the `.btn--sm` block so it wins on source order
-   at equal specificity. */
-.bp :global(.content .td-bar .btn) {
-  height: var(--td-ctl-h);
-  padding: 0 13px;
-  gap: 7px;
-}
+/* "New post" keeps the base `.btn` size (40px / 0 16px / 12px caps): the blue
+   page primary is one size fleet-wide (owner call, 2026-08-12), so it does NOT
+   share the chips' `--td-ctl-h` line height. Only the icon is bumped to the
+   20px every page primary carries. */
+.bp :global(.content .td-bar .btn .ic) { width: 20px; height: 20px; }
 
 .bp :global(.content .posts) { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; align-items: start; }
 .bp :global(.content .post) {
@@ -1412,12 +1404,13 @@
 .bp :global(.content .btn.is-busy) { opacity: 0.7; }
 
 .bp :global(.content .td-empty) { padding: 46px 24px; text-align: center; display: flex; flex-direction: column; align-items: center;
-  border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); }
+  border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow); }
 .bp :global(.content .td-empty.is-hidden) { display: none; }
 .bp :global(.content .td-empty .ic) { width: 22px; height: 22px; color: var(--muted); }
 .bp :global(.content .td-empty b) { margin-top: 12px; font-size: 17px; font-weight: 900; }
 .bp :global(.content .td-empty span) { margin-top: 8px; max-width: 40ch; font-size: 13px; line-height: 1.55; color: var(--muted); }
-.bp :global(.content .td-empty .btn) { margin-top: 16px; }
+/* (.td-empty .btn is gone with the empty state's #emptyPostBtn — the bar's
+   #newPostBtn is the board's one entry point.) */
 
 /* The donor's influencer vocabulary (.stat-grid / .stat* tiles, .td-card /
    .td-head / .td-table, .inf-* identity cells, .pay--* payout statuses) is not
@@ -1436,7 +1429,7 @@
    and the rule stops matching the moment the dialog closes. */
 .bp :global(.content:has(.mdl.open)) { z-index: auto; }
 .bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
-.bp :global(.content .mdl-box) { position: relative; width: min(440px, 100%); max-height: 86vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); overflow: hidden; }
+.bp :global(.content .mdl-box) { position: relative; width: min(400px, 100%); max-height: 86vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 5px 5px 0 var(--ink); overflow: hidden; }
 .bp :global(.content .mdl-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .mdl-title) { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
 .bp :global(.content .mdl-sub) { margin-top: 5px; font-size: 12.5px; color: var(--muted); }
@@ -1453,40 +1446,71 @@
 .bp :global(.content .mdl-body) { padding: 15px 17px 16px; overflow-y: auto; flex: 1; }
 .bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); flex: 0 0 auto; }
 .bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
+/* Dialog-foot small buttons are ~22px tall → ≤30px band = 2px hover. Scoped
+   to the use-site's container so the 36px `.psheet-foot > .btn-ghost.btn--sm`
+   keeps the base `.btn:hover` 3px (31-44px band). */
+.bp :global(.content .mdl-foot .btn.btn--sm:hover) { box-shadow: 2px 2px 0 var(--ink); }
 .bp :global(.content .tf) { display: block; margin-bottom: 13px; }
 .bp :global(.content .tf-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
-.bp :global(.content .tf-in) { width: 100%; height: 38px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink); }
-.bp :global(.content .tf-area) { width: 100%; min-height: 96px; padding: 10px 11px; resize: vertical; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; line-height: 1.5; color: var(--ink); }
+.bp :global(.content .tf-in) { width: 100%; height: 38px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; color: var(--ink); }
+.bp :global(.content .tf-area) { width: 100%; min-height: 80px; padding: 10px 11px; resize: vertical; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; line-height: 1.5; color: var(--ink); }
 .bp :global(.content .tf-in:focus), .bp :global(.content .tf-area:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .tf-in)::placeholder, .bp :global(.content .tf-area)::placeholder { color: var(--muted-faint); }
-/* — Category picker: the SHARED select treatment on this form's metrics —
-   `.bp-sel` / `.bp-sel-in` (dashboard-blueprint/blueprint-global.css) own the
-   appearance reset and the drawn ink chevron; none of that is re-derived here.
-   (The shared rule also publishes a mono value type, but the donor reset above
-   — `.content select { font-family: inherit }`, 0-2-1 — out-specifies the
-   shared 0-2-0, so the value renders in the page sans. That is left alone
-   deliberately: restating the mono here would re-derive shared appearance AND
-   make this page the odd one out, since every already-converted page carries
-   the same reset.)
-   What is page-local is geometry — the 38px row and
-   the 11px text inset that make the picker sit at the same size as the
-   `.tf-in` title field above it. The right pad is the shared rule's own 30px
-   caret gutter, restated because it ships as a `padding-right` longhand that
-   this page's `.content * { padding: 0 }` donor reset ties with on
-   specificity. Border colour is re-pointed at this form's `--hair-soft`
-   hairline; the shared default `--ink-line` is far lighter and would read as
-   a different weight of control from the fields beside it — which is also why
-   the focus/hover edge is restated below (the resting colour here
-   out-specifies the shared states). */
-.bp :global(.content .tf .bp-sel-in) {
-  height: 38px;
-  padding: 0 30px 0 11px;
-  border-color: var(--hair-soft);
+/* — Category picker: the fleet `.dd` dropdown (dashboard chart-range) recut
+   as a FORM FIELD, replacing the native <select> whose option list is OS
+   chrome and can't take the blueprint treatment. Same vocabulary — caps mono
+   label, ink-shadowed menu plate, blueprint-blue active row — on the form's
+   geometry: the 38px row and hair-soft resting border of the `.tf-in` fields
+   beside it. The menu opens UPWARD: `.mdl-body` scrolls (`overflow-y: auto`),
+   so a downward menu on the form's last field would be clipped inside it,
+   while above the button sits the whole form's height. Rows lead with the
+   board chips' own `.cat-dot` tone swatches, set off from the label by a
+   short `.dd-div` vertical rule. */
+.bp :global(.content .tf .dd) { position: relative; display: block; }
+.bp :global(.content .tf .dd-btn) {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; height: 38px; padding: 0 11px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: #fff;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
 }
-.bp :global(.content .tf .bp-sel-in:hover),
-.bp :global(.content .tf .bp-sel-in:focus) { border-color: var(--ink); }
+.bp :global(.content .tf .dd-btn:hover),
+.bp :global(.content .tf .dd.open .dd-btn) { border-color: var(--ink); background: var(--accent-soft); }
+.bp :global(.content .tf .dd-btn .ic) { width: 13px; height: 13px; margin-left: auto; color: var(--muted); transition: transform 0.2s var(--ease); }
+.bp :global(.content .tf .dd.open .dd-btn .ic) { transform: rotate(180deg); }
+/* The short vertical rule between a row's tone swatch and its label — the
+   legend mark and the word read as two drawn columns. */
+.bp :global(.content .tf .dd-div) { width: 1.5px; height: 13px; flex: 0 0 auto; background: var(--hair-soft); }
+/* Plate, fade and item type come from the page's shared `.dd` rules above —
+   only the diffs are restated: full field width, the upward flip (top: auto
+   kills the shared downward offset, and the closed-state slide reverses to
+   match), and the swatch row layout. */
+.bp :global(.content .tf .dd-menu) {
+  top: auto; bottom: calc(100% + 6px);
+  left: 0; right: 0;
+  transform: translateY(6px);
+}
+.bp :global(.content .tf .dd.open .dd-menu) { transform: none; }
+.bp :global(.content .tf .dd-item) {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 11px;
+}
+/* Hairline rules between the rows — the plate reads as a drawn list, not a
+   floating cloud of labels. */
+.bp :global(.content .tf .dd-item + .dd-item) { border-top: 1.5px solid var(--hair-soft); }
 
 @media (max-width: 860px) {
   .bp :global(.content .posts) { grid-template-columns: 1fr; }
-  .bp :global(.content .td-bar .btn) { width: 100%; justify-content: center; }
+  /* Same box as every page's .page-actions .btn at this width (42px / 0 10px /
+     11px): the primary is one size fleet-wide on mobile too. */
+  .bp :global(.content .td-bar .btn) { width: 100%; justify-content: center; height: 42px; padding: 0 10px; font-size: 11px; }
+  /* Touch targets: category chips, the card-strip ⋯ trigger (needs the
+     .post-top selector to outweigh its 26px base rule), dialog-foot smalls. */
+  .bp :global(.content .cat) { min-height: 44px; }
+  .bp :global(.content .post-top .pt-open) { width: 44px; height: 44px; }
+  .bp :global(.content .mdl-foot .btn.btn--sm) { min-height: 44px; }
 }

@@ -35,8 +35,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "This plan is no longer available." }, { status: 410 });
   }
   if (plan.isFree) {
+    // $0 plans have nothing to charge — they cannot form a Stripe Checkout
+    // Session. Not reachable from the UI (no $0 plan is offered), kept as
+    // defense against a hand-crafted request.
     return NextResponse.json(
-      { error: "The free plan doesn't go through checkout — switch plans from your subscription page." },
+      { error: "This plan can't be purchased through checkout." },
       { status: 400 },
     );
   }

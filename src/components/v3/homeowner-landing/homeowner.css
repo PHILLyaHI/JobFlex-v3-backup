@@ -94,7 +94,7 @@ html:has(.jf-homeowner-landing) { scroll-behavior: smooth; }
     linear-gradient(var(--grid-light) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
   background-size: 38px 38px;
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
 }
 
 /* ══════════════════════════════════════════════════════════════════

@@ -65,7 +65,7 @@
     linear-gradient(var(--grid-light) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
   background-size: 38px 38px;
-  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  -webkit-font-smoothing: auto; overflow-x: hidden;
 }
 .bp :global(button), .bp :global(input), .bp :global(textarea) { font-family: inherit; color: inherit; }
 .bp :global(button) { border: none; background: none; cursor: pointer; touch-action: manipulation;

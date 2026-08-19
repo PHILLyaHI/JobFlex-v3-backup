@@ -13,7 +13,7 @@
 /* DESIGN TOKENS + RESET/BASE (donor :root + html/body/body) */
 .bp {
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -45,7 +45,7 @@
   --border: 2px solid var(--ink);
   --border-thin: 1.5px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10,10,10,0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
@@ -78,8 +78,8 @@
   font-family: var(--font);
   background: var(--paper);
   color: var(--ink);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
   overflow: hidden;
   transition: background 0.25s var(--ease), color 0.25s var(--ease);
@@ -301,7 +301,7 @@
   padding: 0;
   cursor: pointer;
 }
-.bp :global(.sb-foot-ic:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.sb-foot-ic:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.sb-foot-ic:active) { transform: none; box-shadow: none; }
 .bp :global(.sb-foot-ic .ic) { width: 15px; height: 15px; }
 /* Sign out is the one footer control that ends a session, so its hover carries
@@ -319,6 +319,9 @@
   overflow-y: auto;
   background: var(--paper);
   position: relative;
+  /* Stacking context so the grid pseudo below can sit at z -1: above this
+     element's own paper background, below ALL content. */
+  isolation: isolate;
 }
 .bp :global(.main)::before {
   content: '';
@@ -329,7 +332,11 @@
     linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
   background-size: 40px 40px;
   pointer-events: none;
-  z-index: 0;
+  /* Pinned below ALL content (sharpness pass, 2026-08-18). `.content` already
+     sat at z 1, so this changes nothing there; the -1 (with isolation on
+     .main) guarantees the same for anything mounted outside .content —
+     toasts, drag ghosts, injected nodes — so grid lines can never cross type. */
+  z-index: -1;
 }
 /* .main scrollbar styling lives in blueprint-global.css (.jf-blueprint scope). */
 
@@ -390,7 +397,7 @@
 .bp :global(.icon-btn:hover) {
   background: var(--paper-deep);
   transform: translate(-1px, -1px);
-  box-shadow: 2px 2px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
 }
 .bp :global(.icon-btn:active) { transform: translate(0, 0); box-shadow: none; }
 .bp :global(.icon-btn .ic) { width: 17px; height: 17px; }
@@ -420,7 +427,7 @@
 .bp :global(.btn:active) { transform: translate(0, 0); box-shadow: none; }
 .bp :global(.btn-primary) { background: var(--blueprint); color: #fff; }
 .bp :global(.btn-primary:hover) { background: var(--blueprint-dark); }
-.bp :global(.btn-ghost) { background: var(--paper); color: var(--ink); }
+.bp :global(.btn-ghost) { background: #fff; color: var(--ink); }
 .bp :global(.btn-ghost:hover) { background: var(--paper-deep); }
 
 /* CONTENT */
@@ -545,7 +552,7 @@
   grid-template-columns: repeat(4, 1fr);
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -573,7 +580,7 @@
 
 /* CARDS */
 .bp :global(.card) {
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   padding: 20px 24px 24px;
@@ -634,22 +641,22 @@
   padding: 9px 12px;
   border: var(--border-thin);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 11px; font-weight: 800;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink);
   cursor: pointer;
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.dd-btn:hover) { background: var(--paper-deep); }
-.bp :global(.dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.dd-btn:hover) { background: var(--accent-soft); }
+.bp :global(.dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.dd-btn .ic) { width: 13px; height: 13px; color: var(--muted); transition: transform 0.2s var(--ease); }
 .bp :global(.dd.open .dd-btn .ic) { transform: rotate(180deg); }
 .bp :global(.dd-menu) {
   position: absolute;
   top: calc(100% + 6px); right: 0;
   min-width: 100%;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--ink);
@@ -670,14 +677,14 @@
   white-space: nowrap;
   transition: background 0.12s, color 0.12s;
 }
-.bp :global(.dd-item:hover) { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.dd-item:hover) { background: var(--accent-soft); color: var(--ink); }
 .bp :global(.dd-item.active) { color: var(--blueprint); font-weight: 800; }
 
 /* Chart hover: guide, square dots, tooltip */
 .bp :global(.ch-overlay) { cursor: crosshair; }
 .bp :global(.ch-guide) { stroke: var(--blueprint); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.15s ease; }
 .bp :global(.ch-tipg) { opacity: 0; pointer-events: none; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.15s ease; }
-.bp :global(.ch-tip-box) { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+.bp :global(.ch-tip-box) { fill: #fff; stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
 .bp :global(.ch-tip-text) { font-family: var(--font-mono); font-size: 13px; font-weight: 700; fill: var(--ink); pointer-events: none; }
 .bp :global(.chart-wrap) { width: 100%; }
 .bp :global(.chart-wrap svg) { width: 100%; height: auto; display: block; }
@@ -690,7 +697,7 @@
 .bp :global(.ch-axis)  { stroke: var(--ink); stroke-width: 1.5; }
 .bp :global(.ch-area)  { fill: var(--chart-fill); }
 .bp :global(.ch-line)  { stroke: var(--blueprint); stroke-width: 2.5; fill: none; }
-.bp :global(.ch-dot)   { fill: var(--paper); stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
+.bp :global(.ch-dot)   { fill: #fff; stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
 .bp :global(.ch-dot.on) { fill: var(--blueprint); }
 .bp :global(.ch-lbl) {
   font-family: var(--font-mono);
@@ -748,13 +755,13 @@
   padding: 10px 4px 9px;
   text-align: center;
   border-right: 1px solid var(--hair);
-  background: var(--paper);
+  background: #fff;
   transition: background 0.12s, box-shadow 0.12s;
   cursor: pointer;
   user-select: none;
 }
 .bp :global(.day:last-child) { border-right: none; }
-.bp :global(.day:hover) { background: var(--paper-deep); }
+.bp :global(.day:hover) { background: var(--accent-soft); }
 .bp :global(.day-lbl) {
   font-size: 9.5px; font-weight: 800;
   letter-spacing: 0.16em;
@@ -877,7 +884,7 @@
   color: var(--ink);
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.card-foot-btn .ic) { width: 13px; height: 13px; }
 .bp :global(.list .card-foot-btn) { display: none; margin-top: 10px; }
 .bp :global(.list.has-more .card-foot-btn) { display: flex; }
@@ -921,7 +928,7 @@
   grid-template-columns: repeat(5, 1fr);
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -1040,7 +1047,6 @@
     width: var(--sidebar-w);
     z-index: 90;
     transition: left 0.28s var(--ease);
-    box-shadow: 6px 0 0 rgba(10, 10, 10, 0.08);
   }
   .bp :global(.sb.open) { left: 0; }
   .bp :global(.sb-overlay) {
@@ -1059,6 +1065,11 @@
   .bp :global(.page-head) { flex-wrap: wrap; gap: 14px; }
   .bp :global(.page-title) { font-size: 30px; }
   .bp :global(.btn) { height: 36px; padding: 0 12px; font-size: 11px; }
+  /* Page actions are 50px touch targets on handhelds — declared HERE so the
+     dashboard matches the per-page mobile-fix blocks that already do this;
+     ≥45px band = 4px hover. Also satisfies the ≥44px touch rule. */
+  .bp :global(.page-actions .btn) { min-height: 50px; }
+  .bp :global(.page-actions .btn:hover) { box-shadow: 4px 4px 0 var(--ink); }
   .bp :global(.kpi-grid) { grid-template-columns: repeat(2, 1fr); }
   .bp :global(.kpi) { padding: 12px 14px 13px; border-bottom: 1.5px solid var(--ink); }
   .bp :global(.kpi:nth-child(odd)) { border-right: 1.5px solid var(--ink); }
@@ -1077,7 +1088,7 @@
 @media (prefers-reduced-motion: reduce) {
   .bp :global(*), .bp :global(*)::before, .bp :global(*)::after { transition: none !important; animation: none !important; }
 }
-.bp :focus-visible, .bp :global(:focus-visible) { outline: 2px solid var(--sky); outline-offset: 2px; }
+.bp :focus-visible, .bp :global(:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* MOTION SYSTEM — BALANCED (package 02, standard) */
 .bp :global(.rv) { opacity: 0; transform: translateY(14px); transition: opacity 0.42s cubic-bezier(0.22, 0.61, 0.36, 1), transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }

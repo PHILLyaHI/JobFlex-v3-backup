@@ -70,7 +70,7 @@ html:has(.jf-auth-forgot), body:has(.jf-auth-forgot) { min-height: 100%; }
 /* donor: the `body` rule, moved onto the page root. */
 .jf-auth-forgot {
   font-family: var(--font); background: var(--paper); color: var(--ink);
-  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto;
 }
 
 /* ══════════════════════════════════════════════════════════════════

@@ -26,7 +26,7 @@
 import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initTradeContent } from "./trade-behavior";
-import type { TradePost } from "./trade-data";
+import { CATEGORIES, type TradePost } from "./trade-data";
 
 /**
  * @param entries the org's real board, read in the page's server component.
@@ -67,9 +67,9 @@ export function TradeContent({ entries, viewer }: { entries?: TradePost[]; viewe
       <section>
         <div className="td-bar">
           <div className="cats" id="cats"></div>
-          {/* No `btn--sm` here (the donor's modifier): it made the page's
-              primary action the SMALLEST control on the filter row. The bar's
-              own rule in trade.module.css sizes it to the chips' height. */}
+          {/* No `btn--sm` here (the donor's modifier): the page primary takes
+              the base `.btn` fleet standard (40px desktop / 42px mobile), NOT
+              the chips' 30px control height beside it. */}
           <button className="btn btn-primary" type="button" id="newPostBtn">
             <svg className="ic">
               <use href="#i-plus" />
@@ -78,18 +78,15 @@ export function TradeContent({ entries, viewer }: { entries?: TradePost[]; viewe
           </button>
         </div>
         <div className="posts" id="postList"></div>
+        {/* The donor put a second New post button here (#emptyPostBtn). Removed
+            2026-08-12 by owner request: one entry point, the bar's #newPostBtn —
+            the empty state only points at it. */}
         <div className="td-empty is-hidden" id="postEmpty">
           <svg className="ic">
             <use href="#i-msg" />
           </svg>
           <b>No posts here</b>
           <span>Nothing in this category yet — start the thread.</span>
-          <button className="btn btn-primary btn--sm" type="button" id="emptyPostBtn">
-            <svg className="ic">
-              <use href="#i-plus" />
-            </svg>
-            New post
-          </button>
         </div>
       </section>
 
@@ -127,26 +124,42 @@ export function TradeContent({ entries, viewer }: { entries?: TradePost[]; viewe
                 placeholder="Condition, price, location, who to call…"
               />
             </label>
-            <label className="tf">
+            <div className="tf">
               <span className="tf-lbl">Category</span>
-              {/* The shared blueprint select: the `.bp-sel` WRAPPER draws the
-                  chevron (a <select> can carry no pseudo-element) and
-                  `.bp-sel-in` owns the appearance reset — both published once
-                  in dashboard-blueprint/blueprint-global.css. `.tf-in` is
-                  deliberately NOT kept on the control: at
-                  `.bp .content .tf-in` (3 classes) it out-specifies
-                  `.jf-blueprint .bp-sel-in` (2) and would drag the native
-                  font and box straight back. Only this form's geometry is
-                  restated, in trade.module.css. */}
-              <span className="bp-sel">
-                <select className="bp-sel-in" id="postCat" defaultValue="question">
-                  <option value="equipment">Equipment</option>
-                  <option value="subcontractor">Subcontractor</option>
-                  <option value="job-share">Job share</option>
-                  <option value="question">Question</option>
-                </select>
-              </span>
-            </label>
+              {/* The fleet `.dd` dropdown (dashboard chart-range) recut as a
+                  form field, replacing the native <select>: its option list is
+                  OS chrome and can't take the blueprint treatment. Items carry
+                  `data-pcat`, NOT `data-cat` — the board's category chips own
+                  that attribute in the page-wide click delegate, and reusing it
+                  here would re-filter the board behind the open dialog. The
+                  active category lives in trade-behavior.ts (`postCat`). */}
+              <div className="dd" id="postCatDd">
+                <button className="dd-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <span className="cat-dot" data-dd-dot style={{ background: "var(--muted-faint)" }}></span>
+                  <span className="dd-div"></span>
+                  <span className="dd-label">Question</span>
+                  <svg className="ic">
+                    <use href="#i-chev" />
+                  </svg>
+                </button>
+                <div className="dd-menu" role="listbox">
+                  {CATEGORIES.filter((c) => c.key !== "all").map((c) => (
+                    <button
+                      key={c.key}
+                      className={"dd-item" + (c.key === "question" ? " active" : "")}
+                      type="button"
+                      role="option"
+                      aria-selected={c.key === "question"}
+                      data-pcat={c.key}
+                    >
+                      <span className="cat-dot" style={{ background: c.tone }}></span>
+                      <span className="dd-div"></span>
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
           {/* The action's own refusal text (createTradePost is manager-gated and
               org-scoped) lands here rather than in an alert(). Same plate the

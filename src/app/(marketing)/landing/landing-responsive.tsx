@@ -18,7 +18,7 @@
 // surface swaps live, with no reload and no second URL to remember.
 //
 // EXACTLY ONE TREE IS MOUNTED, NEVER BOTH. That matters more here than it looks.
-// Both builds ship a sticky <nav> with a brand lockup and a "Start free" CTA,
+// Both builds ship a sticky <nav> with a brand lockup and a "Get started" CTA,
 // both paint their own graph-paper grids, and both neutralize globals.css's
 // body grid and grain from inside their own stylesheet via `body:has(…)`.
 // Rendering them together would give the page two navs, two `:has()` gates

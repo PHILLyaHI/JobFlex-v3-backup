@@ -83,7 +83,7 @@
      root layout's <body> already carries `min-h-dvh`. ] */
   :global(.jf-auth-login) {
     font-family: var(--font); background: var(--paper); color: var(--ink);
-    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto;
 
     /* ── ENVIRONMENT RESTORE 1 of 2 (not in the source) ──────────────
        Tailwind preflight sets `html { line-height: 1.5 }`. The source

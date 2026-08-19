@@ -40,7 +40,7 @@ export default async function PricingPage() {
             <div className="font-display text-[24px] tracking-[-0.015em]">{p.name}</div>
             <div className="mt-4 flex items-baseline gap-1.5">
               <span className="stat-numeric text-[48px]">{formatPlanPrice(p.priceCents)}</span>
-              <span className="text-[12px] text-[color:var(--ink-muted)]">{priceCadence(p.isFree)}</span>
+              <span className="text-[12px] text-[color:var(--ink-muted)]">{priceCadence()}</span>
             </div>
             {p.trialDays > 0 && (
               <div className="mt-1 text-[12px] text-[color:var(--ink-muted)]">

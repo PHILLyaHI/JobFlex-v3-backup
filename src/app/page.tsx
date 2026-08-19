@@ -28,7 +28,7 @@ export default async function HomePage() {
             <Button variant="ghost" size="sm">Sign in</Button>
           </Link>
           <Link href={"/auth/register" as any}>
-            <Button size="sm">Start free</Button>
+            <Button size="sm">Get started</Button>
           </Link>
         </div>
       </nav>

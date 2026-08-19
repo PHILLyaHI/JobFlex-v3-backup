@@ -30,7 +30,7 @@
    ============================================================ */
 .bp :global(.content) {
   --paper: #f2f0eb;
-  --paper-deep: #ebe8e1;
+  --paper-deep: #ffffff;
   --ink: #0a0a0a;
   --ink-soft: #2a2a2a;
   --blueprint: #1854a0;
@@ -62,7 +62,7 @@
   --border: 2px solid var(--ink);
   --border-thin: 1.5px solid var(--ink);
   --radius: 2px;
-  --shadow: rgba(10,10,10,0.06);
+  --shadow: transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   --font: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, 'Courier New', monospace;
@@ -124,7 +124,7 @@
 .bp :global(.content .btn:active) { transform: translate(0, 0); box-shadow: none; }
 .bp :global(.content .btn-primary) { background: var(--blueprint); color: #fff; }
 .bp :global(.content .btn-primary:hover) { background: var(--blueprint-dark); }
-.bp :global(.content .btn-ghost) { background: var(--paper); color: var(--ink); }
+.bp :global(.content .btn-ghost) { background: #fff; color: var(--ink); }
 .bp :global(.content .btn-ghost:hover) { background: var(--paper-deep); }
 
 /* ============================================================
@@ -234,7 +234,7 @@
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -264,7 +264,7 @@
    CARDS
    ============================================================ */
 .bp :global(.content .card) {
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   padding: 20px 24px 24px;
@@ -327,22 +327,22 @@
   padding: 9px 12px;
   border: var(--border-thin);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 11px; font-weight: 800;
   letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink);
   cursor: pointer;
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .dd-btn:hover) { background: var(--paper-deep); }
-.bp :global(.content .dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .dd-btn:hover) { background: var(--accent-soft); }
+.bp :global(.content .dd.open .dd-btn) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .dd-btn .ic) { width: 13px; height: 13px; color: var(--muted); transition: transform 0.2s var(--ease); }
 .bp :global(.content .dd.open .dd-btn .ic) { transform: rotate(180deg); }
 .bp :global(.content .dd-menu) {
   position: absolute;
   top: calc(100% + 6px); right: 0;
   min-width: 100%;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 3px 3px 0 var(--ink);
@@ -363,14 +363,14 @@
   white-space: nowrap;
   transition: background 0.12s, color 0.12s;
 }
-.bp :global(.content .dd-item:hover) { background: var(--paper-deep); color: var(--ink); }
+.bp :global(.content .dd-item:hover) { background: var(--accent-soft); color: var(--ink); }
 .bp :global(.content .dd-item.active) { color: var(--blueprint); font-weight: 800; }
 
 /* Chart hover: callout, square dots, tooltip */
 .bp :global(.content .ch-overlay) { cursor: crosshair; }
 .bp :global(.content .ch-guide) { stroke: var(--blueprint); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.15s ease; }
 .bp :global(.content .ch-tipg) { opacity: 0; pointer-events: none; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.15s ease; }
-.bp :global(.content .ch-tip-box) { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
+.bp :global(.content .ch-tip-box) { fill: #fff; stroke: var(--ink); stroke-width: 1.5; pointer-events: none; }
 .bp :global(.content .ch-tip-text) { font-family: var(--font-mono); font-size: 13px; font-weight: 700; fill: var(--ink); pointer-events: none; }
 .bp :global(.content .chart-wrap) { width: 100%; }
 .bp :global(.content .chart-wrap svg) { width: 100%; height: auto; display: block; }
@@ -383,7 +383,7 @@
 .bp :global(.content .ch-axis) { stroke: var(--ink); stroke-width: 1.5; }
 .bp :global(.content .ch-area) { fill: var(--chart-fill); }
 .bp :global(.content .ch-line) { stroke: var(--blueprint); stroke-width: 2.5; fill: none; }
-.bp :global(.content .ch-dot) { fill: var(--paper); stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
+.bp :global(.content .ch-dot) { fill: #fff; stroke: var(--blueprint); stroke-width: 2.5; transition: fill 0.15s ease; }
 .bp :global(.content .ch-dot.on) { fill: var(--blueprint); }
 .bp :global(.content .ch-lbl) {
   font-family: var(--font-mono);
@@ -445,13 +445,13 @@
   padding: 10px 4px 9px;
   text-align: center;
   border-right: 1px solid var(--hair);
-  background: var(--paper);
+  background: #fff;
   transition: background 0.12s, box-shadow 0.12s;
   cursor: pointer;
   user-select: none;
 }
 .bp :global(.content .day:last-child) { border-right: none; }
-.bp :global(.content .day:hover) { background: var(--paper-deep); }
+.bp :global(.content .day:hover) { background: var(--accent-soft); }
 .bp :global(.content .day-lbl) {
   font-size: 9.5px; font-weight: 800;
   letter-spacing: 0.16em;
@@ -579,7 +579,7 @@
   color: var(--ink);
   transition: background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
 }
-.bp :global(.content .card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .card-foot-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .card-foot-btn .ic) { width: 13px; height: 13px; }
 .bp :global(.content .list .card-foot-btn) { display: none; margin-top: 10px; }
 .bp :global(.content .list.has-more .card-foot-btn) { display: flex; }
@@ -603,7 +603,7 @@
   grid-template-columns: repeat(5, 1fr);
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   overflow: hidden;
   box-shadow: 3px 3px 0 var(--shadow);
 }
@@ -705,7 +705,7 @@
 @media (prefers-reduced-motion: reduce) {
   .bp :global(.content *), .bp :global(.content *)::before, .bp :global(.content *)::after { transition: none !important; animation: none !important; }
 }
-.bp :global(.content :focus-visible) { outline: 2px solid var(--sky); outline-offset: 2px; }
+.bp :global(.content :focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* ============================================================
    PROPOSALS PAGE (the shared table / masthead / sheet system the
@@ -719,7 +719,7 @@
   padding: 9px 15px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-size: 13px; font-weight: 700;
   color: var(--muted);
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, border-color 0.12s, color 0.12s;
@@ -741,6 +741,7 @@
   padding: 5px 11px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
+  background: #fff; /* chips sit on the cream page — plate them white (owner, 2026-08-17) */
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
@@ -811,7 +812,7 @@
 .bp :global(.content .pt-open .ic) { width: 14px; height: 14px; }
 
 .bp :global(.content .pstack) { display: flex; flex-direction: column; gap: 18px; }
-.bp :global(.content .pjob) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
+.bp :global(.content .pjob) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow); overflow: hidden; }
 .bp :global(.content .pjob-head) {
   display: flex; align-items: center; justify-content: space-between; gap: 18px;
   padding: 15px 18px;
@@ -873,10 +874,10 @@
   width: 32px; height: 32px;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s, opacity 0.12s;
 }
-.bp :global(.content .pager-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .pager-btn:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .bp :global(.content .pager-btn:active) { transform: none; box-shadow: none; }
 .bp :global(.content .pager-btn[disabled]) { opacity: 0.3; pointer-events: none; }
 .bp :global(.content .pager-btn .ic) { width: 14px; height: 14px; }
@@ -935,7 +936,7 @@
 .bp :global(.content .pmenu) {
   position: fixed; z-index: 60;
   width: 254px;
-  background: var(--paper);
+  background: #fff;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: 4px 4px 0 var(--ink);
@@ -947,7 +948,7 @@
 .bp :global(.content .pmenu-title) { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink); }
 .bp :global(.content .pmenu-sub) { font-size: 11.5px; font-weight: 500; color: var(--muted-light); margin-top: 2px; }
 .bp :global(.content .pmenu-item) { display: flex; align-items: center; gap: 11px; width: 100%; padding: 8px 10px; border-radius: var(--radius); text-align: left; transition: background 0.12s; }
-.bp :global(.content .pmenu-item:hover) { background: var(--paper-deep); }
+.bp :global(.content .pmenu-item:hover) { background: var(--accent-soft); }
 .bp :global(.content .pmenu-item .ic) { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; }
 .bp :global(.content .pmenu-item-t) { font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1.15; }
 .bp :global(.content .pmenu-item-s) { font-size: 11.5px; font-weight: 500; color: var(--muted); margin-top: 2px; }
@@ -957,7 +958,7 @@
 .bp :global(.content .pmenu-div) { height: 1.5px; background: var(--hair-soft); margin: 5px 4px; }
 
 .bp :global(.content .psheets) { display: flex; flex-direction: column; gap: 22px; }
-.bp :global(.content .psheet) { border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 4px 4px 0 var(--shadow); }
+.bp :global(.content .psheet) { border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 4px 4px 0 var(--shadow); }
 .bp :global(.content .psheet-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px 18px; border-bottom: 2px solid var(--hair-soft); }
 .bp :global(.content .psheet-banklbl) { display: block; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-light); margin-bottom: 5px; text-align: right; }
 .bp :global(.content .pt-money.big) { font-size: 23px; font-weight: 900; }
@@ -987,7 +988,7 @@
   width: 236px; padding: 8px 11px;
   border: 1.5px solid var(--hair);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   font-family: var(--font); font-size: 12.5px; color: var(--ink);
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -1011,7 +1012,7 @@
   margin: 2px 0 26px;
   border: var(--border);
   border-radius: var(--radius);
-  background: var(--paper);
+  background: #fff;
   box-shadow: 3px 3px 0 var(--shadow);
   padding: 20px 24px 22px;
 }
@@ -1097,7 +1098,7 @@
   /* ---------- PALETTE: compensating for warm phone screens ---------- */
   .bp :global(.content) {
     --paper: #f6f5f1;
-    --paper-deep: #eeece7;
+    --paper-deep: #ffffff;
     --grid-light: rgba(0, 0, 0, 0.026);
   }
 
@@ -1327,16 +1328,16 @@
   background: var(--paper);
 }
 .bp :global(.content .bnr--p0) { border-left-color: var(--blueprint); background: rgba(24, 84, 160, 0.05); }
-.bp :global(.content .bnr--p1) { border-left-color: var(--danger); background: var(--danger-soft); }
-.bp :global(.content .bnr--p2) { border-left-color: var(--warning); background: var(--warning-soft); }
+.bp :global(.content .bnr--p1) { border-left-color: var(--warning); background: var(--warning-soft); }
+.bp :global(.content .bnr--p2) { border-left-color: var(--danger); background: var(--danger-soft); }
 .bp :global(.content .bnr-ic) { flex: 0 0 auto; width: 17px; height: 17px; margin-top: 1px; }
 .bp :global(.content .bnr--p0 .bnr-ic) { color: var(--blueprint); }
-.bp :global(.content .bnr--p1 .bnr-ic) { color: var(--danger); }
-.bp :global(.content .bnr--p2 .bnr-ic) { color: var(--warning-dark); }
+.bp :global(.content .bnr--p1 .bnr-ic) { color: var(--warning-dark); }
+.bp :global(.content .bnr--p2 .bnr-ic) { color: var(--danger); }
 .bp :global(.content .bnr-main) { flex: 1; min-width: 0; }
 .bp :global(.content .bnr-t) { display: block; font-size: 13.5px; font-weight: 800; }
 .bp :global(.content .bnr-b) { display: block; margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); }
-.bp :global(.content .bnr-meta) { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .bnr-meta) { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .bnr-x) { width: 26px; height: 26px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); color: var(--muted); font-size: 14px; line-height: 1; }
 .bp :global(.content .bnr-x:hover) { border-color: var(--ink); color: var(--ink); }
 /* Retiring: the card being pulled off the board dims toward the archive tone
@@ -1383,11 +1384,10 @@
 .bp :global(.content .mdl.open) { display: flex; }
 .bp :global(.content:has(.mdl.open)) { z-index: auto; }
 .bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
-.bp :global(.content .mdl-box) { position: relative; width: min(460px, 100%); max-height: 88vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: var(--paper); box-shadow: 5px 5px 0 var(--ink); overflow: hidden; }
+.bp :global(.content .mdl-box) { position: relative; width: min(460px, 100%); max-height: 88vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
 /* Title block left, corner dismiss right. */
 .bp :global(.content .mdl-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .mdl-title) { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
-.bp :global(.content .mdl-sub) { margin-top: 5px; max-width: 52ch; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 /* Corner dismiss — the same 26px plate, hair border and hover the create
    dialogs on Trade / Workers use, at this dialog's 15px title scale. The
    negative margin pulls it toward the box edge so it optically lines up with
@@ -1404,11 +1404,14 @@
 .bp :global(.content .mdl-body) { padding: 15px 17px 16px; overflow-y: auto; flex: 1; }
 .bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); flex: 0 0 auto; }
 .bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
+/* ~22px tall .btn--sm pair in the dialog foot: ≤30px band = 2px. Scoped to
+   .mdl-foot so it cannot reach other .btn--sm use-sites (psheet-foot, pjob-foot). */
+.bp :global(.content .mdl-foot .btn.btn--sm:hover) { box-shadow: 2px 2px 0 var(--ink); }
 .bp :global(.content .af) { display: block; margin-bottom: 13px; }
 .bp :global(.content .af-row) { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
 .bp :global(.content .af-lbl) { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
-.bp :global(.content .af-in) { width: 100%; height: 38px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; color: var(--ink); }
-.bp :global(.content .af-area) { width: 100%; min-height: 76px; padding: 10px 11px; resize: vertical; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); font-family: var(--font); font-size: 13px; line-height: 1.5; color: var(--ink); }
+.bp :global(.content .af-in) { width: 100%; height: 38px; padding: 0 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; color: var(--ink); }
+.bp :global(.content .af-area) { width: 100%; min-height: 76px; padding: 10px 11px; resize: vertical; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 13px; line-height: 1.5; color: var(--ink); }
 .bp :global(.content .af-in:focus), .bp :global(.content .af-area:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .af-in)::placeholder, .bp :global(.content .af-area)::placeholder { color: var(--muted-faint); }
 /* — Priority picker: the SHARED select treatment on this form's metrics —
@@ -1444,4 +1447,8 @@
   /* Touch target — the dismiss grows to 44px off desktop, like every sibling. */
   .bp :global(.content .mdl-x) { width: 44px; height: 44px; margin: -8px -8px 0 0; }
   .bp :global(.content .mdl-x .ic) { width: 16px; height: 16px; }
+  /* Touch targets: banner dismiss (inline-flex keeps the × centered) and the
+     dialog-foot small buttons. */
+  .bp :global(.content .bnr-x) { width: 44px; height: 44px; }
+  .bp :global(.content .mdl-foot .btn.btn--sm) { min-height: 44px; }
 }

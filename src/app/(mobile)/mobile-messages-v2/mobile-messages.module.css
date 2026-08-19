@@ -81,7 +81,7 @@
   background: var(--paper);
   color: var(--ink);
   font-feature-settings: "cv11", "ss01", "ss03";
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
 }
 .app ::selection { background: var(--blueprint); color: #fff; }
 .app :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
@@ -851,8 +851,12 @@
 /* The composer is the thread sheet's submit pair, outside the scrolling body
    and inside the safe area. Sheet feet may carry fills, which is why the send
    key keeps the blueprint plate the desktop gives it. */
+/* `center`, not `flex-end`: the single-line field runs ~50px (13px padding
+   pair + 21px line + borders) against the 48px send key, so bottom alignment
+   left the key drooping below the field's edge. Centered they read as one
+   row; when the field autogrows the key rides its middle. */
 .composer {
-  display: flex; align-items: flex-end; gap: 10px;
+  display: flex; align-items: center; gap: 10px;
   padding: 10px var(--pad-x) calc(10px + var(--safe-b));
   border-top: var(--border);
   background: var(--paper-deep);
@@ -872,20 +876,30 @@
 }
 .composerIn::placeholder { color: var(--muted-faint); }
 .composerIn:focus { outline: none; border-color: var(--blueprint); }
+/* No resting shadow (owner request 2026-08-12): the key sits flat and only
+   lifts toward a shadow under a real cursor — hover is gated behind
+   (hover: hover) so touch devices never catch a sticky hover state. The
+   :active nudge stays as the press feedback either way. */
 .sendBtn {
-  width: 48px; height: 48px;
+  width: 48px;
+  /* Stretch to the field's exact height (edges flush — the key can never sit
+     lower than the field); the cap only bites when the field autogrows, and a
+     capped stretch item anchors to the TOP of the row. */
+  height: auto; align-self: stretch; max-height: 50px;
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   border: var(--border);
   border-radius: var(--radius);
   background: var(--blueprint);
   color: #fff;
-  box-shadow: 3px 3px 0 var(--ink);
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), opacity 0.12s;
 }
 .sendBtn .ic { width: 18px; height: 18px; }
+@media (hover: hover) {
+  .sendBtn:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+}
 .sendBtn:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: none; }
-.sendBtn:disabled { opacity: 0.4; box-shadow: 1px 1px 0 var(--ink); }
+.sendBtn:disabled { opacity: 0.4; }
 /* ============================================================
    BOTTOM SHEETS — hand-rolled (house style, no dialog library).
    Two of them: the thread actions menu, and the new-conversation

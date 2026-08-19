@@ -153,7 +153,7 @@
   --cd-line: var(--hair, rgba(10, 10, 10, 0.12));
 
   /* The house elevation: hard offset, zero blur. */
-  --cd-lift: 3px 3px 0 var(--shadow, rgba(10, 10, 10, 0.06));
+  --cd-lift: 3px 3px 0 transparent; /* light-gray resting shadows retired (2026-08-17) */
 
   /* Outstanding balance. The house yellow, not a local literal:
      money owed is a WARNING state and --warning is the token this
@@ -250,6 +250,24 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* The masthead row follows the fleet's page-action standard (40px,
+   0 16px, 12px/0.12em, 20px icons) so the primary beside the page
+   title is the same plate on every page; the 36px compact system
+   below is untouched. */
+:global(.jf-blueprint) .actions .btn {
+  min-height: 40px;
+  padding: 0 16px;
+  gap: 9px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  border-width: 2px;
+}
+
+:global(.jf-blueprint) .actions .btn :global(.ic) {
+  width: 20px;
+  height: 20px;
 }
 
 /* ============================================================
@@ -1167,7 +1185,9 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink);
-  background: var(--paper);
+  /* Was var(--paper) — controls plated white with the cards (owner,
+     2026-08-17). */
+  background: #fff;
   background-clip: padding-box;
   border: 1.5px solid var(--ink);
   border-radius: var(--radius);
@@ -1220,7 +1240,9 @@
   transform: none;
   box-shadow: none;
   color: var(--ink);
-  background: var(--paper);
+  /* Was var(--paper) — the hover arrives at the base .btn plate, which
+     is now white (owner, 2026-08-17). */
+  background: #fff;
   border-color: var(--ink);
 }
 

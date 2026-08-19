@@ -292,7 +292,7 @@ export function initPhoneContent(
       '<td><span class="ph-when">' +
       esc(c.when) +
       "</span></td>" +
-      '<td class="num"><span class="pt-open"><svg class="ic"><use href="#i-arrow"/></svg></span></td>' +
+      '<td class="num"><button type="button" class="pt-open" aria-label="Open transcript"><svg class="ic"><use href="#i-arrow"/></svg></button></td>' +
       "</tr>"
     );
   }
@@ -585,12 +585,10 @@ export function initPhoneContent(
         sel.addRange(range);
       }
     }
-    b.classList.toggle("done", ok);
     b.innerHTML = ok
-      ? '<svg class="ic"><use href="#i-check"/></svg>Copied'
+      ? '<svg class="ic"><use href="#i-dup"/></svg>Copied'
       : '<svg class="ic"><use href="#i-x"/></svg>Press ⌘C';
     later(() => {
-      b.classList.remove("done");
       b.innerHTML = html;
       delete b.dataset.busy;
     }, 1400);
@@ -761,18 +759,21 @@ export function initPhoneContent(
 
     // Press effects
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        el.addEventListener("click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        el.addEventListener("animationend", () => el.classList.remove(cls));
+      on(root, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
     pressify(
-      ".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open",
+      ".btn, .card-foot-btn, .ptab, .ph-chip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .play-btn, .hook-copy, .sheet-x",
       "pressed",
     );
     pressify(".week-strip .day", "day-pressed");

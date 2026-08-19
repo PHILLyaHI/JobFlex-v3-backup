@@ -10,12 +10,21 @@
 //   (components/v3/blueprint-shell/shell-behavior.ts) already owns all of them;
 // - the donor's `safe(name, fn)` try/catch wrapper is dropped: the modules it
 //   guarded are either shell-owned or replaced by strict null checks below.
+//
+// THREE SUBSYSTEMS ARE NOT IN THE DONOR (added 2026-08-12, owner's request):
+// "MESSAGE ACTIONS MENU" (the donor's inert #pMenu, put to work), "EDIT A
+// SENT MESSAGE" and "READ RECEIPTS — LIVE", plus the per-own-message
+// Sending…/Delivered/Read status in renderThread and its keepScroll parameter.
+// Their values (the 12s poll, the receipt formula) are this repo's own, not
+// donor values — each block carries its own note.
 
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import {
   clearConversation,
   createConversation,
+  editMessage,
+  getReadReceipts,
   markConversationRead,
   postMessage,
 } from "@/actions/messages";
@@ -156,12 +165,16 @@ export function initMessagesContent(
     memberSearch: string;
     /** A write is on the wire — the composer and the dialog are inert. */
     busy: boolean;
+    /** Message id being edited in the composer, or null. Only ever one of the
+     *  viewer's own persisted messages — a `tmp-` optimistic row can't enter. */
+    editing: string | null;
   } = {
     active: seed.activeId ?? "",
     search: "",
     selected: [],
     memberSearch: "",
     busy: false,
+    editing: null,
   };
 
   function initials(n: string) {
@@ -296,12 +309,17 @@ export function initMessagesContent(
     });
   }
 
-  function renderThread() {
+  /** @param keepScroll hold the reader's place instead of snapping to the
+   *  bottom — for repaints the reader didn't ask for (a receipt landing, edit
+   *  mode toggling), where a jump would yank them away from what they're
+   *  reading. Sends and thread switches keep the donor's snap. */
+  function renderThread(keepScroll?: boolean) {
     const c = conv(mx.active);
     const head = $("#thHead");
     const body = $("#thBody");
     const composer = $("#thComposer");
     if (!head || !body || !composer) return;
+    const heldScroll = keepScroll ? body.scrollTop : null;
     if (!c) {
       head.innerHTML = "";
       composer.style.display = "none";
@@ -309,7 +327,7 @@ export function initMessagesContent(
         ? '<div class="th-empty"><b>Pick a conversation</b>' +
           "<span>Choose a thread on the left to read and reply.</span></div>"
         : '<div class="th-empty"><b>No conversations yet</b>' +
-          "<span>Start one with anyone on the crew — “New message”, top right.</span></div>";
+          "<span>Start one with anyone on the crew — “New chat”, top right.</span></div>";
       return;
     }
     composer.style.display = "";
@@ -340,14 +358,63 @@ export function initMessagesContent(
       }
       const prev = c.msgs[i - 1];
       const firstInRun = !prev || prev.who !== m.who || dayLabel(prev.ts) !== mDay;
-      const isLast = i === c.msgs.length - 1;
       // A `tmp-` id is an optimistic send still on the wire: the row reads
-      // "Sending…" until the server action resolves and it becomes "Delivered".
+      // "Sending…" until the server action resolves. From there the status is
+      // REAL, per message: "Read" when every other participant's lastReadAt
+      // (server-computed c.readAt — page load, then the receipts poll) covers
+      // this message's timestamp, "Delivered" until then. The donor stamped
+      // the last own message only; a receipt is per-message, so every own
+      // message carries its own.
       const pendingSend = m.id.indexOf("tmp-") === 0;
+      const status = pendingSend
+        ? "Sending…"
+        : c.readAt !== null && m.ts <= c.readAt
+          ? "Read"
+          : "Delivered";
+      // The viewer's own persisted rows carry an actions affordance: a ⋯
+      // button at the end of the meta line (revealed on message hover/focus,
+      // always visible on touch) and data-mid on the row for the right-click
+      // path — both open the #pMenu actions menu. An optimistic row has no
+      // database id yet, and a `sent-` fallback row (send resolved without
+      // returning its row id — normally unreachable) has no REAL id either,
+      // so neither gets the menu.
+      const actionable = m.me && !pendingSend && m.id.indexOf("sent-") !== 0;
+      // The bubble is the donor's, UNTOUCHED: a direct `.msg > .bub` child,
+      // no wrapper. The ⋯ trigger is `.msg-dots` — states and tones (reveal,
+      // hover frame, colors) live in messages.module.css, but the GEOMETRY
+      // (20px box, 10px icon, centering) rides inline: the owner's tab has
+      // now rendered fresh markup against a stale stylesheet three times on
+      // this page (2026-08-12; decisions.md Session 3), and with the inline
+      // baseline a stale sheet degrades to a quiet, correctly-aligned,
+      // always-visible button instead of a 17px default svg towering over
+      // the meta line. `vertical-align:-1.5px` is dead weight under the
+      // fresh sheet (the meta line is a flex row, which ignores it) and
+      // exists purely for that degraded state. The reference point is the
+      // inline-flex box's BASELINE — the svg's bottom edge, box center
+      // + 5px — not the box's bottom: to put the box center on the meta
+      // text's optical center (baseline − cap/2 ≈ baseline − 3.5px at
+      // 9.5px mono), the box baseline goes 1.5px below the text baseline.
+      // Pixel-measured in the degraded state (owner report of the dots
+      // sitting low, 2026-08-12 late evening).
+      const dots = actionable
+        ? '<button class="msg-dots" type="button" data-mopen="' +
+          esc(m.id) +
+          '" aria-haspopup="menu" aria-label="Message actions" ' +
+          'style="display:inline-flex;align-items:center;justify-content:center;' +
+          'width:20px;height:20px;padding:0;margin-left:7px;vertical-align:-1.5px">' +
+          '<svg class="ic" style="width:10px;height:10px"><use href="#i-dots"/></svg></button>'
+        : "";
       html +=
         '<div class="msg' +
         (m.me ? " me" : "") +
-        '">' +
+        (mx.editing === m.id ? " is-editing" : "") +
+        // menu-on keeps the row's ⋯ trigger revealed while its menu is open;
+        // stamping it here keeps the receipts repaint honest (openMsgMenu /
+        // closeMsgMenu patch the same class in place between renders).
+        (menuMsgId === m.id ? " menu-on" : "") +
+        '"' +
+        (actionable ? ' data-mid="' + esc(m.id) + '"' : "") +
+        ">" +
         (!m.me && c.kind === "GROUP" && firstInRun
           ? '<span class="msg-who">' + esc(m.who) + "</span>"
           : "") +
@@ -356,13 +423,14 @@ export function initMessagesContent(
         "</span>" +
         '<span class="msg-meta">' +
         esc(timeLabel(m.ts)) +
-        (m.me && isLast ? (pendingSend ? " · Sending…" : " · Delivered") : "") +
+        (m.me ? " · " + status : "") +
+        dots +
         "</span>" +
         "</div>";
     });
     body.innerHTML =
       html || '<div class="th-empty"><b>No messages yet</b><span>Say something to start the thread.</span></div>';
-    body.scrollTop = body.scrollHeight;
+    body.scrollTop = heldScroll !== null ? heldScroll : body.scrollHeight;
   }
   function renderMessages() {
     renderList();
@@ -388,13 +456,22 @@ export function initMessagesContent(
       : rows.length === 0
         ? '<li class="members-empty">No match.</li>'
         : rows
-            .map(function (m) {
+            .map(function (m, i) {
+              // The LAST row drops its hairline: the footer's 2px-ink top rule
+              // sits right under it, and the two lines read as a doubled
+              // divider (owner report 2026-08-13). Inline, like the rest of
+              // this page's delivery-critical geometry.
+              const picked = mx.selected.indexOf(m.id) !== -1;
               return (
                 '<li class="' +
-                (mx.selected.indexOf(m.id) !== -1 ? "on" : "") +
+                (picked ? "on" : "") +
                 '" data-mem="' +
                 esc(m.id) +
-                '">' +
+                '" role="option" tabindex="0" aria-selected="' +
+                (picked ? "true" : "false") +
+                '"' +
+                (i === rows.length - 1 ? ' style="border-bottom:0"' : "") +
+                ">" +
                 '<span class="mem-check"></span>' +
                 '<span class="mem-av">' +
                 esc(initials(m.name)) +
@@ -413,6 +490,20 @@ export function initMessagesContent(
     sub.textContent = group ? "Group with " + mx.selected.length + " people." : "Pick someone on the crew.";
     grpWrap.classList.toggle("is-hidden", !group);
     startBtn.disabled = mx.selected.length === 0;
+  }
+  /** One toggle path for mouse and keyboard. Every toggle re-renders the
+   *  member list, which destroys the focused row — so if a member row had
+   *  focus, put it back on the same member afterwards to keep keyboard flow
+   *  intact. */
+  function toggleMember(id: string) {
+    if (mx.busy) return;
+    const hadFocus =
+      document.activeElement instanceof HTMLElement && document.activeElement.closest("[data-mem]") !== null;
+    const i = mx.selected.indexOf(id);
+    if (i === -1) mx.selected.push(id);
+    else mx.selected.splice(i, 1);
+    renderMembers();
+    if (hadFocus) root.querySelector<HTMLElement>('[data-mem="' + CSS.escape(id) + '"]')?.focus();
   }
   function openDialog() {
     mx.selected = [];
@@ -480,9 +571,16 @@ export function initMessagesContent(
     setThreadBusy(true);
 
     try {
-      await postMessage(c.id, text);
+      const res = await postMessage(c.id, text);
       const sent = c.msgs.find((m) => m.id === tmpId);
-      if (sent) sent.id = "sent-" + tmpId;
+      // The action returns the database row's id + stamp; the optimistic row
+      // becomes the real row, so it is editable and a reload changes nothing.
+      if (sent && res) {
+        sent.id = res.id;
+        sent.ts = res.ts;
+      } else if (sent) {
+        sent.id = "sent-" + tmpId;
+      }
       setThreadBusy(false);
       renderThread();
     } catch (err) {
@@ -497,9 +595,221 @@ export function initMessagesContent(
     }
   }
 
+  // ====== MESSAGE ACTIONS MENU (#pMenu) (not in the donor, 2026-08-12) ======
+  // The donor ships `.pmenu` markup + styles with nothing to open it — the
+  // same leftover the Clients port found, and the same resolution: it becomes
+  // this page's per-message actions menu, opened by the ⋯ button beside the
+  // viewer's own bubbles or by right-clicking one. Owner request 2026-08-13:
+  // no head (the bubble right above IS the context), just Edit and Copy side
+  // by side — the `.pmenu--row` modifier. Placement mirrors
+  // clients-behavior.ts, including its zoom compensation; the row menu is
+  // content-sized, so the clamp measures offsetWidth instead of assuming the
+  // donor's 254px.
+
+  const pMenu = $("#pMenu");
+  let menuMsgId: string | null = null;
+
+  function closeMsgMenu() {
+    menuMsgId = null;
+    // Patch, not re-render: only the row's revealed ⋯ state changes.
+    root.querySelector(".msg.menu-on")?.classList.remove("menu-on");
+    pMenu?.classList.remove("open");
+    // openMsgMenu sets an inline `display: flex` (stale-sheet insurance);
+    // it must go, or the base display:none can never hide the menu again.
+    if (pMenu) pMenu.style.display = "";
+  }
+
+  // Item geometry is inline (stale-stylesheet insurance, same contract as
+  // the ⋯ trigger): under a sheet that predates the row menu, the old
+  // `.pmenu-item { width: 100% }` would stack the two actions vertically.
+  // States (hover) and the icon-box/label tones are pre-row vocabulary
+  // present in every sheet vintage, so they stay in CSS. The tonal boxes run
+  // 22px with 12px icons, not the house menu's 26/14 — the owner asked the
+  // row's INNER height down twice (2026-08-13); with 3px item padding the
+  // content band runs 28px inside the unchanged frame.
+  function menuItem(icon: string, tone: string, label: string, act: string) {
+    return (
+      '<button class="pmenu-item" type="button" role="menuitem" data-mact="' +
+      act +
+      '" style="display:flex;align-items:center;gap:9px;width:auto;padding:3px 13px 3px 10px">' +
+      '<span class="pmi-ic' +
+      (tone ? " " + tone : "") +
+      '" style="width:22px;height:22px"><svg class="ic" style="width:12px;height:12px"><use href="#' +
+      icon +
+      '"/></svg></span>' +
+      '<span class="pmenu-item-t">' +
+      esc(label) +
+      "</span>" +
+      "</button>"
+    );
+  }
+
+  /** @param anchor viewport-px rect edges (a button's rect, or a right-click
+   *  point widened to a zero-height rect). */
+  function openMsgMenu(id: string, anchor: { right: number; top: number; bottom: number }) {
+    const c = conv(mx.active);
+    const m = c?.msgs.find((x) => x.id === id);
+    if (!c || !m || !m.me || !pMenu) return;
+    menuMsgId = id;
+    // The open menu keeps its row's ⋯ trigger revealed via `menu-on` — moved
+    // between rows as a patch in place (renderThread re-stamps it on the
+    // receipts repaint).
+    root.querySelector(".msg.menu-on")?.classList.remove("menu-on");
+    root.querySelector('[data-mid="' + id + '"]')?.classList.add("menu-on");
+    pMenu.setAttribute("role", "menu");
+    pMenu.innerHTML =
+      menuItem("i-pen", "pmi--bp", "Edit", "edit") +
+      // The vertical divider between the two actions — inline like the rest
+      // of the row geometry; --hair-soft is the same tone the old vertical
+      // menu's .pmenu-div used.
+      '<span style="width:1.5px;align-self:stretch;background:var(--hair-soft);flex:0 0 auto;margin:2px 6px"></span>' +
+      menuItem("i-dup", "", "Copy", "copy");
+    pMenu.classList.add("open");
+    // Stale-sheet insurance for the CONTAINER: the row layout and the
+    // shadowless frame must hold even when the tab's stylesheet predates
+    // them. closeMsgMenu clears the display so the base `display: none`
+    // can hide the menu again.
+    pMenu.style.display = "flex";
+    pMenu.style.width = "auto";
+    pMenu.style.boxShadow = "none";
+    // 5px, not the donor's 6px — with the items' own vertical padding also
+    // tightened to 5px the row runs ~46px tall (owner asked for a slightly
+    // shorter popup, 2026-08-13; the 26px tonal icon boxes are the system
+    // standard and stay).
+    pMenu.style.padding = "5px";
+    // FLUID SCALE zooms the shell root, so viewport maths has to be un-zoomed
+    // before it can be compared with a zoomed getBoundingClientRect
+    // (decisions.md: every FLIP and every popover placement).
+    const host = root.closest<HTMLElement>(".jf-blueprint");
+    const zRaw = host ? parseFloat(getComputedStyle(host).zoom) : 1;
+    const z = isFinite(zRaw) && zRaw > 0 ? zRaw : 1;
+    const vw = window.innerWidth / z;
+    const vh = window.innerHeight / z;
+    // Park at the origin before measuring: a fixed box with `width: auto`
+    // shrink-wraps against the viewport edge it currently sits at, so
+    // measuring at a stale left would under-report the row's width.
+    pMenu.style.left = "0px";
+    pMenu.style.top = "0px";
+    const mw = pMenu.offsetWidth;
+    let left = Math.min(anchor.right / z - mw, vw - mw - 12);
+    left = Math.max(12, left);
+    pMenu.style.left = left + "px";
+    const mh = pMenu.offsetHeight;
+    let top = anchor.bottom / z + 6;
+    let flipped = false;
+    if (top + mh > vh - 12) {
+      top = Math.max(12, anchor.top / z - mh - 6);
+      flipped = true;
+    }
+    // `.up` flips the enter slide so the menu always slides FROM its anchor;
+    // toggled before this frame paints, so the animation restart is invisible.
+    pMenu.classList.toggle("up", flipped);
+    pMenu.style.top = top + "px";
+  }
+
+  // ============ EDIT A SENT MESSAGE (not in the donor, 2026-08-12) ============
+  // The composer is reused as the editor: Edit loads the bubble's text into it,
+  // the strip above names what's happening, Enter/send saves, Esc/Cancel walks
+  // away. Same optimistic contract as sending — the bubble updates the instant
+  // the save is submitted and rolls back with the error surfaced if the action
+  // rejects.
+
+  function paintEditBar() {
+    // Direct style.display, not a class: the strip is inline-styled and must
+    // show/hide correctly with no help from any stylesheet.
+    const bar = $("#editBar");
+    if (bar) bar.style.display = mx.editing ? "flex" : "none";
+    $("#thComposer")?.classList.toggle("is-editing", !!mx.editing);
+  }
+
+  function enterEdit(id: string) {
+    const c = conv(mx.active);
+    const m = c?.msgs.find((x) => x.id === id);
+    if (!c || !m || !m.me || mx.busy) return;
+    mx.editing = id;
+    sendError(null);
+    const box = root.querySelector<HTMLTextAreaElement>("#msgBox");
+    if (box) {
+      box.value = m.body;
+      box.style.height = "auto";
+      box.style.height = Math.min(130, box.scrollHeight) + "px";
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }
+    paintEditBar();
+    renderThread(true);
+  }
+
+  function exitEdit() {
+    if (!mx.editing) return;
+    mx.editing = null;
+    const box = root.querySelector<HTMLTextAreaElement>("#msgBox");
+    if (box) {
+      box.value = "";
+      box.style.height = "";
+    }
+    paintEditBar();
+    renderThread(true);
+  }
+
+  async function saveEdit() {
+    const box = root.querySelector<HTMLTextAreaElement>("#msgBox");
+    const c = conv(mx.active);
+    const id = mx.editing;
+    if (!box || !c || !id || mx.busy) return;
+    const m = c.msgs.find((x) => x.id === id);
+    if (!m) {
+      exitEdit();
+      return;
+    }
+    const text = box.value.trim();
+    // Unchanged or emptied — treat both as walking away, never a write.
+    if (!text || text === m.body) {
+      exitEdit();
+      return;
+    }
+    sendError(null);
+    const prevBody = m.body;
+    m.body = text;
+    mx.editing = null;
+    box.value = "";
+    box.style.height = "";
+    paintEditBar();
+    renderThread(true);
+    // The rail preview quotes the thread's LAST message — an edit to it must
+    // repaint the row, or the pre-edit text lingers there.
+    paintConvRows();
+    setThreadBusy(true);
+    try {
+      await editMessage(id, text);
+      setThreadBusy(false);
+    } catch (err) {
+      m.body = prevBody;
+      setThreadBusy(false);
+      renderThread(true);
+      paintConvRows();
+      // Give the rejected text back for another try — but ONLY if the user
+      // hasn't switched threads while the save was on the wire: enterEdit
+      // no-ops for a message outside the active thread, and restoring the
+      // text anyway would carry it into another thread's composer (the
+      // invariant the rail-click handler records). enterEdit wipes #sendErr,
+      // so the error is surfaced AFTER it — and only in the thread it
+      // belongs to; a switched-away user keeps the original message intact
+      // and hears nothing stale over the new thread.
+      enterEdit(id);
+      if (mx.editing === id) {
+        box.value = text;
+        box.style.height = "auto";
+        box.style.height = Math.min(130, box.scrollHeight) + "px";
+        sendError(actionError(err));
+      }
+    }
+  }
+
   async function clearThread() {
     const c = conv(mx.active);
     if (!c || mx.busy) return;
+    if (mx.editing) exitEdit();
     sendError(null);
     const prevMsgs = c.msgs;
     const prevTs = c.ts;
@@ -552,6 +862,8 @@ export function initMessagesContent(
         unread: 0,
         // A brand-new thread is the newest thing on the rail.
         ts: Date.now(),
+        // Nobody has opened it yet, so nothing is read.
+        readAt: null,
         msgs: [],
       };
       convData.unshift(c);
@@ -573,8 +885,35 @@ export function initMessagesContent(
   // ================= EVENTS =================
   on(document, "click", function (e) {
     const target = e.target as HTMLElement;
+    // Message-actions menu first: any click that is neither inside the menu
+    // nor on a ⋯ trigger closes it, and the two menu branches run on their
+    // own clicks before the rest of the page reacts.
+    const mopen = target.closest<HTMLElement>("[data-mopen]");
+    const mact = target.closest<HTMLElement>("[data-mact]");
+    if (!mopen && !mact && !target.closest(".pmenu")) closeMsgMenu();
+    if (mopen) {
+      const r = mopen.getBoundingClientRect();
+      openMsgMenu(mopen.dataset.mopen || "", { right: r.right, top: r.top, bottom: r.bottom });
+      return;
+    }
+    if (mact && menuMsgId) {
+      const id = menuMsgId;
+      const act = mact.dataset.mact;
+      closeMsgMenu();
+      if (act === "edit") enterEdit(id);
+      if (act === "copy") {
+        const m = conv(mx.active)?.msgs.find((x) => x.id === id);
+        if (m && navigator.clipboard && navigator.clipboard.writeText) {
+          void navigator.clipboard.writeText(m.body).catch(() => {});
+        }
+      }
+      return;
+    }
     const row = target.closest<HTMLElement>("[data-conv]");
     if (row) {
+      // Leaving the thread abandons an edit in progress — the composer must
+      // never carry one thread's text into another.
+      if (mx.editing) exitEdit();
       mx.active = row.dataset.conv || "";
       sendError(null);
       const c = conv(mx.active);
@@ -594,7 +933,11 @@ export function initMessagesContent(
       return;
     }
     if (target.closest("#sendBtn")) {
-      void sendMessage();
+      void (mx.editing ? saveEdit() : sendMessage());
+      return;
+    }
+    if (target.closest("#editCancel")) {
+      exitEdit();
       return;
     }
     if (target.closest("#newConvBtn")) {
@@ -608,12 +951,7 @@ export function initMessagesContent(
     }
     const mem = target.closest<HTMLElement>("[data-mem]");
     if (mem) {
-      if (mx.busy) return;
-      const id = mem.dataset.mem || "";
-      const i = mx.selected.indexOf(id);
-      if (i === -1) mx.selected.push(id);
-      else mx.selected.splice(i, 1);
-      renderMembers();
+      toggleMember(mem.dataset.mem || "");
       return;
     }
     if (target.closest("#startBtn")) {
@@ -648,17 +986,108 @@ export function initMessagesContent(
     const target = ev.target as HTMLElement;
     if (target.id === "msgBox" && ev.key === "Enter" && !ev.shiftKey) {
       ev.preventDefault();
-      void sendMessage();
+      void (mx.editing ? saveEdit() : sendMessage());
     }
-    // Escape closes the new-conversation dialog — the scrim and Cancel were the
-    // only ways out, and neither is where a keyboard reaches first.
-    if (ev.key === "Escape" && $("#convMdl")?.classList.contains("open") && !mx.busy) {
-      closeDialog();
+    // Enter/Space on a member row toggles it exactly like a click — the rows
+    // are focusable options, not buttons, so the key path is wired by hand.
+    if (ev.key === "Enter" || ev.key === " ") {
+      const mem = target.closest<HTMLElement>("[data-mem]");
+      if (mem) {
+        ev.preventDefault(); // Space must toggle, not scroll the dialog.
+        toggleMember(mem.dataset.mem || "");
+        return;
+      }
+    }
+    // Escape walks the states from the closest out: actions menu, then an
+    // edit in progress, then the new-conversation dialog — the scrim and
+    // Cancel were the only ways out of the last, and neither is where a
+    // keyboard reaches first.
+    if (ev.key === "Escape") {
+      if (menuMsgId) {
+        closeMsgMenu();
+        return;
+      }
+      if (mx.editing && !mx.busy) {
+        exitEdit();
+        return;
+      }
+      if ($("#convMdl")?.classList.contains("open") && !mx.busy) {
+        closeDialog();
+      }
     }
   });
+  // Right-clicking one of the viewer's own bubbles opens the same actions
+  // menu at the pointer — the path every messenger trains. Other rows keep
+  // the native context menu.
+  on(document, "contextmenu", function (e) {
+    const target = e.target as HTMLElement;
+    const row = target.closest<HTMLElement>(".msg[data-mid]");
+    if (!row) return;
+    e.preventDefault();
+    const ev = e as MouseEvent;
+    openMsgMenu(row.dataset.mid || "", { right: ev.clientX + 2, top: ev.clientY, bottom: ev.clientY });
+  });
+  // The menu is position: fixed — any scroll of its anchor detaches it, so
+  // both scroll hosts (the page and the transcript) close it. #thBody is a
+  // persistent element (renders replace only its innerHTML), so one binding
+  // at init holds for the life of the mount.
+  if (main) on(main, "scroll", closeMsgMenu, { passive: true });
+  const thBodyEl = $("#thBody");
+  if (thBodyEl) on(thBodyEl, "scroll", closeMsgMenu, { passive: true });
 
   // ================= INITIALIZATION =================
   renderMessages();
+
+  // The auto-opened thread counts as opened. The rail-click path stamps
+  // lastReadAt, but the newest thread is already active on arrival (page.tsx
+  // auto-selects it) — exactly the thread holding the unread message — so
+  // without this the most common read (land, read, leave) would never
+  // register and the sender would poll "Delivered" forever. Same
+  // fire-and-forget contract as the click path; the classic inbox stamps on
+  // mount the same way (MessagesInbox.tsx).
+  (function () {
+    const c = conv(mx.active);
+    if (c && c.unread > 0) {
+      c.unread = 0;
+      void markConversationRead(c.id).catch(() => {});
+      paintConvRows();
+    }
+  })();
+
+  // ================= READ RECEIPTS — LIVE (not in the donor, 2026-08-12) =================
+  // The page load computed each thread's readAt once; this keeps it honest
+  // while the page is open. Every 12s (and immediately on refocus, the moment
+  // "did they read it yet?" is actually asked) the server re-reports every
+  // thread's real lastReadAt-derived receipt, and a change repaints the open
+  // thread in place — Delivered flips to Read without touching the reader's
+  // scroll. Hidden tabs skip the tick; failures are dropped silently and the
+  // next tick tries again — a missed poll must never surface an error over a
+  // working inbox.
+  (function () {
+    let inFlight = false;
+    async function tick() {
+      if (inFlight || document.hidden) return;
+      inFlight = true;
+      try {
+        const receipts = await getReadReceipts();
+        let activeChanged = false;
+        receipts.forEach(function (r) {
+          const c = conv(r.id);
+          if (!c || c.readAt === r.readAt) return;
+          c.readAt = r.readAt;
+          if (c.id === mx.active) activeChanged = true;
+        });
+        if (activeChanged) renderThread(true);
+      } catch {
+        /* next tick retries */
+      } finally {
+        inFlight = false;
+      }
+    }
+    const iv = window.setInterval(() => void tick(), 12000);
+    disposers.push(() => window.clearInterval(iv));
+    on(window, "focus", () => void tick());
+  })();
 
   // The matchMedia polyfill, mobile nav drawer and FLUID SCALE belong to the
   // persistent chrome and live in
@@ -765,17 +1194,20 @@ export function initMessagesContent(
 
     // Press effects
     function pressify(sel: string, cls: string) {
-      $$(sel).forEach((el) => {
-        el.addEventListener("click", () => {
-          el.classList.remove(cls);
-          void el.offsetWidth;
-          el.classList.add(cls);
-        });
-        el.addEventListener("animationend", () => el.classList.remove(cls));
+      on(root, "click", (e) => {
+        const el = (e.target as Element).closest<HTMLElement>(sel);
+        if (!el || !root.contains(el)) return;
+        el.classList.remove(cls);
+        void el.offsetWidth;
+        el.classList.add(cls);
+      });
+      on(root, "animationend", (e) => {
+        const el = e.target as HTMLElement;
+        if (el.matches && el.matches(sel)) el.classList.remove(cls);
       });
     }
     // Shell controls (.icon-btn, .sb-foot-*) press from the shell module.
-    pressify(".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open", "pressed");
+    pressify(".btn, .card-foot-btn, .ptab, .pchip, .pager-btn, .pmenu-item, .photo-box, .pt-open, .send-btn, .th-clear, .msg-dots", "pressed");
     pressify(".week-strip .day", "day-pressed");
 
     // (Graph-paper parallax lives in the shell — it owns .main.)
