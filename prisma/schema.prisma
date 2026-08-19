@@ -1662,3 +1662,37 @@ model ProductPriceCache {
   @@unique([normalizedQuery, location])
   @@index([updatedAt])
 }
+
+// ReportAll USA parcel cache. The account quota is ALLTIME (1000 parcels for
+// the life of the key), so every fetched parcel is kept forever, keyed on
+// ReportAll's stable robust_id. `wkt` is the raw MULTIPOLYGON in EPSG:4326 —
+// parsed on read by src/lib/parcels.ts, stored verbatim so nothing is lost.
+model ParcelCache {
+  robustId String  @id
+  parcelId String?
+  owner    String?
+  address  String?
+  // Upper-cased, whitespace-collapsed `address` — the key the address lookup
+  // matches on. Equality, never `contains`/`mode: insensitive`: SQLite LIKE is
+  // case-insensitive while Postgres LIKE is not, and `mode: "insensitive"` does
+  // not exist on SQLite, so the only form that behaves identically on the dev
+  // and production engines is exact equality over a pre-normalised column.
+  addressKey String?
+  city       String?
+  zip        String?
+  acreage    Float?
+  wkt        String
+  lat        Float
+  lon        Float
+  fetchedAt  DateTime @default(now())
+
+  @@index([addressKey])
+}
+
+// Negative cache: points that returned zero parcels. Key is "lat,lon" rounded
+// to 5 decimals (~1.1 m), TTL 7 days — repeated clicks on the same lake do not
+// burn the ALLTIME quota, but coverage that appears later is eventually seen.
+model ParcelMiss {
+  key       String   @id
+  checkedAt DateTime @default(now())
+}
