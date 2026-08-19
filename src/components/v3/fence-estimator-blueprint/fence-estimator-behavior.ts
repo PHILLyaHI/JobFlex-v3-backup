@@ -26,7 +26,6 @@ import {
 import {
   buildingsToFootprints,
   latLngToLocalFeet,
-  simplifyPath,
 } from "@/components/estimator/fence/mapProjection";
 import type {
   BuildingFootprint,
@@ -43,6 +42,15 @@ import {
 } from "@/components/estimator/fence/fencePricing";
 import type { ArmedOpening } from "@/stores/useFenceStudioStore";
 import { fetchPropertyBoundary } from "@/actions/fenceBoundary";
+import {
+  groupSides,
+  detectFrontSides,
+  bearingLabel,
+  type FrontSideMatch,
+  type ParcelSide,
+  type RingPoint,
+} from "@/lib/parcels";
+import { pointInRing } from "@/lib/parcel";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { isPlanLimitError, PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
 import {
@@ -53,11 +61,6 @@ import {
   type Material,
   type OpeningType,
 } from "./fence-estimator-data";
-
-/** Douglas–Peucker tolerance for the parcel ring, in feet. A surveyed polygon
- *  carries far more vertices than a fence needs; the same value the sage studio
- *  trims with, so both surfaces hand the user the same editable outline. */
-const PARCEL_SIMPLIFY_FT = 1;
 
 /** Where a created proposal opens. `(dashboard)/dashboard/proposals/[id]` — the
  *  classic-shell detail route; this blueprint fleet only owns the LIST page. */
@@ -549,6 +552,15 @@ export function initFenceEstimatorContent(
         syncHint();
         return;
       }
+      // The ReportAll boundary raster — a MODE like Align, so the button rests
+      // active. Tiles ride an ALLTIME quota; the layer mounts only on demand.
+      if (kind === 'lot-lines') {
+        lotLines = !lotLines;
+        act.classList.toggle('on', lotLines);
+        act.setAttribute('aria-pressed', String(lotLines));
+        pushMap();
+        return;
+      }
     }
     const delRun = target.closest<HTMLElement>('[data-del-run]');
     if (delRun) {
@@ -718,6 +730,22 @@ export function initFenceEstimatorContent(
   let mapOrigin: { lat: number; lng: number } | null = null;
   let armed: ArmedOpening | null = null;
   let aligning = false;
+  // ── Cadastral parcel (ReportAll via /api/parcels) ──
+  /** The lot's outer ring as surveyed, [lat, lng] — full resolution. */
+  let parcelRingPts: RingPoint[] | null = null;
+  /** The same ring in the map's vocabulary — the polygon overlay's path. */
+  let parcelRing: Array<{ lat: number; lng: number }> | null = null;
+  /** Readable walls: consecutive collinear segments merged (lib/parcels
+   *  groupSides), so a 22-segment survey lists as 4–8 rows. */
+  let parcelSides: ParcelSide[] = [];
+  /** Which sides count toward "Use N ft" — the street side defaults to off,
+   *  but only when the geometry singles one out (see detectFrontSide). */
+  let parcelChecked: boolean[] = [];
+  /** Hovered row in the sides list — highlighted on the map. */
+  let parcelHover: number | null = null;
+  /** ReportAll raster boundary tiles (the "Lot lines" tool). */
+  let lotLines = false;
+  let parcelBusy = false;
   /**
    * True once a trace has produced at least one segment. Until then the donor's
    * demo ledger stands: the first click on the map lays ONE vertex and no
@@ -815,6 +843,8 @@ export function initFenceEstimatorContent(
       onApi: function (api) { mapApi = api; },
       accentColor: token('--blueprint'),
       doorColor: token('--muted'),
+      parcel: parcelRing ? { ring: parcelRing, highlight: hoveredSidePath() } : null,
+      parcelTiles: lotLines,
     };
   }
 
@@ -1186,6 +1216,11 @@ export function initFenceEstimatorContent(
       // its map on it (its own effect depends on lat/lng).
       mapOrigin = { lat: p.lat, lng: p.lng };
       pushMap();
+      // The parcel lookup keys off the same point. Fired here — not from a
+      // button — so the boundary and the sides list are already waiting by the
+      // time the contractor looks down from the address field. Cache-first on
+      // the server, so a repeat search costs no quota.
+      void loadParcelForOrigin();
     }
   }
 
@@ -1224,26 +1259,344 @@ export function initFenceEstimatorContent(
     after(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1600);
   }
 
-  // ================= PROPERTY LINES =================
-  // "Load property lines" was a stub in the donor — with no map layer there was
-  // nothing to draw a parcel on. Now that the surface is live it runs the same
-  // path the sage studio does: the EXISTING `fetchPropertyBoundary` server
-  // action (Regrid, plus OSM building footprints), the returned ring converted
-  // into the surface's local-feet frame about the SAME origin the map was built
-  // on, then simplified so a surveyed polygon arrives as a draggable outline
-  // instead of eighty vertices. From there it is an ordinary trace: it seeds the
-  // polylines and the ledger together.
+  // ================= PROPERTY LINES (ReportAll) =================
+  // The parcel now comes from /api/parcels — ReportAll USA cadastral polygons
+  // behind a permanent server-side cache (the account quota is ALLTIME, so a
+  // repeat address costs nothing). The boundary is NOT dumped into the trace
+  // any more: it renders as a display-only polygon overlay, and every side
+  // becomes a checkbox row in `#parcelPanel`. The checked sides — the front is
+  // unchecked by default — are what "Use N ft in estimate" seeds into the
+  // trace/ledger through the ordinary `applyTracedPath` pipeline.
   //
-  // The buildings ride along in the same response and used to be dropped on the
-  // floor. They are the 3D view's spatial context — the subject house and its
-  // neighbours — so they are kept now, through the shared `buildingsToFootprints`
-  // the sage studio uses, and they are kept even when the PARCEL fails: a failed
-  // property-line lookup is no reason to throw away the houses.
+  // Building footprints still come from the OLD `fetchPropertyBoundary` action
+  // (Regrid may be dead, but its OSM half fails soft and still returns the
+  // neighbourhood): they are the 3D view's spatial context, fetched in parallel
+  // and never allowed to block or fail the parcel.
+
+  interface ParcelApiHit {
+    found: true;
+    cached: boolean;
+    parcel: {
+      robustId: string;
+      owner: string | null;
+      address: string | null;
+      acreage: number | null;
+    };
+    rings: RingPoint[][];
+  }
+
+  /** The ring that contains the origin, else the longest one — a MULTIPOLYGON
+   *  parcel (a lot split by a road) returns several. */
+  function pickRing(rings: RingPoint[][], o: { lat: number; lng: number }): RingPoint[] | null {
+    let best: RingPoint[] | null = null;
+    for (const r of rings) {
+      if (r.length < 3) continue;
+      if (pointInRing(o.lat, o.lng, r.map(function (p) { return { lat: p[0], lng: p[1] }; }))) return r;
+      if (!best || r.length > best.length) best = r;
+    }
+    return best;
+  }
+
+  /** The side a contractor usually does NOT fence: the street-facing front.
+   *  Heuristic — the side whose midpoint sits closest to the geocoded address
+   *  point, which Google places at the rooftop/street side of the lot. Wrong
+   *  sometimes; that is what the checkbox is for. */
+  /** The surveyed vertices a listed side actually runs through — one listed
+   *  side can span several segments, so the hover highlight is a PATH. */
+  function sidePath(i: number): Array<{ lat: number; lng: number }> | null {
+    const ring = parcelRingPts;
+    const s = parcelSides[i];
+    if (!ring || !s) return null;
+    const out: Array<{ lat: number; lng: number }> = [];
+    for (let k = 0; k <= s.span; k++) {
+      const p = ring[(s.start + k) % ring.length];
+      out.push({ lat: p[0], lng: p[1] });
+    }
+    return out;
+  }
+
+  function hoveredSidePath(): Array<{ lat: number; lng: number }> | null {
+    return parcelHover === null ? null : sidePath(parcelHover);
+  }
+
+  function hideParcelPanel() {
+    parcelRingPts = null;
+    parcelRing = null;
+    parcelSides = [];
+    parcelChecked = [];
+    parcelHover = null;
+    $('#parcelPanel')?.classList.add('is-hidden');
+  }
+
+  async function loadParcelForOrigin() {
+    const o = mapOrigin;
+    if (!o || parcelBusy) return;
+    parcelBusy = true;
+    try {
+      // ONE call, started first and awaited last: it carries the 3D view's
+      // building footprints AND the OSM street centrelines the front-side
+      // decision reads. Fail-soft on both counts.
+      const osmPromise = fetchPropertyBoundary(o.lat, o.lng);
+      osmPromise
+        .then(function (res) {
+          const ringPts = parcelRing
+            ? parcelRing.map(function (ll) { return latLngToLocalFeet(o, ll); })
+            : null;
+          siteBuildings = buildingsToFootprints(res.buildings, o, ringPts);
+          pushModel();
+        })
+        .catch(function () {});
+
+      const res = await fetch(
+        '/api/parcels?lat=' + encodeURIComponent(o.lat) + '&lon=' + encodeURIComponent(o.lng),
+      );
+      if (res.status === 404) {
+        const body = (await res.json().catch(function () { return {}; })) as {
+          nearest?: { address: string | null; city: string | null } | null;
+        };
+        hideParcelPanel();
+        pushMap();
+        const near = body.nearest?.address
+          ? ' Nearest lot on record: ' + body.nearest.address +
+            (body.nearest.city ? ', ' + body.nearest.city : '') + '.'
+          : '';
+        sayHint('Parcel not found at this point.' + near + ' Trace the fence manually on the map.');
+        return;
+      }
+      if (!res.ok) {
+        const body = (await res.json().catch(function () { return {}; })) as { error?: string };
+        hideParcelPanel();
+        pushMap();
+        sayHint(body.error || 'Parcel lookup failed — trace the fence manually.');
+        return;
+      }
+      const data = (await res.json()) as ParcelApiHit;
+      const ring = pickRing(data.rings, o);
+      if (!ring) {
+        hideParcelPanel();
+        pushMap();
+        sayHint('Parcel geometry was empty — trace the fence manually.');
+        return;
+      }
+      parcelRingPts = ring;
+      parcelRing = ring.map(function (p) { return { lat: p[0], lng: p[1] }; });
+      parcelSides = groupSides(ring);
+      parcelChecked = parcelSides.map(function () { return true; });
+      parcelHover = null;
+      // The lot draws immediately; the sides list waits for the streets, which
+      // are already in flight. Doing it the other way round would show a panel
+      // whose checkboxes change under the contractor's cursor a second later.
+      pushMap();
+
+      // The street side comes off by default — a contractor does not fence the
+      // frontage. A corner lot faces two streets and loses both.
+      const osm = await osmPromise.catch(function () { return null; });
+      const fronts = osm ? detectFrontSides(parcelSides, osm.roads) : [];
+      fronts.forEach(function (f) { parcelChecked[f.index] = false; });
+      renderParcelPanel(data, fronts);
+      if (!fronts.length) {
+        sayHint(
+          osm && osm.roads.length
+            ? 'No street runs close enough to call a frontage here — check the sides yourself before using the footage.'
+            : 'Street data was unavailable, so no side was marked as frontage — uncheck the street side manually.',
+        );
+      }
+    } catch (err) {
+      console.error('[fence-estimator] parcel lookup failed:', err);
+      sayHint('Parcel lookup failed — trace the fence manually.');
+    } finally {
+      parcelBusy = false;
+    }
+  }
+
+  /** Indices of the stubs — real boundary, too small to be worth a row. */
+  function shortSideIndices(): number[] {
+    const out: number[] = [];
+    parcelSides.forEach(function (s, i) { if (s.short) out.push(i); });
+    return out;
+  }
+
+  /** Escape a value that came from OSM before it goes into innerHTML — a street
+   *  name is third-party text, not a literal. */
+  function esc(s: string): string {
+    return s.replace(/[&<>"]/g, function (c) {
+      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+    });
+  }
+
+  function renderParcelPanel(data: ParcelApiHit, fronts: FrontSideMatch[]) {
+    const panel = $('#parcelPanel');
+    const meta = $('#parcelMeta');
+    const list = $('#parcelSides');
+    if (!panel || !meta || !list) return;
+    const bits: string[] = [];
+    if (data.parcel.owner) bits.push(data.parcel.owner);
+    if (typeof data.parcel.acreage === 'number') bits.push(data.parcel.acreage.toFixed(2) + ' ac');
+    if (data.cached) bits.push('cached');
+    meta.textContent = bits.join(' · ') || '—';
+
+    const frontBy = new Map<number, FrontSideMatch>();
+    fronts.forEach(function (f) { frontBy.set(f.index, f); });
+
+    // Only the walls get rows, numbered as they read (1..N), not by their index
+    // in the surveyed ring.
+    let n = 0;
+    let html = parcelSides
+      .map(function (s, i) {
+        if (s.short) return '';
+        n += 1;
+        const front = frontBy.get(i);
+        // The street's own name is the contractor's confirmation that the right
+        // side was dropped; the compass bearing is the fallback when OSM has no
+        // name for it (common on service roads).
+        const trailing = front && front.streetName
+          ? '<span class="ps-street">' + esc(front.streetName) + '</span>'
+          : '<span class="ps-dir">' + bearingLabel(s.bearing) + '</span>';
+        return (
+          '<li class="ps-row" data-side="' + i + '">' +
+          '<label class="ps-label">' +
+          '<input type="checkbox" data-side-check="' + i + '"' + (parcelChecked[i] ? ' checked' : '') + ' />' +
+          '<span class="ps-name">Side ' + n + '</span>' +
+          (front ? '<span class="ps-tag">street</span>' : '') +
+          '<span class="ps-ft">' + Math.round(s.feet) + ' ft</span>' +
+          trailing +
+          '</label></li>'
+        );
+      })
+      .join('');
+
+    // The stubs, as ONE row. They stay in the geometry (dropping them would
+    // open gaps at the corners they connect) and default to included.
+    const shorts = shortSideIndices();
+    if (shorts.length) {
+      const ft = shorts.reduce(function (sum, i) { return sum + parcelSides[i].feet; }, 0);
+      const on = shorts.every(function (i) { return parcelChecked[i]; });
+      html +=
+        '<li class="ps-row ps-row--short" data-side-short="1">' +
+        '<label class="ps-label">' +
+        '<input type="checkbox" data-side-short-check="1"' + (on ? ' checked' : '') + ' />' +
+        '<span class="ps-name">+' + shorts.length + ' short segments</span>' +
+        '<span class="ps-ft">' + Math.round(ft) + ' ft</span>' +
+        '<span class="ps-dir">—</span>' +
+        '</label></li>';
+    }
+
+    list.innerHTML = html;
+    panel.classList.remove('is-hidden');
+    staggerIn(Array.from(list.querySelectorAll<HTMLElement>('li')));
+    updateParcelSum();
+  }
+
+  function checkedParcelFt(): number {
+    return parcelSides.reduce(function (sum, s, i) {
+      return sum + (parcelChecked[i] ? s.feet : 0);
+    }, 0);
+  }
+
+  function updateParcelSum() {
+    const lbl = $('#parcelUseLbl');
+    const btn = $('#parcelUse') as HTMLButtonElement | null;
+    const ft = Math.round(checkedParcelFt());
+    if (lbl) lbl.textContent = 'Use ' + ft + ' ft in estimate';
+    if (btn) btn.disabled = ft <= 0;
+  }
+
+  /** Checked sides → the trace. Consecutive checked sides share vertices, so
+   *  they arrive as one polyline; an unchecked side between two checked ones
+   *  becomes a run break (`gap` on the next group's first point) — the same
+   *  encoding a hand-drawn multi-run trace uses. Wrap-around is honoured: side
+   *  n-1 flowing into side 0 is one continuous run when both are checked. */
+  function applyParcelSelection() {
+    const o = mapOrigin;
+    if (!o || !parcelSides.length) return;
+    const n = parcelSides.length;
+    if (!parcelChecked.some(Boolean)) return;
+
+    // Group indices of maximal consecutive checked runs, in ring order.
+    let groups: number[][] = [];
+    let current: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (parcelChecked[i]) {
+        current.push(i);
+      } else if (current.length) {
+        groups.push(current);
+        current = [];
+      }
+    }
+    if (current.length) groups.push(current);
+    // Wrap: last group ends at n-1 AND first begins at 0 → one run (unless it
+    // is the same group, i.e. every side is checked — a closed loop).
+    if (
+      groups.length > 1 &&
+      groups[0][0] === 0 &&
+      groups[groups.length - 1][groups[groups.length - 1].length - 1] === n - 1
+    ) {
+      groups = [groups.pop()!.concat(groups.shift()!)].concat(groups);
+    }
+
+    // One vertex per listed side — the merged wall's END POINTS, not every
+    // surveyed kink between them. That is both what gets built (a fence runs
+    // straight between its end posts) and what keeps the ledger legible: one
+    // ledger run per row in the panel.
+    const pts: PathPoint[] = [];
+    groups.forEach(function (g, gi) {
+      const start = parcelSides[g[0]].from;
+      const startPt = latLngToLocalFeet(o, { lat: start[0], lng: start[1] });
+      pts.push(gi === 0 ? startPt : { ...startPt, gap: true });
+      g.forEach(function (i) {
+        const to = parcelSides[i].to;
+        pts.push(latLngToLocalFeet(o, { lat: to[0], lng: to[1] }));
+      });
+    });
+    // NOTE: when every side is checked the last vertex coincides with the
+    // first. It STAYS — that duplicate is what closes the loop and what makes
+    // the final side exist. Popping it (as this did) silently dropped one whole
+    // side of the lot from the estimate.
+    applyTracedPath(pts);
+    sayHint(
+      'Fence seeded from ' + Math.round(checkedParcelFt()) +
+      ' ft of property line — drag the dots to fine-tune, or add gates and doors.',
+    );
+  }
+
+  // Panel wiring — delegated, registered once (the panel node is in the initial
+  // markup; only its LIST is rebuilt per parcel).
+  const parcelPanelEl = $('#parcelPanel');
+  if (parcelPanelEl) {
+    on(parcelPanelEl, 'change', function (e) {
+      const el = e.target as HTMLElement;
+      const box = el.closest<HTMLInputElement>('[data-side-check]');
+      if (box) {
+        parcelChecked[Number(box.dataset.sideCheck)] = box.checked;
+        updateParcelSum();
+        return;
+      }
+      // The stubs move together — they are one row, so they are one decision.
+      const shortBox = el.closest<HTMLInputElement>('[data-side-short-check]');
+      if (shortBox) {
+        shortSideIndices().forEach(function (i) { parcelChecked[i] = shortBox.checked; });
+        updateParcelSum();
+      }
+    });
+    on(parcelPanelEl, 'click', function (e) {
+      if ((e.target as HTMLElement).closest('#parcelUse')) applyParcelSelection();
+    });
+    on(parcelPanelEl, 'mouseover', function (e) {
+      const row = (e.target as HTMLElement).closest<HTMLElement>('[data-side]');
+      const next = row ? Number(row.dataset.side) : null;
+      if (next !== parcelHover) { parcelHover = next; pushMap(); }
+    });
+    on(parcelPanelEl, 'mouseleave', function () {
+      if (parcelHover !== null) { parcelHover = null; pushMap(); }
+    });
+  }
+
+  /** The old "Load property lines" button — now a manual retrigger of the same
+   *  ReportAll flow (useful after a miss, or to re-open the sides panel). */
   async function loadParcel(btn: HTMLElement) {
     const say = (icon: string, label: string) => {
       btn.innerHTML = '<svg class="ic"><use href="#' + icon + '"/></svg>' + label;
     };
-    const o = mapOrigin;
     const old = btn.innerHTML;
     btn.dataset.busy = '1';
     if (!mapIsland) {
@@ -1251,41 +1604,15 @@ export function initFenceEstimatorContent(
       // a key the address search cannot resolve either, so "search an address"
       // would send the user after something that can't happen.
       say('i-board', 'Map layer required');
-    } else if (!o) {
+    } else if (!mapOrigin) {
       // The parcel is looked up BY POINT: without a resolved address the only
       // point available is the surface's sample lot, which is someone else's.
       say('i-pin', 'Search an address');
       sayHint('Search the property address first — property lines are looked up from that point.');
     } else {
       say('i-board', 'Loading…');
-      try {
-        const res = await fetchPropertyBoundary(o.lat, o.lng);
-        if (!res.ok) {
-          siteBuildings = buildingsToFootprints(res.buildings, o, null);
-          pushModel();
-          say('i-board', 'No parcel data');
-          sayHint(res.error);
-        } else {
-          const pts = simplifyPath(
-            res.ring.map(function (ll) { return latLngToLocalFeet(o, ll); }),
-            PARCEL_SIMPLIFY_FT,
-          );
-          if (pts.length < 3) {
-            say('i-board', 'Parcel too small');
-            sayHint('That parcel boundary is too small to fence — trace the run by hand instead.');
-          } else {
-            // Tagged against the parcel ring, so the house INSIDE the lot renders
-            // as the subject and the rest as neighbours.
-            siteBuildings = buildingsToFootprints(res.buildings, o, pts);
-            applyTracedPath(pts);
-            say('i-check', 'Lines loaded');
-            sayHint('Property lines loaded — drag the dots onto the fence line, or delete the sides you are not fencing.');
-          }
-        }
-      } catch (err) {
-        console.error('[fence-estimator] parcel load failed:', err);
-        say('i-board', 'Lookup failed');
-      }
+      await loadParcelForOrigin();
+      say(parcelRing ? 'i-check' : 'i-board', parcelRing ? 'Lines loaded' : 'No parcel data');
     }
     after(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1800);
   }

@@ -1375,6 +1375,27 @@
 .bp :global(.content .zoom-btn.done) { background: var(--blueprint); color: #fff; border-color: var(--blueprint-dark); }
 .bp :global(.content .stage-hint) { padding: 9px 14px; border-top: 1.5px solid var(--hair-soft); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.5; color: var(--muted); }
 
+/* parcel sides panel — filled when /api/parcels returns the lot */
+.bp :global(.content .parcel-panel) { border-top: 1.5px solid var(--hair-soft); padding: 12px 14px 14px; }
+.bp :global(.content .parcel-head) { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.bp :global(.content .parcel-meta) { margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .parcel-sides) { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 12px; list-style: none; margin: 0; padding: 0; }
+.bp :global(.content .ps-label) { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+.bp :global(.content .ps-row:hover .ps-label) { border-color: var(--blueprint); background: var(--accent-soft); }
+.bp :global(.content .ps-label input) { width: 15px; height: 15px; flex: 0 0 auto; accent-color: var(--blueprint); cursor: pointer; }
+.bp :global(.content .ps-name) { font-size: 12px; font-weight: 800; color: var(--ink); white-space: nowrap; }
+/* A side that carries a street name needs the room for it — the grid's own
+   column is sized for "Side 3 · 120 ft · N". */
+.bp :global(.content .ps-row:has(.ps-street)) { grid-column: span 2; }
+.bp :global(.content .ps-ft) { margin-left: auto; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--ink); }
+.bp :global(.content .ps-dir) { width: 22px; text-align: right; font-family: var(--font-mono); font-size: 10px; color: var(--muted-light); }
+/* The street's name, on the sides that face one. */
+.bp :global(.content .ps-street) { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+.bp :global(.content .ps-tag) { padding: 1px 5px; border: 1.5px solid var(--warning, #b8860b); border-radius: var(--radius); font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warning, #b8860b); }
+/* The stubs read as one aside, not as another wall. */
+.bp :global(.content .ps-row--short .ps-label) { border-style: dashed; }
+.bp :global(.content .ps-row--short .ps-name) { font-weight: 600; color: var(--muted); }
+
 /* 3D run model */
 
 /* right rail */

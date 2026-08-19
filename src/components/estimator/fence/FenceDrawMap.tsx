@@ -122,6 +122,17 @@ export type FenceDrawMapProps = {
   accentColor?: string;
   /** Door marker colour (reads neutral against the gate colour). */
   doorColor?: string;
+  /**
+   * Cadastral parcel overlay (ReportAll): the lot's outer ring drawn as a
+   * translucent fill under the trace, plus `highlight` — the vertex path of the
+   * side under the cursor in the host's sides list. A path rather than an index
+   * because one listed side can span several surveyed segments (see
+   * lib/parcels groupSides). Display only: the polygon is not clickable and
+   * never enters the trace.
+   */
+  parcel?: { ring: LatLng[]; highlight?: LatLng[] | null } | null;
+  /** Raster parcel-boundary tiles (proxied ReportAll layer, zoom 14–21). */
+  parcelTiles?: boolean;
 };
 
 export function FenceDrawMap({
@@ -142,6 +153,8 @@ export function FenceDrawMap({
   onApi,
   accentColor = DEFAULT_ACCENT,
   doorColor = DEFAULT_DOOR_INK,
+  parcel = null,
+  parcelTiles = false,
 }: FenceDrawMapProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   const measureRef = React.useRef<HTMLDivElement>(null);
@@ -191,6 +204,13 @@ export function FenceDrawMap({
   });
 
   const apiRef = React.useRef<FenceDrawMapApi | null>(null);
+
+  // The live map + maps library, exposed to the parcel-overlay and tile-layer
+  // effects below. `mapEpoch` bumps when a (re)built map lands so those effects
+  // re-run against the new instance — the build effect owns the map's life.
+  const gmapRef = React.useRef<GMaps | null>(null);
+  const mapsLibRef = React.useRef<GMaps | null>(null);
+  const [mapEpoch, setMapEpoch] = React.useState(0);
 
   // Which opening picker menu is open (the pill dropdowns on the map).
   const [openMenu, setOpenMenu] = React.useState<OpeningKind | null>(null);
@@ -935,9 +955,14 @@ export function FenceDrawMap({
         seedRuns();
         renderOpenings();
         onApiRef.current?.(apiRef.current);
+        gmapRef.current = map;
+        mapsLibRef.current = maps;
+        setMapEpoch((e) => e + 1);
 
         cleanup = () => {
           onApiRef.current?.(null);
+          gmapRef.current = null;
+          mapsLibRef.current = null;
           cancelAnimationFrame(raf);
           for (const l of listeners) l?.remove?.();
           while (runs.length) destroyRun(runs[runs.length - 1]);
@@ -961,6 +986,88 @@ export function FenceDrawMap({
     };
     // Rebuild the map when the origin (address) changes.
   }, [enabled, lat, lng]);
+
+  // ── Parcel overlay ─────────────────────────────────────────────────────────
+  // Translucent lot fill + ink outline under the trace, and a heavier accent
+  // stroke over the hovered side. Display-only objects, torn down whole on
+  // every change — a parcel has a few dozen vertices, so rebuild is cheap and
+  // there is no incremental state to get wrong.
+  const fittedRingRef = React.useRef<LatLng[] | null>(null);
+  React.useEffect(() => {
+    const map = gmapRef.current;
+    const maps = mapsLibRef.current;
+    if (!map || !maps) return;
+    const ring = parcel?.ring;
+    if (!ring || ring.length < 3) return;
+
+    const ACCENT = accentRef.current ?? DEFAULT_ACCENT;
+    const polygon = new maps.Polygon({
+      map,
+      paths: ring,
+      clickable: false,
+      fillColor: ACCENT,
+      fillOpacity: 0.14,
+      strokeColor: "#0a0a0a",
+      strokeOpacity: 0.9,
+      strokeWeight: 2,
+      zIndex: 1,
+    });
+
+    let highlightLine: GMaps | null = null;
+    const hi = parcel?.highlight;
+    if (hi && hi.length >= 2) {
+      highlightLine = new maps.Polyline({
+        map,
+        path: hi,
+        clickable: false,
+        strokeColor: ACCENT,
+        strokeOpacity: 1,
+        strokeWeight: 5,
+        zIndex: 2,
+      });
+    }
+
+    // A NEW ring (not a hover change) gets the camera: fit the lot once so a
+    // large parcel is not half off-screen at the address zoom. LatLngBounds is
+    // a core class — read off the global namespace the loader has populated.
+    const g = (window as unknown as { google?: GMaps }).google;
+    if (fittedRingRef.current !== ring && g?.maps?.LatLngBounds) {
+      fittedRingRef.current = ring;
+      const b = new g.maps.LatLngBounds();
+      for (const p of ring) b.extend(p);
+      map.fitBounds(b, 48);
+    }
+
+    return () => {
+      polygon.setMap(null);
+      highlightLine?.setMap(null);
+    };
+  }, [parcel, mapEpoch]);
+
+  // ── Parcel boundary tiles ──────────────────────────────────────────────────
+  // ReportAll's raster line-work for EVERY parcel in view, through the
+  // /api/parcel-tiles proxy (separate ALLTIME tile quota; the key stays on the
+  // server). Sits under the polygon and the trace.
+  React.useEffect(() => {
+    const map = gmapRef.current;
+    const maps = mapsLibRef.current;
+    if (!map || !maps || !parcelTiles) return;
+    // Size is a core class — global namespace, same reasoning as LatLngBounds.
+    const g = (window as unknown as { google?: GMaps }).google;
+    if (!g?.maps?.Size) return;
+    const layer = new maps.ImageMapType({
+      getTileUrl: (coord: { x: number; y: number }, zoom: number) =>
+        zoom >= 14 && zoom <= 21 ? `/api/parcel-tiles/${zoom}/${coord.x}/${coord.y}` : null,
+      tileSize: new g.maps.Size(256, 256),
+      opacity: 0.85,
+      name: "Parcels",
+    });
+    map.overlayMapTypes.push(layer);
+    return () => {
+      const idx = map.overlayMapTypes.getArray().indexOf(layer);
+      if (idx >= 0) map.overlayMapTypes.removeAt(idx);
+    };
+  }, [parcelTiles, mapEpoch]);
 
   if (!enabled) {
     // A chrome-less host renders its own empty state (the blueprint studio keeps

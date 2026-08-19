@@ -135,6 +135,15 @@ export function FenceEstimatorContent() {
                 </svg>
                 Clear
               </button>
+              {/* ReportAll raster boundary layer — every neighbouring lot's
+                  line-work. Off by default: the tile quota is ALLTIME, so the
+                  layer is spent deliberately, not on page load. */}
+              <button className="tool" type="button" data-act="lot-lines" aria-pressed="false">
+                <svg className="ic">
+                  <use href="#i-grid" />
+                </svg>
+                Lot lines
+              </button>
             </div>
             <div className="tool-group">
               <div className="tool-menu">
@@ -199,6 +208,28 @@ export function FenceEstimatorContent() {
 
           <div className="stage-hint">Click to trace — dots magnet when close (close / connect) · right-click to stop ·
             after stopping, click open ground to start a separate fence · right-click a dot to remove</div>
+
+          {/* PARCEL SIDES. Filled by the behavior module when /api/parcels
+              returns a lot for the searched address: one checkbox row per
+              boundary side, hover highlights that side on the map, and the
+              button seeds the CHECKED sides into the trace/ledger. Hidden until
+              a parcel exists — an empty panel would advertise a lookup that
+              has not happened. */}
+          <div className="parcel-panel is-hidden" id="parcelPanel">
+            <div className="parcel-head">
+              <div>
+                <div className="kpi-lbl">Property sides</div>
+                <div className="parcel-meta" id="parcelMeta"></div>
+              </div>
+              <button className="btn btn-primary btn--sm" type="button" id="parcelUse">
+                <svg className="ic">
+                  <use href="#i-check" />
+                </svg>
+                <span id="parcelUseLbl">Use 0 ft in estimate</span>
+              </button>
+            </div>
+            <ul className="parcel-sides" id="parcelSides"></ul>
+          </div>
         </div>
 
         {/* RIGHT RAIL */}

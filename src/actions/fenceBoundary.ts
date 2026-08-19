@@ -16,6 +16,9 @@ import {
   type LatLngPoint,
   type RegridResponse,
 } from "@/lib/parcel";
+// The street centrelines this action now returns are consumed by the parcel
+// geometry lib, which owns the type.
+import type { RoadLine } from "@/lib/parcels";
 
 export type { LatLngPoint };
 
@@ -68,11 +71,52 @@ interface OverpassElement {
   tags?: Record<string, unknown>;
 }
 
+// ── Streets ────────────────────────────────────────────────────────────────
+// Which side of a lot faces the street is decided by where the ROAD is, and OSM
+// already has the road centrelines. They ride along in the SAME Overpass query
+// the building footprints use — one round trip, one bbox, no extra service.
+
+/** OSM `highway` values that are not a street a fence would front onto. A
+ *  `service` way counts only when it is a driveway: an alley or a parking aisle
+ *  behind a lot would otherwise read as its frontage. */
+const NON_STREET_HIGHWAYS = new Set([
+  "footway",
+  "path",
+  "cycleway",
+  "steps",
+  "track",
+  "bridleway",
+  "corridor",
+  "pedestrian",
+  "proposed",
+  "construction",
+  "raceway",
+  "platform",
+]);
+
+function isStreet(tags: Record<string, unknown> | undefined): boolean {
+  const h = tags?.["highway"];
+  if (typeof h !== "string" || NON_STREET_HIGHWAYS.has(h)) return false;
+  if (h === "service") return String(tags?.["service"] ?? "") === "driveway";
+  return true;
+}
+
+const MAX_ROADS = 40;
+
 // Best-effort — public Overpass mirrors can be slow or down, so this fails soft
-// to [] and never blocks the parcel result for long.
-async function fetchOsmBuildings(lat: number, lng: number): Promise<BuildingRing[]> {
+// to empty and never blocks the parcel result for long.
+async function fetchOsmContext(
+  lat: number,
+  lng: number,
+): Promise<{ buildings: BuildingRing[]; roads: RoadLine[] }> {
+  const empty = { buildings: [] as BuildingRing[], roads: [] as RoadLine[] };
   try {
-    const q = `[out:json][timeout:8];way["building"](around:${OSM_RADIUS_M},${lat},${lng});out geom ${MAX_BUILDINGS * 2};`;
+    // One union query: footprints AND street centrelines in the same bbox.
+    const q =
+      `[out:json][timeout:10];(` +
+      `way["building"](around:${OSM_RADIUS_M},${lat},${lng});` +
+      `way["highway"](around:${OSM_RADIUS_M},${lat},${lng});` +
+      `);out geom ${(MAX_BUILDINGS + MAX_ROADS) * 2};`;
     const res = await fetch("https://overpass-api.de/api/interpreter", {
       method: "POST",
       headers: {
@@ -81,22 +125,37 @@ async function fetchOsmBuildings(lat: number, lng: number): Promise<BuildingRing
         "User-Agent": "JobFlex/3.0 (fence estimator; contact: support@jobflex.app)",
       },
       body: `data=${encodeURIComponent(q)}`,
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(10000),
     });
-    if (!res.ok) return [];
+    if (!res.ok) return empty;
     const data = (await res.json()) as { elements?: OverpassElement[] };
-    const out: BuildingRing[] = [];
+    const buildings: BuildingRing[] = [];
+    const roads: RoadLine[] = [];
     for (const el of data.elements ?? []) {
       if (el.type !== "way" || !Array.isArray(el.geometry)) continue;
-      const ring: LatLngPoint[] = [];
+      const pts: Array<[number, number]> = [];
       for (const g of el.geometry) {
-        if (typeof g?.lat === "number" && typeof g?.lon === "number") ring.push({ lat: g.lat, lng: g.lon });
+        if (typeof g?.lat === "number" && typeof g?.lon === "number") pts.push([g.lat, g.lon]);
       }
-      if (ring.length >= 3) out.push({ ring, heightFt: heightFromTags(el.tags) });
+      if (isStreet(el.tags)) {
+        // A centreline needs two points to be a line at all.
+        if (pts.length >= 2 && roads.length < MAX_ROADS) {
+          const name = el.tags?.["name"];
+          roads.push({ name: typeof name === "string" ? name : null, points: pts });
+        }
+        continue;
+      }
+      if (el.tags?.["building"] === undefined) continue;
+      if (pts.length >= 3) {
+        buildings.push({
+          ring: pts.map(([la, ln]) => ({ lat: la, lng: ln })),
+          heightFt: heightFromTags(el.tags),
+        });
+      }
     }
-    return out;
+    return { buildings, roads };
   } catch {
-    return [];
+    return empty;
   }
 }
 
@@ -126,21 +185,31 @@ function mergeBuildings(primary: BuildingRing[], fill: BuildingRing[], lat: numb
   return merged.sort((a, b) => dist(a) - dist(b)).slice(0, MAX_BUILDINGS);
 }
 
+/**
+ * Site context for a point: the Regrid parcel ring (when a key is configured),
+ * nearby building footprints, and the STREET centrelines around the lot.
+ *
+ * `roads` is the signal the fence studio uses to decide which side of a parcel
+ * faces the street. It is independent of `ok`: a Regrid failure says nothing
+ * about OSM, and the front-side decision must not be collateral damage.
+ */
 export async function fetchPropertyBoundary(
   lat: number,
   lng: number,
 ): Promise<
-  | { ok: true; ring: LatLngPoint[]; buildings: BuildingRing[] }
-  | { ok: false; error: string; buildings: BuildingRing[] }
+  | { ok: true; ring: LatLngPoint[]; buildings: BuildingRing[]; roads: RoadLine[] }
+  | { ok: false; error: string; buildings: BuildingRing[]; roads: RoadLine[] }
 > {
   await requireEstimatorOrManager();
   // OSM lookup runs concurrently with Regrid — it's independent and fail-soft.
-  const osmPromise = fetchOsmBuildings(lat, lng);
+  const osmPromise = fetchOsmContext(lat, lng);
   if (!isRegridEnabled()) {
+    const osm = await osmPromise;
     return {
       ok: false,
       error: "Set REGRID_API_KEY in .env.local to load property lines (get a key at regrid.com/api).",
-      buildings: await osmPromise,
+      buildings: osm.buildings,
+      roads: osm.roads,
     };
   }
   try {
@@ -152,24 +221,29 @@ export async function fetchPropertyBoundary(
         status === 401 || status === 403
           ? "Regrid rejected the key (401/403) — the token is likely expired. Regrid issues 30-day tokens; mint a new one and update REGRID_API_KEY."
           : `Regrid request failed (${status || "no key"}).`;
-      return { ok: false, error, buildings: await osmPromise };
+      const osm = await osmPromise;
+      return { ok: false, error, buildings: osm.buildings, roads: osm.roads };
     }
     const ring = extractRing(data, lat, lng);
-    const buildings = mergeBuildings(regridBuildings(data), await osmPromise, lat, lng);
+    const osm = await osmPromise;
+    const buildings = mergeBuildings(regridBuildings(data), osm.buildings, lat, lng);
     if (ring.length < 3) {
       return {
         ok: false,
         error:
           "No parcel found here — your Regrid plan may not cover this area. Drop the pin inside the lot, or draw the fence manually.",
         buildings,
+        roads: osm.roads,
       };
     }
-    return { ok: true, ring, buildings };
+    return { ok: true, ring, buildings, roads: osm.roads };
   } catch (err) {
+    const osm = await osmPromise.catch(() => ({ buildings: [], roads: [] }));
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to load property lines.",
-      buildings: await osmPromise.catch(() => []),
+      buildings: osm.buildings,
+      roads: osm.roads,
     };
   }
 }
