@@ -194,10 +194,14 @@ const PAGE_OWNED_HANDHELD = /^\/dashboard\/(projects|jobs)\/[^/]+$/;
  *  build needs the page's server data, so it cannot be a props-less component
  *  mounted from this layout.
  *
- *  · /dashboard/subscription-blueprint — the URL the sidebar's Subscription
- *    button points at (2026-08-13). Its handheld half is the real-data
+ *  · /dashboard/subscription — the URL the sidebar's Subscription button
+ *    points at (the promoted route; its handheld half was folded in
+ *    2026-08-18). The handheld half is the real-data
  *    components/v3/mobile-subscription build, fed by the page's own loader; see
- *    app/dashboard/subscription-blueprint/subscription-blueprint-responsive.tsx.
+ *    app/dashboard/subscription/subscription-responsive.tsx.
+ *  · /dashboard/subscription-blueprint — the responsive staging route; it
+ *    renders the SAME switch through a re-export, so it needs the same
+ *    exemption for as long as it stands.
  *  · /dashboard/client-detail — the record the handheld clients book opens
  *    (2026-08-15). It was the one surface reachable from a mobile page with no
  *    mobile chrome: the desktop topbar was clipped off the right edge of a
@@ -207,6 +211,7 @@ const PAGE_OWNED_HANDHELD = /^\/dashboard\/(projects|jobs)\/[^/]+$/;
  *    components/v3/client-detail-blueprint/client-detail-viewport-switch.tsx,
  *    which needs the `?client=` row the page's own loader read. */
 const PAGE_OWNED_STATIC = new Set([
+  "/dashboard/subscription",
   "/dashboard/subscription-blueprint",
   "/dashboard/client-detail",
 ]);

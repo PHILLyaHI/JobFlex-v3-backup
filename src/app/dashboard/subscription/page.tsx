@@ -31,9 +31,19 @@
 // access rule even before real data lands.
 
 import { redirect } from "next/navigation";
+// RESPONSIVE, 2026-08-18: this route now answers a phone as well as a desktop —
+// above 768px the blueprint port, at or below it the handheld build in
+// components/v3/mobile-subscription, switched by a media query in
+// ./subscription-responsive.tsx. The handheld half runs on REAL data, so the
+// page performs the live surface's read (loadSubscriptionData — the existing
+// loader, no new query, no new action, no schema change). The desktop half is
+// still the mockup's fixture; the two halves therefore disagree on the numbers
+// until the blueprint port is wired to the same loader, which is separate work.
+
 import type { Metadata } from "next";
 import { requireOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
-import { SubscriptionContent } from "@/components/v3/subscription-blueprint/subscription-content";
+import { loadSubscriptionData } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
+import { SubscriptionResponsive } from "./subscription-responsive";
 
 export const dynamic = "force-dynamic";
 
@@ -46,15 +56,21 @@ export const metadata: Metadata = {
 };
 
 export default async function SubscriptionPage() {
+  let organizationId: string;
   let role: string;
   try {
-    ({ role } = await requireOrg());
+    ({ organizationId, role } = await requireOrg());
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fsubscription");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
     throw err;
   }
+  // Billing is owner-only. The nav hides the entry from every other role; this
+  // is the fail-closed side, and it also has to run BEFORE the loader, whose
+  // invoice and referral calls assert ownership themselves.
   if (!isOwnerRole(role)) redirect("/dashboard");
 
-  return <SubscriptionContent />;
+  const data = await loadSubscriptionData(organizationId);
+
+  return <SubscriptionResponsive {...data} />;
 }
