@@ -296,8 +296,16 @@ export interface FrontSideMatch {
 }
 
 /** Past this a road is not this lot's frontage — it is the road serving the
- *  block behind, or the arterial two lots over. */
-export const FRONT_MAX_DISTANCE_FT = 150;
+ *  block behind, or the arterial two lots over.
+ *
+ *  75 ft, measured rather than guessed. A lot that genuinely fronts a street
+ *  sits close to it: 17028 NE 100th St measures 36 ft from its south boundary
+ *  to the centreline. At the 150 ft this started on, an interior lot with NO
+ *  street within 290 ft (17505 88th Ave NE) matched a private lane 114 ft away
+ *  that serves a neighbouring apartment complex, and quietly took 134 ft off
+ *  the estimate. Tightening to 75 keeps the real frontage and sends the
+ *  street-less lot to "check it yourself", which is the honest answer for it. */
+export const FRONT_MAX_DISTANCE_FT = 75;
 /** Sides within 25% of the closest one are ALSO frontage: a corner lot really
  *  does face two streets, and unchecking only one of them would quietly put a
  *  street-facing run back into the estimate. */

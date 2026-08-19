@@ -251,4 +251,34 @@ ok("stubs are never nominated as the frontage", () => {
 ok("a degenerate one-point 'road' cannot crash or match", () =>
   assert.deepEqual(detectFrontSides(groupSides(lot), [{ name: "X", points: [[47.6, -122.2]] }]), []));
 
+// The 75 ft cap, exercised either side of the line. The lot's south edge is at
+// lat 47.6, so a road offset purely in latitude sits at a known distance from
+// that side's midpoint: 1 degree of latitude is 364,824 ft.
+const FT_PER_DEG_LAT = 20902231 * (Math.PI / 180);
+const roadSouthOf = (ft) => ({
+  name: `${ft} ft away`,
+  points: [
+    [47.6 - ft / FT_PER_DEG_LAT, -122.2004],
+    [47.6 - ft / FT_PER_DEG_LAT, -122.1988],
+  ],
+});
+ok("a street 60 ft from the side IS its frontage (inside the 75 ft cap)", () => {
+  const sides = groupSides(lot);
+  const fronts = detectFrontSides(sides, [roadSouthOf(60)]);
+  assert.equal(fronts.length, 1, `expected 1 front, got ${fronts.length}`);
+  assert.ok(Math.abs(midLat(sides[fronts[0].index]) - 47.6) < 1e-6, "not the south wall");
+  assert.ok(Math.abs(fronts[0].distanceFt - 60) < 1, `distance ${fronts[0].distanceFt}`);
+});
+ok("a street 90 ft away is NOT — nothing is tagged", () => {
+  const fronts = detectFrontSides(groupSides(lot), [roadSouthOf(90)]);
+  assert.deepEqual(fronts, [], `tagged ${fronts.length} side(s) at 90 ft`);
+});
+ok("the cap is the only thing separating those two cases", () => {
+  // Same 90 ft road, cap lifted past it → the side comes back. Proves the
+  // rejection is the threshold, not a geometry accident.
+  const fronts = detectFrontSides(groupSides(lot), [roadSouthOf(90)], { maxDistanceFt: 150 });
+  assert.equal(fronts.length, 1);
+  assert.ok(Math.abs(fronts[0].distanceFt - 90) < 1, `distance ${fronts[0].distanceFt}`);
+});
+
 console.log(`\n${passed} checks passed`);
