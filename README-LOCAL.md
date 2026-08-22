@@ -42,6 +42,7 @@ npm run dev                      # http://localhost:3000
 | `GOOGLE_MAPS_API_KEY` | Google Cloud Console → Maps Platform (server key) | геокодинг, Find в Fence |
 | `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` | там же (browser key, с HTTP-referrer localhost) | спутниковая карта Fence, Places autocomplete |
 | `REGRID_API_KEY` | regrid.com (free trial) | контур участка в Fence |
+| `REPORTALL_CLIENT_KEY` | reportallusa.com | границы участка + владелец/площадь в Fence. Квота **ALLTIME** (1000 парселей на весь срок ключа, не помесячно) — всё кэшируется в `ParcelCache`/`ParcelMiss`, повторный адрес бесплатен |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_PHONE_NUMBER` | console.twilio.com | Phone (приём звонков) |
 | `TWILIO_APP_URL` | твой публичный URL (ngrok) | база для Twilio-вебхуков; пусто → берётся app URL |
 | `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | dashboard.stripe.com → Developers → API keys (test) | checkout, инвойсы |
@@ -76,10 +77,34 @@ stripe listen --forward-to localhost:3000/api/webhooks/stripe
 - Google Sign-In: `http://localhost:3000/api/auth/callback/google`
 - Gmail-интеграция: `http://localhost:3000/api/integrations/gmail/callback` (то же значение стоит в `GMAIL_OAUTH_REDIRECT_URI`)
 
+## Перенос на другую машину
+
+Код тянется из git; вне git остаются ровно три файла — `.env`, `.env.local` и
+`prisma/dev.db`. Их переносить отдельно, защищённым каналом (внутри боевой ключ Stripe
+и app-password Gmail):
+
+```bash
+# на исходной машине, из корня репозитория
+tar -czf ~/jobflex-secrets.tar.gz .env .env.local prisma/dev.db
+
+# на новой машине
+git clone <repo> jobflex-v3 && cd jobflex-v3
+git checkout blueprint-design      # рабочая ветка, не main
+tar -xzf /путь/к/jobflex-secrets.tar.gz
+npm install && npx prisma generate && npm run dev
+```
+
+`prisma/dev.db` едет вместе с ключами не просто так: в нём кэш парселей ReportAll, а та
+квота ALLTIME — на чистой базе те же адреса спишутся повторно. По этой же причине на
+новой машине **не** запускать `npm run seed` (не идемпотентен) и `vercel env pull`
+(перезапишет `.env.local` пустыми значениями).
+
 ## Известные ограничения
 
 - **Subscription и Settings — витрины**: интерфейс кликается, но данные не сохраняются (проводка данных — отдельная незапущенная задача; решение owner'а от 2026-08-18).
 - Smart Proposal: «Send to proposal» и кнопки материалов — заглушки без обработчиков (донорская фикстура).
 - Roof estimator без EagleView-ключей показывает только плашку конфигурации — это задумано (гейт и на клиенте, и на сервере).
 - Seed не идемпотентен — только для чистой базы.
+- Квота ReportAll — ALLTIME, а не помесячная: чистка `ParcelCache` означает повторный
+  расход на те же адреса. `ParcelMiss` держит промахи 7 дней.
 - Прод-окружение Vercel из локалки не трогать: `vercel env add/rm` не выполнять, реальный прод — проект `epoxy-fox-main` (jobflex.app), линкована должна быть только `jobflex-v3`.
