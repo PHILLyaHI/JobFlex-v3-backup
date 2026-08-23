@@ -18,8 +18,13 @@ import {
   formatUSD,
   isBareUrlParagraph,
 } from "@/lib/email/build/client";
-import { buildOwnerAccepted, buildNewLead, buildLeadOffer } from "@/lib/email/build/operator";
-import { buildJobAssignment } from "@/lib/email/build/worker";
+import {
+  buildCrewResponse,
+  buildLeadOffer,
+  buildNewLead,
+  buildOwnerAccepted,
+} from "@/lib/email/build/operator";
+import { buildAppointmentAssignment, buildJobAssignment } from "@/lib/email/build/worker";
 import { buildRequestReceived, buildHomeownerMatched } from "@/lib/email/build/platform";
 import { parseGmailSettings } from "@/lib/settings";
 
@@ -278,6 +283,63 @@ export async function notifyLeadCreated(leadId: string) {
   return { skipped: false as const };
 }
 
+/**
+ * Staffed on an appointment — email the worker.
+ *
+ * The job path has notified since it shipped; the appointment path never did.
+ * A manager could put someone on a site visit and the only trace the worker had
+ * was a card appearing in a calendar they might not open that week. Called with
+ * the ids that were ADDED (not the whole roster), so re-saving an appointment
+ * does not re-mail everyone already on it.
+ *
+ * Best-effort by contract: the caller wraps it, because a mail failure must
+ * never roll back a booking that is already in the calendar.
+ */
+export async function notifyAppointmentAssigned(appointmentId: string, workerIds: string[]) {
+  if (!workerIds.length) return { skipped: true as const, reason: "no-workers" };
+
+  const apt = await db.appointment.findUnique({
+    where: { id: appointmentId },
+    include: {
+      client: { select: { address: true } },
+      lead: { select: { address: true } },
+      organization: { select: { name: true, logoUrl: true, phone: true } },
+    },
+  });
+  if (!apt) return { skipped: true as const, reason: "not-found" };
+
+  const workers = await db.workerProfile.findMany({
+    where: { id: { in: workerIds }, organizationId: apt.organizationId },
+    select: { displayName: true, token: true, user: { select: { email: true } } },
+  });
+
+  const appUrl = await appBaseUrl();
+  let sent = 0;
+  for (const w of workers) {
+    const email = w.user?.email;
+    if (!email) continue;
+    const { subject, html } = renderEmail(
+      buildAppointmentAssignment({
+        org: {
+          name: apt.organization.name,
+          logoUrl: apt.organization.logoUrl,
+          phone: apt.organization.phone,
+        },
+        workerName: w.displayName,
+        title: apt.title,
+        startsAt: apt.startsAt,
+        endsAt: apt.endsAt,
+        address: apt.client?.address ?? apt.lead?.address ?? null,
+        notes: apt.notes,
+        href: `${appUrl}/w/${w.token}`,
+      }),
+    );
+    await sendEmail({ to: email, subject, html });
+    sent += 1;
+  }
+  return { skipped: false as const, sent };
+}
+
 export async function notifyAssignmentCreated(assignmentId: string) {
   const a = await db.jobAssignment.findUnique({
     where: { id: assignmentId },
@@ -334,6 +396,71 @@ export async function notifyAssignmentCreated(assignmentId: string) {
     ).catch(() => null);
   }
 
+  return { skipped: false as const };
+}
+
+/**
+ * Crew answered an assignment (2026-08-22, owner request): the OFFICE hears it
+ * by email — the org's owner(s) plus the manager who made the assignment
+ * (recovered from the ASSIGNED activity row's meta; the assignment table
+ * carries no assignedBy column). Recipients are deduped and the responding
+ * worker's own address is excluded — answering your own mail is noise.
+ */
+export async function notifyAssignmentResponded(
+  assignmentId: string,
+  response: "ACCEPTED" | "DECLINED",
+  jobStatusNow: string | null,
+) {
+  if (!isEmailEnabled()) return { skipped: true as const };
+  const a = await db.jobAssignment.findUnique({
+    where: { id: assignmentId },
+    include: {
+      worker: { include: { user: { select: { email: true } } } },
+      job: { select: { id: true, title: true, startsAt: true, organizationId: true } },
+    },
+  });
+  if (!a) return { skipped: true as const };
+  const organizationId = a.job.organizationId;
+
+  const [org, owners, assignedEvent] = await Promise.all([
+    db.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true, logoUrl: true, phone: true },
+    }),
+    db.membership.findMany({
+      where: { organizationId, role: "OWNER" },
+      select: { user: { select: { email: true } } },
+    }),
+    db.activityEvent.findFirst({
+      where: { organizationId, kind: "ASSIGNED", meta: { contains: assignmentId } },
+      orderBy: { createdAt: "desc" },
+      select: { actor: { select: { email: true } } },
+    }),
+  ]);
+
+  const workerEmail = a.worker.user?.email?.toLowerCase() ?? null;
+  const to = Array.from(
+    new Set(
+      [...owners.map((m) => m.user?.email), assignedEvent?.actor?.email]
+        .filter((e): e is string => Boolean(e))
+        .map((e) => e.toLowerCase()),
+    ),
+  ).filter((e) => e !== workerEmail);
+  if (to.length === 0) return { skipped: true as const };
+
+  const appUrl = await appBaseUrl();
+  const { subject, html } = renderEmail(
+    buildCrewResponse({
+      org: { name: org?.name ?? "Your team", logoUrl: org?.logoUrl, phone: org?.phone },
+      workerName: a.worker.displayName,
+      title: a.job.title,
+      response,
+      startsAt: a.job.startsAt,
+      jobStatusNow,
+      href: `${appUrl}/dashboard/jobs/${a.job.id}`,
+    }),
+  );
+  await Promise.all(to.map((email) => sendEmail({ to: email, subject, html })));
   return { skipped: false as const };
 }
 

@@ -160,6 +160,10 @@
 
 /* ── чипы (виды работ) ── */
 .bp :global(.chips) { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+/* Revealed only while the "Other" chip is on: the trade the closed taxonomy
+   has no word for. Sits under the chip row, indented by nothing — it is a
+   continuation of the answer above it, not a new field. */
+.bp :global(.fld-in--other) { margin-top: 9px; }
 .bp :global(.chip) {
   height: 34px; padding: 0 12px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);

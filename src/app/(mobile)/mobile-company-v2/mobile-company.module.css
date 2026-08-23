@@ -340,6 +340,7 @@
   color: var(--muted);
 }
 .saveLine.saved { color: var(--success); }
+.saveLine.err { color: var(--danger); }
 /* ============================================================
    IDENTITY — a read summary. The five fields live in the form
    sheet: on a phone this panel is one long scroll, and a focused
@@ -400,6 +401,8 @@
 }
 .logoDrop .ic { width: 20px; height: 20px; color: var(--muted); }
 .logoDrop:active, .logoDrop.over { border-color: var(--ink); background: rgba(10, 10, 10, 0.05); }
+/* The saved logo fills the drop target once one exists (tap to replace). */
+.logoImg { max-height: 84px; max-width: 100%; object-fit: contain; }
 .logoT { font-size: 15px; font-weight: 700; }
 .logoH {
   font-family: var(--font-mono);

@@ -1514,6 +1514,18 @@
 /* A record on its way out — leaveRow fades and slides that one node while the
    rows below close the gap. The wash says WHICH row is going while it does. */
 .bp :global(.content .prow.is-leaving) { background: var(--danger-soft); }
+
+/* A row the server just created (a duplicate). It lands somewhere in an
+   already-long list, so it says where it is for a couple of seconds and then
+   becomes an ordinary row. Paired with `flashRow` in proposals-behavior.ts. */
+.bp :global(.content .prow.is-fresh) {
+  background: var(--accent-soft);
+  animation: prowFresh 2.2s ease-out forwards;
+}
+@keyframes prowFresh {
+  0%, 55% { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
 .bp :global(.content .pjob.is-leaving), .bp :global(.content .psheet.is-leaving) { border-color: var(--muted-faint); }
 
 @media (max-width: 860px) {

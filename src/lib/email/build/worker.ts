@@ -62,6 +62,45 @@ export function buildJobAssignment(i: JobAssignmentInput): EmailDoc {
   };
 }
 
+export interface AppointmentAssignmentInput {
+  org: OrgBrand;
+  workerName: string;
+  title: string;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  /** Where it happens, when the appointment carries a linked record. */
+  address: string | null;
+  notes: string | null;
+  href: string;
+}
+
+/**
+ * Staffed on an APPOINTMENT — a site visit, a walkthrough, an estimate call.
+ *
+ * Distinct from buildJobAssignment on purpose: an appointment is not a job, so
+ * there is nothing to accept or decline and no crew list to read. The CTA opens
+ * their schedule rather than a confirm/decline gate, and the box carries the
+ * notes, which for a visit are usually the whole brief.
+ */
+export function buildAppointmentAssignment(i: AppointmentAssignmentInput): EmailDoc {
+  const box: BoxRow[] = [
+    { type: "field", label: "Time", value: i.startsAt ? formatTime(i.startsAt) : "TBD" },
+    { type: "field", label: "Where", value: i.address ?? "See your schedule" },
+    { type: "anchor", label: "Date", value: i.startsAt ? formatStartDate(i.startsAt) : "TBD" },
+  ];
+  if (i.notes) box.push({ type: "field", label: "Notes", value: truncate(i.notes, 120) });
+  return {
+    subject: `You're scheduled — ${truncate(i.title, TITLE_MAX)}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Schedule" },
+    headline: truncate(i.title, TITLE_MAX),
+    prose: [`Hi ${i.workerName.split(" ")[0]} — you've been put on the schedule.`],
+    box,
+    cta: { label: "Open my schedule", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
+
 export interface WorkerInviteInput {
   org: OrgBrand;
   workerName: string;

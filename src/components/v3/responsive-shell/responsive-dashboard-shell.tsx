@@ -25,6 +25,8 @@ import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
 import { NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
+import type { SeenKey } from "@/lib/badgeCounts";
 
 /** CLAUDE.md's handheld target: ≤768px. Matches the mobile modules' own scale. */
 const HANDHELD = "(max-width: 768px)";
@@ -216,6 +218,27 @@ const PAGE_OWNED_STATIC = new Set([
   "/dashboard/client-detail",
 ]);
 
+/** Seen-stamps for the HANDHELD branch. The desktop edition stamps from each
+ *  server page.tsx (<MarkNavSeen /> in the returned tree), but at ≤768px this
+ *  shell renders the mapped mobile component INSTEAD of the page's children —
+ *  the stamp in the page never mounts, and a badge a phone visit should clear
+ *  would survive the visit. So the handheld branch stamps here, keyed by
+ *  route. Deliberately absent:
+ *  · /dashboard/jobs — the offers popup stamps it (owner request 2026-08-21),
+ *    on both viewports; a route-level stamp would clear it on mere arrival.
+ *  · /dashboard/messages — clears per-thread via markConversationRead. */
+const HANDHELD_SEEN: Record<string, SeenKey> = {
+  "/dashboard/leads": "leads",
+  "/dashboard/proposals": "proposals",
+  "/dashboard/calendar": "calendar",
+  "/dashboard/workers": "workers",
+  "/dashboard/announcements": "announcements",
+  "/dashboard/trade": "trade",
+  "/dashboard/phone": "phone",
+  "/dashboard/referrals": "referrals",
+  "/dashboard/reviews": "reviews",
+};
+
 // Module-scope so the identities are stable across renders — a fresh
 // `subscribe` on every render makes useSyncExternalStore re-subscribe each
 // time, which on a resize-driven store means tearing down the listener in the
@@ -236,6 +259,7 @@ export function ResponsiveDashboardShell({
   children,
   user,
   identity,
+  badges,
 }: {
   children: React.ReactNode;
   /** Signed-in identity, read in the server layout and handed to the desktop
@@ -246,6 +270,10 @@ export function ResponsiveDashboardShell({
    *  inside a mobile page, and the command palette. It wraps BOTH branches
    *  below, because the drawer is inside the handheld one. */
   identity?: NavIdentity;
+  /** Unread/pending counts by nav href, read server-side in the layout
+   *  (getBadgeCounts). Published through the same provider the identity rides,
+   *  for the same reason: the two nav shells sit at very different depths. */
+  badges?: Record<string, number>;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const pathname = usePathname();
@@ -258,8 +286,12 @@ export function ResponsiveDashboardShell({
   // the new build instead. Keyed on the pathname so navigating off a surface
   // whose chunk is missing clears the panel rather than carrying it along.
   if (isHandheld && Handheld) {
+    const seenSurface = HANDHELD_SEEN[pathname ?? ""];
     return (
-      <NavRoleProvider identity={identity}>
+      <NavRoleProvider identity={identity} badges={badges}>
+        {/* Keyed: this shell persists across navigation, and MarkNavSeen only
+            stamps once per mount — a new key remounts it for the new surface. */}
+        {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
         <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
           <Handheld />
         </ChunkRecoveryBoundary>
@@ -284,14 +316,14 @@ export function ResponsiveDashboardShell({
   // Page-owned handheld branches render their own chrome (which reaches for
   // MobileNav), so they need the provider just as much as the mapped ones.
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
-    return <NavRoleProvider identity={identity}>{children}</NavRoleProvider>;
+    return <NavRoleProvider identity={identity} badges={badges}>{children}</NavRoleProvider>;
   }
   if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
-    return <NavRoleProvider identity={identity}>{children}</NavRoleProvider>;
+    return <NavRoleProvider identity={identity} badges={badges}>{children}</NavRoleProvider>;
   }
 
   return (
-    <NavRoleProvider identity={identity}>
+    <NavRoleProvider identity={identity} badges={badges}>
       <BlueprintShell user={user}>{children}</BlueprintShell>
     </NavRoleProvider>
   );

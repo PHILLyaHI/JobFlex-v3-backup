@@ -52,11 +52,21 @@ function settledFrom(status: string): Settled {
   return null;
 }
 
+export type PayProvider = "stripe" | "square" | "paypal";
+
+const PROVIDER_LABEL: Record<PayProvider, string> = {
+  stripe: "Pay with card",
+  square: "Pay with Square",
+  paypal: "Pay with PayPal",
+};
+
 export function PortalActions({
   publicId,
   status,
   total,
+  providers,
 }: {
+  providers: readonly PayProvider[];
   publicId: string;
   status: string;
   total: number;
@@ -69,17 +79,32 @@ export function PortalActions({
   // Optimistic: the donor swaps to the settled state on click, before any
   // round trip. router.refresh() then re-renders the server tree behind it.
   const [local, setLocal] = useState<Settled>(null);
+  // Runs the accept flourish exactly once, on the click that settles the deal —
+  // never on a reload of an already-accepted page, where a burst of confetti
+  // over a week-old decision would be nonsense.
+  const [cheer, setCheer] = useState(false);
 
   const settled = local ?? settledFrom(status);
 
   async function accept() {
+    // OPTIMISTIC, and this is the whole point. The comment above has always
+    // claimed the settled state swaps "before any round trip"; it did not —
+    // the swap waited on the POST, and that POST blocks on sending two emails
+    // through the mail provider. The client sat on an unchanged page for
+    // several seconds after clicking Accept, with no signal that anything had
+    // happened, and a reload in that window showed the proposal still open.
+    // Flip first, celebrate, and put it back only if the server refuses.
+    const previous = local;
+    setBusy("accept");
+    setLocal("accepted");
+    setCheer(true);
     try {
-      setBusy("accept");
       const res = await fetch(`/api/public-quote/${publicId}/accept`, { method: "POST" });
       if (!res.ok) throw new Error("Couldn't record acceptance");
-      setLocal("accepted");
       router.refresh();
     } catch (err) {
+      setLocal(previous);
+      setCheer(false);
       toast.error("Acceptance failed", err instanceof Error ? err.message : undefined);
     } finally {
       setBusy(null);
@@ -124,6 +149,7 @@ export function PortalActions({
       });
       const data = await res.json();
       if (data?.url) {
+        // eslint-disable-next-line react-hooks/immutability -- external checkout redirect, not component state
         window.location.href = data.url;
       } else if (data?.disabled) {
         toast.info(
@@ -155,31 +181,7 @@ export function PortalActions({
           Accept proposal
         </button>
         <button
-          className="pv-btn pv-btn--ghost"
-          type="button"
-          disabled={busy !== null}
-          onClick={() => checkout("stripe")}
-        >
-          Pay with Stripe
-        </button>
-        <button
-          className="pv-btn pv-btn--ghost"
-          type="button"
-          disabled={busy !== null}
-          onClick={() => checkout("square")}
-        >
-          Square
-        </button>
-        <button
-          className="pv-btn pv-btn--ghost"
-          type="button"
-          disabled={busy !== null}
-          onClick={() => checkout("paypal")}
-        >
-          PayPal
-        </button>
-        <button
-          className="pv-btn pv-btn--ghost"
+          className="pv-btn pv-btn--danger"
           type="button"
           id="pvDeclineT"
           aria-expanded={declineOpen}
@@ -205,7 +207,7 @@ export function PortalActions({
         </div>
         <div className="pv-decline-row">
           <button
-            className="pv-btn pv-btn--ghost"
+            className="pv-btn pv-btn--danger"
             type="button"
             id="pvDeclineGo"
             disabled={busy !== null}
@@ -216,13 +218,52 @@ export function PortalActions({
         </div>
       </div>
 
-      <div className="pv-state" id="pvAccepted" hidden={!positive}>
+      <div
+        className="pv-state"
+        id="pvAccepted"
+        hidden={!positive}
+        data-cheer={cheer ? "1" : undefined}
+      >
+        {cheer && (
+          <span className="pv-cheer" aria-hidden="true">
+            {/* Eight sparks thrown from behind the plate. Pure CSS, no library,
+                and `prefers-reduced-motion` stops them dead (see the stylesheet). */}
+            {Array.from({ length: 8 }, (_, i) => (
+              <i key={i} style={{ "--i": i } as React.CSSProperties} />
+            ))}
+          </span>
+        )}
         {/* The donor writes `&#10003;&nbsp;` — a NO-BREAK space after the check,
             not a plain one. ` ` keeps it one. */}
         {settled === "paid"
           ? "✓ Paid in full — thank you. The team has been notified."
           : "✓ Accepted — thank you. The team has been notified."}
       </div>
+      {/* HOW TO PAY — only after the deal is agreed.
+          These used to sit in the same row as Accept, which asked the client to
+          pay for something they had not yet said yes to and gave a card payment
+          the same weight as declining. Accepting is the decision; paying is the
+          next step, and it appears once that decision is made. Gone again once
+          the proposal is PAID — there is nothing left to pay. */}
+      {settled === "accepted" && providers.length > 0 ? (
+        <div className="pv-paynow" id="pvPay">
+          <div className="pv-paynow-l">Ready when you are — pay your deposit</div>
+          <div className="pv-btnrow">
+            {providers.map((prov) => (
+              <button
+                key={prov}
+                className="pv-btn pv-btn--ghost pv-btn--pay"
+                type="button"
+                disabled={busy !== null}
+                onClick={() => checkout(prov)}
+              >
+                {PROVIDER_LABEL[prov]}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div
         className="pv-state pv-state--declined"
         id="pvDeclined"

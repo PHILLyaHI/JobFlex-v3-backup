@@ -40,7 +40,8 @@ import {
   isLimitedRole,
   navSectionsFor,
 } from "@/components/v3/blueprint-shell/nav-map";
-import { useNavIdentity } from "@/components/v3/blueprint-shell/nav-role";
+import { useNavBadges, useNavIdentity } from "@/components/v3/blueprint-shell/nav-role";
+import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
 import { SignOutButton } from "@/components/v3/blueprint-shell/sign-out";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
@@ -93,6 +94,10 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
      review URLs) the role is null and nothing is filtered, exactly as before. */
   const { role, name: accountName } = useNavIdentity();
   const sections = navSectionsFor(role);
+  /* Unread / pending counts by href, from the same provider the identity
+     rides. Outside it (the standalone /mobile-*-v2 review URLs) the map is
+     empty and no badge is drawn — exactly what those routes showed before. */
+  const badges = useNavBadges();
   /* Every engine in the picker lives outside a field worker's allow-list, so
      for them the handheld New Estimate button could only open a dialog whose
      every card bounces. Asked of the engine list itself, not a copy of it. */
@@ -209,10 +214,13 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
               <Icon id="i-search" />
             </button>
           ) : null}
-          <button className={styles.tbarBtn} type="button" aria-label="Notifications">
-            <Icon id="i-bell" />
-            <span className={styles.bellDot} />
-          </button>
+          {/* The handheld bell had NO onClick at all and rendered `.bellDot`
+              unconditionally — a dot that advertised unread notifications on
+              every page load whether or not any existed. Same component the
+              desktop topbar mounts, wearing this shell's chrome classes; the
+              dot now appears only when something is genuinely newer than the
+              last time this person opened it. */}
+          <NotificationBell buttonClassName={styles.tbarBtn} dotClassName={styles.bellDot} iconClassName={styles.ic} />
         </div>
       </header>
 
@@ -253,6 +261,7 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
               {sec.items.map((item) => {
                 const isActive = item.href === active;
                 const cls = `${styles.sbLink} ${isActive ? styles.active : ""}`;
+                const count = badges[item.href] ?? 0;
                 // Surfaces with no page yet stay dead, but must not jump the
                 // scroller to the top on the way — the drawer just closes.
                 return item.href === "#" ? (
@@ -278,6 +287,13 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
                   >
                     <Icon id={item.icon} />
                     {item.label}
+                    {/* Unread count — the desktop sidebar's sb-badge, in this
+                        shell's hash space. Zero draws nothing. */}
+                    {count > 0 && (
+                      <span className={styles.sbBadge} aria-label={`${count} new`}>
+                        {count > 99 ? "99+" : count}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

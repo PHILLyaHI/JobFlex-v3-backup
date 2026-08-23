@@ -92,12 +92,22 @@ function safeHref(url: string): string {
  * exactly its content and hands the remainder to the label. valign=top keeps
  * the amount level with the FIRST line of a wrapped name, which is what
  * preserves the scan down the right edge (principle 15).
+ *
+ * `valign` is "top" for every text-vs-text row. The condition row overrides it
+ * to "middle": its right cell is a bordered chip roughly twice the label's
+ * height, so top-alignment leaves the label visibly floating above the chip's
+ * optical centre instead of sitting on the same line as it.
  */
-function twoCol(left: string, right: string, padM: number): string {
+function twoCol(
+  left: string,
+  right: string,
+  padM: number,
+  valign: "top" | "middle" = "top",
+): string {
   return `<tr><td class="rowpad" style="padding:${padM}px ${PAD_M}px;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-    <td align="left" valign="top">${left}</td>
-    <td align="right" valign="top" style="width:1%;white-space:nowrap;padding-left:16px;">${right}</td>
+    <td align="left" valign="${valign}">${left}</td>
+    <td align="right" valign="${valign}" style="width:1%;white-space:nowrap;padding-left:16px;">${right}</td>
   </tr></table>
 </td></tr>`;
 }
@@ -143,10 +153,14 @@ function rowHtml(row: BoxRow): string {
 </td></tr>`;
     }
     case "cond":
+      // The condition is the row the 2px rule points at, so its label reads at
+      // the chip's own size rather than annotation size — sized just above the
+      // chip's 11.5px so the pair balances, and centred against it.
       return twoCol(
-        `<div style="font-family:${MONO};font-size:11.5px;letter-spacing:.10em;text-transform:uppercase;font-weight:700;color:${C.inkMuted};line-height:1.3;">${esc(row.label)}</div>`,
+        `<div class="condlbl" style="font-family:${MONO};font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:${C.inkSoft};line-height:1.35;">${esc(row.label)}</div>`,
         chip(row.chip, TONE_COLOR[row.tone ?? "neutral"]),
         12,
+        "middle",
       );
   }
 }
@@ -274,6 +288,7 @@ export function renderEmail(doc: EmailDoc): { subject: string; html: string; tex
   .body { font-size:16px !important; }
   .item { font-size:17px !important; }
   .anchorlbl { font-size:16px !important; }
+  .condlbl { font-size:13px !important; }
   ${a ? `.anchorval { font-size:${a.d}px !important; }` : ""}
   .orgname { font-size:${o.d}px !important; }
   .rowpad { padding-left:${PAD_D}px !important; padding-right:${PAD_D}px !important; }

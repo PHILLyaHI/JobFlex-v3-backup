@@ -982,6 +982,90 @@
   }
 }
 /* ============================================================
+   WIRED MARKETPLACE + REAL WRITES — new blocks only. Values reuse
+   the page's own scale: hairlines, 2px radius, mono meta, the
+   status three-tone rule (danger carries the rollback strip).
+   ============================================================ */
+
+/* A refused write: the row rolled back, and this says why. */
+.merr {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+}
+.merrTxt { flex: 1; font-size: 12.5px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+.merrX {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; margin: -10px -12px -10px 0;
+  color: var(--danger);
+}
+.merrX .ic { width: 14px; height: 14px; }
+
+/* Read-only identity block in the edit sheet — the data layer supports a
+   stage move and an appended note, so the rest reads as a record. */
+.metaBox {
+  display: flex; flex-direction: column; gap: 9px;
+  margin-bottom: 14px; padding: 12px 13px;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.metaRow { display: flex; align-items: baseline; gap: 10px; font-size: 13px; color: var(--ink-soft); }
+.metaRow > span:last-child { min-width: 0; word-break: break-word; }
+.metaLbl {
+  flex: 0 0 72px;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+}
+.metaLink { color: var(--blueprint); font-weight: 700; text-decoration: none; }
+.metaLink:active { color: var(--blueprint-dark); }
+
+/* Note history — the server stamps and appends; the sheet reads it back
+   as a dated ledger. */
+.noteLog { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.noteItem {
+  padding: 10px 11px;
+  border: 1.5px solid var(--hair-soft);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.noteStamp {
+  display: block; margin-bottom: 5px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.noteTxt { display: block; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); white-space: pre-line; }
+
+/* One error line per form, above the foot. */
+.formErrLine { font-size: 12.5px; font-weight: 700; line-height: 1.45; color: var(--danger); }
+
+/* Talent directory rows — the sheet's own ledger. */
+.talRow {
+  display: flex; align-items: flex-start; gap: 12px;
+  min-height: 44px; padding: 12px 2px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.talRow:last-child { border-bottom: none; }
+.talMain { min-width: 0; flex: 1; }
+.talName { display: block; font-size: 14px; font-weight: 800; color: var(--ink); }
+.talWho { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+.talSub { display: block; margin-top: 3px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.talArea {
+  display: block; margin-top: 5px;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.04em; color: var(--muted);
+}
+.talEmpty {
+  padding: 26px 14px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+/* ============================================================
    MOBILE LAYER — must be the LAST block in this file. Anything the
    page declares after it would win at equal specificity and part
    of the responsive behaviour would silently fail to apply.

@@ -36,6 +36,11 @@ const registerSchema = z.object({
   companyAddress: z.string().trim().max(240).optional(),
   companyPhone: z.string().trim().max(40).optional(),
   tradeTypes: z.array(z.enum(TRADE_TYPES)).max(TRADE_TYPES.length).optional(),
+  // The trade the closed taxonomy has no word for, typed under the "Other"
+  // chip. Free text by definition, so it is length-capped and kept OUT of
+  // tradeTypesJson — the matcher validates that column against TRADE_TYPES and
+  // would drop anything it does not recognise.
+  otherTrade: z.string().trim().max(80).optional(),
   // Captured promo/referral code from the signup pill. A claim, not proof —
   // bindAttributionToOrg re-validates it against the DB before linking anything.
   attribution: z
@@ -73,6 +78,10 @@ export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
           address: data.companyAddress || null,
           phone: data.companyPhone || null,
           tradeTypesJson: JSON.stringify(data.tradeTypes ?? []),
+          // Only meaningful alongside the "Other" chip; ignored otherwise so a
+          // label cannot outlive the selection that justified it.
+          otherTrade:
+            data.otherTrade && data.tradeTypes?.includes("Other") ? data.otherTrade : null,
         },
         select: { id: true },
       });
@@ -152,6 +161,42 @@ export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
   }
 
   return { ok: true };
+}
+
+/**
+ * Is this email free to register? Answered BEFORE the signup form's second step
+ * so a duplicate address is reported while the user is still looking at the
+ * field that caused it, instead of after they have filled in their company and
+ * pressed Create account — which is what happened until 2026-08-18.
+ *
+ * ENUMERATION. This does disclose whether an address has an account, and that is
+ * deliberate here: `registerAccount` already discloses exactly the same fact one
+ * step later (a duplicate simply cannot be created), so this moves a disclosure
+ * that already exists rather than opening a new one. The RESET flow is the one
+ * that must stay silent, and it still is — see requestPasswordReset below.
+ */
+export async function checkEmailAvailable(
+  raw: unknown,
+): Promise<{ available: boolean; message?: string }> {
+  const parsed = registerSchema.shape.email.safeParse(raw);
+  if (!parsed.success) {
+    return { available: false, message: "Enter a valid email address." };
+  }
+  const existing = await db.user.findUnique({
+    where: { email: parsed.data },
+    select: { id: true, hashedPassword: true },
+  });
+  if (!existing) return { available: true };
+  // A row with no password hash was provisioned by a first Google sign-in (see
+  // the `signIn` callback in src/lib/auth.ts), not by anyone filling in this
+  // form. Telling those people to "sign in instead" sends them to a password
+  // field they have never set — so name the door they actually came through.
+  return existing.hashedPassword
+    ? { available: false, message: "That email is already registered. Try signing in instead." }
+    : {
+        available: false,
+        message: "That email already signs in with Google. Use Continue with Google below.",
+      };
 }
 
 // ── Forgot password (request a reset link) ───────────────────────────────────

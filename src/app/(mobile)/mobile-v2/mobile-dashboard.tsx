@@ -66,6 +66,7 @@ import {
   type BoardLead,
   type DashboardData,
 } from "@/components/v3/dashboard-blueprint/blueprint-data";
+import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -216,8 +217,19 @@ export function MobileDashboard({ data: seed }: { data?: DashboardData }) {
     if (seed) return;
     let alive = true;
     getDashboardData()
-      .then((d) => {
-        if (alive) setData(d);
+      .then((res) => {
+        if (!alive) return;
+        if (res.ok) {
+          setData(res.data);
+          return;
+        }
+        // Not a fault: a signed-in login with no company, or a session that has
+        // lapsed. Both used to arrive here as a 500 from the action.
+        setLoadError(
+          res.reason === "no-org"
+            ? "This account isn't a member of any company yet, so there's nothing to show. Sign in with the address you registered, or ask for a new invite."
+            : "Your session has expired. Sign in again to continue.",
+        );
       })
       .catch((err) => {
         if (alive) setLoadError(actionError(err));
@@ -239,7 +251,11 @@ function BootScreen({ error }: { error: string | null }) {
     <div className={styles.app}>
       <Sprite />
       {error ? (
-        <main className={styles.scroll}>
+        /* bootMain, not scroll alone: `.app` is a three-row grid whose first row
+           is the topbar, and this screen renders no topbar — so the card landed
+           in the 56px topbar row and was clipped to a sliver. It is pinned to
+           the middle row instead. */
+        <main className={`${styles.scroll} ${styles.bootMain}`}>
           <div className={styles.content}>
             <div className={styles.card}>
               <div className={styles.cardHead}>
@@ -802,6 +818,18 @@ function DashboardView({ data }: { data: DashboardData }) {
           <span className={styles.tbarName}>JOBFLEX</span>
           <span className={styles.tbarSub}>Contractor OS</span>
         </span>
+        {/* This bar carried a burger and a wordmark and nothing else, so the
+            one surface an owner opens first on a phone had no notification
+            surface at all — while the handheld shell used by every OTHER
+            route (mobile-shell/mobile-nav) did have a bell, and that one had
+            no handler. Same component both places now. `.bellDot` already
+            exists in this module; it was written for the bell that was never
+            built here. */}
+        <NotificationBell
+          buttonClassName={`${styles.tbarBtn} ${styles.tbarBell}`}
+          dotClassName={styles.bellDot}
+          iconClassName={styles.ic}
+        />
       </header>
 
       {/* ============ SCROLLER ============ */}

@@ -37,43 +37,53 @@
 //  · The 44×24 toggle becomes a full-width row button, so the target clears
 //    44px instead of being a 24px-tall track.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is the ORG'S REAL COMPANY RECORD. The component is mounted
+// props-less (by ResponsiveDashboardShell on /dashboard/company and by the
+// standalone /mobile-company-v2 route) and asks the read-only `getCompanySeed`
+// action for the same org row + member roster + toActivityEntries feed the
+// desktop page reads — the pattern mobile-calendar-v2 set. Every save runs the
+// same three server actions the desktop sheet runs (updateBranding /
+// updateLeadProfile / updateLanding), behind the donor's 700ms debounce for
+// typing and immediately for decisions (swatch, chip, toggle, form submit).
+// The feed is read-only, like the desktop's: there is no delete affordance.
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./mobile-company.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import {
+  getCompanySeed,
+  updateBranding,
+  updateLanding,
+  updateLeadProfile,
+} from "@/actions/company";
+import {
   ACT_CATS,
   ALL_CAT,
   COLOR_PRESETS,
-  CREW,
   DEFAULT_COLOR,
-  DEFAULT_TRADES,
   EVERYONE,
-  IDENTITY_SEED,
   LANDING_PLACEHOLDERS,
-  LANDING_SEED,
-  LEAD_SEED,
-  MEMBERS,
   PAGE_SIZE,
   TRADE_TYPES,
+  actionError,
   catCount,
   catLabel,
-  cloneActivity,
   hasRecord,
   matchesEntry,
   metaAmount,
   metaType,
   monogram,
+  orNull,
   personCount,
   plainSummary,
   rowBadge,
   summaryParts,
   toneKey,
   type ActivityRecord,
+  type CompanySeed,
   type Identity,
   type ToneKey,
 } from "./company-data";
@@ -161,19 +171,39 @@ function CountUp({ value, className }: { value: number; className?: string }) {
   );
 }
 
-type SaveState = "idle" | "saving" | "saved";
+type SaveState = "idle" | "saving" | "saved" | "err";
 
 /**
- * The donor's autosave: "Saving…" for 700ms, then "All changes saved". One
- * instance per card, so the line always reports what that card owns.
+ * The donor's autosave line, now in front of a REAL write. `run` shows
+ * "Saving…", debounces (700ms for typing, 0 for decisions), awaits the server
+ * action, then reports what the server actually did — "All changes saved" or
+ * the error, inline. One instance per card, so the line always reports what
+ * that card owns. The sequence token means a slow older write can never
+ * overwrite the report of a newer one.
  */
 function useAutosave() {
   const [state, setState] = useState<SaveState>("idle");
+  const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | null>(null);
-  const ping = useCallback(() => {
+  const seq = useRef(0);
+  const run = useCallback((write: () => Promise<unknown>, delay = 700) => {
     setState("saving");
+    setError(null);
     if (timer.current !== null) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setState("saved"), 700);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      const token = ++seq.current;
+      write().then(
+        () => {
+          if (seq.current === token) setState("saved");
+        },
+        (err: unknown) => {
+          if (seq.current !== token) return;
+          setState("err");
+          setError(actionError(err));
+        },
+      );
+    }, delay);
   }, []);
   useEffect(
     () => () => {
@@ -181,7 +211,7 @@ function useAutosave() {
     },
     [],
   );
-  return { state, ping };
+  return { state, error, run };
 }
 
 /** The donor's `data-flash`: swap the label for a check for 1500ms. */
@@ -202,42 +232,129 @@ function useFlash(ms: number) {
   return [on, fire] as const;
 }
 
-function SaveLine({ state, idle }: { state: SaveState; idle?: string }) {
+function SaveLine({
+  state,
+  error,
+  idle,
+}: {
+  state: SaveState;
+  error?: string | null;
+  idle?: string;
+}) {
   if (state === "idle" && !idle) return null;
+  const cls =
+    state === "saved" ? styles.saved : state === "err" ? styles.err : "";
   return (
-    <div className={`${styles.saveLine} ${state === "saved" ? styles.saved : ""}`}>
-      {state === "saving" ? "Saving…" : state === "saved" ? "All changes saved" : idle}
+    <div className={`${styles.saveLine} ${cls}`}>
+      {state === "saving"
+        ? "Saving…"
+        : state === "saved"
+          ? "All changes saved"
+          : state === "err"
+            ? (error ?? "Couldn’t save — try again.")
+            : idle}
     </div>
   );
 }
 
+/**
+ * Props-less mount: fetch the real seed, then hand it to the board. Failure is
+ * an honest boot error with a retry — never the fixture.
+ */
 export function MobileCompany() {
+  const [seed, setSeed] = useState<CompanySeed | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    getCompanySeed()
+      .then((s) => {
+        if (alive) setSeed(s);
+      })
+      .catch((err: unknown) => {
+        if (alive) setLoadError(actionError(err));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [attempt]);
+
+  if (seed) return <CompanyBoard seed={seed} />;
+  return (
+    <BootScreen
+      error={loadError}
+      onRetry={() => {
+        // Back to the paper hold while the refetch runs; the effect re-runs
+        // off `attempt`.
+        setLoadError(null);
+        setAttempt((a) => a + 1);
+      }}
+    />
+  );
+}
+
+/** Paper hold while the seed lands, and an honest failure if it does not.
+ *  No Icon here: the sprite ships with <MobileNav />, which only the board
+ *  mounts. */
+function BootScreen({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+  if (!error) return <div className={styles.app} />;
+  return (
+    <div className={styles.app}>
+      <main className={styles.scroll}>
+        <div className={styles.content}>
+          <div className={styles.empty}>
+            <div className={styles.emptyT}>Couldn’t load company</div>
+            <div className={styles.emptyS}>{error}</div>
+            <button className={styles.emptyA} type="button" onClick={onRetry}>
+              Try again
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function CompanyBoard({ seed }: { seed: CompanySeed }) {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const [tab, setTab] = useState<TabKey>("branding");
 
   /* ---- branding ---- */
-  const [identity, setIdentity] = useState<Identity>(() => ({ ...IDENTITY_SEED }));
-  const [color, setColor] = useState(DEFAULT_COLOR);
-  const [hex, setHex] = useState(DEFAULT_COLOR);
-  const [logoOver, fireLogo] = useFlash(600);
+  const [identity, setIdentity] = useState<Identity>(() => ({
+    name: seed.org.name,
+    email: seed.org.billingEmail,
+    phone: seed.org.phone,
+    site: seed.org.website,
+    addr: seed.org.address,
+  }));
+  const [color, setColor] = useState(seed.org.primaryColor || DEFAULT_COLOR);
+  const [hex, setHex] = useState(seed.org.primaryColor || DEFAULT_COLOR);
+  const [logoUrl, setLogoUrl] = useState<string | null>(seed.org.logoUrl);
+  const logoFileRef = useRef<HTMLInputElement>(null);
 
   /* ---- lead matching ---- */
-  const [lead, setLead] = useState(() => ({ ...LEAD_SEED }));
-  const [trades, setTrades] = useState<string[]>(() => [...DEFAULT_TRADES]);
-  const [leadsOn, setLeadsOn] = useState(true);
+  const [lead, setLead] = useState(() => ({ addr: seed.org.address, phone: seed.org.phone }));
+  const [trades, setTrades] = useState<string[]>(() => [...seed.org.tradeTypes]);
+  const [leadsOn, setLeadsOn] = useState(seed.org.leadOffersEnabled);
 
   /* ---- landing builder ---- */
-  const [publicOn, setPublicOn] = useState(false);
-  const [landing, setLanding] = useState(() => ({ ...LANDING_SEED }));
+  const [publicOn, setPublicOn] = useState(seed.org.publicProfileEnabled);
+  const [landing, setLanding] = useState(() => ({
+    title: seed.org.landingHeroTitle,
+    sub: seed.org.landingHeroSubtitle,
+  }));
 
   /* ---- team ---- */
+  const members = seed.members;
   const [workersFlash, fireWorkers] = useFlash(1500);
   const [copied, fireCopied] = useFlash(1500);
 
-  /* ---- activity ---- */
-  const [activity, setActivity] = useState<ActivityRecord[]>(() => cloneActivity());
+  /* ---- activity (read-only, like the desktop feed) ---- */
+  const activity: ActivityRecord[] = seed.activity;
   const [actCat, setActCat] = useState(ALL_CAT);
   const [actPerson, setActPerson] = useState(EVERYONE);
   const [actQuery, setActQuery] = useState("");
@@ -253,7 +370,13 @@ export function MobileCompany() {
   const [landed, setLanded] = useState<string | null>(null);
 
   /* ---- identity form draft ---- */
-  const [form, setForm] = useState<Identity>(() => ({ ...IDENTITY_SEED }));
+  const [form, setForm] = useState<Identity>(() => ({
+    name: seed.org.name,
+    email: seed.org.billingEmail,
+    phone: seed.org.phone,
+    site: seed.org.website,
+    addr: seed.org.address,
+  }));
   const [nameErr, setNameErr] = useState(false);
   const [emailErr, setEmailErr] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -452,6 +575,15 @@ export function MobileCompany() {
   const sheetEntry = sheetId === null ? null : (activity.find((e) => e.id === sheetId) ?? null);
   const tabIndex = TABS.findIndex((t) => t.key === tab);
 
+  /* The person filter's options: the EVERYONE sentinel plus the real roster.
+     Values are membership user ids — display names can collide. */
+  const personOptions = useMemo(
+    () => [{ id: EVERYONE, name: "Everyone" }, ...members],
+    [members],
+  );
+  const personLabel = (id: string) =>
+    personOptions.find((m) => m.id === id)?.name ?? "Member";
+
   /* ---------- actions -------------------------------------------------- */
   const copyText = (text: string) => {
     try {
@@ -470,23 +602,33 @@ export function MobileCompany() {
     fireCopied();
   };
 
+  /* A swatch is a decision, not typing — save it without the type-ahead wait.
+     Same single-field write the desktop swatch sends. */
   const pickColor = (c: string) => {
     setColor(c);
     setHex(c);
-    saveBrand.ping();
+    saveBrand.run(() => updateBranding({ primaryColor: c }), 0);
   };
 
   const onHex = (v: string) => {
     setHex(v);
-    if (/^#[0-9a-fA-F]{6}$/.test(v.trim())) {
-      setColor(v.trim());
-      saveBrand.ping();
+    const t = v.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(t)) {
+      setColor(t);
+      saveBrand.run(() => updateBranding({ primaryColor: t }));
     }
   };
 
+  /* A chip is a decision too — desktop sends `{ tradeTypes }` alone, delay 0. */
   const toggleTrade = (t: string) => {
-    setTrades((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
-    saveLead.ping();
+    const next = trades.includes(t) ? trades.filter((x) => x !== t) : [...trades, t];
+    setTrades(next);
+    saveLead.run(() => updateLeadProfile({ tradeTypes: next }), 0);
+  };
+
+  const openWorkers = () => {
+    fireWorkers();
+    router.push("/dashboard/workers");
   };
 
   const resetFilters = () => {
@@ -520,18 +662,37 @@ export function MobileCompany() {
       (badName ? nameRef : emailRef).current?.focus();
       return;
     }
-    setIdentity({
+    const next: Identity = {
       name,
       email,
       phone: form.phone.trim(),
       site: form.site.trim(),
       addr: form.addr.trim(),
-    });
+    };
+    setIdentity(next);
+    // Branding and Lead matching edit the SAME two Organization columns
+    // (address, phone) — keep the pair of cards in step, like the desktop's
+    // mirrorField, so the sheet never shows two values for one column.
+    setLead({ addr: next.addr, phone: next.phone });
     setIdentityOpen(false);
-    saveIdentity.ping();
+    // Same field mapping as the desktop's saveBranding().
+    saveIdentity.run(
+      () =>
+        updateBranding({
+          name: next.name,
+          billingEmail: orNull(next.email),
+          phone: orNull(next.phone),
+          website: orNull(next.site),
+          address: orNull(next.addr),
+          primaryColor: color,
+        }),
+      0,
+    );
     setLanded("identity");
   };
 
+  /* No "Remove from log" row: ActivityEvent has no delete action and the
+     desktop feed is read-only — the audit trail is not editable. */
   const menuRows = useMemo<MenuRow[]>(() => {
     const e = sheetEntry;
     if (!e) return [];
@@ -541,15 +702,22 @@ export function MobileCompany() {
         icon: "i-file",
         tone: styles.miBp,
         title: "Open record",
-        // Fixture-driven disabled state: a team change has no proposal, job or
-        // lead behind it, so there is nothing to open.
+        // A team / system event has no proposal, job or lead behind it, so
+        // there is nothing to open.
         sub: hasRecord(e) ? `${metaType(e.meta)} · full history` : "Team change — no record to open",
         disabled: !hasRecord(e),
       },
       { act: "msg", icon: "i-msg", tone: styles.miSky, title: `Message ${e.actor}`, sub: "Ask about this update" },
-      { act: "only", icon: "i-user", tone: styles.miOk, title: `Show only ${e.actor}`, sub: "Filter the log to this person" },
+      {
+        act: "only",
+        icon: "i-user",
+        tone: styles.miOk,
+        title: `Show only ${e.actor}`,
+        // A client-side / system event carries no membership to filter on.
+        sub: e.actorId ? "Filter the log to this person" : "No team member behind this update",
+        disabled: !e.actorId,
+      },
       { act: "copy", icon: "i-copy", title: "Copy update", sub: "Summary and reference as text" },
-      { act: "del", icon: "i-trash", tone: styles.miDanger, title: "Remove from log", sub: "Deletes this entry permanently", danger: true },
     ];
   }, [sheetEntry]);
 
@@ -557,15 +725,13 @@ export function MobileCompany() {
     const e = sheetEntry;
     setSheetId(null);
     if (!e) return;
-    if (act === "del") {
-      setActivity((prev) => prev.filter((x) => x.id !== e.id));
-      setActPage(1);
-    } else if (act === "only") {
-      setActPerson(e.actor);
+    if (act === "only") {
+      if (!e.actorId) return;
+      setActPerson(e.actorId);
       setActPage(1);
       setLanded(e.id);
     } else if (act === "copy") {
-      copyText(`${e.actor} ${plainSummary(e.summary)} — ${e.meta} (${e.time} ago)`);
+      copyText(`${e.actor} ${plainSummary(e.summary)} — ${e.meta} (${e.day}, ${e.time})`);
     }
   };
 
@@ -602,8 +768,8 @@ export function MobileCompany() {
           </div>
 
           {/* MASTHEAD — one numeral, a mono kicker, EXACTLY two annotations.
-              All three are computed, so removing a log entry or toggling a
-              trade moves them. */}
+              All three are real: the log count, the roster size, and the
+              org's trades over the canonical taxonomy. */}
           <div className={styles.omast}>
             <div className={styles.omastTop}>
               <div className={styles.omastLbl}>
@@ -615,7 +781,7 @@ export function MobileCompany() {
             <div className={styles.omastCnt}>
               <div className={styles.omastSub}>
                 <div className={styles.omastSubL}>Crew</div>
-                <div className={styles.omastSubV}>{CREW.length}</div>
+                <div className={styles.omastSubV}>{members.length}</div>
               </div>
               <div className={styles.omastSub}>
                 <div className={styles.omastSubL}>Trades</div>
@@ -666,7 +832,7 @@ export function MobileCompany() {
                     ))}
                   </div>
                 </div>
-                <SaveLine state={saveIdentity.state} />
+                <SaveLine state={saveIdentity.state} error={saveIdentity.error} />
               </div>
 
               {/* BRAND — colour, logo, live preview. Zoned white → beige →
@@ -702,17 +868,64 @@ export function MobileCompany() {
 
                 <div className={styles.zoneBeige}>
                   <div className={styles.zoneLbl}>Logo</div>
-                  <button
-                    className={`${styles.logoDrop} ${logoOver ? styles.over : ""}`}
-                    type="button"
-                    onClick={() => {
-                      fireLogo();
-                      saveBrand.ping();
+                  {/* Real upload (2026-08-22), desktop's rules verbatim: images
+                      only, 2 MB ceiling, read to a data URL, optimistic swap
+                      with rollback through the same updateBranding write. */}
+                  <input
+                    ref={logoFileRef}
+                    className={styles.srOnlyInput ?? ""}
+                    style={{ display: "none" }}
+                    type="file"
+                    accept="image/*"
+                    onChange={(ev) => {
+                      const file = ev.target.files?.[0];
+                      ev.target.value = "";
+                      if (!file) return;
+                      if (!file.type.startsWith("image/")) {
+                        saveBrand.run(() => Promise.reject(new Error("Image files only")), 0);
+                        return;
+                      }
+                      if (file.size > 2 * 1024 * 1024) {
+                        saveBrand.run(
+                          () => Promise.reject(new Error("Too large — keep it under 2 MB")),
+                          0,
+                        );
+                        return;
+                      }
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const dataUrl = reader.result as string;
+                        const previous = logoUrl;
+                        setLogoUrl(dataUrl);
+                        saveBrand.run(async () => {
+                          try {
+                            await updateBranding({ logoUrl: dataUrl });
+                          } catch (err) {
+                            setLogoUrl(previous);
+                            throw err;
+                          }
+                        }, 0);
+                      };
+                      reader.onerror = () =>
+                        saveBrand.run(() => Promise.reject(new Error("Couldn’t read that file.")), 0);
+                      reader.readAsDataURL(file);
                     }}
+                  />
+                  <button
+                    className={styles.logoDrop}
+                    type="button"
+                    onClick={() => logoFileRef.current?.click()}
                   >
-                    <Icon id="i-imgplus" />
-                    <span className={styles.logoT}>Tap to upload</span>
-                    <span className={styles.logoH}>PNG, JPG, or SVG up to 2 MB</span>
+                    {logoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- may be a data: URL
+                      <img className={styles.logoImg} src={logoUrl} alt="Company logo" />
+                    ) : (
+                      <>
+                        <Icon id="i-imgplus" />
+                        <span className={styles.logoT}>Tap to upload</span>
+                        <span className={styles.logoH}>PNG, JPG, or SVG up to 2 MB</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
@@ -733,7 +946,11 @@ export function MobileCompany() {
                     </span>
                   </div>
                 </div>
-                <SaveLine state={saveBrand.state} idle="Autosaves as you edit" />
+                <SaveLine
+                  state={saveBrand.state}
+                  error={saveBrand.error}
+                  idle="Autosaves as you edit"
+                />
               </div>
 
               {/* LEAD MATCHING */}
@@ -759,8 +976,19 @@ export function MobileCompany() {
                       autoComplete="off"
                       value={lead.addr}
                       onChange={(ev) => {
-                        setLead((l) => ({ ...l, addr: ev.target.value }));
-                        saveLead.ping();
+                        const addr = ev.target.value;
+                        setLead((l) => ({ ...l, addr }));
+                        // Same column as the identity card's address — mirror it.
+                        setIdentity((i) => ({ ...i, addr }));
+                        // Desktop's saveLead() sends all four fields together.
+                        saveLead.run(() =>
+                          updateLeadProfile({
+                            address: orNull(addr.trim()),
+                            phone: orNull(lead.phone.trim()),
+                            tradeTypes: trades,
+                            leadOffersEnabled: leadsOn,
+                          }),
+                        );
                       }}
                     />
                   </div>
@@ -775,8 +1003,18 @@ export function MobileCompany() {
                       autoComplete="off"
                       value={lead.phone}
                       onChange={(ev) => {
-                        setLead((l) => ({ ...l, phone: ev.target.value }));
-                        saveLead.ping();
+                        const phone = ev.target.value;
+                        setLead((l) => ({ ...l, phone }));
+                        // Same column as the identity card's phone — mirror it.
+                        setIdentity((i) => ({ ...i, phone }));
+                        saveLead.run(() =>
+                          updateLeadProfile({
+                            address: orNull(lead.addr.trim()),
+                            phone: orNull(phone.trim()),
+                            tradeTypes: trades,
+                            leadOffersEnabled: leadsOn,
+                          }),
+                        );
                       }}
                     />
                   </div>
@@ -812,8 +1050,11 @@ export function MobileCompany() {
                   type="button"
                   aria-pressed={leadsOn}
                   onClick={() => {
-                    setLeadsOn((v) => !v);
-                    saveLead.ping();
+                    const next = !leadsOn;
+                    setLeadsOn(next);
+                    // A toggle is a decision — single-field write, no debounce,
+                    // exactly like the desktop's #leadToggle.
+                    saveLead.run(() => updateLeadProfile({ leadOffersEnabled: next }), 0);
                   }}
                 >
                   <span className={styles.tgTxt}>
@@ -824,7 +1065,11 @@ export function MobileCompany() {
                   </span>
                   <span className={styles.tgl} />
                 </button>
-                <SaveLine state={saveLead.state} idle="Autosaves as you edit" />
+                <SaveLine
+                  state={saveLead.state}
+                  error={saveLead.error}
+                  idle="Autosaves as you edit"
+                />
               </div>
             </>
           )}
@@ -840,8 +1085,10 @@ export function MobileCompany() {
                 <p className={styles.teamP}>
                   Crew, roles, invites and portal links are all managed on the Workers page.
                 </p>
-                <div className={styles.teamCrew}>{CREW.join(" · ")}</div>
-                <button className={styles.teamAct} type="button" onClick={fireWorkers}>
+                <div className={styles.teamCrew}>
+                  {members.map((m) => m.name).join(" · ") || "No crew yet"}
+                </div>
+                <button className={styles.teamAct} type="button" onClick={openWorkers}>
                   <Icon id={workersFlash ? "i-check" : "i-arrow"} />
                   {workersFlash ? "Opening" : "Open Workers"}
                 </button>
@@ -940,27 +1187,27 @@ export function MobileCompany() {
                   <span
                     className={`${styles.ddValue} ${actPerson === EVERYONE ? styles.isAll : ""}`}
                   >
-                    {actPerson} · {personCount(activity, actPerson)}
+                    {personLabel(actPerson)} · {personCount(activity, actPerson)}
                   </span>
                   <Icon id="i-chev" className={`${styles.ic} ${styles.ddCaret}`} />
                 </button>
                 <div className={styles.ddMenu} role="listbox">
-                  {MEMBERS.map((m) => (
+                  {personOptions.map((m) => (
                     <button
-                      key={m}
-                      className={`${styles.ddItem} ${actPerson === m ? styles.active : ""}`}
+                      key={m.id}
+                      className={`${styles.ddItem} ${actPerson === m.id ? styles.active : ""}`}
                       type="button"
                       role="option"
-                      aria-selected={actPerson === m}
+                      aria-selected={actPerson === m.id}
                       onClick={() => {
-                        setActPerson(m);
+                        setActPerson(m.id);
                         setActPage(1);
                         setPersonOpen(false);
                       }}
                     >
-                      {m}
-                      <span className={styles.ddCount}>{personCount(activity, m)}</span>
-                      {actPerson === m ? <Icon id="i-check" /> : null}
+                      {m.name}
+                      <span className={styles.ddCount}>{personCount(activity, m.id)}</span>
+                      {actPerson === m.id ? <Icon id="i-check" /> : null}
                     </button>
                   ))}
                 </div>
@@ -978,7 +1225,7 @@ export function MobileCompany() {
                       Team actions show up here as they happen — proposals sent, jobs started,
                       leads claimed.
                     </div>
-                    <button className={styles.emptyA} type="button" onClick={fireWorkers}>
+                    <button className={styles.emptyA} type="button" onClick={openWorkers}>
                       <Icon id={workersFlash ? "i-check" : "i-userplus"} />
                       {workersFlash ? "Opening" : "Invite the crew"}
                     </button>
@@ -1030,8 +1277,10 @@ export function MobileCompany() {
                         {/* Rows 2 and 3 are one group: the mono annotation sits
                             tight above the badge + figure line, and the whole
                             group is pushed clear of the identity line. */}
+                        {/* `time` is the event's time of day (the desktop
+                            mapper's timeOfDay), not a relative age. */}
                         <div className={styles.ameta}>
-                          {metaType(e.meta)} · {e.time} ago
+                          {metaType(e.meta)} · {e.time}
                         </div>
                         <div className={styles.afoot}>
                           <span className={`${styles.badge} ${TONE_BADGE[tone]}`}>
@@ -1088,8 +1337,11 @@ export function MobileCompany() {
                 type="button"
                 aria-pressed={publicOn}
                 onClick={() => {
-                  setPublicOn((v) => !v);
-                  saveLanding.ping();
+                  const next = !publicOn;
+                  setPublicOn(next);
+                  // A toggle is a decision — single-field write, no debounce,
+                  // exactly like the desktop's #publicToggle.
+                  saveLanding.run(() => updateLanding({ publicProfileEnabled: next }), 0);
                 }}
               >
                 <span className={styles.tgTxt}>
@@ -1114,8 +1366,16 @@ export function MobileCompany() {
                     autoComplete="off"
                     value={landing.title}
                     onChange={(ev) => {
-                      setLanding((l) => ({ ...l, title: ev.target.value }));
-                      saveLanding.ping();
+                      const title = ev.target.value;
+                      setLanding((l) => ({ ...l, title }));
+                      // Desktop's saveLanding() sends the toggle + both fields.
+                      saveLanding.run(() =>
+                        updateLanding({
+                          publicProfileEnabled: publicOn,
+                          landingHeroTitle: orNull(title.trim()),
+                          landingHeroSubtitle: orNull(landing.sub.trim()),
+                        }),
+                      );
                     }}
                   />
                 </div>
@@ -1131,8 +1391,15 @@ export function MobileCompany() {
                     autoComplete="off"
                     value={landing.sub}
                     onChange={(ev) => {
-                      setLanding((l) => ({ ...l, sub: ev.target.value }));
-                      saveLanding.ping();
+                      const sub = ev.target.value;
+                      setLanding((l) => ({ ...l, sub }));
+                      saveLanding.run(() =>
+                        updateLanding({
+                          publicProfileEnabled: publicOn,
+                          landingHeroTitle: orNull(landing.title.trim()),
+                          landingHeroSubtitle: orNull(sub.trim()),
+                        }),
+                      );
                     }}
                   />
                   <span className={styles.fldHint}>
@@ -1140,7 +1407,11 @@ export function MobileCompany() {
                   </span>
                 </div>
               </div>
-              <SaveLine state={saveLanding.state} idle="Autosaves as you edit" />
+              <SaveLine
+                state={saveLanding.state}
+                error={saveLanding.error}
+                idle="Autosaves as you edit"
+              />
             </div>
           )}
         </div>
@@ -1171,7 +1442,7 @@ export function MobileCompany() {
         <div className={styles.sheetGrab} {...actionsDrag.handleProps} />
         <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>
-            {sheetEntry ? `${sheetEntry.meta} · ${sheetEntry.time} ago` : "Update · —"}
+            {sheetEntry ? `${sheetEntry.meta} · ${sheetEntry.day}, ${sheetEntry.time}` : "Update · —"}
           </div>
           <div className={styles.sheetTitle}>{sheetEntry?.actor ?? "Actions"}</div>
         </div>

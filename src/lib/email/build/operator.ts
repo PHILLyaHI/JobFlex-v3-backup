@@ -63,6 +63,50 @@ export function buildOwnerAccepted(i: OwnerAcceptedInput): EmailDoc {
   };
 }
 
+export interface CrewResponseInput {
+  org: OrgBrand;
+  workerName: string;
+  title: string;
+  response: "ACCEPTED" | "DECLINED";
+  startsAt: Date | null;
+  /** What the response did to the job — "Scheduled" / "Canceled" / null when
+   *  nothing changed (other crew still on it). */
+  jobStatusNow: string | null;
+  href: string;
+}
+
+/** Crew answered an assignment (2026-08-22). Link, not CTA on an accept —
+ *  nothing to do but know it; a DECLINE carries a warn chip because the work
+ *  now needs someone else. */
+export function buildCrewResponse(i: CrewResponseInput): EmailDoc {
+  const accepted = i.response === "ACCEPTED";
+  const box: BoxRow[] = [
+    { type: "field", label: "Job", value: truncate(i.title, TITLE_MAX) },
+    { type: "field", label: "Crew", value: i.workerName },
+    { type: "anchor", label: "Starts", value: i.startsAt ? shortDate(i.startsAt) : "TBD" },
+  ];
+  if (i.jobStatusNow) {
+    box.push({
+      type: "cond",
+      label: "Job status",
+      chip: i.jobStatusNow,
+      tone: accepted ? "ok" : "warn",
+    });
+  }
+  if (!accepted) {
+    box.push({ type: "cond", label: "Needs crew", chip: "Reassign", tone: "warn" });
+  }
+  return {
+    subject: `${accepted ? "Accepted" : "Declined"} — ${truncate(i.title, TITLE_MAX)}`,
+    lockup: orgLockup(i.org),
+    kicker: accepted ? { text: "Confirmed", tone: "ok" } : { text: "Declined", tone: "warn" },
+    headline: `${i.workerName} ${accepted ? "accepted" : "declined"} the job`,
+    box,
+    link: { label: "Open job", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
+
 export interface NewLeadInput {
   org: OrgBrand;
   leadName: string;

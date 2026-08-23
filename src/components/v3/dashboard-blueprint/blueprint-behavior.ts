@@ -145,10 +145,21 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
       snoozed = false;
     }
     if (snoozed) {
-      // Removed rather than hidden: this runs inside the mount's layout effect,
-      // before the first paint, so the banner never flashes — and a removed node
-      // is not part of the reveal cascade's block list below.
-      banner.remove();
+      // Hidden, NOT removed. React owns this node — dashboard-content.tsx
+      // renders it behind `{data.leadProfile && …}`, which makes it a direct
+      // child of `.content` AND a deletion root. Calling `.remove()` on it left
+      // React holding a fiber whose host parent no longer contained the node,
+      // so the next navigation's deletion commit threw
+      //   NotFoundError: Failed to execute 'removeChild' on 'Node'
+      // out of commitDeletionEffectsOnFiber — on EVERY navigation away from
+      // /dashboard, for the whole week the snooze lasts.
+      //
+      // `.banner.hidden` is `display: none` (blueprint.module.css), and this
+      // still runs inside the mount's layout effect, so the banner is gone
+      // before the first paint exactly as before. The reveal cascade below
+      // skips `.hidden` for the same reason it skips `.d-toast`, so the block
+      // list — and every stagger delay derived from its indexes — is unchanged.
+      banner.classList.add("hidden");
     } else {
       const missing = $("#bannerMissing");
       if (missing) missing.textContent = leadProfileMissing(data.leadProfile);
@@ -826,6 +837,20 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
   layoutSync();
   on(window, "load", layoutSync);
   on(window, "resize", layoutSync);
+  // The two pairs are height-matched imperatively, so a card that changes size
+  // AFTER the last sync (the chart re-drawing on a range pick, the lead banner
+  // being snoozed, a late activity row landing) leaves its partner frozen at the
+  // old measure — which is how Recent Activity ended up standing a couple of
+  // hundred pixels taller than the chart beside it. Watching the two source
+  // cards keeps the pair in step no matter what moved them.
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => layoutSync());
+    ["#chartCard", "#weekCard"].forEach((sel) => {
+      const el = $(sel);
+      if (el) ro.observe(el);
+    });
+    disposers.push(() => ro.disconnect());
+  }
   // SPA equivalent of the donor's window-load re-layout. The donor caches the
   // 4-row week-list height on first measure; in the app that first paint can
   // happen before the web fonts resolve, freezing fallback metrics into the
@@ -862,7 +887,11 @@ export function initDashboardContent(content: HTMLElement, data: DashboardData):
       );
     // `.d-toast` is a fixed, display:none overlay — it never intersects, so the
     // cascade would strand it at opacity 0 the first time a refusal shows it.
-    const blocks = $$(".content > *:not(.d-toast)");
+    // `.hidden` is excluded for the same reason: the snoozed Lead Center banner
+    // is `display: none` but still in the tree (React owns it — see the banner
+    // block above), so counting it would shift every following block's stagger
+    // index by one and strand it at opacity 0.
+    const blocks = $$(".content > *:not(.d-toast):not(.hidden)");
     blocks.forEach((el, i) => {
       el.classList.add("rv");
       const initial = el.getBoundingClientRect().top < vpH;

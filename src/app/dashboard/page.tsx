@@ -16,8 +16,10 @@
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
+import { auth } from "@/lib/auth";
 import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { DashboardContent } from "@/components/v3/dashboard-blueprint/dashboard-content";
+import { NoOrgNotice } from "@/components/v3/dashboard-blueprint/no-org-notice";
 import type { DashboardData } from "@/components/v3/dashboard-blueprint/blueprint-data";
 import { buildDashboardData } from "./dashboard-data";
 
@@ -35,7 +37,15 @@ export default async function DashboardPage() {
     data = await buildDashboardData();
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard");
-    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    // NOT a redirect. This page is where every other blueprint page sends a
+    // NoOrgError, and it used to send that error to ITSELF
+    // ("/dashboard?error=forbidden"), which threw the same error again: an
+    // endless redirect that painted the shell and never the page. It answers in
+    // place now.
+    if (err instanceof NoOrgError) {
+      const session = await auth();
+      return <NoOrgNotice email={session?.user?.email} />;
+    }
     throw err;
   }
 

@@ -37,6 +37,7 @@ import type { Route } from "next";
 import { headers } from "next/headers";
 import { requireOrg } from "@/lib/orgContext";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
+import { getBadgeCounts } from "@/lib/badgeCounts";
 import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/responsive-dashboard-shell";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
@@ -55,11 +56,19 @@ export default async function DashboardBlueprintLayout({
   // enum value ("INSTALLER"), the account block prints the pretty one.
   let role: string | null = null;
   let name: string | null = null;
+  // Unread / pending-action counts by nav href, for the sidebar and the
+  // handheld drawer. Read HERE for the same reason the identity is: the badge
+  // module is server-only (raw tenant ids, never client-invokable) and the
+  // shell below is a client tree. Stale-until-refresh is by design — the
+  // MarkNavSeen stamp on each surface calls router.refresh() when a badge was
+  // actually showing, which re-renders this layout with fresh counts.
+  let badges: Record<string, number> | undefined;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
     name = ctx.user.name || ctx.user.email || "Account";
     user = { name, role: humanRole(ctx.role) };
+    badges = await getBadgeCounts(ctx.organizationId, ctx.user.id, ctx.role);
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }
@@ -74,7 +83,7 @@ export default async function DashboardBlueprintLayout({
   }
 
   return (
-    <ResponsiveDashboardShell user={user} identity={{ role, name }}>
+    <ResponsiveDashboardShell user={user} identity={{ role, name }} badges={badges}>
       {children}
     </ResponsiveDashboardShell>
   );

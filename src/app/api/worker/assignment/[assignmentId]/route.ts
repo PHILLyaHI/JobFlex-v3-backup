@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { touchWorkerActivity } from "@/lib/workerActivity";
+import { applyAssignmentResponse } from "@/lib/assignmentResponse";
 
 export async function POST(
   req: Request,
@@ -15,7 +16,10 @@ export async function POST(
   // Token-gate: the assignment's worker must match the supplied token.
   const assignment = await db.jobAssignment.findUnique({
     where: { id: assignmentId },
-    include: { worker: { select: { token: true, id: true } } },
+    include: {
+      worker: { select: { token: true, id: true, userId: true, displayName: true } },
+      job: { select: { id: true, title: true, status: true, organizationId: true } },
+    },
   });
   if (!assignment || assignment.worker.token !== body.token) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -30,6 +34,20 @@ export async function POST(
     where: { id: assignment.id },
     data: { status: body.status },
   });
+  // An ANSWER through the magic link carries the same consequences as one from
+  // the dashboard: job transition, office bell, office email (2026-08-22 —
+  // this route used to update the row and stop, so the token portal's accepts
+  // and declines were invisible to the office).
+  if (body.status === "ACCEPTED" || body.status === "DECLINED") {
+    await applyAssignmentResponse({
+      assignmentId: assignment.id,
+      response: body.status,
+      organizationId: assignment.job.organizationId,
+      actorUserId: assignment.worker.userId,
+      workerDisplayName: assignment.worker.displayName,
+      job: assignment.job,
+    });
+  }
   await touchWorkerActivity(assignment.worker.id);
   return NextResponse.json({ ok: true });
 }

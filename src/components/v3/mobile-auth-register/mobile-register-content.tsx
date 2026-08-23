@@ -15,7 +15,8 @@
 //     /auth/login;
 //   · signIn("google", { callbackUrl: "/dashboard" }) with the 1600ms label
 //     swap, and the 1800ms "Learn more" swap;
-//   · the show/hide password toggle;
+//   · the show/hide password toggle (the confirm-password field below it gets
+//     its own independent one);
 //   · the trade chip picker validating against the canonical TRADE_TYPES;
 //   · the ?promo / ?ref → 30-day cookie → localStorage → validateAttributionCode
 //     attribution chain (see mobile-referral-panel.tsx).
@@ -39,8 +40,10 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { toast } from "@/components/ui/Toast";
-import { registerAccount } from "@/actions/auth";
+import { checkEmailAvailable, registerAccount } from "@/actions/auth";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
+// One definition of the success-panel hold, shared with the desktop surface.
+import { REDIRECT_SECONDS } from "@/components/v3/auth-register-blueprint/register-content";
 import { MobileRegisterSprite } from "./mobile-register-sprite";
 import {
   MobileReferralPanel,
@@ -97,10 +100,17 @@ export function MobileRegisterContent() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
+  const [password2, setPassword2] = React.useState("");
+  const [showPw2, setShowPw2] = React.useState(false);
 
   const [addr, setAddr] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [trades, setTrades] = React.useState<TradeType[]>([]);
+  // The free-text line behind the "Other" chip — see toggleTrade below.
+  const [otherTrade, setOtherTrade] = React.useState("");
+  const otherRef = React.useRef<HTMLInputElement>(null);
+  // Success panel hold before the handover to the dashboard.
+  const [countdown, setCountdown] = React.useState(REDIRECT_SECONDS);
   const [tradeQuery, setTradeQuery] = React.useState("");
 
   // The resolved promo/referral. `attribution` — the shape registerAccount
@@ -111,6 +121,9 @@ export function MobileRegisterContent() {
   const [err1, setErr1] = React.useState<string | null>(null);
   const [err2, setErr2] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
+  // Step-1 gate: the duplicate-email check runs before the step swaps, so the
+  // Continue button owns a busy state of its own.
+  const [checking, setChecking] = React.useState(false);
   const [doneNote, setDoneNote] = React.useState("");
   const [googleBusy, setGoogleBusy] = React.useState(false);
   const [learnBusy, setLearnBusy] = React.useState(false);
@@ -121,8 +134,30 @@ export function MobileRegisterContent() {
     window.scrollTo(0, 0);
   }, [step]);
 
+  // Five-second hold on the success panel, then hand over to the dashboard. The
+  // sticky bar's "Open the dashboard" button still works for anyone who would
+  // rather not wait; the timer is cleared on unmount so they are not navigated
+  // twice.
+  React.useEffect(() => {
+    if (step !== 3) return;
+    if (countdown <= 0) {
+      router.push("/dashboard" as Route);
+      return;
+    }
+    const t = window.setTimeout(() => setCountdown((n) => n - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [step, countdown, router]);
+
   function toggleTrade(t: TradeType) {
-    setTrades((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+    setTrades((prev) => {
+      const on = prev.includes(t);
+      // Same contract as the desktop surface: "Other" carries a free-text line,
+      // cleared when the chip goes back off so a stale label cannot be sent for
+      // a chip nobody has selected, and focused on the way in.
+      if (t === "Other" && on) setOtherTrade("");
+      if (t === "Other" && !on) window.setTimeout(() => otherRef.current?.focus(), 0);
+      return on ? prev.filter((x) => x !== t) : [...prev, t];
+    });
   }
 
   const q = tradeQuery.trim().toLowerCase();
@@ -131,9 +166,12 @@ export function MobileRegisterContent() {
     trades: q ? g.trades.filter((t) => t.toLowerCase().includes(q)) : g.trades,
   })).filter((g) => g.trades.length > 0);
 
-  // Donor `#step1Form` submit — client-side only, exactly as the donor has it.
-  function onStep1(e: React.FormEvent) {
+  // Donor `#step1Form` submit — the donor's client-side checks, then a real
+  // server round trip so a taken email is caught HERE rather than after the
+  // user has already filled in step 2.
+  async function onStep1(e: React.FormEvent) {
     e.preventDefault();
+    if (checking) return;
     const n = name.trim();
     const b = biz.trim();
     const em = email.trim();
@@ -149,9 +187,25 @@ export function MobileRegisterContent() {
       setErr1("Password must be at least 8 characters.");
       return;
     }
+    if (password2 !== password) {
+      setErr1("Passwords do not match.");
+      return;
+    }
     setErr1(null);
-    setDoneNote(b + " is ready.");
-    setStep(2);
+    setChecking(true);
+    try {
+      const res = await checkEmailAvailable(em);
+      if (!res.available) {
+        setErr1(res.message || "That email is already registered. Try signing in instead.");
+        return;
+      }
+      setDoneNote(b + " is ready.");
+      setStep(2);
+    } catch (err: unknown) {
+      setErr1(err instanceof Error ? err.message : "Couldn't check that email.");
+    } finally {
+      setChecking(false);
+    }
   }
 
   // Donor `finish(withCompany)` — the real registerAccount + signIn round trip.
@@ -168,6 +222,10 @@ export function MobileRegisterContent() {
         companyAddress: withCompany ? addr.trim() || undefined : undefined,
         companyPhone: withCompany ? phone.trim() || undefined : undefined,
         tradeTypes: withCompany && trades.length ? trades : undefined,
+        otherTrade:
+          withCompany && trades.includes("Other") && otherTrade.trim()
+            ? otherTrade.trim()
+            : undefined,
         attribution: attribution ?? undefined,
       });
       // Account exists — establish the session client-side, then land on the app.
@@ -251,12 +309,11 @@ export function MobileRegisterContent() {
 
         {/* ═══════════ STEP 1 ═══════════ */}
         <section className={step === 1 ? "mr-step" : "mr-step is-hidden"} aria-hidden={step !== 1}>
-          <p className="mr-kicker">Get started</p>
-          <h1 className="mr-h1">Set up your shop.</h1>
+          <h1 className="mr-h1">Register.</h1>
 
           {pill && <MobileReferralPill pill={pill} />}
 
-          <form id="mr-step1-form" noValidate onSubmit={onStep1}>
+          <form id="mr-step1-form" noValidate onSubmit={(e) => void onStep1(e)}>
             <label className="mr-fld" htmlFor="mr-name">
               <span className="mr-lbl">Your name</span>
               <input
@@ -326,6 +383,35 @@ export function MobileRegisterContent() {
               </span>
               <span className="mr-note">At least 8 characters.</span>
             </div>
+            <div className="mr-fld">
+              <label className="mr-lbl" htmlFor="mr-password-confirm">
+                Confirm password
+              </label>
+              <span className="mr-pw">
+                <input
+                  className="mr-in"
+                  type={showPw2 ? "text" : "password"}
+                  id="mr-password-confirm"
+                  name="passwordConfirm"
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  value={password2}
+                  onChange={(e) => setPassword2(e.target.value)}
+                />
+                <button
+                  className="mr-pw-btn"
+                  type="button"
+                  aria-label={showPw2 ? "Hide confirmation password" : "Show confirmation password"}
+                  aria-pressed={showPw2}
+                  onClick={() => setShowPw2((v) => !v)}
+                >
+                  <svg className="ic" aria-hidden="true">
+                    <use href={showPw2 ? "#mrg-eye-off" : "#mrg-eye"} />
+                  </svg>
+                </button>
+              </span>
+              <span className="mr-note">Type it again to confirm.</span>
+            </div>
 
             {/* the attribution entry affordance lives BELOW the required
                 fields; the earned pill (above) lives under the headline */}
@@ -383,7 +469,6 @@ export function MobileRegisterContent() {
 
         {/* ═══════════ STEP 2 ═══════════ */}
         <section className={step === 2 ? "mr-step" : "mr-step is-hidden"} aria-hidden={step !== 2}>
-          <p className="mr-kicker">Almost there</p>
           <h1 className="mr-h1">Tell us what you do.</h1>
 
           {/* the desktop right panel's perk block, re-cut as an inverse card */}
@@ -518,6 +603,19 @@ export function MobileRegisterContent() {
                 )}
               </div>
 
+              {trades.includes("Other") && (
+                <input
+                  ref={otherRef}
+                  className="mr-in mr-in--other"
+                  type="text"
+                  maxLength={80}
+                  placeholder="Name the trade — e.g. epoxy floors"
+                  aria-label="Your other trade"
+                  value={otherTrade}
+                  onChange={(e) => setOtherTrade(e.target.value)}
+                />
+              )}
+
               <span className="mr-note" aria-live="polite">
                 {tradeNote(trades.length)}
               </span>
@@ -553,6 +651,9 @@ export function MobileRegisterContent() {
           <p className="mr-kicker">Account created</p>
           <h1 className="mr-h1">Your shop is live.</h1>
           <p className="mr-lede">{doneNote}</p>
+          <p className="mr-note" role="status">
+            {countdown > 0 ? `Taking you there in ${countdown}…` : "Opening your dashboard…"}
+          </p>
         </section>
       </main>
 
@@ -560,11 +661,17 @@ export function MobileRegisterContent() {
       <div className="mr-bar">
         <div className="mr-bar-in">
           {step === 1 && (
-            <button className="mr-btn" type="submit" form="mr-step1-form">
-              Continue
-              <svg className="ic" aria-hidden="true">
-                <use href="#mrg-arrow-r" />
-              </svg>
+            <button className="mr-btn" type="submit" form="mr-step1-form" disabled={checking}>
+              {checking ? (
+                "Checking…"
+              ) : (
+                <>
+                  Continue
+                  <svg className="ic" aria-hidden="true">
+                    <use href="#mrg-arrow-r" />
+                  </svg>
+                </>
+              )}
             </button>
           )}
           {step === 2 && (

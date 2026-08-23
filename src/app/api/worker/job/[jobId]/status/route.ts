@@ -29,7 +29,15 @@ export async function POST(
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
-  await db.job.update({ where: { id: jobId }, data: { status: body.status } });
+  const job = await db.job.update({ where: { id: jobId }, data: { status: body.status } });
+  // Same promotion updateJob does: the ACCEPTED proposal behind a finished
+  // job reads COMPLETED, no matter which door completed the work.
+  if (body.status === "COMPLETED" && job.proposalId) {
+    await db.proposal.updateMany({
+      where: { id: job.proposalId, status: "ACCEPTED" },
+      data: { status: "COMPLETED" },
+    });
+  }
   await touchWorkerActivity(worker.id);
   return NextResponse.json({ ok: true });
 }

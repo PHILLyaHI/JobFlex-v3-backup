@@ -3,9 +3,9 @@
 // Blueprint hire — page CONTENT only. The donor's `.content` children,
 // verbatim; the sidebar, topbar, sprite and graph-paper field come from the
 // shared shell (components/v3/blueprint-shell), which persists across
-// navigation. Dynamic regions (#hubDoors, #tallyRow, #hubList, #hkBoard and
-// #sheetBody) are left empty exactly like the donor and filled by the ported
-// script on mount — same architecture, same timing.
+// navigation. Dynamic regions (#hubDoors, #tallyRow, #hubList, #hkBoard,
+// #profBox, #talentBox and #sheetBody) are left empty exactly like the donor
+// and filled by the ported script on mount — same architecture, same timing.
 //
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
@@ -20,9 +20,13 @@
 // donor's paint order and motion exactly.
 
 import { useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import type { Route } from "next";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
+import type { DiscoverProfileDTO } from "@/actions/tradeServices";
+import type { TradeNetworkProfileDTO } from "@/app/(mobile)/trade-services/trade-data";
 import { initHireContent } from "./hire-behavior";
-import type { Applicant } from "./hire-data";
+import type { Applicant, HireTallies } from "./hire-data";
 import "./hire-global.css";
 
 /**
@@ -30,8 +34,21 @@ import "./hire-global.css";
  *   component. The behavior module takes it as its starting state and then
  *   keeps itself in step with the database through the applicant server
  *   actions.
+ * @param profile   the caller's TradeNetworkProfile ("Publish your profile").
+ * @param tallies   the hub's real activity numbers — see HireTallies.
+ * @param talent    other orgs' opted-in profiles ("Discover talent").
  */
-export function HireContent({ applicants }: { applicants?: Applicant[] }) {
+export function HireContent({
+  applicants,
+  profile,
+  tallies,
+  talent,
+}: {
+  applicants?: Applicant[];
+  profile?: TradeNetworkProfileDTO;
+  tallies?: HireTallies;
+  talent?: DiscoverProfileDTO[];
+}) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a
   // re-run tears the page down and replays the whole reveal cascade — so the
@@ -43,10 +60,22 @@ export function HireContent({ applicants }: { applicants?: Applicant[] }) {
   // and keeps itself in step with the database through the server actions. A
   // navigation away unmounts the component, so the next visit gets a fresh ref
   // holding freshly-queried rows.
-  const seedRef = useRef(applicants);
+  const seedRef = useRef({ applicants, profile, tallies, talent });
+
+  // Cross-route rows ("Job posts", "Applications") leave through router.push —
+  // a hard navigation replays the shell's entrance and double-takes (see the
+  // clients port for the long version). Same contract as clients-content.tsx:
+  // `useRouter` returns the same object for the life of the mount, so seeding
+  // the ref once is enough — and writing to a ref during render is not allowed.
+  const router = useRouter();
+  const routerRef = useRef(router);
 
   const init = useCallback(
-    (content: HTMLElement) => initHireContent(content, { applicants: seedRef.current }),
+    (content: HTMLElement) =>
+      initHireContent(content, {
+        ...seedRef.current,
+        navigate: (href) => routerRef.current.push(href as Route),
+      }),
     [],
   );
   useBlueprintContent(init);
@@ -60,11 +89,6 @@ export function HireContent({ applicants }: { applicants?: Applicant[] }) {
             <div className="kicker">Marketplace</div>
             <h1 className="page-title">Hire &amp; Work</h1>
           </div>
-          <div className="page-actions">
-            <span className="pstatus hub-flag">
-              <span className="hub-dot"></span>Preview
-            </span>
-          </div>
         </div>
 
         {/* two doors in one card, split by a hairline */}
@@ -76,8 +100,8 @@ export function HireContent({ applicants }: { applicants?: Applicant[] }) {
             <div className="card-titles">
               <div className="card-title">Your activity</div>
             </div>
-            <button className="hub-viewall" type="button" data-flash-door="">
-              View all{" "}
+            <button className="hub-viewall" type="button" data-goto="pipeline">
+              View pipeline{" "}
               <svg className="ic">
                 <use href="#i-arrow" />
               </svg>
@@ -140,6 +164,44 @@ export function HireContent({ applicants }: { applicants?: Applicant[] }) {
           </div>
         </div>
       </section>
+
+      {/* ===== PANEL: talent directory (Discover talent) ===== */}
+      <section className="ppanel is-hidden" data-panel="talent">
+        <button className="back-link" type="button" data-goto="hub">
+          <svg className="ic rot-l">
+            <use href="#i-chev" />
+          </svg>
+          Hire &amp; Work
+        </button>
+        <div className="page-head">
+          <div>
+            <div className="kicker">Marketplace</div>
+            <h1 className="page-title">Talent directory</h1>
+          </div>
+        </div>
+        <div className="card hub-talent" id="talentBox"></div>
+      </section>
+
+      {/* ===== PANEL: open-for-work profile (Publish your profile) ===== */}
+      <section className="ppanel is-hidden" data-panel="profile">
+        <button className="back-link" type="button" data-goto="hub">
+          <svg className="ic rot-l">
+            <use href="#i-chev" />
+          </svg>
+          Hire &amp; Work
+        </button>
+        <div className="page-head">
+          <div>
+            <div className="kicker">Marketplace</div>
+            <h1 className="page-title">Your public profile</h1>
+          </div>
+          <div className="page-actions">
+            <span className="pstatus" id="profFlag"></span>
+          </div>
+        </div>
+        <div className="card hub-prof" id="profBox"></div>
+      </section>
+
       <div className="pmenu" id="pMenu"></div>
 
       {/* Candidate panel — donor overlays, fixed to the viewport */}

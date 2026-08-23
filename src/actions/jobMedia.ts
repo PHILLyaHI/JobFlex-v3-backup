@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireManager } from "@/lib/orgContext";
+import { isLimitedRole, requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
@@ -81,11 +81,27 @@ const photoInput = z.object({
   caption: z.string().optional().nullable(),
 });
 
-export async function createJobPhoto(jobId: string, raw: unknown) {
-  const { organizationId } = await requireManager();
-  const data = photoInput.parse(raw);
+// Photo writes are OPEN TO THE CREW (2026-08-21, owner request): a manager may
+// photograph any org job, a limited role (installer/sales/estimator) only a
+// job they are assigned to. Everything else in this file stays manager-only —
+// expenses and deletes are office work.
+async function requireJobPhotoAccess(jobId: string) {
+  const { organizationId, user, role } = await requireOrg();
   const job = await db.job.findUnique({ where: { id: jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
+  if (isLimitedRole(role)) {
+    const assigned = await db.jobAssignment.findFirst({
+      where: { jobId, worker: { userId: user.id } },
+      select: { id: true },
+    });
+    if (!assigned) throw new Error("You can only add photos to jobs assigned to you");
+  }
+  return { organizationId };
+}
+
+export async function createJobPhoto(jobId: string, raw: unknown) {
+  await requireJobPhotoAccess(jobId);
+  const data = photoInput.parse(raw);
   await db.jobPhoto.create({
     data: {
       jobId,
@@ -119,9 +135,7 @@ export async function uploadJobPhoto(
   filename: string,
   kind: "BEFORE" | "PROGRESS" | "AFTER" = "BEFORE",
 ) {
-  const { organizationId } = await requireManager();
-  const job = await db.job.findUnique({ where: { id: jobId } });
-  if (!job || job.organizationId !== organizationId) throw new Error("Not found");
+  await requireJobPhotoAccess(jobId);
 
   let url = dataUrl;
   if (isBlobEnabled()) {

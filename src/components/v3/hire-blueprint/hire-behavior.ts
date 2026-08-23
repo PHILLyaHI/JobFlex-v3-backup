@@ -23,23 +23,33 @@ import {
   deleteApplicant,
   updateApplicantStatus,
 } from "@/actions/applicants";
+import { setTradeNetworkOptIn, type DiscoverProfileDTO } from "@/actions/tradeServices";
+import type { TradeNetworkProfileDTO } from "@/app/(mobile)/trade-services/trade-data";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
   HK_COLUMNS,
   SOURCES,
-  APPLICANTS_SEED,
   HUB_DOORS,
-  HUB_TALLY,
   HUB_LINKS,
   type Applicant,
   type HireColumnKey,
+  type HireTallies,
 } from "./hire-data";
 
 export type HireContentOptions = {
-  /** The org's real applicant pipeline, read server-side. Omit to fall back to
-   *  the donor fixture (the standalone mock routes have no session to read
-   *  from). */
+  /** The org's real applicant pipeline, read server-side. A render with
+   *  nothing to pass (no session to read from) gets the empty state — never a
+   *  fixture that looks like data. */
   applicants?: Applicant[];
+  /** The caller's TradeNetworkProfile — the "Publish your profile" panel. */
+  profile?: TradeNetworkProfileDTO;
+  /** The hub's real activity numbers, computed in page.tsx. */
+  tallies?: HireTallies;
+  /** Other orgs' opted-in profiles — the "Discover talent" panel. */
+  talent?: DiscoverProfileDTO[];
+  /** Client-side route push for the cross-route hub rows. Falls back to
+   *  location.assign — see the clients port for why the way matters. */
+  navigate?: (href: string) => void;
 };
 
 /** Server actions reject with an Error whose message is written for the user
@@ -139,7 +149,22 @@ export function initHireContent(
   // The org's real pipeline, read in src/app/dashboard/hire/page.tsx. Cloned
   // per mount; every mutation below goes through a server action first and
   // patches this array from the result, so a reload reads the same rows back.
-  let applicantsData: Applicant[] = (options.applicants ?? APPLICANTS_SEED).map((a) => ({ ...a }));
+  let applicantsData: Applicant[] = (options.applicants ?? []).map((a) => ({ ...a }));
+
+  /** The caller's open-for-work profile — the panel edits this copy and the
+   *  save handler swaps in whatever the server actually stored. */
+  let profileData: TradeNetworkProfileDTO = options.profile
+    ? { ...options.profile, tradeTypes: [...options.profile.tradeTypes], specialties: [...options.profile.specialties] }
+    : { optIn: false, tradeTypes: [], specialties: [], serviceArea: null };
+  const talentData: DiscoverProfileDTO[] = options.talent ?? [];
+  const tallies: HireTallies = options.tallies ?? {
+    hired: 0, openPosts: 0, totalPosts: 0, interestReceived: 0, interestSent: 0,
+  };
+
+  function goRoute(href: string) {
+    if (options.navigate) options.navigate(href);
+    else window.location.assign(href);
+  }
 
   const hire = {
     tab: "hub",
@@ -152,7 +177,10 @@ export function initHireContent(
     saving: false,
     /** Two-tap arming for the destructive actions in the sheet. */
     armed: null as string | null,
+    /** The profile panel's listing toggle — local until Save writes it. */
+    profOptIn: false,
   };
+  hire.profOptIn = profileData.optIn;
 
   function monogram(name: string) {
     const p = name.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
@@ -251,13 +279,38 @@ export function initHireContent(
     box.classList.toggle("is-hidden", !msg);
   }
 
+  /** Every number is real: HIRED comes from the pipeline on this page, the
+   *  other two from the caller's trade-network records. There is no contracts
+   *  model, so there is no contracts tile — the third slot counts hires. */
+  function buildTally() {
+    return [
+      {
+        label: "Hired",
+        value: tallies.hired,
+        hint: tallies.hired ? "From your pipeline" : "No hires yet",
+      },
+      {
+        label: "Job posts",
+        value: tallies.openPosts,
+        hint: tallies.totalPosts
+          ? (tallies.openPosts ? "Open now · " + tallies.totalPosts + " posted" : "None open · " + tallies.totalPosts + " posted")
+          : "None posted",
+      },
+      {
+        label: "Interest",
+        value: tallies.interestReceived + tallies.interestSent,
+        hint: tallies.interestReceived + " received · " + tallies.interestSent + " sent",
+      },
+    ];
+  }
+
   function renderHub() {
     const doors = $("#hubDoors");
     const tally = $("#tallyRow");
     const links = $("#hubList");
     if (doors) {
       doors.innerHTML = HUB_DOORS.map(function (d) {
-        return '<button class="door" type="button" data-flash-door>' +
+        return '<button class="door" type="button" data-goto="' + d.goto + '">' +
           '<span class="door-kicker">' + d.kicker + '</span>' +
           '<span class="door-ic"><svg class="ic"><use href="#' + d.icon + '"/></svg></span>' +
           '<span class="door-t" style="display:block">' + d.title + '</span>' +
@@ -267,23 +320,92 @@ export function initHireContent(
       }).join('');
     }
     if (tally) {
-      tally.innerHTML = HUB_TALLY.map(function (t) {
+      tally.innerHTML = buildTally().map(function (t) {
         return '<div class="tally-cell"><div class="kpi-lbl">' + t.label + '</div>' +
-          '<div class="tally-v">' + t.value + '</div></div>';
+          '<div class="tally-v">' + t.value + '</div>' +
+          '<div class="tally-h">' + esc(t.hint) + '</div></div>';
       }).join('');
     }
     if (links) {
       links.innerHTML = HUB_LINKS.map(function (l) {
-        return '<li><button class="hub-row" type="button"' + (l.goto ? ' data-goto="' + l.goto + '"' : ' data-flash-door') + '>' +
+        const act = l.goto ? ' data-goto="' + l.goto + '"' : ' data-href="' + l.href + '"';
+        return '<li><button class="hub-row" type="button"' + act + '>' +
           '<span class="hub-row-ic"><svg class="ic"><use href="#' + l.icon + '"/></svg></span>' +
-          '<span class="hub-row-t">' + l.label + '</span>' +
+          '<span style="min-width:0">' +
+            '<span class="hub-row-t" style="display:block">' + l.label + '</span>' +
+            '<span class="hub-row-s" style="display:block">' + l.sub + '</span>' +
+          '</span>' +
           '<svg class="ic hub-go"><use href="#i-arrow"/></svg>' +
           '</button></li>';
       }).join('');
     }
   }
 
-  function renderHire() { renderBoard(); renderHub(); }
+  // ---- "Publish your profile" — the caller's TradeNetworkProfile ----
+  function profFlag() {
+    const flag = $("#profFlag");
+    if (!flag) return;
+    flag.textContent = profileData.optIn ? "Open for work" : "Not listed";
+    flag.classList.toggle("pstatus--accepted", profileData.optIn);
+  }
+
+  function renderProfile() {
+    const box = $("#profBox");
+    if (!box) return;
+    profFlag();
+    hire.profOptIn = profileData.optIn;
+    box.innerHTML =
+        '<div class="sf"><span class="sf-lbl">Listing</span><div class="pipe" id="profOpt">' +
+          '<button class="pipe-btn' + (profileData.optIn ? ' on' : '') + '" type="button" data-opt="1">Open for work</button>' +
+          '<button class="pipe-btn' + (profileData.optIn ? '' : ' on') + '" type="button" data-opt="0">Not listed</button>' +
+        '</div>' +
+        '<div class="sf-hint">Listed profiles appear in other companies’ talent directories and receive matching trade jobs.</div></div>' +
+        '<label class="sf"><span class="sf-lbl">Trades</span>' +
+          '<input class="sf-in" data-p="trades" value="' + esc(profileData.tradeTypes.join(", ")) + '" placeholder="Roofing, Fencing, General contracting">' +
+          '<div class="sf-hint">Comma-separated.</div></label>' +
+        '<label class="sf"><span class="sf-lbl">Specialties</span>' +
+          '<input class="sf-in" data-p="specialties" value="' + esc(profileData.specialties.join(", ")) + '" placeholder="Metal roofs, cedar fences, decks">' +
+          '<div class="sf-hint">Comma-separated.</div></label>' +
+        '<label class="sf"><span class="sf-lbl">Service area</span>' +
+          '<input class="sf-in" data-p="area" value="' + esc(profileData.serviceArea || "") + '" placeholder="King County, WA"></label>' +
+        '<div class="mf-err is-hidden" id="profErr" role="alert"></div>' +
+        '<div class="sf-act"><button class="btn btn-primary btn--sm" type="button" data-act="save-profile">' +
+          '<svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Save profile</span></button></div>';
+  }
+
+  // ---- "Discover talent" — other orgs' opted-in profiles ----
+  function renderTalent() {
+    const box = $("#talentBox");
+    if (!box) return;
+    if (!talentData.length) {
+      box.innerHTML =
+        '<div class="tal-empty"><div class="pempty" style="margin:0">' +
+          '<b>No companies are open for work yet</b><br>' +
+          'Profiles that switch on “Open for work” appear here.' +
+        '</div></div>';
+      return;
+    }
+    box.innerHTML =
+      '<ul class="tal-list">' +
+      talentData.map(function (p) {
+        const trades = p.tradeTypes.join(" · ");
+        const skills = p.specialties.join(", ");
+        return '<li class="tal-row">' +
+          '<span class="hub-row-ic"><svg class="ic"><use href="#i-hardhat"/></svg></span>' +
+          '<span class="tal-main">' +
+            '<span class="tal-name">' + esc(p.company || p.name) + '</span>' +
+            (p.company && p.name !== p.company ? '<span class="tal-who">' + esc(p.name) + '</span>' : '') +
+            (trades || skills
+              ? '<span class="tal-sub">' + esc(trades) + (trades && skills ? " — " : "") + esc(skills) + '</span>'
+              : '') +
+          '</span>' +
+          (p.serviceArea ? '<span class="tal-area">' + esc(p.serviceArea) + '</span>' : '') +
+        '</li>';
+      }).join('') +
+      '</ul>';
+  }
+
+  function renderHire() { renderBoard(); renderHub(); renderProfile(); renderTalent(); }
 
   // ================= PANELS =================
   function openSheet(title: string, html: string) {
@@ -343,6 +465,15 @@ export function initHireContent(
         '<div class="sf-meta-row"><span class="kpi-lbl">Phone</span><span>' + esc(a.phone || '—') + '</span></div>' +
         '<div class="sf-meta-row"><span class="kpi-lbl">Source</span><span>' + esc(a.source || 'Other') + '</span></div>' +
         '<div class="sf-meta-row"><span class="kpi-lbl">Applied</span><span>' + esc(a.age) + '</span></div>' +
+        // Only a real web address becomes a link — anything else renders as
+        // the text it is rather than an href the browser would misread.
+        (a.resumeUrl
+          ? '<div class="sf-meta-row"><span class="kpi-lbl">Resume</span><span>' +
+            (/^https?:\/\//i.test(a.resumeUrl)
+              ? '<a class="sf-meta-link" href="' + esc(a.resumeUrl) + '" target="_blank" rel="noopener noreferrer">Open resume</a>'
+              : esc(a.resumeUrl)) +
+            '</span></div>'
+          : '') +
       '</div>' +
       '<div class="sf"><span class="sf-lbl">Pipeline status</span><div class="pipe" id="pipeBox">' +
         HK_COLUMNS.map(function (c) {
@@ -504,13 +635,13 @@ export function initHireContent(
     if (target.closest('[data-sheet="close"]') || target.id === "sheetBg") { closeSheet(); return; }
     const goto = target.closest<HTMLElement>("[data-goto]");
     if (goto) { switchTab(goto.dataset.goto ?? ""); return; }
-    const door = target.closest<HTMLElement>("[data-flash-door]");
-    if (door) {
-      if (!door.dataset.busy) {
-        door.dataset.busy = "1";
-        door.classList.add("tapped");
-        later(function () { door.classList.remove("tapped"); delete door.dataset.busy; }, 700);
-      }
+    const link = target.closest<HTMLElement>("[data-href]");
+    if (link) { goRoute(link.dataset.href ?? "/dashboard/hire"); return; }
+    const opt = target.closest<HTMLElement>("[data-opt]");
+    if (opt) {
+      if (hire.saving) return;
+      hire.profOptIn = opt.dataset.opt === "1";
+      $$("#profOpt .pipe-btn").forEach(function (b) { b.classList.toggle("on", b === opt); });
       return;
     }
     const st = target.closest<HTMLElement>("[data-st]");
@@ -533,11 +664,52 @@ export function initHireContent(
     if (hire.saving) return;
 
     if (kind === "add") { openAddForm(); return; }
+    if (kind === "save-profile") { void saveProfile(act); return; }
     if (kind === "save-applicant") { void saveApplicant(act, val("notes")); return; }
     if (kind === "convert") { void convertApplicant(act); return; }
     if (kind === "delete-applicant") { void removeApplicant(act); return; }
     if (kind === "create-applicant") { void submitApplicant(act, val); return; }
   });
+
+  /** Split a comma-separated field into the JSON list the profile stores. */
+  function csv(raw: string): string[] {
+    return raw.split(",").map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 40);
+  }
+
+  /** "Publish your profile" — one write (`setTradeNetworkOptIn` upserts the
+   *  whole record), and the local copy is replaced by what the server actually
+   *  stored, so the panel re-reads exactly like a reload would. */
+  async function saveProfile(btn: HTMLElement) {
+    const read = function (f: string) {
+      const el = root.querySelector<HTMLInputElement>('[data-p="' + f + '"]');
+      return el ? el.value.trim() : "";
+    };
+    const errBox = $("#profErr");
+    const setErr = function (msg: string | null) {
+      if (!errBox) return;
+      errBox.textContent = msg || "";
+      errBox.classList.toggle("is-hidden", !msg);
+    };
+    setErr(null);
+    setSaving(btn, true, "Saving…", "");
+    try {
+      profileData = await setTradeNetworkOptIn({
+        optIn: hire.profOptIn,
+        tradeTypes: csv(read("trades")),
+        specialties: csv(read("specialties")),
+        serviceArea: read("area") || null,
+      });
+      setSaving(btn, false, "", "Saved");
+      profFlag();
+      later(function () {
+        const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
+        if (lbl) lbl.textContent = "Save profile";
+      }, 1600);
+    } catch (err) {
+      setSaving(btn, false, "", "Save profile");
+      setErr(actionError(err));
+    }
+  }
 
   /** Save = the two things the data layer actually supports: a status move
    *  (`updateApplicantStatus`) and a new stamped note (`appendApplicantNote`).

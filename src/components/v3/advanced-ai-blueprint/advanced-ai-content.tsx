@@ -240,8 +240,13 @@ export function AdvancedAiContent() {
     if (panel !== "intake") return;
     const input = addrRef.current;
     if (!input) return;
+    // NOT cityOnly. The field asks for "address or city", and restricting the
+    // query to `locality` meant a typed street address could only ever come back
+    // as some unrelated town that fuzzy-matched the string — type "6232 97th Dr
+    // NE" and Google answers with Naivasha. Unrestricted suggestions resolve the
+    // address itself, and the addressComponents parse below still lifts the city
+    // and state out of it, so regional pricing is unaffected.
     return attachPlacesSuggest(input, {
-      cityOnly: true,
       onPick(p) {
         setAddr(p.typed ? p.address : p.formatted || p.address);
         if (p.typed || !p.state) return;
@@ -671,9 +676,15 @@ export function AdvancedAiContent() {
         discount: data.discount ?? undefined,
       });
       toast.success("Proposal created", "Opening it now.");
+      // Straight into the BLUEPRINT manual builder. This used to push
+      // /dashboard/proposals/<id>, which is the legacy builder-a editor — the
+      // one that greets a fresh save with its own corner transfer modal and a
+      // five-second auto-redirect. The estimate is already persisted at this
+      // point, so ?proposal=<id> reopens it with every line, assumption and
+      // discount in place.
       // router.push, never location.assign — a hard nav replays the blueprint
       // entrance and the page visibly double-takes.
-      router.push(`/dashboard/proposals/${res.id}` as never);
+      router.push(`/dashboard/manual-blueprint?proposal=${res.id}` as never);
     } catch (err) {
       if (reportPlanLimit(err)) return;
       const msg = err instanceof Error ? err.message : "Couldn't save the proposal.";
@@ -1565,10 +1576,13 @@ function GenerateOverlay({
   // Resolved lazily rather than in an effect: this component only ever mounts
   // in response to a click, so `document` is always there and there is no
   // hydration pass to disagree with.
+  // Portalled into <body>, NOT into `.content`: the shell transforms the content
+  // column, and a transformed ancestor becomes the containing block for
+  // `position: fixed`. Hosted inside it, an "inset: 0" overlay covers only the
+  // column — it slid under the topbar and left the chrome undimmed. The styles
+  // are module-hashed, so they no longer need the `.content` prefix to be safe.
   const [host] = useState<HTMLElement | null>(() =>
-    typeof document === "undefined"
-      ? null
-      : document.querySelector<HTMLElement>(".jf-blueprint .content"),
+    typeof document === "undefined" ? null : document.body,
   );
   if (!host) return null;
   return createPortal(
@@ -1636,10 +1650,13 @@ function ClarifyDialog({
   questions: ClarifyQuestion[];
   onSettle: (value: ClarifyAnswer[] | null) => void;
 }) {
+  // Portalled into <body>, NOT into `.content`: the shell transforms the content
+  // column, and a transformed ancestor becomes the containing block for
+  // `position: fixed`. Hosted inside it, an "inset: 0" overlay covers only the
+  // column — it slid under the topbar and left the chrome undimmed. The styles
+  // are module-hashed, so they no longer need the `.content` prefix to be safe.
   const [host] = useState<HTMLElement | null>(() =>
-    typeof document === "undefined"
-      ? null
-      : document.querySelector<HTMLElement>(".jf-blueprint .content"),
+    typeof document === "undefined" ? null : document.body,
   );
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [custom, setCustom] = useState<Record<string, boolean>>({});

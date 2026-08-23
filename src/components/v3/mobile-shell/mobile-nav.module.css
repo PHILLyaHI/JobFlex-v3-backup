@@ -266,6 +266,21 @@
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .sbLink .ic { width: 17px; height: 17px; opacity: 0.72; }
+/* Unread count — the desktop sidebar's sb-badge voice: a small blueprint
+   plate with mono numerals, pushed to the row's right edge. Slightly larger
+   than desktop's 18px because the drawer rows themselves are. */
+.sbBadge {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px; font-weight: 700;
+  line-height: 1;
+}
 .sbLink:active:not(.active) { background: var(--paper-deep); }
 .sbLink.active { color: var(--ink); font-weight: 700; border-color: var(--ink); }
 .sbLink.active .ic { opacity: 1; color: var(--blueprint); }

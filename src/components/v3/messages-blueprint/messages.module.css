@@ -1371,7 +1371,10 @@
 .bp :global(.content .day-div) { display: flex; align-items: center; gap: 11px; margin: 12px 0 8px; }
 .bp :global(.content .day-div)::before, .bp :global(.content .day-div)::after { content: ''; flex: 1; height: 1.5px; background: var(--hair-soft); }
 .bp :global(.content .day-div span) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-light); }
-.bp :global(.content .msg) { display: flex; flex-direction: column; max-width: 74%; }
+/* `align-items: flex-start` keeps a RECEIVED bubble shrink-wrapped to its
+   text: without it the flex-column stretches .bub to the full 74% rail. Sent
+   bubbles never showed the bug because .msg.me overrides both axes. */
+.bp :global(.content .msg) { display: flex; flex-direction: column; align-items: flex-start; max-width: 74%; }
 .bp :global(.content .msg.me) { align-self: flex-end; align-items: flex-end; }
 .bp :global(.content .msg-who) { margin: 6px 0 4px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
 /* No offset shadow on chat bubbles (owner request 2026-08-12): the donor

@@ -17,6 +17,7 @@ import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { longDate } from "@/lib/format";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { AnnouncementsContent } from "@/components/v3/announcements-blueprint/announcements-content";
 import type { Announcement } from "@/components/v3/announcements-blueprint/announcements-data";
 
@@ -57,5 +58,13 @@ export default async function AnnouncementsPage() {
     expired: !!(a.expiresAt && a.expiresAt <= now),
   }));
 
-  return <AnnouncementsContent entries={entries} />;
+  return (
+    <>
+      {/* Clears the announcements nav badge (new banners in force) on open.
+          Desktop edition only — the handheld build is stamped by the
+          responsive shell (HANDHELD_SEEN). */}
+      <MarkNavSeen surface="announcements" />
+      <AnnouncementsContent entries={entries} />
+    </>
+  );
 }

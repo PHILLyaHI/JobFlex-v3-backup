@@ -1,12 +1,27 @@
 "use client";
+
+// ORDER MATERIALS — the shoppable list behind the proposals row menu.
+//
+// Hand-rolled dialog in the blueprint vocabulary, not the shared `Sheet`
+// primitive: this is opened from the proposals blueprint page (as a React
+// island) and the generic right-hand drawer read as a component-library panel
+// arriving over a hand-drawn page. House rule — modals here are hand-rolled.
+// Styling lives in ./materials-sheet.css under a `.jf-mat` root; see the note
+// at the top of that file for why it is plain CSS rather than a module.
+//
+// Behaviour is unchanged from the drawer it replaces: same props, same lines,
+// same merchantUrl() link fix, same clipboard payload. What is new is Escape,
+// a scroll lock, a focus trap and a backdrop click — the drawer only had
+// Escape.
 import * as React from "react";
-import { Copy, Package, ExternalLink } from "lucide-react";
-import { Sheet } from "@/components/ui/Sheet";
-import { Button } from "@/components/ui/Button";
+import { createPortal } from "react-dom";
+import { Copy, Package, ExternalLink, X } from "lucide-react";
 import { toast } from "@/components/ui/Toast";
 import { money } from "@/lib/format";
 import { MaterialThumb } from "@/components/materials/MaterialThumb";
 import { merchantUrl } from "@/lib/merchantLinks";
+import { lockScroll } from "@/lib/scrollLock";
+import "./materials-sheet.css";
 
 export interface MaterialLine {
   id: string;
@@ -83,112 +98,165 @@ export function MaterialsSheet({
     toast.success("Copied to clipboard", "Paste into Slack, an email, or a supplier portal.");
   }
 
-  return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title="Order materials"
-      description={`${proposalTitle} · ${clientName}`}
-      width="min(560px, 100vw)"
-      footer={
-        // Subtotal lives here so it's pinned to the bottom of the screen and
-        // stays visible regardless of scroll. Copy list is the single action.
-        <div className="flex items-end justify-between gap-4">
+  // Escape, scroll lock, focus in, Tab trap. Reference-counted lock so a sheet
+  // opened over another surface cannot leave the page unscrollable.
+  const boxRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const release = lockScroll();
+    const restore = document.activeElement as HTMLElement | null;
+    boxRef.current?.focus();
+    const SELECTOR =
+      'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const node = boxRef.current;
+      if (!node) return;
+      const list = Array.from(node.querySelectorAll<HTMLElement>(SELECTOR));
+      if (!list.length) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      release();
+      restore?.focus?.();
+    };
+  }, [open, onClose]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    // Portalled to <body>: the blueprint shell transforms its content column,
+    // and a transformed ancestor becomes the containing block for
+    // `position: fixed` — hosted inside it, the backdrop would cover the column
+    // and slide under the topbar.
+    <div
+      className="jf-mat"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="jf-mat-box"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="jfMatTitle"
+        tabIndex={-1}
+        ref={boxRef}
+      >
+        <div className="jf-mat-head">
           <div className="min-w-0">
-            <div className="quiet-caps !mb-0 text-[color:var(--ink-faint)]">Materials total</div>
-            <div className="mt-0.5 font-display tabular text-[26px] leading-none tracking-[-0.015em] text-[color:var(--accent)]">
-              {money(grandTotal)}
+            <div className="jf-mat-kicker">Order materials</div>
+            <div className="jf-mat-h" id="jfMatTitle">
+              {proposalTitle}
             </div>
-            <div className="mt-1 text-[10.5px] text-[color:var(--ink-muted)] tabular">
+            <div className="jf-mat-sub">{clientName}</div>
+          </div>
+          <button className="jf-mat-x" type="button" aria-label="Close" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="jf-mat-body">
+          {lines.length === 0 ? (
+            <div className="jf-mat-empty">
+              <Package className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <div>
+                <div className="jf-mat-empty-t">No materials on this proposal</div>
+                <p className="jf-mat-empty-p">
+                  Add Material $/unit values to line items in the editor. Lines with $0 material
+                  cost are excluded automatically.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <ul className="jf-mat-list">
+                {lines.map((l) => (
+                  <li className="jf-mat-row" key={l.id}>
+                    <MaterialThumb src={l.imageUrl ?? null} alt={l.name} />
+
+                    <div className="min-w-0">
+                      <div className="jf-mat-n">{l.name}</div>
+                      <div className="jf-mat-meta">
+                        {(l.dimensions || l.description) && (
+                          <span className="jf-mat-dim">{l.dimensions || l.description}</span>
+                        )}
+                        <span>
+                          Qty {formatQty(l.quantity)} {l.unit}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{money(l.materialCost)}/unit</span>
+                        {l.store ? (
+                          <span className="jf-mat-store">{l.store}</span>
+                        ) : (
+                          <span className="jf-mat-nolink">no retail source</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="jf-mat-v">{money(l.lineTotal)}</div>
+
+                    {l.buyHref && (
+                      <a
+                        className="jf-mat-buy"
+                        href={l.buyHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                        {l.store ? `Buy at ${l.store}` : "View product"}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+
+              <p className="jf-mat-note">
+                Totals reflect <em>base</em> material costs only — markups, overhead and profit
+                live in the proposal&apos;s Estimate breakdown. Each store link jumps straight to
+                the item at that retailer.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="jf-mat-foot">
+          <div className="min-w-0">
+            <div className="jf-mat-kicker">Materials total</div>
+            <div className="jf-mat-total">{money(grandTotal)}</div>
+            <div className="jf-mat-count">
               {lines.length} item{lines.length === 1 ? "" : "s"}
               {shoppable > 0 ? ` · ${shoppable} shoppable` : ""}
             </div>
           </div>
-          <Button
-            variant="outline"
-            icon={<Copy className="h-3.5 w-3.5" />}
+          <button
+            className="jf-mat-copy"
+            type="button"
             onClick={copyList}
             disabled={lines.length === 0}
           >
+            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
             Copy list
-          </Button>
+          </button>
         </div>
-      }
-    >
-      {lines.length === 0 ? (
-        <div className="paper-card p-6 flex items-start gap-3">
-          <Package className="h-5 w-5 text-[color:var(--ink-muted)] shrink-0 mt-0.5" />
-          <div>
-            <div className="text-[13px] font-medium text-[color:var(--ink)]">
-              No materials on this proposal
-            </div>
-            <div className="text-[11.5px] text-[color:var(--ink-muted)] mt-1 leading-relaxed">
-              Add Material $/unit values to line items in the editor. Lines with $0 material cost
-              are excluded automatically.
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Product rows — image-led shop tickets. Each lifts on hover and
-              carries a confident "Buy at {store}" CTA when a link resolves. */}
-          <ul className="space-y-2.5">
-            {lines.map((l) => (
-              <li
-                key={l.id}
-                className="rounded-[var(--r-md)] hairline bg-[color:var(--paper)] p-3 transition-shadow hover:shadow-[var(--shadow-md)]"
-              >
-                <div className="flex items-center gap-3.5">
-                  <MaterialThumb src={l.imageUrl ?? null} alt={l.name} />
-
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-[14px] leading-snug text-[color:var(--ink)] truncate">
-                      {l.name}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[color:var(--ink-muted)]">
-                      {(l.dimensions || l.description) && (
-                        <span className="truncate max-w-[220px]">{l.dimensions || l.description}</span>
-                      )}
-                      <span className="tabular">
-                        Qty {formatQty(l.quantity)} {l.unit}
-                      </span>
-                      <span className="text-[color:var(--ink-faint)]">·</span>
-                      <span className="tabular">{money(l.materialCost)}/unit</span>
-                      {l.store && (
-                        <span className="inline-flex items-center rounded-full bg-[color:var(--paper-deep)] px-2 py-0.5 text-[10px] font-medium text-[color:var(--ink-soft)]">
-                          {l.store}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="shrink-0 text-right">
-                    <div className="font-display tabular text-[16px] tracking-[-0.01em] text-[color:var(--ink)]">
-                      {money(l.lineTotal)}
-                    </div>
-                  </div>
-                </div>
-
-                {l.buyHref && (
-                  <div className="mt-2.5 flex justify-end">
-                    <a href={l.buyHref} target="_blank" rel="noopener noreferrer">
-                      <Button size="sm" icon={<ExternalLink className="h-3.5 w-3.5" />}>
-                        {l.store ? `Buy at ${l.store}` : "View product"}
-                      </Button>
-                    </a>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-
-          <p className="text-[10.5px] text-[color:var(--ink-muted)] leading-relaxed">
-            Totals reflect <em>base</em> material costs only — markups, overhead, and profit live
-            in the proposal&apos;s Estimate breakdown. Each store link jumps straight to the item at
-            that retailer.
-          </p>
-        </div>
-      )}
-    </Sheet>
+      </div>
+    </div>,
+    document.body,
   );
 }

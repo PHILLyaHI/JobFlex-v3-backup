@@ -17,6 +17,7 @@ import type { Metadata } from "next";
 import { requireOrg, isSalesRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { relative } from "@/lib/format";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { LeadsContent } from "@/components/v3/leads-blueprint/leads-content";
 import type { Lead, Offer } from "@/components/v3/leads-blueprint/leads-data";
 
@@ -104,5 +105,13 @@ export default async function LeadsPage() {
     desc: o.platformLead.description ?? "",
   }));
 
-  return <LeadsContent leads={leads} offers={offers} />;
+  return (
+    <>
+      {/* Clears the leads nav badge (un-triaged leads + live offers) on open.
+          Desktop edition only — the handheld build is stamped by the
+          responsive shell (HANDHELD_SEEN). */}
+      <MarkNavSeen surface="leads" />
+      <LeadsContent leads={leads} offers={offers} />
+    </>
+  );
 }

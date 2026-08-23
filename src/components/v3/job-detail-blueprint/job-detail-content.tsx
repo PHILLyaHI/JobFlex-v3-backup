@@ -103,7 +103,12 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
   const [photoKind, setPhotoKind] = useState<PhotoKind>("BEFORE");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const a = useJobDetailActions(record.id, record.booking, record.status);
+  const a = useJobDetailActions(
+    record.id,
+    record.booking,
+    record.status,
+    record.viewer === "worker",
+  );
 
   useJobDetailMotion(s.btn);
 
@@ -168,7 +173,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
         {record.proposal && (
           <Link
             className={cx("btn", "btn-ghost", "jd-vp")}
-            href={`/dashboard/proposals/${record.proposal.id}` as Route}
+            href={`/dashboard/manual-blueprint?proposal=${record.proposal.id}` as Route}
           >
             <Ic id="i-file" />
             View proposal · {fmt(record.proposal.total)}
@@ -196,11 +201,16 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                 <h2 className={cx("jd-t")}>Overview</h2>
               </div>
 
-              {record.canWrite && (
+              {/* Crew progress control (2026-08-21): an ACCEPTED worker moves
+                  the job forward — In progress / Completed only. Office roles
+                  keep the full four-state picker. */}
+              {(record.canWrite || (worker && record.assignment === "ok")) && (
                 <div className={cx("jd-status")}>
                   <div className={cx("jd-sec-l")}>Set up the status</div>
                   <div className={cx("jd-status-row")}>
-                    {STATUS_BUTTONS.map(([key, label]) => (
+                    {STATUS_BUTTONS.filter(
+                      ([key]) => record.canWrite || key === "prog" || key === "done",
+                    ).map(([key, label]) => (
                       <button
                         key={key}
                         className={cx("jd-sbtn", `jd-sbtn--${key}`, a.status === key && "on")}
@@ -593,7 +603,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                 ))}
               </div>
             )}
-            {record.canWrite && (
+            {record.canPhotos && (
               <div className={cx("jd-total", "jd-total--foot14")}>
                 <div className={cx("jd-status-row")}>
                   {PHOTO_KINDS.map(([key, label]) => (

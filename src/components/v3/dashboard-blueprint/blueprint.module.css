@@ -237,6 +237,20 @@
   font-weight: 700;
 }
 .bp :global(.sb-link.active .ic) { opacity: 1; color: var(--blueprint); }
+/* Unread count — same voice as the messages ledger's conv-badge: a small
+   blueprint plate, mono numerals, pushed to the row's right edge. */
+.bp :global(.sb-badge) {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 700;
+  line-height: 1;
+}
 .bp :global(.sb-indicator) {
   position: absolute;
   left: 12px; right: 12px;

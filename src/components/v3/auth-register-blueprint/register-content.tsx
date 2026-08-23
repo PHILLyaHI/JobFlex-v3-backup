@@ -34,13 +34,17 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { toast } from "@/components/ui/Toast";
-import { registerAccount } from "@/actions/auth";
+import { checkEmailAvailable, registerAccount } from "@/actions/auth";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
 import styles from "./auth-register.module.css";
 
 type Step = 1 | 2 | 3;
+
+// How long the "Your shop is live" panel holds before it hands over to the
+// dashboard. Shared by both register surfaces.
+export const REDIRECT_SECONDS = 5;
 
 // Donor `setStep`: items[0] is `on` at step 1 and `done` after it; items[1] is
 // `on` at step 2, `done` at step 3, and bare at step 1.
@@ -67,11 +71,27 @@ export function RegisterContent() {
   const [biz, setBiz] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [password2, setPassword2] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
+  const [showPw2, setShowPw2] = React.useState(false);
+  // Step 1 is now gated on a server answer (is this email free?), so it has a
+  // pending state the Continue button reads.
+  const [checking, setChecking] = React.useState(false);
 
   const [addr, setAddr] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [trades, setTrades] = React.useState<TradeType[]>([]);
+  // "Other" is the one chip that cannot say what it means on its own. Picking it
+  // opens a free-text line so the trade the taxonomy has no word for still
+  // reaches the company record instead of being flattened into a shrug.
+  const [otherTrade, setOtherTrade] = React.useState("");
+  const otherRef = React.useRef<HTMLInputElement>(null);
+
+  // The success panel holds for five seconds before it hands over to the
+  // dashboard — long enough to read that the shop is live, short enough that
+  // nobody has to hunt for the button. The button is still there for anyone who
+  // does not want to wait.
+  const [countdown, setCountdown] = React.useState(REDIRECT_SECONDS);
 
   const [attribution, setAttribution] = React.useState<RegisterAttribution | null>(null);
   const [err1, setErr1] = React.useState<string | null>(null);
@@ -98,13 +118,41 @@ export function RegisterContent() {
     return () => window.removeEventListener("resize", syncNewsHeight);
   }, [step]);
 
+  // Tick the countdown down on the success step, then leave. Gated on `step` so
+  // the clock cannot start before the account exists, and cleared on unmount so
+  // a person who clicks the button first is not navigated a second time.
+  React.useEffect(() => {
+    if (step !== 3) return;
+    if (countdown <= 0) {
+      router.push("/dashboard" as Route);
+      return;
+    }
+    const t = window.setTimeout(() => setCountdown((n) => n - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [step, countdown, router]);
+
   function toggleTrade(t: TradeType) {
-    setTrades((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+    setTrades((prev) => {
+      const on = prev.includes(t);
+      // Turning "Other" back off throws away whatever was typed under it, so a
+      // stale label cannot be submitted for a chip that is no longer selected.
+      if (t === "Other" && on) setOtherTrade("");
+      // Focus the revealed input on the way in — the whole point of the chip is
+      // that there is something else to say.
+      if (t === "Other" && !on) window.setTimeout(() => otherRef.current?.focus(), 0);
+      return on ? prev.filter((x) => x !== t) : [...prev, t];
+    });
   }
 
-  // Donor `#step1Form` submit — client-side only, exactly as the donor has it.
-  function onStep1(e: React.FormEvent) {
+  // Donor `#step1Form` submit. The donor's checks were client-side only, which
+  // meant the one failure a person cannot fix by looking at the form — an email
+  // that is already registered — was not reported until AFTER they had filled in
+  // step 2 and pressed Create account, by which point the message pointed at a
+  // field two screens back. Step 1 now also asks the server whether the address
+  // is free, and only advances on a clean answer.
+  async function onStep1(e: React.FormEvent) {
     e.preventDefault();
+    if (checking) return;
     const n = name.trim();
     const b = biz.trim();
     const em = email.trim();
@@ -120,7 +168,24 @@ export function RegisterContent() {
       setErr1("Password must be at least 8 characters.");
       return;
     }
+    if (password !== password2) {
+      setErr1("Passwords do not match.");
+      return;
+    }
     setErr1(null);
+    setChecking(true);
+    try {
+      const res = await checkEmailAvailable(em);
+      if (!res.available) {
+        setErr1(res.message || "That email is already registered. Try signing in instead.");
+        return;
+      }
+    } catch (err: unknown) {
+      setErr1(err instanceof Error ? err.message : "Couldn't check that email. Try again.");
+      return;
+    } finally {
+      setChecking(false);
+    }
     setDoneNote(b + " is ready.");
     setStep(2);
   }
@@ -141,6 +206,10 @@ export function RegisterContent() {
         companyAddress: withCompany ? addr.trim() || undefined : undefined,
         companyPhone: withCompany ? phone.trim() || undefined : undefined,
         tradeTypes: withCompany && trades.length ? trades : undefined,
+        otherTrade:
+          withCompany && trades.includes("Other") && otherTrade.trim()
+            ? otherTrade.trim()
+            : undefined,
         attribution: attribution ?? undefined,
       });
       // Account exists — establish the session client-side, then land on the app.
@@ -218,11 +287,13 @@ export function RegisterContent() {
           </div>
 
           {/* ───── ШАГ 1 ───── */}
+          {/* The donor's "Get started" kicker is gone (owner's call) — the
+              stepper above already says which step this is, so the badge only
+              repeated it. Same for step 2's "Almost there". */}
           <div className={step === 1 ? "step" : "step is-hidden"} id="step1">
-            <div className="auth-kicker kpi-lbl">Get started</div>
-            <h1 className="auth-h1">Set up your shop.</h1>
+            <h1 className="auth-h1">Register.</h1>
 
-            <form id="step1Form" noValidate onSubmit={onStep1}>
+            <form id="step1Form" noValidate onSubmit={(e) => void onStep1(e)}>
               <div className="grid2">
                 <label className="fld">
                   <span className="fld-lbl">Your name</span>
@@ -285,9 +356,36 @@ export function RegisterContent() {
                 </span>
                 <span className="fld-note">At least 8 characters.</span>
               </label>
+              {/* Confirm password (owner's call, 2026-08-18). Its own toggle
+                  state, so revealing one field does not reveal the other. */}
+              <label className="fld">
+                <span className="fld-lbl">Confirm password</span>
+                <span className="pw-wrap">
+                  <input
+                    className="fld-in"
+                    type={showPw2 ? "text" : "password"}
+                    id="password2"
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    value={password2}
+                    onChange={(e) => setPassword2(e.target.value)}
+                  />
+                  <button
+                    className="pw-toggle"
+                    type="button"
+                    aria-label="Show confirmation password"
+                    onClick={() => setShowPw2((v) => !v)}
+                  >
+                    <svg className="ic">
+                      <use href={showPw2 ? "#i-eye-off" : "#i-eye"} />
+                    </svg>
+                  </button>
+                </span>
+                <span className="fld-note">Type it once more.</span>
+              </label>
 
-              <button className="btn" type="submit" id="nextBtn">
-                Continue
+              <button className="btn" type="submit" id="nextBtn" disabled={checking}>
+                {checking ? "Checking…" : "Continue"}
                 <svg className="ic">
                   <use href="#i-arrow-r" />
                 </svg>
@@ -328,7 +426,6 @@ export function RegisterContent() {
 
           {/* ───── ШАГ 2 ───── */}
           <div className={step === 2 ? "step" : "step is-hidden"} id="step2">
-            <div className="auth-kicker kpi-lbl">Almost there</div>
             <h1 className="auth-h1">Tell us what you do.</h1>
 
             <form
@@ -381,6 +478,18 @@ export function RegisterContent() {
                     </button>
                   ))}
                 </div>
+                {trades.includes("Other") && (
+                  <input
+                    ref={otherRef}
+                    className="fld-in fld-in--other"
+                    type="text"
+                    maxLength={80}
+                    placeholder="Name the trade — e.g. epoxy & garage floor coatings"
+                    aria-label="Your other trade"
+                    value={otherTrade}
+                    onChange={(e) => setOtherTrade(e.target.value)}
+                  />
+                )}
                 <span className="fld-note" id="tradeNote">
                   {tradeNote(trades.length)}
                 </span>
@@ -436,6 +545,11 @@ export function RegisterContent() {
                 Open the dashboard
               </Link>
             </div>
+            <p className="fld-note" role="status" id="doneCountdown">
+              {countdown > 0
+                ? `Taking you there in ${countdown}…`
+                : "Opening your dashboard…"}
+            </p>
           </div>
         </section>
 

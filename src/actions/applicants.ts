@@ -1,9 +1,11 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireManager } from "@/lib/orgContext";
+import { requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { relative } from "@/lib/format";
 import { ApplicantStatus } from "@/lib/prismaEnums";
+import type { Applicant, HireColumnKey } from "@/components/v3/hire-blueprint/hire-data";
 
 const applicantInput = z.object({
   fullName: z.string().min(1),
@@ -85,6 +87,36 @@ export async function convertApplicantToWorker(id: string) {
   revalidatePath("/dashboard/hire");
   revalidatePath("/dashboard/workers");
   return { ok: true };
+}
+
+/** `Applicant.status` is a plain String column; anything unrecognised lands in
+ *  the first column rather than vanishing off the board. */
+const COLUMN_KEYS = ["APPLIED", "INTERVIEWING", "HIRED", "REJECTED"] as const;
+function asColumn(v: string): HireColumnKey {
+  return (COLUMN_KEYS as readonly string[]).includes(v) ? (v as HireColumnKey) : "APPLIED";
+}
+
+/** Read-only: the org's applicant pipeline in the exact shape the hire
+ *  surfaces render — the desktop /dashboard/hire page and the mobile twin both
+ *  seed their boards from this one query. */
+export async function getHireSeed(): Promise<Applicant[]> {
+  const { organizationId } = await requireOrg();
+  const rows = await db.applicant.findMany({
+    where: { organizationId },
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map((a) => ({
+    id: a.id,
+    name: a.fullName,
+    email: a.email,
+    phone: a.phone,
+    role: a.role,
+    status: asColumn(a.status),
+    source: a.source,
+    age: relative(a.createdAt),
+    notes: a.notes ?? "",
+    resumeUrl: a.resumeUrl,
+  }));
 }
 
 export async function deleteApplicant(id: string) {

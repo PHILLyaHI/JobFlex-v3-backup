@@ -58,6 +58,20 @@ export async function recordReferralConversion(code: string, signupEmail: string
       status: "PENDING",
     },
   });
+  // Bell + referrals badge for the REFERRER's org — a signup on your link is
+  // news you shouldn't have to visit the referrals page to learn. Best-effort:
+  // the conversion stands even if the event write fails.
+  if (ref.organizationId) {
+    await db.activityEvent
+      .create({
+        data: {
+          organizationId: ref.organizationId,
+          kind: "CREATED",
+          summary: `Someone signed up with your referral link (${signupEmail})`,
+        },
+      })
+      .catch(() => {});
+  }
   return { skipped: false as const, codeId: ref.id };
 }
 

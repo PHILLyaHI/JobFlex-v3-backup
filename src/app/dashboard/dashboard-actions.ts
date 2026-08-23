@@ -13,9 +13,25 @@
 // the org scope and the sales-rep lead slice are enforced on this path too —
 // the action takes no arguments, so there is nothing a caller could widen.
 
+import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { buildDashboardData } from "./dashboard-data";
 import type { DashboardData } from "@/components/v3/dashboard-blueprint/blueprint-data";
 
-export async function getDashboardData(): Promise<DashboardData> {
-  return buildDashboardData();
+/** Either the rows, or WHY there are none. The two "no rows" cases are ordinary
+ *  states of a signed-in browser, not faults, so they are returned rather than
+ *  thrown: an action that throws crosses the boundary as an HTTP 500, which is
+ *  what filled the console with red while the handheld overview sat on its hold
+ *  screen. A genuine failure still throws. */
+export type DashboardRead =
+  | { ok: true; data: DashboardData }
+  | { ok: false; reason: "no-org" | "signed-out" };
+
+export async function getDashboardData(): Promise<DashboardRead> {
+  try {
+    return { ok: true, data: await buildDashboardData() };
+  } catch (err) {
+    if (err instanceof NoOrgError) return { ok: false, reason: "no-org" };
+    if (err instanceof UnauthorizedError) return { ok: false, reason: "signed-out" };
+    throw err;
+  }
 }

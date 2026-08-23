@@ -24,8 +24,8 @@ import {
   clearConversation,
   createConversation,
   editMessage,
-  getReadReceipts,
   markConversationRead,
+  pollMessages,
   postMessage,
 } from "@/actions/messages";
 import type { Conv, MessagesSeed, Msg } from "./messages-data";
@@ -1054,37 +1054,93 @@ export function initMessagesContent(
     }
   })();
 
-  // ================= READ RECEIPTS — LIVE (not in the donor, 2026-08-12) =================
-  // The page load computed each thread's readAt once; this keeps it honest
-  // while the page is open. Every 12s (and immediately on refocus, the moment
-  // "did they read it yet?" is actually asked) the server re-reports every
-  // thread's real lastReadAt-derived receipt, and a change repaints the open
-  // thread in place — Delivered flips to Read without touching the reader's
-  // scroll. Hidden tabs skip the tick; failures are dropped silently and the
-  // next tick tries again — a missed poll must never surface an error over a
-  // working inbox.
+  // ================= LIVE INBOX — MESSAGES + RECEIPTS (2026-08-21) =================
+  // Grew out of the 12s receipts-only poll: that one flipped Delivered → Read
+  // live but NEW MESSAGES only appeared on a full reload (the owner had to
+  // refresh to see the other side's replies). One pollMessages() round trip
+  // now returns both: every thread's receipt, and every message newer than the
+  // newest server timestamp this client has seen — including messages in
+  // threads this client has never seen, which arrive with rail metadata and
+  // become a new row. 5s cadence (the archived classic inbox's value), refocus
+  // ticks immediately, hidden tabs skip, failures drop silently — a missed
+  // poll must never surface an error over a working inbox.
   (function () {
     let inFlight = false;
+    // Watermark of SERVER timestamps only — the optimistic bubble's client
+    // clock never leaks in, so a fast local clock can't swallow real rows.
+    let pollTs = convData.reduce(function (mx0, c) {
+      return c.msgs.reduce(function (m2, m) {
+        return m.id.indexOf("tmp-") === 0 ? m2 : Math.max(m2, m.ts);
+      }, mx0);
+    }, 0);
     async function tick() {
       if (inFlight || document.hidden) return;
       inFlight = true;
       try {
-        const receipts = await getReadReceipts();
+        const res = await pollMessages(pollTs);
         let activeChanged = false;
-        receipts.forEach(function (r) {
+        let orderChanged = false;
+        res.receipts.forEach(function (r) {
           const c = conv(r.id);
           if (!c || c.readAt === r.readAt) return;
           c.readAt = r.readAt;
           if (c.id === mx.active) activeChanged = true;
         });
-        if (activeChanged) renderThread(true);
+        res.updates.forEach(function (u) {
+          u.msgs.forEach(function (m) {
+            pollTs = Math.max(pollTs, m.ts);
+          });
+          let c = conv(u.id);
+          if (!c) {
+            // A thread someone else just started with us.
+            c = {
+              id: u.id,
+              kind: u.kind,
+              title: u.title,
+              job: u.job,
+              unread: 0,
+              ts: 0,
+              readAt: null,
+              msgs: [],
+            };
+            convData.push(c);
+            orderChanged = true;
+          }
+          u.msgs.forEach(function (m) {
+            if (c.msgs.some((x) => x.id === m.id)) return;
+            // Our own send that is still in flight: the optimistic tmp- bubble
+            // is this same row; postMessage's return will claim the real id.
+            if (m.me && c.msgs.some((x) => x.id.indexOf("tmp-") === 0 && x.body === m.body)) {
+              return;
+            }
+            c.msgs.push(m);
+            if (!m.me && c.id !== mx.active) c.unread += 1;
+            if (m.ts > c.ts) {
+              c.ts = m.ts;
+              orderChanged = true;
+            }
+            if (c.id === mx.active) activeChanged = true;
+          });
+        });
+        if (orderChanged) renderList();
+        else if (res.updates.length) paintConvRows();
+        if (activeChanged) {
+          renderThread(true);
+          // Reading is happening right now — stamp it so the sender's
+          // Delivered flips to Read and the sidebar badge stays honest.
+          const c = conv(mx.active);
+          if (c) {
+            c.unread = 0;
+            void markConversationRead(c.id).catch(() => {});
+          }
+        }
       } catch {
         /* next tick retries */
       } finally {
         inFlight = false;
       }
     }
-    const iv = window.setInterval(() => void tick(), 12000);
+    const iv = window.setInterval(() => void tick(), 5000);
     disposers.push(() => window.clearInterval(iv));
     on(window, "focus", () => void tick());
   })();

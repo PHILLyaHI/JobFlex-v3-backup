@@ -20,6 +20,7 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initJobsContent } from "./jobs-behavior";
+import { JobOffers } from "./job-offers";
 import type { Job, JobClientOption, JobCrewOption, JobProposalOption } from "./jobs-data";
 
 export type JobsContentProps = {
@@ -34,16 +35,26 @@ export type JobsContentProps = {
   /** Owner/manager. Gates the row menu's status writes — `updateJob` refuses
    *  for anyone else, so the items are not offered. */
   canManage: boolean;
+  /** LIMITED role (installer/sales/estimator). Mounts the Offers popup in the
+   *  page head and lets the rows headline the caller's own answer. */
+  workerView?: boolean;
 };
 
-export function JobsContent({ entries, clients, crew, proposals, canManage }: JobsContentProps) {
+export function JobsContent({
+  entries,
+  clients,
+  crew,
+  proposals,
+  canManage,
+  workerView = false,
+}: JobsContentProps) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
   // tears the page down and replays the whole reveal cascade — so the init has
   // to stay referentially stable for the life of the mount. Written once, on
   // first render; from then on the behavior module owns the board and keeps
   // itself in step with the database through the server actions.
-  const seedRef = useRef({ entries, clients, crew, proposals, canManage });
+  const seedRef = useRef({ entries, clients, crew, proposals, canManage, workerView });
 
   // Same contract as the seed, and for the same reason. The row's three doors
   // (whole row, arrow, "Open job") all go through this: the job record is a
@@ -72,6 +83,10 @@ export function JobsContent({ entries, clients, crew, proposals, canManage }: Jo
           <h1 className="page-title">Jobs</h1>
         </div>
         <div className="page-actions">
+          {/* Crew roles only: pending offers with Accept / Decline, polling —
+              a React island in the ported page head. The popup anchors to its
+              own wrapper, so the FLUID SCALE zoom never enters the maths. */}
+          {workerView ? <JobOffers /> : null}
           <button className="btn btn-primary" id="newJobBtn">
             <svg className="ic">
               <use href="#i-plus" />

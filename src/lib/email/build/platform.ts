@@ -23,9 +23,13 @@ export interface PasswordResetInput {
   href: string;
 }
 
-/** One-row box, tone warn — the deadline is the only thing worth boxing. */
+/**
+ * One-row box, tone warn — the deadline is the only thing worth boxing. Worded
+ * "Link expires / In 1 hour" to match the other link-expiry rows in the fleet
+ * (partner invite, worker invite) rather than drifting to its own phrasing.
+ */
 export function buildPasswordReset(i: PasswordResetInput): EmailDoc {
-  const box: BoxRow[] = [{ type: "cond", label: "Link valid for", chip: "1 hour", tone: "warn" }];
+  const box: BoxRow[] = [{ type: "cond", label: "Link expires", chip: "In 1 hour", tone: "warn" }];
   return {
     subject: "Reset your JobFlex password",
     lockup: PLATFORM_LOCKUP,

@@ -16,6 +16,7 @@
 import { canOpen } from "./nav-map";
 import { useNavRole } from "./nav-role";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
+import { NotificationBell } from "./notification-bell";
 
 export function Topbar() {
   const role = useNavRole();
@@ -69,22 +70,12 @@ export function Topbar() {
             New Estimate
           </button>
         )}
-        {/* The bell had no handler, and `.bell-dot` was a static CSS dot no
-            code ever toggled — so it advertised unread notifications
-            permanently, whether or not any existed. Until a notification
-            surface exists, it opens the palette (where everything reachable
-            is listed) and the dot is gone rather than lying. */}
-        <button
-          className="icon-btn"
-          type="button"
-          title="Notifications"
-          aria-label="Notifications"
-          onClick={openPalette}
-        >
-          <svg className="ic">
-            <use href="#i-bell" />
-          </svg>
-        </button>
+        {/* The bell now has a real feed — see ./notification-bell.tsx. It used
+            to open the command palette because no notification surface existed
+            on the promoted routes; the only feed in the codebase was mounted by
+            the legacy topbar and was manager-gated, so a field worker had no
+            in-app notification surface at all. */}
+        <NotificationBell />
       </div>
     </header>
   );

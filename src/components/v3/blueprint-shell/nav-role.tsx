@@ -37,16 +37,41 @@ const EMPTY: NavIdentity = { role: null, name: null };
 
 const NavRoleContext = createContext<NavIdentity>(EMPTY);
 
+// Nav badge counts, keyed by nav href ("/dashboard/leads" → 3). Computed once,
+// server-side, by the layout (getBadgeCounts in @/lib/badgeCounts) and handed
+// down here for the same reason the identity is: the desktop sidebar, the
+// handheld drawer and any future tab bar sit at very different depths, and the
+// drawer is mounted by every mobile page from inside its own tree. Same
+// provider, second channel — NOT folded into NavIdentity, because "who is
+// looking" and "what is unread" change for different reasons.
+const EMPTY_BADGES: Record<string, number> = {};
+
+const NavBadgesContext = createContext<Record<string, number>>(EMPTY_BADGES);
+
 export function NavRoleProvider({
   identity,
+  badges,
   children,
 }: {
   identity?: NavIdentity;
+  /** Unread/pending counts by nav href, from the layout's getBadgeCounts. */
+  badges?: Record<string, number>;
   children: React.ReactNode;
 }) {
   return (
-    <NavRoleContext.Provider value={identity ?? EMPTY}>{children}</NavRoleContext.Provider>
+    <NavRoleContext.Provider value={identity ?? EMPTY}>
+      <NavBadgesContext.Provider value={badges ?? EMPTY_BADGES}>
+        {children}
+      </NavBadgesContext.Provider>
+    </NavRoleContext.Provider>
   );
+}
+
+/** Badge counts by nav href, or an empty map outside the provider (the
+ *  standalone /mobile-*-v2 review URLs), which renders no badges — exactly
+ *  what those fixture routes showed before. */
+export function useNavBadges(): Record<string, number> {
+  return useContext(NavBadgesContext);
 }
 
 /** The signed-in identity, or a null identity outside the provider. A null role

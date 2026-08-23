@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { requireManager } from "@/lib/orgContext";
+import { requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { AssignmentStatus, Role, roleLabel } from "@/lib/prismaEnums";
@@ -42,6 +42,65 @@ export async function createWorkerInvite(raw: unknown) {
   // an account-takeover path. Managers must Edit or Remove instead.
   if (alreadyAWorker?.inviteStatus === "ACCEPTED") {
     throw new Error("That worker has already joined. Use Edit or Remove instead.");
+  }
+
+  // SELF / OFFICE-STAFF GUARD. The membership upsert below takes its UPDATE
+  // branch for any user who already holds a seat in this org — and that update
+  // OVERWRITES their role with the invited one. A manager who typed their own
+  // email (or an office teammate's) demoted that OWNER/MANAGER seat to
+  // INSTALLER on the spot: the very next request resolved the session against
+  // the rewritten membership and locked them into the restricted worker
+  // dashboard. It also left a live PENDING invite token that could re-set the
+  // account's password via acceptWorkerInvite. Only a user with no existing
+  // seat here — or an existing crew member being re-invited — may pass.
+  // The self-check sits OUTSIDE the `!alreadyAWorker` narrowing on purpose: a
+  // manager who already carries a PENDING crew record here (left behind by the
+  // old buggy path, or by a seed) would otherwise skip both guards and demote
+  // their own seat by re-inviting themselves.
+  if (existingUserForLimit?.id === inviter.id) {
+    throw new Error("That's your own email address — you can't invite yourself to the crew.");
+  }
+  if (existingUserForLimit && !alreadyAWorker) {
+    const officeSeat = await db.membership.findUnique({
+      where: {
+        userId_organizationId: { userId: existingUserForLimit.id, organizationId },
+      },
+      select: { role: true },
+    });
+    if (officeSeat) {
+      throw new Error(
+        `${data.email} already has a ${roleLabel(officeSeat.role)} account in this company. ` +
+          "Inviting them as a crew member would overwrite that access — change their role instead.",
+      );
+    }
+  }
+
+  // CROSS-TENANT GUARD. `WorkerProfile.userId` is @unique — one crew record per
+  // PERSON, not per person-per-company — and the upsert below keys on userId
+  // alone. So inviting someone who already crews for a different contractor
+  // took the UPDATE branch: it overwrote that company's displayName, phone,
+  // rate and specialties, reset their accepted status to PENDING, and left
+  // `organizationId` pointing at the OLD org. The invitee then vanished from
+  // the inviting company's roster (which filters by organizationId) while
+  // quietly corrupting the other company's record, and accepting the invite
+  // set their activeOrgId back to the old org — so they signed in and saw
+  // someone else's jobs.
+  //
+  // Refusing is the honest answer until WorkerProfile is keyed on
+  // (userId, organizationId); a person who genuinely crews for two contractors
+  // needs that composite key, not this upsert.
+  if (existingUserForLimit && !alreadyAWorker) {
+    const elsewhere = await db.workerProfile.findFirst({
+      where: { userId: existingUserForLimit.id, organizationId: { not: organizationId } },
+      select: { organization: { select: { name: true } } },
+    });
+    if (elsewhere) {
+      throw new Error(
+        `${data.email} is already on the crew at ${elsewhere.organization.name}. ` +
+          "A person can only be a crew member of one company right now — remove them there first, " +
+          "or invite them from a different email address.",
+      );
+    }
   }
 
   // Upsert a lightweight User (no password yet). The worker sets a password when
@@ -328,9 +387,17 @@ export async function assignWorker(jobId: string, workerId: string) {
   )
     throw new Error("Not found");
 
+  // Re-assigning is a FRESH ASK (2026-08-22). The upsert used to no-op on an
+  // existing row, so putting someone back on a job kept their old answer:
+  // an earlier accept meant no new confirmation ever appeared (the owner
+  // scheduled new work and the crew "didn't receive" anything), and an
+  // earlier DECLINE made the worker permanently un-askable. Every call to
+  // this action is a manager deliberately (re)adding someone — the ask
+  // restarts: PENDING, stamped now, so the offers popup, the jobs badge and
+  // the crew-confirmation ledger all treat it as new.
   const assignment = await db.jobAssignment.upsert({
     where: { jobId_workerId: { jobId, workerId } },
-    update: {},
+    update: { status: AssignmentStatus.PENDING, assignedAt: new Date(), pingedAt: null },
     create: {
       jobId,
       workerId,
@@ -345,6 +412,21 @@ export async function assignWorker(jobId: string, workerId: string) {
   } catch (err) {
     console.warn("[assignWorker] notify failed:", err);
   }
+
+  // The in-app trace. Assigning someone used to leave NONE — only the tray drop
+  // and the team-view drop wrote one — so an assignment made from the calendar
+  // sheet or the job record existed in the worker's inbox and in their email
+  // and nowhere the office could see it afterwards. The bell feed reads
+  // ActivityEvent, so without this row the assignment was invisible there.
+  await db.activityEvent.create({
+    data: {
+      organizationId,
+      actorId: user.id,
+      kind: "ASSIGNED",
+      summary: `${worker.displayName} was assigned to "${job.title}"`,
+      meta: JSON.stringify({ jobId, workerId, assignmentId: assignment.id }),
+    },
+  });
 
   // Keep the job's group chat in sync — add the newly-assigned worker (and the
   // manager) so they can message about this job.
@@ -429,6 +511,12 @@ export async function markAssignmentAccepted(assignmentId: string) {
     where: { id: assignmentId },
     data: { status: "ACCEPTED" },
   });
+  // Same revive rule as a real accept: a job that fell to CANCELED because
+  // everyone declined comes back to the schedule when someone is confirmed.
+  // No office email here — the office is the one clicking.
+  if (a.job.status === "CANCELED") {
+    await db.job.update({ where: { id: a.job.id }, data: { status: "SCHEDULED" } });
+  }
   await db.activityEvent.create({
     data: {
       organizationId,
@@ -459,4 +547,99 @@ export async function unassignAssignment(assignmentId: string) {
   });
   revalidatePath("/dashboard/calendar");
   revalidatePath(`/dashboard/jobs/${a.jobId}`);
+}
+
+// ── Logged-in worker: job offers (2026-08-21) ────────────────────────────────
+// The token portal (/w/[token]) already lets a link-only worker accept or
+// decline, but a worker WITH a password is redirected off that portal to
+// /dashboard/jobs — which until now had no way to answer an offer, so the
+// email's "Confirm or decline" ended in a dead click. These two run on the
+// session instead of the token: the offers feed drives the jobs page's offer
+// popup (and its poll), and the response writes the same JobAssignment status
+// the portal endpoints write.
+
+export interface JobOffer {
+  assignmentId: string;
+  jobId: string;
+  title: string;
+  client: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  scope: string | null;
+  assignedAt: string;
+}
+
+export async function myJobOffers(): Promise<JobOffer[]> {
+  const { organizationId, user } = await requireOrg();
+  const wp = await db.workerProfile.findUnique({
+    where: { userId: user.id },
+    select: { id: true },
+  });
+  if (!wp) return [];
+  const rows = await db.jobAssignment.findMany({
+    where: {
+      workerId: wp.id,
+      status: "PENDING",
+      job: { organizationId, status: { not: "CANCELED" } },
+    },
+    orderBy: { assignedAt: "desc" },
+    include: {
+      job: {
+        select: {
+          id: true,
+          title: true,
+          startsAt: true,
+          endsAt: true,
+          scopeOfWork: true,
+          client: { select: { name: true } },
+        },
+      },
+    },
+  });
+  return rows.map((a) => ({
+    assignmentId: a.id,
+    jobId: a.jobId,
+    title: a.job.title,
+    client: a.job.client?.name ?? null,
+    startsAt: a.job.startsAt?.toISOString() ?? null,
+    endsAt: a.job.endsAt?.toISOString() ?? null,
+    scope: a.job.scopeOfWork,
+    assignedAt: a.assignedAt.toISOString(),
+  }));
+}
+
+export async function respondToAssignment(assignmentId: string, response: "ACCEPTED" | "DECLINED") {
+  if (response !== "ACCEPTED" && response !== "DECLINED") throw new Error("Invalid response");
+  const { organizationId, user } = await requireOrg();
+  const wp = await db.workerProfile.findUnique({
+    where: { userId: user.id },
+    select: { id: true, displayName: true },
+  });
+  if (!wp) throw new Error("No crew profile on this account");
+  const a = await db.jobAssignment.findUnique({
+    where: { id: assignmentId },
+    include: { job: { select: { id: true, title: true, status: true, organizationId: true } } },
+  });
+  // Own-assignment gate: the id arrives over the action wire, so ownership is
+  // proven against the caller's worker profile, never trusted.
+  if (!a || a.workerId !== wp.id || a.job.organizationId !== organizationId) {
+    throw new Error("Not found");
+  }
+  if (a.status !== "PENDING") return { ok: true, status: a.status };
+  await db.jobAssignment.update({ where: { id: a.id }, data: { status: response } });
+  // Job transition + bell + office email — one shared consequence path for
+  // every door an answer can come through (lib/assignmentResponse.ts).
+  const { applyAssignmentResponse } = await import("@/lib/assignmentResponse");
+  await applyAssignmentResponse({
+    assignmentId: a.id,
+    response,
+    organizationId,
+    actorUserId: user.id,
+    workerDisplayName: wp.displayName,
+    job: a.job,
+  });
+  revalidatePath("/dashboard/jobs");
+  revalidatePath(`/dashboard/jobs/${a.job.id}`);
+  revalidatePath("/dashboard/calendar");
+  return { ok: true, status: response };
 }

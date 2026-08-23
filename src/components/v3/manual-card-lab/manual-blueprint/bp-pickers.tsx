@@ -198,6 +198,7 @@ export function ClientField({
   choice,
   onChoice,
   onCreate,
+  onCreatingChange,
 }: {
   clients: ClientRecord[];
   choice: ClientChoice;
@@ -206,8 +207,17 @@ export function ClientField({
    *  with a message the form prints in place — the create is a real round trip
    *  now, so it can fail, and a silently discarded name is worse than an error. */
   onCreate: (input: NewClientInput) => Promise<void>;
+  /** Told whenever the inline "add a new client" form opens or closes, so the
+   *  card above can hide the contact rows that belong to the SELECTED client —
+   *  two Email/Phone/Address pairs stacked on one card read as one long form
+   *  where half the boxes silently do nothing. */
+  onCreatingChange?: (creating: boolean) => void;
 }) {
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreatingState] = useState(false);
+  const setCreating = (next: boolean) => {
+    setCreatingState(next);
+    onCreatingChange?.(next);
+  };
   const [form, setForm] = useState(BLANK);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -237,7 +247,11 @@ export function ClientField({
   }, [freeMode]);
 
   const record = choice.mode === "record" ? clients.find((c) => c.id === choice.id) : undefined;
-  const display = choice.mode === "record" ? (record?.name ?? "No client") : "No client";
+  const display = creating
+    ? "Add a new client"
+    : choice.mode === "record"
+      ? (record?.name ?? "No client")
+      : "No client";
 
   const set = (k: keyof typeof BLANK, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -266,7 +280,7 @@ export function ClientField({
         </Field>
       ) : (
         <Field label="Client">
-          <Picker ariaLabel="Client" display={display} empty={choice.mode === "none"}>
+          <Picker ariaLabel="Client" display={display} empty={choice.mode === "none" && !creating}>
             {(close) => (
               <>
                 {clients.length === 0 ? (

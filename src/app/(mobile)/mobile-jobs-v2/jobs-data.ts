@@ -23,6 +23,9 @@ export type StatusFilter = "ALL" | JobStatus;
  *  being looked up again at click time. */
 export type JobCrewAssignment = { id: string; workerId: string; name: string };
 
+/** JobAssignment.status, as the board sees it. */
+export type MyAssignmentStatus = "PENDING" | "ACCEPTED" | "DECLINED";
+
 export type Job = {
   id: string;
   title: string;
@@ -42,6 +45,13 @@ export type Job = {
   site: string;
   /** Title of the linked proposal, or null. */
   proposal: string | null;
+  /** LIMITED roles only: the caller's OWN assignment status on this job. A
+   *  PENDING row prints "Not accepted yet" instead of the job status, DECLINED
+   *  prints "Declined". Null for office roles. */
+  myAssignment: MyAssignmentStatus | null;
+  /** Office roles only: how many of this job's assignments are still PENDING —
+   *  drives the small "awaiting crew" hint next to the status badge. */
+  pendingCrew: number;
 };
 
 /** A client the create sheet can attach the new job to. */
@@ -61,6 +71,10 @@ export type JobsBoard = {
    *  the rows that call them are disabled for everyone else rather than offered
    *  and then refused by the server. */
   canManage: boolean;
+  /** LIMITED role (installer/sales/estimator). Mounts the Offers button +
+   *  bottom sheet in the page head and lets the rows headline the caller's
+   *  own answer. */
+  isWorker: boolean;
 };
 
 export const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [

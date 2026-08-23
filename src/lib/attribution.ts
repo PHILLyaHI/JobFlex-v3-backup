@@ -123,4 +123,24 @@ export async function bindAttributionToOrg(
   await db.referralConversion.create({
     data: { codeId: valid.refCodeId, signupEmail, signupOrgId: orgId, status: "PENDING" },
   });
+  // Tell the referrer's org on the bell + referrals badge (same voice as
+  // recordReferralConversion). Best-effort — attribution must never be able
+  // to fail a signup.
+  try {
+    const codeRow = await db.referralCode.findUnique({
+      where: { id: valid.refCodeId },
+      select: { organizationId: true },
+    });
+    if (codeRow?.organizationId) {
+      await db.activityEvent.create({
+        data: {
+          organizationId: codeRow.organizationId,
+          kind: "CREATED",
+          summary: `Someone signed up with your referral link (${signupEmail})`,
+        },
+      });
+    }
+  } catch {
+    /* best-effort */
+  }
 }

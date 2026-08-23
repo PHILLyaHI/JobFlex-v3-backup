@@ -103,6 +103,15 @@ export function stateDisplayName(code: string): string {
  * guess from a city name and it will not fire on "TX" inside a word, because a
  * wrong estimate that silently rewrites a tax rate is worse than no estimate.
  */
+/** The rate for a state the caller already KNOWS — a client record's own state
+ *  column, say — with no string parsing in between. Returns null for a code the
+ *  table has no rate for, so a caller can fall back to the address guess. */
+export function taxForState(code: string): { code: string; pct: number } | null {
+  const key = code.trim().toUpperCase();
+  const hit = STATE_TAX[key];
+  return hit ? { code: key, pct: hit.pct } : null;
+}
+
 export function estimateFromAddress(address: string): { code: string; pct: number } | null {
   const tokens = address.toUpperCase().match(/\b[A-Z]{2}\b/g);
   if (!tokens) return null;

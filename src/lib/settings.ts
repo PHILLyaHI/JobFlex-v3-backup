@@ -45,6 +45,26 @@ export function parsePaymentSettings(json: string | null | undefined): PaymentSe
   return { ...PAYMENT_DEFAULTS, ...safeParse(json) };
 }
 
+// ── Proposals ────────────────────────────────────────────────────────────────
+// Mirrors Organization.proposalSettingsJson. Only `terms` is read today (the
+// public portal's Terms & conditions disclosure); the rest of the blob is
+// declared so a future reader does not have to re-derive its shape.
+export interface ProposalSettings {
+  validityDays: number;
+  terms: string;
+  requireSig: boolean;
+  autoFollowUp: boolean;
+}
+export const PROPOSAL_DEFAULTS: ProposalSettings = {
+  validityDays: 14,
+  terms: "",
+  requireSig: true,
+  autoFollowUp: true,
+};
+export function parseProposalSettings(json: string | null | undefined): ProposalSettings {
+  return { ...PROPOSAL_DEFAULTS, ...safeParse(json) };
+}
+
 // ── Leads ────────────────────────────────────────────────────────────────────
 export type LeadStrategy = "round-robin" | "first-come" | "territory" | "manual";
 export interface LeadsSettings {

@@ -31,7 +31,7 @@
 
 import { useCallback, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { updateJob, createJobEvent } from "@/actions/jobs";
+import { updateJob, createJobEvent, setJobProgress } from "@/actions/jobs";
 import { assignWorker, unassignAssignment } from "@/actions/workers";
 import { uploadJobPhoto } from "@/actions/jobMedia";
 import { sendChangeOrder, approveChangeOrderPublic } from "@/actions/changeOrders";
@@ -54,7 +54,14 @@ export type JobBusy =
   | { kind: "upload" }
   | { kind: "change"; id: string };
 
-export function useJobDetailActions(jobId: string, booking: JdBooking, initial: StatusKey) {
+export function useJobDetailActions(
+  jobId: string,
+  booking: JdBooking,
+  initial: StatusKey,
+  // Worker edition: the status picker writes through setJobProgress (the
+  // crew-gated, forward-only action) instead of the manager-only updateJob.
+  workerViewer = false,
+) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState<JobBusy>(null);
@@ -91,15 +98,23 @@ export function useJobDetailActions(jobId: string, booking: JdBooking, initial: 
   const pickStatus = useCallback(
     async (key: StatusKey) => {
       if (key === status) return;
+      // A worker only moves work FORWARD — Scheduled/Canceled are office calls
+      // and setJobProgress would refuse them anyway; refuse locally so the
+      // picker never flashes an impossible state.
+      if (workerViewer && key !== "prog" && key !== "done") return;
       const previous = lastGood.current;
       setStatus(key);
       const ok = await run({ kind: "status" }, "Could not change the status.", async () => {
-        await updateJob(jobId, { status: KEY_TO_STATUS[key] });
+        if (workerViewer) {
+          await setJobProgress(jobId, KEY_TO_STATUS[key] as "IN_PROGRESS" | "COMPLETED");
+        } else {
+          await updateJob(jobId, { status: KEY_TO_STATUS[key] });
+        }
       });
       if (ok) lastGood.current = key;
       else setStatus(previous);
     },
-    [jobId, run, status],
+    [jobId, run, status, workerViewer],
   );
 
   /** Books the window the server picked, then LEAVES for the calendar, where

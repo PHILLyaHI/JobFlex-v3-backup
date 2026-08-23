@@ -12,8 +12,10 @@
 // radii and Inter 900 caps stay, rather than the mobile skill's soft-shadow /
 // rounded-3xl bubble defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is the ORG'S REAL INBOX (2026-08-21): the component mounts
+// props-less and asks getMessagesSeed() for the same book the desktop
+// /dashboard/messages page computes; writes go through the same server
+// actions. See mobile-messages.tsx.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
 // its own redirect-to-login like the other design routes.

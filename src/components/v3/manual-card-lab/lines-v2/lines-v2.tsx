@@ -105,7 +105,6 @@ import {
   applyUnitPrice,
   isFixedUnit,
   isNamed,
-  isTimeUnit,
   materialShare,
   money,
   qty,
@@ -251,11 +250,9 @@ function cents(n: number): string {
  */
 function SplitBand({
   line,
-  named,
   onPatch,
 }: {
   line: Line;
-  named: boolean;
   onPatch: (patch: Partial<Line>) => void;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
@@ -483,9 +480,12 @@ function SplitBand({
           <span className={s.legendPct}>{pct}%</span>
         </span>
 
-        <span className={s.legendMid}>
-          {!named ? <span className={s.flag}>Needs a name · excluded</span> : null}
-        </span>
+        {/* The "Needs a name · excluded" flag used to sit here. An unnamed row
+            already shows its total muted and the card footer still counts the
+            unnamed rows, so the badge was a third telling of the same fact,
+            wedged between the two share readouts. The spacer stays: it is what
+            holds Material left and Labor right. */}
+        <span className={s.legendMid} aria-hidden="true" />
 
         <span className={cx(s.legendSide, s.legendSideEnd)}>
           <span className={s.legendPct}>{100 - pct}%</span>
@@ -595,10 +595,10 @@ function LineBlock({
    * what keeps the rule from fighting anyone who has since moved the slider.
    */
   function commitUnitPrice(n: number) {
-    if (cost <= 0 && isTimeUnit(line.unit)) {
-      onPatch({ materialCost: 0, laborCost: round2(n) });
-      return;
-    }
+    // The hourly special case used to live here; `applyUnitPrice` now seeds a
+    // costless line from the unit itself (material for anything measured, labor
+    // for hours, an even split only for a lump sum), so every unit goes through
+    // the same path.
     onPatch(applyUnitPrice(line, n));
   }
 
@@ -715,7 +715,7 @@ function LineBlock({
 
       {/* BAND 2 — the split, full width beneath the entry row. */}
       <div className={s.cSplit}>
-        <SplitBand line={line} named={named} onPatch={onPatch} />
+        <SplitBand line={line} onPatch={onPatch} />
       </div>
     </div>
   );

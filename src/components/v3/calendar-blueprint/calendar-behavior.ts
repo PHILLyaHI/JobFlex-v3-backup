@@ -36,7 +36,7 @@ import {
   updateJobEvent,
 } from "@/actions/jobs";
 import { assignWorker, markAssignmentAccepted, unassignWorker } from "@/actions/workers";
-import { leaveRow } from "@/components/v3/blueprint-shell/list-motion";
+import { markNavSeen } from "@/actions/notifications";
 import {
   TODAY as TODAY_FIXTURE,
   JOB_STATUSES,
@@ -260,7 +260,10 @@ export function initCalendarContent(
     assignmentIds: { ...(e.assignmentIds || {}) },
   }));
   let trayJobs: TrayJob[] = (seed ? seed.tray : TRAY_SEED).map((j) => ({ ...j }));
-  let inboxData: InboxItem[] = (seed ? seed.inbox : INBOX_SEED).map((r) => ({ ...r }));
+  const inboxData: InboxItem[] = (seed ? seed.inbox : INBOX_SEED).map((r) => ({ ...r }));
+  /** Crew answers not yet looked at — rides the bell on top of the pending
+   *  count and clears when the sheet opens (seen-stamped server-side). */
+  let inboxUnseen = seed?.inboxUnseen ?? 0;
   let evSeq = 100;
 
   // ---------- write plumbing ----------
@@ -278,10 +281,11 @@ export function initCalendarContent(
   }
   disposers.push(() => window.clearTimeout(toastTimer));
 
-  /** Tracked timeout — an unmount mid-animation must not fire the rest of a
-   *  sequence into a detached tree. `leaveRow` takes this as its scheduler. */
+  /** Tracked timeouts — an unmount mid-animation must not fire the rest of a
+   *  sequence into a detached tree. (The leaveRow scheduler that used this is
+   *  gone — the crew inbox keeps its rows now — but the cleanup stays for any
+   *  future tracked timer.) */
   const timers: number[] = [];
-  const after = (ms: number, fn: () => void) => { timers.push(window.setTimeout(fn, ms)); };
   disposers.push(() => { timers.forEach((t) => window.clearTimeout(t)); timers.length = 0; });
 
   /** Everything a move touches, so a refused write can be put back exactly. */
@@ -507,8 +511,16 @@ export function initCalendarContent(
     if (calTitle) calTitle.textContent = title;
     const inb = byId("inboxN");
     if (inb) {
-      inb.textContent = String(inboxData.length);
-      inb.classList.toggle("is-hidden", inboxData.length === 0);
+      // The badge counts only UNANSWERED assignments — the ledger also holds
+      // accepted/declined rows now, and those are history, not workload.
+      const pendingN = inboxData.filter(function (r) {
+        return (r.status ?? "PENDING") === "PENDING";
+      }).length;
+      // Workload + news: unanswered asks plus answers the office hasn't seen
+      // (a decline must register here even when nothing is pending anymore).
+      const bellN = pendingN + inboxUnseen;
+      inb.textContent = String(bellN);
+      inb.classList.toggle("is-hidden", bellN === 0);
     }
     const tr = byId("trayN");
     if (tr) {
@@ -1621,10 +1633,22 @@ export function initCalendarContent(
     cal.form.allDay = !!e.allDay;
     cal.form.linkTab = "all";
     cal.form.linkQuery = "";
-    const names = workerNames(e);
-    const crewLine = e.kind === "blocked" && e.selfOnly
-      ? "Just me · " + OWNER.name
-      : names.join(", ") || "Unassigned";
+    // Crew line carries each person's ANSWER on a job event (2026-08-22):
+    // "Casey Stone accepted · Dima pending". The office asked for the
+    // confirmation state to be readable on the event itself, not only in the
+    // inbox ledger. Already-escaped HTML, so it is dropped in raw below.
+    const crewHtml = e.kind === "blocked" && e.selfOnly
+      ? esc("Just me · " + OWNER.name)
+      : e.workers.length
+        ? e.workers.map(function (id) {
+            const w = workersData.find(function (x) { return x.id === id; });
+            const st = e.kind === "job" ? e.assignmentStatus?.[id] : undefined;
+            const chip = st
+              ? ' <span class="pstatus pstatus--' + esc(st.toLowerCase()) + '">' + esc(st.toLowerCase()) + "</span>"
+              : "";
+            return esc(w ? w.name : id) + chip;
+          }).join(", ")
+        : "Unassigned";
     openSheet(KIND_TITLE[e.kind] || "Job event",
       '<div class="sf-meta">' +
         '<div class="sf-meta-row"><span class="kpi-lbl">When</span><span>' +
@@ -1638,7 +1662,7 @@ export function initCalendarContent(
         (e.client ? '<div class="sf-meta-row"><span class="kpi-lbl">Client</span><span>' + esc(e.client) + "</span></div>" : "") +
         (e.phone ? '<div class="sf-meta-row"><span class="kpi-lbl">Phone</span><span>' + esc(e.phone) + "</span></div>" : "") +
         (e.addr ? '<div class="sf-meta-row"><span class="kpi-lbl">Address</span><span>' + esc(e.addr) + "</span></div>" : "") +
-        '<div class="sf-meta-row"><span class="kpi-lbl">Crew</span><span>' + esc(crewLine) + "</span></div>" +
+        '<div class="sf-meta-row"><span class="kpi-lbl">Crew</span><span>' + crewHtml + "</span></div>" +
         (e.scope ? '<div class="sf-meta-row"><span class="kpi-lbl">Scope</span><span>' + esc(e.scope) + "</span></div>" : "") +
       "</div>" +
       '<label class="sf"><span class="sf-lbl">Title</span><input class="sf-in" data-e="title" value="' + esc(e.title) + '"></label>' +
@@ -1750,14 +1774,31 @@ export function initCalendarContent(
   }
   function openInbox() {
     cal.sheet = "inbox";
-    openSheet("Crew confirmations · " + inboxData.length + " pending",
+    // Looking IS seeing: the unseen-answers part of the bell clears now and
+    // the server remembers it (fire-and-forget — bookkeeping, not a gate).
+    if (inboxUnseen) {
+      inboxUnseen = 0;
+      renderBar();
+      if (wired) void markNavSeen("crewInbox").catch(() => {});
+    }
+    // The inbox is a CONFIRMATION LEDGER now (2026-08-22): every assignment's
+    // answer — pending, accepted, declined — not only the unanswered ones. A
+    // decline used to vanish from this list the moment the worker sent it,
+    // which read as "handled" when it meant the opposite. Pending rows keep
+    // the manual "Mark accepted" override; answered rows just say their state.
+    const pendingN = inboxData.filter(function (r) { return (r.status ?? "PENDING") === "PENDING"; }).length;
+    openSheet("Crew confirmations · " + pendingN + " pending",
       inboxData.length ? inboxData.map(function (r) {
+        const st = r.status ?? "PENDING";
+        const cls = st === "ACCEPTED" ? "pstatus--accepted" : st === "DECLINED" ? "pstatus--declined" : "pstatus--pending";
         return '<div class="inbox-row" data-inbox="' + r.id + '">' +
           '<div class="inbox-t">' + esc(r.title) + "</div>" +
           '<div class="inbox-s">' + esc(r.worker) + " · " + esc(r.when) + "</div>" +
-          '<div class="inbox-act"><span class="pstatus pstatus--pending">pending</span>' +
-          '<button class="btn btn-primary btn--sm" type="button" data-act="confirm"><svg class="ic"><use href="#i-check"/></svg>Mark accepted</button></div>' +
-          "</div>";
+          '<div class="inbox-act"><span class="pstatus ' + cls + '">' + st.toLowerCase() + "</span>" +
+          (st === "PENDING"
+            ? '<button class="btn btn-primary btn--sm" type="button" data-act="confirm"><svg class="ic"><use href="#i-check"/></svg>Mark accepted</button>'
+            : "") +
+          "</div></div>";
       }).join("") : '<div class="pempty"><b>Everyone has confirmed</b><br>All crew assignments have been accepted.</div>');
   }
   function readCrew() {
@@ -2931,18 +2972,22 @@ export function initCalendarContent(
         return;
       }
     }
-    leaveRow(row, function () {
-      inboxData = inboxData.filter(function (x) { return x.id !== id; });
-      // Totals only — `leaveRow` measures the surviving rows right after this,
-      // so re-rendering the list here would leave the FLIP nothing to move.
-      renderBar();
-      const title = byId("sheetTitle");
-      if (title) title.textContent = "Crew confirmations · " + inboxData.length + " pending";
-      const body = byId("sheetBody");
-      if (body && !inboxData.length) {
-        body.innerHTML = '<div class="pempty"><b>Everyone has confirmed</b><br>All crew assignments have been accepted.</div>';
-      }
-    }, after);
+    // The row STAYS (2026-08-22): the inbox is a confirmation ledger, so a
+    // marked-accepted assignment flips its chip in place instead of leaving —
+    // exactly what a real worker's accept does to the same row on reload.
+    const item = inboxData.find(function (x) { return x.id === id; });
+    if (item) item.status = "ACCEPTED";
+    const chip = row.querySelector<HTMLElement>(".pstatus");
+    if (chip) {
+      chip.classList.remove("pstatus--pending");
+      chip.classList.add("pstatus--accepted");
+      chip.textContent = "accepted";
+    }
+    btn?.remove();
+    renderBar();
+    const pendingN = inboxData.filter(function (x) { return (x.status ?? "PENDING") === "PENDING"; }).length;
+    const title = byId("sheetTitle");
+    if (title) title.textContent = "Crew confirmations · " + pendingN + " pending";
   }
 
   /** After the all-day switch flips: update the switch in place (so its knob

@@ -110,7 +110,12 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
   // repaint such as approving a change order.
   const [switched, setSwitched] = useState(false);
 
-  const a = useJobDetailActions(record.id, record.booking, record.status);
+  const a = useJobDetailActions(
+    record.id,
+    record.booking,
+    record.status,
+    record.viewer === "worker",
+  );
 
   const expTotal = record.expenses.reduce((sum, e) => sum + e.amount, 0);
   const scheduled = record.events.length > 0;
@@ -351,11 +356,16 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                     <h2 className="mjd-t">Overview</h2>
                   </div>
 
-                  {record.canWrite && (
+                  {/* Crew progress control (2026-08-21): an ACCEPTED worker
+                      moves the job forward — In progress / Completed only.
+                      Office roles keep the full four-state picker. */}
+                  {(record.canWrite || (worker && record.assignment === "ok")) && (
                     <div className="mjd-status">
                       <div className="mjd-sec-l">Set up the status</div>
                       <div className="mjd-status-row">
-                        {STATUS_BUTTONS.map(([key, label]) => (
+                        {STATUS_BUTTONS.filter(
+                          ([key]) => record.canWrite || key === "prog" || key === "done",
+                        ).map(([key, label]) => (
                           <button
                             key={key}
                             className={`mjd-sbtn mjd-sbtn--${key}${a.status === key ? " mjd-on" : ""}`}
@@ -776,7 +786,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                     ))}
                   </div>
                 )}
-                {record.canWrite && (
+                {record.canPhotos && (
                   <div className="mjd-total mjd-foot14">
                     <div className="mjd-status-row">
                       {PHOTO_KINDS.map(([key, label]) => (
@@ -864,7 +874,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
         <div className="mjd-bar">
           <Link
             className="mjd-btn mjd-btn-primary mjd-btn-block"
-            href={`/dashboard/proposals/${record.proposal.id}` as Route}
+            href={`/dashboard/manual-blueprint?proposal=${record.proposal.id}` as Route}
           >
             <Icon id="i-file" />
             View proposal · {fmt(record.proposal.total)}

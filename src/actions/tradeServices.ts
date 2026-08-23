@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireUser, requireManager } from "@/lib/orgContext";
+import { requireUser, requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import type {
   TradeJob,
@@ -81,6 +81,56 @@ export async function setTradeNetworkOptIn(raw: unknown): Promise<TradeNetworkPr
     specialties: parseList(p.specialties),
     serviceArea: p.serviceArea,
   };
+}
+
+// ─── Talent directory (cross-org, read-only) ───────────────────────────────
+// The hire hub's "Discover talent" door. Lists contractors who switched on
+// "Open for work" (TradeNetworkProfile.optIn) at OTHER orgs. Same disclosure
+// rule as the inbox mapper above: the display name and company are surfaced,
+// never the account email — contact starts by posting a trade job, which
+// broadcasts to matching opted-in profiles.
+export type DiscoverProfileDTO = {
+  id: string;
+  name: string;
+  company: string | null;
+  tradeTypes: string[];
+  specialties: string[];
+  serviceArea: string | null;
+};
+
+export async function discoverTradeProfiles(): Promise<DiscoverProfileDTO[]> {
+  const { user, organizationId } = await requireOrg();
+  const rows = await db.tradeNetworkProfile.findMany({
+    where: { optIn: true, userId: { not: user.id } },
+    orderBy: { updatedAt: "desc" },
+    take: 200,
+    select: {
+      id: true,
+      tradeTypes: true,
+      specialties: true,
+      serviceArea: true,
+      user: {
+        select: {
+          name: true,
+          memberships: {
+            select: { organizationId: true, organization: { select: { name: true } } },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
+    },
+  });
+  return rows
+    // Cross-org only: a teammate's profile is not "talent to discover".
+    .filter((p) => !p.user.memberships.some((m) => m.organizationId === organizationId))
+    .map((p) => ({
+      id: p.id,
+      name: p.user.name ?? p.user.memberships[0]?.organization.name ?? "A contractor",
+      company: p.user.memberships[0]?.organization.name ?? null,
+      tradeTypes: parseList(p.tradeTypes),
+      specialties: parseList(p.specialties),
+      serviceArea: p.serviceArea,
+    }));
 }
 
 // ─── Inbox (recipient view: New / Engaged / Hidden) ─────────────────────────

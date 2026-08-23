@@ -80,6 +80,10 @@ export const ProposalStatus = {
   VIEWED: "VIEWED",
   ACCEPTED: "ACCEPTED",
   DECLINED: "DECLINED",
+  // The linked job finished (set automatically when the job flips to
+  // COMPLETED). Distinct from PAID: completed says the work is done, paid
+  // says the money landed — a proposal can be either without the other.
+  COMPLETED: "COMPLETED",
   PAID: "PAID",
   EXPIRED: "EXPIRED",
   ARCHIVED: "ARCHIVED",

@@ -112,13 +112,20 @@ export default async function MessagesPage({
 
   const rows: Conv[] = conversations
     .map((c) => {
-      const msgs = c.messages.map((m) => ({
-        id: m.id,
-        who: m.author?.name ?? m.author?.email ?? "Anonymous",
-        me: m.authorId === userId,
-        ts: m.createdAt.getTime(),
-        body: m.body,
-      }));
+      // Per-viewer clear watermark: "clear thread" stamps clearedAt on MY
+      // participant row only, and I stop seeing anything at or before it.
+      // The other side's transcript is untouched (see clearConversation).
+      const clearedAt =
+        c.participants.find((p) => p.userId === userId)?.clearedAt?.getTime() ?? 0;
+      const msgs = c.messages
+        .filter((m) => m.createdAt.getTime() > clearedAt)
+        .map((m) => ({
+          id: m.id,
+          who: m.author?.name ?? m.author?.email ?? "Anonymous",
+          me: m.authorId === userId,
+          ts: m.createdAt.getTime(),
+          body: m.body,
+        }));
       // Read receipt for the viewer's OWN messages: the moment by which every
       // other participant had read the thread (their min lastReadAt), or null
       // while someone hasn't opened it. Same formula as getReadReceipts in

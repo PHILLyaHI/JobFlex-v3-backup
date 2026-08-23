@@ -1497,3 +1497,27 @@
 .bp :global(.content .sf-note) { padding: 10px 11px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper-deep); }
 .bp :global(.content .sf-note-stamp) { display: block; margin-bottom: 5px; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .bp :global(.content .sf-note-txt) { display: block; font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); white-space: pre-line; }
+
+/* — hub, wired: talent directory + open-for-work profile —
+   New blocks only; every value re-uses the donor's own scale (hairlines,
+   mono meta at 10.5px, 13.5px row titles — the .hub-row family's numbers). */
+.bp :global(.content .hub-talent) { padding: 0; overflow: hidden; }
+.bp :global(.content .tal-empty) { padding: 20px 24px; }
+.bp :global(.content .tal-list) { list-style: none; margin: 0; padding: 0; }
+.bp :global(.content .tal-row) { display: flex; align-items: center; gap: 13px; padding: 14px 16px; border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .tal-row:last-child) { border-bottom: none; }
+.bp :global(.content .tal-main) { min-width: 0; flex: 1; }
+.bp :global(.content .tal-name) { display: block; font-size: 13.5px; font-weight: 800; }
+.bp :global(.content .tal-who) { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+.bp :global(.content .tal-sub) { display: block; margin-top: 3px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.bp :global(.content .tal-area) { flex: 0 0 auto; max-width: 200px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); text-align: right; }
+
+/* The profile form fills a full-width card; the fields do not have to. */
+.bp :global(.content .hub-prof .sf),
+.bp :global(.content .hub-prof .sf-act) { max-width: 560px; }
+.bp :global(.content .hub-prof .sf-act .btn) { flex: 0 0 auto; padding: 8px 16px; }
+.bp :global(.content .sf-hint) { margin-top: 5px; font-size: 11.5px; color: var(--muted-light); }
+
+/* Resume link in the candidate sheet's meta block. */
+.bp :global(.content .sf-meta-link) { color: var(--blueprint); font-weight: 700; }
+.bp :global(.content .sf-meta-link:hover) { color: var(--blueprint-dark); text-decoration: underline; }

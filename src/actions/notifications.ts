@@ -21,7 +21,7 @@ export async function markNavSeen(key: SeenKey): Promise<{ hadNew: boolean }> {
     where: { userId_organizationId_key: { userId: user.id, organizationId, key } },
     select: { seenAt: true },
   });
-  const hadNew = (await countNewForSurface(key, organizationId, prev?.seenAt)) > 0;
+  const hadNew = (await countNewForSurface(key, organizationId, prev?.seenAt, user.id)) > 0;
   await db.navSeen.upsert({
     where: { userId_organizationId_key: { userId: user.id, organizationId, key } },
     create: { userId: user.id, organizationId, key },
@@ -48,6 +48,88 @@ function hrefFor(e: {
   if (e.leadId) return `/dashboard/leads/${e.leadId}`;
   if (e.clientId) return `/dashboard/clients/${e.clientId}`;
   return null;
+}
+
+/**
+ * The bell feed for whoever is asking.
+ *
+ * A MANAGER gets the org's activity stream (below). A WORKER gets their OWN
+ * schedule — the jobs and appointments they have been put on — because
+ * `recentNotifications` is requireManager()-gated and an installer calling it
+ * receives an error, not an empty list. That is why a worker had no in-app
+ * notification surface at all: not an empty bell, an unreachable one.
+ *
+ * Derived from the assignment rows themselves rather than a Notification
+ * table, which does not exist. `assignedAt` is when the office put them on the
+ * work, so it is the honest timestamp for "you were scheduled".
+ */
+export async function notificationFeed(): Promise<NotificationItem[]> {
+  const { organizationId, user, role } = await requireOrg();
+  const limited = role === "INSTALLER";
+  if (!limited) return recentNotifications();
+
+  const profile = await db.workerProfile.findFirst({
+    where: { userId: user.id, organizationId },
+    select: { id: true },
+  });
+  if (!profile) return [];
+
+  const [jobs, appts] = await Promise.all([
+    db.jobAssignment.findMany({
+      where: { workerId: profile.id, job: { organizationId } },
+      orderBy: { assignedAt: "desc" },
+      take: 12,
+      select: {
+        id: true,
+        status: true,
+        assignedAt: true,
+        job: { select: { id: true, title: true, startsAt: true } },
+      },
+    }),
+    db.appointmentAssignment.findMany({
+      where: { workerId: profile.id, appointment: { organizationId } },
+      orderBy: { appointment: { startsAt: "desc" } },
+      take: 12,
+      select: {
+        id: true,
+        appointment: { select: { id: true, title: true, startsAt: true } },
+      },
+    }),
+  ]);
+
+  const when = (d: Date | null) =>
+    d
+      ? d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "a date to be confirmed";
+
+  const items: NotificationItem[] = [
+    ...jobs.map((a) => ({
+      id: a.id,
+      kind: a.status === "PENDING" ? "ASSIGNED" : `ASSIGNMENT_${a.status}`,
+      summary:
+        a.status === "PENDING"
+          ? `You're scheduled: "${a.job.title}" — ${when(a.job.startsAt)}. Awaiting your answer.`
+          : `"${a.job.title}" — ${when(a.job.startsAt)}`,
+      createdAt: a.assignedAt,
+      // A PENDING row IS the ask — land on the jobs page with the offers
+      // popup already open (?offers=1), so the bell click reaches Accept /
+      // Decline directly. Answered rows go to the job record.
+      href: a.status === "PENDING" ? "/dashboard/jobs?offers=1" : `/dashboard/jobs/${a.job.id}`,
+    })),
+    ...appts.map((a) => ({
+      id: a.id,
+      kind: "APPOINTMENT",
+      summary: `You're on "${a.appointment.title}" — ${when(a.appointment.startsAt)}`,
+      // Appointments carry no assignedAt of their own; the booking time is the
+      // only timestamp there is, and it is what the worker cares about anyway.
+      createdAt: a.appointment.startsAt ?? new Date(0),
+      href: "/dashboard/calendar",
+    })),
+  ];
+
+  return items
+    .sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime())
+    .slice(0, 12);
 }
 
 /**

@@ -1,0 +1,120 @@
+/* THE BELL PANEL.
+   ────────────────────────────────────────────────────────────────────────────
+   Plain CSS, imported by the component, because shell chrome is styled by each
+   PAGE's module (`.bp :global(.icon-btn)`, `:global(.bell-dot)`, …) and a new
+   panel would otherwise have to be re-declared in every one of them. The
+   palette is declared locally for the same reason it is in materials-sheet.css:
+   these tokens live on page roots, never on `:root`.
+
+   Every rule is prefixed with `.bell-wrap` on purpose: each blueprint page
+   module ships a `.bp * { margin: 0; padding: 0 }` reset that matches at the
+   same specificity as a lone class and wins on source order, which flattened
+   this panel into an unpadded block. Two classes puts it out of reach.
+
+   `.bell-dot` is deliberately NOT re-styled here — the page modules already own
+   it, and two definitions of one dot is how they drift apart. */
+
+.bell-wrap {
+  --paper: #f2f0eb;
+  --ink: #0a0a0a;
+  --muted: #555;
+  --muted-light: #888;
+  --blueprint: #1854a0;
+  --hair-soft: #d5d1c8;
+  --font-mono: var(--font-jbmono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  position: relative;
+  display: inline-flex;
+}
+
+/* Fixed and fed its offsets by the component (`--bell-top` / `--bell-right`,
+   measured from the live bar edge at open time). The old absolute anchor —
+   button bottom + 10 on desktop, a hardcoded 62px on handhelds — sat 1–2px
+   inside the bar (more under a phone's safe-area inset), so the bar's bottom
+   border drew OVER the panel's top border. Fixed-position keeps working under
+   a sticky bar: the bar never leaves the top while the panel is open, and the
+   panel closes on any outside press. */
+.bell-wrap .bell-pop {
+  position: fixed;
+  top: var(--bell-top, 72px);
+  right: var(--bell-right, 16px);
+  z-index: 140;
+  width: min(360px, calc(100vw - 32px));
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  box-shadow: 5px 5px 0 var(--ink);
+  animation: bellIn 160ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@keyframes bellIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.bell-wrap .bell-head {
+  padding: 12px 14px;
+  border-bottom: 1.5px solid var(--hair-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.bell-wrap .bell-body {
+  max-height: 384px;
+  overflow-y: auto;
+}
+
+.bell-wrap .bell-row {
+  display: block;
+  width: 100%;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.12s;
+}
+.bell-wrap .bell-row:last-child { border-bottom: none; }
+.bell-wrap a.bell-row:hover { background: #ffffff; }
+
+.bell-wrap .bell-kind {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+}
+.bell-wrap .bell-sum {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.bell-wrap .bell-when {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted-light);
+}
+
+.bell-wrap .bell-empty {
+  padding: 22px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  /* Full-width under the bar, so a 360px panel cannot hang off the edge of a
+     phone. `--bell-top` still comes from the measured bar edge. */
+  .bell-wrap .bell-pop { right: 12px; left: 12px; width: auto; }
+  .bell-wrap .bell-row { padding: 14px; min-height: 48px; }
+}

@@ -12,15 +12,26 @@
 // radii and Inter 900 caps stay, rather than the mobile skill's soft-shadow /
 // rounded-3xl defaults.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// The fixture era is over: this page reads the SAME data the desktop
+// /dashboard/hire reads — the org's applicant pipeline (getHireSeed), the
+// caller's open-for-work profile, the trade-network tallies and the talent
+// directory — and every board action below writes through the real applicant
+// server actions with optimistic update + rollback.
 //
 // Auth: middleware only matches /dashboard and /admin, so this page enforces
 // its own redirect-to-login like the other design routes.
 
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { getHireSeed } from "@/actions/applicants";
+import {
+  discoverTradeProfiles,
+  getMyTradeJobs,
+  getTradeInbox,
+  getTradeNetworkProfile,
+} from "@/actions/tradeServices";
+import type { HireTallies } from "./hire-data";
 import { MobileHire } from "./mobile-hire";
 
 export const dynamic = "force-dynamic";
@@ -42,13 +53,41 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileHireV2Page() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    // Literal, not V3_PORTED_ROUTES.mobileHireV2: the route key is registered by
-    // the orchestrator after this page lands, so importing it here would not
-    // compile yet.
-    redirect(`/auth/login?next=${encodeURIComponent("/mobile-hire-v2")}`);
+  let seed: Awaited<ReturnType<typeof buildSeed>>;
+  try {
+    seed = await buildSeed();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      redirect(`/auth/login?next=${encodeURIComponent("/mobile-hire-v2")}`);
+    }
+    if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
+    throw err;
   }
 
-  return <MobileHire />;
+  return (
+    <MobileHire
+      applicants={seed.applicants}
+      profile={seed.profile}
+      tallies={seed.tallies}
+      talent={seed.talent}
+    />
+  );
+}
+
+async function buildSeed() {
+  const [applicants, profile, myJobs, inbox, talent] = await Promise.all([
+    getHireSeed(),
+    getTradeNetworkProfile(),
+    getMyTradeJobs(),
+    getTradeInbox(),
+    discoverTradeProfiles(),
+  ]);
+  const tallies: HireTallies = {
+    hired: applicants.filter((a) => a.status === "HIRED").length,
+    openPosts: myJobs.filter((j) => j.status === "OPEN").length,
+    totalPosts: myJobs.length,
+    interestReceived: myJobs.reduce((n, j) => n + j.interestedCount, 0),
+    interestSent: inbox.engaged.length,
+  };
+  return { applicants, profile, tallies, talent };
 }

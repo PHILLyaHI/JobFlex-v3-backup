@@ -840,6 +840,72 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
 .jf-mobile-proposal-client .mpc-btn--quiet:active:not(:disabled) {
   background: var(--paper-deep);
 }
+/* Declining is the destructive answer — same weight as the quiet button it
+   replaces, but it now carries the colour that says what it does. */
+.jf-mobile-proposal-client .mpc-btn--danger {
+  min-height: 48px;
+  border: 1.5px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+}
+.jf-mobile-proposal-client .mpc-btn--danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+/* Pay action revealed under the accepted plate (the sticky bar is gone by then). */
+.jf-mobile-proposal-client .mpc-paynow { width: 100%; margin-top: 14px; }
+
+/* ── TERMS (disclosure) ──────────────────────────────────────────────────── */
+.jf-mobile-proposal-client .mpc-terms {
+  border: 1.5px solid var(--ink); border-radius: 12px; background: #fff; overflow: hidden;
+}
+.jf-mobile-proposal-client .mpc-terms > summary {
+  cursor: pointer; list-style: none; min-height: 52px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; font-size: 11px; font-weight: 800; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink);
+}
+.jf-mobile-proposal-client .mpc-terms > summary::-webkit-details-marker { display: none; }
+.jf-mobile-proposal-client .mpc-terms > summary::after { content: "+"; font-size: 18px; color: var(--muted); }
+.jf-mobile-proposal-client .mpc-terms[open] > summary::after { content: "2"; }
+.jf-mobile-proposal-client .mpc-terms-b {
+  padding: 0 16px 16px; font-size: 14px; line-height: 1.6; font-weight: 500;
+  color: var(--ink-soft); white-space: pre-wrap;
+}
+
+/* ── THE ACCEPT FLOURISH ─────────────────────────────────────────────────
+   Mirrors the desktop portal: the plate pops once and throws eight sparks, and
+   only on the tap that settles the deal (`data-cheer`), never on a reload of an
+   already-accepted proposal. */
+.jf-mobile-proposal-client .mpc-state[data-cheer] {
+  position: relative;
+  animation: mpcPop 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes mpcPop {
+  0%   { transform: scale(.94); opacity: 0; }
+  55%  { transform: scale(1.03); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.jf-mobile-proposal-client .mpc-cheer { position: absolute; inset: 0; pointer-events: none; }
+.jf-mobile-proposal-client .mpc-cheer i {
+  position: absolute; top: 50%; left: 50%;
+  width: 6px; height: 6px; border-radius: 2px;
+  background: var(--success);
+  transform: rotate(calc(var(--i) * 45deg)) translateY(0);
+  animation: mpcSpark 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(var(--i) * 22ms);
+  opacity: 0;
+}
+.jf-mobile-proposal-client .mpc-cheer i:nth-child(odd) { background: var(--blueprint); }
+@keyframes mpcSpark {
+  0%   { opacity: 1; transform: rotate(calc(var(--i) * 45deg)) translateY(0) scale(.6); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: rotate(calc(var(--i) * 45deg)) translateY(-64px) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-proposal-client .mpc-state[data-cheer] { animation: none; }
+  .jf-mobile-proposal-client .mpc-cheer { display: none; }
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
    BOTTOM SHEETS — hand-rolled, house style. No dialog library, no Radix.
