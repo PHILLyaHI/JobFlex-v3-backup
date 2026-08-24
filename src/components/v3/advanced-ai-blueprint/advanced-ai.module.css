@@ -104,7 +104,8 @@
    `.btn-ghost` carries the SMART PROPOSAL block's `background: #ffffff`
    override, not the base `var(--paper)`.
    ============================================================ */
-:global(.jf-blueprint .content) .btn {
+:global(.jf-blueprint .content) .btn,
+.clq-acts .btn {
   display: inline-flex; align-items: center; gap: 9px;
   padding: 0 16px;
   height: 40px;
@@ -118,32 +119,47 @@
   color: inherit;
   transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
 }
-:global(.jf-blueprint .content) .btn .ic { width: 15px; height: 15px; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1); }
-:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
-:global(.jf-blueprint .content) .btn:hover .ic { transform: scale(1.12); }
-:global(.jf-blueprint .content) .btn:active { transform: translate(0, 0); box-shadow: none; }
-:global(.jf-blueprint .content) .btn-primary { background: var(--blueprint); color: #fff; }
-:global(.jf-blueprint .content) .btn-primary:hover { background: var(--blueprint-dark); }
-:global(.jf-blueprint .content) .btn-ghost { background: #ffffff; color: var(--ink); }
-:global(.jf-blueprint .content) .btn-ghost:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .btn .ic,
+.clq-acts .btn .ic { width: 15px; height: 15px; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint .content) .btn:hover,
+.clq-acts .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:hover .ic,
+.clq-acts .btn:hover .ic { transform: scale(1.12); }
+:global(.jf-blueprint .content) .btn:active,
+.clq-acts .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint .content) .btn-primary,
+.clq-acts .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btn-primary:hover,
+.clq-acts .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btn-ghost,
+.clq-acts .btn-ghost { background: #ffffff; color: var(--ink); }
+:global(.jf-blueprint .content) .btn-ghost:hover,
+.clq-acts .btn-ghost:hover { background: var(--paper-deep); }
 /* Two consequence-carrying buttons, in the system's status tones.
    NOT solid plates: DESIGN.md keeps status colour to ~5% of a surface and a
    filled red button beside a filled blue one would read as two primaries. The
    status-badge treatment — coloured 2px frame, soft fill, coloured caps — says
    "this one is destructive" at a glance without shouting over Save as proposal.
    The offset shadow on hover stays ink, like every other button here. */
-:global(.jf-blueprint .content) .btn-danger { background: var(--danger-soft); border-color: var(--danger);
+:global(.jf-blueprint .content) .btn-danger,
+.clq-acts .btn-danger { background: var(--danger-soft); border-color: var(--danger);
   color: var(--danger); }
-:global(.jf-blueprint .content) .btn-danger:hover { background: color-mix(in srgb, var(--danger) 14%, #ffffff); }
-:global(.jf-blueprint .content) .btn-warning { background: var(--warning-soft); border-color: var(--warning);
+:global(.jf-blueprint .content) .btn-danger:hover,
+.clq-acts .btn-danger:hover { background: color-mix(in srgb, var(--danger) 14%, #ffffff); }
+:global(.jf-blueprint .content) .btn-warning,
+.clq-acts .btn-warning { background: var(--warning-soft); border-color: var(--warning);
   color: var(--warning-dark); }
-:global(.jf-blueprint .content) .btn-warning:hover { background: color-mix(in srgb, var(--warning) 16%, #ffffff); }
-:global(.jf-blueprint .content) .btn[disabled] { opacity: .45; pointer-events: none; }
+:global(.jf-blueprint .content) .btn-warning:hover,
+.clq-acts .btn-warning:hover { background: color-mix(in srgb, var(--warning) 16%, #ffffff); }
+:global(.jf-blueprint .content) .btn[disabled],
+.clq-acts .btn[disabled] { opacity: .45; pointer-events: none; }
 
 /* Donor `svg.ic` base. This module's own class, so the always-on
    `.content svg.ic` (which adds a shape-rendering the donor never
    wrote) cannot reach these. */
-:global(.jf-blueprint .content) .ic {
+:global(.jf-blueprint .content) .ic,
+.gen-box .ic,
+.clq-box .ic {
   width: 17px; height: 17px;
   fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
@@ -497,12 +513,15 @@
 }
 
 :global(.jf-blueprint .content) .btn:focus-visible,
+.clq-acts .btn:focus-visible,
 :global(.jf-blueprint .content) .sp-req-link:focus-visible,
 :global(.jf-blueprint .content) .sp-asm-x:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   :global(.jf-blueprint .content) .btn,
+  .clq-acts .btn,
   :global(.jf-blueprint .content) .btn .ic,
+  .clq-acts .btn .ic,
   :global(.jf-blueprint .content) .sp-req-link,
   :global(.jf-blueprint .content) .sp-asm-x { transition: none !important; }
   :global(.jf-blueprint .content) .sp-busy-dot { animation: none !important; }
@@ -775,7 +794,7 @@
 /* The house dialog frame: 2px ink border + the 5px hard ink offset, the same
    plate every `.mdl-box` in the system carries. It used to float on a 16%-alpha
    shadow, which is the one soft edge the blueprint language does not have. */
-.gen-box { width: min(430px, 100%); padding: 26px 28px 24px;
+.gen .gen-box { width: min(430px, 100%); padding: 26px 28px 24px;
   border: var(--border); border-radius: var(--radius); background: #ffffff;
   box-shadow: 5px 5px 0 var(--ink);
   animation: mdlBoxIn 240ms cubic-bezier(0.22, 0.61, 0.36, 1); }
@@ -785,14 +804,14 @@
 .gen[data-exit="1"] { animation: mdlBgOut 190ms linear forwards; }
 .gen[data-exit="1"] .gen-box {
   animation: mdlBoxOut 190ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
-.gen-kicker { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+.gen .gen-kicker { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
   letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
-.gen-h { margin-top: 7px; font-size: 22px; font-weight: 900;
+.gen .gen-h { margin-top: 7px; font-size: 22px; font-weight: 900;
   letter-spacing: -.015em; text-transform: uppercase; line-height: 1.05; }
-.gen-list { margin: 18px 0 0; padding: 0; list-style: none; }
-.gen-row { display: flex; align-items: center; gap: 11px; padding: 9px 0;
+.gen .gen-list { margin: 18px 0 0; padding: 0; list-style: none; }
+.gen .gen-row { display: flex; align-items: center; gap: 11px; padding: 9px 0;
   border-bottom: 1px dashed rgba(10,10,10,.16); }
-.gen-row:last-child { border-bottom: none; }
+.gen .gen-row:last-child { border-bottom: none; }
 /* The step mark is one 20×20 square in three states. The BORDER is drawn by the
    inline SVG rather than by `border`, because the active state has to animate a
    line travelling around that outline and a CSS border cannot be dashed
@@ -800,9 +819,9 @@
    keeps the same square and runs the line around it, done fills solid and takes
    the check. The square never changes size or position between states — only
    what is drawn on it — so the checklist does not twitch as it advances. */
-.gen-mark { position: relative; flex: 0 0 auto;
+.gen .gen-mark { position: relative; flex: 0 0 auto;
   width: 20px; height: 20px; display: grid; place-items: center; color: #ffffff; }
-.gen-ring { position: absolute; inset: 0; width: 20px; height: 20px;
+.gen .gen-ring { position: absolute; inset: 0; width: 20px; height: 20px;
   overflow: visible; }
 /* The paper fill belongs to the TRACK alone, never to `.gen-ring rect`. Written
    as a type selector it scores (0,3,1) and outranks the single-class
@@ -831,10 +850,10 @@
 .gen-row[data-state="done"] .gen-ring-track {
   fill: var(--blueprint); stroke: var(--blueprint); stroke-dasharray: none; }
 .gen-row[data-state="done"] .gen-mark .ic { opacity: 1; }
-.gen-txt { font-size: 14px; font-weight: 700; color: var(--muted-faint); }
+.gen .gen-txt { font-size: 14px; font-weight: 700; color: var(--muted-faint); }
 .gen-row[data-state="now"] .gen-txt { color: var(--ink); }
 .gen-row[data-state="done"] .gen-txt { color: var(--muted); }
-.gen-foot { margin-top: 16px; padding-top: 13px;
+.gen .gen-foot { margin-top: 16px; padding-top: 13px;
   border-top: 1.5px solid var(--ink); font-family: var(--font-mono); font-size: 11.5px;
   font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--blueprint); }
 
@@ -862,63 +881,63 @@
   background: color-mix(in srgb, var(--ink) 46%, transparent);
   animation: mdlBgIn 190ms linear; }
 .clq[data-exit="1"] { animation: mdlBgOut 190ms linear forwards; }
-.clq-box { display: flex; flex-direction: column;
+.clq .clq-box { display: flex; flex-direction: column;
   width: min(540px, 100%); max-height: min(720px, 88vh);
   border: var(--border); border-radius: var(--radius); background: #ffffff;
   box-shadow: 5px 5px 0 var(--ink);
   animation: mdlBoxIn 240ms cubic-bezier(0.22, 0.61, 0.36, 1); }
 .clq[data-exit="1"] .clq-box {
   animation: mdlBoxOut 190ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
-.clq-head { flex: 0 0 auto; padding: 22px 26px 18px;
+.clq .clq-head { flex: 0 0 auto; padding: 22px 26px 18px;
   border-bottom: var(--border); }
-.clq-kicker { font-family: var(--font-mono); font-size: 10px;
+.clq .clq-kicker { font-family: var(--font-mono); font-size: 10px;
   font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--warning); }
-.clq-h { margin-top: 7px; font-size: 22px; font-weight: 900;
+.clq .clq-h { margin-top: 7px; font-size: 22px; font-weight: 900;
   letter-spacing: -.015em; text-transform: uppercase; line-height: 1.05; }
-.clq-sub { margin-top: 8px; font-size: 13px; line-height: 1.5;
+.clq .clq-sub { margin-top: 8px; font-size: 13px; line-height: 1.5;
   color: var(--muted); max-width: 44ch; }
-.clq-body { flex: 1 1 auto; min-height: 0; overflow-y: auto;
+.clq .clq-body { flex: 1 1 auto; min-height: 0; overflow-y: auto;
   padding: 4px 26px 20px; }
 /* One question = a numbered block on a dashed rule, the estimate-sheet cadence. */
-.clq-q { display: grid; grid-template-columns: 26px 1fr; gap: 12px;
+.clq .clq-q { display: grid; grid-template-columns: 26px 1fr; gap: 12px;
   padding: 18px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
-.clq-q:last-child { border-bottom: none; }
-.clq-n { font-size: 20px; font-weight: 900; line-height: 1;
+.clq .clq-q:last-child { border-bottom: none; }
+.clq .clq-n { font-size: 20px; font-weight: 900; line-height: 1;
   font-variant-numeric: tabular-nums; color: var(--blueprint); padding-top: 1px; }
-.clq-qt { min-width: 0; overflow-wrap: anywhere;
+.clq .clq-qt { min-width: 0; overflow-wrap: anywhere;
   font-size: 14px; font-weight: 700; line-height: 1.35; }
-.clq-opts { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.clq .clq-opts { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
 /* Option chips take the ink-outline / filled-blueprint pair the system uses for
    any picked-or-not control; the frame does not move when it is chosen. */
-.clq-opt { min-height: 34px; padding: 0 12px;
+.clq .clq-opt { min-height: 34px; padding: 0 12px;
   border: 1.5px solid rgba(10,10,10,.45); border-radius: var(--radius); background: #ffffff;
   font-size: 12.5px; font-weight: 700; color: var(--ink); cursor: pointer;
   transition: transform 140ms var(--ease), box-shadow 140ms var(--ease),
     background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease); }
-.clq-opt:hover { transform: translate(-1px, -1px);
+.clq .clq-opt:hover { transform: translate(-1px, -1px);
   box-shadow: 2px 2px 0 var(--ink); }
-.clq-opt[data-on="1"] { background: var(--blueprint);
+.clq .clq-opt[data-on="1"] { background: var(--blueprint);
   border-color: var(--blueprint); color: #ffffff; }
-.clq-opt--other { border-style: dashed; color: var(--muted); }
-.clq-opt--other[data-on="1"] { border-style: solid;
+.clq .clq-opt--other { border-style: dashed; color: var(--muted); }
+.clq .clq-opt--other[data-on="1"] { border-style: solid;
   background: var(--ink); border-color: var(--ink); color: #ffffff; }
-.clq-in { width: 100%; box-sizing: border-box; margin-top: 10px;
+.clq .clq-in { width: 100%; box-sizing: border-box; margin-top: 10px;
   min-height: 38px; padding: 9px 10px; border: 1.5px solid rgba(10,10,10,.45);
   border-radius: var(--radius); background: #ffffff; font: inherit; font-size: 13.5px;
   line-height: 1.4; resize: vertical; }
-.clq-in::placeholder { color: var(--muted-faint); }
-.clq-num { width: 150px; }
-.clq-numrow { display: flex; align-items: center; gap: 8px; }
-.clq-unit { font-family: var(--font-mono); font-size: 11.5px;
+.clq .clq-in::placeholder { color: var(--muted-faint); }
+.clq .clq-num { width: 150px; }
+.clq .clq-numrow { display: flex; align-items: center; gap: 8px; }
+.clq .clq-unit { font-family: var(--font-mono); font-size: 11.5px;
   font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
   padding-top: 10px; }
-.clq-foot { flex: 0 0 auto; display: flex; align-items: center;
+.clq .clq-foot { flex: 0 0 auto; display: flex; align-items: center;
   justify-content: space-between; gap: 14px; flex-wrap: wrap;
   padding: 14px 26px; border-top: var(--border); background: var(--paper-deep); }
-.clq-count { font-family: var(--font-mono); font-size: 11px;
+.clq .clq-count { font-family: var(--font-mono); font-size: 11px;
   font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
   font-variant-numeric: tabular-nums; }
-.clq-acts { display: flex; align-items: center; gap: 9px; }
+.clq .clq-acts { display: flex; align-items: center; gap: 9px; }
 
 :global(.jf-blueprint .content) .bsel-btn:focus-visible,
 :global(.jf-blueprint .content) .sp-row-x:focus-visible,
@@ -926,26 +945,26 @@
 :global(.jf-blueprint .content) .sp-tog-b:focus-visible,
 :global(.jf-blueprint .content) .sp-q:focus-visible,
 :global(.jf-blueprint .content) .ph-drop:focus-visible,
-.clq-opt:focus-visible,
-.clq-in:focus-visible,
+.clq .clq-opt:focus-visible,
+.clq .clq-in:focus-visible,
 :global(.jf-blueprint .content) .ph-x:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
 /* The dialog itself takes focus on open so screen readers announce it, but it
    is a container, not a control — a 540px sky ring around the whole plate reads
    as a selected object. The ring belongs on whatever the user Tabs to next. */
-.clq-box:focus { outline: none; }
+.clq .clq-box:focus { outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .gen,
   .gen[data-exit="1"],
-  .gen-box,
+  .gen .gen-box,
   .gen[data-exit="1"] .gen-box,
   .clq,
   .clq[data-exit="1"],
-  .clq-box,
+  .clq .clq-box,
   .clq[data-exit="1"] .clq-box,
   :global(.jf-blueprint .content) .bsel-list { animation: none !important; }
-  .clq-opt { transition: none !important; }
-  .clq-opt:hover { transform: none; }
+  .clq .clq-opt { transition: none !important; }
+  .clq .clq-opt:hover { transform: none; }
   /* The travelling line stops, but the active square must still READ as active,
      so the segment is parked as a static three-quarter outline rather than
      removed — otherwise "running" and "pending" become indistinguishable. */

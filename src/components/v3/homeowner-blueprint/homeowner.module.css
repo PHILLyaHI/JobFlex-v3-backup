@@ -748,3 +748,19 @@
   .bp :global(.rv) { opacity: 1; transform: none; }
   .bp :global(.anim) { opacity: 1; animation: none; }
 }
+
+/* The Lead Center submission's failure line (2026-08-23). The donor's wizard
+   had no submit and therefore no error state; this is the system's status
+   treatment — danger frame, soft fill, danger text — nothing invented. */
+.bp :global(.send-err) {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 1.5px solid var(--danger, #a83232);
+  border-left-width: 5px;
+  border-radius: 2px;
+  background: rgba(168, 50, 50, 0.08);
+  color: var(--danger, #a83232);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}

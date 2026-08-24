@@ -23,7 +23,6 @@ import {
   discoverTradeProfiles,
   getMyTradeJobs,
   getTradeInbox,
-  getTradeNetworkProfile,
 } from "@/actions/tradeServices";
 import { HireContent } from "@/components/v3/hire-blueprint/hire-content";
 import type { HireTallies } from "@/components/v3/hire-blueprint/hire-data";
@@ -50,7 +49,7 @@ export default async function HirePage() {
   return (
     <HireContent
       applicants={seed.applicants}
-      profile={seed.profile}
+      myPosts={seed.myJobs}
       tallies={seed.tallies}
       talent={seed.talent}
     />
@@ -58,9 +57,8 @@ export default async function HirePage() {
 }
 
 async function buildSeed() {
-  const [applicants, profile, myJobs, inbox, talent] = await Promise.all([
+  const [applicants, myJobs, inbox, talent] = await Promise.all([
     getHireSeed(),
-    getTradeNetworkProfile(),
     getMyTradeJobs(),
     getTradeInbox(),
     discoverTradeProfiles(),
@@ -72,5 +70,5 @@ async function buildSeed() {
     interestReceived: myJobs.reduce((n, j) => n + j.interestedCount, 0),
     interestSent: inbox.engaged.length,
   };
-  return { applicants, profile, tallies, talent };
+  return { applicants, myJobs, tallies, talent };
 }

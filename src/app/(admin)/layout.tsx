@@ -1,65 +1,68 @@
+// Platform admin console — route-group layout.
+//
+// GUARD. requirePlatformAdmin() tries the signed `jf_admin` cookie first (the
+// username/password login at /admin/login), then a NextAuth session whose user
+// carries isPlatformAdmin. Either failing sends the visitor to /admin/login —
+// not /auth/login, because the console has its own door now.
+//
+// THE LOGIN PAGE LIVES UNDER THIS LAYOUT (src/app/(admin)/admin/login), so it
+// must not be guarded — a guard there would redirect the login page to itself.
+// The middleware sets `x-pathname` on every /admin request; for the login path
+// this layout renders its children bare, no shell, no guard.
+//
+// SHELL. The blueprint admin chrome (components/v3/admin-shell) replaces the
+// classic Tailwind header + rail. The three nav badges — unread support
+// tickets, pending payout requests, leads in the manual queue — are the same
+// queries the old rail received as props, handed to the sidebar through the
+// shared NavRoleProvider's `badges` channel keyed by nav href.
+
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { auth } from "@/lib/auth";
+import type { Route } from "next";
+import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { AdminLayout } from "@/components/admin/AdminRail";
-import { AdminNotificationBell } from "@/components/admin/AdminNotificationBell";
-import { recentSupportTickets, unreadSupportCount } from "@/actions/support";
+import { readAdminCookie } from "@/lib/adminAuth";
+import { requirePlatformAdmin } from "@/lib/orgContext";
+import { unreadSupportCount } from "@/actions/support";
+import { NavRoleProvider } from "@/components/v3/blueprint-shell/nav-role";
+import { AdminShell } from "@/components/v3/admin-shell/admin-shell";
 
-export default async function AdminShell({ children }: { children: React.ReactNode }) {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/auth/login?next=/admin");
+export default async function AdminRootLayout({ children }: { children: React.ReactNode }) {
+  const pathname = (await headers()).get("x-pathname") ?? "";
+  if (pathname === "/admin/login" || pathname.startsWith("/admin/login/")) {
+    return <>{children}</>;
+  }
 
-  // Gate: dedicated platform-admin flag (not org-level OWNER/ADMIN). Only
-  // explicitly-flagged users see platform-wide subscribers/revenue/payouts.
-  const admin = await db.user.findUnique({
-    where: { id: session.user.id },
-    select: { isPlatformAdmin: true },
-  });
-  if (!admin?.isPlatformAdmin) redirect("/dashboard" as never);
+  let admin: Awaited<ReturnType<typeof requirePlatformAdmin>> | null = null;
+  try {
+    admin = await requirePlatformAdmin();
+  } catch {
+    admin = null;
+  }
+  // redirect() throws, so it sits outside the try above.
+  if (!admin) redirect("/admin/login" as Route);
 
-  // Support notification feed for the header bell + nav badges (platform-wide).
-  const [feed, unreadSupport, pendingPayouts, manualQueueLeads] = await Promise.all([
-    recentSupportTickets(8),
+  // Which door the admin came through decides what Sign out clears.
+  const viaCookie = (await readAdminCookie()) !== null;
+
+  const [unreadSupport, pendingPayouts, manualQueueLeads] = await Promise.all([
     unreadSupportCount(),
     db.payoutRequest.count({ where: { status: "PENDING" } }),
     db.platformLead.count({ where: { status: "MANUAL_QUEUE" } }),
   ]);
 
+  const badges: Record<string, number> = {
+    "/admin/support": unreadSupport,
+    "/admin/payouts": pendingPayouts,
+    "/admin/lead-center": manualQueueLeads,
+  };
+
+  const adminName = admin.name || admin.email;
+
   return (
-    <div>
-      <header
-        className="border-b border-[color:var(--ink-line)] backdrop-blur sticky top-0 z-20"
-        style={{ backgroundColor: "color-mix(in srgb, var(--paper) 85%, transparent)" }}
-      >
-        <div className="max-w-[1400px] mx-auto h-14 px-6 lg:px-10 flex items-center justify-between">
-          <Link href="/admin" className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-[6px] bg-[color:var(--ink)] text-[color:var(--paper)] grid place-items-center font-display text-[13px] leading-none">
-              J
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-display text-[15px] tracking-[-0.015em]">JobFlex</span>
-              <span className="quiet-caps">Admin</span>
-            </div>
-          </Link>
-          <div className="flex items-center gap-2">
-            <AdminNotificationBell items={feed} unread={unreadSupport} />
-            <Link
-              href={"/dashboard" as never}
-              className="text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
-            >
-              ← Back to dashboard
-            </Link>
-          </div>
-        </div>
-      </header>
-      <AdminLayout
-        unreadSupport={unreadSupport}
-        pendingPayouts={pendingPayouts}
-        manualQueueLeads={manualQueueLeads}
-      >
+    <NavRoleProvider identity={{ role: null, name: adminName }} badges={badges}>
+      <AdminShell adminName={adminName} signOutMode={viaCookie ? "cookie" : "nextauth"}>
         {children}
-      </AdminLayout>
-    </div>
+      </AdminShell>
+    </NavRoleProvider>
   );
 }

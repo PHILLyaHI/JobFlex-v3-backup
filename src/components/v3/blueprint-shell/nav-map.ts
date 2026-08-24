@@ -71,6 +71,13 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Smart Proposal", icon: "i-bulb", href: "/dashboard/advanced-ai" },
       { label: "Roof estimator", icon: "i-roof", href: "/dashboard/roof-estimator" },
       { label: "Fence estimator", icon: "i-fence", href: "/dashboard/fence-estimator" },
+      // Added 2026-08-22 with the Video estimator port. Its position — directly
+      // after the other two engines — is the donor's own
+      // (jobflex-videoestimator-blueprint.html sidebar). Not in ESTIMATOR's
+      // ROLE_NAV plan below: that plan mirrors the production sidebar, which
+      // does not list this surface, so adding it here would be inventing a
+      // grant rather than reflecting one.
+      { label: "Video estimator", icon: "i-video", href: "/dashboard/video-estimator" },
       { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
       { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },
       { label: "Announcements", icon: "i-megaphone", href: "/dashboard/announcements" },

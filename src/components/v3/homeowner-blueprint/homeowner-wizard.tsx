@@ -16,6 +16,7 @@
 //     dragleave test reads `relatedTarget` against that exact element.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { submitHomeownerRequest } from "@/actions/homeowner";
 import {
   CATEGORIES,
   CONTACT_FIELDS,
@@ -56,6 +57,15 @@ export function HomeownerWizard() {
   const [contact, setContact] = useState<string[]>(() => CONTACT_FIELDS.map(() => ""));
   const [thinking, setThinking] = useState(false);
   const [drag, setDrag] = useState(false);
+  /* The Lead Center write. The donor's wizard had no submit target at all —
+     step 4 was a static "done" pane — so this is the one behaviour added to
+     the port (owner, 2026-08-23: "connect the homeowner portal blueprint
+     design with the lead center"). `sending` blocks a double-send; `sendErr`
+     keeps the wizard on the contact step when the write is refused, because a
+     "we've sent it" pane over a failed submission is the one outcome worse
+     than an error. */
+  const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState("");
 
   const winRef = useRef<HTMLDivElement>(null);
   const descRef = useRef<HTMLTextAreaElement | null>(null);
@@ -96,6 +106,43 @@ export function HomeownerWizard() {
     if (!v) return false;
     return f.toLowerCase().includes("email") ? EMAIL_RE.test(v) : true;
   });
+
+  /* ---- send: the donor's dead button, wired ----
+     CONTACT_FIELDS is ["Full name", "Email", "Phone (optional)", "ZIP code"],
+     so the four answers map positionally. The scope answers ride along in the
+     description because `submitHomeownerRequest` takes one free-text body —
+     the same shape the marketing intake posts. Attachments are NOT sent: the
+     donor's uploader never leaves the browser and giving it a real destination
+     is a storage decision, not a wiring one. */
+  const send = useCallback(async () => {
+    if (sending) return;
+    setSendErr("");
+    setSending(true);
+    const [name, email, phone, zip] = contact.map((v) => v.trim());
+    const extra = answers
+      .map((a, i) => (a && a.trim() && qs[i] ? qs[i].q + " " + a.trim() : ""))
+      .filter(Boolean)
+      .join("\n");
+    try {
+      await submitHomeownerRequest({
+        name,
+        email,
+        phone: phone || undefined,
+        zip: zip || undefined,
+        projectType: category ?? undefined,
+        description: extra ? desc.trim() + "\n\n" + extra : desc.trim(),
+      });
+      setStep(4);
+    } catch (err) {
+      setSendErr(
+        err instanceof Error && err.message
+          ? err.message
+          : "Couldn't send that. Check your connection and try again.",
+      );
+    } finally {
+      setSending(false);
+    }
+  }, [sending, contact, answers, category, desc, qs]);
 
   /* ---- head: donor renderHead() ---- */
   let headLabel = step < 4 ? STEP_NAMES[step] : "Done";
@@ -384,14 +431,22 @@ export function HomeownerWizard() {
           );
         })}
       </div>
+      {/* A refused send keeps the homeowner on this step with their answers
+          intact, and says why. Without it the only signal would be a button
+          that stopped saying "Sending…". */}
+      {sendErr ? (
+        <div className="send-err" role="alert">
+          {sendErr}
+        </div>
+      ) : null}
       <div className="pane-foot">
         <button className="back" type="button" data-to="2" onClick={() => setStep(2)}>‹ Back</button>
         {/* Gated with the donor's own `.go:disabled` styling — the same
             affordance "Refine instructions" already uses on step 0, so the
             rule stays legible without adding a new error state. */}
-        <button className="go go-send" type="button" disabled={!canSend}
-          onClick={() => { if (canSend) setStep(4); }}>
-          Send to contractors
+        <button className="go go-send" type="button" disabled={!canSend || sending}
+          onClick={() => { if (canSend && !sending) void send(); }}>
+          {sending ? "Sending…" : "Send to contractors"}
         </button>
       </div>
     </div>

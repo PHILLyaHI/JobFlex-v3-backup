@@ -45,7 +45,7 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-v2.module.css";
-import { useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import { useNavIdentity, useNavRole } from "@/components/v3/blueprint-shell/nav-role";
 import {
   LEAD_STAGES,
   navSectionsFor,
@@ -67,6 +67,7 @@ import {
   type DashboardData,
 } from "@/components/v3/dashboard-blueprint/blueprint-data";
 import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
+import { SupportLauncher } from "@/components/v3/support-widget/support-widget";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -779,6 +780,11 @@ function DashboardView({ data }: { data: DashboardData }) {
   // already humanised for display and cannot be matched against "INSTALLER".
   const navRole = useNavRole();
   const navSections = navSectionsFor(navRole);
+  /* The composer this page's Help button opens is mounted by the responsive
+     shell, which only wraps the authenticated route. On the standalone
+     /mobile-v2 review URL there is no provider and no session, so the button
+     would dispatch at nothing — it is not drawn there. */
+  const signedIn = Boolean(useNavIdentity().name);
   const heroRevenue = data.kpiRaw.revenue;
   const pipeline = compactMoney(data.kpiRaw.pipeline);
 
@@ -825,8 +831,17 @@ function DashboardView({ data }: { data: DashboardData }) {
             no handler. Same component both places now. `.bellDot` already
             exists in this module; it was written for the bell that was never
             built here. */}
+        {/* Help — the launcher for the support composer the responsive shell
+            mounts alongside this page. It sits in the bar rather than floating
+            in the corner because this screen's error toast is pinned bottom-
+            right above the tab bar and has no timeout: a corner button covered
+            its only dismiss control. `.tbarBell` is just `margin-left: auto`,
+            so it moves to whichever control opens the right-hand cluster. */}
+        {signedIn && (
+          <SupportLauncher className={`${styles.tbarBtn} ${styles.tbarBell}`} iconClassName={styles.ic} />
+        )}
         <NotificationBell
-          buttonClassName={`${styles.tbarBtn} ${styles.tbarBell}`}
+          buttonClassName={signedIn ? styles.tbarBtn : `${styles.tbarBtn} ${styles.tbarBell}`}
           dotClassName={styles.bellDot}
           iconClassName={styles.ic}
         />

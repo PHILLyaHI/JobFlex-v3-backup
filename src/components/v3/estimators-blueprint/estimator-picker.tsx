@@ -125,6 +125,31 @@ function Diagram({ kind }: { kind: EngineDiagram }) {
           <text x="140" y="12" textAnchor="end">A-201</text>
         </>
       )}
+      {/* WALKTHROUGH PLAN — камера, пунктирная траектория обхода, четыре точки
+          съёмки с выносками на объект, таймкод и размер. Drawn in the same
+          language as the four above (same viewBox, same ln / bp / dim weights,
+          same annotation type); this engine has no donor card, so the plate is
+          new work rather than ported path data. */}
+      {kind === "video" && (
+        <>
+          <path className="ln" d="M14 56 H150" />
+          <rect className="ln" x="10" y="20" width="13" height="11" />
+          <path className="ln" d="M23 23 L30 19 V32 L23 28 Z" />
+          <path className="bp" d="M34 26 H142" strokeDasharray="4 3" />
+          <rect className="bp" x="44" y="23" width="6" height="6" />
+          <rect className="bp" x="74" y="23" width="6" height="6" />
+          <rect className="bp" x="104" y="23" width="6" height="6" />
+          <rect className="bp" x="132" y="23" width="6" height="6" />
+          <path
+            className="dim"
+            d="M47 29 V56 M77 29 V56 M107 29 V56 M135 29 V56"
+            strokeDasharray="3 3"
+          />
+          <text x="44" y="16">04:12</text>
+          <path className="dim" d="M14 66 H150 M14 63 V69 M150 63 V69" />
+          <text x="82" y="64" textAnchor="middle">{'128\'-0"'}</text>
+        </>
+      )}
     </svg>
   );
 }
@@ -277,11 +302,13 @@ export function EstimatorPicker() {
           </button>
         </div>
 
-        {/* Two blocks, not one: the four live engines sit in a 2×2 catalogue at
-            full card weight, and the queued trades run underneath as a thin
+        {/* Two blocks, not one: the live engines sit in a two-column catalogue
+            at full card weight, and the queued trades run underneath as a thin
             strip of dashed stubs. A single grid would have stretched the stubs
             to card height and given three unbuildable trades the same visual
-            footprint as the four you can actually start. */}
+            footprint as the ones you can actually start.
+            (Was a fixed 2×2 until Video made five; an odd last card takes the
+            full width — see .estp-grid in estimators-global.css.) */}
         <div className="estp-grid">
           {openEngines.map((engine) => (
             <button
@@ -298,7 +325,6 @@ export function EstimatorPicker() {
                   <span className="estp-name">{engine.title}</span>
                   <span className="estp-method">{engine.method}</span>
                 </span>
-                <span className="estp-time">{engine.spec.time}</span>
               </span>
             </button>
           ))}

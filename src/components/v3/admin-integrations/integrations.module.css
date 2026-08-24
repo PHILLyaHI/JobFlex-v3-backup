@@ -1,0 +1,64 @@
+/* ============================================================
+   ADMIN INTEGRATIONS — /admin/integrations
+
+   The rows, the env-key plates and the extra chip tones are imported
+   from admin-overview/admin-shared.module.css, not re-derived
+   (decisions.md: "never create parallel style sets"). This file adds
+   only the two things that are this page's own: the wrapped run of
+   env keys under an integration's name, and the one-line legend that
+   separates a verified "Live" from a merely present key.
+
+   Hashed classes scoped `:global(.jf-blueprint .content) .cls` ⇒
+   (0,3,0), which beats the dashboard module's (0,2,0) resets.
+   Tokens only.
+   ============================================================ */
+
+/* One integration: name and state on the first line, the env keys
+   wrapped onto a full-width line of their own beneath them. The keys
+   are the long strings here (NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is
+   35 characters), so giving them the whole row instead of a shrunken
+   flex child is what keeps 390px free of horizontal overflow. */
+:global(.jf-blueprint .content) div.iRow {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+:global(.jf-blueprint .content) .keys {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+/* Belt for the narrowest phones: below ~330px even a full row is
+   shorter than the longest key, so let the plate break rather than
+   push the page sideways. */
+:global(.jf-blueprint .content) .keys > span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Legend — said once for the whole page: which chip is evidence and
+   which chip is only configuration. */
+:global(.jf-blueprint .content) .legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+:global(.jf-blueprint .content) .legend em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 10px;
+}
+
+/* ── Mobile layer — LAST in the cascade ─────────────────────── */
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .legend em {
+    margin-right: 4px;
+  }
+}

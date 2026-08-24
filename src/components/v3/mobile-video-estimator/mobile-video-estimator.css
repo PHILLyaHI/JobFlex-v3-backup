@@ -1,0 +1,2016 @@
+/* ============================================================================
+   VIDEO ESTIMATOR · HANDHELD   —   /mobile-video-estimator-v1
+   ============================================================================
+
+   The two-step video estimator rebuilt for a phone: the dark graph-paper
+   walkthrough screen and the Job-ticket drawing stamp (INTAKE), then the ink
+   masthead, the frames / measurements, the two EDITABLE ledgers with their own
+   change boxes and gates, the total, the shoppable materials request and the
+   refine review gate (RESULT). Fluid 320 → 768px, no layout breakpoint anywhere
+   in this file.
+
+   It is the HANDHELD EDITION of /dashboard/video-estimator: the desktop page's
+   own file is untouched, and a viewport switch mounts this build at ≤768px, so
+   these rules paint at that route as well as at /mobile-video-estimator-v1.
+
+   The design language is the desktop port's / the donor's, value for value:
+   paper #f2f0eb, ink #0a0a0a, blueprint #1854a0, WHITE sheets, 2px ink frames,
+   2px radii, hard 3px offset shadows with NO blur, 1.5px ink rules, dashed
+   rgba(10,10,10,.16) ledger rows, Inter 800–900 caps for headings and amounts,
+   JetBrains Mono for the drawing-annotation layer, tabular numerals on every
+   number. What is re-decided is the COMPOSITION — the desktop's two side-by-side
+   columns become one vertical document. Each re-cut is argued at its own block.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate, and load-bearing) ───────
+   Two constructs here cannot survive class hashing:
+     · the scoped universal reset `.jf-mobile-video-estimator *` — `*` is not a
+       class, so the modules pipeline leaves it UNSCOPED and it flattens the
+       layout of every page in the app. Tailwind preflight and globals.css then
+       rush into the vacuum (`html{line-height:1.5}`, `font-feature-settings:
+       'cv11','ss01','ss03'`, `text-rendering:optimizeLegibility`, the body
+       drafting grid, `img{max-width:100%}`, `svg{display:block}`) and borders,
+       backgrounds, padding and fonts all fall back. This has been shipped
+       twice and reverted twice; it is not a stylistic preference.
+     · `[hidden] { display: none !important }` — an attribute selector, and
+       load-bearing here: BOTH steps and the refine gate's two faces are
+       toggled with the `hidden` attribute exactly as the donor's own
+       `stepIntake.hidden` / `review.hidden` do, and `.mve-prog` sets
+       `display: flex`, which would otherwise beat Tailwind preflight's plain
+       `[hidden] { display: none }` on source order.
+   Same call, and the same reasoning, as the siblings
+   src/components/v3/mobile-smart-estimate/mobile-smart-estimate.css and
+   src/components/v3/mobile-job-detail/mobile-job-detail.css — read either
+   header for the argument in full.
+
+   Every selector below therefore carries the single literal root class
+   `.jf-mobile-video-estimator`, uniformly, so relative specificity among these
+   rules is exactly what it would be unprefixed and nothing leaks out. The only
+   exceptions are the two host neutralizers, which have to reach <body>; both
+   are `:has()`-gated so they undo themselves the moment the tree unmounts.
+   globals.css is NOT edited — its `* { scrollbar-width: thin }` is left alone.
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   `.jf-mobile-video-estimator` and the element prefix `mve-` are new literals,
+   checked against every `.jf-*` root and every class prefix already in the
+   repo. The fleet's literal globals `rv` / `rv-in` / `pressed` are NOT used —
+   this page writes `mve-rv` / `mve-rv-in` / `mve-pressed`, so no second file
+   can style them. Both @keyframes are namespaced `jf-mve-*`: keyframe names are
+   document-global, `press2` is declared 29 times in this app, and the desktop
+   port's own progress-dot keyframe is the literal `vtBlink` in
+   video-estimator-global.css — a page-local `vtBlink` would collide with it.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark`. No `md:` / `lg:` variants and no layout media
+   query at all — the page is fluid on clamp() and intrinsic grids. The only
+   media queries are `prefers-reduced-motion` and the `hover: hover` guard that
+   keeps a sticky mobile-Safari :hover from leaving a button visibly pressed.
+   ========================================================================= */
+
+/* ── TOKENS ────────────────────────────────────────────────────────────────
+   Page-scoped, never promoted to :root. Values are the donor's `:root` block
+   (jobflex-videoestimator-blueprint.html) and the desktop port's, verbatim.
+
+   `--sheet: #ffffff` is not a donor token but a fleet one: the donor plates
+   `.card` in `var(--paper)` and the app plated every card white on 2026-08-17
+   (owner). The desktop port carries the same deviation at each site; naming it
+   once here keeps it a token edit rather than a sweep. The donor's own
+   `.vt-tb` is already literally #ffffff. */
+.jf-mobile-video-estimator {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --sheet: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555555;
+  --muted-light: #888888;
+  --muted-faint: #b0aea8;
+
+  /* Status colours. STATUSES ONLY — never decoration. */
+  --success: #3a7d44;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #8a650a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+  /* The donor's two literal line values, named so they are stated once:
+     the ledger's dashed row rule and the stamp cell's divider. */
+  --dash: rgba(10, 10, 10, 0.16);
+  --rule: rgba(10, 10, 10, 0.55);
+  --rule-soft: rgba(10, 10, 10, 0.14);
+  --shadow: rgba(10, 10, 10, 0.06);
+  /* The donor's four paper-on-ink tints, used inside the dark screen and the
+     result masthead. Named for the same reason. */
+  --on-ink-grid: rgba(242, 240, 235, 0.07);
+  --on-ink-line: rgba(242, 240, 235, 0.4);
+  --on-ink-dim: rgba(242, 240, 235, 0.6);
+  --on-ink-meta: rgba(242, 240, 235, 0.65);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- FLUID SCALE — one composition, 320px → 768px, no breakpoint ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(16px, 4.6vw, 24px);
+  /* Desktop is a flat 46px. "VIDEO ESTIMATOR" at 900 / -0.03em sets on ONE
+     line down to 320px at 26px and needs no more than 40px at 768. */
+  --fs-h1: clamp(26px, 8.4vw, 40px);
+  /* The shared MobileNav's token contract. See mobile-nav.module.css. */
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* Touch floor. CLAUDE.md and DESIGN.md both put it at 44px; every control on
+     this page is sized from this token so an audit has one number to check. */
+  --tap: 44px;
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow.
+     Row 1 is the shared nav, row 2 the scroller, row 3 the thumb-zone bar. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr) auto;
+  /* minmax(0, 1fr) on the single column, not the implicit `auto`: an auto track
+     grows to its widest item's max-content, and the shared topbar's max-content
+     is ~361px at a 320px viewport — which would widen the scroller under it and
+     clip ~41px off every card behind this element's own `overflow: hidden`.
+     Same fix as the sibling job-detail / project-detail pages. */
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: auto;
+
+  /* ── HOST NEUTRALIZERS, part 1 (the two that live on the root) ──────────
+     Tailwind preflight sets `html { line-height: 1.5 }` and globals.css sets
+     `text-rendering: optimizeLegibility`; both inherit, and without these two
+     lines every box that declares no line-height of its own — every mono
+     annotation, button, ledger row and stamp cell — grows 2–5px, which is
+     enough to break the 320px budgets below.
+     font-feature-settings is deliberately RESTATED rather than neutralised to
+     `normal`: globals puts 'cv11','ss01','ss03' on html+body and every sibling
+     handheld page re-declares exactly that, so `normal` here would make this
+     the one page whose Inter draws different digits. */
+  line-height: normal;
+  text-rendering: auto;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+/* Scoped universal reset — the construct a CSS Module cannot express.
+   WRAPPED IN :where(). Written bare it scores (0,1,0), the same as every class
+   rule in mobile-nav.module.css, and this sheet is imported after that module —
+   so `padding: 0` would win every tie and cancel the shared topbar's own
+   padding, leaving the nav flush to both screen edges on this page alone. At
+   (0,0,0) the reset still beats the UA defaults it exists for and loses to
+   every author rule. Do not un-wrap. */
+:where(.jf-mobile-video-estimator),
+:where(.jf-mobile-video-estimator *) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* :where() holds the control reset at element-level specificity (0,0,1).
+   Un-wrapped — the root class as a plain ancestor of a type selector — it
+   scores (0,2,1) and silently beats EVERY rule below that styles a button by
+   class (0,2,0): every background and every border on this page would be
+   cancelled at render time, and it would parse, lint and typecheck clean while
+   doing it. That trap has cost this fleet a day. Do not un-wrap these. */
+:where(.jf-mobile-video-estimator) button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+:where(.jf-mobile-video-estimator) a { text-decoration: none; color: inherit; }
+:where(.jf-mobile-video-estimator) input,
+:where(.jf-mobile-video-estimator) textarea { font-family: inherit; color: inherit; }
+:where(.jf-mobile-video-estimator) h1,
+:where(.jf-mobile-video-estimator) h2 { font-size: inherit; font-weight: inherit; }
+
+/* The donor's own mechanism, kept: `hidden` is how the two steps and the two
+   faces of the refine gate are shown and hidden. `!important` because
+   `.mve-prog` sets `display: flex`, which would otherwise beat preflight's
+   plain `[hidden] { display: none }` on source order. */
+.jf-mobile-video-estimator [hidden] { display: none !important; }
+
+.jf-mobile-video-estimator ::selection { background: var(--blueprint); color: #fff; }
+.jf-mobile-video-estimator :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* The reset above sets `color: inherit` on inputs; placeholders must not
+   inherit the field's ink or they read as filled values. */
+.jf-mobile-video-estimator input::placeholder,
+.jf-mobile-video-estimator textarea::placeholder {
+  color: var(--muted-faint);
+  font-weight: 500;
+  opacity: 1;
+}
+
+/* Icons come from the shared MobileNav sprite. `display: block` is declared
+   rather than inherited: preflight sets `svg { display: block }` and the bare
+   browser sets `inline`, so stating it makes the icon box identical either way.
+   No global `svg` override is written — MobileNav's product mark is an <img>
+   whose crop window is tuned against preflight, and reaching into the shared
+   nav from here would break it. Donor size for a `.btn .ic` is 15px. */
+.jf-mobile-video-estimator .mve-ic {
+  display: block;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS, part 2 — the only rules here that do not start with the
+   root class. globals.css paints a 40px drafting grid on <body> with FIXED
+   attachment; this page paints its own graph paper inside its own scroller,
+   parallaxed, and the body copy would sit a second, non-parallaxing grid
+   behind it. The `body::before` grain was retired app-wide on 2026-08-18, but
+   the neutralizer is carried anyway — it costs nothing and it means a returning
+   grain's multiply blend cannot tint this page's white sheets.
+   Both are `:has()`-gated, so they restore themselves on unmount — which
+   matters because the App Router keeps this stylesheet in the document after a
+   client-side navigation away.
+   ══════════════════════════════════════════════════════════════════════════ */
+body:has(.jf-mobile-video-estimator) { background-image: none; }
+body:has(.jf-mobile-video-estimator)::before { content: none; }
+
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax (scrollTop × 0.06,
+   the donor's own number, driven from JS through --gy).
+   ============================================================ */
+.jf-mobile-video-estimator .mve-scroll {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  /* No rail down the edge of the sheet — the graph paper has to read as one
+     continuous drawing. Both engines are told the same thing. */
+  scrollbar-width: none;
+}
+.jf-mobile-video-estimator .mve-scroll::-webkit-scrollbar { width: 0; height: 0; }
+.jf-mobile-video-estimator .mve-scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.jf-mobile-video-estimator .mve-content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) 28px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  /* Every child is width-constrained by the flex column; this is the belt to
+     that braces: nothing in this tree may widen the page. */
+  min-width: 0;
+}
+
+/* ============================================================
+   PAGE HEAD — kicker + H1.
+   The desktop head is a `space-between` row with room for actions on the
+   right; this page's head carries none, so it is simply a stack.
+   ============================================================ */
+.jf-mobile-video-estimator .mve-head { padding-top: 2px; }
+.jf-mobile-video-estimator .mve-kick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.jf-mobile-video-estimator .mve-kick::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.jf-mobile-video-estimator .mve-title {
+  font-size: var(--fs-h1);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  line-height: 0.95;
+  /* A page title must wrap, never clip — a truncated H1 reads as a rendering
+     bug. `break-word` is enough here: the string is two known words. */
+  overflow-wrap: break-word;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   INTAKE · THE WALKTHROUGH SCREEN
+   Desktop is `grid-template-columns: 1.55fr 1fr` — the dark screen beside the
+   job ticket, both stretched to `calc(app-h - 292px)`. On a phone there is no
+   second column, so screen and ticket become two consecutive blocks of the
+   document column and each is its own reveal step. The `min-height: 340px` is
+   the donor's own value from its ≤1080px collapse, kept verbatim: it is the
+   height at which the crop marks still read as crop marks rather than as a
+   frame, and at which the loaded state's four frame cells have room.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-video-estimator .mve-screen {
+  position: relative;
+  min-height: 340px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-image:
+    linear-gradient(var(--on-ink-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--on-ink-grid) 1px, transparent 1px);
+  background-size: 44px 44px;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* Crop marks — the drawing's registration corners. Donor geometry verbatim:
+   22px arms, 2px stroke, inset 14px. */
+.jf-mobile-video-estimator .mve-crop {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  z-index: 2;
+}
+.jf-mobile-video-estimator .mve-crop::before,
+.jf-mobile-video-estimator .mve-crop::after {
+  content: "";
+  position: absolute;
+  background: rgba(242, 240, 235, 0.85);
+}
+.jf-mobile-video-estimator .mve-crop::before { width: 22px; height: 2px; }
+.jf-mobile-video-estimator .mve-crop::after { width: 2px; height: 22px; }
+.jf-mobile-video-estimator .mve-crop-tl { top: 14px; left: 14px; }
+.jf-mobile-video-estimator .mve-crop-tr { top: 14px; right: 14px; }
+.jf-mobile-video-estimator .mve-crop-tr::before { right: 0; }
+.jf-mobile-video-estimator .mve-crop-tr::after { right: 0; }
+.jf-mobile-video-estimator .mve-crop-bl { bottom: 14px; left: 14px; }
+.jf-mobile-video-estimator .mve-crop-bl::before { bottom: 0; }
+.jf-mobile-video-estimator .mve-crop-bl::after { bottom: 0; }
+.jf-mobile-video-estimator .mve-crop-br { bottom: 14px; right: 14px; }
+.jf-mobile-video-estimator .mve-crop-br::before { bottom: 0; right: 0; }
+.jf-mobile-video-estimator .mve-crop-br::after { bottom: 0; right: 0; }
+
+/* ── EMPTY STATE ──────────────────────────────────────────────────────────
+   Donor values verbatim, including the 84px play plate and its 5px offset
+   shadow in paper at 18% — the one shadow on this page that is not ink,
+   because it is cast onto ink. It already clears the touch floor by 40px. */
+.jf-mobile-video-estimator .mve-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--paper);
+  text-align: center;
+  padding: 30px;
+}
+.jf-mobile-video-estimator .mve-play {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  background: var(--paper);
+  border: none;
+  border-radius: var(--radius);
+  box-shadow: 5px 5px 0 rgba(242, 240, 235, 0.18);
+  transition: transform 0.16s var(--ease-out), box-shadow 0.16s var(--ease-out);
+}
+.jf-mobile-video-estimator .mve-play i {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 15px 0 15px 25px;
+  border-color: transparent transparent transparent var(--ink);
+  margin-left: 5px;
+}
+/* Press, not hover: on a touch screen :hover is sticky (the state survives the
+   tap), so a hover-only lift leaves the plate visibly raised afterwards. The
+   donor's pointer lift is kept behind the `hover: hover` guard further down. */
+.jf-mobile-video-estimator .mve-play:active {
+  transform: translate(-2px, -2px);
+  box-shadow: 7px 7px 0 rgba(242, 240, 235, 0.22);
+}
+.jf-mobile-video-estimator .mve-empty-t {
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  margin-top: 4px;
+}
+.jf-mobile-video-estimator .mve-empty-m {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  color: var(--on-ink-dim);
+}
+/* The second door to the picker. The plate is the drawing's own control; this
+   is the one that says what it does, for anyone who does not read a triangle as
+   "choose a file". Blueprint-filled, per the button rule below. */
+.jf-mobile-video-estimator .mve-add { margin-top: 2px; }
+
+/* ── LOADED STATE ─────────────────────────────────────────────────────────
+   The donor fills the screen absolutely, file line pinned top and frame strip
+   pinned bottom. That worked while the strip was four empty hatched cells; it
+   cannot hold the REAL clip, because a <video> preview between the two would
+   overflow a 340px screen at 320px wide and be clipped away by the screen's own
+   `overflow: hidden`. The state is put back into normal flow instead, so the
+   screen grows to the clip it is holding; `min-height: 340px` still sets the
+   empty state's height, which is what that number was for. */
+.jf-mobile-video-estimator .mve-loaded {
+  position: relative;
+  align-self: stretch;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+/* The clip itself, framed like the strip cells and plated black so a letterboxed
+   export does not show paper through its own bars. Capped at 40vh: a portrait
+   walkthrough is 16:9 on its side and would otherwise fill two screens before
+   the frame strip is reached. */
+.jf-mobile-video-estimator .mve-preview {
+  display: block;
+  width: 100%;
+  max-height: 40vh;
+  border: 1.5px solid rgba(242, 240, 235, 0.28);
+  border-radius: var(--radius);
+  background: #000;
+  object-fit: contain;
+}
+/* THE FILE LINE — RE-CUT.
+   Desktop is one row: icon, filename, meta, Remove. At 320 the inner width is
+   ~256px and the meta alone ("04:12 · 212 MB · 1080p", mono 11px / .06em) is
+   ~150px, so the filename would be left ~40px. The line WRAPS instead: the
+   meta is forced onto its own second row, which is also where a longer
+   filename spills to. Nothing is truncated — a walkthrough's filename is the
+   only thing identifying which clip is loaded. */
+.jf-mobile-video-estimator .mve-fileline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--paper);
+  padding: 10px 14px;
+  background: rgba(10, 10, 10, 0.55);
+  border: 1.5px solid rgba(242, 240, 235, 0.28);
+  border-radius: var(--radius);
+}
+.jf-mobile-video-estimator .mve-fileline .mve-ic {
+  width: 18px;
+  height: 18px;
+  color: var(--sky);
+  flex-shrink: 0;
+}
+.jf-mobile-video-estimator .mve-fileline b {
+  font-size: 13.5px;
+  font-weight: 800;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-fileline span {
+  flex: 1 0 100%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--on-ink-meta);
+  font-variant-numeric: tabular-nums;
+}
+/* Remove is a mono text control, 10.5px tall in the donor. It reaches the 44px
+   floor through a TRANSPARENT tap extension rather than by growing, because
+   growing it would push the drawn file line to ~64px and unbalance the screen.
+   The extension is safe here: the only other control inside `.mve-loaded` is
+   the play plate, which is hidden whenever this state is on screen. */
+/* It sits BEFORE the meta line in the DOM precisely so the default flex order
+   puts it on row one: the meta's `flex: 1 0 100%` opens row two, and anything
+   after it would be pushed to a third row. Do not reorder either. */
+.jf-mobile-video-estimator .mve-remove {
+  position: relative;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--on-ink-dim);
+  transition: color 0.12s var(--ease);
+}
+.jf-mobile-video-estimator .mve-remove::after {
+  content: "";
+  position: absolute;
+  /* 10.5px of glyph + 2 × 17px = 44.5px of hit area, and 12px of horizontal
+     slack on each side so a thumb landing left of the "R" still counts. */
+  inset: -17px -12px;
+}
+.jf-mobile-video-estimator .mve-remove:active { color: var(--paper); }
+/* Removing the clip mid-extraction would land the outgoing file's stills on the
+   empty screen, so it is held while the flow is busy. */
+.jf-mobile-video-estimator .mve-remove[disabled] { opacity: 0.4; pointer-events: none; }
+/* THE FRAME STRIP — RE-CUT from 4 × 1fr to 2 × 2.
+   Four 16:10 cells across a 256px inner width are 58px wide and 36px tall: the
+   timecode plate inside them (mono 10px, 7px side padding) is 44px on its own,
+   so at four-up the annotation is wider than its own cell. Two-up gives a
+   123px cell at 320 and the plate sits where the donor draws it. */
+.jf-mobile-video-estimator .mve-strip {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.jf-mobile-video-estimator .mve-cell {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border: 1.5px solid var(--on-ink-line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background-image: repeating-linear-gradient(45deg, rgba(242, 240, 235, 0.16) 0 1px, transparent 1px 7px);
+}
+/* The real still, once it is pulled. The hatch stays underneath as the loading
+   face and is what shows while a cell waits. */
+.jf-mobile-video-estimator .mve-cell img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.jf-mobile-video-estimator .mve-cell span {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+/* A waiting cell counts the extraction instead of stamping a timecode it does
+   not have yet, so the plate drops its paper backing and reads as a note. */
+.jf-mobile-video-estimator .mve-cell.mve-is-wait span {
+  background: transparent;
+  color: var(--on-ink-meta);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   INTAKE · THE JOB TICKET — the drawing stamp
+   Kept as the donor draws it, including the 1fr 1fr cell grid: Date and Source
+   are two short values and at 320 each half is 148px, which is more than
+   either needs. Splitting them into two full-width rows would cost the stamp
+   its title-block reading, which is the whole point of the object.
+
+   ONE ADDITION, marked at its site: the donor's last cell relies on the
+   `.vt-tb-foot` below it to hide its bottom rule. That foot moves to the thumb
+   zone here (see THE ACTION BAR), so the last cell's own 1.5px rule would
+   abut the card's 2px frame and read as one heavy 3.5px line — the hairline
+   doubling this fleet has reported as "the line is thicker". It opts out.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-video-estimator .mve-tb {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: #ffffff;
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.jf-mobile-video-estimator .mve-tb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.jf-mobile-video-estimator .mve-tb-no {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--on-ink-meta);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-video-estimator .mve-cells {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.jf-mobile-video-estimator .mve-c {
+  display: block;
+  padding: 13px 18px 14px;
+  border-bottom: 1.5px solid var(--rule);
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-c--full { grid-column: 1 / -1; }
+/* The donor writes this as `:nth-child(odd of .vt-c:not(.vt-c--full))`. There
+   are exactly two half cells and their order is fixed in the markup, so the
+   rule is carried by an explicit class instead — `of S` is a 2023 selector and
+   this page has no need to depend on it. */
+.jf-mobile-video-estimator .mve-c--rule { border-right: 1.5px solid var(--rule); }
+/* The addition argued in this block's header. */
+.jf-mobile-video-estimator .mve-c:last-child { border-bottom: none; }
+.jf-mobile-video-estimator .mve-c-l {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+/* The stamp's fields are borderless by design — the cell IS the frame. The
+   donor sets 15.5px; that is below iOS Safari's 16px zoom threshold, and a
+   page that scales itself on a tap into a field is broken, so these are the
+   one place the donor's type size is overridden. See the note in DEVIATIONS at
+   the foot of this file. */
+.jf-mobile-video-estimator .mve-c-in {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+  /* Touch floor without growing the drawn cell: the cell's own 13/14px padding
+     plus this line box is 47px, so the label + field together are the target. */
+  min-height: 20px;
+}
+.jf-mobile-video-estimator .mve-c-in:focus { outline: none; }
+/* The ticket is read by the analysis the moment it starts, so its fields are
+   held while the flow is busy. */
+.jf-mobile-video-estimator .mve-c-in[disabled] { opacity: 0.6; }
+.jf-mobile-video-estimator .mve-c:focus-within { box-shadow: inset 3px 0 0 var(--blueprint); }
+.jf-mobile-video-estimator .mve-c-v {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-c-ta {
+  resize: none;
+  overflow: hidden;
+  min-height: 24px;
+  line-height: 1.45;
+  font-family: var(--font);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RESULT · THE SHEET
+   Desktop is one flush card: ink masthead, then `1.15fr 1fr` (frames +
+   measurements | ledger + refine), then the action bar. The donor's own
+   ≤1080px collapse already answers the phone: one column, and the divider
+   that was a right border becomes a horizontal rule between the two halves.
+   That is what is carried here, with the card's paddings put on --card-pad.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-video-estimator .mve-card {
+  background: var(--sheet);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--shadow);
+  /* The donor's `.card--flush`: sections run edge to edge and the radius clips
+     them, so the masthead and the footer bar have no gap at the corners. */
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── MASTHEAD — RE-CUT to a stack ─────────────────────────────────────────
+   Desktop is a row with the confidence stamp pushed right by `margin-left:
+   auto`. "Confidence 92%" is ~156px at 11px / 800 / .14em with its padding and
+   it must not wrap (it is a stamp), which would leave the title ~100px at 320.
+   The stamp therefore drops to its own line at the FOOT of the masthead, where
+   an approval mark belongs on a drawing, and the kicker / title / sub keep the
+   full measure. */
+.jf-mobile-video-estimator .mve-mast {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 22px var(--card-pad);
+  background: var(--ink);
+  color: var(--paper);
+  background-image:
+    linear-gradient(rgba(242, 240, 235, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(242, 240, 235, 0.08) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.jf-mobile-video-estimator .mve-mast-min { min-width: 0; max-width: 100%; }
+.jf-mobile-video-estimator .mve-mast-k {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--on-ink-dim);
+}
+.jf-mobile-video-estimator .mve-mast-t {
+  margin: 4px 0 0;
+  font-size: 23px;
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+  /* The title is whatever the contractor typed into Project. `anywhere` is the
+     only value that shrinks min-content, so a 200-character unbroken run
+     cannot widen the card. */
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-mast-s {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  color: var(--on-ink-meta);
+}
+/* The stamp is the reading's own figure now, not a fixture, so it has three
+   faces. The donor's green is the HIGH one, kept verbatim; mid and low are the
+   same plate in amber and red, at the desktop module's values. Status colour on
+   a status — the one place this page paints with it. */
+.jf-mobile-video-estimator .mve-conf {
+  flex: 0 0 auto;
+  padding: 6px 13px;
+  border: 2px solid #58b368;
+  color: #58b368;
+  background: rgba(58, 125, 68, 0.16);
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.jf-mobile-video-estimator .mve-conf--mid {
+  border-color: #e2b04a;
+  color: #e2b04a;
+  background: rgba(184, 132, 32, 0.18);
+}
+.jf-mobile-video-estimator .mve-conf--low {
+  border-color: #e07070;
+  color: #e07070;
+  background: rgba(168, 50, 50, 0.18);
+}
+
+/* ── THE TWO HALVES, STACKED ──────────────────────────────────────────────
+   The donor's ≤1080 rule verbatim: one column, and `.vr-left`'s right border
+   becomes a bottom rule. Written as an adjacency so the last section never
+   draws a rule onto the footer bar's own border (the doubling trap again). */
+.jf-mobile-video-estimator .mve-sec {
+  padding: 24px var(--card-pad);
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-sec + .mve-sec { border-top: 1.5px solid var(--rule-soft); }
+.jf-mobile-video-estimator .mve-sec-h {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.jf-mobile-video-estimator .mve-sec-h--gap { margin-top: 26px; }
+
+/* ── THE READING ──────────────────────────────────────────────────────────
+   Scope, the measurements' grounding, site notes and assumptions: everything
+   the model actually said, at the desktop module's values. */
+.jf-mobile-video-estimator .mve-scope {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+/* An empty face that states WHY it is empty — a blank column reads as a broken
+   render, and this one is a legitimate outcome of a quiet walkthrough. */
+.jf-mobile-video-estimator .mve-none {
+  padding: 12px 14px;
+  border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.jf-mobile-video-estimator .mve-notes {
+  display: grid;
+  gap: 6px;
+  padding-left: 0;
+  list-style: none;
+}
+.jf-mobile-video-estimator .mve-notes li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-notes li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  background: var(--blueprint);
+}
+/* An assumption is not an observation: hollow, and in the warning colour,
+   because it is the thing the contractor has to confirm. */
+.jf-mobile-video-estimator .mve-notes--assume li::before {
+  background: transparent;
+  border: 1.5px solid var(--warning);
+  width: 5px;
+  height: 5px;
+}
+
+/* Frames and measurements keep the donor's 2-column grids: at 320 that is a
+   123px tile, which is the smallest a 16:10 frame with a timecode plate reads
+   at, and dropping to one column would make the section four screens tall. */
+.jf-mobile-video-estimator .mve-frames {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.jf-mobile-video-estimator .mve-frame {
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-frame-img {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background-image: repeating-linear-gradient(45deg, rgba(24, 84, 160, 0.1) 0 1px, transparent 1px 7px);
+}
+.jf-mobile-video-estimator .mve-frame-img img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.jf-mobile-video-estimator .mve-frame-tc {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-video-estimator .mve-frame-l {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-meas {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.jf-mobile-video-estimator .mve-m {
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-m span {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.jf-mobile-video-estimator .mve-m b {
+  display: block;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+/* Where the number came from and how well the clip supports it — "spoken · high"
+   is a very different figure from "inferred · low", and a measurement printed
+   without its grounding invites a contractor to bid on a guess. */
+.jf-mobile-video-estimator .mve-m-tag {
+  display: block;
+  margin-top: 6px;
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+.jf-mobile-video-estimator .mve-m-tag[data-c="high"] { color: var(--success); }
+.jf-mobile-video-estimator .mve-m-tag[data-c="low"] { color: var(--danger); }
+
+/* ── THE DISCOUNT LINE AND THE TOTAL ──────────────────────────────────────
+   Two flex cells, label left and amount right, exactly as the donor: the
+   amount is `flex: 0 0 auto` so a long label gives way instead of pushing the
+   money off the sheet, and the label carries `anywhere` so it wraps rather
+   than widening the row. The ledger's own rows are the editable `.mve-row`
+   below; this pair is what is left of the read-only treatment. */
+.jf-mobile-video-estimator .mve-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--dash);
+  font-size: 13.5px;
+}
+.jf-mobile-video-estimator .mve-line b {
+  display: block;
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-line span {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-video-estimator .mve-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 0 6px;
+  border-top: 1.5px solid var(--ink);
+  margin-top: 12px;
+}
+.jf-mobile-video-estimator .mve-total span {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.jf-mobile-video-estimator .mve-total b {
+  flex: 0 0 auto;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  color: var(--blueprint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── THE EDITABLE LEDGER ──────────────────────────────────────────────────
+   Materials and Labor are two sections now, each with its own heading bar and
+   section total, its own rows, its own Add and its own change box — the split
+   the desktop sheet has. Every value below is the desktop module's
+   (.vr-sec-bar / .vr-sec-total / .vr-row / .vr-name / .vr-in / .vr-unit /
+   .vr-row-t / .vr-row-x / .vr-add), verbatim. What is re-cut is the ROW.
+
+   The desktop row is a five-column grid — name · qty+unit · price · total ·
+   delete — which leaves the name about 60px at a 320px measure. So the row
+   becomes two lines: the NAME takes the first, with the line total set right
+   against it, and qty, unit, price and delete share the second. The per-row
+   total is KEPT rather than dropped (the desktop drops it below 1080px):
+   this ledger is the only place a labor line's money is ever shown on a phone,
+   and a figure that rides on the name's own line costs nothing on the crowded
+   second line.
+
+   Control heights are the tap floor rather than the desktop's 30/32px, and
+   every field is 16px — below 16px iOS Safari zooms the viewport on focus. */
+.jf-mobile-video-estimator .mve-sec-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.jf-mobile-video-estimator .mve-sec-bar .mve-sec-h { margin-bottom: 0; }
+.jf-mobile-video-estimator .mve-sec-total {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-video-estimator .mve-row {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--dash);
+}
+.jf-mobile-video-estimator .mve-row-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+/* Borderless until touched, so the ledger still reads as a drawn sheet rather
+   than a form — the desktop's .vr-name treatment, raised to the tap floor. */
+.jf-mobile-video-estimator .mve-rname {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 7px;
+  margin-left: -7px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  text-overflow: ellipsis;
+}
+.jf-mobile-video-estimator .mve-rname:focus {
+  outline: none;
+  border-color: var(--blueprint);
+  background: var(--sheet);
+}
+.jf-mobile-video-estimator .mve-rname::placeholder { font-weight: 600; }
+.jf-mobile-video-estimator .mve-row-t {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* A line the refine added is painted with the success colour; one it re-priced
+   is painted blueprint. Both come back on the line's own badge. */
+.jf-mobile-video-estimator .mve-row.mve-is-new .mve-rname { color: var(--success); }
+.jf-mobile-video-estimator .mve-row.mve-is-upd .mve-rname { color: var(--blueprint); }
+/* qty · unit · price · delete. The three fixed tracks plus the gaps come to
+   197px, so at a 320px viewport — 259px of card measure — the unit keeps ~62px,
+   enough for "each" / "hour" / "sheet" at 16px mono. */
+.jf-mobile-video-estimator .mve-row-f {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-in {
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 8px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-video-estimator .mve-in:focus { outline: none; border-color: var(--blueprint); }
+.jf-mobile-video-estimator .mve-in--qty { flex: 0 0 56px; }
+.jf-mobile-video-estimator .mve-in--price { flex: 0 0 76px; }
+.jf-mobile-video-estimator .mve-unit {
+  flex: 1 1 60px;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 8px;
+  border: 1.5px solid rgba(10, 10, 10, 0.28);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.jf-mobile-video-estimator .mve-unit:focus {
+  outline: none;
+  border-color: var(--blueprint);
+  color: var(--ink);
+}
+.jf-mobile-video-estimator .mve-row-x {
+  flex: 0 0 var(--tap);
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(10, 10, 10, 0.28);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--muted);
+  transition: border-color 0.13s var(--ease), color 0.13s var(--ease);
+}
+.jf-mobile-video-estimator .mve-row-x:active {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.jf-mobile-video-estimator .mve-row-x .mve-ic { width: 13px; height: 13px; }
+/* The desktop's dashed Add is an inline chip; on a phone it is the full measure
+   so it cannot be missed under a long ledger, and it is at the tap floor. */
+.jf-mobile-video-estimator .mve-addline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 11px;
+  padding: 0 12px;
+  border: 1.5px dashed rgba(10, 10, 10, 0.32);
+  border-radius: var(--radius);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: border-color 0.13s var(--ease), color 0.13s var(--ease);
+}
+.jf-mobile-video-estimator .mve-addline:active {
+  border-style: solid;
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.jf-mobile-video-estimator .mve-addline .mve-ic { width: 13px; height: 13px; }
+@media (hover: hover) {
+  .jf-mobile-video-estimator .mve-row-x:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .jf-mobile-video-estimator .mve-addline:hover {
+    border-style: solid;
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+}
+/* Each section's change box and its gate sit tighter to their own rows than the
+   page-foot pair did — they belong to the section above, not to the card. */
+.jf-mobile-video-estimator .mve-sec .mve-refine { margin-top: 14px; }
+.jf-mobile-video-estimator .mve-sec .mve-review { margin-top: 14px; }
+/* The estimate total gets its own band between the two ledgers and the request
+   list, so it is not read as belonging to Labor. Its rule is the section rule;
+   the ledger's own top margin would double it. */
+.jf-mobile-video-estimator .mve-sec--tot { padding-top: 8px; }
+.jf-mobile-video-estimator .mve-sec--tot .mve-total { margin-top: 0; border-top: none; }
+
+/* ── MATERIALS REQUEST ────────────────────────────────────────────────────
+   The Smart Proposal's shoppable list, DERIVED from the ledger above rather
+   than mirrored from it. Values are the desktop module's .vr-req-* block,
+   verbatim — the 58px hatched thumb frame, the mono meta line, the bordered
+   store chip and its dashed "no retail source" face, the 20px foot figure.
+
+   The desktop row is one flex line: thumb · name and meta · price · a 34px
+   icon link. A 34px control is under the tap floor and the four cells do not
+   share 259px, so the row STACKS: thumb beside the name and meta, the two
+   figures on their own baseline under them, and the buy link as a full-width
+   ghost control that says where it goes. */
+.jf-mobile-video-estimator .mve-req-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.jf-mobile-video-estimator .mve-req-head .mve-sec-h { margin-bottom: 0; }
+.jf-mobile-video-estimator .mve-req-count {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 4px 11px;
+  border: 1.5px solid rgba(10, 10, 10, 0.45);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.jf-mobile-video-estimator .mve-req-row {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px dashed var(--dash);
+  min-width: 0;
+}
+/* `:has(+ …)`, not `:last-of-type`: the foot below is a div as well, so the last
+   ROW is never the last div-of-type and its dashed rule would sit a few pixels
+   above the foot's solid one — the doubling this sheet avoids everywhere else. */
+.jf-mobile-video-estimator .mve-req-row:has(+ .mve-reqtotal) { border-bottom: none; }
+.jf-mobile-video-estimator .mve-req-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-thumb {
+  flex: 0 0 auto;
+  display: block;
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(24, 84, 160, 0.1) 0 1px,
+    transparent 1px 7px
+  );
+}
+.jf-mobile-video-estimator .mve-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* MaterialThumb's own plate is the OTHER design system's — 64px, rounded,
+   hairline, tinted. Flatten its root into the hatch frame above, exactly as the
+   desktop sheet does. */
+.jf-mobile-video-estimator .mve-thumb > div {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.jf-mobile-video-estimator .mve-thumb > div > svg {
+  width: 20px;
+  height: 20px;
+  color: var(--muted-faint);
+}
+.jf-mobile-video-estimator .mve-req-main { flex: 1 1 auto; min-width: 0; }
+/* The desktop clips this to one line; a phone has no second column to protect,
+   and a truncated product name is the one thing a buyer cannot act on. */
+.jf-mobile-video-estimator .mve-req-n {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-req-m {
+  margin-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-store {
+  padding: 1px 8px;
+  border: 1.5px solid rgba(10, 10, 10, 0.45);
+  border-radius: var(--radius);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.jf-mobile-video-estimator .mve-store--none { border-style: dashed; color: var(--muted); }
+.jf-mobile-video-estimator .mve-req-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.jf-mobile-video-estimator .mve-req-foot b {
+  font-size: 16px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-video-estimator .mve-req-foot > span {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+/* The retail price is what the store charges; a typed price rides beside it in
+   parentheses rather than replacing it. */
+.jf-mobile-video-estimator .mve-req-ov { font-style: normal; color: var(--warning-dark); }
+.jf-mobile-video-estimator .mve-req-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: clamp(11px, 3.2vw, 12px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  overflow-wrap: anywhere;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.jf-mobile-video-estimator .mve-req-link:active {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+  background: var(--paper-deep);
+}
+@media (hover: hover) {
+  .jf-mobile-video-estimator .mve-req-link:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--ink);
+    background: var(--paper-deep);
+  }
+}
+.jf-mobile-video-estimator .mve-reqtotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 0 0;
+  margin-top: 12px;
+  border-top: 1.5px solid var(--ink);
+}
+.jf-mobile-video-estimator .mve-reqtotal span {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.jf-mobile-video-estimator .mve-reqtotal b {
+  flex: 0 0 auto;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── REFINE + THE REVIEW GATE ─────────────────────────────────────────────
+   Desktop is one `align-items: flex-end` row: input, then a 40px Apply. At 320
+   the ghost Apply is ~92px of a 256px measure and the field is left ~150px —
+   half a sentence. The row becomes a STACK, keeping the donor's 12px gap and
+   20px top margin, and both controls go full width so the field gets the whole
+   measure and Apply lands under the thumb.
+
+   The input's own frame is this page's one invented rule: the donor markup
+   gives it `class="vt-f-in vr-refine-in"` and `.vt-f-in` is never defined
+   anywhere in the donor file, so on desktop it renders as a bare OS input. An
+   OS control is the one thing that does not belong on a blueprint card, so it
+   is drawn in the house language the neighbouring `.mve-m` / `.mve-frame`
+   tiles already use — a 1.5px ink frame, 2px radius — and nothing else. */
+.jf-mobile-video-estimator .mve-refine {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+.jf-mobile-video-estimator .mve-refine-in {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 13px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  /* 16px, not the donor's 13.5px — the iOS zoom floor. See DEVIATIONS. */
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+/* Colour only, no width change: growing the border on focus would shift every
+   control below it by half a pixel. */
+.jf-mobile-video-estimator .mve-refine-in:focus {
+  outline: none;
+  border-color: var(--blueprint);
+}
+.jf-mobile-video-estimator .mve-refine-in[disabled] { opacity: 0.6; }
+.jf-mobile-video-estimator .mve-review {
+  border: 1.5px dashed var(--blueprint);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-top: 20px;
+}
+.jf-mobile-video-estimator .mve-review-h {
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+.jf-mobile-video-estimator .mve-diff {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.8;
+  margin-bottom: 14px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+/* The gate's three row kinds — added, removed, changed — and the running total
+   underneath them. */
+.jf-mobile-video-estimator .mve-diff > div { overflow-wrap: anywhere; }
+.jf-mobile-video-estimator .mve-diff .mve-add { color: var(--success); }
+.jf-mobile-video-estimator .mve-diff .mve-del { color: var(--danger); }
+.jf-mobile-video-estimator .mve-diff .mve-chg { color: var(--ink-soft); }
+.jf-mobile-video-estimator .mve-diff .mve-tot { color: var(--blueprint); }
+/* The refine's caveats — a re-shop that could not reach a retailer, a quantity
+   the model would not change. They belong with the diff, not in a toast. */
+.jf-mobile-video-estimator .mve-warn {
+  display: grid;
+  gap: 4px;
+  margin: -6px 0 14px;
+  padding-left: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: var(--warning-dark);
+  overflow-wrap: anywhere;
+}
+/* Confirm and Discard together measure ~250px at this type size, which is
+   inside a 320px card's 224px of inner review-box width only if they shrink
+   below the tap floor. Stacked, full width, affirmative first — the same call
+   the sibling smart-estimate page makes for its own gate. */
+.jf-mobile-video-estimator .mve-review-a {
+  display: grid;
+  gap: 10px;
+}
+
+/* ── THE CARD'S FOOTER BAR ────────────────────────────────────────────────
+   The donor bar carries Start over | Save estimate | Convert to proposal. The
+   PRIMARY moves to the thumb zone (see THE ACTION BAR); "Start over" stays
+   here, at the end of the document, where the estimate ends — which is also the
+   safest place for the one destructive control on the page. There is no "Save
+   estimate": Convert writes the AiEstimate row itself before it creates the
+   proposal, so a separate save was a second name for a step that always
+   happened anyway. */
+.jf-mobile-video-estimator .mve-cardbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 16px var(--card-pad);
+  border-top: var(--border-thin);
+  background: var(--paper-deep);
+}
+/* Content-sized, not stretched: a full-measure soft-red plate would put far
+   more status colour on the sheet than the badge treatment intends. */
+.jf-mobile-video-estimator .mve-cardbar .mve-btn { flex: 0 1 auto; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BUTTONS — the owner's explicit preference, kept COLOURED.
+     primary = blueprint #1854a0 fill, white text, 2px ink border;
+     ghost   = #ffffff fill, ink text, 2px ink border;
+     lift    = translate(-1px,-1px) + 3px 3px 0 ink, NO blur.
+   Not flattened to outline-only, tonal grey or near-white. On this page that
+   means Analyze video, Confirm and Convert to proposal are blueprint-filled.
+
+   `:active` carries the lift as well as `:hover`, because hover is sticky on
+   mobile Safari — the state survives the tap and stays until you touch
+   something else, so a hover-only lift leaves a button visibly pressed after
+   you have moved on. The pointer lift is kept behind `hover: hover`.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-video-estimator .mve-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: var(--tap);
+  padding: 0 clamp(12px, 3.6vw, 16px);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* Desktop is a flat 12px. The floor is 11px so "Convert to proposal" and
+     "Save estimate" still set on one line at 320px. */
+  font-size: clamp(11px, 3.2vw, 12px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: inherit;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.jf-mobile-video-estimator .mve-btn-block { width: 100%; }
+.jf-mobile-video-estimator .mve-btn-primary { background: var(--blueprint); color: #fff; }
+.jf-mobile-video-estimator .mve-btn-ghost { background: var(--sheet); color: var(--ink); }
+/* Start over is destructive — the estimate is dropped. Status-badge treatment,
+   NOT a solid red plate: DESIGN.md keeps status colour to ~5% of a surface, and
+   a filled red beside the filled blueprint Convert in the thumb bar would read
+   as two primaries. The desktop module's .btn-danger values, verbatim; the
+   offset shadow stays ink, like every other button on the page. */
+.jf-mobile-video-estimator .mve-btn-danger {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.jf-mobile-video-estimator .mve-btn:active {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-video-estimator .mve-btn-primary:active { background: var(--blueprint-dark); }
+.jf-mobile-video-estimator .mve-btn-ghost:active { background: var(--paper-deep); }
+.jf-mobile-video-estimator .mve-btn-danger:active {
+  background: color-mix(in srgb, var(--danger) 14%, #ffffff);
+}
+/* Disabled: Analyze video before a walkthrough is on the screen. It keeps its
+   colour — the owner's rule — and reads as unavailable through opacity, not by
+   being repainted grey. */
+.jf-mobile-video-estimator .mve-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.jf-mobile-video-estimator .mve-btn:disabled:active {
+  transform: none;
+  box-shadow: none;
+}
+/* Some engines still match :active on a disabled control, which would repaint
+   it as though the press had registered. The fill is pinned back. */
+.jf-mobile-video-estimator .mve-btn-primary:disabled:active { background: var(--blueprint); }
+.jf-mobile-video-estimator .mve-btn-ghost:disabled:active { background: var(--sheet); }
+.jf-mobile-video-estimator .mve-btn-danger:disabled:active { background: var(--danger-soft); }
+@media (hover: hover) {
+  .jf-mobile-video-estimator .mve-btn:hover:not(:disabled) {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  .jf-mobile-video-estimator .mve-btn-primary:hover:not(:disabled) { background: var(--blueprint-dark); }
+  .jf-mobile-video-estimator .mve-btn-ghost:hover:not(:disabled) { background: var(--paper-deep); }
+  .jf-mobile-video-estimator .mve-btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 14%, #ffffff);
+  }
+  .jf-mobile-video-estimator .mve-btn:hover:not(:disabled) .mve-ic { transform: scale(1.12); }
+  .jf-mobile-video-estimator .mve-play:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 7px 7px 0 rgba(242, 240, 235, 0.22);
+  }
+  .jf-mobile-video-estimator .mve-remove:hover { color: var(--paper); }
+}
+/* Donor's Motion System rule for button icons. */
+.jf-mobile-video-estimator .mve-btn .mve-ic {
+  transition: transform 0.18s var(--ease-out);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE ACTION BAR — thumb zone
+   The desktop puts its primary inside the block that produced it: "Analyze
+   video" in the ticket's foot, "Convert to proposal" in the result card's bar.
+   Both scroll away on a phone — the ticket foot is ~700px down the intake and
+   the card bar is at the bottom of a four-screen sheet — so the step's ONE
+   primary lives here instead, always under the thumb, and swaps with the step.
+
+   It is a grid ROW of the shell, not `position: sticky` inside the scroller: a
+   row is deterministic at every viewport, cannot be outrun by an overscroll,
+   and reserves its own space so the last card is never covered.
+
+   The progress line comes with it. On desktop it sits directly above the
+   Analyze button and reports the four stages; keeping that adjacency is what
+   makes the wait read as caused by the press, so it moves into the bar rather
+   than staying behind in a card the user has scrolled past.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-video-estimator .mve-bar {
+  z-index: 25;
+  padding: 12px var(--pad-x) calc(12px + var(--safe-b));
+  background: var(--paper);
+  border-top: var(--border);
+  /* Hard offset, no blur — cast upward, because the bar's edge faces up. */
+  box-shadow: 0 -3px 0 var(--shadow);
+}
+.jf-mobile-video-estimator .mve-bar-in {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.jf-mobile-video-estimator .mve-prog {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blueprint);
+}
+.jf-mobile-video-estimator .mve-prog-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: var(--blueprint);
+  animation: jf-mve-blink 1s steps(1) infinite;
+}
+/* THE FAILURE LINE — a real flow can fail, so the bar has to be able to say so.
+   It rides with the progress line rather than living in the card that produced
+   it, for the same reason the progress line does: the press and its outcome
+   have to be adjacent, and on a phone the card has been scrolled past. The
+   left rule is heavier so it reads as an alert bar in peripheral vision.
+   The bar shows this line in BOTH steps, so a refine that failed on the result
+   sheet has to be dismissible from here — Start over would take the estimate
+   with it. The × is a full 44px target inside the plate's own right padding. */
+.jf-mobile-video-estimator .mve-err {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  padding: 4px 4px 4px 12px;
+  border: 1.5px solid var(--danger);
+  border-left-width: 5px;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-video-estimator .mve-err > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 0;
+}
+.jf-mobile-video-estimator .mve-err-x {
+  flex: 0 0 var(--tap);
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  color: var(--danger);
+}
+.jf-mobile-video-estimator .mve-err-x .mve-ic { width: 14px; height: 14px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE QUESTIONS — a BOTTOM SHEET, not a dialog
+   When the reading says the clip is thin it asks before anything is priced.
+   The desktop puts that in a centred dialog; CLAUDE.md puts bottom sheets ahead
+   of modal dialogs on a phone, and the argument is concrete here: the sheet
+   rises from the edge the thumb is already at, the settle controls land in the
+   thumb zone, and a keyboard opening under a text answer pushes the sheet up
+   instead of cropping a centred plate's foot off both ends.
+
+   It renders INSIDE the page root (see mobile-clarify-sheet.tsx), so every rule
+   below still carries the root class; `position: fixed` escapes to the viewport
+   because nothing above it declares a transform. Hand-rolled — no Radix, no
+   portal, no shared modal primitive.
+
+   z-index sits above the thumb-zone bar (25) and the root itself (20). The
+   shared nav's drawer is not a concern: it cannot be open at the same time,
+   because this sheet only exists while a pricing call is parked on it.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-video-estimator .mve-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(10, 10, 10, 0.55);
+  animation: jf-mve-scrim-in 190ms var(--ease-out) both;
+}
+.jf-mobile-video-estimator .mve-sheet-scrim[data-exit="1"] {
+  animation: jf-mve-scrim-out 200ms linear forwards;
+}
+.jf-mobile-video-estimator .mve-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 88dvh;
+  background: var(--sheet);
+  border: var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  animation: jf-mve-sheet-in 240ms var(--ease-out) both;
+}
+.jf-mobile-video-estimator .mve-sheet-scrim[data-exit="1"] .mve-sheet {
+  animation: jf-mve-sheet-out 200ms var(--ease) forwards;
+}
+.jf-mobile-video-estimator .mve-sheet:focus { outline: none; }
+/* The grab bar. Drawn in ink, not the usual grey pill — this page has no grey. */
+.jf-mobile-video-estimator .mve-sheet-grip {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 3px;
+  margin: 9px auto 0;
+  background: var(--ink);
+  opacity: 0.28;
+}
+.jf-mobile-video-estimator .mve-sheet-head {
+  flex: 0 0 auto;
+  padding: 14px var(--card-pad) 16px;
+  border-bottom: var(--border-thin);
+}
+.jf-mobile-video-estimator .mve-sheet-kick {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-video-estimator .mve-sheet-h {
+  margin-top: 7px;
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+.jf-mobile-video-estimator .mve-sheet-sub {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.jf-mobile-video-estimator .mve-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 0 var(--card-pad);
+}
+.jf-mobile-video-estimator .mve-q {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px dashed var(--dash);
+}
+.jf-mobile-video-estimator .mve-q:last-child { border-bottom: none; }
+.jf-mobile-video-estimator .mve-q-n {
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--muted-faint);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-video-estimator .mve-q-t {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+/* THE OPTION CHIPS. The desktop's are 34px tall; on a phone every one of them
+   is a tap target, so they take the page's own 44px floor. They wrap. */
+.jf-mobile-video-estimator .mve-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.jf-mobile-video-estimator .mve-opt {
+  min-height: var(--tap);
+  padding: 0 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease),
+    background 0.12s var(--ease);
+}
+.jf-mobile-video-estimator .mve-opt[data-on="1"] {
+  background: var(--blueprint);
+  border-color: var(--blueprint);
+  color: #fff;
+}
+.jf-mobile-video-estimator .mve-opt--other { border-style: dashed; color: var(--muted); }
+.jf-mobile-video-estimator .mve-opt--other[data-on="1"] {
+  border-style: solid;
+  color: #fff;
+}
+.jf-mobile-video-estimator .mve-opt:active {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+@media (hover: hover) {
+  .jf-mobile-video-estimator .mve-opt:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+}
+.jf-mobile-video-estimator .mve-numrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.jf-mobile-video-estimator .mve-q-in {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  min-height: var(--tap);
+  padding: 10px 13px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  /* 16px — the iOS zoom floor, as everywhere else on this page. */
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+  resize: vertical;
+}
+.jf-mobile-video-estimator .mve-q-in:focus {
+  outline: none;
+  border-color: var(--blueprint);
+}
+.jf-mobile-video-estimator .mve-q-num { width: 100%; max-width: 170px; }
+.jf-mobile-video-estimator .mve-q-unit {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* THE FOOT — stacked, affirmative first, both full width and both above the
+   home indicator. The desktop puts these side by side; "Price anyway" and "Use
+   answers" together do not fit a 320px measure without dropping under the tap
+   floor, and this is the page's own review-gate call anyway. */
+.jf-mobile-video-estimator .mve-sheet-foot {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 10px;
+  padding: 14px var(--card-pad) calc(14px + var(--safe-b));
+  border-top: var(--border-thin);
+  background: var(--paper-deep);
+}
+.jf-mobile-video-estimator .mve-sheet-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes jf-mve-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes jf-mve-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes jf-mve-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes jf-mve-sheet-out {
+  from { transform: none; }
+  to { transform: translateY(100%); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOTION — Balanced, at the donor's numbers.
+   Reveal on load / on scroll (opacity + 14px rise, 420ms, 60ms stagger on the
+   initial screen, 200ms delay and a scroll-speed-adaptive duration below the
+   fold), the blinking progress dot, and the press stamp.
+
+   There is NO MutationObserver anywhere in this page. The ledger is rebuilt on
+   every confirmed refinement, and an observer-driven stagger would replay the
+   whole list's entrance each time — the trap the page-styler skill calls the
+   most expensive one in this codebase.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-video-estimator .mve-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.jf-mobile-video-estimator .mve-rv-in { opacity: 1; transform: none; }
+
+@keyframes jf-mve-blink { 50% { opacity: 0.2; } }
+
+@keyframes jf-mve-press {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.jf-mobile-video-estimator .mve-pressed { animation: jf-mve-press 0.18s var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-video-estimator *,
+  .jf-mobile-video-estimator *::before,
+  .jf-mobile-video-estimator *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .jf-mobile-video-estimator .mve-rv { opacity: 1; transform: none; }
+  .jf-mobile-video-estimator .mve-prog-dot { animation: none; }
+}
+
+/* ============================================================================
+   DEVIATIONS FROM THE DONOR — the complete list, with reasons.
+
+   1. TYPE SIZE ON THE THREE TEXT FIELDS. `.mve-c-in` (Project / Address /
+      Notes) is 16px where the donor says 15.5px, and `.mve-refine-in` is 16px
+      where the donor says 13.5px. Below 16px iOS Safari zooms the viewport on
+      focus and the whole composition scales itself on a tap into a field.
+      Nothing else on the page moved.
+   2. `.mve-refine-in` HAS A FRAME. The donor markup labels it `vt-f-in` and
+      never defines that class, so the control renders as a bare OS input. It
+      is drawn here in the same 1.5px ink / 2px radius the neighbouring tiles
+      use. Argued at its site.
+   3. THE H1 IS FLUID (26 → 40px) where the donor is a flat 46px, and the
+      button type is fluid (11 → 12px) where the donor is a flat 12px. Both are
+      the fleet's handheld scale rule; 46px "VIDEO ESTIMATOR" does not set on a
+      320px sheet and 12px "Convert to proposal" does not fit a 296px bar.
+   4. FOUR RE-CUTS OF LAYOUT, each argued at its block: the intake's two
+      columns become two blocks; the frame strip goes 4-up → 2×2; the masthead
+      row becomes a stack with the confidence stamp at its foot; the refine row
+      and the review gate's two buttons stack.
+   5. TWO CONTROLS MOVE TO THE THUMB ZONE — the step's primary and, with it,
+      the progress line. Argued at THE ACTION BAR.
+   6. THE LAST STAMP CELL DROPS ITS BOTTOM RULE, because the foot that used to
+      cover it has moved. Argued at THE JOB TICKET.
+   7. `:active` MIRRORS `:hover` on every lift and the hover half is guarded by
+      `hover: hover`, because mobile Safari's hover is sticky.
+   8. `--sheet: #ffffff` for cards and ghost buttons, where the donor says
+      `var(--paper)` — the app-wide plating decision of 2026-08-17 that the
+      desktop port also carries. Stated once as a token here.
+   9. THE LOADED SCREEN IS IN NORMAL FLOW, where the donor fills it absolutely.
+      The clip is real now and its <video> preview sits between the file line
+      and the frame strip; absolutely filled, that overflows a 340px screen at
+      320px wide and is clipped away. Argued at LOADED STATE.
+  10. FOUR THINGS THE DONOR NEVER HAD, because nothing behind it was real:
+      the failure line in the action bar, the confidence stamp's amber and red
+      faces, the measurement grounding tag, and the questions BOTTOM SHEET
+      (the desktop asks the same questions in a centred dialog). Each is argued
+      at its own block, in this page's own language.
+   ========================================================================= */

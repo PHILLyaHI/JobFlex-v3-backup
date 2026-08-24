@@ -1,0 +1,144 @@
+/* ============================================================
+   ADMIN · USERS & SUBSCRIPTIONS — BLUEPRINT
+   /admin/users
+
+   Page-specific layout only: the subscriptions strip and the users
+   table's column plan. Controls, the sheet, fields and badges come from
+   ./admin-shared.module.css. Scoped `:global(.jf-blueprint .content) .cls`
+   ⇒ (0,3,0) — see the header of that file for why the number matters.
+   ============================================================ */
+
+/* The page head's right side holds the search, not a button — a database
+   view's primary action is finding the row. */
+:global(.jf-blueprint .content) .au-head-actions { display: flex; gap: 12px; flex-shrink: 0; padding-bottom: 4px; min-width: min(400px, 100%); }
+
+/* ============================================================
+   SUBSCRIPTIONS STRIP  (donor .kpi-grid / .kpi, restated so the 5-cell
+   plan and the plan ribbon don't fight the shell's 4-column rules)
+   ============================================================ */
+:global(.jf-blueprint .content) .au-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border: var(--border); border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+:global(.jf-blueprint .content) .au-kpi {
+  padding: 20px 24px 22px;
+  border-right: 1.5px solid var(--ink);
+  transition: background 0.12s;
+  min-width: 0;
+}
+:global(.jf-blueprint .content) .au-kpi:nth-child(5) { border-right: none; }
+:global(.jf-blueprint .content) .au-kpi:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .au-kpi-l {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .au-kpi-v {
+  font-size: 38px; font-weight: 900; letter-spacing: -0.005em; line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+:global(.jf-blueprint .content) .au-kpi-v.accent { color: var(--blueprint); }
+:global(.jf-blueprint .content) .au-kpi-v.warn { color: var(--warning); }
+:global(.jf-blueprint .content) .au-kpi-v.danger { color: var(--danger); }
+/* Plan ribbon — one annotation row under the numerals, mono like a drawing's
+   title block. Spans the strip; the top rule is the cells' bottom edge. */
+:global(.jf-blueprint .content) .au-ribbon {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
+  padding: 10px 24px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+:global(.jf-blueprint .content) .au-ribbon-k { color: var(--muted-light); }
+:global(.jf-blueprint .content) .au-ribbon b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 6px; }
+
+/* Stripe import: the button sits on the ribbon and reports back beside itself,
+   directly under the numerals it corrects. */
+:global(.jf-blueprint .content) .au-sync { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 12px; min-width: 0; }
+:global(.jf-blueprint .content) .au-sync-r { min-width: 0; font-variant-numeric: tabular-nums; color: var(--ink); overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .au-sync-r.bad { color: var(--danger); text-transform: none; letter-spacing: 0.02em; }
+
+/* What the numerals are counted over, and which source answered. A second
+   title-block line under the ribbon; cells separated by a rule, not a bullet. */
+:global(.jf-blueprint .content) .au-scope {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px;
+  padding: 8px 24px 9px;
+  border-top: 1px solid var(--hair);
+  background: var(--paper);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted-light);
+  min-width: 0;
+}
+:global(.jf-blueprint .content) .au-scope > span { min-width: 0; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .au-scope > span + span::before {
+  content: "/"; margin-right: 14px; color: var(--muted-faint);
+}
+:global(.jf-blueprint .content) .au-scope-live { color: var(--success); }
+:global(.jf-blueprint .content) .au-scope-bad { color: var(--danger); }
+:global(.jf-blueprint .content) .au-scope--err { color: var(--danger); text-transform: none; letter-spacing: 0.02em; }
+
+/* ============================================================
+   USERS TABLE — column plan (table-layout: fixed on .tbl)
+   ============================================================ */
+:global(.jf-blueprint .content) .au-c-user { width: 28%; }
+:global(.jf-blueprint .content) .au-c-org { width: 18%; }
+:global(.jf-blueprint .content) .au-c-roles { width: 15%; }
+:global(.jf-blueprint .content) .au-c-plan { width: 15%; }
+:global(.jf-blueprint .content) .au-c-admin { width: 10%; }
+:global(.jf-blueprint .content) .au-c-created { width: 14%; }
+
+/* NOTE: a page module must never mention a SHARED class (.btn, .t-title,
+   .meta …) in a selector — doing so mints a page-local hash for that name and
+   cx() would resolve to it instead of the shared rule. Page-owned names only. */
+:global(.jf-blueprint .content) .au-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+:global(.jf-blueprint .content) .au-name-t { flex: 0 1 auto; min-width: 0; }
+:global(.jf-blueprint .content) .au-plan { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+:global(.jf-blueprint .content) .au-plan-name { font-size: 13px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Stripe answered for this org but the platform's own row has nothing yet —
+   the state the Sync button exists to close. */
+:global(.jf-blueprint .content) .au-plan-src { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light); }
+:global(.jf-blueprint .content) .au-dash { font-family: var(--font-mono); font-size: 12px; color: var(--muted-faint); }
+
+/* Delete prompt: field + button on one baseline. `end` aligns the button's
+   bottom to the input's bottom — which only holds because the field carries no
+   hint under the input and the button wears .btn-field (38px, the .in axis). */
+:global(.jf-blueprint .content) .au-del-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+:global(.jf-blueprint .content) .au-del-row > button { white-space: nowrap; }
+
+/* ============================================================
+   BREAKPOINTS — effective width (the shell zooms; the strip collapses
+   before the table does)
+   ============================================================ */
+@media (max-width: 1280px) {
+  :global(.jf-blueprint .content) .au-kpis { grid-template-columns: repeat(3, 1fr); }
+  :global(.jf-blueprint .content) .au-kpi:nth-child(5) { border-right: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content) .au-kpi:nth-child(3n) { border-right: none; }
+  :global(.jf-blueprint .content) .au-kpi:nth-child(-n+3) { border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content) .au-kpi:nth-child(5) { grid-column: 2 / 4; }
+  :global(.jf-blueprint .content) .au-c-created { display: none; }
+}
+
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .au-head-actions { width: 100%; min-width: 0; }
+  :global(.jf-blueprint .content) .au-kpis { grid-template-columns: repeat(2, 1fr); }
+  :global(.jf-blueprint .content) .au-kpi { padding: 12px 14px 13px; border-right: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content) .au-kpi:nth-child(even) { border-right: none; }
+  :global(.jf-blueprint .content) .au-kpi:nth-child(5) { grid-column: 1 / -1; border-right: none; }
+  :global(.jf-blueprint .content) .au-kpi-l { margin-bottom: 8px; }
+  :global(.jf-blueprint .content) .au-kpi-v { font-size: 22px; }
+  :global(.jf-blueprint .content) .au-ribbon { padding: 10px 14px; }
+  :global(.jf-blueprint .content) .au-scope { padding: 8px 14px 9px; }
+  :global(.jf-blueprint .content) .au-sync { margin-left: 0; width: 100%; justify-content: space-between; }
+  :global(.jf-blueprint .content) .au-c-created { display: block; }
+  :global(.jf-blueprint .content) .au-del-row { grid-template-columns: 1fr; align-items: stretch; }
+}

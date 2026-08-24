@@ -23,8 +23,16 @@ import {
   deleteApplicant,
   updateApplicantStatus,
 } from "@/actions/applicants";
-import { setTradeNetworkOptIn, type DiscoverProfileDTO } from "@/actions/tradeServices";
-import type { TradeNetworkProfileDTO } from "@/app/(mobile)/trade-services/trade-data";
+import {
+  contactTalentProfile,
+  createTradeJob,
+  getMyTradeJobs,
+  setTradeJobStatus,
+  type DiscoverProfileDTO,
+} from "@/actions/tradeServices";
+import type { OwnPost } from "@/app/(mobile)/trade-services/trade-data";
+import { TRADE_TYPES } from "@/lib/tradeTypes";
+import { attachPlacesSuggest } from "@/components/v3/blueprint-shell/places-suggest";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
   HK_COLUMNS,
@@ -41,8 +49,8 @@ export type HireContentOptions = {
    *  nothing to pass (no session to read from) gets the empty state — never a
    *  fixture that looks like data. */
   applicants?: Applicant[];
-  /** The caller's TradeNetworkProfile — the "Publish your profile" panel. */
-  profile?: TradeNetworkProfileDTO;
+  /** The caller's posted TradeJobs — the "Your job posts" card. */
+  myPosts?: OwnPost[];
   /** The hub's real activity numbers, computed in page.tsx. */
   tallies?: HireTallies;
   /** Other orgs' opted-in profiles — the "Discover talent" panel. */
@@ -151,11 +159,11 @@ export function initHireContent(
   // patches this array from the result, so a reload reads the same rows back.
   let applicantsData: Applicant[] = (options.applicants ?? []).map((a) => ({ ...a }));
 
-  /** The caller's open-for-work profile — the panel edits this copy and the
-   *  save handler swaps in whatever the server actually stored. */
-  let profileData: TradeNetworkProfileDTO = options.profile
-    ? { ...options.profile, tradeTypes: [...options.profile.tradeTypes], specialties: [...options.profile.specialties] }
-    : { optIn: false, tradeTypes: [], specialties: [], serviceArea: null };
+  /** The caller's posted jobs — optimistic copies; every status change goes
+   *  through setTradeJobStatus first and rolls back if the server refuses. */
+  let myPostsData: OwnPost[] = (options.myPosts ?? []).map((j) => ({ ...j }));
+  /** Talent rows already contacted this visit — one send per profile. */
+  const contacted = new Set<string>();
   const talentData: DiscoverProfileDTO[] = options.talent ?? [];
   const tallies: HireTallies = options.tallies ?? {
     hired: 0, openPosts: 0, totalPosts: 0, interestReceived: 0, interestSent: 0,
@@ -177,10 +185,7 @@ export function initHireContent(
     saving: false,
     /** Two-tap arming for the destructive actions in the sheet. */
     armed: null as string | null,
-    /** The profile panel's listing toggle — local until Save writes it. */
-    profOptIn: false,
   };
-  hire.profOptIn = profileData.optIn;
 
   function monogram(name: string) {
     const p = name.replace(/[^A-Za-z. ]/g, "").split(" ").filter(Boolean);
@@ -341,36 +346,117 @@ export function initHireContent(
     }
   }
 
-  // ---- "Publish your profile" — the caller's TradeNetworkProfile ----
-  function profFlag() {
-    const flag = $("#profFlag");
-    if (!flag) return;
-    flag.textContent = profileData.optIn ? "Open for work" : "Not listed";
-    flag.classList.toggle("pstatus--accepted", profileData.optIn);
+  // ---- "Post a job" — broadcast work to the trade network ----
+  // The panel this replaced was the open-for-work LISTING form (owner call,
+  // 2026-08-23: "remove the listing thing", "say Post a Job"). Listing
+  // management still lives at /trade-services and on the handheld hire sheet.
+  const RATE_UNITS = ["per hour", "per day", "per job"];
+  function emptyPost() {
+    return { title: "", trade: "", specialties: "", area: "", rateMin: "", rateMax: "", rateUnit: "per hour", details: "" };
+  }
+  let post = emptyPost();
+  let disposePlaces: (() => void) | null = null;
+  disposers.push(function () { if (disposePlaces) disposePlaces(); });
+
+  /** "$45–60 / hour" — the TradeJob.budget string this post carries. */
+  function budgetString(): string | null {
+    const a = post.rateMin.trim().replace(/^\$+/, "");
+    const b = post.rateMax.trim().replace(/^\$+/, "");
+    if (!a && !b) return null;
+    const range = a && b ? "$" + a + "\u2013" + b : "$" + (a || b);
+    return range + " / " + post.rateUnit.replace("per ", "");
   }
 
-  function renderProfile() {
+  function renderPost() {
     const box = $("#profBox");
     if (!box) return;
-    profFlag();
-    hire.profOptIn = profileData.optIn;
+    const tradeOpts = TRADE_TYPES.map(function (x) {
+      return '<option value="' + x + '"' + (post.trade === x ? " selected" : "") + '>' + x + "</option>";
+    }).join("");
     box.innerHTML =
-        '<div class="sf"><span class="sf-lbl">Listing</span><div class="pipe" id="profOpt">' +
-          '<button class="pipe-btn' + (profileData.optIn ? ' on' : '') + '" type="button" data-opt="1">Open for work</button>' +
-          '<button class="pipe-btn' + (profileData.optIn ? '' : ' on') + '" type="button" data-opt="0">Not listed</button>' +
-        '</div>' +
-        '<div class="sf-hint">Listed profiles appear in other companies’ talent directories and receive matching trade jobs.</div></div>' +
-        '<label class="sf"><span class="sf-lbl">Trades</span>' +
-          '<input class="sf-in" data-p="trades" value="' + esc(profileData.tradeTypes.join(", ")) + '" placeholder="Roofing, Fencing, General contracting">' +
-          '<div class="sf-hint">Comma-separated.</div></label>' +
+      '<label class="sf"><span class="sf-lbl">Title</span>' +
+        '<input class="sf-in" data-j="title" value="' + esc(post.title) + '" placeholder="e.g. Cedar fence install \u2014 120 ft"></label>' +
+      '<div class="sf-row">' +
+        '<label class="sf"><span class="sf-lbl">Trade</span>' +
+          '<span class="bp-sel"><select class="bp-sel-in" data-j="trade"' + (post.trade ? "" : ' data-empty="1"') + '>' +
+            '<option value="" disabled' + (post.trade ? "" : " selected") + '>Pick a trade</option>' + tradeOpts +
+          "</select></span></label>" +
         '<label class="sf"><span class="sf-lbl">Specialties</span>' +
-          '<input class="sf-in" data-p="specialties" value="' + esc(profileData.specialties.join(", ")) + '" placeholder="Metal roofs, cedar fences, decks">' +
-          '<div class="sf-hint">Comma-separated.</div></label>' +
-        '<label class="sf"><span class="sf-lbl">Service area</span>' +
-          '<input class="sf-in" data-p="area" value="' + esc(profileData.serviceArea || "") + '" placeholder="King County, WA"></label>' +
-        '<div class="mf-err is-hidden" id="profErr" role="alert"></div>' +
-        '<div class="sf-act"><button class="btn btn-primary btn--sm" type="button" data-act="save-profile">' +
-          '<svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Save profile</span></button></div>';
+          '<input class="sf-in" data-j="specialties" value="' + esc(post.specialties) + '" placeholder="Metal roofs, cedar fences, decks"></label>' +
+      "</div>" +
+      '<label class="sf"><span class="sf-lbl">Service area</span>' +
+        '<input class="sf-in" id="postArea" data-j="area" value="' + esc(post.area) + '" placeholder="King County, WA" autocomplete="off"></label>' +
+      '<div class="sf"><span class="sf-lbl">Rate</span><div class="sf-rate">' +
+        '<input class="sf-in" data-j="rateMin" inputmode="decimal" value="' + esc(post.rateMin) + '" placeholder="45">' +
+        '<span class="sf-rate-dash">\u2013</span>' +
+        '<input class="sf-in" data-j="rateMax" inputmode="decimal" value="' + esc(post.rateMax) + '" placeholder="60">' +
+        '<span class="bp-sel sf-rate-unit"><select class="bp-sel-in" data-j="rateUnit">' +
+          RATE_UNITS.map(function (u) { return '<option value="' + u + '"' + (post.rateUnit === u ? " selected" : "") + '>' + u + "</option>"; }).join("") +
+        "</select></span>" +
+      "</div></div>" +
+      '<label class="sf"><span class="sf-lbl">Details</span>' +
+        '<textarea class="sf-area" data-j="details" placeholder="Scope, timing, access \u2014 enough for a contractor to say yes.">' + esc(post.details) + "</textarea></label>" +
+      '<div class="mf-err is-hidden" id="profErr" role="alert"></div>' +
+      '<div class="pok is-hidden" id="postOk" role="status"></div>' +
+      '<div class="sf-act"><button class="btn btn-primary btn--sm" type="button" data-act="post-job">' +
+        '<svg class="ic"><use href="#i-send"/></svg><span data-save-lbl>Post a job</span></button></div>';
+
+    // Typed values live in `post`, so a re-render never loses a keystroke.
+    box.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-j]").forEach(function (el) {
+      el.addEventListener("input", function () {
+        const k = el.dataset.j || "";
+        (post as unknown as Record<string, string>)[k] = el.value;
+        if (k === "trade") el.removeAttribute("data-empty");
+      });
+    });
+    // Google Places on the area field — with no browser key it stays a plain
+    // text input and free typing still posts.
+    if (disposePlaces) { disposePlaces(); disposePlaces = null; }
+    const area = box.querySelector<HTMLInputElement>("#postArea");
+    if (area) {
+      disposePlaces = attachPlacesSuggest(area, {
+        cityOnly: true,
+        onPick: function (place) {
+          post.area = place.typed ? place.address : place.formatted || place.address;
+          if (!place.typed) area.value = post.area;
+        },
+      });
+    }
+  }
+
+  function agoText(h: number) {
+    return h < 1 ? "just now" : h < 24 ? h + "h ago" : Math.floor(h / 24) + "d ago";
+  }
+
+  // ---- "Your job posts" — the caller's broadcasts, with their responses ----
+  function renderMyPosts() {
+    const box = $("#myPostsBox");
+    if (!box) return;
+    if (!myPostsData.length) {
+      box.innerHTML =
+        '<div class="pempty" style="margin:0"><b>No job posts yet</b><br>' +
+        "Post a job above and it lands here with its responses.</div>";
+      return;
+    }
+    box.innerHTML =
+      '<ul class="mypost-list">' +
+      myPostsData.map(function (j) {
+        const chip =
+          j.status === "OPEN" ? '<span class="pstatus pstatus--accepted">Open</span>'
+          : j.status === "FILLED" ? '<span class="pstatus pstatus--viewed">Filled</span>'
+          : '<span class="pstatus">Cancelled</span>';
+        const meta = [j.tradeType, j.location, j.budget, agoText(j.hoursAgo)].filter(Boolean).join(" \u00b7 ");
+        const acts = j.status === "OPEN"
+          ? '<button class="btn btn-ghost btn--sm" type="button" data-post-act="FILLED" data-id="' + esc(j.id) + '">Mark filled</button>' +
+            '<button class="btn btn-ghost btn--sm mypost-cancel" type="button" data-post-act="CANCELLED" data-id="' + esc(j.id) + '">Cancel</button>'
+          : "";
+        return '<li class="mypost-row"><span class="mypost-main">' +
+          '<span class="mypost-t">' + esc(j.title) + "</span>" +
+          '<span class="mypost-m">' + esc(meta) + "</span>" +
+          '<span class="mypost-m">' + j.broadcastCount + " notified \u00b7 " + j.interestedCount + " interested</span>" +
+          '</span><span class="mypost-side">' + chip + acts + "</span></li>";
+      }).join("") +
+      "</ul>";
   }
 
   // ---- "Discover talent" — other orgs' opted-in profiles ----
@@ -400,12 +486,16 @@ export function initHireContent(
               : '') +
           '</span>' +
           (p.serviceArea ? '<span class="tal-area">' + esc(p.serviceArea) + '</span>' : '') +
+          (contacted.has(p.id)
+            ? '<button class="btn btn-ghost btn--sm tal-contact" type="button" disabled>Sent \u2713</button>'
+            : '<button class="btn btn-ghost btn--sm tal-contact" type="button" data-contact="' + esc(p.id) + '">' +
+              '<svg class="ic"><use href="#i-send"/></svg>I\u2019m interested</button>') +
         '</li>';
       }).join('') +
       '</ul>';
   }
 
-  function renderHire() { renderBoard(); renderHub(); renderProfile(); renderTalent(); }
+  function renderHire() { renderBoard(); renderHub(); renderPost(); renderMyPosts(); renderTalent(); }
 
   // ================= PANELS =================
   function openSheet(title: string, html: string) {
@@ -637,11 +727,15 @@ export function initHireContent(
     if (goto) { switchTab(goto.dataset.goto ?? ""); return; }
     const link = target.closest<HTMLElement>("[data-href]");
     if (link) { goRoute(link.dataset.href ?? "/dashboard/hire"); return; }
-    const opt = target.closest<HTMLElement>("[data-opt]");
-    if (opt) {
+    const postAct = target.closest<HTMLElement>("[data-post-act]");
+    if (postAct) {
       if (hire.saving) return;
-      hire.profOptIn = opt.dataset.opt === "1";
-      $$("#profOpt .pipe-btn").forEach(function (b) { b.classList.toggle("on", b === opt); });
+      void changePostStatus(postAct.dataset.id || "", postAct.dataset.postAct === "FILLED" ? "FILLED" : "CANCELLED");
+      return;
+    }
+    const contactBtn = target.closest<HTMLButtonElement>("[data-contact]");
+    if (contactBtn) {
+      void contactTalent(contactBtn);
       return;
     }
     const st = target.closest<HTMLElement>("[data-st]");
@@ -664,7 +758,7 @@ export function initHireContent(
     if (hire.saving) return;
 
     if (kind === "add") { openAddForm(); return; }
-    if (kind === "save-profile") { void saveProfile(act); return; }
+    if (kind === "post-job") { void postJob(act); return; }
     if (kind === "save-applicant") { void saveApplicant(act, val("notes")); return; }
     if (kind === "convert") { void convertApplicant(act); return; }
     if (kind === "delete-applicant") { void removeApplicant(act); return; }
@@ -676,38 +770,89 @@ export function initHireContent(
     return raw.split(",").map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 40);
   }
 
-  /** "Publish your profile" — one write (`setTradeNetworkOptIn` upserts the
-   *  whole record), and the local copy is replaced by what the server actually
-   *  stored, so the panel re-reads exactly like a reload would. */
-  async function saveProfile(btn: HTMLElement) {
-    const read = function (f: string) {
-      const el = root.querySelector<HTMLInputElement>('[data-p="' + f + '"]');
-      return el ? el.value.trim() : "";
-    };
+  /** "Post a job" — createTradeJob broadcasts to matching opted-in profiles,
+   *  then the "Your job posts" card refreshes from the server. */
+  async function postJob(btn: HTMLElement) {
     const errBox = $("#profErr");
     const setErr = function (msg: string | null) {
       if (!errBox) return;
       errBox.textContent = msg || "";
       errBox.classList.toggle("is-hidden", !msg);
     };
+    $("#postOk")?.classList.add("is-hidden");
+    const title = post.title.trim();
+    const details = post.details.trim();
+    if (title.length < 5) { setErr("Give the post a short title (5+ characters)."); return; }
+    if (!post.trade) { setErr("Pick a trade so the right contractors are notified."); return; }
+    if (details.length < 20) { setErr("Describe the work (20+ characters)."); return; }
     setErr(null);
-    setSaving(btn, true, "Saving…", "");
+    setSaving(btn, true, "Posting\u2026", "Post a job");
     try {
-      profileData = await setTradeNetworkOptIn({
-        optIn: hire.profOptIn,
-        tradeTypes: csv(read("trades")),
-        specialties: csv(read("specialties")),
-        serviceArea: read("area") || null,
+      const res = await createTradeJob({
+        title,
+        description: details,
+        tradeType: post.trade,
+        specialties: csv(post.specialties),
+        location: post.area.trim() || null,
+        budget: budgetString(),
+        timeWindow: null,
+        urgency: null,
       });
-      setSaving(btn, false, "", "Saved");
-      profFlag();
-      later(function () {
-        const lbl = btn.querySelector<HTMLElement>("[data-save-lbl]");
-        if (lbl) lbl.textContent = "Save profile";
-      }, 1600);
+      post = emptyPost();
+      hire.saving = false;
+      renderPost();
+      const ok = $("#postOk");
+      if (ok) {
+        ok.textContent =
+          "Posted \u2014 broadcast to " + res.broadcastCount +
+          " matching contractor" + (res.broadcastCount === 1 ? "" : "s") + ".";
+        ok.classList.remove("is-hidden");
+      }
+      try { myPostsData = await getMyTradeJobs(); } catch { /* list refresh is best-effort */ }
+      renderMyPosts();
     } catch (err) {
-      setSaving(btn, false, "", "Save profile");
-      setErr(actionError(err));
+      setSaving(btn, false, "Posting\u2026", "Post a job");
+      const b = $("#profErr");
+      if (b) { b.textContent = actionError(err); b.classList.remove("is-hidden"); }
+    }
+  }
+
+  /** Mark filled / cancel — optimistic, rolled back if the server refuses. */
+  async function changePostStatus(id: string, status: "FILLED" | "CANCELLED") {
+    const row = myPostsData.find(function (j) { return j.id === id; });
+    if (!row) return;
+    const prev = row.status;
+    row.status = status;
+    renderMyPosts();
+    const errBox = $("#myPostsErr");
+    if (errBox) errBox.classList.add("is-hidden");
+    try {
+      await setTradeJobStatus(id, status);
+    } catch (err) {
+      row.status = prev;
+      renderMyPosts();
+      if (errBox) { errBox.textContent = actionError(err); errBox.classList.remove("is-hidden"); }
+    }
+  }
+
+  /** "I'm interested" on a talent row — the listed contractor gets an email
+   *  and a bell notice naming this company. One send per profile per visit. */
+  async function contactTalent(btn: HTMLButtonElement) {
+    const id = btn.dataset.contact || "";
+    if (!id || contacted.has(id)) return;
+    btn.disabled = true;
+    const was = btn.innerHTML;
+    btn.textContent = "Sending\u2026";
+    const errBox = $("#talErr");
+    if (errBox) errBox.classList.add("is-hidden");
+    try {
+      await contactTalentProfile(id);
+      contacted.add(id);
+      btn.textContent = "Sent \u2713";
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerHTML = was;
+      if (errBox) { errBox.textContent = actionError(err); errBox.classList.remove("is-hidden"); }
     }
   }
 

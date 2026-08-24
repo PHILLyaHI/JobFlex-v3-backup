@@ -200,6 +200,9 @@ async function countUsage(
       return db.workerProfile.count({
         where: { organizationId, inviteStatus: { not: "DECLINED" } },
       });
+    case "clients":
+      // Absolute — live client records; soft-deleted rows freed their slot.
+      return db.client.count({ where: { organizationId, deletedAt: null } });
     case "estimatorUses":
       return db.aiEstimate.count({ where: { organizationId, createdAt: since } });
     case "conversationsStarted":

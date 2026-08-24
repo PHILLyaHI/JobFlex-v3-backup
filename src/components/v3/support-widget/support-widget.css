@@ -1,0 +1,701 @@
+/* ============================================================
+   SUPPORT WIDGET — the Help control and its composer.
+
+   ONE LAUNCHER, AT EVERY WIDTH: `.jfsup-dock`, an icon button
+   the host's TOP BAR renders, wearing that bar's own classes.
+   Nothing floats — there is no width at which this file puts a
+   control in the bottom-right corner any more.
+
+   That corner cannot be held. On handheld the floating plate
+   covered the Smart Proposal wizard's only "Next" (.wfoot, z 30),
+   the dashboard toast's only dismiss (.toastX, z 70, no timeout)
+   and the manual builder's totals chevron (.barExpand, z 60);
+   dropping the plate to z-index 2 stopped that and then buried
+   the plate itself under FloatingCostsCard (z 40), which is
+   PERMANENT furniture on /dashboard/proposals/new and /[id] — so
+   above 860px, where the docked button used to be hidden, Help
+   was unreachable on both live proposal-editor routes. A top bar
+   is the one corner of the screen no page claims.
+
+   A PLAIN STYLESHEET, NOT A CSS MODULE, and it must not be
+   "tidied" into one. Same reasoning as estimators-global.css:
+   this component is mounted in FOUR shells — BlueprintShell,
+   MobileNav, the handheld dashboard and the classic (dashboard)
+   layout — so it can lean on none of them.
+
+   - No `.jf-blueprint` ancestor in any selector. That class only
+     exists on the desktop shell root; a handheld page has no such
+     wrapper and every rule here would have missed.
+   - No `.content` ancestor either: the widget is mounted OUTSIDE
+     `.layout` on purpose (SKILL.md responsiveness rule 6 — a new
+     node inside `.layout` takes a grid column on desktop and
+     shoves `.main` off screen).
+
+   TOKENS ARE READ, NEVER RE-DECLARED. Unlike the estimator picker
+   this file declares no palette of its own. Every colour comes
+   from the host it is mounted in, with the app-wide globals.css
+   `:root` value as the fallback:
+
+       var(--blueprint, var(--accent))   blueprint blue
+       var(--muted,     var(--ink-muted))
+       var(--danger,    var(--rose))
+       var(--font,      var(--font-sans))
+
+   `--paper` and `--ink` are declared by globals.css AND by both
+   shells, with the shells' handheld paper half a shade cooler —
+   reading them rather than restating them is what makes the
+   button belong to whichever surface it is sitting on.
+
+   SPECIFICITY — why every rule is `.jfsup .jfsup-x` and the root
+   is doubled `.jfsup.jfsup`. On desktop this renders inside the
+   always-on `.bp` modules, which reset controls at (0,1,1)
+   (`.bp :global(button)` — border: none, background: none) and
+   everything at (0,1,0) (`.bp :global(*)` — margins zeroed). A
+   flat `.jfsup-send` (0,1,0) loses to both, and the composer's
+   primary button would render as a borderless transparent word —
+   on desktop only, which is exactly the sort of defect a
+   handheld-only check survives. Two classes (0,2,0) outrank them.
+   The dock, which lives OUTSIDE `.jfsup` in the host's bar, is
+   trebled for the same reason one notch further — see its own
+   block.
+
+   Nothing here uses a bare element selector for the same reason:
+   `.jfsup textarea` is (0,1,1), a tie with the `.bp` button/svg
+   resets that source order would settle by accident.
+   ============================================================ */
+
+.jfsup,
+.jfsup *,
+.jfsup *::before,
+.jfsup *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.jfsup.jfsup {
+  /* AN ANCHOR, NOT A CONTROL. While the composer is closed NOTHING of this
+     widget is on screen: the root is an empty zero-size box and both its
+     children are `hidden`. It is pinned to the bottom-right because that is
+     where the COMPOSER stands — the corner belongs to the panel now, not to a
+     launcher, and the panel only occupies it while it is open. A closed root
+     that paints nothing and catches nothing needs no z-index of its own; the
+     value that used to be here existed to keep a floating plate out of every
+     overlay's way, and there is no plate. */
+  position: fixed;
+  right: 22px;
+  /* The safe-area inset is added, not substituted: on a notched phone in
+     portrait the home indicator eats the bottom 34px, and a panel edge pinned
+     to a flat 22px sits under it. */
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  font-family: var(--font, var(--font-sans));
+  color: var(--ink);
+  line-height: normal;
+}
+/* OPEN: 95. `src/app/layout.tsx` wraps the whole app in
+   `<div class="relative z-10">`, which is a stacking context, and every host
+   mounts this widget INSIDE it — so this number is only ever compared with the
+   page's own overlays (Sheet 40/50, MobileDrawer 40/50, BottomSheet 50,
+   LeadOfferPopup 60, FloatingCostsCard 40, the sticky topbar / tab bar 30, the
+   blueprint dropdown 40 and nav drawer 89/90), never with anything at the
+   document root. 95 clears all of them, which is the requirement: the composer
+   is a DIALOG, and wherever it is opened from it has to be the thing you are
+   looking at. Opened while a drawer was up it once rendered BEHIND it — an
+   aria-modal dialog the user could type into and not see.
+
+   It also clears `.mdl`, the blueprint pages' 120 dialog tier, without having
+   to outnumber it: `.mdl` lives inside `.main`, whose `isolation: isolate`
+   traps that whole subtree in one paint step, and this widget is mounted
+   OUTSIDE `.main`, as a positioned sibling of `.layout`. */
+.jfsup.jfsup--open {
+  z-index: 95;
+}
+
+/* ── THE LAUNCHER ─────────────────────────────────────────────
+   One icon button in the host's TOP BAR, at every width, drawn
+   almost entirely by that bar's own classes (`.tbarBtn`,
+   `icon-btn`, the classic bar's utilities). This block adds only
+   the three things the host cannot know about: a containing
+   block, a 44px touch floor, and the tooltip.
+
+   DISPLAY IS THE HOST'S. This file used to switch the button on
+   below 860px and off above it, because there were two launchers
+   and only one could be on screen at a time. There is one now, so
+   there is nothing to switch: all four hosts already give their
+   icon button a display (`flex` in the blueprint and the two
+   mobile bars, `inline-flex` from the classic bar's utilities)
+   and a rule here would only fight them.
+
+   Trebled selector, not doubled. The blueprint shells publish
+   `.bp :global(.icon-btn) { display: flex }` at (0,2,0); a
+   two-class rule would tie with it and the winner would be
+   whichever stylesheet the bundler happened to emit last. Three
+   classes (0,3,0) settle it. The same reasoning as the doubled
+   `.jfsup.jfsup` root above, one notch further.
+
+   WHY THIS BUTTON NEEDS NO WITHDRAWAL RULE, where the floating
+   plate needed `body:has(.mdl.open)`. Every host top bar sits at
+   `z-index: 30` — the classic bar's `sticky top-0 z-30`, the
+   blueprint `.topbar`, the mobile `.tbar` — and every overlay in
+   the app is above it: Sheet 40/50, MobileDrawer 40/50,
+   BottomSheet 50, LeadOfferPopup 60, the nav drawers 89/90, and
+   `.mdl` at 120, which resolves against the topbar precisely
+   because `.content:has(.mdl.open)` drops to `z-index: auto`. An
+   open overlay's scrim therefore covers this button and takes its
+   clicks, which is the outcome the plate needed a rule to reach:
+   a task in progress does not get a help button punched through
+   it. Do NOT add a `display: none` for that here — it would
+   reflow the bar every time a dialog opened.
+   ============================================================ */
+.jfsup-dock.jfsup-dock.jfsup-dock {
+  /* Containing block for the two children below. Every host already sets this
+     on its icon button; declared here so neither has to depend on that. */
+  position: relative;
+}
+
+/* THE 44px TOUCH FLOOR, without disturbing the bar's rhythm. The blueprint bar
+   draws its icon buttons at 40px and the classic bar relaxes to 36px from
+   1024px up; growing only THIS button would leave Help a different size from
+   the bell beside it, and growing the others is not this component's call. An
+   invisible centred 44x44 box gives the control its floor and costs no layout:
+   it is out of flow, so nothing moves and nothing shrinks, and the gaps it
+   reaches into (12px in the blueprint bar, 8px in the classic one) are wider
+   than the 2–4px it needs, so it never overlaps a neighbour's own target. */
+.jfsup-dock.jfsup-dock.jfsup-dock::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* The glyph, ONLY when the host named no icon class of its own — all four
+   pass one today. Without this the fallback `.jfsup-ic` would match nothing out
+   here (every other rule for it is scoped inside `.jfsup`, and the dock is not)
+   and an unsized <svg> draws at its 300×150 default. */
+.jfsup-dock.jfsup-dock .jfsup-ic {
+  display: block;
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+  flex-shrink: 0;
+}
+
+/* ── TOOLTIP ──────────────────────────────────────────────────
+   One word, on an ink plate. It used to sit to the LEFT of the
+   floating square; UNDER the button is the only side a control in
+   a top bar has. Pointer devices only — on a touchscreen a hover
+   tip either never shows or shows stuck after the tap. */
+.jfsup-dock.jfsup-dock .jfsup-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  display: none;
+  padding: 5px 9px;
+  border-radius: var(--radius, 2px);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition:
+    opacity 0.14s var(--ease-out),
+    transform 0.14s var(--ease-out);
+}
+@media (hover: hover) {
+  .jfsup-dock.jfsup-dock .jfsup-tip {
+    display: block;
+  }
+  .jfsup-dock.jfsup-dock:hover .jfsup-tip,
+  .jfsup-dock.jfsup-dock:focus-visible .jfsup-tip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+/* The reduced-motion kill at the foot of this file is scoped to `.jfsup`, and
+   the dock is not inside it. */
+@media (prefers-reduced-motion: reduce) {
+  .jfsup-dock.jfsup-dock .jfsup-tip {
+    transition: none;
+  }
+}
+
+/* The composer's own glyph — today only the close X, which overrides the size
+   below. Kept general because it is the fallback any Icon in this tree gets. */
+.jfsup .jfsup-ic {
+  /* The `.bp` module resets svg to `display: inline` at (0,1,1); block keeps
+     the glyph off the text baseline inside its flex button. */
+  display: block;
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+  flex-shrink: 0;
+}
+
+/* ── SCRIM ────────────────────────────────────────────────────
+   Transparent on desktop: it exists only to catch the outside
+   press, which is cheaper and more reliable than a document
+   listener racing the launcher's own click. It darkens on
+   handheld, where the composer is a bottom sheet and the page
+   behind it genuinely is out of play. */
+.jfsup .jfsup-scrim {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease-out);
+}
+.jfsup.jfsup--on .jfsup-scrim {
+  opacity: 1;
+}
+.jfsup .jfsup-scrim[hidden] {
+  display: none;
+}
+
+/* ── PANEL ────────────────────────────────────────────────────
+   Desktop: a card standing in the bottom-right corner over a
+   catch-all scrim. 2px ink frame, near-square corners, a hard 5px
+   offset shadow — the sheet frame the admin and clients dialogs
+   already use.
+
+   It STANDS in that corner, it is not anchored to the launcher:
+   the launcher is up in the top bar, and this is a modal dialog
+   with a scrim, not a menu hanging off a button. `bottom: 0`
+   against a root that is now an empty box, so the panel's own
+   edge lands on the root's 22px inset — the same corner the
+   handheld sheet rises from. */
+.jfsup .jfsup-pop {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 344px;
+  max-width: calc(100vw - 44px);
+  display: flex;
+  flex-direction: column;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius, 2px);
+  background: #fff;
+  box-shadow: 5px 5px 0 var(--ink);
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.18s var(--ease-out),
+    transform 0.22s var(--ease-out);
+}
+.jfsup.jfsup--on .jfsup-pop {
+  opacity: 1;
+  transform: none;
+}
+.jfsup .jfsup-pop[hidden] {
+  display: none;
+}
+
+/* Grab bar — handheld only; see the sheet layer at the end. */
+.jfsup .jfsup-grab {
+  display: none;
+}
+
+.jfsup .jfsup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px 12px;
+  border-bottom: 1.5px solid var(--hair-soft, rgba(10, 10, 10, 0.08));
+}
+.jfsup .jfsup-title {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+.jfsup .jfsup-x {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px solid var(--hair-soft, rgba(10, 10, 10, 0.08));
+  border-radius: var(--radius, 2px);
+  background: transparent;
+  color: var(--muted, var(--ink-muted));
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
+}
+.jfsup .jfsup-x:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--paper);
+}
+.jfsup .jfsup-x .jfsup-ic {
+  width: 15px;
+  height: 15px;
+}
+.jfsup .jfsup-x:focus-visible {
+  outline: 2px solid var(--sky, var(--blueprint, var(--accent)));
+  outline-offset: 2px;
+}
+
+.jfsup .jfsup-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px 15px 15px;
+}
+
+/* ── CATEGORY CHIPS ───────────────────────────────────────────
+   Four plates on a 2-column grid. The chosen one inverts to an
+   ink stamp; the rest keep a hairline frame on paper. */
+.jfsup .jfsup-cats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.jfsup .jfsup-cat {
+  min-height: 40px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius, 2px);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font, var(--font-sans));
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background-clip: padding-box;
+  transition:
+    transform 0.12s var(--ease-out),
+    box-shadow 0.12s var(--ease-out),
+    background 0.12s,
+    color 0.12s;
+}
+.jfsup .jfsup-cat:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--ink);
+  background: #fff;
+}
+.jfsup .jfsup-cat:active {
+  transform: none;
+  box-shadow: none;
+}
+.jfsup .jfsup-cat[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+.jfsup .jfsup-cat[aria-pressed="true"]:hover {
+  background: var(--ink);
+}
+.jfsup .jfsup-cat:focus-visible {
+  outline: 2px solid var(--sky, var(--blueprint, var(--accent)));
+  outline-offset: 2px;
+}
+
+/* ── MESSAGE FIELD ────────────────────────────────────────────── */
+.jfsup .jfsup-in {
+  width: 100%;
+  min-height: 104px;
+  padding: 10px 11px;
+  border: 1.5px solid var(--hair, rgba(10, 10, 10, 0.12));
+  border-radius: var(--radius, 2px);
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font, var(--font-sans));
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  resize: vertical;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+.jfsup .jfsup-in::placeholder {
+  color: var(--muted-faint, var(--ink-faint));
+}
+.jfsup .jfsup-in:focus {
+  outline: none;
+  border-color: var(--blueprint, var(--accent));
+  box-shadow: 2px 2px 0 rgba(24, 84, 160, 0.25);
+}
+.jfsup .jfsup-in:disabled {
+  background: var(--paper);
+  color: var(--muted, var(--ink-muted));
+  cursor: not-allowed;
+}
+
+/* ── SEND ─────────────────────────────────────────────────────── */
+.jfsup .jfsup-send {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius, 2px);
+  background: var(--blueprint, var(--accent));
+  color: #fff;
+  font-family: var(--font, var(--font-sans));
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background-clip: padding-box;
+  transition:
+    transform 0.12s var(--ease-out),
+    box-shadow 0.12s var(--ease-out),
+    background 0.12s;
+}
+.jfsup .jfsup-send:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+  background: var(--blueprint-dark, var(--accent-ink));
+}
+.jfsup .jfsup-send:active {
+  transform: none;
+  box-shadow: none;
+}
+.jfsup .jfsup-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.jfsup .jfsup-send:disabled:hover {
+  transform: none;
+  box-shadow: none;
+  background: var(--blueprint, var(--accent));
+}
+.jfsup .jfsup-send:focus-visible {
+  outline: 2px solid var(--sky, var(--blueprint, var(--accent)));
+  outline-offset: 3px;
+}
+
+/* Quiet twin — the confirmation's only control. */
+.jfsup .jfsup-done {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius, 2px);
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font, var(--font-sans));
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  background-clip: padding-box;
+  transition:
+    transform 0.12s var(--ease-out),
+    box-shadow 0.12s var(--ease-out);
+}
+.jfsup .jfsup-done:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jfsup .jfsup-done:active {
+  transform: none;
+  box-shadow: none;
+}
+.jfsup .jfsup-done:focus-visible {
+  outline: 2px solid var(--sky, var(--blueprint, var(--accent)));
+  outline-offset: 3px;
+}
+
+/* ── FAILURE ──────────────────────────────────────────────────
+   The server's own words, in the danger tone, with the typed
+   message still in the field behind it. */
+.jfsup .jfsup-err {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger, var(--rose));
+  overflow-wrap: anywhere;
+}
+
+/* ── CONFIRMATION ─────────────────────────────────────────────
+   The reference is a drawing number: mono, on an ink plate. */
+.jfsup .jfsup-ok {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.jfsup .jfsup-ok-t {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.jfsup .jfsup-ref {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: var(--radius, 2px);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+/* Whether the operator was actually told. One line, quiet — it is the
+   footnote to the reference, not a second headline. */
+.jfsup .jfsup-ok-s {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted, var(--ink-muted));
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   HANDHELD LAYER — the panel becomes a BOTTOM SHEET.  ≤860px.
+   The LAUNCHER does not change here: it is the same top-bar
+   button at every width, which is the point of docking it.
+
+   LAST in the cascade before the reduced-motion kill, per the
+   house rule that the mobile layer must not be outranked by a
+   later rule of equal specificity.
+
+   WHY 860 AND NOT 768. This component lives in four hosts and they
+   switch at different widths: the mobile page fleet is ≤768px, but
+   the DESKTOP blueprint shell goes into its own handheld mode
+   (drawer + burger + compacted density) at ≤860px. 860 is
+   therefore the width at which SOME host is already drawing a
+   phone layout underneath this widget, and a corner card inside
+   one reads as a leftover.
+
+   The shape is the fleet's own hand-rolled sheet: full bleed,
+   bottom-anchored, a 2px ink border on the TOP EDGE ONLY, paper
+   ground, a grab bar, and translateY(100%) for the enter. A user
+   who has met the fleet's filter sheets meets the same object.
+   ============================================================ */
+@media (max-width: 860px) {
+  /* The fleet's scrim tone, matched rather than reinvented (mobile-v2 .scrim). */
+  .jfsup .jfsup-scrim {
+    background: rgba(10, 10, 10, 0.35);
+  }
+
+  .jfsup .jfsup-pop {
+    position: fixed;
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    /* dvh, not vh: on iOS Safari vh is frozen to the LARGEST viewport, so a
+       sheet sized in vh sits partly under the collapsing toolbar until the
+       page is scrolled. vh first, as the fallback for engines without dvh. */
+    max-height: 86vh;
+    max-height: 86dvh;
+    border-width: 2px 0 0;
+    border-radius: 0;
+    box-shadow: none;
+    transform: translateY(100%);
+    transition:
+      opacity 0.2s var(--ease-out),
+      transform 0.28s var(--ease-out);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    overflow-y: auto;
+    /* Paper, not white: the fleet's sheets stand on --paper (mobile-v2
+       `.sheet`), and a white slab on a paper page reads as a foreign card. The
+       desktop corner card keeps #fff because it stands on the card layer, where
+       white IS the ground. */
+    background: var(--paper);
+  }
+  .jfsup.jfsup--on .jfsup-pop {
+    transform: none;
+  }
+  /* Ground inverted with the panel, so the unpicked chips still separate from
+     what is behind them. */
+  .jfsup .jfsup-cat {
+    background: #fff;
+  }
+  .jfsup .jfsup-cat[aria-pressed="true"] {
+    background: var(--ink);
+  }
+
+  .jfsup .jfsup-grab {
+    display: block;
+    width: 46px;
+    height: 4px;
+    margin: 9px auto 3px;
+    border-radius: 2px;
+    background: var(--hair, rgba(10, 10, 10, 0.12));
+  }
+
+  .jfsup .jfsup-head {
+    padding: 10px 16px 12px;
+  }
+  .jfsup .jfsup-title {
+    font-size: 19px;
+  }
+  .jfsup .jfsup-body {
+    gap: 14px;
+    padding: 15px 16px 20px;
+  }
+
+  /* ≥44px on every target, per the handheld contract. */
+  .jfsup .jfsup-cat {
+    min-height: 46px;
+    font-size: 11.5px;
+  }
+  .jfsup .jfsup-x {
+    width: 44px;
+    height: 44px;
+  }
+  .jfsup .jfsup-in {
+    min-height: 116px;
+    font-size: 16px; /* under 16px iOS zooms the whole page on focus */
+    resize: none;
+  }
+  .jfsup .jfsup-send,
+  .jfsup .jfsup-done {
+    min-height: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jfsup.jfsup,
+  .jfsup.jfsup *,
+  .jfsup.jfsup *::before,
+  .jfsup.jfsup *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  .jfsup .jfsup-pop {
+    transform: none;
+  }
+}

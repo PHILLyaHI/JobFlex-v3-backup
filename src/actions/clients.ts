@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 // Tight client shape returned to the v3 builder. Matches the columns the
 // inline create/edit form writes; ignore notes/customFields/tags for now.
@@ -67,6 +68,9 @@ const createClientInput = clientInput.extend({ vip: z.boolean().optional() });
 export async function createClient(raw: unknown): Promise<ClientRecord> {
   const { organizationId } = await requireSalesOrManager();
   const { vip, ...data } = createClientInput.parse(raw);
+  // Plan cap on live client records (absolute scope) — throws PLAN_LIMIT_MESSAGE
+  // like every other gated create so the builder raises its limit dialog.
+  await enforcePlanLimit(organizationId, "clients");
   const created = await db.client.create({
     data: { organizationId, ...data },
     select: CLIENT_SELECT,
@@ -81,6 +85,32 @@ export async function createClient(raw: unknown): Promise<ClientRecord> {
     await db.clientTag.create({ data: { clientId: created.id, tagId: tag.id } });
   }
   return created;
+}
+
+/**
+ * Set a client's email and nothing else.
+ *
+ * The manual builder's "Save & send" needs an address on the RECORD — the
+ * sheet's contact row is display state and never reaches the database, so a
+ * send against a client with no stored email silently went nowhere and still
+ * reported success. `updateClient` cannot serve this: it parses a COMPLETE
+ * client input, and the builder only holds the street line of a client's
+ * address (the loader splits it on "
+"), so round-tripping the record through
+ * it would truncate the rest. One column, one write.
+ */
+export async function setClientEmail(id: string, rawEmail: unknown) {
+  const { organizationId } = await requireSalesOrManager();
+  const email = z.string().trim().email("Enter a valid email address").parse(rawEmail);
+  const existing = await db.client.findUnique({
+    where: { id },
+    select: { organizationId: true, deletedAt: true },
+  });
+  if (!existing || existing.organizationId !== organizationId || existing.deletedAt) {
+    throw new Error("Client not found");
+  }
+  await db.client.update({ where: { id }, data: { email } });
+  return { email };
 }
 
 export async function updateClient(

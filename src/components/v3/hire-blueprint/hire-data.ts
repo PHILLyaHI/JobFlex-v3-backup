@@ -83,13 +83,17 @@ export const HUB_DOORS: HubDoor[] = [
   { icon: 'i-search', kicker: 'For hirers', title: 'Discover talent',
     body: 'See which companies in the trade network are open for work — their trades, specialties and service area.',
     cta: 'Open the directory', goto: 'talent' },
-  { icon: 'i-userplus', kicker: 'For workers', title: 'Publish your profile',
-    body: 'List your trades and service area as open for work, so matching trade jobs land in your inbox.',
-    cta: 'Manage your profile', goto: 'profile' },
+  // Was "Publish your profile" — the panel behind it became the Post-a-job
+  // composer (owner, 2026-08-23). Listing management moved to a hub row below
+  // (/trade-services carries the same opt-in form the panel used to).
+  { icon: 'i-send', kicker: 'Hire out work', title: 'Post a job',
+    body: 'Broadcast work you can\'t take to matching contractors in the trade network \u2014 trade, area and rate.',
+    cta: 'Post a job', goto: 'profile' },
 ];
 
 export const HUB_LINKS: HubLink[] = [
   { icon: 'i-users', label: 'Applicant pipeline', sub: 'Track candidates through your hiring funnel', goto: 'pipeline' },
   { icon: 'i-jobs',  label: 'Job posts',          sub: 'The work you broadcast to the trade network', href: '/trade-services' },
   { icon: 'i-send',  label: 'Applications',       sub: 'Interest on your posts, and jobs you raised a hand for', href: '/trade-services' },
+  { icon: 'i-userplus', label: 'Manage your profile', sub: 'List your trades as open for work in the talent directory', href: '/trade-services' },
 ];

@@ -10,6 +10,7 @@ import { CommandK } from "@/components/layout/CommandK";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
+import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { SessionProvider } from "@/components/providers/SessionProvider";
 import { getBadgeCounts } from "@/lib/badgeCounts";
 import { getNavLimitCounters } from "@/lib/navLimits";
@@ -130,6 +131,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
         {!isLimited && <CommandK />}
         {canHandleLeads && <LeadOfferPopup />}
         <PlanLimitDialog />
+        {/* The support composer. It was mounted in the two blueprint shells
+            only, so ~50 routes had no Help control at all — every billing and
+            settings surface among them, which is where the composer's Billing
+            and Account categories point. Its launchers: the floating plate
+            above 860px, the topbar button between 768 and 860, and the tab
+            bar's More drawer below 768, where this group's bottom-right corner
+            already belongs to the create button and the tab bar. */}
+        <SupportWidget signedIn />
         <div className="md:hidden">
           <MobileTabBar role={activeRole} badges={badgeCounts} />
         </div>

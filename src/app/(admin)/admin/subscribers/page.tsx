@@ -1,25 +1,25 @@
 import { requirePlatformAdmin } from "@/lib/orgContext";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { getSubscribersData } from "@/actions/subscribers";
-import { SubscribersClient } from "./subscribers-client";
+import { AdminSubscribersContent } from "@/components/v3/admin-subscribers/admin-subscribers-content";
 
 export default async function AdminSubscribersPage() {
   await requirePlatformAdmin();
-  const { rows, metrics, stripeLive, truncated } = await getSubscribersData();
+  const { rows, metrics, stripeEnabled, stripeLive, stripeError, truncated } =
+    await getSubscribersData();
 
   return (
-    <>
-      <PageHeader
-        eyebrow="Platform"
-        title="Subscribers"
-        description="Sourced live from Stripe subscriptions, enriched with JobFlex account data."
-      />
-      <SubscribersClient
-        rows={rows.map((r) => ({ ...r, currentPeriodEnd: r.currentPeriodEnd?.toISOString() ?? null, createdAt: r.createdAt.toISOString() }))}
-        metrics={metrics}
-        stripeLive={stripeLive}
-        truncated={truncated}
-      />
-    </>
+    <AdminSubscribersContent
+      rows={rows.map((r) => ({
+        ...r,
+        currentPeriodEnd: r.currentPeriodEnd?.toISOString() ?? null,
+        createdAt: r.createdAt.toISOString(),
+        changedAt: r.changedAt.toISOString(),
+      }))}
+      metrics={metrics}
+      stripeEnabled={stripeEnabled}
+      stripeLive={stripeLive}
+      stripeError={stripeError}
+      truncated={truncated}
+    />
   );
 }

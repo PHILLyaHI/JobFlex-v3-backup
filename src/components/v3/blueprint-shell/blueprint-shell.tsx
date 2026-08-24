@@ -22,6 +22,7 @@ import { initBlueprintShell, type ShellHandle } from "./shell-behavior";
 import { CommandPalette } from "./command-palette";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
+import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { Sprite } from "./sprite";
 import { Sidebar, type SidebarUser } from "./sidebar";
 import { Topbar } from "./topbar";
@@ -165,6 +166,26 @@ export function BlueprintShell({
           is the same trade the MaterialsSheet island already makes.
           Store-driven (Zustand, module-level), so it needs no provider. */}
       <PlanLimitDialog />
+
+      {/* Same slot, same reasoning: the Help composer belongs to the chrome,
+          not to any one route. It is mounted HERE rather than inside `.layout`
+          on purpose — SKILL.md's responsiveness rule 6: a new node inside
+          `.layout` takes a grid column on desktop and shoves `.main` off
+          screen. Its LAUNCHER is the floating plate above 860px and the
+          topbar's Help button at or below it, where this shell is already
+          drawing a phone layout and a corner button would sit on whatever the
+          page has pinned to the bottom of the screen.
+          `user` is the signed-in identity the layout read; it is undefined
+          when requireOrg() threw, which is the only state in which this tree
+          renders without a session.
+
+          Mounting it inside this root also puts it under FLUID SCALE: the
+          shell root carries `zoom = clamp(0.78, innerWidth/1728, 1.35)`, so
+          the floating plate is drawn at 48px × that factor — 37.4px at 1280,
+          48 at 1728 — like every other control on the page. That is on
+          purpose and is written down in support-widget.css; do not divide the
+          zoom back out unless the whole shell stops scaling. */}
+      <SupportWidget signedIn={Boolean(user)} />
 
       <div className="layout">
         <Sidebar user={user} />

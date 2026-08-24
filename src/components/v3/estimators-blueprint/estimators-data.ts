@@ -7,11 +7,12 @@
 //
 // ORDER IS THE MOCKUP'S. `jobflex-estimator-picker-blueprint (10).html` lists
 // its ENGINES as Manual, Smart Proposal, Roof, Fence — catalogue numbers 03,
-// 04, 01, 02 — so the 2×2 block reads Manual/Smart on the top row. The number
+// 04, 01, 02 — so the block reads Manual/Smart on the top row. Video was added
+// after it (2026-08-22), in the position the sidebar gives it. The number
 // stays on the record as `no`; only the queued stubs print it, which is also
 // what the source does (`<i>05</i>Deck`).
 
-export type EngineDiagram = "roof" | "fence" | "sheet" | "prose";
+export type EngineDiagram = "roof" | "fence" | "sheet" | "prose" | "video";
 
 type EngineBase = {
   id: string;
@@ -22,10 +23,10 @@ type EngineBase = {
   /** The lowercase method line under the title — how you feed this engine. */
   method: string;
   diagram: EngineDiagram;
-  /** Input/output/time. Only `time` reaches the card — it is the figure in the
-      card's right-hand slot. The other two are the source's dead fields, kept
-      because they are real and cost nothing. */
-  spec: { input: string; output: string; time: string };
+  /** Input/output. The source's dead fields, kept because they are real and
+      cost nothing. The `time` figure that used to ride beside them was dropped
+      from the record when the owner had it taken off the cards (2026-08-22). */
+  spec: { input: string; output: string };
 };
 
 export type Engine = EngineBase &
@@ -48,7 +49,7 @@ export const ENGINES: Engine[] = [
     // The older cost-sheet builder is untouched and still reachable directly at
     // /dashboard/estimators/manual.
     href: "/dashboard/manual-blueprint",
-    spec: { input: "typed rows", output: "cost sheet", time: "~9 min" },
+    spec: { input: "typed rows", output: "cost sheet" },
   },
   {
     id: "smart",
@@ -58,7 +59,7 @@ export const ENGINES: Engine[] = [
     diagram: "prose",
     status: "active",
     href: "/dashboard/advanced-ai",
-    spec: { input: "plain prose", output: "cost sheet", time: "~2 min" },
+    spec: { input: "plain prose", output: "cost sheet" },
   },
   {
     id: "roof",
@@ -68,7 +69,7 @@ export const ENGINES: Engine[] = [
     diagram: "roof",
     status: "active",
     href: "/dashboard/roof-estimator",
-    spec: { input: "aerial imagery", output: "squares · facets", time: "~4 min" },
+    spec: { input: "aerial imagery", output: "squares · facets" },
   },
   {
     id: "fence",
@@ -78,7 +79,24 @@ export const ENGINES: Engine[] = [
     diagram: "fence",
     status: "active",
     href: "/dashboard/fence-estimator",
-    spec: { input: "drawn polyline", output: "linear ft · gates", time: "~3 min" },
+    spec: { input: "drawn polyline", output: "linear ft · gates" },
+  },
+  {
+    // Added 2026-08-22 with the Video estimator port. It sits after Fence
+    // because that is where the sidebar's Automation section puts it.
+    //
+    // Catalogue number 08, not 05: 05–07 are already spent on the queued stubs,
+    // and those are the only entries that PRINT their number. Renumbering three
+    // stubs to give this card a lower one would change what is on screen for a
+    // figure this card never shows.
+    id: "video",
+    no: "08",
+    title: "Video",
+    method: "walk it on video",
+    diagram: "video",
+    status: "active",
+    href: "/dashboard/video-estimator",
+    spec: { input: "walkthrough clip", output: "cost sheet" },
   },
   {
     id: "deck",
@@ -87,7 +105,7 @@ export const ENGINES: Engine[] = [
     method: "queued",
     diagram: "sheet",
     status: "queued",
-    spec: { input: "—", output: "—", time: "—" },
+    spec: { input: "—", output: "—" },
   },
   {
     id: "concrete",
@@ -96,7 +114,7 @@ export const ENGINES: Engine[] = [
     method: "queued",
     diagram: "sheet",
     status: "queued",
-    spec: { input: "—", output: "—", time: "—" },
+    spec: { input: "—", output: "—" },
   },
   {
     id: "paint",
@@ -105,7 +123,7 @@ export const ENGINES: Engine[] = [
     method: "queued",
     diagram: "sheet",
     status: "queued",
-    spec: { input: "—", output: "—", time: "—" },
+    spec: { input: "—", output: "—" },
   },
 ];
 

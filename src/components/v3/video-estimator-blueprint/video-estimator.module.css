@@ -1,0 +1,702 @@
+/* ============================================================
+   VIDEO ESTIMATOR — BLUEPRINT
+   /dashboard/video-estimator
+
+   WHAT THIS IS
+   A verbatim port of the donor `jobflex-videoestimator-blueprint.html`.
+   Every size, colour, spacing, weight, radius, shadow and transition
+   below is the donor's literal value — nothing rounded, substituted or
+   re-derived. Donor comments (including the Russian section headings)
+   are preserved as written.
+
+   ── WHAT IS *NOT* HERE, AND WHY ────────────────────────────
+   The donor ships the whole dashboard chrome: :root tokens, the reset,
+   `.layout`, the sidebar, `.main` (graph-paper field + scrollbars), the
+   topbar, `.content`, the nav burger / backdrop and FLUID SCALE. ALL of
+   it is dropped — blueprint-shell already renders that furniture from
+   src/app/dashboard/layout.tsx and it persists across navigation, at the
+   donor's own numbers (`--sidebar-w: 264px`, `--topbar-h: 62px`,
+   `.content { padding: 40px 96px 80px; gap: 22px }`).
+
+   The donor's other dashboard blocks it never uses — the Lead Center
+   banner, KPI strip, chart, activity list, week strip, upcoming jobs,
+   pipeline board, dropdown and list limits — are absent for the same
+   reason: this page's markup contains none of them, and the always-on
+   dashboard module publishes each of those rules verbatim anyway. Only
+   the rules THIS page's markup actually uses are restated here.
+
+   Also dropped because the always-on modules already publish them at the
+   donor's exact values: the `*` / `button` / `a` / `ul` / `input` reset,
+   `::selection`, `.rv` / `.rv-in` / `.rv-cell`, the `press2` keyframe
+   behind `.pressed`, and the `prefers-reduced-motion` blanket.
+
+   ── SCOPING ────────────────────────────────────────────────
+   pageKey for this route is "video-estimator", which no other page module
+   claims, so nothing but the always-on dashboard + proposals modules is
+   live beside this file. Every class here is this module's own hashed
+   name, scoped `:global(.jf-blueprint .content) .cls` ⇒ (0,3,0) — the
+   same number project-detail.module.css established, chosen so a sibling
+   module's `.bp :global(.content button)` (0,2,1) reset can never take
+   the border, background or cursor off this page's controls.
+
+   Icons carry this module's `.ic`, not the literal one.
+
+   The literal-global classes the markup does use — `rv`, `rv-in`,
+   `pressed`, `vt-prog-dot` — pass through `cx()` unhashed. The first
+   three are the fleet's entrance cascade and press feedback; the fourth
+   lives in ./video-estimator-global.css because Lightning CSS rejects
+   `@keyframes` inside a CSS module and a module-local `animation-name`
+   would be hashed away from a globally-declared keyframe.
+
+   ── THE THREE FLEET DEVIATIONS FROM THE DONOR ──────────────
+   Not oversights — three app-wide owner decisions (2026-08-17) that every
+   one of the 22 shipped blueprint pages already carries. Shipping the
+   donor's originals here would make this the one page out of step:
+
+     · `--shadow` is `transparent` app-wide (resting light-grey card
+       shadows retired); the donor's `:root` says rgba(10,10,10,0.06).
+     · `--paper-deep` is `#ffffff` app-wide (hover plate); the donor's
+       `:root` says #ebe8e1.
+     · `.card` / `.btn-ghost` are plated `#fff`; the donor says
+       `var(--paper)`. Marked at each site below.
+
+   The tokens are NOT re-declared here, so the first two follow the shell
+   automatically and reverting is a token edit, not a sweep.
+
+   ── ONE ADAPTATION ─────────────────────────────────────────
+   `.vt`'s donor `min-height: calc(100vh - 292px)` is written against
+   `var(--app-h, 100vh)`. The shell's FLUID SCALE module sets
+   `--app-h = innerHeight / zoom`; a bare `100vh` under a zoom other than
+   1 measures the wrong box. Same intent, same 292px.
+
+   ── CONTRACTS ──────────────────────────────────────────────
+   - Light mode only. No .dark variants.
+   ============================================================ */
+
+/* ============================================================
+   BASE — the donor's `svg.ic`
+   ============================================================ */
+:global(.jf-blueprint .content) svg.ic { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* ============================================================
+   PAGE HEAD
+   ============================================================ */
+:global(.jf-blueprint .content) .page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  margin-bottom: 14px;
+}
+:global(.jf-blueprint .content) .kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+:global(.jf-blueprint .content) .kicker::before {
+  content: '';
+  width: 7px; height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+}
+:global(.jf-blueprint .content) .page-title {
+  font-size: 46px; font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase;
+  line-height: 0.95;
+  /* A pasted 200-character project name must wrap, never clip: a truncated
+     page title reads as a rendering bug. */
+  overflow-wrap: break-word;
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+:global(.jf-blueprint .content) .btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 0 16px;
+  height: 40px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint .content) .btn .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint .content) .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btn-ghost { background: #fff; color: var(--ink); } /* donor: var(--paper) — controls plated white (owner, 2026-08-17) */
+:global(.jf-blueprint .content) .btn-ghost:hover { background: var(--paper-deep); }
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+:global(.jf-blueprint .content) .card {
+  background: #fff; /* donor: var(--paper) — cards plated white (owner, 2026-08-17) */
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px 24px;
+  position: relative;
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+/* ─────── VIDEO ESTIMATOR — ЗАГОЛОВОЧНЫЙ СТЕК ─────── */
+:global(.jf-blueprint .content) [hidden] { display: none !important; }
+:global(.jf-blueprint .content) .card--flush { padding: 0; overflow: hidden; }
+
+:global(.jf-blueprint .content) .vt { display: grid; grid-template-columns: 1.55fr 1fr; gap: 22px;
+  max-width: 1180px; min-height: calc(var(--app-h, 100vh) - 292px); }
+
+/* Просмотровый экран */
+:global(.jf-blueprint .content) .vt-screen { position: relative; border: var(--border); border-radius: var(--radius);
+  background: var(--ink); display: flex; align-items: center;
+  justify-content: center; overflow: hidden;
+  background-image: linear-gradient(rgba(242,240,235,.07) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(242,240,235,.07) 1px, transparent 1px);
+  background-size: 44px 44px;
+  box-shadow: 3px 3px 0 var(--shadow); }
+:global(.jf-blueprint .content) .vt-screen { min-height: 0; }
+:global(.jf-blueprint .content) .vt-crop { position: absolute; width: 22px; height: 22px; z-index: 2; }
+:global(.jf-blueprint .content) .vt-crop::before, :global(.jf-blueprint .content) .vt-crop::after { content: ''; position: absolute;
+  background: rgba(242,240,235,.85); }
+:global(.jf-blueprint .content) .vt-crop::before { width: 22px; height: 2px; }
+:global(.jf-blueprint .content) .vt-crop::after { width: 2px; height: 22px; }
+:global(.jf-blueprint .content) .vt-crop.tl { top: 14px; left: 14px; }
+:global(.jf-blueprint .content) .vt-crop.tr { top: 14px; right: 14px; }
+:global(.jf-blueprint .content) .vt-crop.tr::before { right: 0; } :global(.jf-blueprint .content) .vt-crop.tr::after { right: 0; }
+:global(.jf-blueprint .content) .vt-crop.bl { bottom: 14px; left: 14px; }
+:global(.jf-blueprint .content) .vt-crop.bl::before { bottom: 0; } :global(.jf-blueprint .content) .vt-crop.bl::after { bottom: 0; }
+:global(.jf-blueprint .content) .vt-crop.br { bottom: 14px; right: 14px; }
+:global(.jf-blueprint .content) .vt-crop.br::before { bottom: 0; right: 0; } :global(.jf-blueprint .content) .vt-crop.br::after { bottom: 0; right: 0; }
+
+:global(.jf-blueprint .content) .vt-empty { display: flex; flex-direction: column; align-items: center; gap: 14px;
+  color: var(--paper); text-align: center; padding: 30px; }
+:global(.jf-blueprint .content) .vt-play { appearance: none; cursor: pointer; width: 84px; height: 84px;
+  display: grid; place-items: center; background: var(--paper); border: none;
+  border-radius: var(--radius); box-shadow: 5px 5px 0 rgba(242,240,235,.18);
+  transition: transform .16s var(--ease-out), box-shadow .16s var(--ease-out); }
+:global(.jf-blueprint .content) .vt-play:hover { transform: translate(-2px,-2px);
+  box-shadow: 7px 7px 0 rgba(242,240,235,.22); }
+:global(.jf-blueprint .content) .vt-play i { width: 0; height: 0; border-style: solid; border-width: 15px 0 15px 25px;
+  border-color: transparent transparent transparent var(--ink); margin-left: 5px; }
+:global(.jf-blueprint .content) .vt-empty-t { font-size: 21px; font-weight: 900; letter-spacing: -.01em; margin-top: 4px; }
+:global(.jf-blueprint .content) .vt-empty-m { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase; color: rgba(242,240,235,.6); }
+
+:global(.jf-blueprint .content) .vt-loaded { position: absolute; inset: 0; display: flex; flex-direction: column;
+  justify-content: space-between; padding: 20px; }
+:global(.jf-blueprint .content) .vt-fileline { display: flex; align-items: center; gap: 12px; color: var(--paper);
+  padding: 10px 14px; background: rgba(10,10,10,.55); border: 1.5px solid rgba(242,240,235,.28);
+  border-radius: var(--radius); }
+:global(.jf-blueprint .content) .vt-fileline .ic { width: 18px; height: 18px; color: var(--sky); flex-shrink: 0; }
+:global(.jf-blueprint .content) .vt-fileline b { font-size: 13.5px; font-weight: 800; min-width: 0; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vt-fileline span { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .06em; color: rgba(242,240,235,.65); }
+:global(.jf-blueprint .content) .vt-remove { margin-left: auto; appearance: none; cursor: pointer; background: transparent;
+  border: none; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase; color: rgba(242,240,235,.6); }
+:global(.jf-blueprint .content) .vt-remove:hover { color: var(--paper); }
+:global(.jf-blueprint .content) .vt-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+:global(.jf-blueprint .content) .vt-cell { position: relative; aspect-ratio: 16 / 10; border: 1.5px solid rgba(242,240,235,.4);
+  border-radius: var(--radius);
+  background-image: repeating-linear-gradient(45deg, rgba(242,240,235,.16) 0 1px, transparent 1px 7px); }
+:global(.jf-blueprint .content) .vt-cell span { position: absolute; left: 6px; bottom: 6px; padding: 2px 7px;
+  background: var(--paper); color: var(--ink); font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600; letter-spacing: .08em; }
+
+/* Титульный блок — чертёжный штамп на белом */
+:global(.jf-blueprint .content) .vt-tb { border: var(--border); border-radius: var(--radius); background: #ffffff;
+  box-shadow: 3px 3px 0 var(--shadow); overflow: hidden;
+  display: flex; flex-direction: column; }
+:global(.jf-blueprint .content) .vt-tb-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; background: var(--ink); color: var(--paper);
+  font-size: 11px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .vt-tb-no { font-family: var(--font-mono); font-weight: 600; letter-spacing: .1em;
+  color: rgba(242,240,235,.65); }
+:global(.jf-blueprint .content) .vt-cells { display: grid; grid-template-columns: 1fr 1fr; }
+:global(.jf-blueprint .content) .vt-c { display: block; padding: 13px 18px 14px; border-bottom: 1.5px solid rgba(10,10,10,.55);
+  min-width: 0; }
+:global(.jf-blueprint .content) .vt-c--full { grid-column: 1 / -1; }
+:global(.jf-blueprint .content) .vt-c:not(.vt-c--full):nth-child(odd of .vt-c:not(.vt-c--full)) { border-right: 1.5px solid rgba(10,10,10,.55); }
+:global(.jf-blueprint .content) .vt-c-l { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+  margin-bottom: 5px; }
+:global(.jf-blueprint .content) .vt-c-in { display: block; width: 100%; border: none; border-radius: 0;
+  background: transparent; padding: 0;
+  font-family: var(--font); font-size: 15.5px; font-weight: 800; color: var(--ink); }
+:global(.jf-blueprint .content) .vt-c-in::placeholder { color: var(--muted-faint, #b6b3ac); font-weight: 500; }
+:global(.jf-blueprint .content) .vt-c-in:focus { outline: none; }
+:global(.jf-blueprint .content) .vt-c:focus-within { box-shadow: inset 3px 0 0 var(--blueprint); }
+:global(.jf-blueprint .content) .vt-c-v { display: block; font-size: 14.5px; font-weight: 800; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .vt-c-ta { resize: none; overflow: hidden; min-height: 23px; line-height: 1.45;
+  font-family: var(--font); }
+:global(.jf-blueprint .content) .vt-tb-foot { padding: 20px; background: #ffffff; margin-top: auto; }
+:global(.jf-blueprint .content) .vt-go { width: 100%; justify-content: center; }
+:global(.jf-blueprint .content) .vt-prog { display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--blueprint); }
+/* `.vt-prog-dot` and its `vtBlink` keyframe live in ./video-estimator-global.css —
+   Lightning CSS rejects @keyframes inside a CSS module. */
+
+/* Результат */
+:global(.jf-blueprint .content) .step-result .card { max-width: 1180px; }
+:global(.jf-blueprint .content) .vr-mast { display: flex; align-items: flex-start; gap: 18px; padding: 22px 28px;
+  background: var(--ink); color: var(--paper);
+  background-image: linear-gradient(rgba(242,240,235,.08) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(242,240,235,.08) 1px, transparent 1px);
+  background-size: 44px 44px; }
+:global(.jf-blueprint .content) .vr-mast-min { min-width: 0; }
+:global(.jf-blueprint .content) .vr-mast-k { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase; color: rgba(242,240,235,.6); }
+:global(.jf-blueprint .content) .vr-mast-t { margin: 4px 0 0; font-size: 23px; font-weight: 900; letter-spacing: -.015em;
+  overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vr-mast-s { margin-top: 4px; font-family: var(--font-mono); font-size: 11.5px;
+  font-weight: 600; letter-spacing: .06em; color: rgba(242,240,235,.65); }
+:global(.jf-blueprint .content) .vr-conf { margin-left: auto; padding: 6px 13px; border: 2px solid #58b368;
+  color: #58b368; background: rgba(58,125,68,.16); border-radius: var(--radius);
+  font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  white-space: nowrap; }
+
+:global(.jf-blueprint .content) .vr-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0; }
+:global(.jf-blueprint .content) .vr-left { padding: 24px 28px; border-right: 1.5px solid rgba(10,10,10,.14); min-width: 0; }
+:global(.jf-blueprint .content) .vr-right { padding: 24px 28px; min-width: 0; }
+:global(.jf-blueprint .content) .vr-sec-h { font-size: 11px; font-weight: 800; letter-spacing: .16em;
+  text-transform: uppercase; margin-bottom: 14px; }
+:global(.jf-blueprint .content) .vr-sec-h--gap { margin-top: 26px; }
+:global(.jf-blueprint .content) .vr-frames { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+:global(.jf-blueprint .content) .vr-frame { border: var(--border-thin); border-radius: var(--radius); overflow: hidden; }
+:global(.jf-blueprint .content) .vr-frame-img { position: relative; aspect-ratio: 16 / 10;
+  background-image: repeating-linear-gradient(45deg, rgba(24,84,160,.10) 0 1px, transparent 1px 7px); }
+:global(.jf-blueprint .content) .vr-frame-tc { position: absolute; left: 6px; bottom: 6px; padding: 2px 7px;
+  background: var(--ink); color: var(--paper); font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600; letter-spacing: .08em; }
+:global(.jf-blueprint .content) .vr-frame-l { padding: 8px 10px; font-size: 11.5px; font-weight: 700; }
+:global(.jf-blueprint .content) .vr-meas { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+:global(.jf-blueprint .content) .vr-m { border: var(--border-thin); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+:global(.jf-blueprint .content) .vr-m span { display: block; font-family: var(--font-mono); font-size: 10px;
+  font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 6px; }
+:global(.jf-blueprint .content) .vr-m b { font-size: 17px; font-weight: 900; letter-spacing: -.005em;
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .vr-line { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0;
+  border-bottom: 1px dashed rgba(10,10,10,.16); font-size: 13.5px; }
+:global(.jf-blueprint .content) .vr-line b { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vr-line span { font-family: var(--font-mono); font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .vr-line.is-new b { color: var(--success); }
+:global(.jf-blueprint .content) .vr-total { display: flex; align-items: baseline; justify-content: space-between;
+  padding: 16px 0 6px; border-top: 1.5px solid var(--ink); margin-top: 12px; }
+:global(.jf-blueprint .content) .vr-total span { font-size: 11px; font-weight: 800; letter-spacing: .2em;
+  text-transform: uppercase; }
+:global(.jf-blueprint .content) .vr-total b { font-size: 30px; font-weight: 900; letter-spacing: -.005em;
+  color: var(--blueprint); font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .vr-refine { display: flex; align-items: flex-end; gap: 12px; margin-top: 20px; }
+:global(.jf-blueprint .content) .vr-refine-in { font-size: 13.5px; min-width: 0; }
+:global(.jf-blueprint .content) .vr-review { border: 1.5px dashed var(--blueprint); border-radius: var(--radius);
+  padding: 16px 18px; margin-top: 20px; }
+:global(.jf-blueprint .content) .vr-review-h { font-size: 12.5px; font-weight: 800; margin-bottom: 10px; }
+:global(.jf-blueprint .content) .vr-diff { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600;
+  line-height: 1.8; margin-bottom: 14px; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vr-diff .add { color: var(--success); }
+:global(.jf-blueprint .content) .vr-diff .tot { color: var(--blueprint); }
+:global(.jf-blueprint .content) .vr-review-a { display: flex; gap: 10px; }
+:global(.jf-blueprint .content) .vr-bar { display: flex; align-items: center; gap: 14px; padding: 16px 28px;
+  border-top: var(--border-thin); background: var(--paper-deep, rgba(10,10,10,.03)); }
+:global(.jf-blueprint .content) .vr-bar-r { display: flex; gap: 10px; margin-left: auto; }
+
+@media (max-width: 1080px) {
+  :global(.jf-blueprint .content) .vt { grid-template-columns: 1fr; min-height: 0; }
+  :global(.jf-blueprint .content) .vt-screen { min-height: 340px; }
+  :global(.jf-blueprint .content) .vr-grid { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .vr-left { border-right: none; border-bottom: 1.5px solid rgba(10,10,10,.14); }
+}
+
+@media (max-width: 1000px) {
+  :global(.jf-blueprint .content) .page-title { font-size: 38px; }
+}
+
+/* ============================================================
+   MOTION SYSTEM — BALANCED (пакет 02, стандарт)
+   Only the two rules this page's markup can reach; the rest of the
+   donor's motion block belongs to blocks this page does not have and is
+   published verbatim by the always-on dashboard module.
+   ============================================================ */
+:global(.jf-blueprint .content) .btn .ic { transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint .content) .btn:hover .ic { transform: scale(1.12); }
+:global(.jf-blueprint .content) .btn[disabled] { opacity: .45; pointer-events: none; }
+
+/* ============================================================
+   WIRED (2026-08-22) — the rules the live flow needs that the donor's
+   fixture never did. New states, not donor restatements: the drop
+   target, a real picked file, real stills, real progress, real
+   failures, the reading's confidence and the refine diff's three row
+   kinds. Drawn in the donor's own language — 2px ink, 2px radii,
+   mono annotations, hard offsets, status colour on status only.
+   ============================================================ */
+
+/* The empty screen is a drop target. The plate keeps its 84px paper face;
+   the play triangle became the video mark, since there is nothing to play
+   yet. The coloured Add video button is the owner's standing call — a
+   blueprint-filled primary, never outline-only. */
+:global(.jf-blueprint .content) .vt-play-ic { width: 34px; height: 34px; color: var(--ink); stroke-width: 2.2; }
+:global(.jf-blueprint .content) .vt-add { margin-top: 8px; }
+:global(.jf-blueprint .content) .vt-screen.is-drag { border-color: var(--sky);
+  box-shadow: 3px 3px 0 var(--sky), inset 0 0 0 2px var(--sky); }
+:global(.jf-blueprint .content) .vt-screen.is-drag .vt-play { transform: translate(-2px,-2px);
+  box-shadow: 7px 7px 0 rgba(242,240,235,.22); }
+
+/* A picked file: the clip itself sits between the file line and the strip,
+   on the graph paper, framed like the strip cells. */
+:global(.jf-blueprint .content) .vt-loaded { gap: 14px; }
+:global(.jf-blueprint .content) .vt-preview { display: block; align-self: center;
+  width: auto; max-width: 100%; min-height: 0; flex: 1 1 0; max-height: 100%;
+  border: 1.5px solid rgba(242,240,235,.28); border-radius: var(--radius);
+  background: #000; object-fit: contain; }
+:global(.jf-blueprint .content) .vt-fileline { flex-wrap: wrap; }
+:global(.jf-blueprint .content) .vt-fileline b { flex: 1 1 160px; }
+:global(.jf-blueprint .content) .vt-remove[disabled] { opacity: .4; pointer-events: none; }
+
+/* Real stills in the strip cells; the hatch stays underneath as the
+   loading face and shows through while a cell waits. */
+:global(.jf-blueprint .content) .vt-cell { overflow: hidden; flex-shrink: 0; }
+:global(.jf-blueprint .content) .vt-cell img { position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block; }
+:global(.jf-blueprint .content) .vt-cell.is-wait span { background: transparent; color: rgba(242,240,235,.65); }
+:global(.jf-blueprint .content) .vt-strip { flex-shrink: 0; }
+
+/* The foot's failure line, under the progress line and over the button. */
+:global(.jf-blueprint .content) .vt-err { margin-bottom: 12px; padding: 9px 12px;
+  border: 1.5px solid var(--danger); border-left-width: 5px; border-radius: var(--radius);
+  background: var(--danger-soft); color: var(--danger);
+  font-size: 12.5px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vt-c-in[disabled] { opacity: .6; }
+
+/* The confidence stamp, by the reading's own figure. The donor's green is
+   the high face; the other two are the same plate in amber and red. */
+:global(.jf-blueprint .content) .vr-conf--mid { border-color: #e2b04a; color: #e2b04a;
+  background: rgba(184,132,32,.18); }
+:global(.jf-blueprint .content) .vr-conf--low { border-color: #e07070; color: #e07070;
+  background: rgba(168,50,50,.18); }
+
+/* The reading, in the left column: scope, measurements with their grounding,
+   site notes, assumptions. */
+:global(.jf-blueprint .content) .vr-scope { font-size: 13.5px; line-height: 1.55; color: var(--ink-soft);
+  overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vr-frame-img img { position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block; }
+:global(.jf-blueprint .content) .vr-frame-img { overflow: hidden; }
+:global(.jf-blueprint .content) .vr-m b { overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vr-m-tag { display: block; margin-top: 6px; font-style: normal;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted-light); }
+:global(.jf-blueprint .content) .vr-m-tag[data-c="high"] { color: var(--success); }
+:global(.jf-blueprint .content) .vr-m-tag[data-c="low"] { color: var(--danger); }
+:global(.jf-blueprint .content) .vr-none { padding: 12px 14px;
+  border: 1.5px dashed var(--muted-faint); border-radius: var(--radius);
+  font-size: 12.5px; font-weight: 500; color: var(--muted); line-height: 1.45; }
+:global(.jf-blueprint .content) .vr-notes { display: grid; gap: 6px; padding-left: 0; }
+:global(.jf-blueprint .content) .vr-notes li { position: relative; padding-left: 16px;
+  font-size: 13px; line-height: 1.45; color: var(--ink-soft); overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vr-notes li::before { content: ''; position: absolute; left: 2px; top: .62em;
+  width: 6px; height: 6px; background: var(--blueprint); }
+:global(.jf-blueprint .content) .vr-notes--assume li::before { background: transparent;
+  border: 1.5px solid var(--warning); width: 5px; height: 5px; }
+
+/* Ledger lines carry their quantity and unit price under the name, so a
+   total is never a bare figure. */
+:global(.jf-blueprint .content) .vr-line b { display: block; min-width: 0; }
+:global(.jf-blueprint .content) .vr-line-q { display: block; margin-top: 2px; font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600; letter-spacing: .06em; color: var(--muted-light);
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .vr-line span { flex-shrink: 0; }
+:global(.jf-blueprint .content) .vr-line.is-upd b { color: var(--blueprint); }
+
+/* The review gate's three row kinds and the refine's caveats. */
+:global(.jf-blueprint .content) .vr-diff > div { overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vr-diff .del { color: var(--danger); }
+:global(.jf-blueprint .content) .vr-diff .chg { color: var(--ink-soft); }
+:global(.jf-blueprint .content) .vr-warn { display: grid; gap: 4px; margin: -6px 0 14px; padding-left: 0;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  color: var(--warning-dark); }
+:global(.jf-blueprint .content) .vr-warn li { overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .vr-refine-in { flex: 1; height: 40px; padding: 0 12px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #ffffff;
+  font-family: var(--font); font-weight: 600; color: var(--ink); }
+:global(.jf-blueprint .content) .vr-refine-in:focus { outline: none; border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .vr-refine-in::placeholder { color: var(--muted-faint); font-weight: 500; }
+:global(.jf-blueprint .content) .vr-refine-in[disabled] { opacity: .6; }
+
+/* ============================================================
+   THE READING'S QUESTIONS — the Smart Proposal's intake dialog, value
+   for value (advanced-ai.module.css `.clq`). Portalled to the shell
+   root, so scoped to `.jf-blueprint`, not `.content`; the footer's
+   buttons restate the `.btn` rules for the same reason.
+   ============================================================ */
+:global(.jf-blueprint) .clq { position: fixed; inset: 0; z-index: 210;
+  display: grid; place-items: center; padding: 20px;
+  background: color-mix(in srgb, var(--ink) 46%, transparent);
+  animation: mdlBgIn 190ms linear; }
+:global(.jf-blueprint) .clq[data-exit="1"] { animation: mdlBgOut 190ms linear forwards; }
+:global(.jf-blueprint) .clq .clq-box { display: flex; flex-direction: column;
+  width: min(540px, 100%); max-height: min(720px, 88vh);
+  border: var(--border); border-radius: var(--radius); background: #ffffff;
+  box-shadow: 5px 5px 0 var(--ink);
+  animation: mdlBoxIn 240ms cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint) .clq[data-exit="1"] .clq-box {
+  animation: mdlBoxOut 190ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards; }
+:global(.jf-blueprint) .clq .clq-box:focus { outline: none; }
+:global(.jf-blueprint) .clq .clq-head { flex: 0 0 auto; padding: 22px 26px 18px;
+  border-bottom: var(--border); }
+:global(.jf-blueprint) .clq .clq-kicker { font-family: var(--font-mono); font-size: 10px;
+  font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--warning); }
+:global(.jf-blueprint) .clq .clq-h { margin-top: 7px; font-size: 22px; font-weight: 900;
+  letter-spacing: -.015em; text-transform: uppercase; line-height: 1.05; }
+:global(.jf-blueprint) .clq .clq-sub { margin-top: 8px; font-size: 13px; line-height: 1.5;
+  color: var(--muted); max-width: 44ch; }
+:global(.jf-blueprint) .clq .clq-body { flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  padding: 4px 26px 20px; }
+:global(.jf-blueprint) .clq .clq-q { display: grid; grid-template-columns: 26px 1fr; gap: 12px;
+  padding: 18px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint) .clq .clq-q:last-child { border-bottom: none; }
+:global(.jf-blueprint) .clq .clq-n { font-size: 20px; font-weight: 900; line-height: 1;
+  font-variant-numeric: tabular-nums; color: var(--blueprint); padding-top: 1px; }
+:global(.jf-blueprint) .clq .clq-qt { min-width: 0; overflow-wrap: anywhere;
+  font-size: 14px; font-weight: 700; line-height: 1.35; }
+:global(.jf-blueprint) .clq .clq-opts { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+:global(.jf-blueprint) .clq .clq-opt { min-height: 34px; padding: 0 12px;
+  border: 1.5px solid rgba(10,10,10,.45); border-radius: var(--radius); background: #ffffff;
+  font-size: 12.5px; font-weight: 700; color: var(--ink); cursor: pointer;
+  transition: transform 140ms var(--ease), box-shadow 140ms var(--ease),
+    background 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease); }
+:global(.jf-blueprint) .clq .clq-opt:hover { transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--ink); }
+:global(.jf-blueprint) .clq .clq-opt[data-on="1"] { background: var(--blueprint);
+  border-color: var(--blueprint); color: #ffffff; }
+:global(.jf-blueprint) .clq .clq-opt--other { border-style: dashed; color: var(--muted); }
+:global(.jf-blueprint) .clq .clq-opt--other[data-on="1"] { border-style: solid;
+  background: var(--ink); border-color: var(--ink); color: #ffffff; }
+:global(.jf-blueprint) .clq .clq-in { width: 100%; box-sizing: border-box; margin-top: 10px;
+  min-height: 38px; padding: 9px 10px; border: 1.5px solid rgba(10,10,10,.45);
+  border-radius: var(--radius); background: #ffffff; font: inherit; font-size: 13.5px;
+  line-height: 1.4; resize: vertical; }
+:global(.jf-blueprint) .clq .clq-in::placeholder { color: var(--muted-faint); }
+:global(.jf-blueprint) .clq .clq-num { width: 150px; }
+:global(.jf-blueprint) .clq .clq-numrow { display: flex; align-items: center; gap: 8px; }
+:global(.jf-blueprint) .clq .clq-unit { font-family: var(--font-mono); font-size: 11.5px;
+  font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  padding-top: 10px; }
+:global(.jf-blueprint) .clq .clq-foot { flex: 0 0 auto; display: flex; align-items: center;
+  justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  padding: 14px 26px; border-top: var(--border); background: var(--paper-deep); }
+:global(.jf-blueprint) .clq .clq-count { font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint) .clq .clq-acts { display: flex; align-items: center; gap: 9px; }
+:global(.jf-blueprint) .clq .clq-opt:focus-visible,
+:global(.jf-blueprint) .clq .clq-in:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+/* The dialog's buttons — the page's `.btn` rules, reachable outside `.content`. */
+:global(.jf-blueprint) .clq-acts .btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 0 16px; height: 40px;
+  border: var(--border); border-radius: var(--radius);
+  font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap; font-family: inherit; cursor: pointer; color: inherit;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s; }
+:global(.jf-blueprint) .clq-acts .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint) .clq-acts .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint) .clq-acts .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint) .clq-acts .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint) .clq-acts .btn-ghost { background: #ffffff; color: var(--ink); }
+:global(.jf-blueprint) .clq-acts .btn-ghost:hover { background: var(--paper-deep); }
+:global(.jf-blueprint) .clq-acts .btn[disabled] { opacity: .45; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .clq,
+  :global(.jf-blueprint) .clq[data-exit="1"],
+  :global(.jf-blueprint) .clq .clq-box,
+  :global(.jf-blueprint) .clq[data-exit="1"] .clq-box { animation: none !important; }
+  :global(.jf-blueprint) .clq .clq-opt { transition: none !important; }
+  :global(.jf-blueprint) .clq .clq-opt:hover { transform: none; }
+}
+
+/* ============================================================
+   THE LEDGER, SPLIT AND EDITABLE (owner, 2026-08-22)
+   Materials and Labor are now two sections, each with its own rows,
+   its own Add, its own change box and its own review gate — the
+   split the Smart Proposal's estimate panel has. Column geometry,
+   control sizes and the dashed row rule are that page's
+   (.sp-thead / .sp-row / .sp-in), value for value, narrowed for
+   this page's right column.
+   ============================================================ */
+:global(.jf-blueprint .content) .vr-sec { margin-bottom: 26px; }
+:global(.jf-blueprint .content) .vr-sec:last-of-type { margin-bottom: 0; }
+:global(.jf-blueprint .content) .vr-sec-bar { display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 12px; }
+:global(.jf-blueprint .content) .vr-sec-bar .vr-sec-h { margin-bottom: 0; }
+:global(.jf-blueprint .content) .vr-sec-total { margin-left: auto; font-size: 17px; font-weight: 900;
+  letter-spacing: -.005em; font-variant-numeric: tabular-nums;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* minmax(0, …) on the name track: a bare 1fr takes its automatic minimum from
+   its content, so one long product name widens the row past the card. */
+:global(.jf-blueprint .content) .vr-thead,
+:global(.jf-blueprint .content) .vr-row { display: grid;
+  grid-template-columns: minmax(0, 1fr) 126px 76px 76px 24px; gap: 9px; align-items: center; }
+:global(.jf-blueprint .content) .vr-thead { padding-bottom: 8px; border-bottom: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .vr-thead span { font-family: var(--font-mono); font-size: 10.5px;
+  font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .vr-thead span + span { text-align: right; }
+:global(.jf-blueprint .content) .vr-row { padding: 8px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .vr-row > * { min-width: 0; }
+:global(.jf-blueprint .content) .vr-row.is-new .vr-name { color: var(--success); }
+:global(.jf-blueprint .content) .vr-row.is-upd .vr-name { color: var(--blueprint); }
+
+/* Borderless until touched, so the ledger still reads as a drawn sheet rather
+   than a form — the Smart Proposal's .sp-name treatment. */
+:global(.jf-blueprint .content) .vr-name { width: 100%; height: 30px; padding: 0 6px; margin-left: -6px;
+  border: 1.5px solid transparent; border-radius: var(--radius); background: transparent;
+  font-family: inherit; font-size: 13.5px; font-weight: 700; color: var(--ink);
+  text-overflow: ellipsis; }
+:global(.jf-blueprint .content) .vr-name:hover { border-color: rgba(10,10,10,.18); }
+:global(.jf-blueprint .content) .vr-name:focus { outline: none; border-color: var(--blueprint);
+  background: #ffffff; }
+:global(.jf-blueprint .content) .vr-name::placeholder { color: var(--muted-faint); font-weight: 600; }
+
+:global(.jf-blueprint .content) .vr-qty { display: flex; align-items: center; gap: 5px; min-width: 0; }
+:global(.jf-blueprint .content) .vr-in { width: 100%; box-sizing: border-box; height: 32px; padding: 0 8px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #ffffff;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--ink);
+  text-align: right; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .vr-in:focus { outline: none; border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .vr-in--qty { flex: 0 1 54px; }
+:global(.jf-blueprint .content) .vr-unit { flex: 1 1 60px; min-width: 0; box-sizing: border-box;
+  height: 32px; padding: 0 7px; border: 1.5px solid rgba(10,10,10,.28); border-radius: var(--radius);
+  background: #ffffff; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+  letter-spacing: .04em; color: var(--muted); }
+:global(.jf-blueprint .content) .vr-unit:focus { outline: none; border-color: var(--blueprint);
+  color: var(--ink); }
+:global(.jf-blueprint .content) .vr-row-t { font-family: var(--font-mono); font-size: 13.5px;
+  font-weight: 600; text-align: right; font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .vr-row-x { width: 24px; height: 24px; display: grid; place-items: center;
+  border: 1.5px solid rgba(10,10,10,.28); border-radius: var(--radius); background: #ffffff;
+  cursor: pointer; color: var(--muted);
+  transition: border-color .13s var(--ease), color .13s var(--ease); }
+:global(.jf-blueprint .content) .vr-row-x:hover { border-color: var(--danger); color: var(--danger); }
+:global(.jf-blueprint .content) .vr-row-x .ic { width: 11px; height: 11px; }
+:global(.jf-blueprint .content) .vr-add { display: inline-flex; align-items: center; gap: 7px;
+  margin-top: 11px; padding: 7px 11px;
+  border: 1.5px dashed rgba(10,10,10,.32); border-radius: var(--radius); background: transparent;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted); cursor: pointer;
+  transition: border-color .13s var(--ease), color .13s var(--ease); }
+:global(.jf-blueprint .content) .vr-add:hover { border-style: solid; border-color: var(--ink);
+  color: var(--ink); }
+:global(.jf-blueprint .content) .vr-add .ic { width: 13px; height: 13px; }
+/* Each section's change box sits tighter to its own rows than the page-foot one
+   did — it belongs to the section above it, not to the card. */
+:global(.jf-blueprint .content) .vr-sec .vr-refine { margin-top: 14px; }
+:global(.jf-blueprint .content) .vr-sec .vr-review { margin-top: 14px; }
+
+/* ============================================================
+   MATERIALS REQUEST — the shoppable list, full width under the two
+   columns. The Smart Proposal's .sp-req-* block, value for value;
+   MaterialThumb's own box is flattened into the donor's hatch frame
+   the same way that page does it.
+   ============================================================ */
+:global(.jf-blueprint .content) .vr-req { padding: 24px 28px; border-top: 1.5px solid rgba(10,10,10,.14); }
+:global(.jf-blueprint .content) .vr-req-head { display: flex; align-items: center; gap: 12px; }
+:global(.jf-blueprint .content) .vr-req-head .vr-sec-h { margin-bottom: 0; }
+:global(.jf-blueprint .content) .vr-req-count { margin-left: auto; padding: 4px 11px;
+  border: 1.5px solid rgba(10,10,10,.45); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .vr-req-row { display: flex; align-items: center; gap: 16px;
+  padding: 13px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
+:global(.jf-blueprint .content) .vr-req-row:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .vr-thumb { flex-shrink: 0; width: 58px; height: 58px;
+  border: var(--border-thin); border-radius: var(--radius); overflow: hidden; position: relative;
+  display: block;
+  background-image: repeating-linear-gradient(45deg, rgba(24,84,160,.10) 0 1px, transparent 1px 7px); }
+:global(.jf-blueprint .content) .vr-thumb img { position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block; }
+/* MaterialThumb's own plate is the OTHER design system's — 64px, rounded,
+   hairline, tinted. Flatten its root into the hatch frame above. Bare element
+   selectors inside a scoped rule are not hashed, which is what makes this
+   reachable at all. */
+:global(.jf-blueprint .content) .vr-thumb > div { position: absolute; inset: 0; width: 100%; height: 100%;
+  border: none; border-radius: 0; background: transparent; }
+:global(.jf-blueprint .content) .vr-thumb > div > svg { width: 20px; height: 20px; color: var(--muted-faint); }
+:global(.jf-blueprint .content) .vr-req-main { min-width: 0; flex: 1; }
+:global(.jf-blueprint .content) .vr-req-n { display: block; font-size: 14.5px; font-weight: 800;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:global(.jf-blueprint .content) .vr-req-m { margin-top: 4px; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  letter-spacing: .03em; color: var(--muted); font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .vr-store { padding: 1px 8px; border: 1.5px solid rgba(10,10,10,.45);
+  border-radius: var(--radius); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink); }
+:global(.jf-blueprint .content) .vr-store--none { border-style: dashed; color: var(--muted); }
+:global(.jf-blueprint .content) .vr-req-price { flex: 0 1 auto; min-width: 0; max-width: 46%;
+  text-align: right; }
+:global(.jf-blueprint .content) .vr-req-price b { display: block; font-size: 16px; font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .vr-req-price > span { display: block; margin-top: 2px;
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .vr-req-ov { font-style: normal; color: var(--warning-dark); }
+:global(.jf-blueprint .content) .vr-req-link { flex-shrink: 0; width: 34px; height: 34px; display: grid;
+  place-items: center; border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: #ffffff; color: var(--ink);
+  transition: transform .12s var(--ease), box-shadow .12s var(--ease), background .12s; }
+:global(.jf-blueprint .content) .vr-req-link:hover { transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--ink); background: var(--paper-deep); }
+:global(.jf-blueprint .content) .vr-req-link .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .vr-reqtotal { display: flex; align-items: baseline;
+  justify-content: space-between; gap: 14px; padding: 14px 0 0; margin-top: 12px;
+  border-top: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .vr-reqtotal span { font-size: 11px; font-weight: 800;
+  letter-spacing: .2em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .vr-reqtotal b { font-size: 20px; font-weight: 900;
+  letter-spacing: -.005em; font-variant-numeric: tabular-nums; }
+
+/* Start over is destructive — the estimate is dropped. Status-badge treatment,
+   NOT a solid red plate: DESIGN.md keeps status colour to ~5% of a surface, and
+   a filled red beside the filled blueprint Convert would read as two primaries.
+   The offset shadow on hover stays ink, like every other button here. */
+:global(.jf-blueprint .content) .btn-danger { background: var(--danger-soft);
+  border-color: var(--danger); color: var(--danger); }
+:global(.jf-blueprint .content) .btn-danger:hover { background: color-mix(in srgb, var(--danger) 14%, #ffffff); }
+
+@media (max-width: 1080px) {
+  /* The five-column row is a desktop geometry; on a narrow column the name takes
+     its own line and the two figures share the one below it. */
+  :global(.jf-blueprint .content) .vr-thead { display: none; }
+  :global(.jf-blueprint .content) .vr-row { grid-template-columns: minmax(0, 1fr) 76px 24px;
+    grid-template-areas: "name name name" "qty price x"; row-gap: 7px; }
+  :global(.jf-blueprint .content) .vr-row > .vr-name { grid-area: name; }
+  :global(.jf-blueprint .content) .vr-row > .vr-qty { grid-area: qty; }
+  :global(.jf-blueprint .content) .vr-row > .vr-in { grid-area: price; }
+  :global(.jf-blueprint .content) .vr-row > .vr-row-t { display: none; }
+  :global(.jf-blueprint .content) .vr-row > .vr-row-x { grid-area: x; }
+  :global(.jf-blueprint .content) .vr-req { padding: 20px 22px; }
+}
+
+/* The failure line is dismissible: it is shown in the ticket foot, above the
+   button that caused it, and a refine failure would otherwise sit there until
+   Start over. */
+:global(.jf-blueprint .content) .vt-err { display: flex; align-items: flex-start; gap: 10px; }
+:global(.jf-blueprint .content) .vt-err > span { flex: 1; min-width: 0; }
+:global(.jf-blueprint .content) .vt-err-x { flex-shrink: 0; width: 22px; height: 22px; display: grid;
+  place-items: center; border: 1.5px solid currentColor; border-radius: var(--radius);
+  background: transparent; color: var(--danger); cursor: pointer; }
+:global(.jf-blueprint .content) .vt-err-x .ic { width: 11px; height: 11px; }

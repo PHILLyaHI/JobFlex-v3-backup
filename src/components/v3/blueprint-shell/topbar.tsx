@@ -14,12 +14,13 @@
 // something you type into was the lie. It opens the thing you type into.
 
 import { canOpen } from "./nav-map";
-import { useNavRole } from "./nav-role";
+import { useNavIdentity } from "./nav-role";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
 import { NotificationBell } from "./notification-bell";
+import { SupportLauncher } from "@/components/v3/support-widget/support-widget";
 
 export function Topbar() {
-  const role = useNavRole();
+  const { role, name } = useNavIdentity();
   // Every engine the picker offers sits outside a field worker's allow-list, so
   // the app's most prominent CTA would open a dialog whose every card bounces
   // them back to Jobs. Asked of the engine list itself so a new engine cannot
@@ -75,6 +76,17 @@ export function Topbar() {
             on the promoted routes; the only feed in the codebase was mounted by
             the legacy topbar and was manager-gated, so a field worker had no
             in-app notification surface at all. */}
+        {/* Help — the launcher for the composer this shell mounts, at EVERY
+            width. It used to be the handheld half of a pair, with a floating
+            plate above 860px; the plate is retired, because a globally mounted
+            button in the bottom-right corner loses that corner to the page —
+            to whatever a handheld surface pins to the bottom of the screen,
+            and on the desk to FloatingCostsCard, permanent furniture on the
+            proposal editor. A top bar is the one corner nothing else claims.
+            `.icon-btn` draws it at the bar's own 40px like the bell beside it;
+            the widget's stylesheet adds the 44px hit floor without changing
+            the plate, so the bar's rhythm is untouched. */}
+        {name ? <SupportLauncher className="icon-btn" iconClassName="ic" /> : null}
         <NotificationBell />
       </div>
     </header>

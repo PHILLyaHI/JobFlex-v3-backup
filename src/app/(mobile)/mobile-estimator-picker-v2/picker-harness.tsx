@@ -43,7 +43,10 @@ export function EstimatorPickerHarness() {
 
   return (
     <div className="jf-epl-app">
-      <MobileNav showSearch={false} />
+      {/* `showSearch` is gone with the button it hid: the topbar's search was a
+          control with no handler and no surface to open, and its slot now
+          carries the Help launcher. */}
+      <MobileNav />
 
       <div className="jf-epl-sheet">
         <div className="jf-epl-kicker">Review harness &middot; drawing № 2847</div>

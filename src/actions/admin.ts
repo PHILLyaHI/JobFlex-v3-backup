@@ -178,10 +178,14 @@ export async function updateTicketStatus(id: string, status: string) {
   revalidatePath("/admin");
 }
 
-// ── Platform-wide email campaigns ─────────────────────
+// ── Platform-wide campaigns ───────────────────────────
 // Reuses the existing Announcement model with `scope = "PLATFORM"`.
 // Every tenant's AnnouncementBanner picks these up because the banner
 // reads any Announcement targeting the org *or* the platform.
+//
+// NOT EMAIL. This writes a banner row and nothing else — no send, no
+// recipient list, no per-recipient state. /admin/campaigns says so on the
+// composer; do not let the file name imply otherwise.
 
 const campaignInput = z.object({
   title: z.string().min(1),
@@ -217,14 +221,22 @@ export async function sendPlatformCampaign(raw: unknown) {
     },
   });
 
+  // The reach the console reports back is counted here, at write time, rather
+  // than echoed from whatever the page was rendered with.
+  const organizations = await db.organization.count();
+
   revalidatePath("/admin/campaigns");
   revalidatePath("/dashboard"); // banner re-renders
-  return { id: created.id };
+  return { id: created.id, organizations };
 }
 
 export async function deletePlatformCampaign(id: string) {
   await requirePlatformAdmin();
-  await db.announcement.delete({ where: { id } });
+  // Scoped to PLATFORM: this console only ever issues platform announcements,
+  // and an ORG-scope id reaching an unscoped delete would take out a tenant's
+  // own notice.
+  const { count } = await db.announcement.deleteMany({ where: { id, scope: "PLATFORM" } });
+  if (count === 0) throw new Error("That announcement no longer exists.");
   revalidatePath("/admin/campaigns");
   revalidatePath("/dashboard");
 }

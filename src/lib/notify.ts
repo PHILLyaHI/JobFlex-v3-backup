@@ -23,6 +23,7 @@ import {
   buildLeadOffer,
   buildNewLead,
   buildOwnerAccepted,
+  buildSupportTicket,
 } from "@/lib/email/build/operator";
 import { buildAppointmentAssignment, buildJobAssignment } from "@/lib/email/build/worker";
 import { buildRequestReceived, buildHomeownerMatched } from "@/lib/email/build/platform";
@@ -576,4 +577,278 @@ export async function notifyHomeownerMatched(platformLeadId: string) {
     ).catch(() => null);
   }
   return { skipped: false as const, enabled: isEmailEnabled() };
+}
+
+// ── Support tickets ───────────────────────────────────────────────────────────
+//
+// Moved here from src/actions/support.ts, where it lived inside one
+// `try { … } catch {}` with an EMPTY catch and the comment "Swallowed by
+// design". Best-effort was the right contract — a dead mail transport must
+// never fail a ticket that is already in the database — but silent was not:
+// a broken key, an empty admin list or a render error all produced a green
+// toast and no alert, and nothing anywhere recorded that the operator had not
+// been told. It is still best-effort (this never throws), but every path now
+// says which one it took: to the log, and to the caller through the return.
+
+/** Short human reference for a ticket, derived from its cuid — nothing is
+ *  generated or stored. Shown to the submitter and printed on the alert so a
+ *  follow-up email and the admin row can be matched by eye. */
+export function supportTicketRef(ticketId: string): string {
+  return ticketId.slice(-6).toUpperCase();
+}
+
+export interface SupportTicketNotice {
+  ticketId: string;
+  ref: string;
+  subject: string;
+  body: string;
+  category: string;
+  priority: string;
+  orgName: string;
+  submitterEmail: string | null;
+}
+
+export type SupportNotifyResult =
+  | { sent: true; recipients: number }
+  /** no-transport — neither Resend nor SMTP configured; no-recipient — no
+   *  SUPPORT_NOTIFY_EMAIL and no user flagged isPlatformAdmin; failed — the
+   *  transport was asked and refused (already logged). */
+  | { sent: false; reason: "no-transport" | "no-recipient" | "failed" };
+
+/** An address no transport can deliver to.
+ *
+ *  THE ONE THAT MATTERS: the platform-admin console does not use NextAuth. It
+ *  mints its principal as `<ADMIN_USERNAME>@platform.jobflex.local` with
+ *  isPlatformAdmin: true (src/actions/adminAuth.ts) so admin writes have a real
+ *  User row to hang foreign keys on. That row is a login, not a mailbox —
+ *  `.local` is reserved by RFC 6762 and resolves nowhere — and it is picked up
+ *  by the isPlatformAdmin query below, which is the DOCUMENTED default when
+ *  SUPPORT_NOTIFY_EMAIL is unset. Resend rejects a batch containing it as a
+ *  permanent validation error, which the retry layer correctly does not retry,
+ *  so a single synthetic row took the alert away from every real admin too. */
+function undeliverable(email: string): boolean {
+  return /@[^@]*\.local$/i.test(email.trim());
+}
+
+/** Where new-ticket alerts go: an explicit SUPPORT_NOTIFY_EMAIL (comma-
+ *  separated) if set, otherwise every flagged platform admin's address. */
+async function supportRecipients(): Promise<string[]> {
+  const override = process.env.SUPPORT_NOTIFY_EMAIL?.trim();
+  if (override) {
+    return override
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  const admins = await db.user.findMany({
+    where: { isPlatformAdmin: true },
+    select: { email: true },
+  });
+  const all = admins.map((a) => a.email).filter((e): e is string => Boolean(e));
+  const real = all.filter((e) => !undeliverable(e));
+  if (real.length < all.length) {
+    console.warn(
+      `[support] skipped ${all.length - real.length} undeliverable platform-admin address(es) — console principals are logins, not mailboxes.`,
+    );
+  }
+  return real;
+}
+
+/** Email the operator that a ticket arrived. Never throws. */
+export async function notifySupportTicket(t: SupportTicketNotice): Promise<SupportNotifyResult> {
+  try {
+    if (!isEmailEnabled()) {
+      console.warn(
+        `[support] ticket ${t.ref} filed with no mail transport configured (set RESEND_API_KEY or SMTP_*) — no operator alert sent.`,
+      );
+      return { sent: false, reason: "no-transport" };
+    }
+    const to = await supportRecipients();
+    if (to.length === 0) {
+      console.warn(
+        `[support] ticket ${t.ref} filed with nobody reachable to alert — set SUPPORT_NOTIFY_EMAIL, or flag a user with a real mailbox isPlatformAdmin.`,
+      );
+      return { sent: false, reason: "no-recipient" };
+    }
+
+    const appUrl = await appBaseUrl();
+    const { subject, html } = renderEmail(
+      buildSupportTicket({
+        subject: t.subject,
+        body: t.body,
+        category: t.category,
+        priority: t.priority,
+        orgName: t.orgName,
+        submitterEmail: t.submitterEmail,
+        ref: t.ref,
+        href: `${appUrl}/admin/support`,
+      }),
+    );
+    // ONE SEND PER RECIPIENT, not one batch. A batch is a single provider call
+    // and a single verdict: one address the provider dislikes and nobody on the
+    // list is told, which is exactly how the console principal above took the
+    // alert away from the real admins. Sent in series (the list is a handful of
+    // operators, not a mailing) and each failure is logged with its address.
+    let delivered = 0;
+    for (const address of to) {
+      try {
+        await sendEmail({
+          to: address,
+          subject,
+          html,
+          // The alert is FROM the platform but ABOUT a contractor's problem, so
+          // a plain Reply goes to the person who raised it instead of to the
+          // platform's own send-only address.
+          replyTo: t.submitterEmail ?? undefined,
+        });
+        delivered += 1;
+      } catch (err) {
+        console.error(`[support] alert to ${address} failed for ticket ${t.ref}:`, err);
+      }
+    }
+    if (delivered === 0) return { sent: false, reason: "failed" };
+    return { sent: true, recipients: delivered };
+  } catch (err) {
+    console.error(`[support] operator alert failed for ticket ${t.ref}:`, err);
+    return { sent: false, reason: "failed" };
+  }
+}
+
+// ── Trade network (Hire & Work marketplace) ─────────────────────────────────
+// All three are best-effort and called behind dynamic imports from
+// actions/tradeServices.ts — a mail failure never fails the write that
+// triggered it. The bell reads ActivityEvent per org
+// (actions/notifications.ts recentNotifications), so each notice also writes
+// one there; unknown kinds fall through to the bell's default href.
+
+const tradeEsc = (s: string) =>
+  s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
+
+async function tradeFirstOrgId(userId: string): Promise<string | null> {
+  const m = await db.membership.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+    select: { organizationId: true },
+  });
+  return m?.organizationId ?? null;
+}
+
+async function tradeEmailOf(userId: string): Promise<string | null> {
+  const u = await db.user.findUnique({ where: { id: userId }, select: { email: true } });
+  return u?.email ?? null;
+}
+
+/** A hirer pressed "I'm interested" on a listed open-for-work profile. */
+export async function notifyTalentContacted(
+  userId: string,
+  from: { fromName: string; fromCompany: string | null },
+) {
+  const who =
+    from.fromCompany && from.fromCompany !== from.fromName
+      ? `${from.fromName} (${from.fromCompany})`
+      : from.fromName;
+  const orgId = await tradeFirstOrgId(userId);
+  if (orgId) {
+    await db.activityEvent.create({
+      data: {
+        organizationId: orgId,
+        kind: "TRADE_CONTACT",
+        summary: `${who} is interested in your services`,
+      },
+    });
+  }
+  if (!isEmailEnabled()) return { skipped: true as const };
+  const email = await tradeEmailOf(userId);
+  if (!email) return { skipped: true as const };
+  const appUrl = await appBaseUrl();
+  await sendEmail({
+    to: email,
+    subject: `${who} is interested in your services on JobFlex`,
+    html:
+      `<p>${tradeEsc(who)} saw your open-for-work profile in the JobFlex talent directory and wants to talk.</p>` +
+      `<p><a href="${appUrl}/trade-services">Open Trade services</a> to follow up.</p>`,
+  });
+  return { skipped: false as const };
+}
+
+/** A recipient raised a hand for a posted trade job — tell its author. */
+export async function notifyTradeInterest(jobId: string, recipientUserId: string) {
+  const job = await db.tradeJob.findUnique({
+    where: { id: jobId },
+    select: { title: true, authorId: true, authorOrgId: true },
+  });
+  if (!job) return { skipped: true as const };
+  const [rec, recOrg] = await Promise.all([
+    db.user.findUnique({ where: { id: recipientUserId }, select: { name: true } }),
+    db.membership.findFirst({
+      where: { userId: recipientUserId },
+      orderBy: { createdAt: "asc" },
+      select: { organization: { select: { name: true } } },
+    }),
+  ]);
+  const who = rec?.name ?? recOrg?.organization.name ?? "A contractor";
+  await db.activityEvent.create({
+    data: {
+      organizationId: job.authorOrgId,
+      kind: "TRADE_INTEREST",
+      summary: `${who} is interested in "${job.title}"`,
+    },
+  });
+  if (!isEmailEnabled()) return { skipped: true as const };
+  const email = await tradeEmailOf(job.authorId);
+  if (!email) return { skipped: true as const };
+  const appUrl = await appBaseUrl();
+  await sendEmail({
+    to: email,
+    subject: `${who} raised a hand for "${job.title}"`,
+    html:
+      `<p>${tradeEsc(who)} is interested in your trade-network post <b>${tradeEsc(job.title)}</b>. A private chat is open with them.</p>` +
+      `<p><a href="${appUrl}/trade-services">Open Trade services</a> to reply.</p>`,
+  });
+  return { skipped: false as const };
+}
+
+/** The poster marked a job FILLED — everyone who raised a hand hears it. The
+ *  contractor they actually hired reads it as "you're hired"; the rest read it
+ *  as the thread closing, which is also true. */
+export async function notifyTradeFilled(jobId: string) {
+  const job = await db.tradeJob.findUnique({
+    where: { id: jobId },
+    select: {
+      title: true,
+      recipients: { where: { status: "INTERESTED" }, select: { recipientId: true } },
+    },
+  });
+  if (!job || job.recipients.length === 0) return { skipped: true as const };
+  await Promise.all(
+    job.recipients.map(async (r) => {
+      const orgId = await tradeFirstOrgId(r.recipientId);
+      if (!orgId) return;
+      await db.activityEvent.create({
+        data: {
+          organizationId: orgId,
+          kind: "TRADE_HIRED",
+          summary: `"${job.title}" was filled — you were on its interested list`,
+        },
+      });
+    }),
+  );
+  if (!isEmailEnabled()) return { skipped: true as const };
+  const appUrl = await appBaseUrl();
+  await Promise.all(
+    job.recipients.map(async (r) => {
+      const email = await tradeEmailOf(r.recipientId);
+      if (!email) return;
+      await sendEmail({
+        to: email,
+        subject: `"${job.title}" has been filled`,
+        html:
+          `<p>You raised a hand for <b>${tradeEsc(job.title)}</b> and the poster has marked it filled. If you agreed the work with them — congratulations, you're hired.</p>` +
+          `<p><a href="${appUrl}/trade-services">Open Trade services</a> — the conversation stays available.</p>`,
+      });
+    }),
+  );
+  return { skipped: false as const };
 }

@@ -1,0 +1,110 @@
+/* ============================================================
+   ADMIN · SUPPORT — the triage queue.
+   /admin/support
+
+   Almost nothing lives here. The page draws from two published
+   sets and adds only what neither already says:
+
+     · the donor globals the admin shell's always-on `.bp` modules
+       apply to page content — page-head, kicker, page-title, card,
+       card-head, card-title, kpi-grid, kpi, kpi-lbl, kpi-val;
+     · components/v3/admin-users/admin-shared.module.css — the
+       admin kit's buttons, search, estimate-style table, status
+       badges, stamps, the hand-rolled sheet and its fields.
+
+   decisions.md: "never create parallel style sets for identical
+   blocks — the main source of typography drift." A second table,
+   a second badge scale or a second sheet frame for this one page
+   would be exactly that, so the filter bar, the unread mark, the
+   message block and the column widths are all that is new.
+
+   SCOPING. Every class is this module's own hashed name, scoped
+   `:global(.jf-blueprint .content) .cls` ⇒ (0,3,0), which beats
+   the dashboard module's `.bp :global(.content *)` control resets
+   at (0,2,1) / (0,2,0). Nothing is registered in PAGE_STYLES: the
+   component imports this file directly.
+   ============================================================ */
+
+/* ── Filter bar ───────────────────────────────────────────────
+   One row, intrinsic rather than breakpoint-driven, so the
+   tablet range needs no rules of its own. */
+:global(.jf-blueprint .content) .filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+:global(.jf-blueprint .content) .filters > * { min-width: 0; }
+/* The kit's `.search` already caps itself at 400px; this only gives it the
+   flex behaviour a bar needs. */
+:global(.jf-blueprint .content) .fSearch { flex: 1 1 280px; }
+/* `.fSel` only gives the kit's <Select> its share of the bar. The control's own
+   metrics are published — `.bp-sel` + `.bp-sel--admin` in blueprint-global.css
+   — and restating any of them here is how the console ended up with three
+   copies of one dropdown. */
+:global(.jf-blueprint .content) .fSel { flex: 0 1 180px; }
+:global(.jf-blueprint .content) .count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Unread mark ──────────────────────────────────────────────
+   A filled blueprint square beside the subject — squares, not
+   dots (DESIGN.md: the drawing's marks are square). Inside the
+   subject cell rather than in a column of its own, so it survives
+   the kit's `.tbl--stack`, which collapses every cell to a block
+   and would have left the mark stranded on a row by itself. */
+:global(.jf-blueprint .content) .subj {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+:global(.jf-blueprint .content) .mark {
+  width: 8px; height: 8px;
+  flex-shrink: 0;
+  background: var(--blueprint);
+}
+:global(.jf-blueprint .content) .unread { font-weight: 800; }
+
+/* ── Table geometry ───────────────────────────────────────────
+   `table-layout: fixed` (the kit's) reads these and nothing
+   else — without them one long subject sets every column. */
+:global(.jf-blueprint .content) .cTicket { width: auto; }
+:global(.jf-blueprint .content) .cCat { width: 130px; }
+:global(.jf-blueprint .content) .cStatus { width: 150px; }
+:global(.jf-blueprint .content) .cAge { width: 110px; }
+
+/* ── The message, in the sheet ────────────────────────────────
+   Verbatim, wrapped, on paper — a quoted note on the drawing,
+   not a paraphrase. `pre-wrap` keeps the submitter's own line
+   breaks; `anywhere` stops one 200-character unbroken run from
+   widening the sheet (SKILL.md, user text never breaks layout). */
+:global(.jf-blueprint .content) .msg {
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 13px 14px;
+  font-size: 13.5px; font-weight: 500; line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+
+/* ── Mobile layer — LAST in the cascade ─────────────────────── */
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .fSearch,
+  :global(.jf-blueprint .content) .fSel { flex: 1 1 100%; }
+  :global(.jf-blueprint .content) .count { margin-left: 0; }
+
+  /* A sheet that already fills the screen has nothing to protect against a
+     long message; the inner scroll would only add a second scrollbar. */
+  :global(.jf-blueprint .content) .msg { max-height: none; }
+}

@@ -61,8 +61,24 @@ export function SupportForm() {
 
     setBusy(true);
     try {
-      await submitSupportTicket({ subject: subject.trim(), body: body.trim(), category, priority });
-      toast.success("Message sent", "Our team will follow up by email — usually within a business day.");
+      const filed = await submitSupportTicket({
+        subject: subject.trim(),
+        body: body.trim(),
+        category,
+        priority,
+      });
+      // What happened, not what usually happens. The action reports whether the
+      // operator alert actually went out; with no mail transport configured
+      // this used to promise a follow-up email that nobody had been told to
+      // send. The ticket is filed either way — that part is a database row.
+      if (filed.notified) {
+        toast.success("Ticket filed", `Reference ${filed.ref}. Our team has been alerted by email.`);
+      } else {
+        toast.info(
+          "Ticket filed",
+          `Reference ${filed.ref}. The email alert didn't go out — quote this reference if you follow up.`,
+        );
+      }
       setSubject("");
       setBody("");
       setCategory("technical");

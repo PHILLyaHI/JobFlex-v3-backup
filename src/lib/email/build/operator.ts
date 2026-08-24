@@ -172,17 +172,26 @@ export interface SupportTicketInput {
   priority: string;
   orgName: string;
   submitterEmail: string | null;
+  /** Short ticket reference (src/lib/notify.ts → supportTicketRef). The same
+   *  string the submitter is shown, so a reply and a row can be matched. */
+  ref?: string;
   href: string;
 }
 
 /** Platform lockup — this reaches admins, never the submitting org. */
 export function buildSupportTicket(i: SupportTicketInput): EmailDoc {
+  const highPriority = i.priority === "high";
   const box: BoxRow[] = [
     { type: "field", label: "Category", value: i.category },
     { type: "field", label: "From", value: i.submitterEmail ? `${i.orgName} (${i.submitterEmail})` : i.orgName },
-    { type: "cond", label: "Respond within", chip: i.priority === "high" ? "1 hour" : "1 day" },
   ];
-  const highPriority = i.priority === "high";
+  // A "Respond within — 1 hour / 1 day" chip used to sit here. It was invented
+  // in this function: there is no SLA anywhere in the product, no field behind
+  // it and nothing that measures it, so the alert was quoting a promise the
+  // platform had never made. The priority the submitter actually chose says the
+  // same thing honestly, and only when it is not the default. `cond` must be
+  // the last row (doc.ts).
+  if (highPriority) box.push({ type: "cond", label: "Priority", chip: "High", tone: "bad" });
   return {
     subject: `${highPriority ? "High priority — " : ""}New support ticket — ${i.subject}`,
     lockup: PLATFORM_LOCKUP,
@@ -191,6 +200,6 @@ export function buildSupportTicket(i: SupportTicketInput): EmailDoc {
     box,
     after: [i.body],
     cta: { label: "Open admin inbox", href: i.href },
-    footer: { name: "JobFlex" },
+    footer: { name: "JobFlex", ref: i.ref },
   };
 }

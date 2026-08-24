@@ -3,7 +3,7 @@
 // MOBILE NAV — the shared handheld navigation chrome.
 //
 // One component for every mobile surface: the dark topbar (burger, product
-// mark, wordmark, optional search, notifications) and the slide-out drawer
+// mark, wordmark, new estimate, help, notifications) and the slide-out drawer
 // carrying the full 22-item nav map with its sliding active-item plate.
 //
 // WHY THIS EXISTS (owner's call, 2026-07-29). The topbar and drawer were
@@ -44,6 +44,7 @@ import { useNavBadges, useNavIdentity } from "@/components/v3/blueprint-shell/na
 import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
 import { SignOutButton } from "@/components/v3/blueprint-shell/sign-out";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
+import { SupportLauncher, SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
 import styles from "./mobile-nav.module.css";
 import "@/components/v3/estimators-blueprint/estimators-global.css";
@@ -76,7 +77,7 @@ function monogram(name: string): string {
     : (p[0][0] + p[p.length - 1][0]).toUpperCase();
 }
 
-export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
+export function MobileNav() {
   const [open, setOpen] = useState(false);
   const navScrollRef = useRef<HTMLElement>(null);
   const indicatorRef = useRef<HTMLDivElement>(null);
@@ -102,6 +103,10 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
      for them the handheld New Estimate button could only open a dialog whose
      every card bounces. Asked of the engine list itself, not a copy of it. */
   const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href));
+  /* The review URLs render this nav with no session behind it, so the Help
+     button would open a composer whose send could only ever fail. Same signal
+     the widget itself is given. */
+  const signedIn = Boolean(accountName);
   const canOpenSettings = canOpen(role, "/dashboard/settings");
   const canOpenAccount = canOpen(role, "/dashboard/settings/account");
 
@@ -164,6 +169,14 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
           does not need the blueprint shell to be present. */}
       <EstimatorPicker />
 
+      {/* The support composer, mounted for the same reason and in the same slot
+          as the picker: it is on every handheld surface, so it belongs beside
+          the nav rather than in any one page. Its LAUNCHER is the topbar
+          button below — nothing floats at this width.
+          `accountName` is empty on the standalone /mobile-*-v2 review URLs,
+          which have no session and no NavRoleProvider. */}
+      <SupportWidget signedIn={signedIn} />
+
       <header className={styles.tbar} onClick={press}>
         <button
           className={styles.tbarBtn}
@@ -209,11 +222,31 @@ export function MobileNav({ showSearch = true }: { showSearch?: boolean }) {
               <Icon id="i-plus" />
             </button>
           )}
-          {showSearch ? (
-            <button className={styles.tbarBtn} type="button" aria-label="Search">
-              <Icon id="i-search" />
-            </button>
-          ) : null}
+          {/* Help — the launcher for the support composer the widget below
+              mounts, and the only one the app has at any width now. It is HERE
+              rather than floating in the corner because a globally mounted
+              button there loses that corner to the page: on handheld it
+              covered the Smart Proposal wizard's only "Next" and the manual
+              builder's totals chevron, and on the desk, once lowered out of
+              their way, it ended up buried under FloatingCostsCard on the
+              proposal editor. The desktop shells carry the same button in
+              their own top bars, so the control is one object everywhere.
+
+              It stands in the slot the SEARCH button held. That button was
+              INERT — no onClick, no href, and no listener for it anywhere in
+              the tree (`git show HEAD:…/mobile-nav.tsx`): it opened nothing on
+              any of the surfaces that mount this nav, most of which carry
+              their own working search field in the page body (the `.find` bar
+              on jobs, clients, leads, projects, messages, …). It is not
+              restored alongside Help because the slot is the last one there
+              is: the right group is already New Estimate + Help + bell, and
+              the 320px budget in mobile-nav.module.css is burger + mark +
+              wordmark + the right group. A fourth control there pushes
+              "CONTRACTOR OS" past its ellipsis. A real handheld search needs
+              a surface to open first — nothing in this fleet has one. */}
+          {signedIn && (
+            <SupportLauncher className={styles.tbarBtn} iconClassName={styles.ic} />
+          )}
           {/* The handheld bell had NO onClick at all and rendered `.bellDot`
               unconditionally — a dot that advertised unread notifications on
               every page load whether or not any existed. Same component the

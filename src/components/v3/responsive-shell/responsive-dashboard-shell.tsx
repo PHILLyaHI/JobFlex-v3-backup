@@ -25,6 +25,7 @@ import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
 import { NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
+import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import type { SeenKey } from "@/lib/badgeCounts";
 
@@ -216,7 +217,24 @@ const PAGE_OWNED_STATIC = new Set([
   "/dashboard/subscription",
   "/dashboard/subscription-blueprint",
   "/dashboard/client-detail",
+  // Both editions need the org's next ticket number and whether the estimator
+  // key is configured — server facts — so the switch lives with the page
+  // (video-estimator-blueprint/video-estimator-viewport-switch.tsx) rather than
+  // in the props-less map above. Added 2026-08-22 with the wired estimator;
+  // before it, a phone on this URL got the desktop page and no handheld nav.
+  "/dashboard/video-estimator",
 ]);
+
+/** Mapped handheld surfaces that do NOT render <MobileNav />.
+ *
+ *  /dashboard (mobile-v2) is the fleet's oldest handheld page and the only one
+ *  that kept its own inline topbar, drawer and bottom bar when the other 21
+ *  moved onto the shared nav. Anything MobileNav mounts for every surface — the
+ *  estimator picker, the support widget — therefore has to be mounted for this
+ *  one from here. Verified by grep, not assumed: every other entry in
+ *  HANDHELD_SURFACES and every PAGE_OWNED branch imports mobile-shell/mobile-nav.
+ *  The day mobile-v2 adopts MobileNav, this set empties and goes. */
+const NO_MOBILE_NAV = new Set(["/dashboard"]);
 
 /** Seen-stamps for the HANDHELD branch. The desktop edition stamps from each
  *  server page.tsx (<MarkNavSeen /> in the returned tree), but at ≤768px this
@@ -295,6 +313,17 @@ export function ResponsiveDashboardShell({
         <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
           <Handheld />
         </ChunkRecoveryBoundary>
+        {/* The support composer. Every other handheld surface gets it from
+            <MobileNav />; /dashboard is the one mapped surface that kept its
+            own topbar and drawer instead of the shared nav, so its copy is
+            mounted from out here. Its LAUNCHER is the Help button in that
+            page's own topbar (mobile-v2/mobile-dashboard.tsx) — nothing floats
+            at this width, which is what keeps the button off the error toast's
+            only dismiss control. Mounted last so the sheet paints over the
+            page, which is `position: fixed; z-index: 20`. */}
+        {NO_MOBILE_NAV.has(pathname ?? "") && (
+          <SupportWidget signedIn={Boolean(identity?.name)} />
+        )}
       </NavRoleProvider>
     );
   }

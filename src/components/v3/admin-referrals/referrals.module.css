@@ -1,0 +1,29 @@
+/* ============================================================
+   ADMIN REFERRALS — BLUEPRINT
+   /admin/referrals
+   Page-specific vocabulary only; shared furniture lives in
+   admin-influencers/admin-ui.module.css. Scoped (0,3,0).
+   ============================================================ */
+
+:global(.jf-blueprint .content) .root { display: flex; flex-direction: column; gap: 22px; }
+
+/* Conversions: signup · referrer · status · credit · actions */
+:global(.jf-blueprint .content) .cols { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.6fr) minmax(0, 1.1fr) 96px 270px; }
+
+:global(.jf-blueprint .content) .refSub { display: flex; align-items: center; gap: 7px; white-space: normal; }
+:global(.jf-blueprint .content) .refOrg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .when { margin-top: 5px; }
+:global(.jf-blueprint .content) .amtOk { color: var(--success); }
+
+:global(.jf-blueprint .content) .bannerX {
+  margin-left: auto; appearance: none; border: none; background: none; cursor: pointer;
+  color: inherit; display: inline-flex; padding: 4px;
+}
+:global(.jf-blueprint .content) .bannerX :global(.ic) { width: 15px; height: 15px; }
+
+:global(.jf-blueprint .content .pmdl) .markWho { font-size: 13.5px; line-height: 1.55; margin-bottom: 14px; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content .pmdl) .markWho b { font-weight: 900; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .bannerX { padding: 12px; }
+}

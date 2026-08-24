@@ -7,11 +7,20 @@ import { SupportTickets, type SupportTicketView } from "./support-tickets";
 export const dynamic = "force-dynamic";
 
 export default async function SupportPage() {
-  // Manager-only: support history can hold billing/account detail, and only
-  // managers can submit — viewing matches the submission gate.
-  const { organizationId } = await requireManager();
+  // Manager-only route, and — since the Help widget put a composer on every
+  // screen for every role — the viewer's OWN tickets only.
+  //
+  // This page listed every ticket the organization had ever filed, body
+  // included. A ticket is addressed to the JobFlex platform, not to the
+  // contractor: an installer writing about their employer had no way to know
+  // that employer could read it verbatim from here, and no way to opt out.
+  // Filtering by userId is what makes the page's own words ("Your tickets",
+  // "Your conversations", "Only you and our team can see this") true. The
+  // cross-org view stays where it belongs, on the operator's console at
+  // /admin/support.
+  const { organizationId, user } = await requireManager();
   const tickets = await db.supportTicket.findMany({
-    where: { organizationId },
+    where: { organizationId, userId: user.id },
     orderBy: { createdAt: "desc" },
     take: 50,
     select: {

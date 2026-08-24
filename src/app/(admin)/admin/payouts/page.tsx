@@ -1,7 +1,10 @@
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { PayoutsClient, type PayoutRequestDTO, type TransferDTO } from "./payouts-client";
+import {
+  AdminPayoutsContent,
+  type PayoutRequestDTO,
+  type TransferDTO,
+} from "@/components/v3/admin-payouts/payouts-content";
 
 export default async function AdminPayoutsPage() {
   await requirePlatformAdmin();
@@ -32,6 +35,7 @@ export default async function AdminPayoutsPage() {
     status: r.status,
     rejectedReason: r.rejectedReason,
     createdAt: r.createdAt.toISOString(),
+    approvedAt: r.approvedAt ? r.approvedAt.toISOString() : null,
   }));
 
   const transferDto: TransferDTO[] = transfers.map((t) => ({
@@ -42,16 +46,8 @@ export default async function AdminPayoutsPage() {
     stripeTransferId: t.stripeTransferId,
     failureReason: t.failureReason,
     createdAt: t.createdAt.toISOString(),
+    paidAt: t.paidAt ? t.paidAt.toISOString() : null,
   }));
 
-  return (
-    <>
-      <PageHeader
-        eyebrow="Platform"
-        title="Payouts"
-        description="Approve partner payout requests. Approved requests are transferred to their Stripe Connect account by the daily payout cron."
-      />
-      <PayoutsClient requests={requestDto} transfers={transferDto} />
-    </>
-  );
+  return <AdminPayoutsContent requests={requestDto} transfers={transferDto} />;
 }

@@ -294,3 +294,102 @@ export async function requestPayout() {
   });
   revalidatePath("/influencer");
 }
+
+// ── admin: dashboard rollup for /admin/influencers ───
+// One read shape for the strip at the top of the admin page: totals across
+// every partner, the commission ledger netted out, and the five codes that
+// have actually converted. Read-only; the page's table comes from its own
+// findMany so the two never disagree on what counts as a conversion (an
+// Attribution row, whatever its status — a cancelled subscriber still
+// converted once).
+export interface InfluencerRollup {
+  total: number;
+  active: number;
+  pending: number;
+  suspended: number;
+  terminated: number;
+  clicks: number;
+  conversions: number;
+  /** Net of every ledger entry — what is still owed across all partners. */
+  owedCents: number;
+  /** Inside the hold window, not yet payable. */
+  pendingCents: number;
+  /** Past the hold window, payable now. */
+  clearedCents: number;
+  paidOutCents: number;
+  topCodes: {
+    promoId: string;
+    code: string;
+    influencerId: string;
+    influencerName: string;
+    conversions: number;
+    clicks: number;
+    active: boolean;
+  }[];
+}
+
+export async function getInfluencerRollup(): Promise<InfluencerRollup> {
+  await requirePlatformAdmin();
+
+  const [statusGroups, clickAgg, conversions, ledger, topGroups] = await Promise.all([
+    db.influencer.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.promoCode.aggregate({ _sum: { clicks: true } }),
+    db.attribution.count(),
+    db.commissionLedger.findMany({ select: { entryType: true, amountCents: true, state: true } }),
+    db.attribution.groupBy({
+      by: ["promoCodeId"],
+      _count: { _all: true },
+      orderBy: { _count: { promoCodeId: "desc" } },
+      take: 5,
+    }),
+  ]);
+
+  const byStatus = new Map(statusGroups.map((g) => [g.status, g._count._all]));
+  const total = statusGroups.reduce((n, g) => n + g._count._all, 0);
+  const balances = ledgerBalances(ledger);
+
+  const topIds = topGroups.map((g) => g.promoCodeId);
+  const topPromos = topIds.length
+    ? await db.promoCode.findMany({
+        where: { id: { in: topIds } },
+        select: {
+          id: true,
+          code: true,
+          clicks: true,
+          active: true,
+          influencer: { select: { id: true, displayName: true } },
+        },
+      })
+    : [];
+  const promoById = new Map(topPromos.map((p) => [p.id, p]));
+  const topCodes = topGroups.flatMap((g) => {
+    const p = promoById.get(g.promoCodeId);
+    if (!p) return [];
+    return [
+      {
+        promoId: p.id,
+        code: p.code,
+        influencerId: p.influencer.id,
+        influencerName: p.influencer.displayName,
+        conversions: g._count._all,
+        clicks: p.clicks,
+        active: p.active,
+      },
+    ];
+  });
+
+  return {
+    total,
+    active: byStatus.get(InfluencerStatus.ACTIVE) ?? 0,
+    pending: byStatus.get(InfluencerStatus.PENDING) ?? 0,
+    suspended: byStatus.get(InfluencerStatus.SUSPENDED) ?? 0,
+    terminated: byStatus.get(InfluencerStatus.TERMINATED) ?? 0,
+    clicks: clickAgg._sum.clicks ?? 0,
+    conversions,
+    owedCents: balances.balanceCents,
+    pendingCents: balances.pendingCents,
+    clearedCents: balances.clearedCents,
+    paidOutCents: balances.paidOutCents,
+    topCodes,
+  };
+}

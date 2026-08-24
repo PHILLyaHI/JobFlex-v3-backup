@@ -1,0 +1,911 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   JobFlex — LANDING C  ·  "THE DRAWING SET"
+   ───────────────────────────────────────────────────────────────────────────
+   PLAIN stylesheet. Deliberately NOT a CSS Module.
+
+   Three constructs in this file are unscopable by the modules pipeline, and
+   two of them would leak app-wide if this file were ever renamed to
+   `.module.css`:
+
+     1. `.jf-landing-c *` — a scoped universal reset. `*` is not a class, so
+        CSS Modules leaves it ALONE. The rule ships as a bare `*` selector and
+        flattens the margin/padding/box-sizing of every other page in the app.
+        This exact failure has bitten this project twice.
+     2. `[data-lc-*]` attribute selectors drive the mobile menu, the section
+        marks and the reveal states. Hashing renames classes, not attributes,
+        so half a rule would hash and half would not — the pairs silently stop
+        matching and nothing errors.
+     3. The `:has()` host neutralizers below have to name real `html` / `body`
+        elements. A module cannot scope those either.
+
+   So: every selector below carries ONE literal root class, `.jf-landing-c`,
+   uniformly. A uniform prefix leaves relative specificity — and therefore
+   which of two competing rules wins — exactly as authored.
+
+   `@keyframes` cannot nest under a class, so all names carry an `lc_` prefix,
+   the convention already used by `lp_` (landing), `hire_`, `calendar_`.
+
+   Page tokens are declared on `.jf-landing-c`, never on `:root`. Several
+   shadow globals.css tokens at different values (`--lc-*` names avoid the
+   collision entirely, which is why they are prefixed rather than reusing
+   `--paper` / `--ink`). Nothing leaks outward.
+
+   HOST NEUTRALIZERS — globals.css paints a 40px drafting grid on `body`.
+   Landing C's whole argument is that the blueprint furniture is DIALLED BACK;
+   a graph-paper ground under a page whose only technical device is a pair of
+   hairline registration rules would fight it. The three `:has()` rules switch
+   the app grid off for the document that contains this page and restore it
+   automatically the moment the page unmounts — a live selector needs no JS
+   teardown and there is nothing to forget on navigate-away.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── HOST NEUTRALIZERS (the only rules that name html/body) ─────────────── */
+html:has(.jf-landing-c) { scroll-behavior: smooth; }
+body:has(.jf-landing-c) { overflow-x: hidden; background-image: none; }
+body:has(.jf-landing-c)::before { content: none; }
+/* Scroll-lock for the mobile menu, expressed as a live selector rather than a
+   JS body-class toggle: it cannot get stranded if a render is interrupted.
+   Placed after the rule above so `overflow:hidden` wins on both axes. */
+body:has(.jf-landing-c [data-lc-menu="open"]) { overflow: hidden; }
+
+/* ── TOKENS ────────────────────────────────────────────────────────────── */
+.jf-landing-c {
+  /* Ground / sheets. The page inverts cal.com: their white sheets sit on a
+     grey field; here the field is drafting PAPER and the sheets are white —
+     white is the drawing area, paper is the table it lies on. */
+  --lc-paper: #f2f0eb;
+  --lc-sheet: #ffffff;
+  --lc-sheet-2: #faf9f6;
+
+  /* Ink. -2 is body copy, -3 is the annotation layer. Both clear WCAG AA on
+     BOTH grounds: #6b6b6b is 5.25:1 on white and 4.61:1 on paper. */
+  --lc-ink: #0a0a0a;
+  --lc-ink-2: #3d3d3d;
+  --lc-ink-3: #6b6b6b;
+  --lc-ink-inv: #ffffff;
+  --lc-ink-inv-2: #b9b9b9;
+
+  /* Rules. `hair` draws the registration gutter, `rule` the content dividers. */
+  --lc-hair: rgba(10, 10, 10, 0.11);
+  --lc-rule: rgba(10, 10, 10, 0.14);
+  --lc-rule-inv: rgba(255, 255, 255, 0.16);
+
+  /* Accent. Blue is for DRAWINGS and marks, never for buttons — the primary
+     action is ink, which keeps the ~80/15/5 neutral/blueprint/sky split and
+     stops the page reading as a generic blue SaaS site. */
+  --lc-blue: #1854a0;
+  --lc-blue-deep: #0e3d7a;
+  --lc-blue-soft: rgba(24, 84, 160, 0.07);
+  --lc-sky: #4a9eff;
+
+  --lc-frame: 2px solid var(--lc-ink);
+  --lc-r: 2px;
+  --lc-drop: 3px 3px 0 var(--lc-ink);
+  --lc-drop-lift: 5px 5px 0 var(--lc-ink);
+
+  --lc-sans: var(--font-inter), 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --lc-mono: var(--font-jbmono), 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  /* Layout. --lc-rule-x is the x of the registration gutter: it tracks the
+     content edge until the viewport is wide enough for the 1200px measure to
+     centre, then locks to it. One expression drives the verticals AND the
+     crosses, so they can never drift apart. */
+  --lc-pad: 20px;
+  --lc-measure: 1200px;
+  --lc-rule-x: max(var(--lc-pad), calc(50% - var(--lc-measure) / 2));
+  --lc-bay: clamp(72px, 8.5vw, 128px);
+
+  --lc-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Scoped reset — see hazard 1 in the header. */
+.jf-landing-c *,
+.jf-landing-c *::before,
+.jf-landing-c *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+.jf-landing-c {
+  position: relative;
+  isolation: isolate;
+  background: var(--lc-paper);
+  color: var(--lc-ink);
+  font-family: var(--lc-sans);
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: auto;
+  overflow-wrap: break-word;
+  padding-top: 92px; /* clears the fixed nav */
+}
+.jf-landing-c a { color: inherit; text-decoration: none; }
+.jf-landing-c button { font: inherit; color: inherit; background: none; border: none;
+  cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(24, 84, 160, 0.14); }
+.jf-landing-c ul { list-style: none; }
+.jf-landing-c svg { display: block; }
+.jf-landing-c img { max-width: 100%; height: auto; }
+
+/* One focus treatment for the whole page. */
+.jf-landing-c a:focus-visible,
+.jf-landing-c button:focus-visible {
+  outline: 2px solid var(--lc-blue);
+  outline-offset: 3px;
+  border-radius: var(--lc-r);
+}
+.jf-landing-c [data-lc-invert] a:focus-visible,
+.jf-landing-c [data-lc-invert] button:focus-visible { outline-color: var(--lc-sky); }
+
+/* ── TYPE PRIMITIVES ───────────────────────────────────────────────────── */
+/* Only H1 and H2 are set in the house's heavy uppercase. Card titles, body
+   and lists are sentence case — that restraint IS the "dial it back" brief.
+   The mono annotation layer is the one place the drafting voice survives. */
+.jf-landing-c .lc-h1 {
+  font-size: clamp(31px, 6.2vw, 66px);
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: -0.038em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.jf-landing-c .lc-h2 {
+  font-size: clamp(26px, 3.5vw, 44px);
+  font-weight: 900;
+  line-height: 1.03;
+  letter-spacing: -0.032em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.jf-landing-c .lc-h3 {
+  font-size: clamp(17px, 1.35vw, 19px);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.014em;
+}
+.jf-landing-c .lc-lead {
+  font-size: clamp(16px, 1.35vw, 18.5px);
+  line-height: 1.6;
+  color: var(--lc-ink-2);
+  text-wrap: pretty;
+}
+.jf-landing-c .lc-body { font-size: 15.5px; line-height: 1.62; color: var(--lc-ink-2); }
+.jf-landing-c .lc-mono {
+  font-family: var(--lc-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--lc-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.jf-landing-c .lc-blue { color: var(--lc-blue); }
+
+/* ── LAYOUT SHELL ──────────────────────────────────────────────────────── */
+.jf-landing-c .lc-wrap {
+  width: 100%;
+  max-width: calc(var(--lc-measure) + var(--lc-pad) * 2);
+  margin-inline: auto;
+  padding-inline: var(--lc-pad);
+}
+.jf-landing-c .lc-sec {
+  position: relative;
+  z-index: 1;
+  padding-block: var(--lc-bay);
+}
+.jf-landing-c .lc-sec[data-lc-tight] { padding-block: clamp(34px, 4vw, 52px); }
+
+/* THE REGISTRATION GUTTER — the page's one structural blueprint device.
+   Two hairlines held at the content edge for the full scroll, with a small
+   drawn cross where each bay meets the next. Fixed, at z-index 0, so opaque
+   sections (the one inverse band) pass over them instead of having to
+   re-declare them. cal.com does exactly this in grey; here it is drawn. */
+.jf-landing-c .lc-rules {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.jf-landing-c .lc-rules::before,
+.jf-landing-c .lc-rules::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--lc-hair);
+}
+.jf-landing-c .lc-rules::before { left: var(--lc-rule-x); }
+.jf-landing-c .lc-rules::after { right: var(--lc-rule-x); }
+
+.jf-landing-c .lc-sec[data-lc-mark]::before,
+.jf-landing-c .lc-sec[data-lc-mark]::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  width: 13px;
+  height: 13px;
+  background-image: linear-gradient(var(--lc-rule) 0 0), linear-gradient(var(--lc-rule) 0 0);
+  background-size: 13px 1px, 1px 13px;
+  background-position: center, center;
+  background-repeat: no-repeat;
+}
+.jf-landing-c .lc-sec[data-lc-mark]::before { left: var(--lc-rule-x); margin-left: -6px; }
+.jf-landing-c .lc-sec[data-lc-mark]::after { right: var(--lc-rule-x); margin-right: -6px; }
+
+/* Section head: mono bay number + rule + heading + lead + CTAs, centred.
+   The repetition is the point — cal.com's calm comes from every band opening
+   the same way. */
+.jf-landing-c .lc-head { max-width: 720px; margin-inline: auto; text-align: center; }
+.jf-landing-c .lc-head .lc-h2 { margin-top: 16px; }
+.jf-landing-c .lc-head .lc-lead { margin-top: 16px; }
+.jf-landing-c .lc-kick {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--lc-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--lc-ink-3);
+}
+.jf-landing-c .lc-kick i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  background: var(--lc-blue);
+  flex: none;
+}
+.jf-landing-c [data-lc-invert] .lc-kick { color: var(--lc-ink-inv-2); }
+.jf-landing-c [data-lc-invert] .lc-kick i { background: var(--lc-sky); }
+
+/* ── BUTTONS ───────────────────────────────────────────────────────────── */
+/* Exactly two, both square, both ink. Blue is never a button here. */
+.jf-landing-c .lc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 50px;
+  padding: 0 24px;
+  border: var(--lc-frame);
+  border-radius: var(--lc-r);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  background: var(--lc-sheet);
+  color: var(--lc-ink);
+  transition: transform 150ms var(--lc-ease), box-shadow 150ms var(--lc-ease),
+              background-color 150ms var(--lc-ease);
+}
+.jf-landing-c .lc-btn svg { width: 15px; height: 15px; flex: none; }
+.jf-landing-c .lc-btn[data-lc-v="fill"] { background: var(--lc-ink); color: var(--lc-ink-inv); box-shadow: var(--lc-drop); }
+.jf-landing-c .lc-btn:hover { transform: translate(-1px, -1px); box-shadow: var(--lc-drop); }
+.jf-landing-c .lc-btn[data-lc-v="fill"]:hover { box-shadow: var(--lc-drop-lift); }
+.jf-landing-c .lc-btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--lc-ink); }
+.jf-landing-c [data-lc-invert] .lc-btn { border-color: var(--lc-ink-inv); background: transparent; color: var(--lc-ink-inv); }
+.jf-landing-c [data-lc-invert] .lc-btn:hover { box-shadow: 3px 3px 0 var(--lc-ink-inv); }
+.jf-landing-c [data-lc-invert] .lc-btn[data-lc-v="fill"] { background: var(--lc-ink-inv); color: var(--lc-ink); box-shadow: 3px 3px 0 var(--lc-sky); }
+.jf-landing-c [data-lc-invert] .lc-btn[data-lc-v="fill"]:hover { box-shadow: 5px 5px 0 var(--lc-sky); }
+
+.jf-landing-c .lc-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+/* ── NAV ───────────────────────────────────────────────────────────────── */
+/* cal.com's floating pill, redrawn with our pen: same silhouette and inset,
+   square corners and a hard offset shadow instead of a soft radius. */
+.jf-landing-c .lc-nav {
+  position: fixed;
+  top: 16px;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  padding-inline: var(--lc-pad);
+}
+.jf-landing-c .lc-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  max-width: var(--lc-measure);
+  margin-inline: auto;
+  height: 60px;
+  padding: 0 10px 0 16px;
+  background: var(--lc-sheet);
+  border: var(--lc-frame);
+  border-radius: var(--lc-r);
+  box-shadow: var(--lc-drop);
+}
+.jf-landing-c .lc-brand { display: inline-flex; align-items: center; gap: 10px; flex: none; min-height: 44px; }
+.jf-landing-c .lc-brand svg { width: 26px; height: 26px; flex: none; }
+.jf-landing-c .lc-brand b {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+.jf-landing-c .lc-nav-links { display: none; align-items: center; gap: 4px; margin-left: 10px; }
+.jf-landing-c .lc-nav-links a {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: var(--lc-r);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--lc-ink-2);
+  transition: color 140ms var(--lc-ease), background-color 140ms var(--lc-ease);
+}
+.jf-landing-c .lc-nav-links a:hover { color: var(--lc-blue); background: var(--lc-blue-soft); }
+.jf-landing-c .lc-nav-end { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.jf-landing-c .lc-nav-signin {
+  display: none;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--lc-ink-2);
+}
+.jf-landing-c .lc-nav-signin:hover { color: var(--lc-blue); }
+.jf-landing-c .lc-nav .lc-btn { min-height: 44px; padding: 0 16px; font-size: 12px; }
+.jf-landing-c .lc-burger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: var(--lc-frame);
+  border-radius: var(--lc-r);
+  background: var(--lc-sheet);
+}
+.jf-landing-c .lc-burger svg { width: 18px; height: 18px; }
+
+/* Mobile menu — a full-height sheet, not a dropdown. */
+.jf-landing-c .lc-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: var(--lc-paper);
+  padding: 16px var(--lc-pad) 28px;
+  animation: lc_sheet 220ms var(--lc-ease) both;
+}
+.jf-landing-c .lc-menu-top { display: flex; align-items: center; height: 60px; }
+.jf-landing-c .lc-menu-top .lc-burger { margin-left: auto; }
+.jf-landing-c .lc-menu nav { margin-top: 18px; border-top: 1px solid var(--lc-rule); }
+.jf-landing-c .lc-menu nav a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  border-bottom: 1px solid var(--lc-rule);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+.jf-landing-c .lc-menu nav a span {
+  font-family: var(--lc-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--lc-ink-3);
+}
+.jf-landing-c .lc-menu-foot { margin-top: auto; display: grid; gap: 10px; padding-top: 24px; }
+.jf-landing-c .lc-menu-foot .lc-btn { width: 100%; min-height: 52px; }
+
+/* ── HERO ──────────────────────────────────────────────────────────────── */
+.jf-landing-c .lc-hero { padding-block: clamp(44px, 6vw, 84px) clamp(56px, 6vw, 88px); }
+.jf-landing-c .lc-hero-copy { max-width: 860px; margin-inline: auto; text-align: center; }
+.jf-landing-c .lc-hero .lc-h1 { margin-top: 20px; }
+.jf-landing-c .lc-hero .lc-lead { margin-top: 22px; max-width: 620px; margin-inline: auto; }
+.jf-landing-c .lc-hero-note {
+  margin-top: 20px;
+  font-family: var(--lc-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--lc-ink-3);
+}
+
+/* ── SHEET (the page's one card shape) ─────────────────────────────────── */
+.jf-landing-c .lc-sheet {
+  position: relative;
+  background: var(--lc-sheet);
+  border: var(--lc-frame);
+  border-radius: var(--lc-r);
+}
+.jf-landing-c .lc-sheet-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 42px;
+  padding: 9px 14px;
+  border-bottom: 2px solid var(--lc-ink);
+  background: var(--lc-sheet-2);
+}
+/* The drawing title wraps rather than truncating: an ellipsised "14 MA…" on a
+   document that is meant to look like a real proposal reads as a bug. */
+.jf-landing-c .lc-push { margin-left: auto; }
+.jf-landing-c .lc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1.5px solid var(--lc-blue);
+  border-radius: var(--lc-r);
+  background: var(--lc-blue-soft);
+  font-family: var(--lc-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lc-blue-deep);
+  white-space: nowrap;
+}
+.jf-landing-c .lc-chip i { width: 5px; height: 5px; background: var(--lc-blue); flex: none; }
+
+.jf-landing-c .lc-hero-figure { margin-top: clamp(36px, 4.5vw, 60px); }
+.jf-landing-c .lc-figure-body { display: grid; grid-template-columns: 1fr; }
+.jf-landing-c .lc-figure-plan {
+  display: flex;
+  flex-direction: column;
+  padding: 20px 18px;
+  border-bottom: 1px solid var(--lc-rule);
+  background: var(--lc-sheet-2);
+}
+.jf-landing-c .lc-figure-plan svg { width: 100%; height: auto; color: var(--lc-blue); }
+.jf-landing-c .lc-plan-label { margin-top: 20px; }
+.jf-landing-c .lc-scope { margin-top: 10px; display: grid; gap: 7px; }
+/* Pushed to the foot of the panel: a real drawing carries its notes at the
+   bottom of the sheet, and it stops the column bottoming out in dead white. */
+.jf-landing-c .lc-plan-note { margin-top: auto; padding-top: 22px; }
+.jf-landing-c .lc-scope li {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--lc-ink-2);
+}
+.jf-landing-c .lc-scope li::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: none;
+  background: var(--lc-blue);
+  transform: translateY(-2px);
+}
+
+/* The ledger — an estimate sheet: name left, spec under it, tabular figure
+   right, hairline leaders between rows. Straight out of the house system. */
+.jf-landing-c .lc-ledger { padding: 6px 18px 18px; }
+.jf-landing-c .lc-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px 14px;
+  align-items: baseline;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--lc-rule);
+}
+.jf-landing-c .lc-row-h { font-size: 14.5px; font-weight: 700; letter-spacing: -0.008em; }
+.jf-landing-c .lc-row-s {
+  margin-top: 3px;
+  font-family: var(--lc-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lc-ink-3);
+}
+.jf-landing-c .lc-row-n {
+  font-size: 14.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+.jf-landing-c .lc-row[data-lc-muted] .lc-row-h { font-weight: 600; color: var(--lc-ink-3); }
+.jf-landing-c .lc-row[data-lc-muted] .lc-row-n { font-weight: 600; color: var(--lc-ink-3); }
+.jf-landing-c .lc-row-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.jf-landing-c .lc-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 4px;
+  padding: 18px 0 2px;
+}
+.jf-landing-c .lc-total-n {
+  font-size: clamp(28px, 3.4vw, 40px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-landing-c .lc-sheet-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border-top: 2px solid var(--lc-ink);
+  background: var(--lc-sheet-2);
+}
+
+/* ── TRADE STRIP ───────────────────────────────────────────────────────── */
+/* cal.com's trusted-by row, kept as a SHAPE and made honest. A logo wall on a
+   product this size would be a fabrication; the six trades it is actually
+   built for carry real information in the same silhouette. */
+.jf-landing-c .lc-trades {
+  border-top: 1px solid var(--lc-rule);
+  border-bottom: 1px solid var(--lc-rule);
+  padding-block: 26px;
+}
+.jf-landing-c .lc-trades p { text-align: center; }
+.jf-landing-c .lc-trade-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 0;
+  margin-top: 18px;
+}
+.jf-landing-c .lc-trade-row li {
+  padding: 0 clamp(12px, 2vw, 26px);
+  font-size: clamp(12px, 1.25vw, 15px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lc-ink-2);
+  border-right: 1px solid var(--lc-rule);
+  line-height: 1.9;
+}
+.jf-landing-c .lc-trade-row li:last-child { border-right: none; }
+
+/* ── STEP GRID (01 / 02 / 03) ──────────────────────────────────────────── */
+.jf-landing-c .lc-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin-top: clamp(36px, 4vw, 56px);
+}
+.jf-landing-c .lc-step { display: flex; flex-direction: column; }
+.jf-landing-c .lc-step-copy { padding: 22px 20px 18px; }
+.jf-landing-c .lc-num {
+  display: inline-block;
+  font-family: var(--lc-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--lc-blue);
+}
+.jf-landing-c .lc-step .lc-h3 { margin-top: 12px; }
+.jf-landing-c .lc-step .lc-body { margin-top: 9px; }
+.jf-landing-c .lc-step-art {
+  margin-top: auto;
+  padding: 18px;
+  border-top: 1px solid var(--lc-rule);
+  background: var(--lc-sheet-2);
+}
+.jf-landing-c .lc-step-art svg { width: 100%; height: auto; color: var(--lc-blue); }
+
+/* ── INVERSE BAND (estimators) ─────────────────────────────────────────── */
+/* The page's single dark block and the ONE place graph paper survives. A page
+   this quiet needs one spine; giving the drawing-led section the ink ground
+   lets the schematics glow in sky line-art and earns the blueprint identity
+   in a single band instead of smearing it over ten. */
+.jf-landing-c .lc-band {
+  background-color: var(--lc-ink);
+  background-image:
+    linear-gradient(rgba(74, 158, 255, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 158, 255, 0.09) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--lc-ink-inv);
+}
+.jf-landing-c .lc-band .lc-lead { color: var(--lc-ink-inv-2); }
+.jf-landing-c .lc-band .lc-body { color: var(--lc-ink-inv-2); }
+.jf-landing-c .lc-band .lc-mono { color: var(--lc-ink-inv-2); }
+.jf-landing-c .lc-tools {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin-top: clamp(36px, 4vw, 56px);
+}
+.jf-landing-c .lc-tool {
+  display: flex;
+  flex-direction: column;
+  border: 2px solid var(--lc-rule-inv);
+  border-radius: var(--lc-r);
+  background: rgba(255, 255, 255, 0.03);
+}
+.jf-landing-c .lc-tool-art {
+  padding: 18px;
+  border-bottom: 2px solid var(--lc-rule-inv);
+}
+.jf-landing-c .lc-tool-art svg { width: 100%; height: auto; color: var(--lc-sky); }
+.jf-landing-c .lc-tool-copy { padding: 18px 18px 20px; }
+.jf-landing-c .lc-tool .lc-h3 { margin-top: 10px; color: var(--lc-ink-inv); }
+.jf-landing-c .lc-tool .lc-body { margin-top: 8px; }
+.jf-landing-c .lc-tool-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+.jf-landing-c .lc-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1.5px solid var(--lc-rule-inv);
+  border-radius: var(--lc-r);
+  font-family: var(--lc-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lc-ink-inv-2);
+}
+
+/* ── BENEFITS ──────────────────────────────────────────────────────────── */
+/* Deliberately the flattest thing on the page: no frames, no shadows, just a
+   hairline lattice. After the dark band the eye needs somewhere to rest. */
+.jf-landing-c .lc-bens {
+  display: grid;
+  grid-template-columns: 1fr;
+  margin-top: clamp(36px, 4vw, 56px);
+  border-top: 1px solid var(--lc-rule);
+}
+.jf-landing-c .lc-ben {
+  padding: 26px 0;
+  border-bottom: 1px solid var(--lc-rule);
+}
+.jf-landing-c .lc-ben svg { width: 22px; height: 22px; color: var(--lc-blue); }
+.jf-landing-c .lc-ben .lc-h3 { margin-top: 14px; }
+.jf-landing-c .lc-ben .lc-body { margin-top: 8px; max-width: 42ch; }
+
+/* ── QUOTES ────────────────────────────────────────────────────────────── */
+.jf-landing-c .lc-quotes {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin-top: clamp(36px, 4vw, 56px);
+}
+.jf-landing-c .lc-quote { padding: 22px 20px; display: flex; flex-direction: column; }
+.jf-landing-c .lc-quote blockquote {
+  font-size: 16px;
+  line-height: 1.58;
+  color: var(--lc-ink);
+  letter-spacing: -0.005em;
+}
+.jf-landing-c .lc-quote figcaption {
+  margin-top: auto;
+  padding-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.jf-landing-c .lc-avatar {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 1.5px solid var(--lc-ink);
+  border-radius: var(--lc-r);
+  background: var(--lc-sheet-2);
+  display: grid;
+  place-items: center;
+  font-family: var(--lc-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--lc-ink-2);
+}
+.jf-landing-c .lc-quote-who { display: block; font-size: 13.5px; font-weight: 700; letter-spacing: -0.008em; }
+.jf-landing-c .lc-quote-where {
+  display: block;
+  font-family: var(--lc-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lc-ink-3);
+  margin-top: 2px;
+}
+.jf-landing-c .lc-illus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 22px;
+  padding: 7px 11px;
+  border: 1.5px dashed var(--lc-ink-3);
+  border-radius: var(--lc-r);
+  font-family: var(--lc-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lc-ink-3);
+}
+
+/* ── FACTS ─────────────────────────────────────────────────────────────── */
+.jf-landing-c .lc-facts {
+  display: grid;
+  grid-template-columns: 1fr;
+  border: var(--lc-frame);
+  border-radius: var(--lc-r);
+  background: var(--lc-sheet);
+}
+.jf-landing-c .lc-fact { padding: 26px 22px; border-bottom: 1px solid var(--lc-rule); }
+.jf-landing-c .lc-fact:last-child { border-bottom: none; }
+.jf-landing-c .lc-fact b {
+  display: block;
+  font-size: clamp(34px, 4vw, 48px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-landing-c .lc-fact .lc-body { margin-top: 12px; max-width: 34ch; }
+
+/* ── CLOSER ────────────────────────────────────────────────────────────── */
+.jf-landing-c .lc-closer { padding: clamp(44px, 6vw, 76px) 24px; text-align: center; }
+.jf-landing-c .lc-closer .lc-h2 { margin-top: 16px; }
+.jf-landing-c .lc-closer .lc-lead { max-width: 520px; margin: 16px auto 0; }
+
+/* ── FOOTER ────────────────────────────────────────────────────────────── */
+.jf-landing-c .lc-foot { border-top: 1px solid var(--lc-rule); padding-block: clamp(44px, 5vw, 72px) 28px; }
+.jf-landing-c .lc-foot-grid { display: grid; grid-template-columns: 1fr; gap: 34px; }
+.jf-landing-c .lc-foot-brand { max-width: 320px; }
+.jf-landing-c .lc-foot-brand .lc-body { margin-top: 14px; font-size: 14px; }
+.jf-landing-c .lc-foot-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px 20px; }
+.jf-landing-c .lc-foot-col h3 {
+  font-family: var(--lc-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--lc-ink-3);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--lc-rule);
+}
+.jf-landing-c .lc-foot-col ul { margin-top: 6px; }
+.jf-landing-c .lc-foot-col a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--lc-ink-2);
+  transition: color 140ms var(--lc-ease);
+}
+.jf-landing-c .lc-foot-col a:hover { color: var(--lc-blue); }
+.jf-landing-c .lc-foot-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--lc-rule);
+}
+.jf-landing-c .lc-foot-bar .lc-mono { font-size: 10px; letter-spacing: 0.16em; }
+.jf-landing-c .lc-foot-bar .lc-foot-legal { margin-left: 0; display: flex; gap: 16px; flex-wrap: wrap; }
+.jf-landing-c .lc-foot-bar .lc-foot-legal a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 12px;
+  color: var(--lc-ink-3);
+}
+.jf-landing-c .lc-foot-bar .lc-foot-legal a:hover { color: var(--lc-blue); }
+
+/* ── DRAWN FIGURE PRIMITIVES ───────────────────────────────────────────── */
+/* Every schematic on the page is inline SVG with stroke="currentColor" so the
+   line weight is set once, here, and the colour comes from the section. */
+.jf-landing-c [data-lc-art] { stroke: currentColor; fill: none; stroke-width: 1.5;
+  stroke-linecap: square; stroke-linejoin: miter; shape-rendering: geometricPrecision; }
+.jf-landing-c [data-lc-art] [data-lc-w="hair"] { stroke-width: 1; }
+.jf-landing-c [data-lc-art] [data-lc-w="bold"] { stroke-width: 2.5; }
+.jf-landing-c [data-lc-art] [data-lc-dash] { stroke-dasharray: 4 4; }
+.jf-landing-c [data-lc-art] [data-lc-fill] { fill: currentColor; stroke: none; }
+.jf-landing-c [data-lc-art] text {
+  fill: currentColor;
+  stroke: none;
+  font-family: var(--lc-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.jf-landing-c [data-lc-art] [data-lc-ghost] { opacity: 0.42; }
+.jf-landing-c [data-lc-art] [data-lc-faint] { opacity: 0.28; }
+.jf-landing-c [data-lc-art] [data-lc-t="total"] { font-size: 11px; font-weight: 800; }
+.jf-landing-c [data-lc-art] [data-lc-t="stamp"] { font-size: 13px; letter-spacing: 0.14em; }
+.jf-landing-c [data-lc-glyph] { stroke: currentColor; fill: none; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── REVEAL ────────────────────────────────────────────────────────────── */
+/* The whole motion budget: one 12px settle, once, on scroll. Nothing loops,
+   nothing parallaxes, nothing auto-advances. cal.com is calm largely because
+   almost nothing on it moves. */
+.jf-landing-c [data-rv] {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 520ms var(--lc-ease), transform 520ms var(--lc-ease);
+}
+.jf-landing-c [data-rv].lc-in { opacity: 1; transform: none; }
+.jf-landing-c [data-rv][data-rv-d="1"] { transition-delay: 70ms; }
+.jf-landing-c [data-rv][data-rv-d="2"] { transition-delay: 140ms; }
+.jf-landing-c [data-rv][data-rv-d="3"] { transition-delay: 210ms; }
+
+@keyframes lc_sheet {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── BREAKPOINTS ───────────────────────────────────────────────────────── */
+@media (max-width: 559px) {
+  .jf-landing-c .lc-ctas { flex-direction: column; }
+  .jf-landing-c .lc-ctas .lc-btn { width: 100%; }
+}
+
+@media (min-width: 560px) {
+  .jf-landing-c { --lc-pad: 28px; }
+  .jf-landing-c .lc-figure-plan { padding: 26px 24px; }
+  .jf-landing-c .lc-ledger { padding: 8px 24px 24px; }
+  .jf-landing-c .lc-facts { grid-template-columns: repeat(3, 1fr); }
+  .jf-landing-c .lc-fact { border-bottom: none; border-right: 1px solid var(--lc-rule); }
+  .jf-landing-c .lc-fact:last-child { border-right: none; }
+}
+
+@media (min-width: 720px) {
+  .jf-landing-c .lc-grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .jf-landing-c .lc-tools { grid-template-columns: repeat(3, 1fr); }
+  .jf-landing-c .lc-quotes { grid-template-columns: repeat(3, 1fr); }
+  .jf-landing-c .lc-bens { grid-template-columns: repeat(2, 1fr); column-gap: 40px; }
+  .jf-landing-c .lc-foot-cols { grid-template-columns: repeat(4, 1fr); }
+  .jf-landing-c .lc-foot-bar .lc-foot-legal { margin-left: auto; }
+}
+
+@media (min-width: 861px) {
+  .jf-landing-c { --lc-pad: 40px; }
+  .jf-landing-c .lc-nav-links { display: flex; }
+  .jf-landing-c .lc-nav-signin { display: inline-flex; }
+  .jf-landing-c .lc-burger { display: none; }
+  .jf-landing-c .lc-figure-body { grid-template-columns: 340px 1fr; }
+  .jf-landing-c .lc-figure-plan { border-bottom: none; border-right: 1px solid var(--lc-rule); }
+  .jf-landing-c .lc-bens { grid-template-columns: repeat(3, 1fr); }
+  .jf-landing-c .lc-foot-grid { grid-template-columns: 300px 1fr; gap: 56px; }
+}
+
+@media (max-width: 860px) {
+  /* The registration gutter is a wide-viewport device. At handheld width the
+     content already touches the edge, so the rules would sit on top of type
+     instead of framing it — they come off entirely rather than being squeezed. */
+  .jf-landing-c .lc-rules { display: none; }
+  .jf-landing-c .lc-sec[data-lc-mark]::before,
+  .jf-landing-c .lc-sec[data-lc-mark]::after { display: none; }
+}
+
+@media (min-width: 1080px) {
+  .jf-landing-c .lc-figure-body { grid-template-columns: 400px 1fr; }
+  .jf-landing-c .lc-ben { padding: 30px 0; }
+}
+
+/* ── REDUCED MOTION ────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .jf-landing-c *,
+  .jf-landing-c *::before,
+  .jf-landing-c *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .jf-landing-c [data-rv] { opacity: 1; transform: none; }
+}

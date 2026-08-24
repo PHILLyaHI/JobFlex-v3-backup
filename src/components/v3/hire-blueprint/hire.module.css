@@ -1521,3 +1521,105 @@
 /* Resume link in the candidate sheet's meta block. */
 .bp :global(.content .sf-meta-link) { color: var(--blueprint); font-weight: 700; }
 .bp :global(.content .sf-meta-link:hover) { color: var(--blueprint-dark); text-decoration: underline; }
+
+
+/* ============================================================
+   POST A JOB + HUB BUTTONS (owner, 2026-08-23)
+   The profile panel became the Post-a-job composer; the hub's
+   text-like affordances became real buttons; talent rows gained
+   a contact control; "Your job posts" lists the caller's
+   broadcasts. Appended overrides — later in the cascade wins at
+   equal specificity, so the earlier hub rules need no edits.
+   ============================================================ */
+
+/* The back control is a BUTTON now, not a mono caption. */
+.bp :global(.content .back-link) {
+  padding: 0 13px; height: 34px; margin-bottom: 14px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #ffffff;
+  color: var(--ink); cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.bp :global(.content .back-link:hover) {
+  color: var(--ink); background: var(--paper-deep);
+  transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink);
+}
+.bp :global(.content .back-link:active) { transform: none; box-shadow: none; }
+
+/* Door CTAs read as buttons; the whole door still presses as one target. */
+.bp :global(.content .door-cta) {
+  margin-top: auto; align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 0 14px; height: 36px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #ffffff;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease),
+    background 0.12s, color 0.12s, border-color 0.12s;
+}
+.bp :global(.content .door:hover .door-cta) {
+  background: var(--blueprint); border-color: var(--blueprint); color: #ffffff;
+  transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* "Go deeper" rows are plated as buttons too. */
+.bp :global(.content .hub-list) { display: flex; flex-direction: column; gap: 10px; }
+.bp :global(.content .hub-row) {
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #ffffff;
+  padding: 12px 14px;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.bp :global(.content .hub-row:hover) {
+  background: var(--paper-deep);
+  transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* The composer's rate row: min – max + the styled unit dropdown. */
+.bp :global(.content .sf-rate) {
+  display: grid; grid-template-columns: 110px 16px 110px minmax(150px, 220px);
+  gap: 8px; align-items: stretch;
+}
+.bp :global(.content .sf-rate-dash) {
+  display: grid; place-items: center; color: var(--muted); font-weight: 700;
+}
+.bp :global(.content .sf-rate .bp-sel-in) { padding-top: 9px; padding-bottom: 9px; padding-left: 11px; }
+@media (max-width: 700px) {
+  .bp :global(.content .sf-rate) { grid-template-columns: 1fr 16px 1fr; }
+  .bp :global(.content .sf-rate .bp-sel) { grid-column: 1 / -1; }
+}
+
+/* Success line under the composer — status colour on a status, nothing else. */
+.bp :global(.content .pok) {
+  margin-top: 12px; padding: 10px 12px;
+  border: 1.5px solid var(--success); border-left-width: 5px; border-radius: var(--radius);
+  background: var(--success-soft); color: var(--success);
+  font-size: 12.5px; font-weight: 600; line-height: 1.4;
+}
+
+/* "Your job posts" — the caller's broadcasts with their responses. */
+.bp :global(.content .mypost-list) { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.bp :global(.content .mypost-row) {
+  display: flex; align-items: flex-start; gap: 14px; padding: 12px 0;
+  border-bottom: 1px dashed rgba(10, 10, 10, 0.16);
+}
+.bp :global(.content .mypost-row:last-child) { border-bottom: none; }
+.bp :global(.content .mypost-main) { min-width: 0; flex: 1; display: block; }
+.bp :global(.content .mypost-t) { display: block; font-size: 14px; font-weight: 800; overflow-wrap: anywhere; }
+.bp :global(.content .mypost-m) {
+  display: block; margin-top: 3px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; color: var(--muted);
+}
+.bp :global(.content .mypost-side) {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  flex-wrap: wrap; justify-content: flex-end;
+}
+.bp :global(.content .mypost-cancel:hover) { border-color: var(--danger); color: var(--danger); }
+
+/* The talent row's contact control. */
+.bp :global(.content .tal-contact) { flex-shrink: 0; }
+.bp :global(.content .tal-contact[disabled]) { opacity: 0.55; pointer-events: none; }
+
+/* The back control's chevron points BACK. `.rot-l` was only ever defined for
+   `.pager-btn`, so on `.back-link` it rendered as a downward caret — which
+   reads as a disclosure, not a return. */
+.bp :global(.content .back-link .ic.rot-l) { transform: rotate(90deg); }

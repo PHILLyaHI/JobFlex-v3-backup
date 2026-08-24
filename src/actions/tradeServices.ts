@@ -133,6 +133,34 @@ export async function discoverTradeProfiles(): Promise<DiscoverProfileDTO[]> {
     }));
 }
 
+/** "I'm interested" on a talent-directory row — the door from the HIRER side
+ *  (owner, 2026-08-23: the directory had no way to contact anyone). The listed
+ *  contractor gets an email and a bell notice naming the interested company;
+ *  nothing else is written — the conversation happens wherever they take it. */
+export async function contactTalentProfile(profileId: string): Promise<{ ok: true }> {
+  const { user, organizationId } = await requireOrg();
+  const prof = await db.tradeNetworkProfile.findUnique({
+    where: { id: profileId },
+    select: { optIn: true, userId: true },
+  });
+  if (!prof || !prof.optIn) throw new Error("This profile is no longer listed.");
+  if (prof.userId === user.id) throw new Error("That is your own profile.");
+  const org = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { name: true },
+  });
+  try {
+    const { notifyTalentContacted } = await import("@/lib/notify");
+    await notifyTalentContacted(prof.userId, {
+      fromName: user.name ?? org?.name ?? "A contractor",
+      fromCompany: org?.name ?? null,
+    });
+  } catch (err) {
+    console.warn("[tradeServices] talent-contact notify failed:", err);
+  }
+  return { ok: true };
+}
+
 // ─── Inbox (recipient view: New / Engaged / Hidden) ─────────────────────────
 type RecipientRow = {
   status: string;
@@ -389,6 +417,16 @@ export async function respondToTradeJob(
       update: { updatedAt: new Date() },
     });
   }
+  if (status === "INTERESTED") {
+    // The poster hears about the raised hand — bell + email, best-effort:
+    // a mail failure must never fail the response that triggered it.
+    try {
+      const { notifyTradeInterest } = await import("@/lib/notify");
+      await notifyTradeInterest(jobId, user.id);
+    } catch (err) {
+      console.warn("[tradeServices] interest notify failed:", err);
+    }
+  }
   revalidatePath(ROUTE);
   return { ok: true };
 }
@@ -422,6 +460,15 @@ export async function setTradeJobStatus(
   });
   if (!job || job.authorId !== user.id) throw new Error("Only the poster can do that.");
   await db.tradeJob.update({ where: { id: jobId }, data: { status } });
+  if (status === "FILLED") {
+    // Everyone who raised a hand hears the outcome — best-effort, see above.
+    try {
+      const { notifyTradeFilled } = await import("@/lib/notify");
+      await notifyTradeFilled(jobId);
+    } catch (err) {
+      console.warn("[tradeServices] filled notify failed:", err);
+    }
+  }
   revalidatePath(ROUTE);
   return { ok: true };
 }

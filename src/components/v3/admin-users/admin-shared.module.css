@@ -1,0 +1,428 @@
+/* ============================================================
+   ADMIN — SHARED BLUEPRINT KIT
+   /admin/users · /admin/plans
+
+   The vocabulary both admin pages draw from: buttons, the topbar-style
+   search, the estimate-style table, status badges and stamps, the
+   hand-rolled sheet (.mdl), form fields, drawn toggles, banners.
+   Values are the donor's (jobflex-dashboard-blueprint.html) and the
+   fleet's (proposals .ptable/.pstatus, clients .mdl/.fld) — restated,
+   not re-derived, so the two admin pages cannot drift from each other
+   or from the dashboard.
+
+   ── SCOPING ────────────────────────────────────────────────
+   Every class is this module's own hashed name and the whole file is
+   scoped `:global(.jf-blueprint .content) .cls` ⇒ (0,3,0). The always-on
+   dashboard module resets controls under `.content` at (0,2,1) /
+   (0,2,0); (0,3,0) wins both, so buttons keep their frames here.
+
+   The literal-global names the markup uses — `mdl`, `mdl-bg`, `mdl-box`,
+   `open`, `mdl--closing`, `rv`, `rv-in`, `pressed` — are the fleet's
+   dialog enter/exit (blueprint-global.css) and entrance cascade. They
+   pass through cx() untouched because this module never declares them.
+
+   ── NO @keyframes ──────────────────────────────────────────
+   Lightning CSS rejects @keyframes inside the modules pipeline; the
+   dialog's mdlBoxIn/Out and the press2 keyframe are published globally
+   by dashboard-blueprint/blueprint-global.css.
+   ============================================================ */
+
+/* icons — 15px in controls (3/4 of the 24 grid, stroke 2 → clean 1.5px) */
+:global(.jf-blueprint .content) .ic {
+  width: 15px; height: 15px; flex-shrink: 0;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+}
+
+/* ============================================================
+   BUTTONS  (donor .btn / .btn-primary / .btn-ghost)
+   ============================================================ */
+:global(.jf-blueprint .content) .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 0 16px; height: 40px;
+  border: var(--border); border-radius: var(--radius);
+  background: #fff; color: var(--ink);
+  font-family: var(--font);
+  font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap; cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint .content) .btn .ic { width: 15px; height: 15px; transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1); }
+:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:hover .ic { transform: scale(1.12); }
+:global(.jf-blueprint .content) .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint .content) .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btn-ghost { background: #fff; color: var(--ink); }
+:global(.jf-blueprint .content) .btn-ghost:hover { background: var(--paper-deep); }
+/* TRAP (decisions.md): the base .btn carries height 40px — a compact variant
+   must restate height or it secretly stays 40px and inflates the bar. */
+:global(.jf-blueprint .content) .btn-sm { height: 34px; padding: 0 12px; font-size: 11px; gap: 7px; }
+:global(.jf-blueprint .content) .btn-sm .ic { width: 14px; height: 14px; }
+/* A button standing beside a field is part of that field's row: the same 38px
+   axis as `.in`, `.search` and the published `.bp-sel--admin`, so all four
+   share one baseline (44px on the handheld layer). */
+:global(.jf-blueprint .content) .btn-field { height: 38px; }
+/* Danger: the status tone on the frame and the imprint, never a fill. */
+:global(.jf-blueprint .content) .btn-danger { border-color: var(--danger); color: var(--danger); }
+:global(.jf-blueprint .content) .btn-danger:hover { background: var(--danger-soft); box-shadow: 3px 3px 0 var(--danger); }
+/* Quiet: no frame at rest; the ink outline appears on hover (proposals bar actions). */
+:global(.jf-blueprint .content) .btn-quiet { border-color: transparent; background: transparent; color: var(--muted); }
+:global(.jf-blueprint .content) .btn-quiet:hover { border-color: var(--ink); background: var(--paper-deep); color: var(--ink); }
+:global(.jf-blueprint .content) .btn-quiet.btn-danger { color: var(--danger); }
+:global(.jf-blueprint .content) .btn-quiet.btn-danger:hover { border-color: var(--danger); background: var(--danger-soft); }
+/* A disabled control is mid-write or refused, not decoration — it dims and stops lifting. */
+:global(.jf-blueprint .content) .btn:disabled { opacity: 0.5; cursor: default; }
+:global(.jf-blueprint .content) .btn:disabled:hover { transform: none; box-shadow: none; }
+:global(.jf-blueprint .content) .btn:disabled:hover .ic { transform: none; }
+:global(.jf-blueprint .content) .btn:global(.pressed) { animation: press2 0.18s ease-out; }
+
+/* ============================================================
+   SEARCH  (donor topbar .search)
+   ============================================================ */
+/* 38px, not the donor topbar's 40: on this page the search stands in a bar
+   beside `.in`, `.bp-sel--admin` and `.btn-field`, and one axis is worth more than one
+   inherited number. 44px on the handheld layer with the rest of them. */
+:global(.jf-blueprint .content) .search {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; max-width: 400px; height: 38px; padding: 0 12px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper);
+  transition: background 0.12s;
+}
+:global(.jf-blueprint .content) .search:focus-within { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .search .ic { width: 16px; height: 16px; color: var(--muted); }
+:global(.jf-blueprint .content) .search input {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-family: var(--font); font-size: 13.5px; font-weight: 500; color: var(--ink);
+}
+:global(.jf-blueprint .content) .search input::placeholder { color: var(--muted-light); }
+:global(.jf-blueprint .content) .search kbd {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  color: var(--muted);
+  border: 1px solid var(--hair); border-radius: var(--radius);
+  padding: 2px 6px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   TABLE  (proposals .card--table / .ptable)
+   ============================================================ */
+:global(.jf-blueprint .content) .tbl-card { padding: 0; overflow: hidden; }
+:global(.jf-blueprint .content) .tbl-wrap { overflow-x: auto; }
+:global(.jf-blueprint .content) .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+:global(.jf-blueprint .content) .tbl th {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted-light);
+  text-align: left;
+  padding: 13px 16px;
+  border-bottom: 2px solid var(--ink);
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .tbl th.num, :global(.jf-blueprint .content) .tbl td.num { text-align: right; }
+:global(.jf-blueprint .content) .tbl td {
+  padding: 11px 16px;
+  border-bottom: 1.5px solid var(--hair-soft);
+  vertical-align: middle;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .tbl tbody tr { transition: background 0.12s; }
+:global(.jf-blueprint .content) .tbl tbody tr.is-link { cursor: pointer; }
+:global(.jf-blueprint .content) .tbl tbody tr:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .tbl tbody tr:last-child td { border-bottom: none; }
+:global(.jf-blueprint .content) .tbl tbody tr:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+
+:global(.jf-blueprint .content) .t-title {
+  font-size: 13.5px; font-weight: 700; color: var(--ink); line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+:global(.jf-blueprint .content) .t-sub {
+  margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+:global(.jf-blueprint .content) .t-mono {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--muted);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+:global(.jf-blueprint .content) .t-num {
+  font-size: 14.5px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .t-clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:global(.jf-blueprint .content) .t-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Empty table — a note on the drawing, 1.5px dashed (DESIGN.md). */
+:global(.jf-blueprint .content) .tbl-empty {
+  margin: 16px;
+  border: 1.5px dashed var(--muted-faint); border-radius: var(--radius);
+  padding: 22px 16px; text-align: center;
+  font-size: 13px; font-weight: 500; color: var(--muted);
+}
+
+/* ============================================================
+   STATUS BADGES + STAMPS  (proposals .pstatus — 3-tone rule)
+   ============================================================ */
+:global(.jf-blueprint .content) .st {
+  display: inline-flex; align-items: center;
+  padding: 3.5px 9px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .st--ok     { border-color: var(--success); color: var(--success); background: var(--success-soft); }
+:global(.jf-blueprint .content) .st--warn   { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
+:global(.jf-blueprint .content) .st--danger { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+:global(.jf-blueprint .content) .st--sky    { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
+:global(.jf-blueprint .content) .st--bp     { border-color: var(--blueprint); color: var(--blueprint-dark); background: rgba(24, 84, 160, 0.1); }
+/* Inverse plate — the drawing's stamp. */
+:global(.jf-blueprint .content) .stamp {
+  display: inline-flex; align-items: center;
+  padding: 3px 8px;
+  background: var(--ink); color: var(--paper);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .stamp--bp { background: var(--blueprint); color: #fff; }
+/* Mono annotation tag (donor .tag). */
+:global(.jf-blueprint .content) .tag {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--muted);
+  border: 1px solid var(--hair); border-radius: var(--radius);
+  padding: 3px 7px; white-space: nowrap; flex-shrink: 0;
+}
+
+/* ============================================================
+   SHEET  (.mdl — the house dialog; frame verbatim from clients/projects)
+   The element ALSO wears the literal `mdl` / `mdl-bg` / `mdl-box` names so
+   blueprint-global.css's enter/exit keyframes reach it. `.content` has
+   `z-index: 1` and would trap a fixed child beneath the shell chrome;
+   `:has(.mdl.open)` lifts that while a sheet is up (fleet pattern).
+   ============================================================ */
+:global(.jf-blueprint .content:has(.mdl.open)) { z-index: auto; }
+:global(.jf-blueprint .content) .sheet {
+  position: fixed; inset: 0; z-index: 120;
+  display: none; align-items: center; justify-content: center;
+  padding: 20px;
+}
+:global(.jf-blueprint .content) .sheet:global(.open) { display: flex; }
+:global(.jf-blueprint .content) .sheet-bg { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
+:global(.jf-blueprint .content) .sheet-box {
+  position: relative;
+  display: flex; flex-direction: column;
+  width: min(560px, 100%);
+  max-height: calc(var(--app-h, 100vh) - 40px);
+  border: var(--border); border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 5px 5px 0 var(--ink);
+  overflow: hidden;
+}
+:global(.jf-blueprint .content) .sheet-box--wide { width: min(880px, 100%); }
+:global(.jf-blueprint .content) .sheet-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  padding: 15px 17px 13px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+:global(.jf-blueprint .content) .sheet-titles { min-width: 0; }
+:global(.jf-blueprint .content) .sheet-kick {
+  display: block; margin-bottom: 5px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted-light);
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .sheet-title {
+  font-size: 20px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .sheet-x {
+  width: 30px; height: 30px; flex-shrink: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: transparent; color: var(--muted); cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+:global(.jf-blueprint .content) .sheet-x:hover { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
+:global(.jf-blueprint .content) .sheet-x .ic { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .sheet-body { display: grid; gap: 14px; padding: 16px 17px 18px; overflow-y: auto; min-height: 0; align-content: start; }
+:global(.jf-blueprint .content) .sheet-foot {
+  display: flex; gap: 9px; align-items: center;
+  padding: 12px 17px;
+  border-top: 1.5px solid var(--ink);
+  background: var(--paper-deep);
+}
+:global(.jf-blueprint .content) .sheet-foot .btn { flex: 1; }
+:global(.jf-blueprint .content) .sheet-foot .grow { flex: 1; min-width: 0; }
+
+/* sections inside a sheet — dashed rules between, like a drawing's zones */
+:global(.jf-blueprint .content) .sec { display: grid; gap: 12px; padding-top: 14px; border-top: 1.5px dashed var(--hair); }
+:global(.jf-blueprint .content) .sec:first-child { padding-top: 0; border-top: none; }
+:global(.jf-blueprint .content) .sec-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .sec-t { font-size: 12px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .sec-m {
+  margin-left: auto;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .sec--danger { border-top-color: var(--danger); }
+:global(.jf-blueprint .content) .sec--danger .sec-t { color: var(--danger); }
+/* 12px is the sheet's rhythm (.sec gap); align-items start keeps every field in
+   a row hanging off the same top line instead of stretching to the tallest. */
+:global(.jf-blueprint .content) .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: start; }
+:global(.jf-blueprint .content) .row--3 { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+
+/* ============================================================
+   FIELDS  (clients .fld / .pinput)
+   ============================================================ */
+:global(.jf-blueprint .content) .fld { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+:global(.jf-blueprint .content) .fld-lbl {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  display: flex; align-items: center; gap: 6px;
+}
+:global(.jf-blueprint .content) .fld-hint { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--muted-light); }
+:global(.jf-blueprint .content) .in {
+  width: 100%; height: 38px; padding: 8px 11px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: #fff;
+  font-family: var(--font); font-size: 12.5px; color: var(--ink);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+:global(.jf-blueprint .content) .in::placeholder { color: var(--muted-faint); }
+:global(.jf-blueprint .content) .in:focus { outline: none; border-color: var(--blueprint); box-shadow: 2px 2px 0 rgba(24, 84, 160, 0.25); }
+:global(.jf-blueprint .content) .in:disabled { background: var(--paper); color: var(--muted); cursor: not-allowed; }
+:global(.jf-blueprint .content) .in--mono { font-family: var(--font-mono); font-weight: 600; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .in--num { text-align: right; }
+:global(.jf-blueprint .content) .ta { height: auto; min-height: 78px; padding: 9px 11px; line-height: 1.45; resize: vertical; }
+/* A $ or % drawn into the field — the annotation, not the value. */
+:global(.jf-blueprint .content) .in-wrap { position: relative; }
+:global(.jf-blueprint .content) .in-pre, :global(.jf-blueprint .content) .in-suf {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--muted); pointer-events: none;
+}
+:global(.jf-blueprint .content) .in-pre { left: 11px; }
+:global(.jf-blueprint .content) .in-suf { right: 11px; }
+:global(.jf-blueprint .content) .in--pre { padding-left: 26px; }
+:global(.jf-blueprint .content) .in--suf { padding-right: 30px; }
+/* THE ADMIN SELECT is published in blueprint-global.css as the shared
+   control plus one modifier: <span class="bp-sel bp-sel--admin">. The kit's
+   <Select> renders exactly that; this file used to carry a copy of the
+   treatment, and so did two other admin stylesheets. */
+
+/* drawn toggle — a 2px ink box; pressed = blueprint fill (clients .fchk).
+   A GRID, not a flex row: with a sub the box must sit on the label's line, and
+   flex centring dropped it into the gutter between the two lines. The 18px line
+   box on the label is the box's own height, so the two share one axis. */
+:global(.jf-blueprint .content) .tg {
+  display: inline-grid; grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px; row-gap: 2px; align-items: center; align-content: center;
+  min-height: 32px; padding: 0; border: none; background: none; cursor: pointer; text-align: left;
+  font-family: var(--font); font-size: 12.5px; font-weight: 700; color: var(--ink);
+}
+:global(.jf-blueprint .content) .tg-box {
+  width: 18px; height: 18px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 2px solid var(--ink); border-radius: var(--radius);
+  background: #fff; color: transparent;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+:global(.jf-blueprint .content) .tg-box .ic { width: 12px; height: 12px; stroke-width: 3; }
+:global(.jf-blueprint .content) .tg[aria-pressed="true"] .tg-box { border-color: var(--blueprint); background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .tg-lbl { grid-column: 2; min-width: 0; line-height: 18px; }
+:global(.jf-blueprint .content) .tg-sub {
+  grid-column: 2; min-width: 0; line-height: 1.35;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted-light);
+}
+:global(.jf-blueprint .content) .tg:disabled { opacity: 0.5; cursor: default; }
+:global(.jf-blueprint .content) .tg:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 3px; }
+/* Compact — inside a table cell: the box and a one-word state. */
+:global(.jf-blueprint .content) .tg--cell { min-height: 30px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+/* ============================================================
+   BANNERS  (DESIGN.md info banner — base-amber frame, 6px left edge,
+   no ink frame, no offset shadow; danger is the same shape in rose)
+   ============================================================ */
+:global(.jf-blueprint .content) .note {
+  display: flex; align-items: flex-start; gap: 12px;
+  border: 2px solid var(--warning); border-left-width: 6px; border-radius: var(--radius);
+  background: var(--warning-soft);
+  padding: 11px 14px;
+  font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--warning-dark);
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content) .note .ic { width: 18px; height: 18px; margin-top: 1px; }
+:global(.jf-blueprint .content) .note--danger { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+:global(.jf-blueprint .content) .note--ok { border-color: var(--success); background: var(--success-soft); color: var(--success-dark); }
+:global(.jf-blueprint .content) .note b { font-weight: 800; }
+
+/* mono meta list — "PROVIDER STRIPE · SUB sub_1Ab…" */
+:global(.jf-blueprint .content) .meta {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  color: var(--muted);
+}
+:global(.jf-blueprint .content) .meta b { color: var(--ink-soft); font-weight: 600; }
+:global(.jf-blueprint .content) .meta span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* busy annotation in a sheet foot */
+:global(.jf-blueprint .content) .busy {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+
+/* ============================================================
+   MOBILE LAYER — last in the cascade (skill rule 4).
+   Sheets become bottom sheets; every control reaches 44px.
+   ============================================================ */
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .search { max-width: none; height: 44px; }
+  :global(.jf-blueprint .content) .btn { height: 44px; }
+  :global(.jf-blueprint .content) .btn-sm { height: 44px; }
+  :global(.jf-blueprint .content) .sheet { padding: 0; align-items: flex-end; }
+  :global(.jf-blueprint .content) .sheet-box,
+  :global(.jf-blueprint .content) .sheet-box--wide {
+    width: 100%;
+    max-height: calc(var(--app-h, 100vh) - 56px);
+    border-width: 2px 0 0; box-shadow: none;
+  }
+  :global(.jf-blueprint .content) .sheet-x { width: 44px; height: 44px; }
+  :global(.jf-blueprint .content) .sheet-foot { padding: 12px 14px calc(12px + var(--safe-bottom, 0px)); flex-wrap: wrap; }
+  :global(.jf-blueprint .content) .in { height: 44px; font-size: 13.5px; }
+  :global(.jf-blueprint .content) .ta { height: auto; }
+  :global(.jf-blueprint .content) .btn-field { height: 44px; }
+  :global(.jf-blueprint .content) .tg { min-height: 44px; }
+  :global(.jf-blueprint .content) .tg--cell { min-height: 44px; }
+  /* stacked rows: the head goes, each cell carries its own mono label */
+  :global(.jf-blueprint .content) .tbl--stack thead { display: none; }
+  :global(.jf-blueprint .content) .tbl--stack,
+  :global(.jf-blueprint .content) .tbl--stack tbody,
+  :global(.jf-blueprint .content) .tbl--stack tr,
+  :global(.jf-blueprint .content) .tbl--stack td { display: block; }
+  :global(.jf-blueprint .content) .tbl--stack tr { padding: 10px 14px 12px; border-bottom: 1.5px solid var(--hair-soft); min-height: 44px; }
+  :global(.jf-blueprint .content) .tbl--stack tr:last-child { border-bottom: none; }
+  :global(.jf-blueprint .content) .tbl--stack td { padding: 3px 0; border-bottom: none; text-align: left; }
+  :global(.jf-blueprint .content) .tbl--stack td.num { text-align: left; }
+  :global(.jf-blueprint .content) .tbl--stack td[data-l]::before {
+    content: attr(data-l);
+    display: inline-block; margin-right: 8px; min-width: 64px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted-light);
+  }
+  :global(.jf-blueprint .content) .tbl--stack .t-title,
+  :global(.jf-blueprint .content) .tbl--stack .t-sub { white-space: normal; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint .content) .btn,
+  :global(.jf-blueprint .content) .btn .ic,
+  :global(.jf-blueprint .content) .search,
+  :global(.jf-blueprint .content) .in,
+  :global(.jf-blueprint .content) .tg-box,
+  :global(.jf-blueprint .content) .sheet-x { transition: none !important; animation: none !important; }
+}

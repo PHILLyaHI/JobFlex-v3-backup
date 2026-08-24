@@ -24,7 +24,7 @@ import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import type { DiscoverProfileDTO } from "@/actions/tradeServices";
-import type { TradeNetworkProfileDTO } from "@/app/(mobile)/trade-services/trade-data";
+import type { OwnPost } from "@/app/(mobile)/trade-services/trade-data";
 import { initHireContent } from "./hire-behavior";
 import type { Applicant, HireTallies } from "./hire-data";
 import "./hire-global.css";
@@ -34,18 +34,18 @@ import "./hire-global.css";
  *   component. The behavior module takes it as its starting state and then
  *   keeps itself in step with the database through the applicant server
  *   actions.
- * @param profile   the caller's TradeNetworkProfile ("Publish your profile").
+ * @param myPosts   the caller's posted TradeJobs ("Your job posts").
  * @param tallies   the hub's real activity numbers — see HireTallies.
  * @param talent    other orgs' opted-in profiles ("Discover talent").
  */
 export function HireContent({
   applicants,
-  profile,
+  myPosts,
   tallies,
   talent,
 }: {
   applicants?: Applicant[];
-  profile?: TradeNetworkProfileDTO;
+  myPosts?: OwnPost[];
   tallies?: HireTallies;
   talent?: DiscoverProfileDTO[];
 }) {
@@ -60,7 +60,7 @@ export function HireContent({
   // and keeps itself in step with the database through the server actions. A
   // navigation away unmounts the component, so the next visit gets a fresh ref
   // holding freshly-queried rows.
-  const seedRef = useRef({ applicants, profile, tallies, talent });
+  const seedRef = useRef({ applicants, myPosts, tallies, talent });
 
   // Cross-route rows ("Job posts", "Applications") leave through router.push —
   // a hard navigation replays the shell's entrance and double-takes (see the
@@ -100,12 +100,6 @@ export function HireContent({
             <div className="card-titles">
               <div className="card-title">Your activity</div>
             </div>
-            <button className="hub-viewall" type="button" data-goto="pipeline">
-              View pipeline{" "}
-              <svg className="ic">
-                <use href="#i-arrow" />
-              </svg>
-            </button>
           </div>
           <div className="tally-row" id="tallyRow"></div>
         </div>
@@ -179,6 +173,7 @@ export function HireContent({
             <h1 className="page-title">Talent directory</h1>
           </div>
         </div>
+        <div className="mf-err mf-err--boxed is-hidden" id="talErr" role="alert"></div>
         <div className="card hub-talent" id="talentBox"></div>
       </section>
 
@@ -193,13 +188,20 @@ export function HireContent({
         <div className="page-head">
           <div>
             <div className="kicker">Marketplace</div>
-            <h1 className="page-title">Your public profile</h1>
-          </div>
-          <div className="page-actions">
-            <span className="pstatus" id="profFlag"></span>
+            <h1 className="page-title">Post a job</h1>
           </div>
         </div>
         <div className="card hub-prof" id="profBox"></div>
+
+        <div className="card hub-myposts">
+          <div className="card-head">
+            <div className="card-titles">
+              <div className="card-title">Your job posts</div>
+            </div>
+          </div>
+          <div className="mf-err mf-err--boxed is-hidden" id="myPostsErr" role="alert"></div>
+          <div id="myPostsBox"></div>
+        </div>
       </section>
 
       <div className="pmenu" id="pMenu"></div>
