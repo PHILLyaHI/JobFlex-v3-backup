@@ -1,0 +1,251 @@
+/* ============================================================
+   LANDING-D — ported marketing landing (/landing-d)
+   ============================================================
+   The donor ran Tailwind v4, where its palette and component classes lived in
+   `@theme` / `@layer components`. Here the palette is `lp-*` in
+   tailwind.config.ts and the component classes are below, plain and prefixed
+   `lp-` so nothing leaks into the blueprint surfaces.
+
+   Plain CSS, not a CSS Module: module hashing kills bare element selectors and
+   the `*` reset the donor leans on. Everything is scoped under `.jf-lp`, and
+   that scope is also what lets a rule outrank a Tailwind utility — our global
+   config flattens every radius to 2px, which is right for the blueprint app
+   and wrong for a marketing page.
+   ============================================================ */
+
+.jf-lp {
+  /* Tuning knobs for this page — change here, not in the markup. */
+  --lp-wrap: 76rem;           /* content column (donor shipped 86rem) */
+  --lp-gutter: clamp(20px, 5vw, 72px);
+  --lp-r-sm: 4px;
+  --lp-r: 5px;
+  --lp-r-md: 6px;
+  --lp-r-lg: 8px;
+  --lp-r-xl: 10px;
+  --lp-r-2xl: 12px;
+  --lp-ease: cubic-bezier(0.694, 0, 0.31, 1);
+
+  /* our type tokens, not the donor's */
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  color: #112220;
+  background: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+.jf-lp h1,
+.jf-lp h2,
+.jf-lp h3,
+.jf-lp h4 {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Numerals in the mocks read as instrument readouts, so they take the mono
+   token the rest of the product uses for the same job. */
+.jf-lp .tabular,
+.jf-lp .lp-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Content column ──────────────────────────────────────────
+   One class instead of the donor's repeated `max-w-[86rem]`, so the column
+   width and the side gutter are a single edit. */
+.jf-lp .lp-wrap {
+  width: 100%;
+  max-width: var(--lp-wrap);
+  padding-inline: var(--lp-gutter);
+}
+
+/* ── Radius ──────────────────────────────────────────────────
+   Softer than the blueprint's 2px, far short of the donor's pill corners. */
+.jf-lp .rounded-sm { border-radius: var(--lp-r-sm); }
+.jf-lp .rounded { border-radius: var(--lp-r); }
+.jf-lp .rounded-md { border-radius: var(--lp-r-md); }
+.jf-lp .rounded-lg { border-radius: var(--lp-r-lg); }
+.jf-lp .rounded-xl { border-radius: var(--lp-r-xl); }
+.jf-lp .rounded-2xl { border-radius: var(--lp-r-2xl); }
+.jf-lp .rounded-3xl { border-radius: 14px; }
+.jf-lp .rounded-\[28px\] { border-radius: 14px; }
+.jf-lp .rounded-\[26px\] { border-radius: 13px; }
+.jf-lp .rounded-\[5px\] { border-radius: var(--lp-r-sm); }
+.jf-lp .rounded-t { border-radius: var(--lp-r) var(--lp-r) 0 0; }
+.jf-lp .rounded-t-2xl { border-radius: var(--lp-r-2xl) var(--lp-r-2xl) 0 0; }
+.jf-lp .rounded-tl { border-top-left-radius: var(--lp-r); }
+.jf-lp .rounded-br { border-bottom-right-radius: var(--lp-r); }
+.jf-lp .rounded-bl { border-bottom-left-radius: var(--lp-r); }
+/* pills, avatars and dots stay circular */
+.jf-lp .rounded-full { border-radius: 9999px; }
+
+/* ── Donor component classes ─────────────────────────────── */
+.jf-lp .lp-eyebrow {
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.jf-lp .lp-btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--lp-r-md);
+  background: #15171a;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  transition: background-color 0.2s;
+}
+.jf-lp .lp-btn-dark:hover { background: #112220; }
+
+.jf-lp .lp-btn-lime {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--lp-r-md);
+  background: #1854a0;
+  padding: 16px 28px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  transition: transform 0.2s, background-color 0.2s;
+}
+.jf-lp .lp-btn-lime:hover { background: #0e3d7a; transform: scale(1.02); }
+
+.jf-lp .lp-arrow-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+.jf-lp .lp-arrow-link .arrow { transition: transform 0.3s var(--lp-ease); }
+.jf-lp .lp-arrow-link:hover .arrow { transform: translateX(4px); }
+
+/* Scroll reveal — the class the IntersectionObserver in reveal.tsx drives. */
+.jf-lp .lp-reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.75s var(--lp-ease), transform 0.75s var(--lp-ease);
+}
+.jf-lp .lp-reveal.lp-in {
+  opacity: 1;
+  transform: none;
+}
+
+.jf-lp .lp-tile {
+  overflow: hidden;
+  border-radius: var(--lp-r-md);
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.1), 0 12px 24px -8px rgb(15 23 42 / 0.18);
+  break-inside: avoid;
+  transition: transform 0.35s var(--lp-ease), box-shadow 0.35s var(--lp-ease);
+}
+.jf-lp .lp-tile:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.12), 0 24px 44px -10px rgb(15 23 42 / 0.3);
+}
+
+/* iOS-style switch in the client-portal mock */
+.jf-lp .lp-toggle {
+  position: relative;
+  display: inline-block;
+  height: 26px;
+  width: 44px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: #e2e8f0;
+  transition: background-color 0.25s var(--lp-ease);
+}
+.jf-lp .lp-toggle::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  height: 22px;
+  width: 22px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 0.25s var(--lp-ease);
+}
+.jf-lp .lp-toggle.on { background: #1854a0; }
+.jf-lp .lp-toggle.on::after { transform: translateX(18px); }
+
+/* Swipe strips hide their scrollbars */
+.jf-lp .no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.jf-lp .no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ── Keyframes used by the section mocks ─────────────────── */
+@keyframes lpScanline {
+  0% { top: 8%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 88%; opacity: 0; }
+}
+@keyframes lpToastIn {
+  0% { opacity: 0; transform: translateY(8px) scale(0.96); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes lpCaret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes lpEnvelopePop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+@keyframes lpSlideFill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+/* the donor referenced these by their bare names in inline styles */
+@keyframes scanline {
+  0% { top: 8%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 88%; opacity: 0; }
+}
+@keyframes toast-in {
+  0% { opacity: 0; transform: translateY(8px) scale(0.96); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes envelope-pop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+@keyframes slide-fill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-lp .lp-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .jf-lp *,
+  .jf-lp *::before,
+  .jf-lp *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
