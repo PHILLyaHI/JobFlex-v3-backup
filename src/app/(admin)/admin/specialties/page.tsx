@@ -1,10 +1,14 @@
-import { requireUser } from "@/lib/orgContext";
+import { requirePlatformAdmin } from "@/lib/orgContext";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { db } from "@/lib/db";
 
 export default async function AdminSpecialtiesPage() {
-  await requireUser();
+  // The admin panel authenticates with the jf_admin cookie, not a NextAuth
+  // session, so this has to be the platform-admin guard — requireUser() threw
+  // UnauthorizedError for every cookie-authenticated admin and took the whole
+  // Server Component render down with it.
+  await requirePlatformAdmin();
   const specialties = await db.specialty.findMany({
     orderBy: { name: "asc" },
     include: { organization: { select: { name: true } } },
