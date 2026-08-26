@@ -550,10 +550,104 @@ function removeEdgeByExtension(ring: FootprintPoint[], at: number): FootprintPoi
   };
   if (Math.hypot(l1.dx, l1.dy) < 1e-9 || Math.hypot(l2.dx, l2.dy) < 1e-9) return null;
   const meet = intersect(l1, l2);
-  if (!meet) return null;
+  if (!meet) return collapseStep(ring, at);
   const out = ring.filter((_, i) => i !== at && i !== (at + 1) % n);
   out.splice(Math.min(at, out.length), 0, meet);
   return out.length >= 3 ? out : null;
+}
+
+/**
+ * The other half of the removal test: a STEP, where the two walls either side
+ * of the edge are parallel and never meet, so "extend the neighbours" has
+ * nothing to extend to.
+ *
+ * On a contour regularised to right angles this is the common case, not the
+ * exception — every short edge on 12629 NE 100th Pl is a step (2.6, 3.5, 4.1
+ * and 4.9 ft), and with only the intersection move available not one of them
+ * could even be judged.
+ *
+ * The move: slide the SHORTER of the two walls sideways onto the other's line,
+ * which is the smaller disturbance of the two. The wall keeps its direction and
+ * length; only the edge feeding into it changes length, and only when the slide
+ * runs along that edge — otherwise the move would tilt a wall that is not under
+ * test, and it is refused. The caller applies the same effect thresholds it
+ * applies to an intersection removal, so a 2 ft tracing step goes and a 5 ft bay
+ * stays.
+ */
+function collapseStep(ring: FootprintPoint[], at: number): FootprintPoint[] | null {
+  const n = ring.length;
+  if (n <= 5) return null;
+  const iPrevPrev = (at - 2 + n) % n;
+  const iPrev = (at - 1 + n) % n;
+  const iA = at;
+  const iB = (at + 1) % n;
+  const iNext = (at + 2) % n;
+  const iNextNext = (at + 3) % n;
+  const a = ring[iA];
+  const b = ring[iB];
+  const step = { x: b.x - a.x, y: b.y - a.y };
+  const stepLen = Math.hypot(step.x, step.y);
+  if (stepLen < 1e-9) return null;
+
+  const wallLen = (p: FootprintPoint, q: FootprintPoint) => Math.hypot(q.x - p.x, q.y - p.y);
+  const prevWall = wallLen(ring[iPrev], a);
+  const nextWall = wallLen(b, ring[iNext]);
+  // Sliding a wall is only clean when the step runs ALONG the edge that feeds
+  // it; otherwise that edge would tilt.
+  const alongEdge = (p: FootprintPoint, q: FootprintPoint): boolean => {
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    if (len < 1e-9) return false;
+    const cos = Math.abs(((q.x - p.x) * step.x + (q.y - p.y) * step.y) / (len * stepLen));
+    return cos > 0.996; // within ~5°
+  };
+
+  const movePrev = alongEdge(ring[iPrevPrev], ring[iPrev]);
+  const moveNext = alongEdge(ring[iNext], ring[iNextNext]);
+  const preferPrev = movePrev && (!moveNext || prevWall <= nextWall);
+  if (!preferPrev && !moveNext) return null;
+
+  const out = ring.map((p) => ({ ...p }));
+  if (preferPrev) {
+    // The prev wall slides forward onto the next wall's line; `a` lands on `b`.
+    out[iPrev] = { x: ring[iPrev].x + step.x, y: ring[iPrev].y + step.y };
+    return out.filter((_, i) => i !== iA);
+  }
+  // …or the next wall slides back onto the prev wall's line; `b` lands on `a`.
+  out[iNext] = { x: ring[iNext].x - step.x, y: ring[iNext].y - step.y };
+  return out.filter((_, i) => i !== iB);
+}
+
+
+/** Distance from a point to a closed outline. */
+function distToRing(p: FootprintPoint, ring: FootprintPoint[]): number {
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+    best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+  }
+  return best;
+}
+
+/**
+ * How far the candidate strays from the ring it came from — the SYMMETRIC
+ * Hausdorff distance between the two outlines, sampled at their vertices.
+ *
+ * Symmetric on purpose. One direction alone is blind to a step collapse: the
+ * wall slides onto the line of its neighbour, and that line is part of the
+ * original outline, so every candidate vertex reads zero. It is the ORIGINAL
+ * wall, now abandoned, that is far from the candidate — and that distance is
+ * the step depth, which is exactly the disturbance being judged.
+ */
+function maxVertexDeviation(candidate: FootprintPoint[], original: FootprintPoint[]): number {
+  let worst = 0;
+  for (const p of candidate) worst = Math.max(worst, distToRing(p, original));
+  for (const p of original) worst = Math.max(worst, distToRing(p, candidate));
+  return worst;
 }
 
 /**
@@ -602,8 +696,7 @@ function dropOffFamilyEdges(
     const lengthFt = Math.hypot(b.x - a.x, b.y - a.y);
     const candidate = removeEdgeByExtension(cur, target);
     if (!candidate) break;
-    const meet = candidate[Math.min(target, candidate.length - 1)];
-    const shift = Math.min(Math.hypot(meet.x - a.x, meet.y - a.y), Math.hypot(meet.x - b.x, meet.y - b.y));
+    const shift = maxVertexDeviation(candidate, cur);
     const before = areaOf(cur);
     const share = before > 0 ? Math.abs(areaOf(candidate) - before) / before : 1;
     if (shift < maxShiftFt && share < maxAreaShare) {
@@ -612,6 +705,61 @@ function dropOffFamilyEdges(
       continue;
     }
     break; // the worst edge is load-bearing; the ones behind it are no worse
+  }
+  return { ring: cur, removed };
+}
+
+/**
+ * Vertex budget, judged by the SAME effect test.
+ *
+ * `dropOffFamilyEdges` only ever looks at edges that failed to snap. A contour
+ * traced by EagleView arrives with EVERY corner already near-square (measured
+ * on 12629 NE 100th Pl: 16 corners, every turn 75–90°, nothing collinear to
+ * merge), so nothing there is off the family and nothing is removed — yet the
+ * ring still carries small jogs no contractor would draw, and the skeleton
+ * refuses a ring over its vertex cap.
+ *
+ * So while the ring is over budget the edge whose removal disturbs the outline
+ * LEAST goes, under the identical thresholds. Nothing is ever removed merely to
+ * reach the budget: when the cheapest remaining removal is still load-bearing —
+ * or the accumulated area drift would pass `maxTotalAreaShare` — the pass stops
+ * and the ring stays over budget, so the assert fails honestly instead of the
+ * geometry being bent to fit.
+ */
+function dropToVertexBudget(
+  ring: FootprintPoint[],
+  maxVertices: number,
+  maxShiftFt: number,
+  maxAreaShare: number,
+  maxTotalAreaShare: number,
+): { ring: FootprintPoint[]; removed: Array<{ lengthFt: number; offDeg: number; shiftFt: number; areaShare: number }> } {
+  const removed: Array<{ lengthFt: number; offDeg: number; shiftFt: number; areaShare: number }> = [];
+  const original = areaOf(ring);
+  let cur = ring;
+  for (let guard = 0; guard < ring.length * 2; guard++) {
+    const n = cur.length;
+    if (n <= maxVertices || n <= 4) break;
+    const before = areaOf(cur);
+    let best: { ring: FootprintPoint[]; cost: number; lengthFt: number; shiftFt: number; areaShare: number } | null = null;
+    for (let i = 0; i < n; i++) {
+      const candidate = removeEdgeByExtension(cur, i);
+      if (!candidate) continue;
+      const a = cur[i];
+      const b = cur[(i + 1) % n];
+      const shiftFt = maxVertexDeviation(candidate, cur);
+      const areaShare = before > 0 ? Math.abs(areaOf(candidate) - before) / before : 1;
+      if (shiftFt >= maxShiftFt || areaShare >= maxAreaShare) continue;
+      if (original > 0 && Math.abs(areaOf(candidate) - original) / original >= maxTotalAreaShare) continue;
+      // Normalised disturbance, so a long thin sliver and a short deep jog are
+      // compared on the same scale rather than by whichever number is smaller.
+      const cost = areaShare / maxAreaShare + shiftFt / maxShiftFt;
+      if (!best || cost < best.cost) {
+        best = { ring: candidate, cost, lengthFt: Math.hypot(b.x - a.x, b.y - a.y), shiftFt, areaShare };
+      }
+    }
+    if (!best) break;
+    removed.push({ lengthFt: best.lengthFt, offDeg: 0, shiftFt: best.shiftFt, areaShare: best.areaShare });
+    cur = best.ring;
   }
   return { ring: cur, removed };
 }
@@ -646,6 +794,113 @@ function dropShortEdges(ring: FootprintPoint[], minFt: number): FootprintPoint[]
 // ── entry point ──────────────────────────────────────────────────────────────
 
 /** Steps 2–9 for ONE already-selected building blob. */
+export interface RegularizeReport {
+  vertices: number;
+  edgesUnder3Ft: number;
+  perimeterFt: number;
+  areaSqft: number;
+  /** Plan area of the ring as it arrived, before any of this. */
+  rawAreaSqft: number;
+  axisDeg: number;
+  worstAngleDeviationDeg: number;
+  familyShare: number;
+  offFamily: Array<{ lengthFt: number; offDeg: number }>;
+  staircaseEdgesRemoved: Array<{ lengthFt: number; offDeg: number; shiftFt: number; areaShare: number }>;
+  budgetEdgesRemoved: Array<{ lengthFt: number; offDeg: number; shiftFt: number; areaShare: number }>;
+  maxCornerShiftFt: number;
+  simple: boolean;
+  asserts: { vertices: boolean; angles: boolean };
+  reasons: string[];
+}
+
+/**
+ * The one regularisation pass, from ANY closed ring in frame feet: Douglas–
+ * Peucker → dominant axis → snap to the 45° family → merge collinear → drop
+ * short edges → the effect test (off-family, then the vertex budget) → CCW.
+ *
+ * Both inputs go through this identical pass — the pixel staircase traced off
+ * Google's mask, and the polygon EagleView Instant returns. They arrive broken
+ * in different ways (the staircase has hundreds of 0.3 ft steps on the family;
+ * the traced polygon has a dozen real corners a few degrees off it), and the
+ * point of one pass is that the SAME contour comes out either way.
+ */
+export function regularizeRing(raw: FootprintPoint[], opts: FootprintOptions = {}): { ring: FootprintPoint[]; report: RegularizeReport } {
+  const o = { ...DEFAULTS, ...opts };
+  const reasons: string[] = [];
+  const rawAreaSqft = areaOf(raw);
+
+  let ring = dropCollinear(douglasPeucker(raw, o.simplifyFt));
+  const axisDeg = dominantAxisDeg(ring, o.snapTolDeg);
+  const snapped = snapToAxis(ring, axisDeg, o.snapTolDeg, o.maxCornerShiftFt);
+  ring = snapped.ring;
+  ring = mergeCollinear(ring, o.collinearMergeDeg);
+  ring = dropShortEdges(ring, o.minEdgeFt);
+  const cleaned = dropOffFamilyEdges(ring, axisDeg, o.maxCornerShiftFt, 0.01);
+  ring = mergeCollinear(cleaned.ring, o.collinearMergeDeg);
+  const budget = dropToVertexBudget(ring, o.maxVertices, o.maxCornerShiftFt, 0.01, 0.02);
+  ring = mergeCollinear(budget.ring, o.collinearMergeDeg);
+  ring = ensureCCW(dropCollinear(ring));
+
+  const area = areaOf(ring);
+  const simple = isSimpleRing(ring);
+  if (!simple) reasons.push("regularised ring is not simple");
+
+  const offFamily: Array<{ lengthFt: number; offDeg: number }> = [];
+  let worstAngle = 0;
+  let onFamilyLen = 0;
+  let totalLen = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const bearing = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+    let diff = Infinity;
+    for (let k = 0; k < 8; k++) {
+      let d = Math.abs((((bearing - (axisDeg + k * 45)) % 360) + 540) % 360 - 180);
+      if (d > 90) d = 180 - d;
+      diff = Math.min(diff, d);
+    }
+    totalLen += len;
+    if (diff <= 3) onFamilyLen += len;
+    else offFamily.push({ lengthFt: len, offDeg: diff });
+    worstAngle = Math.max(worstAngle, diff);
+  }
+  const familyShare = totalLen > 0 ? onFamilyLen / totalLen : 0;
+  const anglesOk = familyShare >= o.minFamilyShare;
+  if (!anglesOk) {
+    reasons.push(`only ${(familyShare * 100).toFixed(1)}% of the perimeter is on the family (min ${(o.minFamilyShare * 100).toFixed(0)}%)`);
+  }
+  for (const e of offFamily) {
+    reasons.push(`off family: ${e.lengthFt.toFixed(1)} ft at ${e.offDeg.toFixed(1)}°`);
+  }
+  const vertsOk = ring.length <= o.maxVertices;
+  if (!vertsOk) reasons.push(`${ring.length} vertices, over the ${o.maxVertices} cap`);
+
+  return {
+    ring,
+    report: {
+      vertices: ring.length,
+      edgesUnder3Ft: ring.filter((p, i) => {
+        const q = ring[(i + 1) % ring.length];
+        return Math.hypot(q.x - p.x, q.y - p.y) < 3;
+      }).length,
+      perimeterFt: perimeterOf(ring),
+      areaSqft: area,
+      rawAreaSqft,
+      axisDeg,
+      worstAngleDeviationDeg: worstAngle,
+      familyShare,
+      offFamily,
+      staircaseEdgesRemoved: cleaned.removed,
+      budgetEdgesRemoved: budget.removed,
+      maxCornerShiftFt: snapped.maxShift,
+      simple,
+      asserts: { vertices: vertsOk, angles: anglesOk },
+      reasons,
+    },
+  };
+}
+
 function outlineFromBinary(
   binIn: Uint8Array,
   w: number,
@@ -699,50 +954,14 @@ function outlineFromBinary(
     return Math.hypot(q.x - p.x, q.y - p.y) < 3;
   }).length;
 
-  // 4–8. regularise ONCE
-  let ring = dropCollinear(douglasPeucker(staircase, o.simplifyFt));
-  const axisDeg = dominantAxisDeg(ring, o.snapTolDeg);
-  const snapped = snapToAxis(ring, axisDeg, o.snapTolDeg, o.maxCornerShiftFt);
-  ring = snapped.ring;
-  ring = mergeCollinear(ring, o.collinearMergeDeg);
-  ring = dropShortEdges(ring, o.minEdgeFt);
-  const cleaned = dropOffFamilyEdges(ring, axisDeg, o.maxCornerShiftFt, 0.01);
-  ring = mergeCollinear(cleaned.ring, o.collinearMergeDeg);
-  ring = ensureCCW(dropCollinear(ring));
-
-  // 9. asserts
-  const area = areaOf(ring);
-  const simple = isSimpleRing(ring);
-  if (!simple) reasons.push("regularised ring is not simple");
-
-  const offFamily: Array<{ lengthFt: number; offDeg: number }> = [];
-  let worstAngle = 0;
-  let onFamilyLen = 0;
-  let totalLen = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i];
-    const b = ring[(i + 1) % ring.length];
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    const bearing = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-    let diff = Infinity;
-    for (let k = 0; k < 8; k++) {
-      let d = Math.abs((((bearing - (axisDeg + k * 45)) % 360) + 540) % 360 - 180);
-      if (d > 90) d = 180 - d;
-      diff = Math.min(diff, d);
-    }
-    totalLen += len;
-    if (diff <= 3) onFamilyLen += len;
-    else offFamily.push({ lengthFt: len, offDeg: diff });
-    worstAngle = Math.max(worstAngle, diff);
-  }
-  const familyShare = totalLen > 0 ? onFamilyLen / totalLen : 0;
-  const anglesOk = familyShare >= o.minFamilyShare;
-  if (!anglesOk) {
-    reasons.push(`only ${(familyShare * 100).toFixed(1)}% of the perimeter is on the family (min ${(o.minFamilyShare * 100).toFixed(0)}%)`);
-  }
-  for (const e of offFamily) {
-    reasons.push(`off family: ${e.lengthFt.toFixed(1)} ft at ${e.offDeg.toFixed(1)}°`);
-  }
+  // 4–9. regularise ONCE — the same pass the Instant contour goes through
+  const reg = regularizeRing(staircase, opts);
+  const ring = reg.ring;
+  const { axisDeg, familyShare, offFamily, simple } = reg.report;
+  const worstAngle = reg.report.worstAngleDeviationDeg;
+  const anglesOk = reg.report.asserts.angles;
+  const area = reg.report.areaSqft;
+  reasons.push(...reg.report.reasons.filter((r) => !r.includes("over the")));
 
   // The area comparison is a WARNING: Google reports the SLOPED roof area, so
   // the plan has to be lifted by a slope factor the caller supplies, and until
@@ -776,8 +995,8 @@ function outlineFromBinary(
       worstAngleDeviationDeg: worstAngle,
       familyShare,
       offFamily,
-      staircaseEdgesRemoved: cleaned.removed,
-      maxCornerShiftFt: snapped.maxShift,
+      staircaseEdgesRemoved: [...reg.report.staircaseEdgesRemoved, ...reg.report.budgetEdgesRemoved],
+      maxCornerShiftFt: reg.report.maxCornerShiftFt,
       asserts: { vertices: vertsOk, angles: anglesOk },
       areaWarning,
       reasons,
