@@ -46,6 +46,7 @@ import { RoofDiagram, type RoofDiagramHandle } from "@/components/estimator/roof
 import { ALL_LAYERS_ON, type DiagramLayer, type DiagramLayers, type DiagramLayout } from "@/lib/roofDiagram/layoutTypes";
 import { LAYER_LABELS, fmtArea, fmtLength, layoutFromMeasurement } from "@/lib/roofDiagram/layout";
 import { validateRoofInvariants } from "@/lib/roofDiagram/validate";
+import { assessRoof, confidenceLabel } from "@/lib/roofDiagram/confidence";
 import type { MeasurementSource, RoofMeasurementDTO, RoofMeasurementSummary } from "@/lib/roofDiagram/types";
 import {
   getRoofMeasurement,
@@ -213,8 +214,24 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
   //                    belongs in monitoring. Either way the plan is drawn.
   //   INVALID_GEOMETRY the model was read and the invariants failed. Blocks.
   const cannotValidate = !!gate && gate.errorCodes.includes("INPUT");
-  const gateBlocked =
-    !!gate && gate.errors > 0 && !cannotValidate && process.env.NEXT_PUBLIC_ROOF_GATE !== "off";
+  // The drawing and the estimate are gated separately (confidence.ts). A plan
+  // is withheld ONLY when the roof cannot be seen; invariant failures flag the
+  // figures instead of hiding the roof, because four of the five failure
+  // classes this branch found were defects in the rules, not in the roofs.
+  const assessment = React.useMemo(
+    () =>
+      measurement
+        ? assessRoof({
+            coverage: measurement.provenance.coverage ?? null,
+            errorCodes: gate?.errorCodes ?? [],
+            cannotValidate,
+          })
+        : null,
+    [measurement, gate, cannotValidate],
+  );
+  const gateBlocked = !!assessment && !assessment.drawable && process.env.NEXT_PUBLIC_ROOF_GATE !== "off";
+  /** Instant already answered for this address, so offering to order a report is noise. */
+  const hasInstant = measurement?.source === "instant+recon" || measurement?.source === "instant-outline";
   React.useEffect(() => {
     if (!gate || !measurement) return;
     const where = measurement.address ?? "(no address)";
@@ -692,7 +709,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
       <section className={"ppanel" + (panel === "report" && measurement && layout ? "" : " is-hidden")} data-panel="report">
         {measurement && layout && totals && (
           <>
-            {(layout.stamps.length > 0 || unsaved) && (
+            {(layout.stamps.length > 0 || unsaved || (assessment && assessment.confidence !== "high") || measurement.provenance.partialCoverage) && (
               <div className="rf-notice">
                 {layout.stamps.map((s) => (
                   <div className="call warn" key={s}>
@@ -718,6 +735,23 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                     </div>
                   </div>
                 ))}
+                {assessment && assessment.confidence !== "high" && (
+                  <div className="call warn">
+                    <div>
+                      <span className="rf-stamp">{confidenceLabel(assessment.confidence)}</span>
+                      {assessment.reasons.join(" ")}
+                      {assessment.inferredShare != null && assessment.inferredShare > 0.05 && (
+                        <>
+                          {" "}The plan below draws the whole roof; the inferred part is drawn from the shape of what
+                          is visible, not measured.
+                        </>
+                      )}
+                      {!assessment.estimable && (
+                        <> These figures should not be used to price the job as they stand.</>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {measurement.provenance.partialCoverage && (
                   <div className="call warn">
                     <div>
@@ -755,11 +789,12 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                   </div>
                 </div>
                 <div className="rf-gate">
-                  <div className="rf-gate-title">TRACE MANUALLY</div>
+                  <div className="rf-gate-title">ROOF NOT VISIBLE</div>
                   <p className="rf-gate-body">
-                    This roof fails {gate?.errors} geometry {gate?.errors === 1 ? "check" : "checks"}. The plan is not drawn and
-                    its measurements are withheld — the area, the squares and the edge footage are all computed from the same
-                    geometry, so pricing off them would misprice the job. Trace the roof by hand or order an EagleView report.
+                    {assessment?.reasons.join(" ")}{" "}
+                    {hasInstant
+                      ? "Trace the roof by hand from the aerial view."
+                      : "Trace the roof by hand, or order an EagleView report for this address."}
                   </p>
                   {process.env.NODE_ENV !== "production" && (
                     <ul className="rf-gate-codes">
@@ -1100,7 +1135,21 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                       </select>
                     </span>
                   </label>
-                  <button className="btn btn-primary btn--sm" type="button" id="buildBtn" disabled={isRecon || genBusy} onClick={generate}>
+                  {/* Drawn always, priced only when the geometry holds up: every
+                      figure here is computed from it, so an estimate off a
+                      defective model misprices the job (confidence.ts). */}
+                  <button
+                    className="btn btn-primary btn--sm"
+                    type="button"
+                    id="buildBtn"
+                    disabled={isRecon || genBusy || assessment?.estimable === false}
+                    title={
+                      assessment?.estimable === false
+                        ? "The geometry of this roof does not hold together, so its area and footage are not reliable enough to price from. Measure on site."
+                        : undefined
+                    }
+                    onClick={generate}
+                  >
                     <svg className="ic"><use href="#i-bulb" /></svg>
                     {genBusy ? "Generating…" : "Generate estimate"}
                   </button>

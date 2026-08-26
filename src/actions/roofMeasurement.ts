@@ -60,7 +60,8 @@ import {
 import { isSolarEnabled } from "@/lib/solar";
 import { deleteBlob, isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { buildReconModel, type ReconBuild, type ReconBuildInput } from "@/lib/roofReconBuild";
-import { buildRoofV2FromRecon } from "@/lib/roofRecon/reconV2";
+import { buildRoofV2FromRecon, measureCoverage } from "@/lib/roofRecon/reconV2";
+import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { parcelRingForPoint } from "@/lib/parcelLookup";
 import {
   calibrateModel,
@@ -472,12 +473,29 @@ function provenanceOf(
     visionOutline?: VisionOutlineProvenance;
   },
 ): StoredProvenanceWithValidation {
+  // How much of this roof was actually visible from above — the one thing that
+  // can withhold a drawing (confidence.ts). Measured against the model's own
+  // plan area, which is the contour the facets were drawn on.
+  const covIdx = buildIndexes(model);
+  const planRings = model.faces
+    .map((f) => ringOf(f.lineIds, covIdx))
+    .filter((r): r is NonNullable<typeof r> => !!r && r.length >= 3)
+    .map((r) => r.map((p) => ({ x: p.x, y: p.y })));
+  const coverage = recon
+    ? measureCoverage({
+        mask: recon.mask,
+        dsm: recon.dsm,
+        groundElevFt: recon.diagnostics.groundElevFt,
+        rings: planRings,
+      })
+    : null;
   return {
     calibration,
     ...(validation ? { validation } : {}),
     // Which gate candidate shipped (spec §6.5) — additive, absent on older rows.
     ...(notes?.pipeline ? { pipeline: notes.pipeline } : {}),
     provenance: {
+      ...(coverage ? { coverage } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
       pixelSizeM: model.provenance?.pixelSizeM,

@@ -129,6 +129,13 @@ export interface MeasurementProvenance {
    * both answers exist. Never log this without also showing it.
    */
   partialCoverage?: { reason: string; measuredStructures: number };
+  /**
+   * How much of the roof was actually seen from above: gated mask area against
+   * the drawn contour's area. The only condition that withholds a drawing
+   * (confidence.ts); absent when there was no reconstruction to measure it
+   * from, which is itself not a reason to withhold anything.
+   */
+  coverage?: { seenSqft: number; contourSqft: number; share: number };
 }
 
 /** Verdict of the AI roof-outline trace recorded with a measurement — how the

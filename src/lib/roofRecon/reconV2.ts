@@ -274,6 +274,70 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
 const ROOF_MIN_HEIGHT_FT = 4;
 const FT_PER_M = 3.28084;
 
+/**
+ * How much of `contour` is actually SEEN from above: building-mask area that
+ * clears the height gate, against the area of the contour the roof is drawn
+ * on. The one number that decides whether a plan may be drawn at all
+ * (confidence.ts) — everything else is drawn with a flag.
+ *
+ * Counted only INSIDE the drawn polygons: the raster covers the whole tile and
+ * a naive count reads the neighbours' roofs too (measured: 1054 % on Kirkland
+ * before this was restricted). Clamped at 1 — a mask that spills past the
+ * contour is not extra confidence.
+ */
+export function measureCoverage(input: {
+  mask: Raster;
+  dsm: Raster;
+  groundElevFt: number;
+  /** The plan polygons the roof was drawn on, in frame feet. */
+  rings: FootprintPoint[][];
+}): { seenSqft: number; contourSqft: number; share: number } | null {
+  const { mask, dsm, groundElevFt, rings } = input;
+  const usable = rings.filter((r) => r.length >= 3);
+  if (!usable.length) return null;
+  const contourSqft = usable.reduce((s2, r) => s2 + areaOf(r), 0);
+  if (!(contourSqft > 0)) return null;
+
+  const cutM = (groundElevFt + ROOF_MIN_HEIGHT_FT) / FT_PER_M;
+  const stepFt = mask.pixelSizeM * FT_PER_M;
+  const cellSqft = stepFt * stepFt;
+  const xs = usable.flatMap((r) => r.map((p) => p.x));
+  const ys = usable.flatMap((r) => r.map((p) => p.y));
+  const { width: w, height: h } = mask;
+  // Frame → pixel, clamped to the raster.
+  const px0 = Math.max(0, Math.floor(Math.min(...xs) / stepFt + w / 2 - 1));
+  const px1 = Math.min(w - 1, Math.ceil(Math.max(...xs) / stepFt + w / 2 + 1));
+  const py0 = Math.max(0, Math.floor(h / 2 - Math.max(...ys) / stepFt - 1));
+  const py1 = Math.min(h - 1, Math.ceil(h / 2 - Math.min(...ys) / stepFt + 1));
+
+  const inside = (x: number, y: number): boolean => {
+    for (const r of usable) {
+      let hit = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const a = r[i];
+        const b = r[j];
+        if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+      }
+      if (hit) return true;
+    }
+    return false;
+  };
+
+  let seen = 0;
+  for (let py = py0; py <= py1; py++) {
+    for (let px = px0; px <= px1; px++) {
+      const x = (px + 0.5 - w / 2) * stepFt;
+      const y = (h / 2 - py - 0.5) * stepFt;
+      if (!inside(x, y)) continue;
+      if (!(mask.data[py * w + px] > 0)) continue;
+      const z = dsm.data[py * w + px];
+      if (Number.isFinite(z) && z >= cutM) seen++;
+    }
+  }
+  const seenSqft = seen * cellSqft;
+  return { seenSqft, contourSqft, share: Math.min(1, seenSqft / contourSqft) };
+}
+
 export interface ReconV2FallbackInput {
   /** Google Solar building mask, 1 = building. */
   mask: Raster;
