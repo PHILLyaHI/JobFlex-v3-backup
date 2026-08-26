@@ -23,6 +23,21 @@ import { readFileSync } from 'node:fs';
 // ── допуски ───────────────────────────────────────────────────────────────
 const EPS_XY = 0.05;      // ft, склейка вершин (~0.6 in)
 const EPS_Z = 0.05;       // ft
+// An edge is LEVEL by its slope, not by an absolute drop. The old test asked
+// |za - zb| <= EPS_Z with no reference to the edge's length, so the longer a
+// ridge was the flatter it had to be: a 40 ft ridge had to be level to 0.125 %
+// to stay a ridge, and past that it was reclassified as a hip. Measured: three
+// ridges of 16-23 ft dropping 0.06-0.17 ft (slopes 0.002-0.008 - level by any
+// roofing standard, 0.03 in per foot) were classified hips, and R12 then
+// demanded 45 degrees from them and got 0.3-1.0. The threshold is in the edge
+// CLASSIFIER, so it also decides R08's counts and what R11 is asked about.
+// The absolute value stays as a FLOOR so a 6-inch stub is not reclassified by
+// numerical noise.
+const LEVEL_SLOPE = 0.02;
+const isLevelEdge = (a, b) => {
+  const run = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  return Math.abs(a[2] - b[2]) <= Math.max(EPS_Z, LEVEL_SLOPE * run);
+};
 const EPS_PLANE = 0.08;   // ft, отклонение от плоскости грани
 const EPS_PITCH = 0.03;   // в единицах rise/12
 const EPS_AREA_REL = 0.01;
@@ -201,7 +216,7 @@ export function validateRoof(model) {
 
   // ─ 6. Классификация рёбер
   const classify = (e) => {
-    const level = Math.abs(e.a[2] - e.b[2]) <= EPS_Z;
+    const level = isLevelEdge(e.a, e.b);
     if (e.facets.length === 1) return level ? 'eave' : 'rake';
     if (level) return 'ridge';
     // hip vs valley: смотрим, как ведут себя обе плоскости в стороны от ребра

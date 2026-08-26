@@ -27,6 +27,7 @@ import {
   type Parcel,
 } from "@/lib/reportall";
 import { parseWkt, type RingPoint } from "@/lib/parcels";
+import { maySpendParcelQuota } from "@/lib/parcelLookup";
 
 export const runtime = "nodejs";
 
@@ -152,7 +153,11 @@ export async function GET(req: Request) {
         return NextResponse.json({ found: false, cached: true }, { status: 404 });
       }
 
-      // c. ReportAll.
+      // c. ReportAll — but not below the reserve. The allowance is ALLTIME, so
+      // running it dry turns every later lookup into a silent "no parcel"
+      // (parcelLookup.ts). Refuse loudly instead; the cache above still serves.
+      const gate = await maySpendParcelQuota();
+      if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 503 });
       const parcel = await fetchParcelByPoint(lat, lon);
       if (parcel) {
         await saveParcel(parcel);
@@ -186,6 +191,8 @@ export async function GET(req: Request) {
     });
     if (cachedByAddr) return NextResponse.json(payload(cachedByAddr, true));
 
+    const gate = await maySpendParcelQuota();
+    if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 503 });
     const parcel = await fetchParcelByAddress(address as string, region as string);
     if (parcel) {
       await saveParcel(parcel);

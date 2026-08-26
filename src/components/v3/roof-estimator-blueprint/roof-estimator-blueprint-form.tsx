@@ -201,15 +201,37 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
     () => (measurement ? validateRoofInvariants(measurement.model) : null),
     [measurement],
   );
-  const gateBlocked = !!gate && gate.errors > 0 && process.env.NEXT_PUBLIC_ROOF_GATE !== "off";
+  // Two states the gate used to conflate. Being unable to CHECK a roof is not
+  // the same as checking it and finding it wrong, and only the second is a
+  // reason to withhold the drawing.
+  //
+  //   CANNOT_VALIDATE  the validator could not read the model — its INPUT
+  //                    precondition. Either the model has no facets at all (the
+  //                    outline-only path saves exactly that, by design, and the
+  //                    FACETS UNAVAILABLE stamp already explains it) or we have
+  //                    handed it something malformed, which is OUR bug and
+  //                    belongs in monitoring. Either way the plan is drawn.
+  //   INVALID_GEOMETRY the model was read and the invariants failed. Blocks.
+  const cannotValidate = !!gate && gate.errorCodes.includes("INPUT");
+  const gateBlocked =
+    !!gate && gate.errors > 0 && !cannotValidate && process.env.NEXT_PUBLIC_ROOF_GATE !== "off";
   React.useEffect(() => {
     if (!gate || !measurement) return;
-    if (gate.errors > 0) {
-      console.warn(
-        `[roof-gate] ${measurement.address ?? "(no address)"} — ${gate.errors} error(s): ${gate.errorCodes.join(", ")}`,
+    const where = measurement.address ?? "(no address)";
+    if (cannotValidate) {
+      // error, not warn: a roof we cannot check is a hole in the check, and it
+      // should be visible in monitoring rather than sitting in a console.
+      console.error(
+        `[roof-gate] CANNOT_VALIDATE ${where} — the validator could not read the model` +
+          ` (${measurement.model.faces.length} facets, ${measurement.model.lines.length} lines).` +
+          " Drawing anyway; this is a pipeline defect unless the model is outline-only.",
       );
+      return;
     }
-  }, [gate, measurement]);
+    if (gate.errors > 0) {
+      console.warn(`[roof-gate] INVALID_GEOMETRY ${where} — ${gate.errors} error(s): ${gate.errorCodes.join(", ")}`);
+    }
+  }, [gate, cannotValidate, measurement]);
 
   // ── Recent measurements ──
   const [recent, setRecent] = React.useState<RoofMeasurementSummary[]>([]);

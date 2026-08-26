@@ -958,6 +958,18 @@ export function validateRoofModel(
 
 const INV_EPS_XY = 0.05;
 const INV_EPS_Z = 0.05;
+/**
+ * An edge is LEVEL by its slope, not by an absolute drop — see the same
+ * constant in validate-roof.mjs. Asking |za − zb| ≤ 0.05 ft with no reference
+ * to the edge's length made the test stricter the longer the ridge: 40 ft had
+ * to be level to 0.125 %. Three real ridges of 16–23 ft dropping 0.06–0.17 ft
+ * (slope 0.002–0.008) were classified as hips, and R12 then demanded 45° from
+ * them. The absolute value remains a FLOOR so a 6-inch stub is not
+ * reclassified by numerical noise.
+ */
+const INV_LEVEL_SLOPE = 0.02;
+const invIsLevelEdge = (a: IPt3, b: IPt3): boolean =>
+  Math.abs(a[2] - b[2]) <= Math.max(INV_EPS_Z, INV_LEVEL_SLOPE * Math.hypot(b[0] - a[0], b[1] - a[1]));
 const INV_EPS_PLANE = 0.08;
 const INV_EPS_PITCH = 0.03;
 const INV_EPS_AREA_REL = 0.01;
@@ -1221,7 +1233,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
 
   // R08 — edge classification
   const classify = (e: InvEdge): string => {
-    const level = Math.abs(e.a[2] - e.b[2]) <= INV_EPS_Z;
+    const level = invIsLevelEdge(e.a, e.b);
     if (e.facets.length === 1) return level ? "eave" : "rake";
     if (level) return "ridge";
     const mid: IPt = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2];

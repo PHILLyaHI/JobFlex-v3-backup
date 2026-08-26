@@ -109,6 +109,25 @@ async function cacheParcel(p: Parcel): Promise<void> {
   }
 }
 
+/**
+ * May a caller spend a parcel result right now? The floor is the whole point of
+ * this module: without it a caller reaches the end of an ALLTIME allowance and
+ * every later lookup fails as "no parcel", which downstream reads as "one
+ * building". Callers that need the full Parcel payload rather than a ring use
+ * this directly.
+ */
+export async function maySpendParcelQuota(): Promise<{ ok: boolean; reason?: string; remaining: number | null }> {
+  const remaining = await remainingQuota();
+  if (remaining != null && remaining < QUOTA_FLOOR) {
+    return {
+      ok: false,
+      reason: `Parcel allowance is down to ${remaining} of ${QUOTA_ALLTIME} and the allowance is ALLTIME, not monthly. Lookups are paused above the ${QUOTA_FLOOR} reserve — cached parcels still work.`,
+      remaining,
+    };
+  }
+  return { ok: true, remaining };
+}
+
 export interface ParcelRingResult {
   /** Outer ring as [lat, lng] pairs, or null when there is none to give. */
   ring: RingPoint[] | null;
@@ -167,14 +186,8 @@ export async function parcelRingForPoint(lat: number, lon: number): Promise<Parc
   }
 
   // c. the quota gate, BEFORE the request
-  if (remaining != null && remaining < QUOTA_FLOOR) {
-    return {
-      ring: null,
-      source: "none",
-      blocked: `parcel allowance is down to ${remaining} of ${QUOTA_ALLTIME} (floor ${QUOTA_FLOOR}) — not spending it here`,
-      remaining,
-    };
-  }
+  const gate = await maySpendParcelQuota();
+  if (!gate.ok) return { ring: null, source: "none", blocked: gate.reason, remaining: gate.remaining };
 
   // d. network
   try {
