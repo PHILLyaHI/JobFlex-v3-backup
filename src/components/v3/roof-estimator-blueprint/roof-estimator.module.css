@@ -1931,3 +1931,15 @@
   overflow: auto;
   max-height: 40%;
 }
+
+/* The gate panel stands in for the whole report body, so it carries the card's
+   own padding and a working minimum height. */
+.bp :global(.content .rf-gate-card .rf-gate) {
+  min-height: 320px;
+  border: 0;
+}
+.bp :global(.content .rf-gate-card .rf-files) {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}

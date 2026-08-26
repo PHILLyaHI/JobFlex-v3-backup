@@ -189,11 +189,14 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
   );
 
   // ── The geometry gate (spec R01–R16, src/lib/roofDiagram/validate.ts) ──
-  // A roof that breaks the invariants is not drawn: a plan with facets that do
-  // not tile, ridges that are not the top of their facet or hips at the wrong
-  // plan angle is worse than no plan, because a contractor prices from it. The
-  // measurement, its numbers and the exports stay available; only the drawing
-  // is withheld, with the failing codes named so the roof can be traced by hand.
+  // A roof that breaks the invariants is not drawn — and nothing DERIVED from
+  // that geometry is shown either. Withholding only the picture is the more
+  // dangerous half-measure: a contractor prices from total sq ft, and an R04
+  // failure means the printed area is inflated by the wrong slope factor. So
+  // areas, squares, pitch, facet count, linear footage, waste, the estimate,
+  // the exports and the 3D model all go with it. What survives is what does not
+  // depend on the geometry: the address, the drawing number, and a way to go
+  // trace the roof by hand.
   const gate = React.useMemo(
     () => (measurement ? validateRoofInvariants(measurement.model) : null),
     [measurement],
@@ -705,6 +708,57 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
               </div>
             )}
 
+            {gateBlocked ? (
+              <div className="card rf-card rf-gate-card">
+                <div className="rf-head rf-head--bar">
+                  <div>
+                    <div className="card-title">Roof plan</div>
+                    <div className="card-sub">
+                      {[measurement.address, measurement.city, measurement.state, measurement.zip]
+                        .filter(Boolean)
+                        .join(", ")}
+                      {savedId ? ` · DRAWING № RM-${savedId.slice(-6).toUpperCase()}` : ""}
+                    </div>
+                  </div>
+                </div>
+                <div className="rf-gate">
+                  <div className="rf-gate-title">TRACE MANUALLY</div>
+                  <p className="rf-gate-body">
+                    This roof fails {gate?.errors} geometry {gate?.errors === 1 ? "check" : "checks"}. The plan is not drawn and
+                    its measurements are withheld — the area, the squares and the edge footage are all computed from the same
+                    geometry, so pricing off them would misprice the job. Trace the roof by hand or order an EagleView report.
+                  </p>
+                  {process.env.NODE_ENV !== "production" && (
+                    <ul className="rf-gate-codes">
+                      {gate?.results
+                        .filter((r) => r.level === "error")
+                        .slice(0, 12)
+                        .map((r, i) => (
+                          <li key={`${r.id}-${i}`}>
+                            <b>{r.id}</b> {r.msg}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                  <span className="rf-files">
+                    {measurement.lat != null && measurement.lng != null && (
+                      <a
+                        className="btn btn-ghost btn--sm"
+                        href={`https://www.google.com/maps/@${measurement.lat},${measurement.lng},80m/data=!3m1!1e3`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open aerial view
+                      </a>
+                    )}
+                    <button className="btn btn-ghost btn--sm" type="button" onClick={() => setMeasurement(null)}>
+                      Measure another
+                    </button>
+                  </span>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="card rf-hero" id="rfHero">
               <HeroCell l="Total area" v={num(totals.areaSqft)} h="sq ft" />
               <HeroCell l="Roofing squares" v={num(totals.squares, 1)} h="× 100 sq ft" accent />
@@ -1058,6 +1112,8 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                 )}
               </div>
             </div>
+            </>
+            )}
           </>
         )}
       </section>
