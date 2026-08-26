@@ -277,6 +277,14 @@ const DEGENERATE_FT = 0.05;
 // within ALIGN_PAIR_FT; the fit needs ALIGN_MIN_PAIRS of them and is trusted
 // only while it stays small — a bigger correction means the outline belongs to
 // a different building, not that the grid is rotated.
+// NOTE: this is the ICP CAPTURE RADIUS and ALIGN_MAX_SHIFT_FT is the ceiling on
+// the answer — one number doing two jobs, and at 6 ft neither is large enough.
+// The measured offset between the Instant frame and the Google raster is 7.25 ft
+// on Kirkland and 4.0 ft on Prairie, so on Kirkland the correct pairs sit
+// outside the radius from the first iteration and the fit never sees them.
+// Registration for the V2 path does not use this: see roofRecon/register.ts,
+// which sweeps coarse-then-fine and scores the answer separately from bounding
+// the search. Left as it is here because this path is being replaced.
 const ALIGN_PAIR_FT = 6;
 const ALIGN_MIN_PAIRS = 4;
 const ALIGN_MAX_THETA_RAD = (3 * Math.PI) / 180;
@@ -473,6 +481,19 @@ function alignOutlines(rings: P2[][], anchors: P2[]): Rigid {
     current = current.map((ring) => ring.map((p) => applyRigid(step, p)));
   }
   if (Math.abs(total.thetaRad) > ALIGN_MAX_THETA_RAD || Math.hypot(total.tx, total.ty) > ALIGN_MAX_SHIFT_FT) {
+    // Refused, and SAID so. This used to return IDENTITY, which a caller cannot
+    // tell apart from "the outline was already in place" — the same silent
+    // failure as a parcel lookup returning no ring with no reason. The measured
+    // offset on 12629 NE 100th Pl is 7.25 ft, past this ceiling, so the one
+    // house where the alignment mattered most is exactly the one it dropped
+    // without a word.
+    console.warn(
+      "[calibrate] outline alignment refused: fitted %s ft / %s° exceeds the %s ft / %s° ceiling — the outline is left where it was",
+      Math.hypot(total.tx, total.ty).toFixed(2),
+      ((total.thetaRad * 180) / Math.PI).toFixed(2),
+      ALIGN_MAX_SHIFT_FT,
+      ((ALIGN_MAX_THETA_RAD * 180) / Math.PI).toFixed(0),
+    );
     return IDENTITY;
   }
   return total;
