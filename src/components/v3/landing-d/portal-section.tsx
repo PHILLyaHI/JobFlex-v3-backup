@@ -31,17 +31,23 @@ export function PortalSection() {
   const upgraded = step >= 1;
 
   return (
-    <section className="relative overflow-hidden bg-lp-blue pt-[8vmin] max-sm:pb-0 sm:py-[8vmin] sm:px-6">
+    <section className="relative overflow-hidden bg-lp-navy px-5 py-[8vmin] max-sm:pb-[12vmin] max-sm:pt-[11vmin] sm:px-6">
       <div className="mx-auto lp-wrap">
         <div className="grid items-center gap-8 sm:gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-20">
           {/* Pink portal surface — full-bleed band on mobile, rounded card on sm+ */}
           <Reveal className="order-2 lg:order-1">
             <div
               ref={ref}
-              className="relative flex min-h-[440px] items-center justify-center px-5 py-12 sm:min-h-[560px] sm:rounded-3xl sm:px-6 sm:py-16"
-              style={{ background: "linear-gradient(180deg,#8fc2ff 0%,#4A9EFF 78%,#2f8ae8 100%)" }}
+              /* The band hugs the card rather than framing it in a slab of
+                 sky (owner, 2026-08-25), and the gradient runs the blueprint
+                 blue instead of the donor's pale candy tone. */
+              className="relative flex items-center justify-center rounded-[12px] border-2 border-lp-ink px-3 py-6 sm:min-h-[560px] sm:rounded-[10px] sm:border-0 sm:px-6 sm:py-16"
+              style={{ background: "linear-gradient(165deg,#4A9EFF 0%,#1F62B4 62%,#12457F 100%)" }}
             >
-              <div className="w-full max-w-[330px] rounded-2xl bg-white p-6 shadow-[0_24px_60px_-12px_rgb(10_35_70/0.4)]">
+              {/* The inner plate takes the band's corner, not a softer one —
+                  two different radii nested read as a mistake (owner,
+                  2026-08-25). */}
+              <div className="w-full max-w-[360px] rounded-[12px] bg-white p-5 shadow-[0_24px_60px_-12px_rgb(10_35_70/0.4)] sm:max-w-[330px] sm:rounded-[10px] sm:p-6">
                 <div className="text-center">
                   <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-lp-blue/10">
                     <svg viewBox="0 0 20 20" className="h-5 w-5 text-lp-blue" aria-hidden>
@@ -166,7 +172,10 @@ export function PortalSection() {
           </Reveal>
 
           {/* Text column */}
-          <Reveal delay={120} className="order-1 px-5 sm:px-0 lg:order-2">
+          {/* No extra px-5: the section already pads, and the doubled gutter
+              made the heading narrower than the card under it (owner,
+              2026-08-25). */}
+          <Reveal delay={120} className="order-1 lg:order-2">
             <p className="text-[30px] font-bold leading-[1.08] tracking-[-0.02em] text-white sm:text-[clamp(34px,4vw,58px)] sm:leading-[1.05] sm:tracking-[-0.015em]">
               Get jobs signed.
             </p>

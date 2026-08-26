@@ -3,13 +3,16 @@ export function AppWindow({
   title,
   children,
   className = "",
+  rootRef,
 }: {
   title?: string;
   children: React.ReactNode;
   className?: string;
+  rootRef?: React.Ref<HTMLDivElement>;
 }) {
   return (
     <div
+      ref={rootRef}
       className={`overflow-hidden rounded-xl bg-white ring-1 ring-slate-200 shadow-[0_1px_2px_rgb(15_23_42/0.05),0_14px_36px_-14px_rgb(15_23_42/0.16)] ${className}`}
     >
       <div className="flex items-center gap-1.5 border-b border-slate-100 bg-lp-paper px-3.5 py-2.5">

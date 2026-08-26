@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { REGISTER } from "./routes";
 
 export function MobileCta() {
   const [scrolled, setScrolled] = useState(false);
@@ -34,7 +35,7 @@ export function MobileCta() {
           <div className="text-[13px] font-bold leading-tight text-lp-ink">Free for 14 days</div>
           <div className="text-[12px] leading-tight text-slate-400">No card required</div>
         </div>
-        <a href="#" className="lp-btn-dark h-12 flex-1 text-[16px] font-semibold">
+        <a href={REGISTER} className="lp-btn-dark h-12 flex-1 text-[16px] font-semibold">
           Start FREE Trial
         </a>
       </div>

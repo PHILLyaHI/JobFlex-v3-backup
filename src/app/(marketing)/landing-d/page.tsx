@@ -6,27 +6,13 @@
 // and `text-base` is a font size in our config). Everything visual that is not
 // a utility lives in landing-d.css, scoped `.jf-lp`.
 //
-// It sits alongside /landing-a../landing-c rather than replacing `/`, which
-// still serves the blueprint landing.
+// As of 2026-08-25 this design IS the root landing: `/` renders the same
+// <LandingD /> this route does, so the two URLs cannot drift. The route stays
+// up under its own name for review and for linking to it directly.
 
 import type { Metadata } from "next";
 
-import { BuiltSection } from "@/components/v3/landing-d/built-section";
-import { CtaFooter } from "@/components/v3/landing-d/cta-footer";
-import { EstimatorSection } from "@/components/v3/landing-d/estimator-section";
-import { FlowFeatures } from "@/components/v3/landing-d/flow-features";
-import { Hero } from "@/components/v3/landing-d/hero";
-import { Integrations } from "@/components/v3/landing-d/integrations";
-import { Intro } from "@/components/v3/landing-d/intro";
-import { JobsSection } from "@/components/v3/landing-d/jobs-section";
-import { MobileCta } from "@/components/v3/landing-d/mobile-cta";
-import { Montage } from "@/components/v3/landing-d/montage";
-import { Nav } from "@/components/v3/landing-d/nav";
-import { PortalSection } from "@/components/v3/landing-d/portal-section";
-import { ProposalsSection } from "@/components/v3/landing-d/proposals-section";
-import { ScrollFx } from "@/components/v3/landing-d/scroll-fx";
-import { StatsSection } from "@/components/v3/landing-d/stats-section";
-import "@/components/v3/landing-d/landing-d.css";
+import { LandingD } from "@/components/v3/landing-d/landing-d-page";
 
 export const metadata: Metadata = {
   title: "JobFlex — Turn your trade into a business",
@@ -35,25 +21,5 @@ export const metadata: Metadata = {
 };
 
 export default function LandingDPage() {
-  return (
-    <div className="jf-lp min-h-full bg-white">
-      <Nav />
-      <main>
-        <Hero />
-        <Intro />
-        <EstimatorSection />
-        <Montage />
-        <ProposalsSection />
-        <PortalSection />
-        <JobsSection />
-        <FlowFeatures />
-        <Integrations />
-        <StatsSection />
-        <BuiltSection />
-        <CtaFooter />
-      </main>
-      <MobileCta />
-      <ScrollFx />
-    </div>
-  );
+  return <LandingD />;
 }

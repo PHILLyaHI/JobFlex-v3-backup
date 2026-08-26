@@ -1,282 +1,338 @@
 "use client";
 
-import { DashboardMobile } from "./dashboard-mobile";
 import { LogoMark } from "./logo";
 import { useCountUp, useInView } from "./use-in-view";
 
-const NAV = [
-  { label: "Dashboard", active: true },
-  { label: "Leads", count: "7" },
-  { label: "Estimates", count: "12" },
-  { label: "Proposals", count: "4" },
-  { label: "Jobs", count: "24" },
-  { label: "Schedule" },
-  { label: "Invoices", count: "9" },
-  { label: "Crew" },
-  { label: "Reports" },
+/* The hero's product shot, drawn in the blueprint language the real app uses:
+   drafting paper, 2px ink frames, near-square corners, labels above numerals.
+   It is a mock, not the shell — but it has to read as the same product, so the
+   vocabulary tracks dashboard-blueprint rather than the donor's dark card.
+
+   Deliberately quiet (owner, 2026-08-24): every row carries an icon, and the
+   plate is taller with more air rather than denser. A hero shot is read at a
+   glance, so it shows the shape of the product, not its data. */
+
+const ICON: Record<string, string> = {
+  grid: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
+  doc: "M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8zM14 3v5h5M9.5 13h5M9.5 17h4",
+  users: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c0-3.4 3-5.5 6.5-5.5s6.5 2.1 6.5 5.5M17 5.5a3.5 3.5 0 0 1 0 6",
+  target: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  calendar: "M3.5 5h17v16h-17zM3.5 10h17M8 2.5V7M16 2.5V7",
+  jobs: "M3 7.5h18v13H3zM8.5 7.5V5a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 15.5 5v2.5",
+  // A hard hat, read at 15px (owner, 2026-08-25). The previous head-and-
+  // shoulders glyph collapsed into a blob at this size and said nothing.
+  worker:
+    "M2.5 18.5h19v-2.2a1 1 0 0 0-1-1h-17a1 1 0 0 0-1 1v2.2zM10 15.3V6.2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v9.1M4.8 15.3v-2.6A6 6 0 0 1 10 6.8M14 6.8a6 6 0 0 1 5.2 5.9v2.6",
+  money: "M12 3v18M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 2 2.6 4.5 3 4.5 1.3 4.5 3-2 3-4.5 3-4.5-1.3-4.5-3",
+  card: "M2.5 5.5h19v13h-19zM2.5 10h19",
+  search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4.2-4.2",
+  folder: "M3 6.5h6l2 2.5h10v11H3zM3 6.5V4.5h5l2 2",
+  crm: "M6 9.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18 9.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM7.6 8.4l3 7M16.4 8.4l-3 7",
+  hire: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c0-3.4 3-5.5 6.5-5.5s6.5 2.1 6.5 5.5M19 8v6M16 11h6",
+  building: "M4 21V4.5h10V21M14 10h6v11M7 8h4M7 12h4M7 16h4M17 14h1M17 18h1",
+  spark: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM18.5 16.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z",
+  roof: "M2.5 11.5 12 4l9.5 7.5M5.5 10.5V20h13v-9.5M9.5 20v-5h5v5",
+  fence: "M4 9.5 6.5 7l2.5 2.5V21H4zM10 9.5 12.5 7l2.5 2.5V21h-5zM16 9.5 18.5 7 21 9.5V21h-5zM2.5 12h19M2.5 16h19",
+  video: "M3 6.5h11v11H3zM14 10.5l6.5-3.5v10L14 13.5z",
+  phone: "M7 3.5h10v17H7zM10.5 18h3",
+  chat: "M4 5h16v11H9l-5 4z",
+  megaphone: "M4 10v4h3l8 4V6l-8 4zM17 9.5a3 3 0 0 1 0 5",
+  star: "M12 4l2.5 5.2 5.5.8-4 3.9 1 5.6-5-2.7-5 2.7 1-5.6-4-3.9 5.5-.8z",
+  gear: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.5 12a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-2-1.2L14.6 3h-4l-.4 2.6c-.7.3-1.4.7-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1c.6.5 1.3.9 2 1.2l.4 2.6h4l.4-2.6c.7-.3 1.4-.7 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z",
+  check: "M4 12.5l5 5L20 6.5",
+  pen: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
+  plus: "M12 5v14M5 12h14",
+};
+
+export function Ic({ name, className = "lp-bp-ic" }: { name: string; className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden>
+      <path
+        d={ICON[name]}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/* The REAL sidebar, section for section (owner, 2026-08-24). A shortened menu
+   made the product look smaller than it is; the list now says what the app
+   actually carries. It runs past the plate's floor exactly as it does in the
+   app — the column clips, and the account row stays pinned to the bottom. */
+const NAV: { label: string; items: { name: string; icon: string; badge?: string; on?: boolean }[] }[] = [
+  {
+    label: "Work",
+    items: [
+      { name: "Overview", icon: "grid", on: true },
+      { name: "Proposals", icon: "doc" },
+      { name: "Clients", icon: "users" },
+      { name: "Leads", icon: "target" },
+      { name: "Projects", icon: "folder" },
+      { name: "CRM", icon: "crm" },
+    ],
+  },
+  {
+    label: "Delivery",
+    items: [
+      { name: "Calendar", icon: "calendar" },
+      { name: "Jobs", icon: "jobs", badge: "6" },
+      { name: "Workers", icon: "worker" },
+      { name: "Hire", icon: "hire" },
+      { name: "Company", icon: "building" },
+    ],
+  },
+  {
+    label: "Money",
+    items: [
+      { name: "Financials", icon: "money" },
+      { name: "Subscription", icon: "card" },
+    ],
+  },
+  {
+    label: "Automation",
+    items: [
+      { name: "Smart Proposal", icon: "spark" },
+      { name: "Roof estimator", icon: "roof" },
+      { name: "Fence estimator", icon: "fence" },
+      { name: "Video estimator", icon: "video" },
+      { name: "Phone", icon: "phone" },
+      { name: "Messages", icon: "chat" },
+      { name: "Announcements", icon: "megaphone" },
+      { name: "Reviews", icon: "star" },
+    ],
+  },
 ];
 
-const RECENT_JOBS = [
-  { name: "Nguyen kitchen remodel — week 3 of 5", meta: "Maple & quartz · $24,800", pct: 72 },
-  { name: "Ortiz hall bath — tile & glass", meta: "Standard tier · $11,400", pct: 55 },
-  { name: "Whitfield deck rebuild — 340 sq ft", meta: "Cedar · $16,900", pct: 38 },
-  { name: "Kowalski basement — framing & drywall", meta: "Budget tier · $28,300", pct: 21 },
+const ACTIVITY: { icon: string; title: string; meta: string }[] = [
+  { icon: "check", title: "Casey Stone accepted “Rough electrical”", meta: "Accepted · 1d ago" },
+  { icon: "doc", title: "Proposal sent — “Full kitchen remodel”", meta: "Created · 1d ago" },
+  { icon: "users", title: "Casey Stone assigned to “Rough electrical”", meta: "Assigned · 1d ago" },
+  { icon: "pen", title: "Started work on “Mezzanine steel”", meta: "Updated · 2d ago" },
+  { icon: "money", title: "Invoice #1042 paid — Ortiz hall bath", meta: "Paid · 3d ago" },
 ];
 
-function Stat({
+const TREND = [18, 26, 21, 34, 29, 41, 38, 52, 47, 61];
+
+function Kpi({
   label,
   value,
   prefix = "",
-  suffix = "",
-  delta,
+  accent = false,
   run,
-  className = "",
 }: {
   label: string;
   value: number;
   prefix?: string;
-  suffix?: string;
-  delta: string;
+  accent?: boolean;
   run: boolean;
-  className?: string;
 }) {
-  const v = useCountUp(value, run);
+  const n = useCountUp(value, run, 1200);
   return (
-    <div className={className}>
-      <div className="text-[11px] font-medium text-white/40">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-[26px] font-bold tracking-tight text-white">
-          {prefix}
-          {v.toLocaleString("en-US")}
-          {suffix}
-        </span>
-        <span className="text-[11px] font-semibold text-lp-sky">{delta}</span>
+    <div className="lp-bp-kpi">
+      <div className="lp-bp-kpi-lbl">{label}</div>
+      <div className={`lp-bp-kpi-val${accent ? " is-accent" : ""}`}>
+        {prefix}
+        {n.toLocaleString("en-US")}
+      </div>
+    </div>
+  );
+}
+
+/** The plate itself — sidebar, topbar, frame — with the page content slotted
+    in. DashboardMock and the Jobs plate are the same device showing two
+    different screens, so they must share this chrome verbatim. */
+export function BlueprintShell({
+  active,
+  search,
+  action,
+  rootRef,
+  children,
+}: {
+  active: string;
+  search: string;
+  action: string;
+  rootRef?: React.Ref<HTMLDivElement>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div ref={rootRef} className="lp-bp">
+      {/* ── Sidebar ─────────────────────────────────────── */}
+      <aside className="lp-bp-sb">
+        {/* Absolutely filled: the menu is longer than the plate is tall, and a
+            column that measured its own content would stretch the whole shot.
+            The list clips at the floor exactly as the app's does. */}
+        <div className="lp-bp-sb-inner">
+        <div className="lp-bp-sb-head">
+          <LogoMark tone="paper" className="lp-mark-box--xs" />
+          <span className="lp-bp-sb-brand">
+            <span className="lp-bp-sb-name">JOBFLEX</span>
+            <span className="lp-bp-sb-sub">Contractor OS</span>
+          </span>
+        </div>
+        <div className="lp-bp-sb-scroll">
+          {NAV.map((group) => (
+            <div key={group.label}>
+              <div className="lp-bp-sb-lbl">{group.label}</div>
+              {group.items.map((it) => (
+                <div key={it.name} className={`lp-bp-sb-link${it.name === active ? " is-on" : ""}`}>
+                  <Ic name={it.icon} />
+                  {it.name}
+                  {it.badge && <span className="lp-bp-sb-badge">{it.badge}</span>}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        {/* Pinned to the floor of the column, like the app's own account row —
+            the menu above it clips, this never does. */}
+        <div className="lp-bp-sb-acct">
+          <span className="lp-bp-sb-avatar">JR</span>
+          <span className="lp-bp-sb-acct-body">
+            <span className="lp-bp-sb-acct-name">Jamie Rivera</span>
+            <span className="lp-bp-sb-acct-role">Owner</span>
+          </span>
+          <span className="lp-bp-sb-acct-gear">
+            <Ic name="gear" className="lp-bp-ic lp-bp-ic--sm" />
+          </span>
+        </div>
+        </div>
+      </aside>
+
+      {/* ── Main ────────────────────────────────────────── */}
+      <div className="lp-bp-main">
+        <div className="lp-bp-topbar">
+          <span className="lp-bp-search">
+            <Ic name="search" className="lp-bp-ic lp-bp-ic--sm" />
+            {search}
+          </span>
+          <span className="lp-bp-btn">
+            <Ic name="plus" className="lp-bp-ic lp-bp-ic--sm" />
+            {action}
+          </span>
+        </div>
+
+        <div className="lp-bp-content">{children}</div>
       </div>
     </div>
   );
 }
 
 export function DashboardMock() {
-  const { ref, inView } = useInView<HTMLDivElement>(0.25);
+  const { ref, inView } = useInView<HTMLDivElement>(0.2);
+  const max = Math.max(...TREND);
+  const pt = (v: number, i: number) => ({
+    x: (i / (TREND.length - 1)) * 292 + 4,
+    y: 132 - (v / max) * 112,
+  });
 
   return (
-    <>
-      {/* Mobile: Stripe-classic dashboard screenshot */}
-      <div className="sm:hidden">
-        <DashboardMobile />
-      </div>
+    <BlueprintShell
+      active="Overview"
+      search="Search clients, proposals, leads…"
+      action="New estimate"
+      rootRef={ref}
+    >
+          <div className="lp-bp-kicker">Good morning · Aug 24</div>
+          <h3 className="lp-bp-title">Overview</h3>
 
-      <div
-        ref={ref}
-        className="hidden overflow-hidden rounded-2xl bg-lp-base text-left shadow-[0_40px_80px_-20px_rgb(15_23_42/0.45)] ring-1 ring-white/10 sm:block"
-      >
-      <div className="flex">
-        {/* Sidebar */}
-        <aside className="hidden w-[210px] shrink-0 flex-col border-r border-white/[0.06] px-4 py-5 md:flex">
-          <div className="flex items-center justify-between px-2">
-            <span className="flex items-center gap-2">
-              <LogoMark className="h-6 w-6 text-white/10" />
-              <span className="text-[15px] font-bold text-white">jobflex</span>
-            </span>
-            <svg viewBox="0 0 16 16" className="h-4 w-4 text-white/30" aria-hidden>
-              <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+          <div className="lp-bp-kpis">
+            <Kpi label="Revenue · 30d" value={48200} prefix="$" run={inView} />
+            <Kpi label="Pipeline" value={307511} prefix="$" run={inView} accent />
+            <Kpi label="Open proposals" value={22} run={inView} accent />
+            <Kpi label="New leads · 7d" value={9} run={inView} />
           </div>
-          <nav className="mt-6 space-y-0.5">
-            {NAV.map((item) => (
-              <div
-                key={item.label}
-                className={`flex items-center justify-between rounded-md px-2.5 py-[7px] text-[13px] font-medium ${
-                  item.active ? "bg-white/[0.08] text-white" : "text-white/45"
-                }`}
-              >
-                {item.label}
-                {item.count && (
-                  <span className="text-[10px] font-semibold text-white/25">{item.count}</span>
-                )}
+
+          <div className="lp-bp-grid">
+            {/* Revenue trend */}
+            <div className="lp-bp-card">
+              <div className="lp-bp-card-head">
+                <span className="lp-bp-card-title">Revenue trend</span>
+                <span className="lp-bp-tag">Last 7 days</span>
               </div>
-            ))}
-          </nav>
-          <div className="mt-auto flex items-center gap-2.5 px-2 pt-8">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-600 text-[11px] font-bold text-white">
-              R
-            </span>
-            <div>
-              <div className="text-[12px] font-semibold text-white/90">Reyes & Sons</div>
-              <div className="text-[10px] text-white/35">Remodeling · 6 crew</div>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main */}
-        <div className="min-w-0 flex-1 px-5 py-5 sm:px-7">
-          <div className="flex items-center justify-between">
-            <span className="text-[17px] font-bold text-white">Dashboard</span>
-            <span className="rounded-md bg-white/[0.07] px-2.5 py-1 text-[11px] font-medium text-white/50">
-              Last 30 days ⌄
-            </span>
-          </div>
-
-          {/* Stat row — two essentials on mobile, all three from sm up */}
-          <div className="mt-5 grid grid-cols-2 gap-4 border-b border-white/[0.06] pb-5 sm:grid-cols-3 sm:gap-6">
-            <Stat label="Active jobs" value={24} delta="+3" run={inView} />
-            <Stat label="Pipeline value" value={186400} prefix="$" delta="+$12,400" run={inView} className="hidden sm:block" />
-            <Stat label="Collected this month" value={96834} prefix="$" delta="+8%" run={inView} />
-          </div>
-
-          {/* Big cash-flow chart */}
-          <div className="mt-5">
-            <div className="flex items-center gap-4 text-[11px] font-medium">
-              <span className="text-white/80">Cash flow</span>
-              <span className="text-white/30">Invoiced</span>
-              <span className="text-white/30">Collected</span>
-            </div>
-            <svg viewBox="0 0 900 220" className="mt-3 w-full" aria-hidden>
-              <defs>
-                <linearGradient id="dashArea" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#1854A0" stopOpacity="0.55" />
-                  <stop offset="60%" stopColor="#4A9EFF" stopOpacity="0.18" />
-                  <stop offset="100%" stopColor="#4A9EFF" stopOpacity="0" />
-                </linearGradient>
-                <linearGradient id="dashLine" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#1854A0" />
-                  <stop offset="100%" stopColor="#4A9EFF" />
-                </linearGradient>
-              </defs>
-              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => (
-                <line key={i} x1={i * 82 + 8} y1="0" x2={i * 82 + 8} y2="204" stroke="#ffffff" strokeOpacity="0.04" />
-              ))}
-              <path
-                d="M0 190 L60 172 L120 178 L180 140 L240 150 L300 96 L360 118 L420 60 L480 92 L540 40 L600 70 L660 30 L720 84 L780 52 L840 66 L900 24 L900 220 L0 220 Z"
-                fill="url(#dashArea)"
-                style={{
-                  opacity: inView ? 1 : 0,
-                  transition: "opacity 1.2s cubic-bezier(.2,.6,.2,1) .35s",
-                }}
-              />
-              <path
-                d="M0 190 L60 172 L120 178 L180 140 L240 150 L300 96 L360 118 L420 60 L480 92 L540 40 L600 70 L660 30 L720 84 L780 52 L840 66 L900 24"
-                fill="none"
-                stroke="url(#dashLine)"
-                strokeWidth="2.5"
-                pathLength={1}
-                strokeDasharray={1}
-                strokeDashoffset={inView ? 0 : 1}
-                style={{ transition: "stroke-dashoffset 1.6s cubic-bezier(.2,.6,.2,1) .15s" }}
-              />
-              <path
-                d="M0 200 L90 194 L180 197 L270 176 L360 184 L450 158 L540 168 L630 138 L720 152 L810 128 L900 136"
-                fill="none"
-                stroke="#38bdf8"
-                strokeOpacity="0.5"
-                strokeWidth="1.5"
-                strokeDasharray="3 5"
-              />
-            </svg>
-          </div>
-
-          {/* Mini modules — desktop density, hidden on the mobile snapshot */}
-          <div className="mt-5 hidden grid-cols-3 gap-6 border-t border-white/[0.06] pt-5 sm:grid">
-            <div>
-              <div className="text-[11px] text-white/40">Avg job size</div>
-              <div className="mt-1 text-[20px] font-bold text-white">$21,850</div>
-              <svg viewBox="0 0 160 40" className="mt-2 w-full" aria-hidden>
+              <svg viewBox="0 0 300 146" className="lp-bp-chart" aria-hidden>
+                {[20, 56, 92].map((y) => (
+                  <line key={y} x1="0" y1={y} x2="300" y2={y} stroke="rgba(24,84,160,.09)" strokeWidth="1" />
+                ))}
                 <path
-                  d="M0 32 L20 28 L40 30 L60 20 L80 24 L100 12 L120 18 L140 8 L160 12"
+                  d={TREND.map((v, i) => `${i === 0 ? "M" : "L"}${pt(v, i).x} ${pt(v, i).y}`).join(" ")}
                   fill="none"
-                  stroke="#4A9EFF"
-                  strokeWidth="2"
+                  stroke="#1854A0"
+                  strokeWidth="2.5"
                   pathLength={1}
                   strokeDasharray={1}
                   strokeDashoffset={inView ? 0 : 1}
-                  style={{ transition: "stroke-dashoffset 1.4s cubic-bezier(.2,.6,.2,1) .6s" }}
+                  style={{ transition: "stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1) .2s" }}
                 />
-              </svg>
-            </div>
-            <div>
-              <div className="text-[11px] text-white/40">Crew hours this week</div>
-              <div className="mt-1 text-[20px] font-bold text-white">248</div>
-              <div className="mt-2 flex h-[40px] items-end gap-[3px]">
-                {[14, 22, 9, 28, 18, 32, 12, 26, 20, 34, 16, 24, 30, 11, 27, 19, 33, 15, 23, 29].map(
-                  (h, i) => (
-                    <span
-                      key={i}
-                      className="w-full rounded-sm bg-sky-400/70"
-                      style={{
-                        height: inView ? `${h}px` : "3px",
-                        transition: `height .7s cubic-bezier(.2,.6,.2,1) ${0.5 + i * 0.03}s`,
-                      }}
-                    />
-                  )
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="text-[11px] text-white/40">Estimate win rate</div>
-              <div className="mt-1 text-[20px] font-bold text-white">
-                68<span className="text-[14px] text-white/50">%</span>
-              </div>
-              <div className="mt-2 space-y-1.5">
-                {[
-                  { l: "Won", w: 68, c: "bg-lp-blue" },
-                  { l: "Open", w: 22, c: "bg-white/30" },
-                  { l: "Lost", w: 10, c: "bg-white/10" },
-                ].map((r, i) => (
-                  <div key={r.l} className="flex items-center gap-2">
-                    <span className="w-7 text-[10px] text-white/35">{r.l}</span>
-                    <span className="h-[6px] flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-                      <span
-                        className={`block h-full rounded-full ${r.c}`}
-                        style={{
-                          width: inView ? `${r.w}%` : "0%",
-                          transition: `width .9s cubic-bezier(.2,.6,.2,1) ${0.7 + i * 0.12}s`,
-                        }}
-                      />
-                    </span>
-                  </div>
+                {TREND.map((v, i) => (
+                  <rect
+                    key={i}
+                    x={pt(v, i).x - 3.5}
+                    y={pt(v, i).y - 3.5}
+                    width="7"
+                    height="7"
+                    fill="#ffffff"
+                    stroke="#1854A0"
+                    strokeWidth="2"
+                    style={{ opacity: inView ? 1 : 0, transition: `opacity .3s ease ${0.55 + i * 0.05}s` }}
+                  />
                 ))}
+                <line x1="0" y1="134" x2="300" y2="134" stroke="#0a0a0a" strokeWidth="1.5" />
+              </svg>
+              <div className="lp-bp-axis">
+                <span>Tue</span>
+                <span>Thu</span>
+                <span>Sat</span>
+                <span>Mon</span>
               </div>
             </div>
-          </div>
 
-          {/* Recent jobs */}
-          <div className="mt-5 border-t border-white/[0.06] pt-4">
-            <div className="flex items-center justify-between text-[11px] font-medium">
-              <span className="text-white/80">Recent jobs</span>
-              <span className="text-white/30">View all →</span>
-            </div>
-            <div className="mt-2">
-              {RECENT_JOBS.map((j, i) => (
-                <div
-                  key={j.name}
-                  className={`items-center justify-between gap-6 border-b border-white/[0.04] py-[9px] last:border-0 ${
-                    i > 1 ? "hidden sm:flex" : "flex"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-medium text-white/85">{j.name}</div>
-                    <div className="text-[11px] text-white/30">{j.meta}</div>
-                  </div>
-                  <div className="hidden w-40 shrink-0 items-center gap-2 sm:flex">
-                    <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-white/[0.07]">
-                      <span
-                        className="block h-full rounded-full bg-gradient-to-r from-lp-blue to-lp-sky"
-                        style={{
-                          width: inView ? `${j.pct}%` : "0%",
-                          transition: "width 1s cubic-bezier(.2,.6,.2,1) .8s",
-                        }}
-                      />
-                    </span>
-                    <span className="w-8 text-right text-[11px] text-white/40">{j.pct}%</span>
-                  </div>
+            {/* Recent activity */}
+            <div className="lp-bp-card">
+              <div className="lp-bp-card-head">
+                <span className="lp-bp-card-title">Recent activity</span>
+              </div>
+              {ACTIVITY.map((a) => (
+                <div key={a.title} className="lp-bp-act">
+                  <span className="lp-bp-act-ic">
+                    <Ic name={a.icon} className="lp-bp-ic lp-bp-ic--sm" />
+                  </span>
+                  <span className="lp-bp-act-body">
+                    <span className="lp-bp-act-title">{a.title}</span>
+                    <span className="lp-bp-act-meta">{a.meta}</span>
+                  </span>
                 </div>
               ))}
             </div>
           </div>
-        </div>
-      </div>
-      </div>
-    </>
+
+          {/* This week — the real overview carries a day strip under the fold */}
+          <div className="lp-bp-card lp-bp-week">
+            <div className="lp-bp-card-head">
+              <span className="lp-bp-card-title">This week</span>
+              <span className="lp-bp-tag">4 jobs booked</span>
+            </div>
+            <div className="lp-bp-days">
+              {[
+                { d: "Mon", n: 18, dot: true },
+                { d: "Tue", n: 19, dot: true },
+                { d: "Wed", n: 20, today: true, dot: true },
+                { d: "Thu", n: 21 },
+                { d: "Fri", n: 22, dot: true },
+                { d: "Sat", n: 23 },
+                { d: "Sun", n: 24 },
+              ].map((d) => (
+                <span key={d.d} className={`lp-bp-day${d.today ? " is-today" : ""}`}>
+                  <span className="lp-bp-day-d">{d.d}</span>
+                  <span className="lp-bp-day-n">{d.n}</span>
+                  <span className={`lp-bp-day-dot${d.dot ? "" : " is-off"}`} />
+                </span>
+              ))}
+            </div>
+          </div>
+    </BlueprintShell>
   );
 }

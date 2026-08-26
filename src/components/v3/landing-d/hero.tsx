@@ -1,13 +1,16 @@
+import { PhoneOverview } from "./blueprint-phone";
+import { REGISTER } from "./routes";
 import { DashboardMock } from "./dashboard-mock";
 import { Reveal } from "./reveal";
 
 export function Hero() {
   return (
-    <>
-      <div className="mx-auto mt-[12vmin] flex max-w-[86rem] flex-col items-center gap-3 px-5 text-center sm:mt-[16vmin]">
+    <section className="lp-hero">
+      <div className="lp-bg lp-bg--ridge" aria-hidden />
+      <div className="relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center gap-3 px-5 pt-[12vmin] text-center sm:pt-[14vmin]">
         <Reveal>
           <a
-            href="#"
+            href={REGISTER}
             className="inline-flex items-center gap-1 rounded-full bg-lp-gold px-4 py-[7px] text-[13px] font-semibold text-lp-ink transition-transform duration-200 hover:scale-[1.03]"
           >
             Just launched: JobFlex AI Estimator
@@ -23,12 +26,12 @@ export function Hero() {
         </Reveal>
         <Reveal delay={170} className="w-full sm:w-auto">
           <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
-            <a href="#" className="lp-btn-dark h-12 px-6 text-[16px] font-semibold sm:h-auto sm:py-3 sm:text-[15px]">
-              Start free trial
+            <a href={REGISTER} className="lp-btn-dark lp-cta lp-cta--solid">
+              Start 14-Day Free Trial
             </a>
             <a
-              href="#"
-              className="inline-flex h-12 items-center justify-center gap-2.5 rounded-md border border-slate-200 bg-white px-6 text-[16px] font-semibold text-lp-ink transition-colors duration-200 hover:border-slate-300 hover:bg-slate-50 sm:h-auto sm:py-3 sm:text-[15px]"
+              href={REGISTER}
+              className="lp-cta lp-cta--ghost"
             >
               <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>
                 <path
@@ -54,8 +57,15 @@ export function Hero() {
         </Reveal>
       </div>
 
-      <div className="relative mt-[8vmin] px-5 sm:px-6">
-        <div className="mx-auto lp-wrap">
+      <div className="relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6">
+        {/* Two builds of the same screen, not one build clipped: the desktop
+            plate's 208px sidebar and four-across KPI row cannot survive a
+            phone column (owner, 2026-08-25). The phone build also skips
+            lp-wrap, whose gutter would double the section's own px-5. */}
+        <Reveal delay={150} className="sm:hidden">
+          <PhoneOverview />
+        </Reveal>
+        <div className="mx-auto hidden lp-wrap sm:block">
           <Reveal delay={150}>
             <div data-parallax="18">
               <DashboardMock />
@@ -63,6 +73,6 @@ export function Hero() {
           </Reveal>
         </div>
       </div>
-    </>
+    </section>
   );
 }

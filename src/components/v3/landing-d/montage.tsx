@@ -23,7 +23,8 @@ function Photo({ src, label }: { src: string; label?: string }) {
         alt={label ?? "Job site photo"}
         width={640}
         height={430}
-        sizes="(max-width: 640px) 248px, (max-width: 1280px) 33vw, 20vw"
+        sizes="(max-width: 640px) 60vw, (max-width: 1280px) 33vw, 20vw"
+        quality={88}
         className="block w-full"
       />
       {label && (
@@ -122,7 +123,10 @@ const TILES: { key: string; mobile?: boolean; node: React.ReactNode }[] = [
     key: "portal",
     node: (
       <Chrome>
-        <div className="bg-gradient-to-b from-pink-100 to-pink-200 p-4">
+        {/* Blueprint blue, not the donor's pink (owner, 2026-08-25) — this
+            tile is the client portal, and the portal is blue everywhere else
+            on the page. */}
+        <div className="bg-gradient-to-b from-[#e3edfb] to-[#c3d8f2] p-4">
           <div className="rounded-lg bg-white p-3.5 shadow-sm">
             <div className="text-[11px] font-bold text-lp-ink">Review &amp; approve</div>
             <div className="mt-1 text-[9.5px] text-slate-400">Deck rebuild — $16,900</div>
@@ -283,17 +287,23 @@ export function Montage() {
         <div className="sm:hidden">
           <MontageColumns
             columns={(() => {
-              const nodes = TILES.filter((t) => t.mobile).map((t) => t.node);
-              // round-robin so each column mixes photos, docs, and quotes
-              const cols: React.ReactNode[][] = [[], [], []];
-              nodes.forEach((n, i) => cols[i % 3].push(n));
-              return cols;
+              /* Every column runs the FULL deck, each starting at a different
+                 tile (owner, 2026-08-25). Round-robining eight tiles into
+                 threes and then doubling each column put the same card two
+                 rows above itself; a rotation of the whole set means a column
+                 never repeats inside one pass, and the columns never line up
+                 on the same card either. */
+              const nodes = TILES.map((t) => t.node);
+              const per = 9;
+              return [0, 1, 2].map((c) =>
+                Array.from({ length: per }, (_, j) => nodes[(c * 5 + j * 3) % nodes.length]),
+              );
             })()}
           />
         </div>
 
         {/* Desktop: masonry */}
-        <div className="mx-auto hidden max-w-[92rem] columns-2 gap-4 px-4 sm:block sm:columns-3 sm:px-6 xl:columns-5 [&>*]:mb-4">
+        <div className="mx-auto hidden max-w-[76rem] columns-2 gap-4 px-[clamp(20px,5vw,72px)] sm:block sm:columns-3 xl:columns-4 [&>*]:mb-4">
           {TILES.map((t) => (
             <div key={t.key} className="lp-tile">
               {t.node}

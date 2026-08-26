@@ -7,7 +7,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 /* Mobile integrations: two counter-scrolling icon marquees + one headline */
 
 const TILE =
-  "flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white ring-1 ring-lp-blue/25 shadow-[0_1px_2px_rgb(15_23_42/0.04),0_10px_24px_-12px_rgb(15_23_42/0.16)]";
+  "flex h-16 w-16 shrink-0 items-center justify-center lp-int-tile bg-white ring-1 ring-lp-blue/25 shadow-[0_1px_2px_rgb(15_23_42/0.04),0_10px_24px_-12px_rgb(15_23_42/0.16)]";
 
 function Icon({ name }: { name: string }) {
   switch (name) {
@@ -121,7 +121,12 @@ const ROW_B = ["slack", "stripe", "square", "qb", "zapier", "sheets"];
 
 function Marquee({ names, reverse }: { names: string[]; reverse?: boolean }) {
   return (
-    <div className="overflow-hidden">
+    /* The vertical padding is load-bearing (owner, 2026-08-25): overflow-hidden
+       clips on every axis, so with the row exactly one tile tall the ring and
+       the drop shadow were being cut off the top and bottom edges while the
+       sides kept theirs. The negative margin gives the padding back to the
+       layout so the two rows keep their spacing. */
+    <div className="-my-4 overflow-hidden py-4">
       <div
         className={`flex w-max items-center gap-3 will-change-transform ${
           reverse ? "int-track-b" : "int-track-a"
@@ -187,17 +192,17 @@ export function IntegrationsMobile() {
   return (
     <div ref={rootRef} className="w-full lg:hidden">
       {/* Counter-scrolling tile rows */}
-      <div className="-mx-5 space-y-3 py-1">
+      <div className="-mx-5 space-y-4 pb-1 pt-2">
         <Marquee names={ROW_A} />
         <Marquee names={ROW_B} reverse />
       </div>
 
-      <div className="mt-7 text-center">
+      <div className="mt-9 text-center">
         <h2 className="text-[24px] font-bold tracking-[-0.015em] text-lp-ink">
           Connected to 50+ apps
         </h2>
         <p className="mt-2 text-[15px] text-slate-500">
-          Payments, calendars, files, and books — synced to every job.
+          Payments, calendars, files and books, synced to every job.
         </p>
       </div>
     </div>

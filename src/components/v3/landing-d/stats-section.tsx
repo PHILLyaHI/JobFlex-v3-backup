@@ -56,11 +56,11 @@ export function StatsSection() {
                 <path
                   d="M2 28 C14 26 18 18 26 16 C36 13 40 6 54 2"
                   fill="none"
-                  stroke="var(--color-lime)"
+                  stroke="#4A9EFF"
                   strokeWidth="2.5"
                   strokeLinecap="round"
                 />
-                <circle cx="54" cy="2" r="2.5" fill="var(--color-lime)" />
+                <circle cx="54" cy="2" r="2.5" fill="#4A9EFF" />
               </svg>
             </span>
             <p className="mt-6 text-[20px] font-semibold leading-snug text-slate-300 sm:text-[clamp(20px,2vw,28px)]">

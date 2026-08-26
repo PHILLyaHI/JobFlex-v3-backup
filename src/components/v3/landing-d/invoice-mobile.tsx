@@ -2,12 +2,32 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AppWindow } from "./app-window";
+import { useInView } from "./use-in-view";
 
 export function InvoiceMobile() {
+  const { ref, inView } = useInView<HTMLDivElement>(0.4);
   const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  /* The card plays itself once it is on screen (owner, 2026-08-25). It used to
+     wait for a click, so on a phone — where nothing is hovered and nobody taps
+     a picture — the send never happened. It holds for a beat first, so the
+     reader has time to see the invoice before the button moves. */
+  useEffect(() => {
+    if (!inView) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const t: ReturnType<typeof setTimeout>[] = [];
+    const run = () => {
+      t.push(setTimeout(() => setState("sending"), 3400));
+      t.push(setTimeout(() => setState("sent"), 4100));
+      t.push(setTimeout(() => setState("idle"), 7600));
+      t.push(setTimeout(run, 8600));
+    };
+    run();
+    return () => t.forEach(clearTimeout);
+  }, [inView]);
 
   const send = () => {
     if (state !== "idle") return;
@@ -17,7 +37,7 @@ export function InvoiceMobile() {
   };
 
   return (
-    <AppWindow title="app.jobflex.com/invoices/1042">
+    <AppWindow title="app.jobflex.com/invoices/1042" rootRef={ref}>
       <div className="px-4 py-4">
         <div className="text-[14px] font-bold text-lp-ink">Invoice #1042</div>
 
