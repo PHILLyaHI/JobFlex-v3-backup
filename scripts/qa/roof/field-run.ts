@@ -266,6 +266,11 @@ async function runOne(a: Addr): Promise<Row | { skipped: string; addr: string }>
     const first = buildRoofV2({ instant, origin: meta.origin, clusters });
     const st = first.report.structures[0];
     contour = st?.ring ?? null;
+    // A rural lot can carry many structures (12117 202nd St SE: 20). Euler and
+    // tiling are judged against ALL of them, or a correct model reads broken.
+    const keptInstant = first.report.structures.filter((k) => k.ring);
+    structureCount = Math.max(1, keptInstant.length);
+    contourAreaAll = keptInstant.reduce((acc, k) => acc + areaOf(k.ring as FootprintPoint[]), 0);
     vertsTxt = st ? `${st.regularize.rawAreaSqft > 0 ? instant.structures[0]?.outline?.length ?? "?" : "?"}→${st.contourEdges}` : "—";
     familyTxt = st ? `${(st.regularize.familyShare * 100).toFixed(0)}%` : "—";
     if (!first.model || !contour) {

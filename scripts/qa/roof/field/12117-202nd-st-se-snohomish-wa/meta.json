@@ -1,0 +1,96 @@
+{
+ "slug": "12117-202nd-st-se-snohomish-wa",
+ "note": "field run",
+ "address": {
+  "address": "12117 202nd St SE",
+  "city": "Snohomish",
+  "state": "WA",
+  "zip": "98296"
+ },
+ "origin": {
+  "lat": 47.8146934,
+  "lng": -122.0673436
+ },
+ "raster": {
+  "width": 797,
+  "height": 801,
+  "pixelSizeM": 0.1
+ },
+ "googleAreaSqft": 2071.681978786,
+ "multiStructure": false,
+ "excludedSqft": [
+  1607.3748453992484,
+  1051.9570323502883,
+  1032.9049096933763,
+  934.9533186324162,
+  18.083370657408008
+ ],
+ "pitchPriors12": [],
+ "diagnostics": {
+  "buildingPx": 18331,
+  "clusters": 3,
+  "droppedClusters": 454,
+  "groundElevFt": 340.51838660369873,
+  "planPolygonSqft": 1973.1325447675367,
+  "lineCount": 20,
+  "branch": {
+   "crease": 5,
+   "sameFacet": 0,
+   "perimeter": 15,
+   "offRoof": 0
+  },
+  "branchFt": {
+   "crease": 108.17563220192542,
+   "sameFacet": 0,
+   "perimeter": 212.97721354115302,
+   "offRoof": 0
+  },
+  "maskPerimeterFt": 187.00788000000003,
+  "tracePx": [
+   445,
+   428,
+   169
+  ],
+  "corners": [
+   12,
+   4,
+   4
+  ],
+  "maskComponentsSqft": [
+   1973.1325447675367,
+   1607.3748453992484,
+   1051.9570323502883,
+   1032.9049096933763,
+   934.9533186324162,
+   18.083370657408008
+  ],
+  "keptComponents": 1,
+  "parcelScoped": false,
+  "fragmentsBefore": 3,
+  "fragmentsMerged": 0,
+  "droppedSteep": 1,
+  "pitches12": [
+   4,
+   4,
+   6
+  ]
+ },
+ "parcelRing": [
+  {
+   "lat": 47.814943317427314,
+   "lng": -122.06619762054147
+  },
+  {
+   "lat": 47.8145128686202,
+   "lng": -122.0661959944079
+  },
+  {
+   "lat": 47.81453325796792,
+   "lng": -122.06887317391251
+  },
+  {
+   "lat": 47.81496370524695,
+   "lng": -122.06887462726128
+  }
+ ]
+}
