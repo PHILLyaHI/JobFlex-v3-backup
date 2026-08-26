@@ -1,20 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1154" viewBox="0 0 900 1154">
 <rect width="900" height="1154" fill="#fbfbf9"/>
 <path d="M422.8,247.1 L437.1,246.7 L785.3,781.3 L818.9,861.4 L817.3,1072.7 L333.4,994.6 L232.9,979.0 L184.6,971.5 L81.1,970.0 L81.1,897.1 L81.2,854.6 L83.4,81.1 L84.8,81.6 L95.4,86.3 L105.6,91.6 L115.4,97.4 L125.0,103.8 L134.1,110.7 L142.9,118.1 L151.2,126.0 L152.9,127.6 L163.2,138.7 L174.1,149.4 L185.3,159.5 L196.9,169.2 L209.0,178.4 L221.5,187.1 L234.3,195.2 L247.4,202.8 L260.9,209.8 L274.6,216.3 L288.7,222.2 L303.0,227.4 L317.4,232.0 L332.1,236.1 L346.9,239.5 L361.9,242.3 L377.1,244.5 L392.3,246.0 L407.5,246.9 Z" fill="none" stroke="#b9a06a" stroke-width="1.5" stroke-dasharray="6 4"/>
-<path d="M102.1,433.6 L97.5,583.9 L134.7,621.1 L134.7,903.9 L161.4,953.5 L316.9,953.5 L316.9,787.3 L422.3,787.3 L440.2,740.8 L542.9,740.8 L542.9,505.4 L468.4,505.4 L442.0,437.6 Z" fill="#1854a014" stroke="#1854a0" stroke-width="2.5"/>
-<circle cx="102.1" cy="433.6" r="3" fill="#1854a0"/>
-<circle cx="97.5" cy="583.9" r="3" fill="#1854a0"/>
-<circle cx="134.7" cy="621.1" r="3" fill="#1854a0"/>
-<circle cx="134.7" cy="903.9" r="3" fill="#1854a0"/>
-<circle cx="161.4" cy="953.5" r="3" fill="#1854a0"/>
-<circle cx="316.9" cy="953.5" r="3" fill="#1854a0"/>
-<circle cx="316.9" cy="787.3" r="3" fill="#1854a0"/>
-<circle cx="422.3" cy="787.3" r="3" fill="#1854a0"/>
-<circle cx="440.2" cy="740.8" r="3" fill="#1854a0"/>
-<circle cx="542.9" cy="740.8" r="3" fill="#1854a0"/>
-<circle cx="542.9" cy="505.4" r="3" fill="#1854a0"/>
-<circle cx="468.4" cy="505.4" r="3" fill="#1854a0"/>
-<circle cx="442.0" cy="437.6" r="3" fill="#1854a0"/>
-<text x="317.1" y="688.8" font-family="monospace" font-size="15" fill="#1854a0" text-anchor="middle">A · 2553 sq ft · 13v</text>
+<path d="M102.4,433.3 L96.9,583.0 L135.8,622.5 L133.7,902.1 L161.1,952.9 L316.3,954.1 L317.5,786.9 L422.2,787.7 L440.4,740.4 L542.5,741.2 L543.4,505.7 L468.3,505.1 L442.5,438.8 Z" fill="#1854a014" stroke="#1854a0" stroke-width="2.5"/>
+<circle cx="102.4" cy="433.3" r="3" fill="#1854a0"/>
+<circle cx="96.9" cy="583.0" r="3" fill="#1854a0"/>
+<circle cx="135.8" cy="622.5" r="3" fill="#1854a0"/>
+<circle cx="133.7" cy="902.1" r="3" fill="#1854a0"/>
+<circle cx="161.1" cy="952.9" r="3" fill="#1854a0"/>
+<circle cx="316.3" cy="954.1" r="3" fill="#1854a0"/>
+<circle cx="317.5" cy="786.9" r="3" fill="#1854a0"/>
+<circle cx="422.2" cy="787.7" r="3" fill="#1854a0"/>
+<circle cx="440.4" cy="740.4" r="3" fill="#1854a0"/>
+<circle cx="542.5" cy="741.2" r="3" fill="#1854a0"/>
+<circle cx="543.4" cy="505.7" r="3" fill="#1854a0"/>
+<circle cx="468.3" cy="505.1" r="3" fill="#1854a0"/>
+<circle cx="442.5" cy="438.8" r="3" fill="#1854a0"/>
+<text x="317.2" y="688.7" font-family="monospace" font-size="15" fill="#1854a0" text-anchor="middle">A · 2551 sq ft · 13v</text>
 <text x="10" y="20" font-family="monospace" font-size="13" fill="#222">kirkland-12629-ne-100th-pl — 1 structure(s); dashed = parcel</text>
 </svg>

@@ -289,6 +289,8 @@ interface Outcome {
   codes: string[];
   smallestFacet: number | null;
   fail: string;
+  /** Verdict under the phase-2 criteria (geometry only). */
+  gateFail: string;
 }
 
 function euler(model: RoofModel): number {
@@ -313,11 +315,12 @@ function runOne(c: Contour, pitch: number, tuning?: ReconV2Tuning): Outcome {
     id: c.id, klass: c.klass, rawVerts: c.ring.length, areaSqft: areaOf(c.ring),
     regVerts: s?.contourEdges ?? 0, familyPct: (s?.regularize.familyShare ?? 0) * 100,
     skeleton: !!model, facets: model?.faces.length ?? 0, euler: null, tilingPct: null,
-    errors: -1, warnings: -1, codes: [], smallestFacet: null, fail: "",
+    errors: -1, warnings: -1, codes: [], smallestFacet: null, fail: "", gateFail: "",
   };
   if (!model || !s?.ring) {
     base.fail = !s?.ring ? "contour rejected" : report.reasons[0] ?? "skeleton null";
-    if (s && s.contourEdges > 14) base.fail = `${s.contourEdges} vertices > 14 cap`;
+    if (s && s.contourEdges > 64) base.fail = `${s.contourEdges} vertices > 64 cap`;
+    base.gateFail = base.fail;
     return base;
   }
   const idx = buildIndexes(model);
@@ -341,6 +344,29 @@ function runOne(c: Contour, pitch: number, tuning?: ReconV2Tuning): Outcome {
   if (mjs.errors !== port.errors || mjs.warnings !== port.warnings) problems.push("validators diverged");
   if (mjs.codes.length) problems.push(mjs.codes.join("+"));
   base.fail = problems.join(", ");
+  // Verdict under the PHASE 2 criteria, which judge the model's own geometry:
+  // Euler, tiling, R07, R12 on square corners only, no degenerate facet.
+  // Everything else in `problems` is diagnostic — R11 and the 20 sq ft floor
+  // are known invariant-wording defects, and facetCount is a detector.
+  const rectilinear = s.ring!.every((p, i) => {
+    const a = s.ring![(i - 1 + s.ring!.length) % s.ring!.length];
+    const c = s.ring![(i + 1) % s.ring!.length];
+    let turn = ((Math.atan2(c.y - p.y, c.x - p.x) - Math.atan2(p.y - a.y, p.x - a.x)) * 180) / Math.PI;
+    while (turn > 180) turn -= 360;
+    while (turn < -180) turn += 360;
+    return Math.abs(Math.abs(turn) - 90) < 2;
+  });
+  const r07 = port.results.filter((f) => f.id === "R07" && f.level === "error").length;
+  const r12 = port.results.filter((f) => f.id === "R12" && f.level === "error").length;
+  const r01 = port.results.filter((f) => (f.id === "R01" || f.id === "R02") && f.level === "error").length;
+  const gate: string[] = [];
+  if (base.euler !== 1) gate.push(`Euler ${base.euler}`);
+  if (Math.abs(base.tilingPct) >= 0.5) gate.push(`tiling ${base.tilingPct.toFixed(2)}%`);
+  if (r07) gate.push("R07");
+  if (rectilinear && r12) gate.push("R12");
+  if (r01) gate.push("R01/R02");
+  if (mjs.errors !== port.errors || mjs.warnings !== port.warnings) gate.push("diverged");
+  base.gateFail = gate.join(", ");
   return base;
 }
 
@@ -363,7 +389,14 @@ function table(rows: Outcome[]): void {
     );
   }
   const clean = rows.filter((r) => r.skeleton && !r.fail).length;
-  console.log(`\n  CLEAN ${clean}/${rows.length}`);
+  const passed = rows.filter((r) => r.skeleton && !r.gateFail).length;
+  console.log(`\n  CLEAN (nothing reported at all)  ${clean}/${rows.length}`);
+  console.log(`  PASSES THE PHASE 2 CRITERIA     ${passed}/${rows.length}`);
+  const gateFails = rows.filter((r) => r.gateFail);
+  if (gateFails.length) {
+    console.log("\n  ---- fails the phase-2 criteria ----");
+    for (const r of gateFails) console.log(`  ${r.id.padEnd(26)} ${r.gateFail}`);
+  }
 }
 
 function main(): void {

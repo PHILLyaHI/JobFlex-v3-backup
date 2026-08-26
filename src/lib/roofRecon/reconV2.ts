@@ -36,8 +36,9 @@ import { synthesizeRoofModel } from "@/lib/roofDiagram/synthesize";
 import { areaOf, buildStructureFootprints, regularizeRing, type FootprintPoint, type RegularizeReport } from "@/lib/roofRecon/footprint";
 import type { Raster } from "@/lib/solar";
 
-/** Vertex cap: synthesize.ts:125 refuses anything above 14. */
-const MAX_VERTICES = 14;
+/** Vertex cap — mirrors synthesize.ts, which refuses anything above it. Both
+ *  are measured; see the constant there. */
+const MAX_VERTICES = 64;
 /** A skeleton facet is swept by exactly one contour edge, so on a single-mass
  *  roof the facet count IS the edge count — measured: Prairie 12 v → 12
  *  facets, 8 → 8, 6 → 6; Kirkland 14 → 14. That makes Instant's facetCount a

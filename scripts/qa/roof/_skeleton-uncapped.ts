@@ -1,3 +1,9 @@
+// MEASUREMENT COPY of src/lib/roofDiagram/skeleton.ts with the n > 32 guard
+// lifted, so scripts/qa/roof/skeleton-limits.ts can find where the algorithm
+// ACTUALLY fails rather than where the asserted cap stops it. Not shipped,
+// not imported by anything but that harness. Regenerate by copying the
+// source and changing the one line below.
+/* eslint-disable */
 // Roof diagram — STRAIGHT SKELETON (drawing-rules spec §6 step 2). The
 // synthesis core: an unweighted straight skeleton of a simple CCW building
 // outline, computed with the classic LAV/SLAV wavefront algorithm of Felkel &
@@ -7,7 +13,7 @@
 // ridges, 45° hips from convex corners, valleys from reflex corners,
 // watertight and crossing-free.
 //
-// Inputs are simplified building outlines (4–256 vertices, feet, x east /
+// Inputs are simplified building outlines (4–14 vertices, feet, x east /
 // y north). Robustness choices, per the spec: the whole computation runs in a
 // local frame centred on the outline centroid; comparisons use 1e-9-relative
 // epsilons with a deterministic tie-break (smaller vertex index first) for
@@ -24,30 +30,7 @@
 // blocks the pipeline — the repaired recon model remains, spec §6 step 5).
 //
 // Pure and self-contained: zero imports, no I/O, input never mutated, no
-// recursion. The vertex ceiling below is measured, not assumed — see it.
-
-/**
- * The algorithm's own ceiling, MEASURED (scripts/qa/roof/skeleton-limits.ts).
- * It used to be 32, asserted alongside a header claim that "n ≤ 14 keeps every
- * loop small" — neither number had a measurement behind it.
- *
- * What the measurement says, on synthetic combs whose identical square teeth
- * make wavefront events collide exactly (the worst case there is) and on real
- * OSM footprints:
- *
- *     n     verdict   tiling      time
- *   127        ok     0.0000%     34 ms
- *   191        ok     0.0000%    106 ms
- *   255        ok     0.0000%    117 ms
- *   383        ok     0.0000%   1077 ms
- *   511      null          —    21464 ms
- *
- * Correct — tiling exact to four decimals — everywhere it succeeds, so the
- * limit is not accuracy. It is that failure past ~400 vertices is both certain
- * and expensive: 21 seconds to return null. 256 is the last count that is
- * comfortably fast, with the cliff two steps beyond it.
- */
-const MAX_OUTLINE_VERTICES = 256;
+// recursion (n ≤ 14 keeps every loop small).
 
 export interface SkelPt {
   x: number;
@@ -175,7 +158,7 @@ export function straightSkeleton(outline: SkelPt[], opts: SkeletonOptions = {}):
 
 function skeletonExact(outline: SkelPt[]): SkeletonResult | null {
   const n = outline.length;
-  if (n < 3 || n > MAX_OUTLINE_VERTICES) return null;
+  if (n < 3 || n > 4096) return null; // MEASUREMENT COPY: cap lifted
   for (const p of outline) {
     if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
   }

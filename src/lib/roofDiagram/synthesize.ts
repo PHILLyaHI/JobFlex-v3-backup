@@ -2,7 +2,7 @@
 // from the contract-grade Instant outline instead of repairing traced facets.
 //
 // Per structure outline: simplify (§6.1 — collinear < 8° with a 30° cumulative
-// cap, drop segments < 1 ft, 4–14 vertices, CCW), run the straight skeleton
+// cap, drop segments < 1 ft, 4–64 vertices, CCW), run the straight skeleton
 // (one facet per outline edge; ridges/hips/valleys ARE the skeleton by
 // construction), lift z per vertex as perpendicular distance to the generating
 // edge × dominantPitch/12, then:
@@ -127,7 +127,23 @@ const MIN_EDGE_FT = 1;
 const COLLINEAR_DEG = 8;
 const COLLINEAR_CUM_DEG = 30;
 const MIN_VERTICES = 4;
-const MAX_VERTICES = 14;
+/**
+ * How many sides a contour may have and still be drawn. MEASURED, after 14
+ * turned out to be a number nobody had checked: the spec asserted "inputs are
+ * 4–14-gons" as a given, and the skeleton claimed "n ≤ 14 keeps every loop
+ * small" with nothing behind it.
+ *
+ * The skeleton itself is correct to 383 vertices and fast to 255
+ * (scripts/qa/roof/skeleton-limits.ts) — 25 contours from 7 to 127 sides, zero
+ * failures, tiling exact to four decimals on every one, 18.6 ms at 127. So 14
+ * was never protecting the algorithm from anything.
+ *
+ * 64 is set from the contours instead: the most complex real footprint in the
+ * six-metro sample regularises to 52 sides, the next to 46, and 64 costs under
+ * 2.5 ms. Past that a "contour" is a curved wall traced point by point, not a
+ * building with corners, and the right answer is to refuse it.
+ */
+const MAX_VERTICES = 64;
 /** Recon RAKE endpoints within this of an outline edge count toward gable coverage. */
 const RAKE_GATE_FT = 5;
 /** Share of an outline edge the recon RAKEs must cover to call it a gable end. */
@@ -395,7 +411,7 @@ function dropShortEdges(ring: P2[]): P2[] {
   return out;
 }
 
-/** §6.1: dedupe → CCW → collinear merge → short-edge weld → 4–14 vertices. */
+/** §6.1: dedupe → CCW → collinear merge → short-edge weld → 4–64 vertices. */
 function simplifyRing(raw: P2[]): P2[] | null {
   const ring: P2[] = [];
   for (const p of raw) {
@@ -511,7 +527,7 @@ function synthesizeStructure(
   degenerateRetry: boolean,
 ): StructureResult | string {
   const poly = simplifyRing(outline);
-  if (!poly) return "outline not simplifiable to 4–14 CCW vertices";
+  if (!poly) return `outline not simplifiable to ${MIN_VERTICES}–${MAX_VERTICES} CCW vertices`;
   const skel = straightSkeleton(poly, { degenerateRetry });
   if (!skel) return "straight skeleton failed";
   const n = poly.length;
