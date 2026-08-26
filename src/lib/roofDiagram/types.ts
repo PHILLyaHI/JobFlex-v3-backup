@@ -145,6 +145,12 @@ export interface MeasurementProvenance {
   pitchSource?: PitchSourceProvenance;
   /** How the Instant contour was put onto the Google raster (register.ts). */
   registration?: RegistrationProvenance;
+  /**
+   * Set when ROOF_RECON_V2 was ON but could not build this roof, so the row
+   * was measured by the old calibrated path. A fallthrough must be readable
+   * off the row, not only in a server log that scrolls away.
+   */
+  v2Fallthrough?: { reason: string };
 }
 
 /** Where the printed pitch came from, and why — shown to the user. */

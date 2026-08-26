@@ -404,6 +404,8 @@ interface Geometry {
   /** V2 path only: how the contour was registered and where the pitch came from. */
   registration?: RegistrationProvenance;
   pitchSource?: PitchSourceProvenance;
+  /** V2 was on but could not build this roof; the old path measured it. */
+  v2Fallthrough?: { reason: string };
   source: MeasurementSource;
   origin: LatLng | null;
 }
@@ -443,6 +445,7 @@ function resolveGeometry(
   // ── ROOF_RECON_V2: topology first, then pitch measured into it ──
   // Off by default. The old path below is untouched, and V2 falling through
   // (no usable contour, skeleton refused) lands on it rather than failing.
+  let v2Fallthrough: { reason: string } | undefined;
   if (roofReconV2Enabled()) {
     try {
       const v2 = buildV2Geometry(recon, instant);
@@ -457,8 +460,10 @@ function resolveGeometry(
           pitchSource: v2.pitchSource,
         };
       }
+      v2Fallthrough = { reason: "V2 could not build a usable contour or skeleton from this outline" };
       console.warn("[roofMeasurement] ROOF_RECON_V2 produced no model — falling through to the calibrated path");
     } catch (err) {
+      v2Fallthrough = { reason: errorMessage(err, String(err)) };
       console.warn("[roofMeasurement] ROOF_RECON_V2 failed, falling through:", errorMessage(err, String(err)));
     }
   }
@@ -480,12 +485,13 @@ function resolveGeometry(
       ...(calibrated.notes.graft ? { graft: calibrated.notes.graft } : {}),
       ...(calibrated.notes.outlineSource ? { outlineSource: calibrated.notes.outlineSource } : {}),
       ...(calibrated.notes.visionOutline ? { visionOutline: calibrated.notes.visionOutline } : {}),
+      ...(v2Fallthrough ? { v2Fallthrough } : {}),
       source: "instant+recon",
       origin: recon.origin,
     };
   } catch (err) {
     console.warn("[roofMeasurement] calibration failed, drawing the outline only:", errorMessage(err, String(err)));
-    return outlineGeometry(recon, instant, input);
+    return { ...outlineGeometry(recon, instant, input), ...(v2Fallthrough ? { v2Fallthrough } : {}) };
   }
 }
 
@@ -508,6 +514,7 @@ function provenanceOf(
     visionOutline?: VisionOutlineProvenance;
     registration?: RegistrationProvenance;
     pitchSource?: PitchSourceProvenance;
+    v2Fallthrough?: { reason: string };
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -535,6 +542,7 @@ function provenanceOf(
       ...(coverage ? { coverage } : {}),
       ...(notes?.registration ? { registration: notes.registration } : {}),
       ...(notes?.pitchSource ? { pitchSource: notes.pitchSource } : {}),
+      ...(notes?.v2Fallthrough ? { v2Fallthrough: notes.v2Fallthrough } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
       pixelSizeM: model.provenance?.pixelSizeM,
@@ -1002,7 +1010,7 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
     roofRegions = regions;
   }
 
-  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
 
   // Chimneys: DSM posts on the RAW reconstruction (the rasters' frame — the
   // calibrated model stays in it, so no transform is needed) + vision boxes on
@@ -1060,6 +1068,7 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
       visionOutline: visionNote ?? visionTraceNote,
       ...(registration ? { registration } : {}),
       ...(pitchSource ? { pitchSource } : {}),
+      ...(v2Fallthrough ? { v2Fallthrough } : {}),
     }),
   };
 

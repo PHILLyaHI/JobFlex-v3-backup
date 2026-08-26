@@ -121,10 +121,15 @@ export interface ReconV2Result {
   report: ReconV2Report;
 }
 
-/** Off by default; the old path keeps shipping until the final acceptance. */
+/**
+ * ON by default in dev, OFF in production until the final acceptance — an
+ * explicit ROOF_RECON_V2 value wins over both. Only the measurement action
+ * reads this; the QA harnesses call the V2 builders directly.
+ */
 export function roofReconV2Enabled(): boolean {
   const v = process.env.ROOF_RECON_V2;
-  return v === "1" || v === "true" || v === "on";
+  if (v !== undefined && v !== "") return v === "1" || v === "true" || v === "on";
+  return process.env.NODE_ENV !== "production";
 }
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
