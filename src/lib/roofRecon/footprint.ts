@@ -357,27 +357,70 @@ function douglasPeucker(pts: FootprintPoint[], tol: number): FootprintPoint[] {
   return pts.filter((_, i) => keep[i]);
 }
 
-/** The angle whose ±tol band holds the most edge length. */
+/**
+ * The 0/45/90 family that best explains the ring, as an angle in [0, 45).
+ *
+ * Two stages, and the second one is the point.
+ *
+ * A plain scan for "the angle whose ±tol band holds the most edge length" is
+ * DEGENERATE on the commonest building there is. Give it a rectangle and every
+ * angle in a 2·tol-wide window captures all four edges, so they all tie — and
+ * a first-wins scan then returns the LOWEST of them, roughly tol below the
+ * truth. Measured on an OSM footprint in Phoenix: edges at 132.3° / 42.6° /
+ * 132.4° / 42.1°, true axis 42.34°, and the scan returned 31.00°. The family
+ * share, which is measured at 3°, then read 0.0% on a perfect rectangle, and
+ * the snap released every edge because squaring onto that wrong axis would have
+ * moved the corners more than 3 ft. The geometry survived only because the
+ * release valve fired. Kirkland squared correctly for the opposite reason: its
+ * ±15° tracing noise let the scan discriminate. Noise was doing the work.
+ *
+ * So: the wide band still SELECTS which edges belong to the family, because a
+ * traced contour needs that tolerance to find its axis at all — but the angle
+ * itself is then FITTED to those edges, by the length-weighted circular mean of
+ * their deviations. A rectangle fits exactly; a wobbly contour gets the
+ * best-fit axis instead of the low edge of a plateau.
+ */
 export function dominantAxisDeg(ring: FootprintPoint[], tolDeg = 12): number {
-  let best = 0;
-  let bestLen = -1;
-  for (let deg = 0; deg < 90; deg += 0.5) {
+  const edges: Array<{ bearing: number; len: number }> = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1e-6) continue;
+    edges.push({ bearing: (((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) % 45 + 45) % 45, len });
+  }
+  if (!edges.length) return 0;
+
+  // 1. Which edges are on the family — the widest plateau, scanned coarsely.
+  let seed = 0;
+  let seedLen = -1;
+  for (let deg = 0; deg < 45; deg += 0.5) {
     let len = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i];
-      const b = ring[(i + 1) % ring.length];
-      const l = Math.hypot(b.x - a.x, b.y - a.y);
-      if (l < 1e-6) continue;
-      const bearing = (((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) % 180 + 180) % 180;
-      const rel = ((bearing - deg) % 90 + 90) % 90;
-      if (Math.min(rel, 90 - rel) <= tolDeg) len += l;
+    for (const e of edges) {
+      const rel = ((e.bearing - deg) % 45 + 45) % 45;
+      if (Math.min(rel, 45 - rel) <= tolDeg) len += e.len;
     }
-    if (len > bestLen) {
-      bestLen = len;
-      best = deg;
+    if (len > seedLen + 1e-9) {
+      seedLen = len;
+      seed = deg;
     }
   }
-  return best;
+
+  // 2. Fit the angle to those edges. Deviations live on a 45° circle, so they
+  //    are averaged as unit vectors at 8× the angle — no wrap-around bias.
+  let sx = 0;
+  let sy = 0;
+  for (const e of edges) {
+    const rel = ((e.bearing - seed) % 45 + 45) % 45;
+    const dev = rel > 22.5 ? rel - 45 : rel;
+    if (Math.abs(dev) > tolDeg) continue;
+    const t = (dev * 8 * Math.PI) / 180;
+    sx += e.len * Math.cos(t);
+    sy += e.len * Math.sin(t);
+  }
+  if (sx === 0 && sy === 0) return seed;
+  const fitted = seed + (Math.atan2(sy, sx) * 180) / Math.PI / 8;
+  return ((fitted % 45) + 45) % 45;
 }
 
 interface EdgeLine {

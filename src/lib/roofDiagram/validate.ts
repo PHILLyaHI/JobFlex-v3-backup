@@ -990,6 +990,9 @@ export interface InvariantOptions {
 type IPt = [number, number];
 type IPt3 = [number, number, number];
 
+/** The precision validate-roof.mjs is fed — see validateRoofInvariants. */
+const invQ = (n: number): number => Math.round(n * 1000) / 1000;
+
 const invKey = (p: IPt | IPt3): string =>
   Math.round(p[0] / INV_EPS_XY) + "|" + Math.round(p[1] / INV_EPS_XY);
 const invEdgeKey = (a: IPt3, b: IPt3): string => [invKey(a), invKey(b)].sort().join("#");
@@ -1092,7 +1095,16 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     .map((f, i) => {
       const ring = ringOf(f.lineIds, idx);
       if (!ring || ring.length < 3) return null;
-      const pts3 = ring.map((p) => [p.x, p.y, p.z] as IPt3);
+      // Quantised to the SAME 3 decimals validate-roof.mjs receives. The two
+      // implementations of R14 are line-for-line identical, yet on a 100x60
+      // rectangle at exactly 4/12 they disagreed: the reference reads an
+      // export rounded to 3 places and fits a gradient of 4.00001, this one
+      // read the model at full precision and fitted 3.99998 — one side of
+      // `p < 4`, one warning each way. Every code threshold (2/12 asphalt,
+      // 4/12 double underlayment, 3/12 metal, 4/12 slate) is an exact number a
+      // real roof lands on, so the divergence is not a corner case; it is a
+      // house with a 4/12 roof. Same input, same verdict.
+      const pts3 = ring.map((p) => [invQ(p.x), invQ(p.y), invQ(p.z)] as IPt3);
       const plan = pts3.map(([x, y]) => [x, y] as IPt);
       return {
         i,
@@ -1115,7 +1127,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
   }>;
 
   const b = model.totals?.bounds;
-  const fp: IPt[] =
+  const fp: IPt[] = (
     opts.footprint ??
     (b
       ? [
@@ -1124,7 +1136,8 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
           [b.maxX, b.maxY],
           [b.minX, b.maxY],
         ]
-      : []);
+      : [])
+  ).map(([x, y]) => [invQ(x), invQ(y)] as IPt);
 
   if (!facets.length || !fp.length) {
     err("INPUT", "модель неполная: нужны footprint, vertices, facets");

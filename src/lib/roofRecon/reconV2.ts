@@ -33,7 +33,8 @@
 import type { InstantRoofData, RoofModel } from "@/lib/eagleview";
 import { instantWallRingsRaw } from "@/lib/roofDiagram/calibrate";
 import { synthesizeRoofModel } from "@/lib/roofDiagram/synthesize";
-import { areaOf, regularizeRing, type FootprintPoint, type RegularizeReport } from "@/lib/roofRecon/footprint";
+import { areaOf, buildStructureFootprints, regularizeRing, type FootprintPoint, type RegularizeReport } from "@/lib/roofRecon/footprint";
+import type { Raster } from "@/lib/solar";
 
 /** Vertex cap: synthesize.ts:125 refuses anything above 14. */
 const MAX_VERTICES = 14;
@@ -245,6 +246,136 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
       gableEnds: synth.report.gableEnds,
       pitch12,
       facetDeficit: instantFacets != null ? instantFacets - synth.model.faces.length : null,
+      reasons,
+      synthesizeFailed: synth.report.failed ?? [],
+    },
+  };
+}
+
+// ── fallback: no Instant ─────────────────────────────────────────────────────
+
+/**
+ * Height above local ground a mask pixel must reach to count as roof.
+ *
+ * Measured on the two houses that have both a mask and a contour. Google's
+ * building mask over-claims: on Kirkland it swallowed 543 sq ft of ground
+ * beside the house, sitting at 276.2 ft against a ground elevation of 276.08
+ * and a roof at 295.3. Gate the mask at ground + 4 ft and the survivor agrees
+ * with the Instant contour to 0.6 % (2066 vs 2079 sq ft); Prairie lands within
+ * 1.1 % (3311 vs 3274).
+ *
+ * The threshold is deliberately LOW and deliberately measured from the GROUND,
+ * not from the roof. Prairie's perimeter fringe sits 12.9 ft above the ground
+ * and 13.5 ft below the main roof: that is a porch or a garage, real roof that
+ * a "close to the roof height" rule would have thrown away — the same mistake
+ * that cost Redmond its second structure, 664 sq ft, a 30 % undercount.
+ */
+const ROOF_MIN_HEIGHT_FT = 4;
+const FT_PER_M = 3.28084;
+
+export interface ReconV2FallbackInput {
+  /** Google Solar building mask, 1 = building. */
+  mask: Raster;
+  /** Google Solar DSM in METRES — the raster is not in feet. */
+  dsm: Raster;
+  groundElevFt: number;
+  /** Parcel ring in frame feet; decides which mask blobs belong to this lot. */
+  parcel?: FootprintPoint[] | null;
+  /** Predominant pitch from the reconstruction (rise/12). */
+  pitch12: number | null;
+}
+
+/**
+ * Build the roof WITHOUT Instant: gate the mask to roof height, take one
+ * outline per structure, regularise, grow the skeleton. Same pass as the
+ * Instant path from the contour onward — only where the contour comes from
+ * differs, and it is a noisier source, so the vertex cap bites more often.
+ *
+ * There is no facetCount here, so the vertex budget cannot aim at anything and
+ * is left at the skeleton's ceiling.
+ */
+export function buildRoofV2FromRecon(input: ReconV2FallbackInput): ReconV2Result {
+  const reasons: string[] = [];
+  const { mask, dsm } = input;
+  const cutM = (input.groundElevFt + ROOF_MIN_HEIGHT_FT) / FT_PER_M;
+  const gated: Raster = {
+    ...mask,
+    data: mask.data.map((v, i) => {
+      const z = dsm.data[i];
+      return v > 0 && Number.isFinite(z) && z >= cutM ? v : 0;
+    }),
+  } as Raster;
+
+  const res = buildStructureFootprints(gated, {
+    ...(input.parcel ? { parcel: input.parcel } : {}),
+    maxVertices: MAX_VERTICES,
+    minFamilyShare: MIN_FAMILY_SHARE,
+  });
+
+  const pitch12 = input.pitch12 != null && Number.isFinite(input.pitch12) && input.pitch12 > 0 ? input.pitch12 : null;
+  const structures: ReconV2Structure[] = [];
+  const usable: FootprintPoint[][] = [];
+  for (const st of res.structures) {
+    const notes: string[] = [];
+    const ring = st.ring;
+    if (!ring) {
+      notes.push(st.report.reasons[0] ?? "no outline for this structure");
+    } else if (ring.length > MAX_VERTICES) {
+      notes.push(`contour has ${ring.length} vertices, over the ${MAX_VERTICES} cap — the skeleton will refuse it`);
+    }
+    structures.push({
+      prefix: st.prefix,
+      ring: ring && ring.length <= MAX_VERTICES ? ring : null,
+      regularize: {
+        vertices: st.report.vertices,
+        edgesUnder3Ft: st.report.edgesUnder3Ft,
+        perimeterFt: st.report.perimeterFt,
+        areaSqft: st.report.areaSqft,
+        rawAreaSqft: st.maskAreaSqft,
+        axisDeg: st.report.axisDeg,
+        worstAngleDeviationDeg: st.report.worstAngleDeviationDeg,
+        familyShare: st.report.familyShare,
+        offFamily: st.report.offFamily,
+        staircaseEdgesRemoved: st.report.staircaseEdgesRemoved,
+        budgetEdgesRemoved: [],
+        maxCornerShiftFt: st.report.maxCornerShiftFt,
+        simple: !!ring,
+        asserts: st.report.asserts,
+        reasons: st.report.reasons,
+      },
+      contourAreaSqft: st.report.areaSqft,
+      instantAreaSqft: st.maskAreaSqft,
+      contourEdges: ring?.length ?? 0,
+      clusters: null,
+      instantFacetCount: null,
+      multiMass: false,
+      notes,
+    });
+    if (ring && ring.length <= MAX_VERTICES) usable.push(ring);
+    else reasons.push(`structure ${st.prefix}: ${notes.join("; ") || "unusable contour"}`);
+  }
+
+  if (!usable.length) {
+    return { model: null, report: { structures, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "no usable contour after the height gate"], synthesizeFailed: [] } };
+  }
+  const synth = synthesizeRoofModel({
+    outlines: usable,
+    recon: null,
+    instantPitch: pitch12,
+    degenerateRetry: true,
+    ...(pitch12 != null ? { forcePitch: pitch12 } : {}),
+  });
+  if (!synth) {
+    return { model: null, report: { structures, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "skeleton produced no structure"], synthesizeFailed: [] } };
+  }
+  return {
+    model: synth.model,
+    report: {
+      structures,
+      facets: synth.model.faces.length,
+      gableEnds: synth.report.gableEnds,
+      pitch12,
+      facetDeficit: null,
       reasons,
       synthesizeFailed: synth.report.failed ?? [],
     },
