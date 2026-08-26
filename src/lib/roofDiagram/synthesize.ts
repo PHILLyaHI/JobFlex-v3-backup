@@ -114,7 +114,22 @@ const WELD_FT = 0.05;
  *  measured on Prairie, the west wing's ridge start came out as TWO nodes
  *  0.1 ft apart joined by a stub arc, which turned the gable-end triangle
  *  into a quad and silently skipped the triangle-only gable conversion.
- *  Boundary vertices keep the tight WELD_FT — eave corners must never smear. */
+ *  Boundary vertices keep the tight WELD_FT — eave corners must never smear.
+ *
+ *  ABSOLUTE ON PURPOSE, and the attempt to make it relative is recorded here
+ *  so it is not repeated (ROOF-DIAGNOSIS §K). The audit flagged it as an
+ *  absolute tolerance on an object of variable length, correctly: welding a
+ *  4.11 ft arc's endpoint by 0.238 ft turned it 2.28° and cost R12 on Seattle.
+ *  Capping the tolerance at a share of the local arc length fixes exactly that
+ *  — worst hip deviation 2.28° → 0.20° — and BREAKS TOPOLOGY: the sample fell
+ *  from 32/33 to 30/33 with Euler −1/−2 and R07 on three contours.
+ *
+ *  Because this tolerance does two jobs. It must not rotate short arcs, and it
+ *  must merge the near-tie skeleton nodes that a regularized outline produces
+ *  by the dozen — the ones described above. Tightening it serves the first and
+ *  defeats the second, and the second is what holds the roof together. The
+ *  parameter is not where the fix lives; correcting the arc's DIRECTION after
+ *  the weld, from the skeleton rather than from the moved endpoints, is. */
 const INTERIOR_WELD_FT = 0.25;
 const MICRO_WELD_MIN_Z = 0.5;
 /** Interior arc whose endpoints agree in z within this is level → RIDGE. */
