@@ -119,9 +119,17 @@ const INTERIOR_WELD_FT = 0.25;
 const MICRO_WELD_MIN_Z = 0.5;
 /** Interior arc whose endpoints agree in z within this is level → RIDGE. */
 const LEVEL_EPS_FT = 0.1;
-/** …or whose slope (Δz / plan run) stays under this — a ridge between the
- *  not-quite-parallel eaves of a simplified real outline (see classifier). */
-const RIDGE_MAX_SLOPE = 0.3;
+/**
+ * …or whose slope (Δz / plan run) stays under this — a ridge between the
+ * not-quite-parallel eaves of a simplified real outline (see classifier).
+ *
+ * Was 0.3, which is a 16.7° climb: we were calling a visibly sloped arc a
+ * ridge. The validator's own levelness test uses 0.02 (INV_LEVEL_SLOPE), so
+ * we were fifteen times more liberal than the rule we are judged by, and R11
+ * — "the ridge is the top edge of both facets" — was being asked about lines
+ * that are not ridges. Matched to the validator.
+ */
+const RIDGE_MAX_SLOPE = 0.02;
 /** Outline segments shorter than this are dropped during simplification. */
 const MIN_EDGE_FT = 1;
 const COLLINEAR_DEG = 8;
