@@ -167,7 +167,18 @@ const MIN_VERTICES = 4;
  * building with corners, and the right answer is to refuse it.
  */
 const MAX_VERTICES = 64;
-/** Recon RAKE endpoints within this of an outline edge count toward gable coverage. */
+/**
+ * Outer sanity bound on how far a recon RAKE may sit from an outline edge and
+ * still be evidence about it. It is NOT the discriminator any more — the
+ * outline's own geometry is (see coverageOf): a rake counts toward an edge only
+ * when that edge is the NEAREST one to it.
+ *
+ * The radius alone was length-blind: 5 ft from a 60 ft wall is tight, 5 ft from
+ * a 10 ft jog reaches most of the way to its neighbours, so short edges
+ * collected evidence belonging to the walls beside them. Asking which edge is
+ * nearest needs no tolerance at all, because the edges of a polygon already
+ * partition the plane between them.
+ */
 const RAKE_GATE_FT = 5;
 /** Share of an outline edge the recon RAKEs must cover to call it a gable end. */
 const GABLE_COVERAGE = 0.5;
@@ -704,8 +715,19 @@ function synthesizeStructure(
     const ux = dx / len;
     const uy = dy / len;
     const intervals: Array<[number, number]> = [];
+    /** True when outline edge `i` is the closest one to `p` — the test that
+     *  replaces a fixed capture radius. */
+    const nearestIsThisEdge = (p: P2): boolean => {
+      const here = distToSegment(p, a, b);
+      for (let j = 0; j < n; j++) {
+        if (j === i) continue;
+        if (distToSegment(p, poly[j], poly[(j + 1) % n]) < here - 1e-9) return false;
+      }
+      return true;
+    };
     for (const s of reconRakes) {
       if (distToSegment(s.a, a, b) > RAKE_GATE_FT || distToSegment(s.b, a, b) > RAKE_GATE_FT) continue;
+      if (!nearestIsThisEdge(s.a) || !nearestIsThisEdge(s.b)) continue;
       const t0 = (s.a.x - a.x) * ux + (s.a.y - a.y) * uy;
       const t1 = (s.b.x - a.x) * ux + (s.b.y - a.y) * uy;
       const lo = Math.max(0, Math.min(t0, t1));
