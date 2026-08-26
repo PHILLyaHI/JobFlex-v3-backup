@@ -106,6 +106,7 @@ model Organization {
   influencerPayouts    InfluencerPayout[]
   influencerStatements InfluencerStatement[]
   eagleViewReports     EagleViewReport[]
+  roofMeasurements     RoofMeasurement[]
   signupPromo          PromoCode? @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -144,6 +145,45 @@ model EagleViewReport {
 
   @@unique([organizationId, reportId])
   @@index([organizationId])
+}
+
+// Saved roof measurements from the Instant flow: EagleView Property Data
+// (numbers, outline, flags, imagery) merged with the aerial reconstruction
+// (facet geometry) and calibrated to it. Instant results carry a UUID rather
+// than a reportId and every lookup is billed, so the merged result is persisted
+// once here and re-opened from history, the proposal and the handheld page.
+model RoofMeasurement {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById      String?
+  // instant+recon | instant-outline | recon
+  source           String
+  address          String?
+  city             String?
+  state            String?
+  zip              String?
+  lat              Float?
+  lng              Float?
+  // Headline figures (Instant's when present, else the reconstruction's).
+  areaSqft         Float?
+  squares          Float?
+  predominantPitch String?
+  facetCount       Int?
+  instantRequestId String?
+  // JSON-as-String (SQLite): Instant summary, calibrated RoofModel, chimney
+  // candidates, calibration report + imagery provenance.
+  instantJson      String?
+  modelJson        String
+  chimneyJson      String?
+  provenanceJson   String?
+  // Exported drawing (Vercel Blob), filled by the export batch.
+  pngUrl           String?
+  pdfUrl           String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([organizationId, createdAt])
 }
 
 model User {
@@ -1695,4 +1735,30 @@ model ParcelCache {
 model ParcelMiss {
   key       String   @id
   checkedAt DateTime @default(now())
+}
+
+// One EagleView Property Data ("Instant") order. A row is written THE MOMENT
+// EagleView accepts the order — before the first poll — because from that
+// moment the lookup is billable whether or not we wait for the result. A poll
+// timeout therefore no longer loses the paid result: the requestId is here and
+// result/{id} can be asked again later. Also the idempotency ledger: a repeat
+// measurement of the same address reuses a complete row or resumes a pending
+// one instead of ordering (and paying) again.
+model InstantOrder {
+  id             String   @id @default(cuid())
+  organizationId String
+  // Upper-cased, whitespace-collapsed "address|city|state|zip" (equality only,
+  // same reasoning as ParcelCache.addressKey).
+  addressKey     String
+  address        String?
+  requestId      String   @unique
+  // pending | complete | failed
+  status         String   @default("pending")
+  // The parsed InstantRoofData once retrieved; null while pending/failed.
+  instantJson    String?
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([addressKey, status])
 }

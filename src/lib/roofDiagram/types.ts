@@ -151,6 +151,13 @@ export interface MeasurementProvenance {
    * off the row, not only in a server log that scrolls away.
    */
   v2Fallthrough?: { reason: string };
+  /**
+   * Set when this measurement did NOT order a new EagleView lookup: "stored"
+   * means an already-paid answer for the same address was reused, "recovered"
+   * means a previously orphaned pending order was collected. Absent when the
+   * lookup was ordered (and paid for) by this very measurement.
+   */
+  instantReuse?: { requestId: string; how: "stored" | "recovered" };
 }
 
 /** Where the printed pitch came from, and why — shown to the user. */

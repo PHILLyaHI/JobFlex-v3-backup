@@ -124,7 +124,25 @@ async function call(params: Record<string, string>): Promise<Parcel[]> {
   const left = res.headers.get("x-reportall-api-parcels-quota-remaining");
   if (used || left) {
     const n = Number(left);
-    if (Number.isFinite(n)) lastQuotaRemaining = n;
+    if (Number.isFinite(n)) {
+      lastQuotaRemaining = n;
+      // The header is the ONLY authoritative count — a locally kept tally
+      // drifted 17 results ahead of the truth before this (992 believed, 975
+      // real). Persist it on EVERY response, here rather than in the callers,
+      // so no code path can observe a header and forget to record it.
+      // Fire-and-forget: the count is bookkeeping, never worth failing a
+      // parcel lookup over. Dynamic import keeps this module usable from
+      // routes that bundle without the Prisma client.
+      void import("@/lib/db")
+        .then(({ db }) =>
+          db.syncState.upsert({
+            where: { key: "reportall:quota-remaining" },
+            update: { cursor: String(n) },
+            create: { key: "reportall:quota-remaining", cursor: String(n) },
+          }),
+        )
+        .catch(() => {});
+    }
     console.log(`[reportall] parcel ${used ?? "?"}/${QUOTA_ALLTIME} spent, ${left ?? "?"} remaining`);
   }
 

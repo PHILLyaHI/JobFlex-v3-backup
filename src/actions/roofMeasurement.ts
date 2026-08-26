@@ -23,8 +23,10 @@
 // model and vision boxes (converted from lat/lng with the pin as origin) are
 // moved into it with the calibration's outline transform.
 //
-// Billing rule: requestInstantRoofData is called EXACTLY once per invocation and
-// never retried. Once Instant HAS resolved the result is paid for and must
+// Billing rule: a NEW EagleView order is submitted at most once per invocation
+// and never retried — and only after the order ledger (obtainInstant) found
+// nothing to reuse: no already-paid answer for the address, no pending order to
+// collect. Once Instant HAS resolved the result is paid for and must
 // reach the user: every later step degrades instead of throwing (calibration →
 // outline-only, chimneys → none, save → returned unsaved with `unsaved: true`).
 //
@@ -48,7 +50,9 @@ import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import {
   isEagleViewEnabled,
-  requestInstantRoofData,
+  instantCompleteAddress,
+  pollInstantResult,
+  submitInstantOrder,
   fetchPropertyImage,
   PD_DIAGRAM_PACKS,
   type EvOrderInput,
@@ -109,6 +113,12 @@ type MeasureResult =
        * can show the result but it will not appear in history.
        */
       unsaved?: boolean;
+      /**
+       * Set when NO new EagleView lookup was ordered: an already-paid answer
+       * was reused ("stored") or an orphaned pending order was collected
+       * ("recovered"). The UI says so, and offers the explicit paid re-measure.
+       */
+      reusedInstant?: { requestId: string; how: "stored" | "recovered" };
     }
   | { ok: false; error: string };
 
@@ -515,6 +525,7 @@ function provenanceOf(
     registration?: RegistrationProvenance;
     pitchSource?: PitchSourceProvenance;
     v2Fallthrough?: { reason: string };
+    instantReuse?: { requestId: string; how: "stored" | "recovered" };
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -543,6 +554,7 @@ function provenanceOf(
       ...(notes?.registration ? { registration: notes.registration } : {}),
       ...(notes?.pitchSource ? { pitchSource: notes.pitchSource } : {}),
       ...(notes?.v2Fallthrough ? { v2Fallthrough: notes.v2Fallthrough } : {}),
+      ...(notes?.instantReuse ? { instantReuse: notes.instantReuse } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
       pixelSizeM: model.provenance?.pixelSizeM,
@@ -912,17 +924,158 @@ function buildV2Geometry(
   };
 }
 
+// ── the Instant order ledger ─────────────────────────────────────────────────
+
+/** ParcelCache-style address key: upper-cased, whitespace-collapsed, equality only. */
+const instantAddressKey = (input: EvOrderInput): string =>
+  [input.address, input.city, input.state, input.zip]
+    .map((part) => (part ?? "").toUpperCase().replace(/\s+/g, " ").trim())
+    .join("|");
+
+/** A terminal Property Data verdict (failed/rejected), as opposed to "not ready yet". */
+const isTerminalPdFailure = (err: unknown): boolean =>
+  err instanceof Error && /^Property Data request (?!failed \()/i.test(err.message) && /fail|error|reject/i.test(err.message);
+
+interface ObtainedInstant {
+  instant: InstantRoofData;
+  /** Absent when this call ordered (and paid for) a fresh lookup. */
+  reuse?: { requestId: string; how: "stored" | "recovered" };
+}
+
+/**
+ * The only place the product path gets Instant data, and the reason each click
+ * is no longer a new bill:
+ *
+ *   1. An already-paid answer for the same address — a complete InstantOrder
+ *      row, or the latest saved measurement's instantJson — is reused as is.
+ *   2. A pending order for the address is COLLECTED (result/{id}) instead of
+ *      re-ordered. This is the recovery half: a poll that timed out earlier
+ *      left the row pending, and the paid result is picked up here for free.
+ *   3. Only then is a new order submitted — and its requestId is written to
+ *      the ledger BEFORE the first poll, because from the moment EagleView
+ *      accepts an order it is billable whether or not we wait. Losing the id
+ *      to a timeout exception is how two paid Snohomish lookups became
+ *      unrecoverable on 2026-08-26.
+ *
+ * `forceNewOrder` skips step 1–2 for an explicit "re-measure at a new cost" —
+ * a deliberate action, never a side effect of clicking measure again.
+ */
+async function obtainInstant(input: EvOrderInput, organizationId: string, forceNewOrder: boolean): Promise<ObtainedInstant> {
+  const addressKey = instantAddressKey(input);
+  const keyed = addressKey !== "|||";
+
+  if (keyed && !forceNewOrder) {
+    // 1a. a complete order in the ledger
+    const done = await db.instantOrder.findFirst({
+      where: { organizationId, addressKey, status: "complete", instantJson: { not: null } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (done?.instantJson) {
+      try {
+        return { instant: JSON.parse(done.instantJson) as InstantRoofData, reuse: { requestId: done.requestId, how: "stored" } };
+      } catch {
+        /* an unreadable stored answer falls through to the other sources */
+      }
+    }
+    // 1b. an answer already saved on a measurement row (rows predate the ledger)
+    const prior = await db.roofMeasurement.findMany({
+      where: { organizationId, instantJson: { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { instantJson: true, instantRequestId: true, address: true, city: true, state: true, zip: true },
+    });
+    for (const row of prior) {
+      if (instantAddressKey({ address: row.address ?? "", city: row.city ?? "", state: row.state ?? "", zip: row.zip ?? "" }) !== addressKey) continue;
+      try {
+        const parsed = JSON.parse(row.instantJson as string) as InstantRoofData;
+        if (parsed.structures?.some((st) => (st.outline?.length ?? 0) >= 3)) {
+          return { instant: parsed, reuse: { requestId: row.instantRequestId ?? parsed.requestId, how: "stored" } };
+        }
+      } catch {
+        /* skip unreadable rows */
+      }
+    }
+    // 2. a pending order — collect it, never re-order over it
+    const pending = await db.instantOrder.findFirst({
+      where: { organizationId, addressKey, status: "pending" },
+      orderBy: { createdAt: "desc" },
+    });
+    if (pending) {
+      try {
+        const got = await pollInstantResult(pending.requestId, input, instantCompleteAddress(input));
+        if (got) {
+          await db.instantOrder
+            .update({ where: { id: pending.id }, data: { status: "complete", instantJson: JSON.stringify(got) } })
+            .catch(() => {});
+          return { instant: got, reuse: { requestId: pending.requestId, how: "recovered" } };
+        }
+        throw new Error(
+          `A Property Data order for this address is already processing (order ${pending.requestId}) — measuring again later will collect it without paying twice.`,
+        );
+      } catch (err) {
+        if (!isTerminalPdFailure(err)) throw err;
+        // the old order is dead for good; record that and order fresh below
+        await db.instantOrder
+          .update({ where: { id: pending.id }, data: { status: "failed", error: errorMessage(err, String(err)) } })
+          .catch(() => {});
+      }
+    }
+  }
+
+  // 3. a new order. The ledger write sits BETWEEN accept and the first poll.
+  const { requestId, completeAddress } = await submitInstantOrder(input, PD_DIAGRAM_PACKS);
+  try {
+    await db.instantOrder.create({
+      data: { organizationId, addressKey, address: input.address ?? null, requestId },
+    });
+  } catch (err) {
+    // The order exists either way; without the ledger row a later timeout
+    // orphans it again, so say it as loudly as a log can.
+    console.error("[roofMeasurement] COULD NOT RECORD instant order %s — a poll timeout will orphan it:", requestId, err);
+  }
+  let got: InstantRoofData | null;
+  try {
+    got = await pollInstantResult(requestId, input, completeAddress);
+  } catch (err) {
+    if (isTerminalPdFailure(err)) {
+      await db.instantOrder
+        .update({ where: { requestId }, data: { status: "failed", error: errorMessage(err, String(err)) } })
+        .catch(() => {});
+    }
+    throw err;
+  }
+  if (!got) {
+    throw new Error(
+      `Property Data is taking longer than expected (order ${requestId}). The order is saved — measuring this address again will collect it without paying twice.`,
+    );
+  }
+  await db.instantOrder
+    .update({ where: { requestId }, data: { status: "complete", instantJson: JSON.stringify(got) } })
+    .catch(() => {});
+  return { instant: got };
+}
+
 // ── actions ──────────────────────────────────────────────────────────────────
 
 /**
  * Instant measure: one billed EagleView Instant lookup + the free reconstruction,
  * run together, calibrated, chimney-scanned and saved.
  */
-export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureResult> {
+export async function measureRoofInstant(
+  input: EvOrderInput,
+  opts?: {
+    /**
+     * Order a fresh (billed) EagleView lookup even when a paid answer for this
+     * address already exists. Only an explicit user gesture may set this.
+     */
+    forceNewOrder?: boolean;
+  },
+): Promise<MeasureResult> {
   let organizationId: string;
   let userId: string;
   let instant: InstantRoofData;
   let recon: ReconBuild | null;
+  let instantReuse: { requestId: string; how: "stored" | "recovered" } | undefined;
   /** Set when Instant could not be used, with the reason — the fallback logs it. */
   let instantMissing: string | null = null;
 
@@ -933,13 +1086,15 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
     if (!isEagleViewEnabled()) return { ok: false, error: "EagleView is not configured" };
     if (!input.address && input.lat == null) return { ok: false, error: "Pick an address first" };
 
-    // Both start at once; neither waits on the other. The Instant call is the
-    // billed one and is issued exactly here, once. The reconstruction is
-    // optional: when Solar is not configured it is rejected up front instead of
-    // being attempted, and a slow one is abandoned at the deadline — either way
-    // the outline-only path takes over below.
+    // Both start at once; neither waits on the other. The Instant side goes
+    // through the order ledger (obtainInstant): reuse first, then collect any
+    // pending order, and only then a new billed order — whose id is recorded
+    // before the first poll. The reconstruction is optional: when Solar is not
+    // configured it is rejected up front instead of being attempted, and a
+    // slow one is abandoned at the deadline — either way the outline-only path
+    // takes over below.
     const [instantSettled, reconSettled] = await Promise.allSettled([
-      requestInstantRoofData(input, PD_DIAGRAM_PACKS),
+      obtainInstant(input, organizationId, opts?.forceNewOrder === true),
       isSolarEnabled()
         ? withDeadline(buildReconModel(input), RECON_DEADLINE_MS, "Roof reconstruction")
         : Promise.reject<ReconBuild>(new Error("Google Solar is not configured")),
@@ -958,10 +1113,11 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
     // candidates. Both cases are folded here into one explicit condition.
     if (instantSettled.status === "rejected") {
       instantMissing = errorMessage(instantSettled.reason, "EagleView Instant request failed");
-    } else if (!instantSettled.value.structures.some((s) => (s.outline?.length ?? 0) >= 3)) {
+    } else if (!instantSettled.value.instant.structures.some((s) => (s.outline?.length ?? 0) >= 3)) {
       instantMissing = "EagleView Instant returned no structure outline for this address";
     }
-    instant = instantSettled.status === "fulfilled" ? instantSettled.value : EMPTY_INSTANT;
+    instant = instantSettled.status === "fulfilled" ? instantSettled.value.instant : EMPTY_INSTANT;
+    instantReuse = instantSettled.status === "fulfilled" ? instantSettled.value.reuse : undefined;
     if (reconSettled.status === "fulfilled") {
       recon = reconSettled.value;
     } else {
@@ -975,7 +1131,10 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
     return { ok: false, error: errorMessage(err, "Couldn't measure this roof") };
   }
 
-  // ── No Instant: measure from the reconstruction alone (nothing was billed) ──
+  // ── No Instant: measure from the reconstruction alone. NOTE this does NOT
+  // mean nothing was billed — a poll timeout lands here with the order already
+  // accepted (and billable) at EagleView. The order ledger keeps its id, and
+  // the next measurement of this address collects it instead of paying again. ──
   if (instantMissing) {
     console.warn("[roofMeasurement] measuring without Instant: %s", instantMissing);
     if (!recon) {
@@ -1069,19 +1228,20 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
       ...(registration ? { registration } : {}),
       ...(pitchSource ? { pitchSource } : {}),
       ...(v2Fallthrough ? { v2Fallthrough } : {}),
+      ...(instantReuse ? { instantReuse } : {}),
     }),
   };
 
   try {
     const measurement = await persist(toSave);
-    return { ok: true, measurement };
+    return { ok: true, measurement, ...(instantReuse ? { reusedInstant: instantReuse } : {}) };
   } catch (err) {
     console.error(
       "[roofMeasurement] Instant request %s was billed but could not be saved: %s",
       instant.requestId,
       errorMessage(err, String(err)),
     );
-    return { ok: true, measurement: unsavedDTO(toSave), unsaved: true };
+    return { ok: true, measurement: unsavedDTO(toSave), unsaved: true, ...(instantReuse ? { reusedInstant: instantReuse } : {}) };
   }
 }
 

@@ -173,6 +173,9 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
   // Set when the action measured (and, for Instant, billed) but could not save.
   const [unsaved, setUnsaved] = React.useState(false);
   const [instantBusy, setInstantBusy] = React.useState(false);
+  // Set when the shown measurement reused an already-paid EagleView answer —
+  // the explicit paid re-measure button renders only then.
+  const [reusedInstant, setReusedInstant] = React.useState<"stored" | "recovered" | null>(null);
   const [freeBusy, setFreeBusy] = React.useState(false);
   const [view, setView] = React.useState<"2d" | "3d">("2d");
   const [layers, setLayers] = React.useState<DiagramLayers>(ALL_LAYERS_ON);
@@ -356,30 +359,41 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
     setPanel("report");
   }
 
-  // Instant measure — BILLED per lookup. The button is disabled while any
-  // measurement runs and a failure is never retried from here.
-  async function runInstant() {
+  // Instant measure. A repeat of an address the org already paid for REUSES
+  // the stored EagleView answer (no new bill); `forceNewOrder` is the explicit
+  // "re-measure at a new cost" gesture and is never set by a plain click.
+  async function runInstant(forceNewOrder = false) {
     if (!picked?.address) {
       addrRef.current?.focus();
       return;
     }
+    if (forceNewOrder && !window.confirm("Order a NEW EagleView lookup for this address? This is billed, even though a paid answer already exists.")) {
+      return;
+    }
     resetResult();
     setInstantBusy(true);
+    setReusedInstant(null);
     setMsReport("Instant measure");
     setMsHint("EagleView Property Data (production, billed per lookup) and the aerial reconstruction run together, then the facets are calibrated to EagleView’s figures.");
     setPanel("measuring");
     const stop = runStages();
     try {
-      const res = await measureRoofInstant(orderInput());
+      const res = await measureRoofInstant(orderInput(), forceNewOrder ? { forceNewOrder } : undefined);
       if (!res.ok) throw new Error(res.error);
       stop();
       setMsStage(MS_STAGES.length - 1);
       await sleep(420);
       showMeasurement(res.measurement, !!res.unsaved);
+      setReusedInstant(res.reusedInstant?.how ?? null);
       const t = res.measurement.model.totals;
       toast.success(
         res.unsaved ? "Roof measured — not saved" : "Roof measured",
-        `${t.facetCount} facets · ${t.squares.toFixed(1)} squares`,
+        `${t.facetCount} facets · ${t.squares.toFixed(1)} squares` +
+          (res.reusedInstant
+            ? res.reusedInstant.how === "recovered"
+              ? " · collected the earlier paid order — nothing new was billed"
+              : " · reused the already-paid EagleView answer — nothing new was billed"
+            : ""),
       );
       if (!res.unsaved) void loadRecent();
     } catch (err) {
@@ -630,7 +644,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
             </div>
 
             <div className="rf-actions">
-              <button className="btn btn-primary btn--sm" type="button" id="instantBtn" disabled={busy} onClick={runInstant}>
+              <button className="btn btn-primary btn--sm" type="button" id="instantBtn" disabled={busy} onClick={() => void runInstant()}>
                 <svg className="ic"><use href="#i-target" /></svg>
                 {instantBusy ? "Measuring…" : "Instant measure"}
               </button>
@@ -1201,7 +1215,13 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
         )}
       </section>
 
-      <AgainPortal show={panel === "report"} disabled={busy} onClick={() => { setPanel("intake"); }} />
+      <AgainPortal
+        show={panel === "report"}
+        disabled={busy}
+        onClick={() => { setPanel("intake"); }}
+        showRemeasure={panel === "report" && reusedInstant != null}
+        onRemeasure={() => void runInstant(true)}
+      />
     </>
   );
 }
@@ -1255,7 +1275,20 @@ function EstimateTable({ title, rows }: { title: string; rows: EstimateLine[] })
 // The donor's "Measure another" button sits in `.page-actions` inside
 // `.page-head`, which content.tsx renders above this component. Rendering it
 // there from here keeps one source of truth for the panel state.
-function AgainPortal({ show, disabled, onClick }: { show: boolean; disabled?: boolean; onClick: () => void }) {
+function AgainPortal({
+  show,
+  disabled,
+  onClick,
+  showRemeasure,
+  onRemeasure,
+}: {
+  show: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  /** The shown result reused an already-paid answer — offer the explicit paid re-order. */
+  showRemeasure?: boolean;
+  onRemeasure?: () => void;
+}) {
   // The host is a sibling in the same React tree, so it exists by the time this
   // commits; the store only exists to defer the lookup past SSR/hydration.
   const host = React.useSyncExternalStore(
@@ -1265,10 +1298,24 @@ function AgainPortal({ show, disabled, onClick }: { show: boolean; disabled?: bo
   );
   if (!host) return null;
   return createPortal(
-    <button className={"btn btn-ghost" + (show ? "" : " is-hidden")} type="button" id="againBtn" disabled={disabled} onClick={onClick}>
-      <svg className="ic"><use href="#i-roof" /></svg>
-      Measure another
-    </button>,
+    <>
+      {showRemeasure && onRemeasure && (
+        <button
+          className={"btn btn-ghost" + (show ? "" : " is-hidden")}
+          type="button"
+          id="remeasureBtn"
+          disabled={disabled}
+          onClick={onRemeasure}
+          title="This result reused an already-paid EagleView answer. Re-measuring orders a fresh lookup, which is billed."
+        >
+          Re-measure — new paid lookup
+        </button>
+      )}
+      <button className={"btn btn-ghost" + (show ? "" : " is-hidden")} type="button" id="againBtn" disabled={disabled} onClick={onClick}>
+        <svg className="ic"><use href="#i-roof" /></svg>
+        Measure another
+      </button>
+    </>,
     host,
   );
 }
