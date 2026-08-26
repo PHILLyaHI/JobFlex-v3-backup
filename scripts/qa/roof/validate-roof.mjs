@@ -28,6 +28,7 @@ const EPS_PITCH = 0.03;   // в единицах rise/12
 const EPS_AREA_REL = 0.01;
 const EPS_ANGLE_DEG = 2.0;
 const STUB_FT = 1.0;      // короче — предупреждение
+const RIDGE_CENTRE_FT = 0.5; // R17: допуск на «конёк по центру пролёта»
 
 // ── минимальные уклоны по IRC (rise/12) ───────────────────────────────────
 const MIN_PITCH = {
@@ -315,6 +316,55 @@ export function validateRoof(model) {
   }
   if (!out.some((r) => r.id === 'R13'))
     ok('R13', 'вальмы на выпуклых углах, ендовы на вогнутых');
+
+  // ─ 11b. R17: конёк по центру пролёта при равных уклонах (инвариант №13)
+  //   Предикат на «два почти-параллельных конька»: если обе смежные грани
+  //   одного уклона, перпендикулярные расстояния от конька до их карнизов
+  //   равны. Разъехавшийся конёк — это две разные высоты у одной секции.
+  const perpDistToEaves = (e, f) => {
+    const dir = [e.b[0] - e.a[0], e.b[1] - e.a[1]];
+    const dl = Math.hypot(dir[0], dir[1]) || 1;
+    const nrm = [-dir[1] / dl, dir[0] / dl];
+    let best = null;
+    for (const [, other] of edges) {
+      if (other === e || other.type !== 'eave' || !other.facets.includes(f)) continue;
+      const mid = [(other.a[0] + other.b[0]) / 2, (other.a[1] + other.b[1]) / 2];
+      const d = Math.abs((mid[0] - e.a[0]) * nrm[0] + (mid[1] - e.a[1]) * nrm[1]);
+      if (best == null || d > best) best = d; // the far eave of that facet
+    }
+    return best;
+  };
+  for (const e of byType.ridge) {
+    if (e.facets.length !== 2) continue;
+    const [A, B] = e.facets;
+    if (!A.plane || !B.plane) continue;
+    const pA = gradMag(A.plane) * 12, pB = gradMag(B.plane) * 12;
+    if (Math.abs(pA - pB) > 0.1) continue;      // unequal pitches: ridge is off-centre by design
+    const dA = perpDistToEaves(e, A), dB = perpDistToEaves(e, B);
+    if (dA == null || dB == null) continue;
+    if (Math.abs(dA - dB) > RIDGE_CENTRE_FT)
+      err('R17', `конёк не по центру пролёта: ${A.id} ${dA.toFixed(1)} ft против ${B.id} ${dB.toFixed(1)} ft при равном уклоне ${pA.toFixed(1)}/12`);
+  }
+  if (!out.some((r) => r.id === 'R17')) ok('R17', 'коньки по центру пролёта при равных уклонах');
+
+  // ─ 11c. R18: у чистой вальмы над выпуклым контуром граней ровно n (№7)
+  //   Условие применимости: контур выпуклый и гейблов нет — иначе предикат
+  //   неопределён (гейбл сливает две грани в одну).
+  {
+    let convex = true;
+    for (let i = 0; i < fp.length && convex; i++) {
+      const p0 = fp[(i - 1 + fp.length) % fp.length], p1 = fp[i], p2 = fp[(i + 1) % fp.length];
+      const cr = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
+      if (cr * fpOrient < 0) convex = false;
+    }
+    if (convex && byType.rake.length === 0) {
+      if (facets.length !== fp.length)
+        warn('R18', `выпуклый контур из ${fp.length} сторон без гейблов должен дать ${fp.length} граней, а их ${facets.length}`);
+      else ok('R18', `чистая вальма: ${facets.length} граней на ${fp.length} сторон контура`);
+    } else {
+      ok('R18', `пропущено (контур ${convex ? 'выпуклый' : 'невыпуклый'}, гейблов ${byType.rake.length})`);
+    }
+  }
 
   // ─ 12. Нормативы: минимальный уклон материала
   const mat = model.material || 'asphalt';

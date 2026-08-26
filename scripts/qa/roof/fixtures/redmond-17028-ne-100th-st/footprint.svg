@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1182" viewBox="0 0 900 1182">
+<rect width="900" height="1182" fill="#fbfbf9"/>
+<path d="M816.0,1089.5 L816.0,1097.8 L544.6,1095.9 L117.0,1092.9 L117.0,1084.6 L115.5,92.2 L115.4,84.0 L814.5,88.8 Z" fill="none" stroke="#b9a06a" stroke-width="1.5" stroke-dasharray="6 4"/>
+<path d="M134.8,348.6 L121.5,435.9 L84.0,443.2 L94.6,602.9 L118.1,687.8 L379.4,637.1 L384.2,564.9 L460.2,550.1 L434.9,419.8 L488.2,409.5 L470.5,318.6 L446.3,302.3 Z" fill="#1854a014" stroke="#1854a0" stroke-width="2.5"/>
+<circle cx="134.8" cy="348.6" r="3" fill="#1854a0"/>
+<circle cx="121.5" cy="435.9" r="3" fill="#1854a0"/>
+<circle cx="84.0" cy="443.2" r="3" fill="#1854a0"/>
+<circle cx="94.6" cy="602.9" r="3" fill="#1854a0"/>
+<circle cx="118.1" cy="687.8" r="3" fill="#1854a0"/>
+<circle cx="379.4" cy="637.1" r="3" fill="#1854a0"/>
+<circle cx="384.2" cy="564.9" r="3" fill="#1854a0"/>
+<circle cx="460.2" cy="550.1" r="3" fill="#1854a0"/>
+<circle cx="434.9" cy="419.8" r="3" fill="#1854a0"/>
+<circle cx="488.2" cy="409.5" r="3" fill="#1854a0"/>
+<circle cx="470.5" cy="318.6" r="3" fill="#1854a0"/>
+<circle cx="446.3" cy="302.3" r="3" fill="#1854a0"/>
+<text x="301.4" y="476.7" font-family="monospace" font-size="15" fill="#1854a0" text-anchor="middle">A · 1586 sq ft · 12v</text>
+<path d="M507.8,405.1 L507.8,583.6 L530.3,640.0 L673.7,623.6 L697.3,570.6 L742.4,565.5 L730.7,462.5 L695.2,445.9 L663.9,389.6 Z" fill="#0f8a5f14" stroke="#0f8a5f" stroke-width="2.5"/>
+<circle cx="507.8" cy="405.1" r="3" fill="#0f8a5f"/>
+<circle cx="507.8" cy="583.6" r="3" fill="#0f8a5f"/>
+<circle cx="530.3" cy="640.0" r="3" fill="#0f8a5f"/>
+<circle cx="673.7" cy="623.6" r="3" fill="#0f8a5f"/>
+<circle cx="697.3" cy="570.6" r="3" fill="#0f8a5f"/>
+<circle cx="742.4" cy="565.5" r="3" fill="#0f8a5f"/>
+<circle cx="730.7" cy="462.5" r="3" fill="#0f8a5f"/>
+<circle cx="695.2" cy="445.9" r="3" fill="#0f8a5f"/>
+<circle cx="663.9" cy="389.6" r="3" fill="#0f8a5f"/>
+<text x="638.8" y="520.7" font-family="monospace" font-size="15" fill="#0f8a5f" text-anchor="middle">B · 664 sq ft · 9v</text>
+<text x="10" y="20" font-family="monospace" font-size="13" fill="#222">redmond-17028-ne-100th-st — 2 structure(s); dashed = parcel</text>
+</svg>

@@ -963,6 +963,8 @@ const INV_EPS_PITCH = 0.03;
 const INV_EPS_AREA_REL = 0.01;
 const INV_EPS_ANGLE_DEG = 2.0;
 const INV_STUB_FT = 1.0;
+/** R17: how far a ridge may sit off mid-span when both pitches are equal. */
+const INV_RIDGE_CENTRE_FT = 0.5;
 const INV_DOUBLE_UNDERLAY_BELOW = 4;
 
 export interface InvariantFinding {
@@ -1327,6 +1329,54 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     if (e.type === "valley" && c !== "concave") err("R13", "ендова (valley) выходит из выпуклого угла контура — там должна быть вальма");
   }
   if (!out.some((r) => r.id === "R13")) ok("R13", "вальмы на выпуклых углах, ендовы на вогнутых");
+
+  // R17 — a ridge sits at mid-span when both facets share a pitch (invariant 13)
+  const perpDistToEaves = (e: InvEdge, f: (typeof facets)[number]): number | null => {
+    const dir = [e.b[0] - e.a[0], e.b[1] - e.a[1]];
+    const dl = Math.hypot(dir[0], dir[1]) || 1;
+    const nrm = [-dir[1] / dl, dir[0] / dl];
+    let best: number | null = null;
+    for (const [, other] of edges) {
+      if (other === e || other.type !== "eave" || !other.facets.includes(f)) continue;
+      const mid = [(other.a[0] + other.b[0]) / 2, (other.a[1] + other.b[1]) / 2];
+      const d = Math.abs((mid[0] - e.a[0]) * nrm[0] + (mid[1] - e.a[1]) * nrm[1]);
+      if (best == null || d > best) best = d;
+    }
+    return best;
+  };
+  for (const e of byType.ridge) {
+    if (e.facets.length !== 2) continue;
+    const [A, B] = e.facets;
+    if (!A.plane || !B.plane) continue;
+    const pA = invGrad(A.plane) * 12;
+    const pB = invGrad(B.plane) * 12;
+    if (Math.abs(pA - pB) > 0.1) continue;
+    const dA = perpDistToEaves(e, A);
+    const dB = perpDistToEaves(e, B);
+    if (dA == null || dB == null) continue;
+    if (Math.abs(dA - dB) > INV_RIDGE_CENTRE_FT)
+      err("R17", `конёк не по центру пролёта: ${A.id} ${dA.toFixed(1)} ft против ${B.id} ${dB.toFixed(1)} ft при равном уклоне ${pA.toFixed(1)}/12`);
+  }
+  if (!out.some((r) => r.id === "R17")) ok("R17", "коньки по центру пролёта при равных уклонах");
+
+  // R18 — a clean hip over a convex outline has one facet per side (invariant 7)
+  {
+    let convex = true;
+    for (let i = 0; i < fp.length && convex; i++) {
+      const p0 = fp[(i - 1 + fp.length) % fp.length];
+      const p1 = fp[i];
+      const p2 = fp[(i + 1) % fp.length];
+      const cr = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
+      if (cr * fpOrient < 0) convex = false;
+    }
+    if (convex && byType.rake.length === 0) {
+      if (facets.length !== fp.length)
+        warn("R18", `выпуклый контур из ${fp.length} сторон без гейблов должен дать ${fp.length} граней, а их ${facets.length}`);
+      else ok("R18", `чистая вальма: ${facets.length} граней на ${fp.length} сторон контура`);
+    } else {
+      ok("R18", `пропущено (контур ${convex ? "выпуклый" : "невыпуклый"}, гейблов ${byType.rake.length})`);
+    }
+  }
 
   // R14 — code minimum pitch for the material
   const mat = opts.material || "asphalt";

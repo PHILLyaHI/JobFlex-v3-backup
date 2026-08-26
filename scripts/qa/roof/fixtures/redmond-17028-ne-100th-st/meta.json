@@ -109,5 +109,39 @@
   "dsmUrl": "https://solar.googleapis.com/v1/geoTiff:get?id=YTMxMGNiY2FiZWFhMGFjZDcwOWEwM2NkODFiOWVjZjAtY2ZlYzhmMTY4MTlkMDk1MmZiODcxMjI0MzlhMGZhYzc6RFNNOkhJR0g",
   "maskUrl": "https://solar.googleapis.com/v1/geoTiff:get?id=NjViMTgyNDdhMDRmZTI1MDIxZmZhYjc5YWU3NGRhMjEtMTYyZGFhNDhiNmYwOGNkMmE2OWI2ZGYwNWVkMGJkYjk6TUFTSzpISUdI",
   "rgbUrl": "https://solar.googleapis.com/v1/geoTiff:get?id=M2QwNDJiMGExOTYzYzY3Yjc3MzYwODY0MjQ1ODNmZjUtYmQwOTMzY2RlMWVjNDNmY2E1ZWU5MDMxMTIwYWNkNDQ6UkdCOkhJR0g"
- }
+ },
+ "parcelRing": [
+  {
+   "lat": 47.68937265668551,
+   "lng": -122.11204856460982
+  },
+  {
+   "lat": 47.68936997021508,
+   "lng": -122.11204853923479
+  },
+  {
+   "lat": 47.689370579038155,
+   "lng": -122.11218000126813
+  },
+  {
+   "lat": 47.68937157257172,
+   "lng": -122.11238712627367
+  },
+  {
+   "lat": 47.68937425904204,
+   "lng": -122.1123871516657
+  },
+  {
+   "lat": 47.68969784304183,
+   "lng": -122.1123878852901
+  },
+  {
+   "lat": 47.689700532153964,
+   "lng": -122.11238791475901
+  },
+  {
+   "lat": 47.689698958279365,
+   "lng": -122.11204928252822
+  }
+ ]
 }
