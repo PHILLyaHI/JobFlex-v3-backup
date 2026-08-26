@@ -73,6 +73,14 @@ export function assessRoof(input: {
   errorCodes: readonly string[];
   /** True when the validator could not read the model at all (its INPUT case). */
   cannotValidate?: boolean;
+  /**
+   * Set when the pitch could not be measured and EagleView's published one was
+   * used. On a roof under solar panels the elevation data describes the panels,
+   * not the roof — the GEOMETRY is unaffected, so this is a note about where one
+   * number came from, not a defect. Without it such a roof reads as low
+   * confidence for a reason that is not its fault.
+   */
+  pitchSource?: { source: "measured" | "instant"; reason: string; solarPanels?: boolean } | null;
 }): RoofAssessment {
   const { coverage, errorCodes } = input;
   const reasons: string[] = [];
@@ -103,6 +111,15 @@ export function assessRoof(input: {
 
   if (input.cannotValidate) {
     reasons.push("This drawing could not be checked against the roof rules, so treat its figures as provisional.");
+  }
+
+  if (input.pitchSource?.source === "instant") {
+    reasons.push(
+      input.pitchSource.solarPanels
+        ? "The pitch is EagleView's published figure: this roof carries solar panels, and the aerial elevation data measures the panels rather than the roof beneath them."
+        : "The pitch is EagleView's published figure — too little of this roof reads as a clean plane from above to measure it ourselves.",
+      "The drawing and its areas are unaffected; only the pitch comes from elsewhere.",
+    );
   }
 
   if (share != null && share < COVERAGE_CLEAR) {

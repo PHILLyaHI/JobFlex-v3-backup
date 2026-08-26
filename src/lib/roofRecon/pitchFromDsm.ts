@@ -39,9 +39,15 @@ const MIN_SAMPLES = 12;
  * The gap is an order of magnitude, so the boundary is not delicate.
  */
 export const DSM_NOISE_FLOOR_FT = 0.2;
-/** A robust fit may discard at most this share of a facet's samples. Past it
- *  the "obstruction" is most of the facet and the fit is no longer measuring
- *  the roof. */
+/**
+ * A robust fit may discard at most half a facet's samples — and that is not a
+ * chosen number. The cut-off it discards by is the facet's OWN residual
+ * distribution (twice its median), so the share dropped follows from the data
+ * and came out at 30–49 % across the fixtures without ever being asked to.
+ * The half is the breakdown point of the median itself: past 50 % contamination
+ * the median is a statistic of the outliers, and a "robust" fit would be
+ * measuring the tree.
+ */
 const MAX_DROPPED_SHARE = 0.5;
 /** Sample no closer than this to the facet's own edge: the DSM smears a foot or
  *  so across a crease, so edge pixels carry the neighbour's slope. One raster
@@ -246,4 +252,62 @@ export function measurePitchFromDsm(input: MeasurePitchInput): PitchMeasurement 
   close();
 
   return { facets, sections, skipped };
+}
+
+// ── one pitch for a structure ────────────────────────────────────────────────
+
+/**
+ * The share of a roof that must be measurable before its measured pitch is
+ * trusted over Instant's. Same figure as the drawing's coverage floor
+ * (confidence.ts): under 70 % of the roof genuinely read, we are inferring the
+ * rest, and inferring a pitch from a third of a roof is worse than taking the
+ * one EagleView already published.
+ */
+export const MIN_TRUSTED_SHARE = 0.7;
+
+export interface StructurePitch {
+  pitch12: number;
+  source: "measured" | "instant";
+  /** Share of plan area whose facets fit to the DSM's noise floor. */
+  trustedShare: number;
+  reason: string;
+}
+
+/**
+ * One pitch for the whole structure, area-weighted over the facets that
+ * actually sit on a plane.
+ *
+ * Deliberately ONE, not one per section. A facet's height in this model comes
+ * from the skeleton — perpendicular distance from its generating edge times the
+ * rise — so neighbouring facets share vertices and cannot carry different rises
+ * without the skeleton being re-solved with weights. Assigning per-section
+ * pitches to unchanged geometry is exactly how a label comes to disagree with
+ * its own shape, which is R04, the defect this rebuild exists to remove.
+ *
+ * When too little of the roof reads cleanly — a solar array, which the DSM sees
+ * instead of the roof — the honest answer is Instant's published pitch with the
+ * reason recorded, not a number averaged out of panels.
+ */
+export function structurePitch(m: PitchMeasurement, instantPitch12: number | null): StructurePitch {
+  const trusted = m.facets.filter((f) => f.residualP50Ft <= DSM_NOISE_FLOOR_FT);
+  const totalArea = m.facets.reduce((s, f) => s + f.planSqft, 0);
+  const trustedArea = trusted.reduce((s, f) => s + f.planSqft, 0);
+  const share = totalArea > 0 ? trustedArea / totalArea : 0;
+  if (trusted.length && share >= MIN_TRUSTED_SHARE) {
+    const pitch12 = trusted.reduce((s, f) => s + f.pitch12 * f.planSqft, 0) / trustedArea;
+    return {
+      pitch12,
+      source: "measured",
+      trustedShare: share,
+      reason: `${(share * 100).toFixed(0)}% of the roof fits a plane to within ${DSM_NOISE_FLOOR_FT} ft; pitch is the area-weighted mean of those facets`,
+    };
+  }
+  return {
+    pitch12: instantPitch12 ?? 0,
+    source: "instant",
+    trustedShare: share,
+    reason:
+      `only ${(share * 100).toFixed(0)}% of the roof fits a plane — the elevation data is describing something on the roof ` +
+      `(solar panels, vegetation) rather than the roof, so the published pitch is used instead of one averaged out of it`,
+  };
 }

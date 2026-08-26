@@ -77,6 +77,12 @@ export interface ReconV2Input {
   /** Plane clusters the DSM segmentation found — the multi-mass detector. */
   clusters?: number | null;
   tuning?: ReconV2Tuning;
+  /**
+   * Pitch measured out of the DSM (pitchFromDsm.ts), used instead of Instant's
+   * published one. The skeleton builds every height from it, so the drawn
+   * geometry and the printed label are the same number and R04 cannot fire.
+   */
+  pitchOverride12?: number | null;
 }
 
 export interface ReconV2Structure {
@@ -134,7 +140,7 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
   const reasons: string[] = [];
   const clusters = input.clusters ?? null;
 
-  const pitchRaw = instant.totals?.predominantPitch ?? null;
+  const pitchRaw = input.pitchOverride12 ?? instant.totals?.predominantPitch ?? null;
   const pitch12 = pitchRaw != null && Number.isFinite(pitchRaw) && pitchRaw > 0 ? pitchRaw : null;
   if (pitch12 == null) reasons.push("Instant carries no usable predominant pitch");
 

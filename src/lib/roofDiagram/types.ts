@@ -136,6 +136,13 @@ export interface MeasurementProvenance {
    * from, which is itself not a reason to withhold anything.
    */
   coverage?: { seenSqft: number; contourSqft: number; share: number };
+  /**
+   * Where the pitch came from and why. "instant" means the elevation data was
+   * describing something ON the roof rather than the roof — a solar array is
+   * the usual cause — so the published pitch was used instead of one averaged
+   * out of panels. Geometry is unaffected either way.
+   */
+  pitchSource?: { source: "measured" | "instant"; pitch12: number; trustedShare: number; reason: string; solarPanels?: boolean };
 }
 
 /** Verdict of the AI roof-outline trace recorded with a measurement — how the

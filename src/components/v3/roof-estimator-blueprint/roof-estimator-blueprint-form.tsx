@@ -225,6 +225,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
             coverage: measurement.provenance.coverage ?? null,
             errorCodes: gate?.errorCodes ?? [],
             cannotValidate,
+            pitchSource: measurement.provenance.pitchSource ?? null,
           })
         : null,
     [measurement, gate, cannotValidate],

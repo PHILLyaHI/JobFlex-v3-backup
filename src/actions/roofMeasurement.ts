@@ -78,7 +78,7 @@ import { detectChimneysDsm } from "@/lib/roofDiagram/chimneyDsm";
 import {
   applyRigidTransform,
   detectChimneysVision,
-  dropOutsideBounds,
+  dropOutsideRoof,
   mergeChimneys,
 } from "@/lib/roofDiagram/chimneyVision";
 import { toDTO, toSummary, type StoredProvenance } from "@/lib/roofDiagram/dto";
@@ -333,7 +333,13 @@ function combineChimneys(
 ): ChimneyCandidate[] {
   const placedVision = applyRigidTransform(vision, calibration?.outlineTransform ?? IDENTITY_TRANSFORM);
   const merged = mergeChimneys(dsm, placedVision, { chimney: gate });
-  return dropOutsideBounds(merged, model.totals.bounds, BOUNDS_MARGIN_FT);
+  // Against the drawn facets, not the bounding box — see dropOutsideRoof.
+  const roofIdx = buildIndexes(model);
+  const roofRings = model.faces
+    .map((f) => ringOf(f.lineIds, roofIdx))
+    .filter((r): r is NonNullable<typeof r> => !!r && r.length >= 3)
+    .map((r) => r.map((p) => ({ x: p.x, y: p.y })));
+  return dropOutsideRoof(merged, roofRings, BOUNDS_MARGIN_FT);
 }
 
 /**
@@ -895,7 +901,8 @@ export async function measureRoofFree(input: ReconBuildInput): Promise<MeasureRe
     const { model, validation, planarize } = regularizeReconModel(recon.model);
     let chimneys: ChimneyCandidate[] = [];
     try {
-      chimneys = dropOutsideBounds(
+      const freeIdx = buildIndexes(model);
+      chimneys = dropOutsideRoof(
         // The DSM detector needs the RASTER frame — always the raw recon model.
         detectChimneysDsm({
           dsm: recon.dsm,
@@ -903,7 +910,10 @@ export async function measureRoofFree(input: ReconBuildInput): Promise<MeasureRe
           groundElevFt: recon.diagnostics.groundElevFt,
           model: recon.model,
         }),
-        model.totals.bounds,
+        model.faces
+          .map((f) => ringOf(f.lineIds, freeIdx))
+          .filter((r): r is NonNullable<typeof r> => !!r && r.length >= 3)
+          .map((r) => r.map((p) => ({ x: p.x, y: p.y }))),
         BOUNDS_MARGIN_FT,
       );
     } catch (err) {
