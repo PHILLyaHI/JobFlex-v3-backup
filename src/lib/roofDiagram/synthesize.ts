@@ -197,8 +197,18 @@ const SIDE_STEP_FT = 0.5;
  *  gable conversion reverts to the hip it started from. */
 const MAX_SYNTH_PITCH = 18;
 const GABLE_PLANARITY_FT = 0.5;
-/** Max plan slide of a crease's upper endpoint in the unequal-pitch pass. */
-const CREASE_MAX_SLIDE_FT = 6;
+/**
+ * How far a crease's upper endpoint may slide in the unequal-pitch pass.
+ *
+ * Was a flat 6 ft, which says nothing on a 40 ft crease and rewrites a 4 ft
+ * one. The bound belongs to the crease itself: the pass rotates it from 45°
+ * to arctan(pB/pA), and across the pitches this pipeline admits (2/12 to
+ * 18/12) that is at most ~39° of rotation, needing a slide under the crease's
+ * own length. So the rule is simply that an endpoint may not travel further
+ * than the crease is long — no constant, and a stub crease is left alone
+ * rather than turned into a different line.
+ */
+const CREASE_SLIDE_FLOOR_FT = 4 * WELD_FT;
 /** Owner pitch labels closer than this (rise/12) keep the 45° convention. */
 const CREASE_PITCH_DIFF_MIN = 1;
 
@@ -1123,12 +1133,13 @@ function synthesizeStructure(
       // after every gate passes.
       const qFromHost = Math.hypot(q.x - hostOther.x, q.y - hostOther.y);
       const hostLen = Math.hypot(hx, hy);
+      const maxSlide = Math.max(CREASE_SLIDE_FLOOR_FT, Math.hypot(upper.x - lower.x, upper.y - lower.y));
       if (
         t <= 2 * WELD_FT ||
-        Math.hypot(q.x - upper.x, q.y - upper.y) > CREASE_MAX_SLIDE_FT ||
+        Math.hypot(q.x - upper.x, q.y - upper.y) > maxSlide ||
         qFromHost <= 2 * WELD_FT ||
         (q.x - hostOther.x) * hx + (q.y - hostOther.y) * hy <= 0 ||
-        qFromHost > hostLen + CREASE_MAX_SLIDE_FT
+        qFromHost > hostLen + maxSlide
       ) {
         creaseSkipped++;
         continue;
