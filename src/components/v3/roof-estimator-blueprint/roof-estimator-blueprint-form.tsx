@@ -696,6 +696,17 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                     </div>
                   </div>
                 ))}
+                {measurement.provenance.partialCoverage && (
+                  <div className="call warn">
+                    <div>
+                      <b>Part of the property was not measured.</b>{" "}
+                      {measurement.provenance.partialCoverage.reason} Only{" "}
+                      {measurement.provenance.partialCoverage.measuredStructures}{" "}
+                      {measurement.provenance.partialCoverage.measuredStructures === 1 ? "building is" : "buildings are"}{" "}
+                      included in the figures below — check the aerial view and add anything missing by hand.
+                    </div>
+                  </div>
+                )}
                 {unsaved && (
                   <div className="call warn">
                     <div>

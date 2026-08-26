@@ -61,6 +61,7 @@ import { isSolarEnabled } from "@/lib/solar";
 import { deleteBlob, isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { buildReconModel, type ReconBuild, type ReconBuildInput } from "@/lib/roofReconBuild";
 import { buildRoofV2FromRecon } from "@/lib/roofRecon/reconV2";
+import { parcelRingForPoint } from "@/lib/parcelLookup";
 import {
   calibrateModel,
   instantWallRingsRaw,
@@ -123,6 +124,11 @@ const OUTLINE_VISION_DEADLINE_MS = 8_000;
 const BOUNDS_MARGIN_FT = 5;
 
 const IDENTITY_TRANSFORM: CalibrationReport["outlineTransform"] = { thetaRad: 0, tx: 0, ty: 0 };
+
+// lat/lng → the reconstruction's local feet frame (origin at the pin).
+const D2R = Math.PI / 180;
+const EARTH_R_M = 6378137;
+const FT_PER_M = 3.28084;
 
 // ── helpers (module-private: a "use server" file may only export async fns) ──
 
@@ -605,14 +611,30 @@ async function reconOnlyMeasurement(
   userId: string,
   why: string,
 ): Promise<MeasureResult> {
+  // The lot boundary decides which mask blobs belong to this property. Without
+  // it only the structure under the pin is measured and a detached garage is
+  // silently dropped — 629 of 2240 sq ft on 17028 NE 100th St. Cache-first and
+  // quota-gated (parcelLookup.ts); when it cannot be had, the reason is carried
+  // into the measurement rather than left in the log.
+  const parcelRing = await parcelRingForPoint(recon.origin.lat, recon.origin.lng);
+  console.log(
+    "[roofMeasurement] parcel ring: %s%s (allowance %s remaining)",
+    parcelRing.ring ? `${parcelRing.ring.length} points from ${parcelRing.source}` : "none",
+    parcelRing.blocked ? ` — ${parcelRing.blocked}` : "",
+    parcelRing.remaining ?? "unknown",
+  );
+  const parcel = parcelRing.ring
+    ? parcelRing.ring.map(([plat, plng]) => ({
+        x: (plng - recon.origin.lng) * D2R * EARTH_R_M * Math.cos(recon.origin.lat * D2R) * FT_PER_M,
+        y: (plat - recon.origin.lat) * D2R * EARTH_R_M * FT_PER_M,
+      }))
+    : null;
+
   const built = buildRoofV2FromRecon({
     mask: recon.mask,
     dsm: recon.dsm,
     groundElevFt: recon.diagnostics.groundElevFt,
-    // No parcel ring on this path: without one only the structure under the pin
-    // is measured, so a detached garage on the same lot is left out. Fetching
-    // one costs a Regrid lookup and is a separate decision.
-    parcel: null,
+    parcel,
     pitch12: recon.model.totals.predominantPitch ?? null,
   });
   if (!built.model) {
@@ -624,6 +646,12 @@ async function reconOnlyMeasurement(
     };
   }
   const model = built.model;
+  const measuredStructures = built.report.structures.filter((st) => st.ring).length;
+  // Only a BLOCKED lookup is a partial measurement. A point that genuinely has
+  // no parcel on record is not — there is nothing that was withheld.
+  const partialReason = parcelRing.blocked
+    ? `Only the building under the pin was measured: ${parcelRing.blocked}. A detached garage or shop on the same lot is not included.`
+    : null;
   const toSave: PersistInput = {
     organizationId,
     createdById: userId,
@@ -642,7 +670,15 @@ async function reconOnlyMeasurement(
     instant: null,
     model,
     chimneys: [],
-    stored: provenanceOf(model, recon, null, null, null),
+    stored: partialReason
+      ? {
+          ...provenanceOf(model, recon, null, null, null),
+          provenance: {
+            ...provenanceOf(model, recon, null, null, null).provenance,
+            partialCoverage: { reason: partialReason, measuredStructures: measuredStructures },
+          },
+        }
+      : provenanceOf(model, recon, null, null, null),
   };
   try {
     const measurement = await persist(toSave);

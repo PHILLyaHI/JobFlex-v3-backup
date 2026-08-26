@@ -19,6 +19,15 @@
 
 const BASE = "https://reportallusa.com/api/parcels";
 
+/** The allowance the key ships with — for the log line, not a limit we enforce. */
+export const QUOTA_ALLTIME = 1000;
+
+/** Remaining parcels as of the last response, or null before the first call.
+ *  In-memory only; parcelLookup.ts persists it so a cold start still knows. */
+let lastQuotaRemaining: number | null = null;
+
+export const lastSeenQuotaRemaining = (): number | null => lastQuotaRemaining;
+
 export interface Parcel {
   robustId: string;
   parcelId: string | null;
@@ -108,11 +117,15 @@ async function call(params: Record<string, string>): Promise<Parcel[]> {
     signal: AbortSignal.timeout(15000),
   });
 
-  // Spend visibility — server console only, never the client response.
+  // Spend visibility — server console only, never the client response. The
+  // remaining count is also kept in memory so a caller can refuse to spend the
+  // last of an ALLTIME allowance before it makes the request (parcelLookup.ts).
   const used = res.headers.get("x-reportall-api-parcels-request-quota-used");
   const left = res.headers.get("x-reportall-api-parcels-quota-remaining");
   if (used || left) {
-    console.log(`[reportall] quota used=${used ?? "?"} remaining=${left ?? "?"}`);
+    const n = Number(left);
+    if (Number.isFinite(n)) lastQuotaRemaining = n;
+    console.log(`[reportall] parcel ${used ?? "?"}/${QUOTA_ALLTIME} spent, ${left ?? "?"} remaining`);
   }
 
   if (res.status === 429) throw new ReportAllError("ReportAll rate limit / quota exhausted", 429);
