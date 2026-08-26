@@ -56,11 +56,25 @@ const MIN_FAMILY_SHARE = 0.85;
  */
 const MULTI_MASS_SLACK = 2;
 
+/** Regularisation thresholds, exposed ONLY so the breadth harness can vary
+ *  them against a sample and report sensitivity. Production passes nothing and
+ *  gets the constants above. */
+export interface ReconV2Tuning {
+  simplifyFt?: number;
+  snapTolDeg?: number;
+  maxCornerShiftFt?: number;
+  collinearMergeDeg?: number;
+  minEdgeFt?: number;
+  minFamilyShare?: number;
+  maxVertices?: number;
+}
+
 export interface ReconV2Input {
   instant: InstantRoofData;
   origin: { lat: number; lng: number };
   /** Plane clusters the DSM segmentation found — the multi-mass detector. */
   clusters?: number | null;
+  tuning?: ReconV2Tuning;
 }
 
 export interface ReconV2Structure {
@@ -135,13 +149,23 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
     .sort((a, b) => (b.areaSqft ?? b.footprintSqft ?? 0) - (a.areaSqft ?? a.footprintSqft ?? 0))
     .map((s) => s.facetCount ?? null);
 
+  const tune = input.tuning ?? {};
+  const cap = tune.maxVertices ?? MAX_VERTICES;
+  const opts = {
+    ...(tune.simplifyFt != null ? { simplifyFt: tune.simplifyFt } : {}),
+    ...(tune.snapTolDeg != null ? { snapTolDeg: tune.snapTolDeg } : {}),
+    ...(tune.maxCornerShiftFt != null ? { maxCornerShiftFt: tune.maxCornerShiftFt } : {}),
+    ...(tune.collinearMergeDeg != null ? { collinearMergeDeg: tune.collinearMergeDeg } : {}),
+    ...(tune.minEdgeFt != null ? { minEdgeFt: tune.minEdgeFt } : {}),
+    minFamilyShare: tune.minFamilyShare ?? MIN_FAMILY_SHARE,
+  };
   const structures: ReconV2Structure[] = [];
   const usable: FootprintPoint[][] = [];
   raw.forEach((ring, i) => {
     const notes: string[] = [];
     // First pass at the ceiling, only to learn how many sides the contour
     // really has once it is square — the multi-mass test needs that number.
-    const probe = regularizeRing(ring, { maxVertices: MAX_VERTICES, minFamilyShare: MIN_FAMILY_SHARE });
+    const probe = regularizeRing(ring, { ...opts, maxVertices: cap });
     // The detector runs on the WHOLE roof's cluster count, so it is only
     // meaningful on a single-ring lot; on a multi-ring lot the clusters belong
     // to several buildings and cannot be attributed to one contour.
@@ -153,14 +177,14 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
     const wanted = facetCounts[i];
     const budget =
       !multiMass && wanted != null && Number.isFinite(wanted)
-        ? Math.max(MIN_BUDGET_VERTICES, Math.min(MAX_VERTICES, wanted))
-        : MAX_VERTICES;
-    const reg = budget === MAX_VERTICES ? probe : regularizeRing(ring, { maxVertices: budget, minFamilyShare: MIN_FAMILY_SHARE });
+        ? Math.max(MIN_BUDGET_VERTICES, Math.min(cap, wanted))
+        : cap;
+    const reg = budget === cap ? probe : regularizeRing(ring, { ...opts, maxVertices: budget });
     const edges = reg.ring.length;
     // The budget is an aim, not a gate: only the skeleton's own ceiling can
     // refuse a contour. Falling short means some corners are load-bearing.
-    const withinCap = edges <= MAX_VERTICES;
-    if (budget < MAX_VERTICES) {
+    const withinCap = edges <= cap;
+    if (budget < cap) {
       notes.push(
         `vertex budget ${budget} from Instant's facetCount ${wanted} (one facet per contour edge)` +
           (edges > budget ? ` — stopped at ${edges}, the remaining corners are load-bearing` : ""),
@@ -172,7 +196,7 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
           "(cross gable, sub-roof, wing) that a skeleton on the outer contour cannot grow",
       );
     }
-    if (!withinCap) notes.push(`contour still has ${edges} vertices, over the ${MAX_VERTICES} cap — the skeleton will refuse it`);
+    if (!withinCap) notes.push(`contour still has ${edges} vertices, over the ${cap} cap — the skeleton will refuse it`);
     if (!reg.report.asserts.angles) notes.push(`only ${(reg.report.familyShare * 100).toFixed(1)}% of the perimeter is on the family`);
     if (!reg.report.simple) notes.push("regularised contour is not simple");
 
