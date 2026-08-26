@@ -43,7 +43,12 @@ const EPS_PITCH = 0.03;   // в единицах rise/12
 const EPS_AREA_REL = 0.01;
 const EPS_ANGLE_DEG = 2.0;
 const STUB_FT = 1.0;      // короче — предупреждение
-const RIDGE_CENTRE_FT = 0.5; // R17: допуск на «конёк по центру пролёта»
+// R17's |dA - dB| is not a plan measurement: multiplied by the pitch it is how
+// far the two facets' apex heights DISAGREE. So it is tested in feet of height
+// against EPS_Z, the same tolerance R11 compares heights with, and there is no
+// constant to choose. Not a fraction of the span: a foot off centre on a 12/12
+// is a foot of height error whether the span is 12 ft or 50.
+const ridgeCentreTolFt = (pitch12) => EPS_PLANE * (Math.abs(pitch12) > 0.1 ? 12 / Math.abs(pitch12) : 12); // R17: допуск на «конёк по центру пролёта»
 
 // ── минимальные уклоны по IRC (rise/12) ───────────────────────────────────
 const MIN_PITCH = {
@@ -357,7 +362,7 @@ export function validateRoof(model) {
     if (Math.abs(pA - pB) > 0.1) continue;      // unequal pitches: ridge is off-centre by design
     const dA = perpDistToEaves(e, A), dB = perpDistToEaves(e, B);
     if (dA == null || dB == null) continue;
-    if (Math.abs(dA - dB) > RIDGE_CENTRE_FT)
+    if (Math.abs(dA - dB) > ridgeCentreTolFt(pA))
       err('R17', `конёк не по центру пролёта: ${A.id} ${dA.toFixed(1)} ft против ${B.id} ${dB.toFixed(1)} ft при равном уклоне ${pA.toFixed(1)}/12`);
   }
   if (!out.some((r) => r.id === 'R17')) ok('R17', 'коньки по центру пролёта при равных уклонах');

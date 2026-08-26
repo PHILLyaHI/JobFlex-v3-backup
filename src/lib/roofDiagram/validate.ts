@@ -975,8 +975,32 @@ const INV_EPS_PITCH = 0.03;
 const INV_EPS_AREA_REL = 0.01;
 const INV_EPS_ANGLE_DEG = 2.0;
 const INV_STUB_FT = 1.0;
-/** R17: how far a ridge may sit off mid-span when both pitches are equal. */
-const INV_RIDGE_CENTRE_FT = 0.5;
+/**
+ * R17 asks how far a ridge may sit off mid-span when both pitches are equal.
+ * It used to be a flat 0.5 ft of plan asymmetry, an absolute distance compared
+ * against spans of any width AND roofs of any pitch — 0.5 ft off centre is
+ * 0.5 ft of height on a 12/12 and one inch on a 2/12, and the rule could not
+ * tell those apart.
+ *
+ * But there is no constant to choose here, because |dA − dB| is not really a
+ * plan measurement: multiplied by the pitch it is the amount by which the two
+ * facets' apex heights DISAGREE. So the test is made in feet of height and
+ * compared against a tolerance the validator already states.
+ *
+ * Which one matters. INV_EPS_Z is for two z values of actual POINTS, and using
+ * it flagged ridges 17.7 ft against 17.8 — a 0.05 ft height gap, at the noise
+ * floor. This quantity is not point-derived: it comes through a fitted plane,
+ * its gradient, the farthest eave and a perpendicular projection. The
+ * validator's own statement of how much a fitted plane may be off is
+ * INV_EPS_PLANE, and that is the honest tolerance for something built out of
+ * one.
+ *
+ * Not a fraction of the span, deliberately: 1 ft off centre on a 12/12 roof is
+ * a foot of height error whether the span is 12 ft or 50, so scaling by span
+ * would excuse it on a big house.
+ */
+const invRidgeCentreTolFt = (pitch12: number): number =>
+  INV_EPS_PLANE * (Math.abs(pitch12) > 0.1 ? 12 / Math.abs(pitch12) : 12);
 const INV_DOUBLE_UNDERLAY_BELOW = 4;
 
 export interface InvariantFinding {
@@ -1379,8 +1403,12 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     const dA = perpDistToEaves(e, A);
     const dB = perpDistToEaves(e, B);
     if (dA == null || dB == null) continue;
-    if (Math.abs(dA - dB) > INV_RIDGE_CENTRE_FT)
-      err("R17", `конёк не по центру пролёта: ${A.id} ${dA.toFixed(1)} ft против ${B.id} ${dB.toFixed(1)} ft при равном уклоне ${pA.toFixed(1)}/12`);
+    if (Math.abs(dA - dB) > invRidgeCentreTolFt(pA))
+      err(
+        "R17",
+        `конёк не по центру пролёта: ${A.id} ${dA.toFixed(1)} ft против ${B.id} ${dB.toFixed(1)} ft ` +
+          `при равном уклоне ${pA.toFixed(1)}/12 — расхождение высот ${(Math.abs(dA - dB) * Math.abs(pA) / 12).toFixed(2)} ft`,
+      );
   }
   if (!out.some((r) => r.id === "R17")) ok("R17", "коньки по центру пролёта при равных уклонах");
 
