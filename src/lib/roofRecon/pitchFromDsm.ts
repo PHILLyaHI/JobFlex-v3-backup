@@ -33,6 +33,16 @@ import type { Rigid2D } from "@/lib/roofRecon/register";
 const FT_PER_M = 3.28084;
 /** A facet with fewer DSM samples than this cannot support a plane fit. */
 const MIN_SAMPLES = 12;
+/**
+ * The DSM's own noise floor, read out of the data rather than chosen: facets
+ * that sit on one slope come in at p50 0.02–0.12 ft, mixed ones at 0.5–1.45.
+ * The gap is an order of magnitude, so the boundary is not delicate.
+ */
+export const DSM_NOISE_FLOOR_FT = 0.2;
+/** A robust fit may discard at most this share of a facet's samples. Past it
+ *  the "obstruction" is most of the facet and the fit is no longer measuring
+ *  the roof. */
+const MAX_DROPPED_SHARE = 0.5;
 /** Sample no closer than this to the facet's own edge: the DSM smears a foot or
  *  so across a crease, so edge pixels carry the neighbour's slope. One raster
  *  pixel is 0.33 ft; three is the mask's known over-reach. */
@@ -104,6 +114,27 @@ function distToRing(x: number, y: number, ring: FootprintPoint[]): number {
   return best;
 }
 
+/**
+ * Least squares, then repeatedly drop the samples beyond twice the median
+ * residual and refit. Never discards more than MAX_DROPPED_SHARE — past that
+ * the outliers are the subject and the fit would be measuring them.
+ */
+function robustFitPlane(pts: Array<{ x: number; y: number; z: number }>) {
+  let keep = pts;
+  let plane = fitPlane(keep);
+  const floor = Math.max(MIN_SAMPLES, Math.ceil(pts.length * (1 - MAX_DROPPED_SHARE)));
+  for (let it = 0; it < 5 && plane; it++) {
+    const res = keep.map((p) => Math.abs(p.z - (plane!.a * p.x + plane!.b * p.y + plane!.c)));
+    const sorted = [...res].sort((a, b) => a - b);
+    const limit = Math.max(DSM_NOISE_FLOOR_FT * 0.75, 2 * sorted[Math.floor(sorted.length / 2)]);
+    const next = keep.filter((_, i) => res[i] <= limit);
+    if (next.length < floor || next.length === keep.length) break;
+    keep = next;
+    plane = fitPlane(keep);
+  }
+  return plane;
+}
+
 export interface MeasurePitchInput {
   model: RoofModel;
   mask: Raster;
@@ -165,7 +196,15 @@ export function measurePitchFromDsm(input: MeasurePitchInput): PitchMeasurement 
       skipped.push({ id, reason: `${pts.length} DSM samples inside it, needs ${MIN_SAMPLES}` });
       continue;
     }
-    const plane = fitPlane(pts);
+    // ROBUST fit, and it is the whole difference. A plain least-squares plane is
+    // dragged by whatever sits on the roof but is not the roof — a chimney, an
+    // overhanging branch, a solar array. Measured on the two fixtures: nine of
+    // the eighteen facets that looked "mixed" (p50 0.2–1.2 ft) were not mixed at
+    // all; discarding 30–49 % of their samples as outliers brought them to
+    // p50 0.04–0.10 and moved their pitches from 4.36–7.33 to 5.85–7.16 on a
+    // 6/12 roof. No cut was needed for any of them, and cutting on the raw
+    // residual would have invented a roof plane out of a tree.
+    const plane = robustFitPlane(pts);
     if (!plane) {
       skipped.push({ id, reason: "no plane could be fitted" });
       continue;
