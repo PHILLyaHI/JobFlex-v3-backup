@@ -1162,6 +1162,18 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     plane: InvPlane | null;
   }>;
 
+  // KNOWN INPUT DEFECT, not fixed here. When the caller supplies no contour the
+  // footprint falls back to the model's BOUNDING BOX, and a box is not a
+  // contour: on an L-shaped roof it contains the notch, which the facets
+  // rightly do not cover, so R05 fails on correct geometry. Same species as the
+  // vent drawn in the yard inside the L (chimneyVision.dropOutsideRoof) — a
+  // roof is a polygon and every "is this on the roof" test has to be one.
+  //
+  // Skipping R05 here alone breaks the thing that has caught real drift: the
+  // reference validator is ALWAYS handed a footprint (its schema requires one),
+  // so the two would answer differently and check.ts would diverge. The fix is
+  // at the call sites — pass the real contour, as the V2 path already does and
+  // as phase2.ts shows by passing R05 cleanly. See ROOF-DIAGNOSIS §H.
   const b = model.totals?.bounds;
   const fp: IPt[] = (
     opts.footprint ??

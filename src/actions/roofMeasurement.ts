@@ -60,7 +60,9 @@ import {
 import { isSolarEnabled } from "@/lib/solar";
 import { deleteBlob, isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { buildReconModel, type ReconBuild, type ReconBuildInput } from "@/lib/roofReconBuild";
-import { buildRoofV2FromRecon, measureCoverage } from "@/lib/roofRecon/reconV2";
+import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled } from "@/lib/roofRecon/reconV2";
+import { registerContourToRaster } from "@/lib/roofRecon/register";
+import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { parcelRingForPoint } from "@/lib/parcelLookup";
 import {
@@ -90,6 +92,8 @@ import type {
   ChimneyCandidate,
   MeasurementPipeline,
   MeasurementSource,
+  PitchSourceProvenance,
+  RegistrationProvenance,
   RoofMeasurementDTO,
   RoofMeasurementSummary,
   VisionOutlineProvenance,
@@ -397,6 +401,9 @@ interface Geometry {
    *  absent when no vision outline reached the calibration). */
   outlineSource?: "vision" | "instant";
   visionOutline?: VisionOutlineProvenance;
+  /** V2 path only: how the contour was registered and where the pitch came from. */
+  registration?: RegistrationProvenance;
+  pitchSource?: PitchSourceProvenance;
   source: MeasurementSource;
   origin: LatLng | null;
 }
@@ -433,6 +440,28 @@ function resolveGeometry(
   roofRegions?: Array<Array<{ x: number; y: number }>>,
 ): Geometry {
   if (!recon) return outlineGeometry(null, instant, input);
+  // ── ROOF_RECON_V2: topology first, then pitch measured into it ──
+  // Off by default. The old path below is untouched, and V2 falling through
+  // (no usable contour, skeleton refused) lands on it rather than failing.
+  if (roofReconV2Enabled()) {
+    try {
+      const v2 = buildV2Geometry(recon, instant);
+      if (v2) {
+        return {
+          model: v2.model,
+          calibration: null,
+          validation: null,
+          source: "instant+recon",
+          origin: recon.origin,
+          registration: v2.registration,
+          pitchSource: v2.pitchSource,
+        };
+      }
+      console.warn("[roofMeasurement] ROOF_RECON_V2 produced no model — falling through to the calibrated path");
+    } catch (err) {
+      console.warn("[roofMeasurement] ROOF_RECON_V2 failed, falling through:", errorMessage(err, String(err)));
+    }
+  }
   try {
     const calibrated = calibrateModel({
       recon: recon.model,
@@ -477,6 +506,8 @@ function provenanceOf(
     graft?: GraftReport;
     outlineSource?: "vision" | "instant";
     visionOutline?: VisionOutlineProvenance;
+    registration?: RegistrationProvenance;
+    pitchSource?: PitchSourceProvenance;
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -502,6 +533,8 @@ function provenanceOf(
     ...(notes?.pipeline ? { pipeline: notes.pipeline } : {}),
     provenance: {
       ...(coverage ? { coverage } : {}),
+      ...(notes?.registration ? { registration: notes.registration } : {}),
+      ...(notes?.pitchSource ? { pitchSource: notes.pitchSource } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
       pixelSizeM: model.provenance?.pixelSizeM,
@@ -669,7 +702,64 @@ async function reconOnlyMeasurement(
       } — trace this roof manually.`,
     };
   }
-  const model = built.model;
+  let model = built.model;
+
+  // Measure the pitch here too — but with NO Instant there is no published
+  // figure to fall back on, so a refused registration or an unreadable roof is
+  // simply an unmeasured pitch, and the confidence level has to say so.
+  let registration: RegistrationProvenance | undefined;
+  let pitchSource: PitchSourceProvenance | undefined;
+  const firstRing = built.report.structures.find((st) => st.ring)?.ring;
+  if (firstRing) {
+    const reg = registerContourToRaster({
+      contour: firstRing,
+      mask: recon.mask,
+      dsm: recon.dsm,
+      groundElevFt: recon.diagnostics.groundElevFt,
+    });
+    registration = reg.applied
+      ? { applied: true, transform: reg.transform, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter }
+      : { applied: false, reason: reg.reason, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter };
+    if (reg.applied) {
+      const measured = measurePitchFromDsm({
+        model,
+        mask: recon.mask,
+        dsm: recon.dsm,
+        transform: reg.transform,
+        sectionTolerance12: 0.75,
+      });
+      const sp = structurePitch(measured, null);
+      if (sp.source === "measured") {
+        const rebuilt = buildRoofV2FromRecon({
+          mask: recon.mask,
+          dsm: recon.dsm,
+          groundElevFt: recon.diagnostics.groundElevFt,
+          parcel,
+          pitch12: sp.pitch12,
+        });
+        if (rebuilt.model) model = rebuilt.model;
+        pitchSource = { source: "measured", pitch12: sp.pitch12, trustedShare: sp.trustedShare, reason: sp.reason };
+      } else {
+        pitchSource = {
+          source: "instant",
+          pitch12: built.report.pitch12 ?? 0,
+          trustedShare: sp.trustedShare,
+          reason:
+            "Too little of this roof reads as a clean plane from above to measure its pitch, and there is no EagleView " +
+            "figure for this address to fall back on — the pitch shown is the reconstruction's own estimate.",
+        };
+      }
+    } else {
+      pitchSource = {
+        source: "instant",
+        pitch12: built.report.pitch12 ?? 0,
+        trustedShare: 0,
+        reason:
+          "The aerial elevation data could not be lined up with the building outline, and there is no EagleView figure " +
+          "for this address — the pitch shown is the reconstruction's own estimate and should be checked on site.",
+      };
+    }
+  }
   const measuredStructures = built.report.structures.filter((st) => st.ring).length;
   // Only a BLOCKED lookup is a partial measurement. A point that genuinely has
   // no parcel on record is not — there is nothing that was withheld.
@@ -688,21 +778,27 @@ async function reconOnlyMeasurement(
     lng: recon.origin.lng,
     areaSqft: model.totals.areaSqft,
     squares: model.totals.squares,
-    predominantPitch: built.report.pitch12 != null ? `${built.report.pitch12}/12` : null,
+    predominantPitch: pitchSource ? `${Math.round(pitchSource.pitch12)}/12` : built.report.pitch12 != null ? `${built.report.pitch12}/12` : null,
     facetCount: model.totals.facetCount,
     instantRequestId: null,
     instant: null,
     model,
     chimneys: [],
-    stored: partialReason
-      ? {
-          ...provenanceOf(model, recon, null, null, null),
-          provenance: {
-            ...provenanceOf(model, recon, null, null, null).provenance,
-            partialCoverage: { reason: partialReason, measuredStructures: measuredStructures },
-          },
-        }
-      : provenanceOf(model, recon, null, null, null),
+    stored: (() => {
+      const base = provenanceOf(model, recon, null, null, null, {
+        ...(registration ? { registration } : {}),
+        ...(pitchSource ? { pitchSource } : {}),
+      });
+      return partialReason
+        ? {
+            ...base,
+            provenance: {
+              ...base.provenance,
+              partialCoverage: { reason: partialReason, measuredStructures },
+            },
+          }
+        : base;
+    })(),
   };
   try {
     const measurement = await persist(toSave);
@@ -711,6 +807,101 @@ async function reconOnlyMeasurement(
     console.error("[roofMeasurement] recon-only measurement could not be saved: %s", errorMessage(err, String(err)));
     return { ok: true, measurement: unsavedDTO(toSave), unsaved: true };
   }
+}
+
+
+/**
+ * The V2 path: Instant contour → one regularisation → straight skeleton →
+ * register onto the raster → measure the pitch into the facets it built.
+ *
+ * Gated by ROOF_RECON_V2. The old path is untouched and still the default; this
+ * returns null whenever it cannot produce a model, and the caller falls through
+ * to it rather than failing.
+ *
+ * The pitch has three possible origins and the user is told which:
+ *   measured  — registration held and enough of the roof reads as a plane
+ *   instant   — too little reads (a solar array is the usual cause), so
+ *               EagleView's published figure is used; the GEOMETRY is unaffected
+ *   refused   — registration itself failed, so the DSM is not in the same frame
+ *               as the facets and nothing measured from it can be trusted
+ */
+function buildV2Geometry(
+  recon: ReconBuild,
+  instant: InstantRoofData,
+): {
+  model: RoofModel;
+  registration: RegistrationProvenance;
+  pitchSource: PitchSourceProvenance;
+} | null {
+  const first = buildRoofV2({
+    instant,
+    origin: recon.origin,
+    clusters: recon.diagnostics.clusters ?? null,
+  });
+  const contour = first.report.structures.find((st) => st.ring)?.ring;
+  if (!first.model || !contour) {
+    console.warn("[roofMeasurement] V2: no usable contour — %s", first.report.reasons[0] ?? "unknown");
+    return null;
+  }
+
+  const reg = registerContourToRaster({
+    contour,
+    mask: recon.mask,
+    dsm: recon.dsm,
+    groundElevFt: recon.diagnostics.groundElevFt,
+  });
+  const instantPitch = instant.totals?.predominantPitch ?? null;
+
+  if (!reg.applied) {
+    console.warn("[roofMeasurement] V2: registration refused — %s", reg.reason);
+    return {
+      model: first.model,
+      registration: { applied: false, reason: reg.reason, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter },
+      pitchSource: {
+        source: "instant",
+        pitch12: instantPitch ?? 0,
+        trustedShare: 0,
+        reason:
+          "The aerial elevation data could not be lined up with the building outline, so nothing measured from it " +
+          "would describe this roof. The pitch is EagleView's published figure.",
+      },
+    };
+  }
+
+  const measured = measurePitchFromDsm({
+    model: first.model,
+    mask: recon.mask,
+    dsm: recon.dsm,
+    transform: reg.transform,
+    sectionTolerance12: 0.75,
+  });
+  const sp = structurePitch(measured, instantPitch);
+  // Rebuilt at the pitch that was measured, so the drawn geometry and the
+  // printed label are one number and R04 cannot fire.
+  const rebuilt = buildRoofV2({
+    instant,
+    origin: recon.origin,
+    clusters: recon.diagnostics.clusters ?? null,
+    pitchOverride12: sp.pitch12,
+  });
+  const model = rebuilt.model ?? first.model;
+  const solar = instant.structures.some((st) => st.solarPanels === true);
+  return {
+    model,
+    registration: {
+      applied: true,
+      transform: reg.transform,
+      iouBefore: reg.iouBefore,
+      iouAfter: reg.iouAfter,
+    },
+    pitchSource: {
+      source: sp.source,
+      pitch12: sp.pitch12,
+      trustedShare: sp.trustedShare,
+      reason: sp.reason,
+      ...(solar ? { solarPanels: true } : {}),
+    },
+  };
 }
 
 // ── actions ──────────────────────────────────────────────────────────────────
@@ -811,7 +1002,7 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
     roofRegions = regions;
   }
 
-  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
 
   // Chimneys: DSM posts on the RAW reconstruction (the rasters' frame — the
   // calibrated model stays in it, so no transform is needed) + vision boxes on
@@ -847,9 +1038,12 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
     zip: input.zip || null,
     lat: instant.lat,
     lng: instant.lng,
-    areaSqft: instant.totals.areaSqft,
-    squares: instant.totals.squares,
-    predominantPitch: instant.totals.pitchLabel,
+    // On the V2 path the printed figures come from the DRAWN geometry — that is
+    // the whole point of measuring pitch into the facets (ROOF-DIAGNOSIS §I:
+    // an estimate's area must come from the geometry that was drawn).
+    areaSqft: pitchSource ? model.totals.areaSqft : instant.totals.areaSqft,
+    squares: pitchSource ? model.totals.squares : instant.totals.squares,
+    predominantPitch: pitchSource ? `${Math.round(pitchSource.pitch12)}/12` : instant.totals.pitchLabel,
     facetCount: model.totals.facetCount || instant.totals.facetCount,
     instantRequestId: instant.requestId,
     instant,
@@ -864,6 +1058,8 @@ export async function measureRoofInstant(input: EvOrderInput): Promise<MeasureRe
       // The calibration's verdict wins; a trace that never produced an
       // accepted ring still records why (best-effort diagnostics).
       visionOutline: visionNote ?? visionTraceNote,
+      ...(registration ? { registration } : {}),
+      ...(pitchSource ? { pitchSource } : {}),
     }),
   };
 

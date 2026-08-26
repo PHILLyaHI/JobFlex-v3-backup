@@ -142,7 +142,30 @@ export interface MeasurementProvenance {
    * the usual cause — so the published pitch was used instead of one averaged
    * out of panels. Geometry is unaffected either way.
    */
-  pitchSource?: { source: "measured" | "instant"; pitch12: number; trustedShare: number; reason: string; solarPanels?: boolean };
+  pitchSource?: PitchSourceProvenance;
+  /** How the Instant contour was put onto the Google raster (register.ts). */
+  registration?: RegistrationProvenance;
+}
+
+/** Where the printed pitch came from, and why — shown to the user. */
+export interface PitchSourceProvenance {
+  source: "measured" | "instant";
+  pitch12: number;
+  /** Share of plan area whose facets fitted a plane to the DSM's noise floor. */
+  trustedShare: number;
+  reason: string;
+  solarPanels?: boolean;
+}
+
+/** The per-house frame registration, cached with the model: the two frames are
+ *  4–7.25 ft apart and there is no constant, so it is solved and kept. */
+export interface RegistrationProvenance {
+  applied: boolean;
+  transform?: { dxFt: number; dyFt: number; thetaDeg: number };
+  iouBefore: number;
+  iouAfter: number | null;
+  /** Present only when it was refused — never a silent identity. */
+  reason?: string;
 }
 
 /** Verdict of the AI roof-outline trace recorded with a measurement — how the
