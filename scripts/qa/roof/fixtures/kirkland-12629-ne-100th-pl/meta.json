@@ -1,0 +1,125 @@
+{
+ "slug": "kirkland-12629-ne-100th-pl",
+ "note": "PRIMARY test case: double ridge, 1.7 / 5.4 sq ft facets",
+ "address": {
+  "address": "12629 NE 100th Pl",
+  "city": "Kirkland",
+  "state": "WA",
+  "zip": "98033"
+ },
+ "frozenAt": "2026-08-26T00:32:50.459Z",
+ "origin": {
+  "lat": 47.6900298,
+  "lng": -122.1719688
+ },
+ "raster": {
+  "width": 797,
+  "height": 801,
+  "pixelSizeM": 0.1
+ },
+ "googleAreaSqft": 2646.5448499699996,
+ "multiStructure": false,
+ "excludedSqft": [
+  2638.665168426785,
+  2615.3074813276326,
+  2537.807321367313,
+  2426.4008414243526,
+  2333.293010360913,
+  2149.0148522330405,
+  1204.8045700498083
+ ],
+ "diagnostics": {
+  "buildingPx": 23577,
+  "clusters": 12,
+  "droppedClusters": 840,
+  "groundElevFt": 276.08269100616457,
+  "planPolygonSqft": 2537.807321367313,
+  "lineCount": 73,
+  "branch": {
+   "crease": 42,
+   "sameFacet": 3,
+   "perimeter": 28,
+   "offRoof": 0
+  },
+  "branchFt": {
+   "crease": 409.2238196260157,
+   "sameFacet": 21.14884380971494,
+   "perimeter": 244.77646247060827,
+   "offRoof": 0
+  },
+  "maskPerimeterFt": 230.643052,
+  "tracePx": [
+   283,
+   229,
+   148,
+   292,
+   270,
+   253,
+   242,
+   213,
+   70,
+   78,
+   64
+  ],
+  "corners": [
+   14,
+   5,
+   6,
+   8,
+   10,
+   8,
+   8,
+   8,
+   5,
+   4,
+   6
+  ],
+  "maskComponentsSqft": [
+   3028.534028671617,
+   2638.665168426785,
+   2615.3074813276326,
+   2537.807321367313,
+   2426.4008414243526,
+   2333.293010360913,
+   2149.0148522330405,
+   1204.8045700498083
+  ],
+  "keptComponents": 1,
+  "parcelScoped": false,
+  "fragmentsBefore": 17,
+  "fragmentsMerged": 5,
+  "droppedSteep": 2,
+  "pitches12": [
+   1,
+   8,
+   5,
+   7.999999999999998,
+   7,
+   7,
+   6.000000000000002,
+   8,
+   12,
+   5,
+   7,
+   5
+  ]
+ },
+ "pitchPriors12": [
+  1,
+  5,
+  6,
+  7,
+  8
+ ],
+ "layers": {
+  "imageryQuality": "HIGH",
+  "imageryDate": {
+   "year": 2024,
+   "month": 7,
+   "day": 6
+  },
+  "dsmUrl": "https://solar.googleapis.com/v1/geoTiff:get?id=NzQzMWJmNDBlYWM3NmUyZjk3YTVjMzA4MDA4ZjdhN2YtMGY4NDVjNWZiODJhOTVjMzMyYmZhZjM1ZDAyMzYzNDY6RFNNOkhJR0g",
+  "maskUrl": "https://solar.googleapis.com/v1/geoTiff:get?id=ZGY0NGQ0YWRkMjUxYmZmMzQwMGMwMzhjMGVlMzhhZDctMTAwNDJmYTEwYjM5Y2RjNGNmYjVkNzEyYzI2M2E5Yjg6TUFTSzpISUdI",
+  "rgbUrl": "https://solar.googleapis.com/v1/geoTiff:get?id=ZDQxYTcyM2MxOTM1ZGFhZjgzYTBjYTI3MzViODI0ZjktZDI0NGIyZDBhMDIxYTVkYzVhNTNmZTVlNmYzZmU4MWE6UkdCOkhJR0g"
+ }
+}

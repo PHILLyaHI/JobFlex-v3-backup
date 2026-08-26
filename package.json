@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
+    "qa:roof": "tsx scripts/qa/roof/check.ts",
   "fleet": "node scripts/fleet.js --watch",
   "fleet:once": "node scripts/fleet.js",
   "fleet:list": "node scripts/fleet.js --list",

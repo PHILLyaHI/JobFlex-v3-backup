@@ -1,0 +1,14 @@
+{
+ "kirkland-12629-ne-100th-pl": {
+  "errors": 32,
+  "warnings": 3
+ },
+ "prairie-419-prairie-ridge-ln": {
+  "errors": 10,
+  "warnings": 2
+ },
+ "redmond-17028-ne-100th-st": {
+  "errors": 23,
+  "warnings": 6
+ }
+}
