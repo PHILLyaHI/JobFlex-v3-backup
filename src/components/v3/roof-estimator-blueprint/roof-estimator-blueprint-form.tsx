@@ -243,6 +243,14 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
     [measurement, gate, cannotValidate],
   );
   const gateBlocked = !!assessment && !assessment.drawable && process.env.NEXT_PUBLIC_ROOF_GATE !== "off";
+  /**
+   * Built by the OLD calibrated pipeline. Only that path stores a calibration
+   * report; V2 and the outline-only fallback both store null, so this is the
+   * reliable discriminator — and a saved row is always drawn from its own
+   * stored model, never rebuilt, which is exactly the confusion this line
+   * removes.
+   */
+  const builtByOldPipeline = !!measurement?.calibration;
   /** Instant already answered for this address, so offering to order a report is noise. */
   const hasInstant = measurement?.source === "instant+recon" || measurement?.source === "instant-outline";
   // A poll TIMEOUT on an accepted order is not "no coverage" — the paid order
@@ -740,8 +748,19 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
       <section className={"ppanel" + (panel === "report" && measurement && layout ? "" : " is-hidden")} data-panel="report">
         {measurement && layout && totals && (
           <>
-            {(layout.stamps.length > 0 || unsaved || (assessment && assessment.confidence !== "high") || measurement.provenance.partialCoverage) && (
+            {(layout.stamps.length > 0 || unsaved || builtByOldPipeline || (assessment && assessment.confidence !== "high") || measurement.provenance.partialCoverage) && (
               <div className="rf-notice">
+                {builtByOldPipeline && (
+                  <div className="call warn">
+                    <div>
+                      <span className="rf-stamp">MEASURED BY THE PREVIOUS PIPELINE</span>
+                      This drawing was built before the current measurement path and is shown exactly as it was saved —
+                      reopening a measurement never redraws it. Its interior lines and facet count come from the older
+                      method, so it is not comparable with a drawing measured today. Measure the address again to see
+                      the current one.
+                    </div>
+                  </div>
+                )}
                 {layout.stamps.map((s) => (
                   <div className="call warn" key={s}>
                     <div>
