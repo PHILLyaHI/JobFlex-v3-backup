@@ -68,8 +68,11 @@ import { buildReconModel, type ReconBuild, type ReconBuildInput } from "@/lib/ro
 import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled, type ReconV2Structure } from "@/lib/roofRecon/reconV2";
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
+import { readVisionEvidence, type VisionStructureEvidence } from "@/lib/roofRecon/visionEvidence";
+import type { RoofStructureRead } from "@/lib/roofDiagram/roofStructureVision";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
-import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
+import { measurePitchFromDsm, structurePitch, type PitchMeasurement } from "@/lib/roofRecon/pitchFromDsm";
+import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { parcelRingForPoint } from "@/lib/parcelLookup";
 import {
@@ -194,33 +197,41 @@ function pickOrtho(instant: InstantRoofData): InstantImage | null {
  * creases and penetrations together) is what makes the sizes come out right.
  * Best-effort: on any failure the DSM posts still stand on their own.
  */
-async function structurePenetrations(
+/**
+ * ONE AI read of the roof, used twice. It returns penetrations AND the
+ * interior lines where two slopes meet; the penetrations have always been
+ * used, the interior lines were computed and discarded. Both come from this
+ * single call — reading the topology costs nothing extra.
+ */
+async function structureRead(
   instant: InstantRoofData,
   origin: LatLng | null,
   slug: string | undefined,
-): Promise<ChimneyCandidate[]> {
-  if (!origin) return [];
+): Promise<RoofStructureRead | null> {
+  if (!origin) return null;
   try {
     const wallRings = instantWallRingsRaw(instant, origin);
-    const read = await withDeadline(
+    return await withDeadline(
       readRoofStructure({ imagery: instant.imagery, origin, slug, wallRings }),
       VISION_DEADLINE_MS,
       "Roof structure vision",
     );
-    return read.penetrations.map((p) => ({
-      x: p.x,
-      y: p.y,
-      wFt: p.wFt,
-      hFt: p.hFt,
-      kind: p.kind === "skylight" ? "vent" : p.kind,
-      confidence: p.confidence,
-      method: "vision" as const,
-    }));
   } catch (err) {
-    console.warn("[roofMeasurement] structure penetrations skipped:", err instanceof Error ? err.message : err);
-    return [];
+    console.warn("[roofMeasurement] structure vision skipped:", err instanceof Error ? err.message : err);
+    return null;
   }
 }
+
+const penetrationsOf = (read: RoofStructureRead | null): ChimneyCandidate[] =>
+  (read?.penetrations ?? []).map((p) => ({
+    x: p.x,
+    y: p.y,
+    wFt: p.wFt,
+    hFt: p.hFt,
+    kind: p.kind === "skylight" ? "vent" : p.kind,
+    confidence: p.confidence,
+    method: "vision" as const,
+  }));
 
 /** Vision pass over the Instant ortho. Best-effort: never fails the measurement. */
 async function visionChimneys(instant: InstantRoofData, origin: LatLng | null): Promise<ChimneyCandidate[]> {
@@ -342,15 +353,39 @@ function chimneyGate(structures: InstantStructure[]): boolean | null {
  * frame IS the pin frame), paired with the DSM posts, gated by Instant's flag,
  * and finally anything outside the roof (+ margin) is dropped.
  */
+/**
+ * Rigid inverse of the contour→raster registration, so a candidate measured in
+ * the RASTER frame can be placed on a model that lives in the PIN frame.
+ * `registerContourToRaster` returns raster = R(theta)*pin + d, so the inverse
+ * is R(-theta) with translation -R(-theta)*d.
+ */
+function inverseRegistration(t: { dxFt: number; dyFt: number; thetaDeg: number }): CalibrationReport["outlineTransform"] {
+  const thetaRad = -(t.thetaDeg * Math.PI) / 180;
+  const cos = Math.cos(thetaRad);
+  const sin = Math.sin(thetaRad);
+  return { thetaRad, tx: -(t.dxFt * cos - t.dyFt * sin), ty: -(t.dxFt * sin + t.dyFt * cos) };
+}
+
 function combineChimneys(
   dsm: ChimneyCandidate[],
   vision: ChimneyCandidate[],
   model: RoofModel,
   calibration: CalibrationReport | null,
   gate: boolean | null,
+  /**
+   * V2 only: the transform that put the Instant contour onto the raster. The
+   * DSM posts are found IN the raster and the V2 model stays in the pin frame,
+   * so without this they land a whole registration offset away — measured
+   * -7.4 ft on 12629 against a 4 ft pairing radius, which both mis-merges the
+   * pairs and lets dropOutsideRoof discard real chimneys. The old calibrated
+   * path has no such gap: its model IS in the raster frame and its
+   * outlineTransform moves the vision side instead.
+   */
+  registration?: { dxFt: number; dyFt: number; thetaDeg: number } | null,
 ): ChimneyCandidate[] {
   const placedVision = applyRigidTransform(vision, calibration?.outlineTransform ?? IDENTITY_TRANSFORM);
-  const merged = mergeChimneys(dsm, placedVision, { chimney: gate });
+  const placedDsm = registration ? applyRigidTransform(dsm, inverseRegistration(registration)) : dsm;
+  const merged = mergeChimneys(placedDsm, placedVision, { chimney: gate });
   // Against the drawn facets, not the bounding box — see dropOutsideRoof.
   const roofIdx = buildIndexes(model);
   const roofRings = model.faces
@@ -426,6 +461,8 @@ interface Geometry {
   nestedOutlines?: { overlapSqft: number; pairs: string[] };
   /** V2 paths: facets whose measured drain the drawing does not reproduce. */
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
+  /** V2 paths: what the AI structure read is scored against. */
+  visionInputs?: { contour: FootprintPoint[]; measurement: PitchMeasurement };
   source: MeasurementSource;
   origin: LatLng | null;
 }
@@ -481,6 +518,7 @@ function resolveGeometry(
           structures: v2.structures,
           ...(v2.nestedOutlines ? { nestedOutlines: v2.nestedOutlines } : {}),
           ...(v2.unrecognisedFacets ? { unrecognisedFacets: v2.unrecognisedFacets } : {}),
+          ...(v2.visionInputs ? { visionInputs: v2.visionInputs } : {}),
         };
       }
       v2Fallthrough = { reason: "V2 could not build a usable contour or skeleton from this outline" };
@@ -542,6 +580,7 @@ function provenanceOf(
     structures?: StructureProvenance[];
     nestedOutlines?: { overlapSqft: number; pairs: string[] };
     unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
+    visionStructure?: VisionStructureEvidence;
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -574,6 +613,7 @@ function provenanceOf(
       ...(notes?.structures?.length ? { structures: notes.structures } : {}),
       ...(notes?.nestedOutlines ? { nestedOutlines: notes.nestedOutlines } : {}),
       ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets } : {}),
+      ...(notes?.visionStructure ? { visionStructure: notes.visionStructure } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
       pixelSizeM: model.provenance?.pixelSizeM,
@@ -706,6 +746,7 @@ async function reconOnlyMeasurement(
   organizationId: string,
   userId: string,
   why: string,
+  instant?: InstantRoofData,
 ): Promise<MeasureResult> {
   // The lot boundary decides which mask blobs belong to this property. Without
   // it only the structure under the pin is measured and a detached garage is
@@ -726,12 +767,39 @@ async function reconOnlyMeasurement(
       }))
     : null;
 
+  // THE AI HELPERS EARN THEIR KEEP HERE. Without Instant the contour comes
+  // from Google's building mask, which is this path's weakest input: it
+  // over-claims into the ground (543 sq ft beside the Kirkland house) and on
+  // a rural lot covers only part of the buildings. roofRegionVision answers
+  // exactly the question the mask gets wrong — which of this is roof and
+  // which is patio, deck or driveway — so its polygons filter the mask.
+  // Best-effort and free of consequence: a failed trace leaves the mask as it
+  // was, and the coverage floor still guards the result.
+  let roofRegions: FootprintPoint[][] | null = null;
+  if (instant?.imagery?.length) {
+    try {
+      const slug = outlineSlug(input, instant);
+      const traced = await withDeadline(
+        traceRoofRegions({ imagery: instant.imagery, origin: recon.origin, slug, wallRings: instantWallRingsRaw(instant, recon.origin) }),
+        OUTLINE_VISION_DEADLINE_MS,
+        "Roof region vision",
+      );
+      if (traced.regions.length) {
+        roofRegions = traced.regions;
+        console.log("[roofMeasurement] AI roof regions: %d polygons, wall coverage %s", traced.regions.length, traced.wallCoverage.toFixed(2));
+      }
+    } catch (err) {
+      console.warn("[roofMeasurement] roof-region vision skipped:", errorMessage(err, String(err)));
+    }
+  }
+
   const built = buildRoofV2FromRecon({
     mask: recon.mask,
     dsm: recon.dsm,
     groundElevFt: recon.diagnostics.groundElevFt,
     parcel,
     pitch12: recon.model.totals.predominantPitch ?? null,
+    ...(roofRegions ? { roofRegions } : {}),
   });
   if (!built.model) {
     return {
@@ -954,6 +1022,8 @@ function buildV2Geometry(
   structures: StructureProvenance[];
   nestedOutlines?: { overlapSqft: number; pairs: string[] };
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
+  /** Kept so the AI structure read can be scored against the same measurement. */
+  visionInputs?: { contour: FootprintPoint[]; measurement: PitchMeasurement };
 } | null {
   const first = buildRoofV2({
     instant,
@@ -1048,6 +1118,7 @@ function buildV2Geometry(
     structures,
     ...(nestedOutlines ? { nestedOutlines } : {}),
     ...(unrecognised.length ? { unrecognisedFacets: unrecognised } : {}),
+    visionInputs: { contour: first.report.structures.find((st) => st.ring)!.ring as FootprintPoint[], measurement: measured },
   };
 }
 
@@ -1270,7 +1341,7 @@ export async function measureRoofInstant(
         error: `${instantMissing}, and the aerial reconstruction is unavailable too — nothing to measure this roof from.`,
       };
     }
-    return reconOnlyMeasurement(recon, input, organizationId, userId, instantMissing);
+    return reconOnlyMeasurement(recon, input, organizationId, userId, instantMissing, instant);
   }
 
   // ── From here on the Instant result is PAID FOR. Nothing below may throw. ──
@@ -1283,7 +1354,12 @@ export async function measureRoofInstant(
   let visionOutline: CalibrateVisionOutline | undefined;
   let visionTraceNote: VisionOutlineProvenance | undefined;
   let roofRegions: Array<Array<{ x: number; y: number }>> | undefined;
-  if (recon) {
+  // Only the OLD calibrated path consumes these two traces; V2 builds from the
+  // Instant contour and the DSM and never reads them, so with V2 on they were
+  // two paid vision calls and up to 8 s per measurement for output that was
+  // discarded. On a V2 fallthrough the old path simply runs without them —
+  // exactly as it does when a trace fails — and the fallthrough is recorded.
+  if (recon && !roofReconV2Enabled()) {
     const slug = outlineSlug(input, instant);
     // Both traces run against the same cached ortho; concurrently, so the pair
     // still fits inside one deadline's worth of wall clock.
@@ -1296,12 +1372,14 @@ export async function measureRoofInstant(
     roofRegions = regions;
   }
 
-  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
 
   // Chimneys: DSM posts on the RAW reconstruction (the rasters' frame — the
   // calibrated model stays in it, so no transform is needed) + vision boxes on
   // the Instant ortho, merged and gated. Best-effort: any failure means none.
   let chimneys: ChimneyCandidate[] = [];
+  /** The one AI structure read; its interior lines are scored below. */
+  let aiRead: RoofStructureRead | null = null;
   try {
     const dsmCands = recon
       ? detectChimneysDsm({
@@ -1314,12 +1392,46 @@ export async function measureRoofInstant(
     // Penetrations from the top-model roof read; the older per-penetration pass
     // is the fallback when that read is unavailable.
     const slugForVision = outlineSlug(input, instant);
-    let visionCands = await structurePenetrations(instant, origin, slugForVision);
+    aiRead = await structureRead(instant, origin, slugForVision);
+    let visionCands = penetrationsOf(aiRead);
     if (!visionCands.length) visionCands = await visionChimneys(instant, origin);
-    chimneys = combineChimneys(dsmCands, visionCands, model, calibration, chimneyGate(instant.structures));
+    chimneys = combineChimneys(
+      dsmCands,
+      visionCands,
+      model,
+      calibration,
+      chimneyGate(instant.structures),
+      registration?.applied ? registration.transform : null,
+    );
   } catch (err) {
     console.warn("[roofMeasurement] chimney detection skipped:", errorMessage(err, String(err)));
     chimneys = [];
+  }
+
+  // The AI's topology read, scored against the DSM that produced this model.
+  // Evidence only — measured 2026-08-28 to disagree with the DSM on every
+  // wall where both spoke, so it may never move a vertex (visionEvidence.ts).
+  let visionStructure: VisionStructureEvidence | undefined;
+  if (aiRead && aiRead.interior.length && visionInputs) {
+    try {
+      visionStructure = readVisionEvidence({
+        contour: visionInputs.contour,
+        model,
+        measurement: visionInputs.measurement,
+        interior: aiRead.interior,
+        unrecognised: (unrecognisedFacets ?? []).map((u) => u.facet),
+        source: aiRead.source,
+        model_: aiRead.model,
+      });
+      const ag = visionStructure.agreement;
+      console.log(
+        "[roofMeasurement] AI topology read: %d ridge / %d hip / %d valley · agrees with the DSM on %s of %d walls",
+        visionStructure.lines.ridge, visionStructure.lines.hip, visionStructure.lines.valley,
+        ag.share == null ? "n/a" : `${ag.agreed}`, ag.both,
+      );
+    } catch (err) {
+      console.warn("[roofMeasurement] vision evidence skipped:", errorMessage(err, String(err)));
+    }
   }
 
   const toSave: PersistInput = {
@@ -1359,6 +1471,7 @@ export async function measureRoofInstant(
       ...(structures?.length ? { structures } : {}),
       ...(nestedOutlines ? { nestedOutlines } : {}),
       ...(unrecognisedFacets?.length ? { unrecognisedFacets } : {}),
+      ...(visionStructure ? { visionStructure } : {}),
     }),
   };
 

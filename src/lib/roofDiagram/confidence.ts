@@ -92,6 +92,8 @@ export function assessRoof(input: {
   nestedOutlines?: { overlapSqft: number; pairs: string[] } | null;
   /** Facets whose measured drain the drawing does not reproduce. */
   unrecognisedFacets?: Array<{ facet: string; diffDeg: number }> | null;
+  /** Facets an INDEPENDENT AI read of the photo also draws a crease through. */
+  visionCorroborated?: readonly string[] | null;
   /**
    * Set when the pitch could not be measured and EagleView's published one was
    * used. On a roof under solar panels the elevation data describes the panels,
@@ -162,8 +164,10 @@ export function assessRoof(input: {
 
   if (input.unrecognisedFacets?.length) {
     const names = input.unrecognisedFacets.map((u) => u.facet).join(", ");
+    const both = (input.visionCorroborated ?? []).filter((f) => input.unrecognisedFacets!.some((u) => u.facet === f));
     reasons.push(
-      `${input.unrecognisedFacets.length} facet${input.unrecognisedFacets.length === 1 ? "" : "s"} (${names}) drain in a different direction than drawn: the aerial elevation data sees a gable, shed or split slope where this plan draws a hip.`,
+      `${input.unrecognisedFacets.length} facet${input.unrecognisedFacets.length === 1 ? "" : "s"} (${names}) drain in a different direction than drawn: the aerial elevation data sees a gable, shed or split slope where this plan draws a hip.` +
+        (both.length ? ` A separate read of the aerial photo draws a roof line through ${both.join(", ")} too — two independent sources put a crease there.` : ""),
       "The outer dimensions and the total area are unaffected; the interior lines in those spots are the drawing\u2019s assumption, not a measurement.",
     );
   }

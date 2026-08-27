@@ -174,6 +174,20 @@ export interface MeasurementProvenance {
    */
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   /**
+   * What the AI structure read (gpt-5.4 over the ortho) says the roof's
+   * topology is, and how well that agrees with the DSM on this house.
+   * EVIDENCE ONLY — it never moves a vertex; see visionEvidence.ts for the
+   * measurement that put it there.
+   */
+  visionStructure?: {
+    lines: { ridge: number; hip: number; valley: number };
+    agreement: { both: number; agreed: number; share: number | null };
+    walls: Array<{ edge: number; lengthFt: number; facet: string | null; dsm: string; vision: string }>;
+    corroborated: string[];
+    source: string;
+    model: string;
+  };
+  /**
    * Set when EagleView shipped NESTED structure outlines (a sub-roof drawn as
    * a sibling): this much plan area is counted twice — in our drawn total AND
    * in Instant's own totals.areaSqft, which is the plain sum of structure

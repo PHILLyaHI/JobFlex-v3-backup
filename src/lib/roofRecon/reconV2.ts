@@ -437,6 +437,19 @@ export interface ReconV2FallbackInput {
   parcel?: FootprintPoint[] | null;
   /** Predominant pitch from the reconstruction (rise/12). */
   pitch12: number | null;
+  /**
+   * AI-traced ROOF regions in frame feet (roofRegionVision.ts). Google's
+   * building mask reaches into the ground beside a house and, on rural lots,
+   * covers only part of it; the height gate removes what is at ground level
+   * but not an elevated deck or a patio cover. These polygons are the model's
+   * answer to "which of this is roof, and which is patio, deck or driveway",
+   * and a mask cell outside every one of them is dropped.
+   *
+   * A FILTER, never a source: it can only remove cells the mask already
+   * claimed. If it removes so much that coverage falls under the floor, the
+   * measurement is withheld by the usual gate rather than quietly shrunk.
+   */
+  roofRegions?: FootprintPoint[][] | null;
 }
 
 /**
@@ -452,13 +465,81 @@ export function buildRoofV2FromRecon(input: ReconV2FallbackInput): ReconV2Result
   const reasons: string[] = [];
   const { mask, dsm } = input;
   const cutM = (input.groundElevFt + ROOF_MIN_HEIGHT_FT) / FT_PER_M;
-  const gated: Raster = {
-    ...mask,
-    data: mask.data.map((v, i) => {
-      const z = dsm.data[i];
-      return v > 0 && Number.isFinite(z) && z >= cutM ? v : 0;
-    }),
-  } as Raster;
+  const regions = (input.roofRegions ?? []).filter((r) => r.length >= 3);
+  const stepFt = mask.pixelSizeM * FT_PER_M;
+  const inRegions = (px: number, py: number): boolean => {
+    if (!regions.length) return true;
+    const x = (px + 0.5 - mask.width / 2) * stepFt;
+    const y = (mask.height / 2 - py - 0.5) * stepFt;
+    for (const r of regions) {
+      let hit = false;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        if (r[i].y > y !== r[j].y > y && x < ((r[j].x - r[i].x) * (y - r[i].y)) / (r[j].y - r[i].y) + r[i].x) hit = !hit;
+      }
+      if (hit) return true;
+    }
+    return false;
+  };
+  // Height-gate first, exactly as before.
+  const heightGated = mask.data.map((v, i) => {
+    const z = dsm.data[i];
+    return v > 0 && Number.isFinite(z) && z >= cutM ? v : 0;
+  });
+
+  // The AI regions may only kill DETACHED masses — never the building itself.
+  // The old path learned this the hard way: an earlier version of the same
+  // idea cut 242 sq ft of real roof off 419 Prairie Ridge Ln, and the fix was
+  // to exempt the largest connected component from the vision test. The same
+  // exemption applies here, so a trace that saw only part of the house (the
+  // 12629 read covers about a third of it — tree shadow) can shrink nothing
+  // that matters; it can still remove the slab, deck or carport the height
+  // gate let through, which is the whole job.
+  let droppedByRegions = 0;
+  if (regions.length) {
+    const w = mask.width;
+    const h = mask.height;
+    const comp = new Int32Array(w * h).fill(-1);
+    let best = -1;
+    let bestSize = 0;
+    let next = 0;
+    const stack: number[] = [];
+    for (let i = 0; i < heightGated.length; i++) {
+      if (!(heightGated[i] > 0) || comp[i] >= 0) continue;
+      const id = next++;
+      let size = 0;
+      stack.push(i);
+      comp[i] = id;
+      while (stack.length) {
+        const k = stack.pop()!;
+        size++;
+        const kx = k % w;
+        const ky = (k - kx) / w;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = kx + dx;
+          const ny = ky + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const nk = ny * w + nx;
+          if (comp[nk] >= 0 || !(heightGated[nk] > 0)) continue;
+          comp[nk] = id;
+          stack.push(nk);
+        }
+      }
+      if (size > bestSize) { bestSize = size; best = id; }
+    }
+    for (let i = 0; i < heightGated.length; i++) {
+      if (!(heightGated[i] > 0) || comp[i] === best) continue;
+      if (inRegions(i % w, Math.floor(i / w))) continue;
+      heightGated[i] = 0;
+      droppedByRegions++;
+    }
+  }
+  const gated: Raster = { ...mask, data: heightGated } as Raster;
+  if (droppedByRegions) {
+    reasons.push(
+      `AI roof regions dropped ${(droppedByRegions * stepFt * stepFt).toFixed(0)} sq ft of DETACHED masked area as not-roof ` +
+        "(patio, deck, carport or driveway); the building's own connected mass is exempt from the test",
+    );
+  }
 
   const res = buildStructureFootprints(gated, {
     ...(input.parcel ? { parcel: input.parcel } : {}),
