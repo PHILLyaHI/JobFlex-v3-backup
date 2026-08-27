@@ -167,6 +167,15 @@ export interface MeasurementProvenance {
    */
   instantMissing?: { reason: string; pendingOrderId?: string };
   /**
+   * Set when EagleView shipped NESTED structure outlines (a sub-roof drawn as
+   * a sibling): this much plan area is counted twice — in our drawn total AND
+   * in Instant's own totals.areaSqft, which is the plain sum of structure
+   * areas. An area cross-check against Instant on such a lot compares our
+   * error with theirs and must not be trusted; the UI says so instead of
+   * applying the band.
+   */
+  nestedOutlines?: { overlapSqft: number; pairs: string[] };
+  /**
    * V2 paths, one entry per structure (facet-letter prefix). Coverage and
    * registration are judged PER STRUCTURE: the Solar tile is centred on the
    * house, so on a farmstead the barns read 0 % coverage while the house reads
@@ -192,6 +201,8 @@ export interface StructureProvenance {
     reason?: string;
     transform?: { dxFt: number; dyFt: number; thetaDeg: number };
   };
+  /** This contour lies mostly inside the named sibling's — a nested sub-roof. */
+  nestedIn?: string;
   /** Why this structure carries no measured data, when it does not. */
   note?: string;
 }

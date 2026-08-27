@@ -88,6 +88,8 @@ export function assessRoof(input: {
   errorCodes: readonly string[];
   /** True when the validator could not read the model at all (its INPUT case). */
   cannotValidate?: boolean;
+  /** EagleView shipped nested outlines — the area double-counts, both sides. */
+  nestedOutlines?: { overlapSqft: number; pairs: string[] } | null;
   /**
    * Set when the pitch could not be measured and EagleView's published one was
    * used. On a roof under solar panels the elevation data describes the panels,
@@ -154,6 +156,14 @@ export function assessRoof(input: {
 
   if (input.cannotValidate) {
     reasons.push("This drawing could not be checked against the roof rules, so treat its figures as provisional.");
+  }
+
+  if (input.nestedOutlines) {
+    reasons.push(
+      `EagleView returned overlapping structure outlines for this lot (${input.nestedOutlines.pairs.join(", ")}): about ` +
+        `${Math.round(input.nestedOutlines.overlapSqft).toLocaleString("en-US")} sq ft of plan is counted twice, in this drawing's total and in EagleView's own figure alike (their total sums the structures as sent).`,
+      "Do not reconcile the two totals against each other on this lot; verify the overlapping buildings on site.",
+    );
   }
 
   if (input.pitchSource?.source === "measured" && input.pitchSource.trustedShare != null && input.pitchSource.trustedShare < 0.7) {

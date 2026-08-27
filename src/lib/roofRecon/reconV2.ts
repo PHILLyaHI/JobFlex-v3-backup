@@ -85,9 +85,26 @@ export interface ReconV2Input {
   pitchOverride12?: number | null;
 }
 
+/**
+ * A structure whose ring is MOSTLY inside a sibling's is a nested sub-roof,
+ * not a sibling: EagleView ships them as separate overlapping structures
+ * (12117 202nd St SE: shed N 98 % inside house A; the east barn as a main
+ * contour plus two sub-roofs 80–84 % inside it). Majority of the inner ring's
+ * own area — a relative, dimensionless share, no length dependency.
+ */
+export const NESTED_SHARE = 0.5;
+
 export interface ReconV2Structure {
   /** A/B/C… — the facet-lettering prefix this structure owns. */
   prefix: string;
+  /**
+   * Set when this structure's contour lies mostly inside the named sibling's:
+   * a nested sub-roof. Its plan area double-counts the parent's — and
+   * EagleView's own totals.areaSqft carries the SAME double count (it is the
+   * plain sum of structure areas), so an area cross-check against Instant is
+   * comparing our error with theirs and must not be trusted on such lots.
+   */
+  nestedIn?: string;
   ring: FootprintPoint[] | null;
   regularize: RegularizeReport;
   /** Contour area AFTER regularisation — what the facet areas are checked on. */
@@ -104,6 +121,8 @@ export interface ReconV2Structure {
 
 export interface ReconV2Report {
   structures: ReconV2Structure[];
+  /** Plan area counted twice because of nested outlines, sq ft (0 = none). */
+  nestedOverlapSqft: number;
   /** Facets the skeleton produced across all structures. */
   facets: number;
   gableEnds: number;
@@ -154,7 +173,7 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
   if (raw.length === 0) {
     return {
       model: null,
-      report: { structures: [], facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "Instant returned no outline"], synthesizeFailed: [] },
+      report: { structures: [], nestedOverlapSqft: 0, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "Instant returned no outline"], synthesizeFailed: [] },
     };
   }
   const facetCounts = [...instant.structures]
@@ -231,8 +250,16 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
     else reasons.push(`structure ${LETTERS[i] ?? i}: contour not usable — ${notes.join("; ") || "unknown"}`);
   });
 
+  const nestedOverlapSqft = markNestedStructures(structures);
+  if (nestedOverlapSqft > 0) {
+    reasons.push(
+      `nested outlines: ${structures.filter((st) => st.nestedIn).map((st) => `${st.prefix} inside ${st.nestedIn}`).join(", ")} — ` +
+        `${nestedOverlapSqft.toFixed(0)} sq ft of plan is counted twice, on our side and in Instant's own totals alike`,
+    );
+  }
+
   if (usable.length === 0) {
-    return { model: null, report: { structures, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "no usable contour"], synthesizeFailed: [] } };
+    return { model: null, report: { structures, nestedOverlapSqft, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "no usable contour"], synthesizeFailed: [] } };
   }
 
   // NOTE: `outlines` goes in AS IS. No offsetRingOutward — see the file header.
@@ -246,7 +273,7 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
     ...(pitch12 != null ? { forcePitch: pitch12 } : {}),
   });
   if (!synth) {
-    return { model: null, report: { structures, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "skeleton produced no structure"], synthesizeFailed: [] } };
+    return { model: null, report: { structures, nestedOverlapSqft, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "skeleton produced no structure"], synthesizeFailed: [] } };
   }
 
   const instantFacets = instant.totals?.facetCount ?? null;
@@ -254,6 +281,7 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
     model: synth.model,
     report: {
       structures,
+      nestedOverlapSqft,
       facets: synth.model.faces.length,
       gableEnds: synth.report.gableEnds,
       pitch12,
@@ -284,6 +312,56 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
  */
 const ROOF_MIN_HEIGHT_FT = 4;
 const FT_PER_M = 3.28084;
+
+/**
+ * Mark every structure whose ring lies mostly (NESTED_SHARE of its own area)
+ * inside a LARGER sibling's ring, and return the doubled plan area. Grid
+ * sampling at 1 ft — the rings are house-sized and this runs once per
+ * measurement.
+ */
+function markNestedStructures(structures: ReconV2Structure[]): number {
+  const withRings = structures.filter((st) => st.ring);
+  let doubled = 0;
+  const inRing = (x: number, y: number, r: FootprintPoint[]): boolean => {
+    let hit = false;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const a = r[i];
+      const b = r[j];
+      if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+    }
+    return hit;
+  };
+  for (const inner of withRings) {
+    let bestShare = 0;
+    let bestOuter: ReconV2Structure | null = null;
+    for (const outer of withRings) {
+      if (outer === inner || outer.contourAreaSqft <= inner.contourAreaSqft) continue;
+      const ring = inner.ring as FootprintPoint[];
+      const xs = ring.map((p) => p.x);
+      const ys = ring.map((p) => p.y);
+      let all = 0;
+      let inside = 0;
+      for (let x = Math.min(...xs); x <= Math.max(...xs); x += 1) {
+        for (let y = Math.min(...ys); y <= Math.max(...ys); y += 1) {
+          if (!inRing(x, y, ring)) continue;
+          all++;
+          if (inRing(x, y, outer.ring as FootprintPoint[])) inside++;
+        }
+      }
+      const share = all > 0 ? inside / all : 0;
+      if (share > bestShare) {
+        bestShare = share;
+        bestOuter = outer;
+      }
+    }
+    if (bestOuter && bestShare >= NESTED_SHARE) {
+      inner.nestedIn = bestOuter.prefix;
+      doubled += bestShare * inner.contourAreaSqft;
+      inner.notes.push(`nested: ${(bestShare * 100).toFixed(0)}% of this contour lies inside structure ${bestOuter.prefix}`);
+    }
+  }
+  return doubled;
+}
 
 /**
  * How much of `contour` is actually SEEN from above: building-mask area that
@@ -432,8 +510,9 @@ export function buildRoofV2FromRecon(input: ReconV2FallbackInput): ReconV2Result
   }
 
   if (!usable.length) {
-    return { model: null, report: { structures, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "no usable contour after the height gate"], synthesizeFailed: [] } };
+    return { model: null, report: { structures, nestedOverlapSqft: 0, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "no usable contour after the height gate"], synthesizeFailed: [] } };
   }
+  const nestedOverlapSqft = markNestedStructures(structures);
   const synth = synthesizeRoofModel({
     outlines: usable,
     recon: null,
@@ -442,12 +521,13 @@ export function buildRoofV2FromRecon(input: ReconV2FallbackInput): ReconV2Result
     ...(pitch12 != null ? { forcePitch: pitch12 } : {}),
   });
   if (!synth) {
-    return { model: null, report: { structures, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "skeleton produced no structure"], synthesizeFailed: [] } };
+    return { model: null, report: { structures, nestedOverlapSqft, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "skeleton produced no structure"], synthesizeFailed: [] } };
   }
   return {
     model: synth.model,
     report: {
       structures,
+      nestedOverlapSqft,
       facets: synth.model.faces.length,
       gableEnds: synth.report.gableEnds,
       pitch12,

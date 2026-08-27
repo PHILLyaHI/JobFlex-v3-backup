@@ -421,6 +421,8 @@ interface Geometry {
   v2Fallthrough?: { reason: string };
   /** V2 paths: per-structure coverage and registration. */
   structures?: StructureProvenance[];
+  /** V2 paths: EagleView shipped nested outlines — area double-counts, both sides. */
+  nestedOutlines?: { overlapSqft: number; pairs: string[] };
   source: MeasurementSource;
   origin: LatLng | null;
 }
@@ -474,6 +476,7 @@ function resolveGeometry(
           registration: v2.registration,
           pitchSource: v2.pitchSource,
           structures: v2.structures,
+          ...(v2.nestedOutlines ? { nestedOutlines: v2.nestedOutlines } : {}),
         };
       }
       v2Fallthrough = { reason: "V2 could not build a usable contour or skeleton from this outline" };
@@ -533,6 +536,7 @@ function provenanceOf(
     v2Fallthrough?: { reason: string };
     instantReuse?: { requestId: string; how: "stored" | "recovered" };
     structures?: StructureProvenance[];
+    nestedOutlines?: { overlapSqft: number; pairs: string[] };
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -563,6 +567,7 @@ function provenanceOf(
       ...(notes?.v2Fallthrough ? { v2Fallthrough: notes.v2Fallthrough } : {}),
       ...(notes?.instantReuse ? { instantReuse: notes.instantReuse } : {}),
       ...(notes?.structures?.length ? { structures: notes.structures } : {}),
+      ...(notes?.nestedOutlines ? { nestedOutlines: notes.nestedOutlines } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
       pixelSizeM: model.provenance?.pixelSizeM,
@@ -898,6 +903,7 @@ function registerStructures(
       contourSqft: st.contourAreaSqft,
       coverage: cov ? { seenSqft: cov.seenSqft, share: cov.share } : null,
       covered,
+      ...(st.nestedIn ? { nestedIn: st.nestedIn } : {}),
       registration: reg.applied
         ? { applied: true, transform: reg.transform, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter }
         : { applied: false, reason: reg.reason, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter },
@@ -940,6 +946,7 @@ function buildV2Geometry(
   registration: RegistrationProvenance;
   pitchSource: PitchSourceProvenance;
   structures: StructureProvenance[];
+  nestedOutlines?: { overlapSqft: number; pairs: string[] };
 } | null {
   const first = buildRoofV2({
     instant,
@@ -957,6 +964,13 @@ function buildV2Geometry(
     recon.dsm,
     recon.diagnostics.groundElevFt,
   );
+  const nestedOutlines =
+    first.report.nestedOverlapSqft > 0
+      ? {
+          overlapSqft: first.report.nestedOverlapSqft,
+          pairs: first.report.structures.filter((st) => st.nestedIn).map((st) => `${st.prefix} inside ${st.nestedIn}`),
+        }
+      : undefined;
   const instantPitch = instant.totals?.predominantPitch ?? null;
   // The headline registration is the largest structure that got one — kept so
   // rows and viewers that predate the per-structure entry keep reading.
@@ -981,6 +995,7 @@ function buildV2Geometry(
           "it would describe this roof. The pitch is EagleView's published figure.",
       },
       structures,
+      ...(nestedOutlines ? { nestedOutlines } : {}),
     };
   }
 
@@ -1021,6 +1036,7 @@ function buildV2Geometry(
       ...(solar ? { solarPanels: true } : {}),
     },
     structures,
+    ...(nestedOutlines ? { nestedOutlines } : {}),
   };
 }
 
@@ -1269,7 +1285,7 @@ export async function measureRoofInstant(
     roofRegions = regions;
   }
 
-  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
 
   // Chimneys: DSM posts on the RAW reconstruction (the rasters' frame — the
   // calibrated model stays in it, so no transform is needed) + vision boxes on
@@ -1330,6 +1346,7 @@ export async function measureRoofInstant(
       ...(v2Fallthrough ? { v2Fallthrough } : {}),
       ...(instantReuse ? { instantReuse } : {}),
       ...(structures?.length ? { structures } : {}),
+      ...(nestedOutlines ? { nestedOutlines } : {}),
     }),
   };
 

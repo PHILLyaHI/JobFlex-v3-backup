@@ -261,6 +261,7 @@ async function runOne(a: Addr): Promise<Row | { skipped: string; addr: string }>
   let vertsTxt = "—";
   let familyTxt = "—";
   let contourAreaAll = 0;
+  let nestedNote: string | null = null;
 
   if (instant) {
     const first = buildRoofV2({ instant, origin: meta.origin, clusters });
@@ -314,6 +315,13 @@ async function runOne(a: Addr): Promise<Row | { skipped: string; addr: string }>
         : "REFUSED";
       iouTxt = `${applied.length}/${keptInstant.length} reg`;
       if (keptInstant.length > 1) console.log(`   structures: ${perStruct.join("  ")}`);
+      if (first.report.nestedOverlapSqft > 0) {
+        nestedNote = `${first.report.nestedOverlapSqft.toFixed(0)} sq ft doubled`;
+        console.log(
+          `   NESTED OUTLINES: ${first.report.structures.filter((k) => k.nestedIn).map((k) => `${k.prefix} in ${k.nestedIn}`).join(", ")} — ` +
+            `area comparison with Instant is NOT meaningful on this lot (both sides double-count)`,
+        );
+      }
       if (!headline) problems.push(uncoveredCount === keptInstant.length ? "no structure covered" : "registration refused");
       const ip = instant.totals?.predominantPitch ?? null;
       if (headline) {
@@ -375,6 +383,7 @@ async function runOne(a: Addr): Promise<Row | { skipped: string; addr: string }>
     spent: `${spent.instant}·${spent.solar}·${spent.parcel}`,
     problems,
   };
+  if (nestedNote) problems.push(`nested outlines (${nestedNote}) — vsInst not meaningful`);
   if (!model) {
     return { ...base, facets: "—", euler: "—", tiling: "—", cov: "—", covInset: "—", areaOurs: "—", areaDelta: "—", confidence: "—", codes: "—", pitchGap: null } as Row;
   }
