@@ -238,6 +238,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
             nestedOutlines: measurement.provenance.nestedOutlines ?? null,
             unrecognisedFacets: measurement.provenance.unrecognisedFacets ?? null,
             visionCorroborated: measurement.provenance.visionStructure?.corroborated ?? null,
+            unrecognisedShare: measurement.provenance.unrecognisedShare ?? null,
           })
         : null,
     [measurement, gate, cannotValidate],
@@ -1031,7 +1032,16 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                 <div className="card rf-card">
                   <div className="rf-head">
                     <div className="card-title">Linear footage</div>
-                    <div className="card-sub">Edge lengths that drive trim, ridge vent and flashing.</div>
+                    <div className="card-sub">
+                      Edge lengths that drive trim, ridge vent and flashing.
+                      {assessment && !assessment.footageReliable && (
+                        <>
+                          {" "}
+                          <b>Not reliable on this roof</b> — part of it is drawn draining the wrong way, and these
+                          lengths are those lines. Check them against the aerial view before ordering.
+                        </>
+                      )}
+                    </div>
                   </div>
                   {totals.footage.length > 0 ? (
                     <ul className="lf-list" id="lfList">

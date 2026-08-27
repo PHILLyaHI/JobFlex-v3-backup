@@ -173,6 +173,19 @@ export interface MeasurementProvenance {
    * open case list, filled from the field instead of from the head.
    */
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
+  /** Share of roof PLAN area sitting in those facets, 0–1 — the figure the
+   *  confidence gate judges the layout on. */
+  unrecognisedShare?: number;
+  /**
+   * Which engine drew the interior of this roof. The straight skeleton assumes
+   * an equal-pitch hip everywhere, which costs a gabled house its rakes and
+   * doubles its hips; the weighted wavefront draws the gables the DSM
+   * measured. `applied: false` carries the reason the skeleton was kept — a
+   * fallback is never silent.
+   */
+  wavefront?:
+    | { applied: true; carriers: string[]; gableEdges: number[]; slopeClasses: Array<{ pitch12: number; edges: number }> }
+    | { applied: false; reason: string };
   /**
    * What the AI structure read (gpt-5.4 over the ortho) says the roof's
    * topology is, and how well that agrees with the DSM on this house.

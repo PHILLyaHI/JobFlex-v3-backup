@@ -68,11 +68,15 @@ import { buildReconModel, type ReconBuild, type ReconBuildInput } from "@/lib/ro
 import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled, type ReconV2Structure } from "@/lib/roofRecon/reconV2";
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
+import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
+
+/** Which engine drew the interior, and why, exactly as provenance stores it. */
+type WavefrontProvenance = NonNullable<MeasurementProvenance["wavefront"]>;
 import { readVisionEvidence, type VisionStructureEvidence } from "@/lib/roofRecon/visionEvidence";
 import type { RoofStructureRead } from "@/lib/roofDiagram/roofStructureVision";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { measurePitchFromDsm, structurePitch, type PitchMeasurement } from "@/lib/roofRecon/pitchFromDsm";
-import type { FootprintPoint } from "@/lib/roofRecon/footprint";
+import { areaOf, type FootprintPoint } from "@/lib/roofRecon/footprint";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { parcelRingForPoint } from "@/lib/parcelLookup";
 import {
@@ -103,6 +107,7 @@ import type {
   MeasurementPipeline,
   MeasurementSource,
   PitchSourceProvenance,
+  MeasurementProvenance,
   RegistrationProvenance,
   StructureProvenance,
   RoofMeasurementDTO,
@@ -461,6 +466,9 @@ interface Geometry {
   nestedOutlines?: { overlapSqft: number; pairs: string[] };
   /** V2 paths: facets whose measured drain the drawing does not reproduce. */
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
+  unrecognisedShare?: number;
+  /** V2 paths: which engine drew the interior. */
+  wavefront?: WavefrontProvenance;
   /** V2 paths: what the AI structure read is scored against. */
   visionInputs?: { contour: FootprintPoint[]; measurement: PitchMeasurement };
   source: MeasurementSource;
@@ -517,7 +525,8 @@ function resolveGeometry(
           pitchSource: v2.pitchSource,
           structures: v2.structures,
           ...(v2.nestedOutlines ? { nestedOutlines: v2.nestedOutlines } : {}),
-          ...(v2.unrecognisedFacets ? { unrecognisedFacets: v2.unrecognisedFacets } : {}),
+          ...(v2.unrecognisedFacets ? { unrecognisedFacets: v2.unrecognisedFacets, unrecognisedShare: v2.unrecognisedShare } : {}),
+          ...(v2.wavefront ? { wavefront: v2.wavefront } : {}),
           ...(v2.visionInputs ? { visionInputs: v2.visionInputs } : {}),
         };
       }
@@ -580,6 +589,8 @@ function provenanceOf(
     structures?: StructureProvenance[];
     nestedOutlines?: { overlapSqft: number; pairs: string[] };
     unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
+    unrecognisedShare?: number;
+    wavefront?: WavefrontProvenance;
     visionStructure?: VisionStructureEvidence;
   },
 ): StoredProvenanceWithValidation {
@@ -612,7 +623,8 @@ function provenanceOf(
       ...(notes?.instantReuse ? { instantReuse: notes.instantReuse } : {}),
       ...(notes?.structures?.length ? { structures: notes.structures } : {}),
       ...(notes?.nestedOutlines ? { nestedOutlines: notes.nestedOutlines } : {}),
-      ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets } : {}),
+      ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets, unrecognisedShare: notes.unrecognisedShare } : {}),
+      ...(notes?.wavefront ? { wavefront: notes.wavefront } : {}),
       ...(notes?.visionStructure ? { visionStructure: notes.visionStructure } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
@@ -1022,6 +1034,8 @@ function buildV2Geometry(
   structures: StructureProvenance[];
   nestedOutlines?: { overlapSqft: number; pairs: string[] };
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
+  unrecognisedShare?: number;
+  wavefront?: WavefrontProvenance;
   /** Kept so the AI structure read can be scored against the same measurement. */
   visionInputs?: { contour: FootprintPoint[]; measurement: PitchMeasurement };
 } | null {
@@ -1096,10 +1110,65 @@ function buildV2Geometry(
     clusters: recon.diagnostics.clusters ?? null,
     pitchOverride12: sp.pitch12,
   });
-  const model = rebuilt.model ?? first.model;
+  const skeletonModel = rebuilt.model ?? first.model;
+
+  // ── the wavefront gate ──
+  // The skeleton has drawn its equal-pitch hip. If the DSM says this roof
+  // carries a gable the skeleton missed, the weighted wavefront gets a turn,
+  // and only keeps the result if it beats the skeleton on Euler, tiling, the
+  // area identity and the validator. Single-structure lots only — a
+  // multi-structure lot would need every structure solved and composed.
+  let model = skeletonModel;
+  let wavefront: WavefrontProvenance;
+  const usable = first.report.structures.filter((st) => st.ring);
+  if (usable.length !== 1) {
+    wavefront = { applied: false, reason: `${usable.length} structures on this lot — the wavefront is single-structure only` };
+  } else {
+    try {
+      const gate = tryWavefront({
+        contour: usable[0].ring as FootprintPoint[],
+        skeletonModel,
+        measurement: measured,
+        structurePitch12: sp.pitch12,
+        structureIndex: 0,
+      });
+      if (gate.model) {
+        model = gate.model;
+        wavefront = { applied: true, carriers: gate.carriers, gableEdges: gate.gableEdges, slopeClasses: gate.slopeClasses };
+        console.log(
+          "[roofMeasurement] wavefront drew this roof: carriers %s, %d gable edge(s), %d facets (skeleton had %d)",
+          gate.carriers.join(",") || "none", gate.gableEdges.length, model.faces.length, skeletonModel.faces.length,
+        );
+      } else {
+        wavefront = { applied: false, reason: gate.refused ?? "refused" };
+      }
+    } catch (err) {
+      wavefront = { applied: false, reason: `wavefront threw: ${errorMessage(err, String(err))}` };
+      console.warn("[roofMeasurement] wavefront skipped:", wavefront.reason);
+    }
+  }
+
   // The unrecognised-case detector: what the drawing did NOT reproduce. Runs
-  // on the rebuilt model with the same measurement; geometry untouched.
+  // on the model that will actually ship, so a wavefront that fixed a gable
+  // is credited and one that did not is still caught.
   const unrecognised = detectUnrecognisedFacets(model, measured);
+  // The share of roof PLAN area sitting in those facets — the figure the
+  // confidence gate judges the layout on, and the one that separates "one
+  // small facet is off" from "a third of this roof drains the wrong way".
+  let unrecognisedShare = 0;
+  if (unrecognised.length) {
+    const flagged = new Set(unrecognised.map((u) => u.facet));
+    const idxU = buildIndexes(model);
+    let total = 0;
+    let bad = 0;
+    for (const f of model.faces) {
+      const ring = ringOf(f.lineIds, idxU);
+      const a = ring && ring.length >= 3 ? Math.abs(areaOf(ring.map((p) => ({ x: p.x, y: p.y })))) : 0;
+      total += a;
+      if (flagged.has(String(f.designator || f.id))) bad += a;
+    }
+    unrecognisedShare = total > 0 ? bad / total : 0;
+  }
   return {
     model,
     registration: {
@@ -1117,7 +1186,8 @@ function buildV2Geometry(
     },
     structures,
     ...(nestedOutlines ? { nestedOutlines } : {}),
-    ...(unrecognised.length ? { unrecognisedFacets: unrecognised } : {}),
+    ...(unrecognised.length ? { unrecognisedFacets: unrecognised, unrecognisedShare } : {}),
+    wavefront,
     visionInputs: { contour: first.report.structures.find((st) => st.ring)!.ring as FootprintPoint[], measurement: measured },
   };
 }
@@ -1372,7 +1442,7 @@ export async function measureRoofInstant(
     roofRegions = regions;
   }
 
-  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, wavefront, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
 
   // Chimneys: DSM posts on the RAW reconstruction (the rasters' frame — the
   // calibrated model stays in it, so no transform is needed) + vision boxes on
@@ -1470,7 +1540,8 @@ export async function measureRoofInstant(
       ...(instantReuse ? { instantReuse } : {}),
       ...(structures?.length ? { structures } : {}),
       ...(nestedOutlines ? { nestedOutlines } : {}),
-      ...(unrecognisedFacets?.length ? { unrecognisedFacets } : {}),
+      ...(unrecognisedFacets?.length ? { unrecognisedFacets, unrecognisedShare } : {}),
+      ...(wavefront ? { wavefront } : {}),
       ...(visionStructure ? { visionStructure } : {}),
     }),
   };

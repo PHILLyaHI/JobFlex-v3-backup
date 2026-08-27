@@ -39,6 +39,28 @@ export const COVERAGE_CLEAR = 0.95;
 /** Invariants that mean the geometry itself is wrong, not the rule about it. */
 export const ESTIMATE_BLOCKING_CODES: readonly string[] = ["R03", "R04"];
 
+/**
+ * How much of a roof may be drawn draining THE WRONG WAY before the drawing
+ * stops being trustworthy. A facet the measurement says drains one way and
+ * the plan draws draining another is unknown LAYOUT in exactly the sense the
+ * two coverage figures above already price for unknown SURFACE, so no new
+ * number enters this file:
+ *
+ *   above 1 − COVERAGE_CLEAR (5 %) — past what the waste factor a contractor
+ *     already carries would absorb: say so, and stop calling the linear
+ *     footage reliable, because the footage is drawn from exactly those lines.
+ *   above 1 − COVERAGE_FLOOR (30 %) — the same share that makes a roof too
+ *     unseen to draw at all: the layout must not be ordered from.
+ *
+ * Measured on the field set the day this shipped (share of roof AREA sitting
+ * in facets the detector flagged): 9903 0.0 %, 419 Prairie 5.8 %, 12618
+ * 8.4 %, 12621 23.1 %, 12629 27.2 %, and the owner's 12958 NE 201st St
+ * 30.4 % with one facet draining 168° from its drawn direction — that last
+ * roof is the reason this gate exists, and it lands exactly on the floor.
+ */
+export const UNRECOGNISED_FLAG_SHARE = 1 - COVERAGE_CLEAR;
+export const UNRECOGNISED_UNUSABLE_SHARE = 1 - COVERAGE_FLOOR;
+
 export type RoofConfidence = "high" | "medium" | "low";
 
 export interface RoofCoverage {
@@ -58,6 +80,13 @@ export interface RoofAssessment {
   estimable: boolean;
   /** Share of the roof that was inferred rather than seen, 0–1, when known. */
   inferredShare: number | null;
+  /**
+   * False when part of the roof is drawn draining the wrong way. The linear
+   * footage — ridge, hip, valley, rake — IS those lines, so it is the first
+   * figure to go wrong and the last that should be ordered from; the area and
+   * the outer dimensions survive a layout error far better.
+   */
+  footageReliable: boolean;
   /** Plain sentences for the user. Never codes, never counts of checks. */
   reasons: string[];
 }
@@ -94,6 +123,8 @@ export function assessRoof(input: {
   unrecognisedFacets?: Array<{ facet: string; diffDeg: number }> | null;
   /** Facets an INDEPENDENT AI read of the photo also draws a crease through. */
   visionCorroborated?: readonly string[] | null;
+  /** Share of roof AREA in facets drawn draining the wrong way, 0–1. */
+  unrecognisedShare?: number | null;
   /**
    * Set when the pitch could not be measured and EagleView's published one was
    * used. On a roof under solar panels the elevation data describes the panels,
@@ -124,6 +155,7 @@ export function assessRoof(input: {
       confidence: "low",
       drawable: false,
       estimable: false,
+      footageReliable: false,
       inferredShare,
       reasons: [
         "None of the buildings on this lot is visible in the aerial elevation data — trees, shadow or the imagery itself are covering them.",
@@ -136,6 +168,7 @@ export function assessRoof(input: {
       confidence: "low",
       drawable: false,
       estimable: false,
+      footageReliable: false,
       inferredShare,
       reasons: [
         `Only ${Math.round(share * 100)}% of this roof is visible from above — trees, shadow or the imagery itself are covering the rest.`,
@@ -162,14 +195,34 @@ export function assessRoof(input: {
     reasons.push("This drawing could not be checked against the roof rules, so treat its figures as provisional.");
   }
 
+  const badShare = input.unrecognisedShare ?? null;
+  const layoutUnusable = badShare != null && badShare > UNRECOGNISED_UNUSABLE_SHARE;
+  const layoutFlagged = badShare != null && badShare > UNRECOGNISED_FLAG_SHARE;
   if (input.unrecognisedFacets?.length) {
     const names = input.unrecognisedFacets.map((u) => u.facet).join(", ");
     const both = (input.visionCorroborated ?? []).filter((f) => input.unrecognisedFacets!.some((u) => u.facet === f));
+    const pct = badShare == null ? null : Math.round(badShare * 100);
     reasons.push(
-      `${input.unrecognisedFacets.length} facet${input.unrecognisedFacets.length === 1 ? "" : "s"} (${names}) drain in a different direction than drawn: the aerial elevation data sees a gable, shed or split slope where this plan draws a hip.` +
+      `${input.unrecognisedFacets.length} facet${input.unrecognisedFacets.length === 1 ? "" : "s"} (${names})` +
+        (pct != null ? `, about ${pct}% of this roof,` : "") +
+        ` drain in a different direction than drawn: the aerial elevation data sees a gable, shed or split slope where this plan draws a hip.` +
         (both.length ? ` A separate read of the aerial photo draws a roof line through ${both.join(", ")} too — two independent sources put a crease there.` : ""),
-      "The outer dimensions and the total area are unaffected; the interior lines in those spots are the drawing\u2019s assumption, not a measurement.",
     );
+    if (layoutUnusable) {
+      reasons.push(
+        "That is too much of the roof for the line layout to be trusted: the ridge, hip, valley and rake lengths must NOT be used to order trim, ridge vent or flashing — measure those on site.",
+        "The total area and the outer dimensions are affected far less and remain usable with the normal waste allowance.",
+      );
+    } else if (layoutFlagged) {
+      reasons.push(
+        "Part of the roof is drawn the wrong way round, so the line layout is unreliable — check the ridge, hip, valley and rake lengths against the aerial view before ordering trim.",
+        "The total area and the outer dimensions are affected far less.",
+      );
+    } else {
+      reasons.push(
+        "The outer dimensions and the total area are unaffected; the interior lines in those spots are the drawing\u2019s assumption, not a measurement.",
+      );
+    }
   }
 
   if (input.nestedOutlines) {
@@ -205,15 +258,15 @@ export function assessRoof(input: {
   }
 
   const confidence: RoofConfidence =
-    geometryBad || (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0
-      ? geometryBad
-        ? "low"
-        : "medium"
-      : input.cannotValidate || share == null
+    geometryBad || layoutUnusable
+      ? "low"
+      : (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0 || layoutFlagged
         ? "medium"
-        : errorCodes.length > 0
+        : input.cannotValidate || share == null
           ? "medium"
-          : "high";
+          : errorCodes.length > 0
+            ? "medium"
+            : "high";
 
   if (confidence === "medium" && reasons.length === 0) {
     reasons.push(
@@ -223,7 +276,7 @@ export function assessRoof(input: {
     );
   }
 
-  return { confidence, drawable: true, estimable: !geometryBad, inferredShare, reasons };
+  return { confidence, drawable: true, estimable: !geometryBad, footageReliable: !layoutFlagged, inferredShare, reasons };
 }
 
 /** One short line for a badge. */
