@@ -17,7 +17,7 @@ import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { buildRoofV2, measureCoverage } from "@/lib/roofRecon/reconV2";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
-import { refineModelWithClusters } from "@/lib/roofRecon/refineClusters";
+import { applyRoofSurgeries } from "@/lib/roofRecon/surgeries";
 import { areaOf, type FootprintPoint } from "@/lib/roofRecon/footprint";
 import { validateRoofInvariants } from "@/lib/roofDiagram/validate";
 import { loadFixture, type FixtureMeta } from "@/../scripts/qa/roof/fixture";
@@ -107,45 +107,22 @@ function run(h: H): { refined: RoofModel; origin: { lat: number; lng: number } }
   if (sp.source !== "measured") { console.log(`
 === ${h.name}: pitch source ${sp.source} — refinement skipped (panels or unmeasurable)`); return null; }
   const before = planStats(rebuilt);
-  const res = refineModelWithClusters({
+  const res = applyRoofSurgeries({
     model: rebuilt,
     measurement: meas,
     registeredStructures: new Set(transforms.keys()),
-    structurePitch12: sp.pitch12,
     structureRings: new Map(kept.map((k, i) => [i, k.ring as FootprintPoint[]])),
-    debugSink: (info) => {
-      if (!process.env.REGIONS) return;
-      const xs = info.outline.map((pp) => pp.x), ys = info.outline.map((pp) => pp.y);
-      const [x0, x1, y0, y1] = [Math.min(...xs) - 3, Math.max(...xs) + 3, Math.min(...ys) - 3, Math.max(...ys) + 3];
-      const W2 = 900, H3 = Math.round((W2 * (y1 - y0)) / (x1 - x0));
-      const P = (pp: FootprintPoint) => `${(((pp.x - x0) / (x1 - x0)) * W2).toFixed(1)},${((1 - (pp.y - y0) / (y1 - y0)) * H3).toFixed(1)}`;
-      const HUES = [0, 120, 210, 45, 285, 165, 330, 90, 240, 15, 135, 300, 60, 180];
-      let svg = `<polygon points="${info.outline.map(P).join(" ")}" fill="none" stroke="#000" stroke-width="2"/>`;
-      for (const r of info.regions) {
-        svg += `<polygon points="${r.ring.map(P).join(" ")}" fill="hsl(${HUES[r.wedge % HUES.length]} 85% 60%)" fill-opacity="0.5" stroke="#333" stroke-width="0.7"/>`;
-        const cx = r.ring.reduce((s2, pp) => s2 + pp.x, 0) / r.ring.length;
-        const cy = r.ring.reduce((s2, pp) => s2 + pp.y, 0) / r.ring.length;
-        svg += `<text x="${P({ x: cx, y: cy }).split(",")[0]}" y="${P({ x: cx, y: cy }).split(",")[1]}" font-size="11" font-family="monospace" text-anchor="middle">${info.wedges[r.wedge].label}</text>`;
-      }
-      for (const [wi, w] of info.wedges.entries()) {
-        const a = { x: w.anchor.x + w.tmin * w.dir.x, y: w.anchor.y + w.tmin * w.dir.y };
-        const b = { x: w.anchor.x + w.tmax * w.dir.x, y: w.anchor.y + w.tmax * w.dir.y };
-        svg += `<line x1="${P(a).split(",")[0]}" y1="${P(a).split(",")[1]}" x2="${P(b).split(",")[0]}" y2="${P(b).split(",")[1]}" stroke="hsl(${HUES[wi % HUES.length]} 85% 40%)" stroke-width="3" stroke-dasharray="6 3"/>`;
-      }
-      const fn = resolve(OUT, `regions-${h.name}-${info.prefix}.svg`);
-      writeFileSync(fn, `<svg xmlns="http://www.w3.org/2000/svg" width="${W2}" height="${H3}"><rect width="100%" height="100%" fill="#fff"/>${svg}<text x="6" y="14" font-size="12" font-family="monospace">${info.stopped ?? "ok"}</text></svg>`);
-      console.log(`  regions svg: ${fn}`);
-    },
   });
   const after = planStats(res.model);
   console.log(`\n=== ${h.name} ===`);
   for (const r of res.report) {
     console.log(
-      `  structure ${r.prefix}: source=${r.source} · facets ${r.facetsBefore}→${r.facetsAfter}` +
-        (r.merges.length ? ` · merges: ${r.merges.map((m) => `[${m.cluster.join("+")}]@${m.pitch12.toFixed(2)}`).join(" ")}` : "") +
-        (r.gables.length ? ` · gables: ${r.gables.join(",")}` : "") +
-        (r.stopped ? ` · STOPPED: ${r.stopped}` : ""),
+      `  structure ${r.prefix}: facets ${r.facetsBefore}→${r.facetsAfter}` +
+        (r.gables.length ? ` · gables: ${r.gables.map((g) => `${g.facet}→[${g.absorbedInto.join(",")}]`).join(" ")}` : "") +
+        (r.merges.length ? ` · merges: ${r.merges.map((m) => m.faces.join("+")).join(" ")}` : ""),
     );
+    for (const rf of r.refused) console.log(`    refused ${rf.facet}: ${rf.reason}`);
+    for (const u of r.unrecognised) console.log(`    UNRECOGNISED ${u.facet}: dsm ${u.dsmAz.toFixed(0)}° vs face ${u.faceAz.toFixed(0)}° (Δ${u.diffDeg.toFixed(0)}°)`);
   }
   const rep = validateRoofInvariants(res.model);
   console.log(

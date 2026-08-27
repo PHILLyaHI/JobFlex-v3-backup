@@ -167,6 +167,13 @@ export interface MeasurementProvenance {
    */
   instantMissing?: { reason: string; pendingOrderId?: string };
   /**
+   * Facets whose trusted DSM azimuth disagrees with their drawn drain by more
+   * than the clustering tolerance: topology the pipeline KNOWS it has not
+   * reproduced (gables it could not convert, pent wings, split slopes). The
+   * open case list, filled from the field instead of from the head.
+   */
+  unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
+  /**
    * Set when EagleView shipped NESTED structure outlines (a sub-roof drawn as
    * a sibling): this much plan area is counted twice — in our drawn total AND
    * in Instant's own totals.areaSqft, which is the plain sum of structure

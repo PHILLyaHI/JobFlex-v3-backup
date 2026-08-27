@@ -67,6 +67,7 @@ import { deleteBlob, isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { buildReconModel, type ReconBuild, type ReconBuildInput } from "@/lib/roofReconBuild";
 import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled, type ReconV2Structure } from "@/lib/roofRecon/reconV2";
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
+import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
@@ -423,6 +424,8 @@ interface Geometry {
   structures?: StructureProvenance[];
   /** V2 paths: EagleView shipped nested outlines — area double-counts, both sides. */
   nestedOutlines?: { overlapSqft: number; pairs: string[] };
+  /** V2 paths: facets whose measured drain the drawing does not reproduce. */
+  unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   source: MeasurementSource;
   origin: LatLng | null;
 }
@@ -477,6 +480,7 @@ function resolveGeometry(
           pitchSource: v2.pitchSource,
           structures: v2.structures,
           ...(v2.nestedOutlines ? { nestedOutlines: v2.nestedOutlines } : {}),
+          ...(v2.unrecognisedFacets ? { unrecognisedFacets: v2.unrecognisedFacets } : {}),
         };
       }
       v2Fallthrough = { reason: "V2 could not build a usable contour or skeleton from this outline" };
@@ -537,6 +541,7 @@ function provenanceOf(
     instantReuse?: { requestId: string; how: "stored" | "recovered" };
     structures?: StructureProvenance[];
     nestedOutlines?: { overlapSqft: number; pairs: string[] };
+    unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -568,6 +573,7 @@ function provenanceOf(
       ...(notes?.instantReuse ? { instantReuse: notes.instantReuse } : {}),
       ...(notes?.structures?.length ? { structures: notes.structures } : {}),
       ...(notes?.nestedOutlines ? { nestedOutlines: notes.nestedOutlines } : {}),
+      ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
       pixelSizeM: model.provenance?.pixelSizeM,
@@ -947,6 +953,7 @@ function buildV2Geometry(
   pitchSource: PitchSourceProvenance;
   structures: StructureProvenance[];
   nestedOutlines?: { overlapSqft: number; pairs: string[] };
+  unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
 } | null {
   const first = buildRoofV2({
     instant,
@@ -1020,6 +1027,9 @@ function buildV2Geometry(
     pitchOverride12: sp.pitch12,
   });
   const model = rebuilt.model ?? first.model;
+  // The unrecognised-case detector: what the drawing did NOT reproduce. Runs
+  // on the rebuilt model with the same measurement; geometry untouched.
+  const unrecognised = detectUnrecognisedFacets(model, measured);
   return {
     model,
     registration: {
@@ -1037,6 +1047,7 @@ function buildV2Geometry(
     },
     structures,
     ...(nestedOutlines ? { nestedOutlines } : {}),
+    ...(unrecognised.length ? { unrecognisedFacets: unrecognised } : {}),
   };
 }
 
@@ -1285,7 +1296,7 @@ export async function measureRoofInstant(
     roofRegions = regions;
   }
 
-  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
 
   // Chimneys: DSM posts on the RAW reconstruction (the rasters' frame — the
   // calibrated model stays in it, so no transform is needed) + vision boxes on
@@ -1347,6 +1358,7 @@ export async function measureRoofInstant(
       ...(instantReuse ? { instantReuse } : {}),
       ...(structures?.length ? { structures } : {}),
       ...(nestedOutlines ? { nestedOutlines } : {}),
+      ...(unrecognisedFacets?.length ? { unrecognisedFacets } : {}),
     }),
   };
 
