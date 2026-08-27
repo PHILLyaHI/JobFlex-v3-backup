@@ -1756,6 +1756,13 @@ model InstantOrder {
   status         String   @default("pending")
   // The parsed InstantRoofData once retrieved; null while pending/failed.
   instantJson    String?
+  // The response body EXACTLY as EagleView sent it, kept because the parser
+  // reads 31 paths and drops the rest — every field's confidence, the
+  // roof-material polygon, the occlusion classifiers. Two paid lookups were
+  // already lost this way and can never be re-examined. One row per paid
+  // order, so this is the audit trail of what was actually bought; null for
+  // orders placed before 2026-08-28 and for ones that never completed.
+  instantRawJson String?
   error          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

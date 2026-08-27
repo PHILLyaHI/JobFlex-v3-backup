@@ -662,6 +662,71 @@ const pdRing = (geom: unknown): Array<{ lat: number; lng: number }> | null => {
   return pts.length >= 3 ? pts : null;
 };
 
+/**
+ * Every Property Data key we have ever SEEN — read or deliberately left alone —
+ * catalogued from a full nine-pack capture of 419 Prairie Ridge Ln on
+ * 2026-08-23 (the only raw body that survived; see ROOF-STATE). Anything
+ * arriving outside these sets is NEW, and `unknownPdKeys` says so in the log.
+ *
+ * This exists because the parser reads 31 paths through a 5-key inline cast and
+ * silently drops the rest: without this check, EagleView could start returning
+ * facet geometry tomorrow and nothing would notice. The sets are deliberately
+ * generous — the point is to surface the genuinely new, not to nag about the
+ * fields we already decided not to read.
+ */
+const PD_SEEN_ROOT = new Set([
+  // read
+  "request", "structures", "response_address", "response_coordinates", "imagery",
+  // seen, not read — property-level products (useful for sales, not geometry)
+  "input", "property_images", "pool", "trampoline", "info",
+  "property_driveway_condition_rating", "property_lawn_condition_rating",
+  "property_fence_presence", "property_fence_material_combustibility",
+  "property_yard_debris", "property_accessory_structure_roof_condition_rating",
+]);
+const PD_SEEN_STRUCTURE = new Set([
+  "roof", "structure_eave_height", "structure_geometry", "structure_footprint_sqft",
+  "structure_chimney_presence",
+  "structure_images", "structure_wildfire_mitigation_rating", "structure_setback",
+  "structure_hail_vulnerability_rating", "structure_hail_loss_severity_rating",
+  "structure_vegetation_setback", "structure_density_zones", "structure_count_zones",
+  "structure_wood_deck_presence", "structure_wildfire_vulnerability_rating",
+  "vegetation_coverage_zones",
+]);
+const PD_SEEN_ROOF = new Set([
+  "structure_roof_area", "structure_roof_area_squares", "structure_roof_predominant_pitch",
+  "structure_roof_facet_count", "structure_roof_shape", "structure_roof_material_primary",
+  "structure_roof_condition_rating", "structure_roof_age",
+  "structure_roof_solar_panel_presence", "structure_roof_air_conditioner_count",
+  "structure_roof_occlusion_classification", "structure_tree_overhang_classification",
+  "structure_roof_materials", "structure_roof_condition_elements",
+  "structure_roof_extension", "structure_roof_evaporative_cooler_count",
+]);
+const PD_SEEN_IMAGE_META = new Set(["bbox", "view", "cardinal_direction", "masked", "shot_date"]);
+
+/**
+ * Key paths in this response that our catalogue has never seen. Empty is the
+ * normal answer; anything else is EagleView shipping something new, and the
+ * first place facet geometry would appear if it ever arrives.
+ */
+export function unknownPdKeys(raw: unknown): string[] {
+  const out: string[] = [];
+  const r = (raw ?? {}) as Record<string, unknown>;
+  for (const k of Object.keys(r)) if (!PD_SEEN_ROOT.has(k)) out.push(k);
+  const structures = Array.isArray(r.structures) ? r.structures : [];
+  structures.forEach((entry, i) => {
+    const st = (entry ?? {}) as Record<string, unknown>;
+    for (const k of Object.keys(st)) if (!PD_SEEN_STRUCTURE.has(k)) out.push(`structures[${i}].${k}`);
+    const roof = (st.roof ?? {}) as Record<string, unknown>;
+    for (const k of Object.keys(roof)) if (!PD_SEEN_ROOF.has(k)) out.push(`structures[${i}].roof.${k}`);
+  });
+  const imagery = (r.imagery ?? {}) as Record<string, { metadata?: Record<string, unknown> }>;
+  const firstImg = Object.values(imagery)[0];
+  for (const k of Object.keys(firstImg?.metadata ?? {})) {
+    if (!PD_SEEN_IMAGE_META.has(k)) out.push(`imagery.*.metadata.${k}`);
+  }
+  return out;
+}
+
 function parseInstantResult(raw: PdResult, requestId: string, input: EvOrderInput, completeAddress: string): InstantRoofData {
   const structures: InstantStructure[] = (Array.isArray(raw.structures) ? raw.structures : []).map(
     (entry) => {
@@ -814,6 +879,21 @@ export async function pollInstantResult(
   input: EvOrderInput,
   completeAddress: string,
   maxWaitMs = 30_000,
+  opts: {
+    /**
+     * The response body EXACTLY as EagleView sent it, handed over the moment
+     * the order completes, before anything is parsed away.
+     *
+     * The parser reads 31 paths and drops the rest — including every field's
+     * `confidence`, the roof-material polygon and the occlusion classifiers —
+     * and until this callback existed the raw body went out of scope and was
+     * gone. Two paid lookups can never be re-examined because of that. A caller
+     * that can persist it SHOULD: it is the only audit trail of what was
+     * actually bought, and the only way a new EagleView field (facet geometry,
+     * one day) can be noticed after the fact rather than never.
+     */
+    onRaw?: (body: string, unknownKeys: string[]) => void;
+  } = {},
 ): Promise<InstantRoofData | null> {
   const token = await getToken();
   const deadline = Date.now() + maxWaitMs;
@@ -827,9 +907,31 @@ export async function pollInstantResult(
       signal: AbortSignal.timeout(10_000),
     });
     if (!rr.ok && rr.status !== 202) throw new Error(`Property Data result failed (${rr.status})`);
-    const data = (await rr.json().catch(() => null)) as PdResult | null;
+    // Read the body as TEXT first: `res.json()` would leave nothing to keep.
+    const body = await rr.text().catch(() => "");
+    let data: PdResult | null = null;
+    try {
+      data = body ? (JSON.parse(body) as PdResult) : null;
+    } catch {
+      data = null;
+    }
     const status = String(data?.request?.status ?? "");
-    if (/complete/i.test(status)) return parseInstantResult(data as PdResult, requestId, input, completeAddress);
+    if (/complete/i.test(status)) {
+      const unknown = unknownPdKeys(data);
+      if (unknown.length) {
+        console.warn(
+          "[eagleview] Property Data order %s returned %d field(s) this codebase has never seen: %s — check whether they carry geometry before ignoring them",
+          requestId, unknown.length, unknown.join(", "),
+        );
+      }
+      try {
+        opts.onRaw?.(body, unknown);
+      } catch (err) {
+        // keeping the body is a convenience; it must never fail a paid lookup
+        console.warn("[eagleview] raw-body handler threw:", err instanceof Error ? err.message : err);
+      }
+      return parseInstantResult(data as PdResult, requestId, input, completeAddress);
+    }
     if (/fail|error|reject/i.test(status)) throw new Error(`Property Data request ${status}`);
   } while (Date.now() < deadline);
   return null;
@@ -845,9 +947,10 @@ export async function pollInstantResult(
 export async function requestInstantRoofData(
   input: EvOrderInput,
   packs: PdPack[] = PD_FIGURE_PACKS,
+  opts: { onRaw?: (body: string, unknownKeys: string[]) => void } = {},
 ): Promise<InstantRoofData> {
   const { requestId, completeAddress } = await submitInstantOrder(input, packs);
-  const parsed = await pollInstantResult(requestId, input, completeAddress);
+  const parsed = await pollInstantResult(requestId, input, completeAddress, 30_000, opts);
   if (!parsed) {
     throw new Error(
       `Property Data is taking longer than expected — try again in a minute. (order ${requestId} is still processing and can be fetched later)`,

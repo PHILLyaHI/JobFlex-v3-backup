@@ -1270,10 +1270,18 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
     });
     if (pending) {
       try {
-        const got = await pollInstantResult(pending.requestId, input, instantCompleteAddress(input));
+        // Keep the body EagleView actually sent, not only what we parse out of
+        // it — see InstantOrder.instantRawJson.
+        let rawBody: string | null = null;
+        const got = await pollInstantResult(pending.requestId, input, instantCompleteAddress(input), 30_000, {
+          onRaw: (body) => { rawBody = body; },
+        });
         if (got) {
           await db.instantOrder
-            .update({ where: { id: pending.id }, data: { status: "complete", instantJson: JSON.stringify(got) } })
+            .update({
+              where: { id: pending.id },
+              data: { status: "complete", instantJson: JSON.stringify(got), ...(rawBody ? { instantRawJson: rawBody } : {}) },
+            })
             .catch(() => {});
           return { instant: got, reuse: { requestId: pending.requestId, how: "recovered" } };
         }
@@ -1302,8 +1310,11 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
     console.error("[roofMeasurement] COULD NOT RECORD instant order %s — a poll timeout will orphan it:", requestId, err);
   }
   let got: InstantRoofData | null;
+  let rawBody: string | null = null;
   try {
-    got = await pollInstantResult(requestId, input, completeAddress);
+    got = await pollInstantResult(requestId, input, completeAddress, 30_000, {
+      onRaw: (body) => { rawBody = body; },
+    });
   } catch (err) {
     if (isTerminalPdFailure(err)) {
       await db.instantOrder
@@ -1318,7 +1329,10 @@ async function obtainInstant(input: EvOrderInput, organizationId: string, forceN
     );
   }
   await db.instantOrder
-    .update({ where: { requestId }, data: { status: "complete", instantJson: JSON.stringify(got) } })
+    .update({
+      where: { requestId },
+      data: { status: "complete", instantJson: JSON.stringify(got), ...(rawBody ? { instantRawJson: rawBody } : {}) },
+    })
     .catch(() => {});
   return { instant: got };
 }
