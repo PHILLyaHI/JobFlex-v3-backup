@@ -285,15 +285,33 @@ export function validateRoof(model) {
   if (!out.some((r) => r.id === 'R10' && r.level === 'error'))
     ok('R10', 'вода с каждой грани стекает наружу');
 
-  // ─ 9. Ridge горизонтален и лежит на верхе обеих граней
+  // ─ 9. Ridge горизонтален и является верхней кромкой В СВОЁМ ПРОЛЁТЕ.
+  // Раньше конёк сверялся с максимумом ВСЕЙ грани: L-образная грань с двумя
+  // крыльями разной ширины (два конька на разных высотах) всегда «проваливала»
+  // нижний конёк, хотя геометрия верна. Пролёт конька — интервал проекций его
+  // концов на его же ось; кольцо грани отсекается до этого интервала, z на
+  // границах отсечения интерполируется по ребру.
   for (const e of byType.ridge) {
+    const ux = e.b[0] - e.a[0], uy = e.b[1] - e.a[1];
+    const ul = Math.hypot(ux, uy) || 1;
+    const sOf = (p) => ((p[0] - e.a[0]) * ux + (p[1] - e.a[1]) * uy) / ul;
+    const topZ = Math.max(e.a[2], e.b[2]);
     for (const f of e.facets) {
-      const maxZ = Math.max(...f.pts3.map((p) => p[2]));
-      if (Math.abs(Math.max(e.a[2], e.b[2]) - maxZ) > EPS_Z)
-        err('R11', `${f.id}: конёк не является верхней кромкой грани`);
+      let spanMax = -Infinity;
+      for (let i = 0; i < f.pts3.length; i++) {
+        const p = f.pts3[i], q = f.pts3[(i + 1) % f.pts3.length];
+        const sp = sOf(p), sq = sOf(q);
+        const lo = Math.max(0, Math.min(sp, sq));
+        const hi = Math.min(ul, Math.max(sp, sq));
+        if (hi < lo) continue;
+        const zAt = (t) => (Math.abs(sq - sp) < 1e-9 ? Math.max(p[2], q[2]) : p[2] + ((t - sp) / (sq - sp)) * (q[2] - p[2]));
+        spanMax = Math.max(spanMax, zAt(lo), zAt(hi));
+      }
+      if (spanMax > topZ + EPS_Z)
+        err('R11', `${f.id}: конёк не является верхней кромкой грани в своём пролёте`);
     }
   }
-  if (!out.some((r) => r.id === 'R11')) ok('R11', 'коньки горизонтальны и лежат по верху граней');
+  if (!out.some((r) => r.id === 'R11')) ok('R11', 'коньки горизонтальны и лежат по верху граней в своих пролётах');
 
   // ─ 10. Правило угла в плане: θ от карниза A = arctan(pB / pA)
   for (const e of [...byType.hip, ...byType.valley]) {
@@ -309,13 +327,21 @@ export function validateRoof(model) {
     const dl = Math.hypot(dir[0], dir[1]) || 1;
     const cos = Math.abs((eaveA[0] / el) * (dir[0] / dl) + (eaveA[1] / el) * (dir[1] / dl));
     const observed = deg(Math.acos(Math.min(1, cos)));
-    const predicted = deg(Math.atan(pB / pA));
+    // arctan(pB/pA) — частный случай ПРЯМОГО угла контура. В общем виде гребень
+    // — геометрическое место равных высот: sin(α)·pA = sin(γ−α)·pB, где γ —
+    // внутренний угол между карнизами (180° минус угол между градиентами).
+    // На срезанном угле 135° при равных уклонах это даёт 67.5° — половину угла
+    // контура, а не 45°.
+    const gdot = A.plane.a * B.plane.a + A.plane.b * B.plane.b;
+    const gnorm = Math.hypot(A.plane.a, A.plane.b) * Math.hypot(B.plane.a, B.plane.b) || 1;
+    const gamma = Math.PI - Math.acos(Math.max(-1, Math.min(1, gdot / gnorm)));
+    const predicted = deg(Math.atan2(pB * Math.sin(gamma), pA + pB * Math.cos(gamma)));
     const diff = Math.min(Math.abs(observed - predicted), Math.abs(180 - observed - predicted));
     if (diff > EPS_ANGLE_DEG)
-      err('R12', `${e.type} между ${A.id}(${pA.toFixed(1)}/12) и ${B.id}(${pB.toFixed(1)}/12): угол в плане ${observed.toFixed(1)}°, по правилу arctan(pB/pA) должен быть ${predicted.toFixed(1)}°`);
+      err('R12', `${e.type} между ${A.id}(${pA.toFixed(1)}/12) и ${B.id}(${pB.toFixed(1)}/12): угол в плане ${observed.toFixed(1)}°, по пересечению плоскостей должен быть ${predicted.toFixed(1)}° (угол контура ${deg(gamma).toFixed(0)}°)`);
   }
   if (!out.some((r) => r.id === 'R12'))
-    ok('R12', 'углы вальм/ендов в плане соответствуют уклонам (45° при равных)');
+    ok('R12', 'углы вальм/ендов в плане соответствуют уклонам и углу контура (45° при равных уклонах на прямом углу)');
 
   // ─ 11. Hip на выпуклом углу, valley на вогнутом
   const fpOrient = shoelace(fp) > 0 ? 1 : -1;

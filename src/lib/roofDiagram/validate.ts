@@ -736,16 +736,33 @@ export function validateRoofModel(
     const b = pointsById.get(l.bId);
     if (!a || !b) continue;
     const topZ = Math.max(a.z, b.z);
+    // Judged WITHIN the ridge's own span (see validateRoofInvariants R11): a
+    // facet spanning two wings carries two ridges at two heights legitimately.
+    const ux = b.x - a.x;
+    const uy = b.y - a.y;
+    const ul = Math.hypot(ux, uy) || 1;
+    const sOf = (px: number, py: number) => ((px - a.x) * ux + (py - a.y) * uy) / ul;
     for (const fg of owners.get(l.id) ?? []) {
       if (fg.ring === null) continue;
       const label = fg.face.designator || fg.face.id;
-      const maxZ = fg.ring.reduce((m, p) => Math.max(m, p.z), -Infinity);
-      if (Math.abs(topZ - maxZ) > tol.epsZ) {
-        err("R11", `${label}: ridge ${l.id} is not the facet's top edge`);
+      let spanMax = -Infinity;
+      for (let i = 0; i < fg.ring.length; i++) {
+        const p = fg.ring[i];
+        const q = fg.ring[(i + 1) % fg.ring.length];
+        const sp = sOf(p.x, p.y);
+        const sq = sOf(q.x, q.y);
+        const lo = Math.max(0, Math.min(sp, sq));
+        const hi = Math.min(ul, Math.max(sp, sq));
+        if (hi < lo) continue;
+        const zAt = (t: number) => (Math.abs(sq - sp) < 1e-9 ? Math.max(p.z, q.z) : p.z + ((t - sp) / (sq - sp)) * (q.z - p.z));
+        spanMax = Math.max(spanMax, zAt(lo), zAt(hi));
+      }
+      if (spanMax > topZ + tol.epsZ) {
+        err("R11", `${label}: ridge ${l.id} is not the facet's top edge within its own span`);
       }
     }
   }
-  if (none("R11")) ok("R11", "ridges are level and lie along facet tops");
+  if (none("R11")) ok("R11", "ridges are level and lie along facet tops within their spans");
 
   // ── R12: crease plan angle obeys arctan(pB/pA) ────────────────────────────
   for (const l of model.lines) {
@@ -770,17 +787,22 @@ export function validateRoofModel(
     const dl = Math.hypot(dx, dy) || 1;
     const cos = Math.abs((ex / el) * (dx / dl) + (ey / el) * (dy / dl));
     const observed = deg(Math.acos(Math.min(1, cos)));
-    const predicted = deg(Math.atan(pB / pA));
+    // General-corner rule (see validateRoofInvariants R12): γ is the interior
+    // eave angle; arctan(pB/pA) is its right-angle special case.
+    const gdot = A.plane.a * B.plane.a + A.plane.b * B.plane.b;
+    const gnorm = Math.hypot(A.plane.a, A.plane.b) * Math.hypot(B.plane.a, B.plane.b) || 1;
+    const gamma = Math.PI - Math.acos(Math.max(-1, Math.min(1, gdot / gnorm)));
+    const predicted = deg(Math.atan2(pB * Math.sin(gamma), pA + pB * Math.cos(gamma)));
     const diff = Math.min(Math.abs(observed - predicted), Math.abs(180 - observed - predicted));
     const labelA = A.face.designator || A.face.id;
     const labelB = B.face.designator || B.face.id;
     const msg = `${cls} between ${labelA} (${pA.toFixed(1)}/12) and ${labelB} (${pB.toFixed(
       1,
-    )}/12): plan angle ${observed.toFixed(1)}°, arctan(pB/pA) predicts ${predicted.toFixed(1)}°`;
+    )}/12): plan angle ${observed.toFixed(1)}°, the plane intersection predicts ${predicted.toFixed(1)}° (eave corner ${deg(gamma).toFixed(0)}°)`;
     if (diff > tol.angleErr) err("R12", msg);
     else if (diff > tol.angleWarn) warn("R12", msg);
   }
-  if (none("R12")) ok("R12", "hip/valley plan angles match the pitches (45° at equal pitches)");
+  if (none("R12")) ok("R12", "hip/valley plan angles match the pitches and the eave corner (45° at equal pitches on a square corner)");
 
   // ── R13: hip from a convex footprint corner, valley from a reflex one ─────
   if (chainFailed) {
@@ -1339,14 +1361,34 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
   }
   if (!out.some((r) => r.id === "R10" && r.level === "error")) ok("R10", "вода с каждой грани стекает наружу");
 
-  // R11 — a ridge is the top edge of both facets
+  // R11 — a ridge is the top edge of both facets WITHIN ITS OWN SPAN. The
+  // whole-facet maximum failed every L-shaped facet with two wings of unequal
+  // width (two ridges at two heights). The span is the projection interval of
+  // the ridge's endpoints on its own axis; the facet ring is clipped to it and
+  // z is interpolated at the clip points.
   for (const e of byType.ridge) {
+    const ux = e.b[0] - e.a[0];
+    const uy = e.b[1] - e.a[1];
+    const ul = Math.hypot(ux, uy) || 1;
+    const sOf = (p: IPt3) => ((p[0] - e.a[0]) * ux + (p[1] - e.a[1]) * uy) / ul;
+    const topZ = Math.max(e.a[2], e.b[2]);
     for (const f of e.facets) {
-      const maxZ = Math.max(...f.pts3.map((p) => p[2]));
-      if (Math.abs(Math.max(e.a[2], e.b[2]) - maxZ) > INV_EPS_Z) err("R11", f.id + ": конёк не является верхней кромкой грани");
+      let spanMax = -Infinity;
+      for (let i = 0; i < f.pts3.length; i++) {
+        const p = f.pts3[i];
+        const q = f.pts3[(i + 1) % f.pts3.length];
+        const sp = sOf(p);
+        const sq = sOf(q);
+        const lo = Math.max(0, Math.min(sp, sq));
+        const hi = Math.min(ul, Math.max(sp, sq));
+        if (hi < lo) continue;
+        const zAt = (t: number) => (Math.abs(sq - sp) < 1e-9 ? Math.max(p[2], q[2]) : p[2] + ((t - sp) / (sq - sp)) * (q[2] - p[2]));
+        spanMax = Math.max(spanMax, zAt(lo), zAt(hi));
+      }
+      if (spanMax > topZ + INV_EPS_Z) err("R11", f.id + ": конёк не является верхней кромкой грани в своём пролёте");
     }
   }
-  if (!out.some((r) => r.id === "R11")) ok("R11", "коньки горизонтальны и лежат по верху граней");
+  if (!out.some((r) => r.id === "R11")) ok("R11", "коньки горизонтальны и лежат по верху граней в своих пролётах");
 
   // R12 — plan angle of a hip/valley follows arctan(pB / pA)
   for (const e of [...byType.hip, ...byType.valley]) {
@@ -1362,15 +1404,22 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     const dl = Math.hypot(dir[0], dir[1]) || 1;
     const cos = Math.abs((eaveA[0] / el) * (dir[0] / dl) + (eaveA[1] / el) * (dir[1] / dl));
     const observed = invDeg(Math.acos(Math.min(1, cos)));
-    const predicted = invDeg(Math.atan(pB / pA));
+    // General corner: the crease is the equal-height locus, sin(α)·pA =
+    // sin(γ−α)·pB with γ the interior angle between the eaves (180° minus the
+    // angle between the plan gradients). arctan(pB/pA) is its γ=90° special
+    // case; a 135° cut corner at equal pitches predicts 67.5°, not 45°.
+    const gdot = A.plane.a * B.plane.a + A.plane.b * B.plane.b;
+    const gnorm = Math.hypot(A.plane.a, A.plane.b) * Math.hypot(B.plane.a, B.plane.b) || 1;
+    const gamma = Math.PI - Math.acos(Math.max(-1, Math.min(1, gdot / gnorm)));
+    const predicted = invDeg(Math.atan2(pB * Math.sin(gamma), pA + pB * Math.cos(gamma)));
     const diff = Math.min(Math.abs(observed - predicted), Math.abs(180 - observed - predicted));
     if (diff > INV_EPS_ANGLE_DEG)
       err(
         "R12",
-        e.type + " между " + A.id + "(" + pA.toFixed(1) + "/12) и " + B.id + "(" + pB.toFixed(1) + "/12): угол в плане " + observed.toFixed(1) + "°, по правилу arctan(pB/pA) должен быть " + predicted.toFixed(1) + "°",
+        e.type + " между " + A.id + "(" + pA.toFixed(1) + "/12) и " + B.id + "(" + pB.toFixed(1) + "/12): угол в плане " + observed.toFixed(1) + "°, по пересечению плоскостей должен быть " + predicted.toFixed(1) + "° (угол контура " + invDeg(gamma).toFixed(0) + "°)",
       );
   }
-  if (!out.some((r) => r.id === "R12")) ok("R12", "углы вальм/ендов в плане соответствуют уклонам (45° при равных)");
+  if (!out.some((r) => r.id === "R12")) ok("R12", "углы вальм/ендов в плане соответствуют уклонам и углу контура (45° при равных уклонах на прямом углу)");
 
   // R13 — hips on convex corners, valleys on concave
   const fpOrient = invShoelace(fp) > 0 ? 1 : -1;
