@@ -95,7 +95,7 @@ export function assessRoof(input: {
    * number came from, not a defect. Without it such a roof reads as low
    * confidence for a reason that is not its fault.
    */
-  pitchSource?: { source: "measured" | "instant"; reason: string; solarPanels?: boolean } | null;
+  pitchSource?: { source: "measured" | "instant"; reason: string; solarPanels?: boolean; trustedShare?: number } | null;
 }): RoofAssessment {
   const { coverage, errorCodes } = input;
   const reasons: string[] = [];
@@ -154,6 +154,14 @@ export function assessRoof(input: {
 
   if (input.cannotValidate) {
     reasons.push("This drawing could not be checked against the roof rules, so treat its figures as provisional.");
+  }
+
+  if (input.pitchSource?.source === "measured" && input.pitchSource.trustedShare != null && input.pitchSource.trustedShare < 0.7) {
+    // An honest basis line, not a warning: the measured facets AGREE (that is
+    // the gate now), the rest of the roof is under trees or otherwise unread.
+    reasons.push(
+      `The pitch was measured on the ${Math.round(input.pitchSource.trustedShare * 100)}% of the roof that reads clearly from above — the measured facets agree with each other; the rest is under trees or otherwise obscured.`,
+    );
   }
 
   if (input.pitchSource?.source === "instant") {

@@ -272,19 +272,46 @@ export function measurePitchFromDsm(input: MeasurePitchInput): PitchMeasurement 
 // ── one pitch for a structure ────────────────────────────────────────────────
 
 /**
- * The share of a roof that must be measurable before its measured pitch is
- * trusted over Instant's. Same figure as the drawing's coverage floor
- * (confidence.ts): under 70 % of the roof genuinely read, we are inferring the
- * rest, and inferring a pitch from a third of a roof is worse than taking the
- * one EagleView already published.
+ * RETIRED as the gate (2026-08-27) and kept only as the boundary of "measured
+ * on the whole roof" for messaging. As a gate, an area-share floor of 0.7
+ * rejected the measured pitch on 4 of 4 field houses (trust 55–65 % — trees
+ * and dormers eat 35–45 % of facet area on ordinary American housing) while
+ * the trusted subset was precise every time (validated to 0.1–0.2/12 against
+ * EagleView on the two agreeing houses). A gate that always fires, and is
+ * always wrong, is not protecting the number — it is turning the feature off.
+ * What actually predicts a good measurement is whether the trusted facets
+ * AGREE WITH EACH OTHER — see structurePitch.
  */
 export const MIN_TRUSTED_SHARE = 0.7;
+
+/**
+ * The trusted facets must agree among themselves for their mean to be printed:
+ * area-weighted IQR of their pitches at most this. The figure is
+ * sectionTolerance12's own 0.75 — the tolerance this file already uses for
+ * "these facets sit on the same slope" — reused per the §J rule (a quantity
+ * already in the problem, not a new constant). Category: absolute tolerance on
+ * a physical quantity (rise per 12 of run). Measured spreads: the four field
+ * houses sit at IQR 0.10–0.39 (2× margin); a genuinely mixed set (two slopes a
+ * few /12 apart) lands far above.
+ */
+export const CONSISTENT_IQR_12 = 0.75;
+/**
+ * Floor under the trusted subset itself, so a lone 15 sq ft sliver cannot
+ * carry the measurement (measured: 15 sq ft facets on 12629 read +1.3 to +2.4
+ * off their roof's cluster). One roofing square — the trade's own unit — and
+ * at least two facets, because agreement of one facet with itself is not
+ * evidence. Category: absolute floor on a physical quantity (plan area).
+ */
+export const MIN_TRUSTED_SQFT = 100;
+export const MIN_TRUSTED_FACETS = 2;
 
 export interface StructurePitch {
   pitch12: number;
   source: "measured" | "instant";
   /** Share of plan area whose facets fit to the DSM's noise floor. */
   trustedShare: number;
+  /** Area-weighted IQR of the trusted facets' pitches, when there were any. */
+  spreadIqr12?: number;
   reason: string;
 }
 
@@ -299,30 +326,90 @@ export interface StructurePitch {
  * pitches to unchanged geometry is exactly how a label comes to disagree with
  * its own shape, which is R04, the defect this rebuild exists to remove.
  *
- * When too little of the roof reads cleanly — a solar array, which the DSM sees
- * instead of the roof — the honest answer is Instant's published pitch with the
- * reason recorded, not a number averaged out of panels.
+ * The gate is CONSISTENCY, not coverage share: the trusted facets must agree
+ * among themselves (area-weighted IQR ≤ CONSISTENT_IQR_12) and jointly cover
+ * at least a roofing square in at least two facets. An area-share floor was
+ * tried first and rejected the measurement on 4 of 4 field houses whose
+ * trusted subsets were each precise — trees over 40 % of a roof are ordinary,
+ * not a sign of a bad measurement.
+ *
+ * `solarPanels` forces the Instant fallback REGARDLESS of consistency. On the
+ * one panelled fixture the trusted subset is actually consistent (IQR 0.14)
+ * and agrees with the published pitch to 0.13 — flush-mounted panels ride
+ * parallel to the roof — but nothing guarantees a mount is flush, and a tilted
+ * array is a plane too, so the honest source for a panelled roof stays the
+ * published figure with the reason recorded.
  */
-export function structurePitch(m: PitchMeasurement, instantPitch12: number | null): StructurePitch {
+export function structurePitch(
+  m: PitchMeasurement,
+  instantPitch12: number | null,
+  opts?: { solarPanels?: boolean },
+): StructurePitch {
   const trusted = m.facets.filter((f) => f.residualP50Ft <= DSM_NOISE_FLOOR_FT);
   const totalArea = m.facets.reduce((s, f) => s + f.planSqft, 0);
   const trustedArea = trusted.reduce((s, f) => s + f.planSqft, 0);
   const share = totalArea > 0 ? trustedArea / totalArea : 0;
-  if (trusted.length && share >= MIN_TRUSTED_SHARE) {
-    const pitch12 = trusted.reduce((s, f) => s + f.pitch12 * f.planSqft, 0) / trustedArea;
+
+  let spreadIqr12: number | undefined;
+  if (trusted.length >= 2) {
+    const sorted = [...trusted].sort((a, b) => a.pitch12 - b.pitch12);
+    const q = (frac: number): number => {
+      const target = trustedArea * frac;
+      let cum = 0;
+      for (const f of sorted) {
+        cum += f.planSqft;
+        if (cum >= target) return f.pitch12;
+      }
+      return sorted[sorted.length - 1].pitch12;
+    };
+    spreadIqr12 = q(0.75) - q(0.25);
+  }
+
+  if (opts?.solarPanels && instantPitch12 != null) {
+    return {
+      pitch12: instantPitch12,
+      source: "instant",
+      trustedShare: share,
+      ...(spreadIqr12 != null ? { spreadIqr12 } : {}),
+      reason:
+        "this roof carries solar panels, and the aerial elevation data measures the panels rather than the roof " +
+        "beneath them — the published pitch is used",
+    };
+  }
+
+  const consistent =
+    trusted.length >= MIN_TRUSTED_FACETS && trustedArea >= MIN_TRUSTED_SQFT && spreadIqr12 != null && spreadIqr12 <= CONSISTENT_IQR_12;
+  if (consistent) {
+    const pitch12 = trusted.reduce((s2, f) => s2 + f.pitch12 * f.planSqft, 0) / trustedArea;
     return {
       pitch12,
       source: "measured",
       trustedShare: share,
-      reason: `${(share * 100).toFixed(0)}% of the roof fits a plane to within ${DSM_NOISE_FLOOR_FT} ft; pitch is the area-weighted mean of those facets`,
+      spreadIqr12,
+      reason:
+        `${trusted.length} facets covering ${(share * 100).toFixed(0)}% of the roof fit planes to within ` +
+        `${DSM_NOISE_FLOOR_FT} ft and agree with each other to ${spreadIqr12!.toFixed(2)}/12; ` +
+        `pitch is their area-weighted mean`,
+    };
+  }
+  if (trusted.length && spreadIqr12 != null && spreadIqr12 > CONSISTENT_IQR_12) {
+    return {
+      pitch12: instantPitch12 ?? 0,
+      source: "instant",
+      trustedShare: share,
+      spreadIqr12,
+      reason:
+        `the facets that read cleanly disagree with each other (${spreadIqr12.toFixed(2)}/12 spread) — ` +
+        `the elevation data is describing more than one slope, so the published pitch is used`,
     };
   }
   return {
     pitch12: instantPitch12 ?? 0,
     source: "instant",
     trustedShare: share,
+    ...(spreadIqr12 != null ? { spreadIqr12 } : {}),
     reason:
-      `only ${(share * 100).toFixed(0)}% of the roof fits a plane — the elevation data is describing something on the roof ` +
-      `(solar panels, vegetation) rather than the roof, so the published pitch is used instead of one averaged out of it`,
+      `too little of the roof reads as a plane (${trusted.length} clean facet${trusted.length === 1 ? "" : "s"}, ` +
+      `${trustedArea.toFixed(0)} sq ft) to measure a pitch from — the published pitch is used`,
   };
 }

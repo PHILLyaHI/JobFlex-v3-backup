@@ -92,8 +92,8 @@ async function main() {
       const instantPitch = instant.totals?.predominantPitch ?? null;
       if (reg.applied) {
         const meas = measurePitchFromDsm({ model: first.model, mask: fx.mask, dsm: fx.dsm, transform: reg.transform, sectionTolerance12: 0.75 });
-        const sp = structurePitch(meas, instantPitch);
         const solar = instant.structures.some((st) => st.solarPanels === true);
+        const sp = structurePitch(meas, instantPitch, { solarPanels: solar });
         pitchSource = { source: sp.source, pitch12: sp.pitch12, trustedShare: sp.trustedShare, reason: sp.reason, ...(solar ? { solarPanels: true } : {}) };
         pitchNote = `${sp.pitch12.toFixed(2)}/12 ${sp.source}`;
         model = buildRoofV2({ instant, origin: fx.meta.origin, clusters, pitchOverride12: sp.pitch12 }).model ?? first.model;

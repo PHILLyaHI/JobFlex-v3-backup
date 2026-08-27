@@ -328,7 +328,7 @@ async function runOne(a: Addr): Promise<Row | { skipped: string; addr: string }>
           },
           sectionTolerance12: 0.75,
         });
-        const sp = structurePitch(m, ip);
+        const sp = structurePitch(m, ip, { solarPanels: instant.structures.some((st) => st.solarPanels === true) });
         pitch12 = sp.pitch12;
         pitchSrc = sp.source;
         trusted = `${(sp.trustedShare * 100).toFixed(0)}%`;

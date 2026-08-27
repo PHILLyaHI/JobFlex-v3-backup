@@ -994,7 +994,8 @@ function buildV2Geometry(
     transformFor: (id) => transforms.get(faceStructureIndex(id)) ?? null,
     sectionTolerance12: 0.75,
   });
-  const sp = structurePitch(measured, instantPitch);
+  const solar = instant.structures.some((st) => st.solarPanels === true);
+  const sp = structurePitch(measured, instantPitch, { solarPanels: solar });
   // Rebuilt at the pitch that was measured, so the drawn geometry and the
   // printed label are one number and R04 cannot fire.
   const rebuilt = buildRoofV2({
@@ -1004,7 +1005,6 @@ function buildV2Geometry(
     pitchOverride12: sp.pitch12,
   });
   const model = rebuilt.model ?? first.model;
-  const solar = instant.structures.some((st) => st.solarPanels === true);
   return {
     model,
     registration: {
