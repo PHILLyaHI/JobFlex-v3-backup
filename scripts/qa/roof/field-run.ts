@@ -276,15 +276,58 @@ async function runOne(a: Addr): Promise<Row | { skipped: string; addr: string }>
     if (!first.model || !contour) {
       problems.push(first.report.reasons[0] ?? "no model");
     } else {
-      const reg = registerContourToRaster({ contour, mask, dsm, groundElevFt: ground });
-      regTxt = reg.applied
-        ? `${reg.transform.dxFt.toFixed(1)},${reg.transform.dyFt.toFixed(1)},${reg.transform.thetaDeg.toFixed(1)}°`
+      // PER STRUCTURE, like the product path: the farmstead's barns sit outside
+      // the Solar tile, and pooled with the house they refused registration for
+      // the whole lot. Covered structures register on their own; uncovered ones
+      // are counted and named instead of dragging the rest.
+      // Keyed by usable-structure INDEX — synthesize stamps "s{i}:F{n}" into
+      // face ids; the designator letters rank by area across the whole lot.
+      const transforms = new Map<number, { dxFt: number; dyFt: number; thetaDeg: number }>();
+      const perStruct: string[] = [];
+      let uncoveredCount = 0;
+      for (const [ki, k] of keptInstant.entries()) {
+        // Register FIRST, then coverage on the moved ring — the georeference
+        // shift is exactly what registration removes.
+        const regK = registerContourToRaster({ contour: k.ring as FootprintPoint[], mask, dsm, groundElevFt: ground });
+        const radK = regK.applied ? (regK.transform.thetaDeg * Math.PI) / 180 : 0;
+        const ringCov = regK.applied
+          ? (k.ring as FootprintPoint[]).map((pt) => ({
+              x: pt.x * Math.cos(radK) - pt.y * Math.sin(radK) + regK.transform.dxFt,
+              y: pt.x * Math.sin(radK) + pt.y * Math.cos(radK) + regK.transform.dyFt,
+            }))
+          : (k.ring as FootprintPoint[]);
+        const covK = measureCoverage({ mask, dsm, groundElevFt: ground, rings: [ringCov] });
+        const coveredK = !!covK && covK.share >= 0.7;
+        if (!coveredK) {
+          uncoveredCount++;
+          perStruct.push(`${k.prefix}:${covK ? (covK.share * 100).toFixed(0) : "?"}%·uncovered`);
+          continue;
+        }
+        if (regK.applied) transforms.set(ki, regK.transform);
+        perStruct.push(`${k.prefix}:${(covK.share * 100).toFixed(0)}%·${regK.applied ? `IoU${((regK.iouAfter ?? 0) * 100).toFixed(0)}` : "refused"}`);
+      }
+      const applied = [...transforms.keys()];
+      const headlineIdx = applied.sort((x, y) => keptInstant[y].contourAreaSqft - keptInstant[x].contourAreaSqft)[0];
+      const headline = headlineIdx != null ? keptInstant[headlineIdx] : undefined;
+      regTxt = headlineIdx != null
+        ? `${transforms.get(headlineIdx)!.dxFt.toFixed(1)},${transforms.get(headlineIdx)!.dyFt.toFixed(1)},${transforms.get(headlineIdx)!.thetaDeg.toFixed(1)}°`
         : "REFUSED";
-      iouTxt = `${(reg.iouBefore * 100).toFixed(0)}→${reg.iouAfter == null ? "—" : (reg.iouAfter * 100).toFixed(0)}%`;
-      if (!reg.applied) problems.push("registration refused");
+      iouTxt = `${applied.length}/${keptInstant.length} reg`;
+      if (keptInstant.length > 1) console.log(`   structures: ${perStruct.join("  ")}`);
+      if (!headline) problems.push(uncoveredCount === keptInstant.length ? "no structure covered" : "registration refused");
       const ip = instant.totals?.predominantPitch ?? null;
-      if (reg.applied) {
-        const m = measurePitchFromDsm({ model: first.model, mask, dsm, transform: reg.transform, sectionTolerance12: 0.75 });
+      if (headline) {
+        const m = measurePitchFromDsm({
+          model: first.model,
+          mask,
+          dsm,
+          transform: transforms.get(headlineIdx!)!,
+          transformFor: (id) => {
+            const m = /^s(\d+):/.exec(id);
+            return transforms.get(m ? Number(m[1]) : 0) ?? null;
+          },
+          sectionTolerance12: 0.75,
+        });
         const sp = structurePitch(m, ip);
         pitch12 = sp.pitch12;
         pitchSrc = sp.source;
@@ -345,6 +388,8 @@ async function runOne(a: Addr): Promise<Row | { skipped: string; addr: string }>
   const contourArea = contourAreaAll > 0 ? contourAreaAll : contour ? areaOf(contour) : planSum;
   const tiling = contourArea > 0 ? ((planSum - contourArea) / contourArea) * 100 : 0;
   const cov = measureCoverage({ mask, dsm, groundElevFt: ground, rings });
+  // Aggregate coverage is kept in the table; the per-structure shares above are
+  // what the floor now applies to (printed for multi-structure lots).
   const covInset = insetCoverage(rings, mask, dsm, ground);
   const port = validateRoofInvariants(model, contour ? { footprint: contour.map((p) => [p.x, p.y] as [number, number]) } : {});
   const assess = assessRoof({

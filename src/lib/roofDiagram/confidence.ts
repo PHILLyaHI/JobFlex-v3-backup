@@ -67,8 +67,23 @@ export interface RoofAssessment {
  * measure it from (the outline-only path) — that is not a reason to withhold
  * anything, only a reason not to claim high confidence.
  */
+export interface StructureCoverageInput {
+  prefix: string;
+  contourSqft: number;
+  share: number | null;
+}
+
 export function assessRoof(input: {
   coverage: RoofCoverage | null;
+  /**
+   * Per-structure coverage, when the measurement knows it. The floor then
+   * applies to each STRUCTURE: a barn outside the Solar tile is flagged
+   * individually and drawn from its outline, instead of its 0 % dragging the
+   * aggregate under the floor and hiding the whole farmstead (12117 202nd St
+   * SE: aggregate 20 %, house fully covered). Absent → the aggregate rules,
+   * exactly as before.
+   */
+  structures?: StructureCoverageInput[] | null;
   /** Error codes the invariant validator reported, if it could read the model. */
   errorCodes: readonly string[];
   /** True when the validator could not read the model at all (its INPUT case). */
@@ -85,10 +100,32 @@ export function assessRoof(input: {
   const { coverage, errorCodes } = input;
   const reasons: string[] = [];
 
-  const share = coverage?.share ?? null;
+  const structs = input.structures?.length ? input.structures : null;
+  const coveredStructs = structs?.filter((st) => st.share != null && st.share >= COVERAGE_FLOOR) ?? null;
+  const uncoveredStructs = structs?.filter((st) => !(st.share != null && st.share >= COVERAGE_FLOOR)) ?? null;
+
+  // With per-structure knowledge, the inferred share is judged over the
+  // structures that HAVE data; the ones without are flagged one by one below.
+  const share = coveredStructs?.length
+    ? coveredStructs.reduce((s, st) => s + (st.share as number) * st.contourSqft, 0) /
+      coveredStructs.reduce((s, st) => s + st.contourSqft, 0)
+    : coverage?.share ?? null;
   const inferredShare = share == null ? null : Math.max(0, 1 - share);
 
-  if (share != null && share < COVERAGE_FLOOR) {
+  if (structs && coveredStructs && coveredStructs.length === 0) {
+    // No structure at all is covered — this really is a roof nobody saw.
+    return {
+      confidence: "low",
+      drawable: false,
+      estimable: false,
+      inferredShare,
+      reasons: [
+        "None of the buildings on this lot is visible in the aerial elevation data — trees, shadow or the imagery itself are covering them.",
+        "There is not enough to draw a plan you could rely on.",
+      ],
+    };
+  }
+  if (!structs && share != null && share < COVERAGE_FLOOR) {
     return {
       confidence: "low",
       drawable: false,
@@ -99,6 +136,12 @@ export function assessRoof(input: {
         "There is not enough of it to draw a plan you could rely on.",
       ],
     };
+  }
+
+  for (const st of uncoveredStructs ?? []) {
+    reasons.push(
+      `Structure ${st.prefix} (${Math.round(st.contourSqft).toLocaleString("en-US")} sq ft) is not covered by the aerial elevation data — its plan is drawn from the outline alone; verify it on site.`,
+    );
   }
 
   const geometryBad = ESTIMATE_BLOCKING_CODES.some((c) => errorCodes.includes(c));
@@ -130,7 +173,7 @@ export function assessRoof(input: {
   }
 
   const confidence: RoofConfidence =
-    geometryBad || (share != null && share < COVERAGE_CLEAR)
+    geometryBad || (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0
       ? geometryBad
         ? "low"
         : "medium"

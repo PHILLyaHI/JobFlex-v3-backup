@@ -62,9 +62,11 @@ import {
   type RoofModel,
 } from "@/lib/eagleview";
 import { isSolarEnabled } from "@/lib/solar";
+import type { Raster } from "@/lib/solar";
 import { deleteBlob, isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { buildReconModel, type ReconBuild, type ReconBuildInput } from "@/lib/roofReconBuild";
-import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled } from "@/lib/roofRecon/reconV2";
+import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled, type ReconV2Structure } from "@/lib/roofRecon/reconV2";
+import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
@@ -98,6 +100,7 @@ import type {
   MeasurementSource,
   PitchSourceProvenance,
   RegistrationProvenance,
+  StructureProvenance,
   RoofMeasurementDTO,
   RoofMeasurementSummary,
   VisionOutlineProvenance,
@@ -416,6 +419,8 @@ interface Geometry {
   pitchSource?: PitchSourceProvenance;
   /** V2 was on but could not build this roof; the old path measured it. */
   v2Fallthrough?: { reason: string };
+  /** V2 paths: per-structure coverage and registration. */
+  structures?: StructureProvenance[];
   source: MeasurementSource;
   origin: LatLng | null;
 }
@@ -468,6 +473,7 @@ function resolveGeometry(
           origin: recon.origin,
           registration: v2.registration,
           pitchSource: v2.pitchSource,
+          structures: v2.structures,
         };
       }
       v2Fallthrough = { reason: "V2 could not build a usable contour or skeleton from this outline" };
@@ -526,6 +532,7 @@ function provenanceOf(
     pitchSource?: PitchSourceProvenance;
     v2Fallthrough?: { reason: string };
     instantReuse?: { requestId: string; how: "stored" | "recovered" };
+    structures?: StructureProvenance[];
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -555,6 +562,7 @@ function provenanceOf(
       ...(notes?.pitchSource ? { pitchSource: notes.pitchSource } : {}),
       ...(notes?.v2Fallthrough ? { v2Fallthrough: notes.v2Fallthrough } : {}),
       ...(notes?.instantReuse ? { instantReuse: notes.instantReuse } : {}),
+      ...(notes?.structures?.length ? { structures: notes.structures } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
       pixelSizeM: model.provenance?.pixelSizeM,
@@ -729,23 +737,34 @@ async function reconOnlyMeasurement(
   // simply an unmeasured pitch, and the confidence level has to say so.
   let registration: RegistrationProvenance | undefined;
   let pitchSource: PitchSourceProvenance | undefined;
-  const firstRing = built.report.structures.find((st) => st.ring)?.ring;
-  if (firstRing) {
-    const reg = registerContourToRaster({
-      contour: firstRing,
-      mask: recon.mask,
-      dsm: recon.dsm,
-      groundElevFt: recon.diagnostics.groundElevFt,
-    });
-    registration = reg.applied
-      ? { applied: true, transform: reg.transform, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter }
-      : { applied: false, reason: reg.reason, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter };
-    if (reg.applied) {
+  const { provenance: structProvenance, transforms } = registerStructures(
+    built.report.structures,
+    recon.mask,
+    recon.dsm,
+    recon.diagnostics.groundElevFt,
+  );
+  const headline = structProvenance
+    .filter((st) => st.registration?.applied)
+    .sort((a, b) => b.contourSqft - a.contourSqft)[0];
+  if (structProvenance.length) {
+    const reg = headline?.registration;
+    registration = reg
+      ? { applied: true, transform: reg.transform!, iouBefore: reg.iouBefore!, iouAfter: reg.iouAfter ?? null }
+      : {
+          applied: false,
+          reason: structProvenance.every((st) => !st.covered)
+            ? "no structure on this lot is covered by the elevation data"
+            : "registration refused",
+          iouBefore: 0,
+          iouAfter: null,
+        };
+    if (reg) {
       const measured = measurePitchFromDsm({
         model,
         mask: recon.mask,
         dsm: recon.dsm,
-        transform: reg.transform,
+        transform: reg.transform!,
+        transformFor: (id) => transforms.get(faceStructureIndex(id)) ?? null,
         sectionTolerance12: 0.75,
       });
       const sp = structurePitch(measured, null);
@@ -781,6 +800,11 @@ async function reconOnlyMeasurement(
     }
   }
   const measuredStructures = built.report.structures.filter((st) => st.ring).length;
+  // The obtainInstant errors carry the pending order's id in their text; a row
+  // that says WHY Instant is absent (and that a paid order is waiting) lets the
+  // UI stop suggesting a new report where one is already bought.
+  const pendingOrderId = why.match(/order ([0-9a-f]{8}-[0-9a-f-]{27,})/i)?.[1];
+  const instantMissingNote = { reason: why, ...(pendingOrderId ? { pendingOrderId } : {}) };
   // Only a BLOCKED lookup is a partial measurement. A point that genuinely has
   // no parcel on record is not — there is nothing that was withheld.
   const partialReason = parcelRing.blocked
@@ -808,16 +832,16 @@ async function reconOnlyMeasurement(
       const base = provenanceOf(model, recon, null, null, null, {
         ...(registration ? { registration } : {}),
         ...(pitchSource ? { pitchSource } : {}),
+        ...(structProvenance.length ? { structures: structProvenance } : {}),
       });
-      return partialReason
-        ? {
-            ...base,
-            provenance: {
-              ...base.provenance,
-              partialCoverage: { reason: partialReason, measuredStructures },
-            },
-          }
-        : base;
+      return {
+        ...base,
+        provenance: {
+          ...base.provenance,
+          instantMissing: instantMissingNote,
+          ...(partialReason ? { partialCoverage: { reason: partialReason, measuredStructures } } : {}),
+        },
+      };
     })(),
   };
   try {
@@ -829,6 +853,69 @@ async function reconOnlyMeasurement(
   }
 }
 
+
+/**
+ * Coverage and registration for every structure on the lot, one at a time. The
+ * Solar tile is centred on the house: on a farmstead the barns sit outside it,
+ * and judged in one pool they read the lot down to 20 % coverage and 57 % IoU
+ * while the house is fully covered (12117 202nd St SE). Per structure, the
+ * house keeps its data and each uncovered barn is flagged individually.
+ */
+function registerStructures(
+  structures: ReconV2Structure[],
+  mask: Raster,
+  dsm: Raster,
+  groundElevFt: number,
+): {
+  /** provenance[i] belongs to the i-th structure WITH a ring — the same index
+   *  synthesize stamps into face ids ("s{i}:F{n}"), which is the only real
+   *  face→structure link (designator letters rank by area, across the lot). */
+  provenance: StructureProvenance[];
+  transforms: Map<number, { dxFt: number; dyFt: number; thetaDeg: number }>;
+} {
+  const provenance: StructureProvenance[] = [];
+  const transforms = new Map<number, { dxFt: number; dyFt: number; thetaDeg: number }>();
+  for (const st of structures) {
+    const ring = st.ring;
+    if (!ring) continue;
+    // Registration FIRST, coverage on the moved ring. The order is the point:
+    // Instant's georeference on the Snohomish farm sits ~10 ft east of the
+    // raster, which read the fully-visible house down to 47 % when coverage
+    // was measured unregistered — under the floor that then withheld the very
+    // registration that removes the shift.
+    const reg = registerContourToRaster({ contour: ring, mask, dsm, groundElevFt });
+    const rad = reg.applied ? (reg.transform.thetaDeg * Math.PI) / 180 : 0;
+    const ringForCoverage = reg.applied
+      ? ring.map((pt) => ({
+          x: pt.x * Math.cos(rad) - pt.y * Math.sin(rad) + reg.transform.dxFt,
+          y: pt.x * Math.sin(rad) + pt.y * Math.cos(rad) + reg.transform.dyFt,
+        }))
+      : ring;
+    const cov = measureCoverage({ mask, dsm, groundElevFt, rings: [ringForCoverage] });
+    const covered = !!cov && cov.share >= COVERAGE_FLOOR;
+    const entry: StructureProvenance = {
+      prefix: st.prefix,
+      contourSqft: st.contourAreaSqft,
+      coverage: cov ? { seenSqft: cov.seenSqft, share: cov.share } : null,
+      covered,
+      registration: reg.applied
+        ? { applied: true, transform: reg.transform, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter }
+        : { applied: false, reason: reg.reason, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter },
+    };
+    if (!covered) entry.note = "not covered by elevation data";
+    else if (!reg.applied) entry.note = "registration refused";
+    else transforms.set(provenance.length, reg.transform);
+    provenance.push(entry);
+  }
+  return { provenance, transforms };
+}
+
+/** Raw face id → the index of the structure it grew from ("s2:F5" → 2; a
+ *  single-structure model writes bare "F5" → 0). */
+const faceStructureIndex = (rawFaceId: string): number => {
+  const m = /^s(\d+):/.exec(rawFaceId);
+  return m ? Number(m[1]) : 0;
+};
 
 /**
  * The V2 path: Instant contour → one regularisation → straight skeleton →
@@ -852,39 +939,48 @@ function buildV2Geometry(
   model: RoofModel;
   registration: RegistrationProvenance;
   pitchSource: PitchSourceProvenance;
+  structures: StructureProvenance[];
 } | null {
   const first = buildRoofV2({
     instant,
     origin: recon.origin,
     clusters: recon.diagnostics.clusters ?? null,
   });
-  const contour = first.report.structures.find((st) => st.ring)?.ring;
-  if (!first.model || !contour) {
+  if (!first.model || !first.report.structures.some((st) => st.ring)) {
     console.warn("[roofMeasurement] V2: no usable contour — %s", first.report.reasons[0] ?? "unknown");
     return null;
   }
 
-  const reg = registerContourToRaster({
-    contour,
-    mask: recon.mask,
-    dsm: recon.dsm,
-    groundElevFt: recon.diagnostics.groundElevFt,
-  });
+  const { provenance: structures, transforms } = registerStructures(
+    first.report.structures,
+    recon.mask,
+    recon.dsm,
+    recon.diagnostics.groundElevFt,
+  );
   const instantPitch = instant.totals?.predominantPitch ?? null;
+  // The headline registration is the largest structure that got one — kept so
+  // rows and viewers that predate the per-structure entry keep reading.
+  const headline = structures
+    .filter((st) => st.registration?.applied)
+    .sort((a, b) => b.contourSqft - a.contourSqft)[0];
 
-  if (!reg.applied) {
-    console.warn("[roofMeasurement] V2: registration refused — %s", reg.reason);
+  if (!headline) {
+    const reason = structures.every((st) => !st.covered)
+      ? "no structure on this lot is covered by the elevation data"
+      : structures.find((st) => st.note === "registration refused")?.registration?.reason ?? "registration refused";
+    console.warn("[roofMeasurement] V2: no structure registered — %s", reason);
     return {
       model: first.model,
-      registration: { applied: false, reason: reg.reason, iouBefore: reg.iouBefore, iouAfter: reg.iouAfter },
+      registration: { applied: false, reason, iouBefore: 0, iouAfter: null },
       pitchSource: {
         source: "instant",
         pitch12: instantPitch ?? 0,
         trustedShare: 0,
         reason:
-          "The aerial elevation data could not be lined up with the building outline, so nothing measured from it " +
-          "would describe this roof. The pitch is EagleView's published figure.",
+          "The aerial elevation data could not be lined up with any structure on this lot, so nothing measured from " +
+          "it would describe this roof. The pitch is EagleView's published figure.",
       },
+      structures,
     };
   }
 
@@ -892,7 +988,10 @@ function buildV2Geometry(
     model: first.model,
     mask: recon.mask,
     dsm: recon.dsm,
-    transform: reg.transform,
+    transform: headline.registration!.transform!,
+    // Facets of a structure that did not register are skipped, so a barn with
+    // no raster does not drag trustedShare below the floor for the house.
+    transformFor: (id) => transforms.get(faceStructureIndex(id)) ?? null,
     sectionTolerance12: 0.75,
   });
   const sp = structurePitch(measured, instantPitch);
@@ -910,9 +1009,9 @@ function buildV2Geometry(
     model,
     registration: {
       applied: true,
-      transform: reg.transform,
-      iouBefore: reg.iouBefore,
-      iouAfter: reg.iouAfter,
+      transform: headline.registration!.transform!,
+      iouBefore: headline.registration!.iouBefore!,
+      iouAfter: headline.registration!.iouAfter ?? null,
     },
     pitchSource: {
       source: sp.source,
@@ -921,6 +1020,7 @@ function buildV2Geometry(
       reason: sp.reason,
       ...(solar ? { solarPanels: true } : {}),
     },
+    structures,
   };
 }
 
@@ -1169,7 +1269,7 @@ export async function measureRoofInstant(
     roofRegions = regions;
   }
 
-  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
 
   // Chimneys: DSM posts on the RAW reconstruction (the rasters' frame — the
   // calibrated model stays in it, so no transform is needed) + vision boxes on
@@ -1229,6 +1329,7 @@ export async function measureRoofInstant(
       ...(pitchSource ? { pitchSource } : {}),
       ...(v2Fallthrough ? { v2Fallthrough } : {}),
       ...(instantReuse ? { instantReuse } : {}),
+      ...(structures?.length ? { structures } : {}),
     }),
   };
 

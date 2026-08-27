@@ -142,6 +142,16 @@ function robustFitPlane(pts: Array<{ x: number; y: number; z: number }>) {
 }
 
 export interface MeasurePitchInput {
+  /**
+   * Per-facet transform, for lots where each structure registered on its own —
+   * a barn 300 ft from the house must not borrow the house's shift. Called
+   * with the face's RAW id (synthesize writes "s{i}:F{n}" on multi-structure
+   * models — the display designator letters rank by AREA and say nothing about
+   * structures). Return null for a facet whose structure has no registration:
+   * the facet is SKIPPED, so it neither contributes a garbage pitch nor drags
+   * trustedShare down. When absent, `transform` applies to every facet.
+   */
+  transformFor?: (rawFaceId: string) => Rigid2D | null;
   model: RoofModel;
   mask: Raster;
   /** DSM in METRES. */
@@ -177,8 +187,13 @@ export function measurePitchFromDsm(input: MeasurePitchInput): PitchMeasurement 
     }
     const plan = ring3.map((p) => ({ x: p.x, y: p.y }));
     const planSqft = areaOf(plan);
+    const facetTransform = input.transformFor ? input.transformFor(String(f.id)) : transform;
+    if (!facetTransform) {
+      skipped.push({ id, reason: "structure not covered by elevation data" });
+      continue;
+    }
     // Into the raster's frame before sampling — this is the whole point.
-    const moved = plan.map((p) => applyRigid(p, transform));
+    const moved = plan.map((p) => applyRigid(p, facetTransform));
     const xs = moved.map((p) => p.x);
     const ys = moved.map((p) => p.y);
     const pts: Array<{ x: number; y: number; z: number }> = [];

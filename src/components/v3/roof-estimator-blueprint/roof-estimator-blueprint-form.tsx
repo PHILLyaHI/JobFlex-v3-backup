@@ -226,6 +226,12 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
       measurement
         ? assessRoof({
             coverage: measurement.provenance.coverage ?? null,
+            structures:
+              measurement.provenance.structures?.map((st) => ({
+                prefix: st.prefix,
+                contourSqft: st.contourSqft,
+                share: st.coverage?.share ?? null,
+              })) ?? null,
             errorCodes: gate?.errorCodes ?? [],
             cannotValidate,
             pitchSource: measurement.provenance.pitchSource ?? null,
@@ -236,6 +242,13 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
   const gateBlocked = !!assessment && !assessment.drawable && process.env.NEXT_PUBLIC_ROOF_GATE !== "off";
   /** Instant already answered for this address, so offering to order a report is noise. */
   const hasInstant = measurement?.source === "instant+recon" || measurement?.source === "instant-outline";
+  // A poll TIMEOUT on an accepted order is not "no coverage" — the paid order
+  // exists and is collected free on the next measure. Never suggest ordering a
+  // report while one is already bought and waiting.
+  const pendingInstantOrder = measurement?.provenance?.instantMissing?.pendingOrderId ?? null;
+  const suggestReport = pendingInstantOrder
+    ? "A paid EagleView order for this address is still processing — measure again in a minute to collect it at no extra cost."
+    : "or order an EagleView report for this address.";
   React.useEffect(() => {
     if (!gate || !measurement) return;
     const where = measurement.address ?? "(no address)";
@@ -809,7 +822,9 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                     {assessment?.reasons.join(" ")}{" "}
                     {hasInstant
                       ? "Trace the roof by hand from the aerial view."
-                      : "Trace the roof by hand, or order an EagleView report for this address."}
+                      : pendingInstantOrder
+                        ? `Trace the roof by hand — ${suggestReport}`
+                        : `Trace the roof by hand, ${suggestReport}`}
                   </p>
                   {process.env.NODE_ENV !== "production" && (
                     <ul className="rf-gate-codes">
@@ -920,7 +935,11 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                           <div className="rf-gate-title">TRACE MANUALLY</div>
                           <p className="rf-gate-body">
                             This roof fails {gate?.errors} geometry {gate?.errors === 1 ? "check" : "checks"}, so the plan is not
-                            drawn — it would misprice the job. Measure it by hand or order an EagleView report.
+                            drawn — it would misprice the job. Measure it by hand{pendingInstantOrder
+                              ? ". A paid EagleView order for this address is still processing — measure again in a minute to collect it at no extra cost."
+                              : hasInstant
+                                ? "."
+                                : " or order an EagleView report."}
                           </p>
                           {process.env.NODE_ENV !== "production" && (
                             <ul className="rf-gate-codes">

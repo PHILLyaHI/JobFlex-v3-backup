@@ -158,6 +158,42 @@ export interface MeasurementProvenance {
    * lookup was ordered (and paid for) by this very measurement.
    */
   instantReuse?: { requestId: string; how: "stored" | "recovered" };
+  /**
+   * Recon-only rows: why EagleView Instant was not part of this measurement.
+   * `pendingOrderId` is set when the cause was a poll TIMEOUT on an already
+   * accepted (billable) order — a timeout is NOT evidence the address is
+   * uncovered (12117 202nd St SE timed out twice and is covered), so the UI
+   * must offer "collect the paid order" instead of "order a report".
+   */
+  instantMissing?: { reason: string; pendingOrderId?: string };
+  /**
+   * V2 paths, one entry per structure (facet-letter prefix). Coverage and
+   * registration are judged PER STRUCTURE: the Solar tile is centred on the
+   * house, so on a farmstead the barns read 0 % coverage while the house reads
+   * full — one aggregate number would let the barns hide the house (measured:
+   * 12117 202nd St SE aggregates to 20 % while its house is fully covered).
+   * A structure without data is marked here individually and the drawing
+   * stays; the floor applies to the structure, not to the measurement.
+   */
+  structures?: StructureProvenance[];
+}
+
+export interface StructureProvenance {
+  /** Facet-letter prefix (A, B, …) — facets map to structures by it. */
+  prefix: string;
+  contourSqft: number;
+  coverage: { seenSqft: number; share: number } | null;
+  /** Meets the per-structure coverage floor. */
+  covered: boolean;
+  registration?: {
+    applied: boolean;
+    iouBefore?: number;
+    iouAfter?: number | null;
+    reason?: string;
+    transform?: { dxFt: number; dyFt: number; thetaDeg: number };
+  };
+  /** Why this structure carries no measured data, when it does not. */
+  note?: string;
 }
 
 /** Where the printed pitch came from, and why — shown to the user. */
