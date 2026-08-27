@@ -258,7 +258,26 @@ export function tryWavefront(input: WavefrontGateInput): WavefrontGateResult {
   const slopeClasses = classes.map((cls) => ({ pitch12: slopes[cls[0]] * 12, edges: cls.length }));
 
   // ── run and judge ──
-  const wf = weightedSkeleton(contour, slopes, { degenerateRetry: true });
+  // The retry exists to break EXACT TIES on rectilinear input, not to tilt two
+  // genuinely parallel walls apart. When the exact pass meets a co-normal
+  // parallel contact the roof there needs a vertical step this engine cannot
+  // draw, so the answer is refuse — deterministically, whatever the jitter
+  // would have produced. Measured on 12629: with the retry allowed to decide,
+  // the same house solves or fails on the fourth decimal of its pitch.
+  let parallelContact = false;
+  const wf = weightedSkeleton(contour, slopes, {
+    degenerateRetry: true,
+    onParallelContact: () => { parallelContact = true; },
+  });
+  if (parallelContact) {
+    return {
+      carriers,
+      gableEdges,
+      slopeClasses,
+      refused:
+        "two walls face the same way at different pitches (a gable end beside a lower eave): the roof needs a vertical step there, which this engine cannot draw",
+    };
+  }
   if (!wf) return { carriers, gableEdges, slopeClasses, refused: "the wavefront could not solve this outline" };
   const model = modelFromWavefront({ contour, slopes, result: wf, base: skeletonModel, structureIndex: input.structureIndex });
   if (!model) return { carriers, gableEdges, slopeClasses, refused: "the wavefront result could not be assembled" };

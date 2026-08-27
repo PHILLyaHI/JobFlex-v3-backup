@@ -63,6 +63,16 @@ export interface WavefrontOptions {
   degenerateRetry?: boolean;
   /** Diagnostics: called with the reason each time the exact pass refuses. */
   onRefuse?: (reason: string) => void;
+  /**
+   * Called when the EXACT (unjittered) pass meets two co-normal fronts running
+   * at different speeds — a genuine parallel-edge event, not a numerical tie.
+   * The retry can hide it by tilting the two walls a fraction of a degree, but
+   * what comes out is a long thin sliver where the roof really has a vertical
+   * step, and whether it comes out at all is decided by the fourth decimal of
+   * the pitch (measured on 12629: fails 32 of 51 pitches across a 0.5/12
+   * band). A caller that cares about reproducibility should refuse.
+   */
+  onParallelContact?: () => void;
 }
 
 /**
@@ -71,7 +81,13 @@ export interface WavefrontOptions {
  *                Number.POSITIVE_INFINITY marks a gable (vertical) edge.
  */
 export function weightedSkeleton(outline: WPt[], slopes: number[], opts: WavefrontOptions = {}): WavefrontResult | null {
-  const exact = wavefrontExact(outline, slopes, opts.onRefuse);
+  let sawParallelContact = false;
+  const noteExact = (reason: string) => {
+    if (reason.startsWith("co-normal parallel contact")) sawParallelContact = true;
+    opts.onRefuse?.(reason);
+  };
+  const exact = wavefrontExact(outline, slopes, noteExact);
+  if (sawParallelContact) opts.onParallelContact?.();
   if (exact || !opts.degenerateRetry) return exact;
   for (let attempt = 1; attempt <= 4; attempt++) {
     const eps = 0.001 * attempt;
@@ -176,6 +192,8 @@ function wavefrontExact(outline: WPt[], slopes: number[], onRefuse?: (reason: st
   const allVerts: WVtx[] = [];
 
   /** v solving n_L·v = c_L, n_R·v = c_R. Null when the normals are parallel. */
+  /** Set by solveVelocity when it refuses, so the caller can name the case. */
+  let velReason = "";
   const solveVelocity = (eL: number, eR: number): Vec | null => {
     const nL = edges[eL].nrm;
     const nR = edges[eR].nrm;
@@ -183,7 +201,12 @@ function wavefrontExact(outline: WPt[], slopes: number[], onRefuse?: (reason: st
     if (Math.abs(den) < SECTOR_TOL) {
       if (dot(nL, nR) > 0) {
         // collinear continuation: same front; only equal speeds are coherent
-        if (Math.abs(speed[eL] - speed[eR]) > 1e-9) return refuse("site 9");
+        if (Math.abs(speed[eL] - speed[eR]) > 1e-9) {
+          velReason =
+            `co-normal parallel contact: edges ${eL} and ${eR} face the same way but run at ` +
+            `${speed[eL].toFixed(4)} and ${speed[eR].toFixed(4)} plan-ft per ft of height`;
+          return refuse(velReason);
+        }
         return { x: nL.x * speed[eL], y: nL.y * speed[eL] };
       }
       return refuse("antiparallel strip — unsupported here, caller falls back");
@@ -234,7 +257,7 @@ function wavefrontExact(outline: WPt[], slopes: number[], onRefuse?: (reason: st
 
   const initial: WVtx[] = [];
   for (let i = 0; i < n; i++) initial.push(makeVertex(pts[i], 0, (i + n - 1) % n, i));
-  if (velFail) return refuse("site 11");
+  if (velFail) return refuse(velReason || "initial: unsolvable wavefront vertex");
   for (let i = 0; i < n; i++) {
     initial[i].prev = initial[(i + n - 1) % n];
     initial[i].next = initial[(i + 1) % n];
@@ -305,7 +328,7 @@ function wavefrontExact(outline: WPt[], slopes: number[], onRefuse?: (reason: st
     for (const s of splitEvents(v)) queue.push(s);
   };
   for (const v of initial) pushEventsFor(v);
-  if (velFail) return refuse("site 16");
+  if (velFail) return refuse(velReason || "queue seed: unsolvable wavefront vertex");
 
   // ---- arcs ---------------------------------------------------------------
   const arcs: Array<{ a: Vec; b: Vec }> = [];
@@ -368,7 +391,7 @@ function wavefrontExact(outline: WPt[], slopes: number[], onRefuse?: (reason: st
       emitArc(va.p, p);
       emitArc(vb.p, p);
       const vNew = makeVertex(p, ev.h, va.eL, vb.eR);
-      if (velFail) return refuse("site 19");
+      if (velFail) return refuse(velReason || "edge event: unsolvable wavefront vertex");
       vNew.prev = va.prev;
       vNew.next = vb.next;
       va.prev.next = vNew;
@@ -386,7 +409,7 @@ function wavefrontExact(outline: WPt[], slopes: number[], onRefuse?: (reason: st
       emitArc(v.p, p);
       const v1 = makeVertex(p, ev.h, v.eL, opp);
       const v2 = makeVertex(p, ev.h, opp, v.eR);
-      if (velFail) return refuse("site 20");
+      if (velFail) return refuse(velReason || "split event: unsolvable wavefront vertex");
       v1.prev = v.prev;
       v1.next = y;
       v.prev.next = v1;
