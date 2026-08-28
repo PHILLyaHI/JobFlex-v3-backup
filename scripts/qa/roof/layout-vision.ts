@@ -7,7 +7,10 @@
  * the number we are trying to move — 50% correct drain directions against 38%
  * for random choice — was measured per FACET by the old read, and the new one
  * returns LINES. Comparing 50% against a per-line figure would be a sleight of
- * hand. So the old reader is re-run here and both are scored per line.
+ * hand. So the old reader would be re-run here and both scored per line — but
+ * the scoring rule itself does not work yet (§K8: our own model's lines score
+ * 12% by it), so running the old reader would only produce a second meaningless
+ * number. It is added back when the metric passes its control.
  *
  * THE RULE. Every interior line implies a claim about drainage: the two planes
  * it separates run down away from it (ridge, hip) or down into it (valley), and
@@ -34,7 +37,6 @@ import { buildRoofV2 } from "@/lib/roofRecon/reconV2";
 import { readInstantSurvey } from "@/lib/roofDiagram/instantSurvey";
 import { contrastMap } from "@/lib/roofDiagram/orthoPrep";
 import { readRoofLayout, type LayoutLine } from "@/lib/roofDiagram/roofLayoutVision";
-import { readRoofStructure } from "@/lib/roofDiagram/roofStructureVision";
 import { loadFixture, type FixtureMeta } from "./fixture";
 
 const CACHE = resolve(".cache/roof-diagram");
