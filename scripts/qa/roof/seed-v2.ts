@@ -11,20 +11,12 @@
  *
  * Rows are tagged in the address so they are easy to tell apart and delete.
  */
+import { loadHarnessEnv } from "./env";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
 
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* optional */
-  }
-}
+loadHarnessEnv();
 const req = createRequire(resolve(process.cwd(), "package.json"));
 
 import type { InstantRoofData, RoofModel } from "../../../src/lib/eagleview";

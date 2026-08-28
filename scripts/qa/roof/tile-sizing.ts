@@ -4,22 +4,12 @@
  * raster sizes come from live Solar calls at exactly those radii, so the table
  * is what production will now do.
  */
+import { loadHarnessEnv } from "./env";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fromArrayBuffer } from "geotiff";
 
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      // An EMPTY value counts as unset. `.env` in this repo ships
-      // GOOGLE_MAPS_API_KEY="" and Prisma loads `.env` at import time, so a
-      // `=== undefined` guard would keep that empty string and every Solar call
-      // would come back 403 "unregistered callers".
-      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch { /* optional */ }
-}
+loadHarnessEnv();
 // Read lazily: `import` is hoisted above this file's .env loading, so a
 // module-scope read of the key lands before the file that sets it.
 const key = () => process.env.GOOGLE_MAPS_API_KEY ?? "";

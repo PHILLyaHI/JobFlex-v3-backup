@@ -1,16 +1,10 @@
 /* Step 2 dry run: refine 12629 / 12621 / 12618 / 9903 / Prairie, print merge
    reports, Euler + tiling before/after, footage before/after, and overlays. */
+import { loadHarnessEnv } from "./env";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch { /* optional */ }
-}
+loadHarnessEnv();
 import type { InstantRoofData, RoofModel } from "@/lib/eagleview";
 import type { Raster } from "@/lib/solar";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";

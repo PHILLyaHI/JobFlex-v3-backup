@@ -19,7 +19,7 @@
 // at the queried pin (the Solar tile centre), x east, y north, z feet above
 // ground. Geo rings convert into it via latLngRingToFrame(origin, ring).
 import { geocode } from "@/lib/maps";
-import { fetchParcelRing } from "@/lib/parcel";
+import { fetchParcelRing, type ParcelRingLookup } from "@/lib/parcel";
 import {
   getBuildingInsights,
   getDataLayers,
@@ -125,6 +125,13 @@ export interface ReconBuild {
   /** Other structures in the tile that were NOT measured, plan-view sqft. */
   excludedSqft: number[];
   layers: DataLayerUrls;
+  /**
+   * Why the lot boundary is missing, when it is. Absent means either a ring was
+   * had or the point genuinely has no parcel — `blocked` is only set when the
+   * lookup itself could not answer, and that is the case a user must see: it
+   * means detached structures may be missing from the measurement.
+   */
+  parcelBlocked?: { kind: string; message: string };
   /** The pin the tile was fetched around — the origin of the model's frame. */
   origin: { lat: number; lng: number };
 }
@@ -174,8 +181,14 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
   // which put ~300 ms of building insights and a whole ReportAll round trip on
   // the critical path for no reason. Solar's critical path is TWO steps:
   // dataLayers, then the rasters.
-  // fetchParcelRing soft-fails to [] internally; it never throws.
-  const parcelP = cached ? Promise.resolve([]) : fetchParcelRing(lat, lng);
+  // The parcel ring is fetched EVERY time, cache hit or not. It belongs to a
+  // different service (Regrid) and is not part of the frozen Solar answer, and
+  // skipping it on a cache hit was a defect: the ring decides which of the
+  // tile's structures belong to this property, so a cached measurement would
+  // have scoped a multi-building lot differently from the first one — the same
+  // address, two different answers, with nothing to show why.
+  // fetchParcelRing never throws; it reports WHY the ring is missing.
+  const parcelP: Promise<ParcelRingLookup> = fetchParcelRing(lat, lng);
   const insightsP: Promise<Awaited<ReturnType<typeof getBuildingInsights>> | null> = cached
     ? Promise.resolve(cached.insights)
     : getBuildingInsights(lat, lng).catch(() => null); // priors and the cross-check are both optional
@@ -217,8 +230,14 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
   // Without it we measure only the building under the pin, which understates a
   // property that has a detached garage or wing. Soft-fails by design. Started
   // above, collected here.
-  const ring = await parcelP;
+  const parcelLookup = await parcelP;
+  const ring = parcelLookup.ring;
   const parcel = ring.length >= 3 ? latLngRingToFrame({ lat, lng }, ring) : undefined;
+  if (parcelLookup.blocked) {
+    console.warn(
+      `[roofReconBuild] no lot boundary (${parcelLookup.blocked.kind}): ${parcelLookup.blocked.message} — only the structure under the pin will be measured`,
+    );
+  }
 
   // Google's per-segment pitch, rounded, becomes the candidate set our own
   // planes snap to — it says which pitches this roof is actually framed to, so
@@ -274,6 +293,7 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
     googleAreaSqft,
     multiStructure: diagnostics.keptComponents > 1,
     excludedSqft: diagnostics.maskComponentsSqft.slice(diagnostics.keptComponents),
+    ...(parcelLookup.blocked ? { parcelBlocked: parcelLookup.blocked } : {}),
     layers,
     origin: { lat, lng },
   };

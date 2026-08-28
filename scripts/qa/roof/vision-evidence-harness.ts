@@ -1,15 +1,9 @@
 /* Verify the shipped visionEvidence module on the two houses with cached AI
    reads — the same numbers the action will now record in provenance. Free. */
+import { loadHarnessEnv } from "./env";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch { /* optional */ }
-}
+loadHarnessEnv();
 import type { InstantRoofData } from "@/lib/eagleview";
 import { readRoofStructure } from "@/lib/roofDiagram/roofStructureVision";
 import { buildRoofV2 } from "@/lib/roofRecon/reconV2";

@@ -8,19 +8,11 @@
  * fixtures cannot reproduce the MAIN path, which is Instant-first; the mask is
  * only the fallback for addresses Instant does not cover.
  */
+import { loadHarnessEnv } from "./env";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* optional */
-  }
-}
+loadHarnessEnv();
 
 const TARGETS: Array<{ slug: string; rowId: string }> = [
   { slug: "kirkland-12629-ne-100th-pl", rowId: "cmt9bw6mv0005403bqwdngaau" },

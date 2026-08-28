@@ -109,19 +109,83 @@ export async function fetchRegridPoint(
   const url = `https://app.regrid.com/api/v2/parcels/point.json?lat=${lat}&lon=${lng}&token=${encodeURIComponent(
     process.env.REGRID_API_KEY as string,
   )}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(REGRID_TIMEOUT_MS) });
   if (!res.ok) return { data: null, status: res.status };
   return { data: (await res.json()) as RegridResponse, status: res.status };
 }
 
-// Just the parcel ring for a point. Empty array on disabled / no coverage /
-// network error — every caller treats "no parcel" as a soft fallback.
-export async function fetchParcelRing(lat: number, lng: number): Promise<LatLngPoint[]> {
+/**
+ * How long a Regrid point lookup may take. The same ceiling reportall.ts uses
+ * for the same shape of call — one JSON lookup for the parcel under a point.
+ * There was none at all before 2026-08-28, on a call the roof measurement makes.
+ */
+const REGRID_TIMEOUT_MS = 15_000;
+
+/** Why no ring came back, when the reason is not "this point has no parcel". */
+export type ParcelFailureKind =
+  /** REGRID_API_KEY is not set. */
+  | "disabled"
+  /** Regrid answered, and the answer is that it has nothing here. */
+  | "no-coverage"
+  /** 401/403 — Regrid issues 30-day JWTs, so a working integration expires on a schedule. */
+  | "auth"
+  /** The request hung or the connection broke. */
+  | "timeout"
+  | "error";
+
+export interface ParcelRingLookup {
+  /** The outer ring, or empty. Empty is NOT by itself a failure — see `blocked`. */
+  ring: LatLngPoint[];
+  /**
+   * Set when the ring is empty for a reason the caller must surface, as opposed
+   * to the point genuinely having no parcel.
+   *
+   * This distinction is the whole point of the type. The old signature returned
+   * a bare array and swallowed everything into it: an expired JWT, a dead
+   * network and a rural point with no parcel on file were the same `[]`. The
+   * lot boundary decides which mask blobs belong to the property, so losing it
+   * silently drops a detached garage from the measurement — 629 of 2240 sq ft
+   * on 17028 NE 100th St, and it looked like a smaller house rather than a
+   * failed lookup.
+   */
+  blocked?: { kind: ParcelFailureKind; message: string };
+}
+
+/** The parcel ring for a point, with the reason when there is none. Never throws. */
+export async function fetchParcelRing(lat: number, lng: number): Promise<ParcelRingLookup> {
+  if (!isRegridEnabled()) {
+    return { ring: [], blocked: { kind: "disabled", message: "parcel lookup is not configured (REGRID_API_KEY)" } };
+  }
   try {
-    const { data } = await fetchRegridPoint(lat, lng);
-    if (!data) return [];
-    return extractRing(data, lat, lng);
-  } catch {
-    return [];
+    const { data, status } = await fetchRegridPoint(lat, lng);
+    if (!data) {
+      const kind: ParcelFailureKind = status === 401 || status === 403 ? "auth" : "error";
+      return {
+        ring: [],
+        blocked: {
+          kind,
+          message:
+            kind === "auth"
+              ? `Regrid rejected our credentials (${status}) — its tokens are 30-day JWTs and this one needs renewing`
+              : `Regrid parcel lookup failed (${status})`,
+        },
+      };
+    }
+    const ring = extractRing(data, lat, lng);
+    // A 200 with no ring is Regrid saying it has nothing here. That is an
+    // ANSWER, and it is deliberately not `blocked`.
+    return { ring };
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    const timedOut = name === "TimeoutError" || name === "AbortError";
+    return {
+      ring: [],
+      blocked: {
+        kind: timedOut ? "timeout" : "error",
+        message: timedOut
+          ? `Regrid did not answer in ${REGRID_TIMEOUT_MS / 1000}s`
+          : `Regrid parcel lookup failed (${err instanceof Error ? err.message : String(err)})`,
+      },
+    };
   }
 }

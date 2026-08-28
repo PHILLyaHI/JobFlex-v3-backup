@@ -20,20 +20,12 @@
  * Address format, one per line, blank lines and # comments ignored:
  *   123 Main St, Springfield, IL, 62704
  */
+import { loadHarnessEnv } from "./env";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { resolve } from "node:path";
 
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* optional */
-  }
-}
+loadHarnessEnv();
 
 import type { InstantRoofData, RoofModel } from "../../../src/lib/eagleview";
 import type { Raster } from "../../../src/lib/solar";

@@ -2,6 +2,15 @@ export function isMapsEnabled() {
   return Boolean(process.env.GOOGLE_MAPS_API_KEY);
 }
 
+/**
+ * How long a Maps request may take. Not a new number: geocodeAddress below has
+ * used 8 s since it was written, and it is the same kind of call — one JSON
+ * lookup against the same host. The other two had NO ceiling at all, which is
+ * how `geocode()` came to sit on the roof-measurement path able to hang
+ * forever: buildReconModel geocodes whenever the caller has no coordinates.
+ */
+const MAPS_TIMEOUT_MS = 8_000;
+
 export function staticMapUrl(
   lat: number,
   lng: number,
@@ -38,7 +47,7 @@ export async function geocodeAddress(parts: {
   url.searchParams.set("region", "us");
   url.searchParams.set("key", process.env.GOOGLE_MAPS_API_KEY!);
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(MAPS_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = (await res.json()) as {
       status?: string;
@@ -55,11 +64,16 @@ export async function geocodeAddress(parts: {
 }
 
 // Geocode an address string → lat/lng. Null when maps disabled or geocode failed.
+//
+// This one is on the roof-measurement path — buildReconModel calls it whenever
+// the caller supplied no coordinates — and until 2026-08-28 it had no ceiling
+// at all, so a hung request would have held the whole measurement until the
+// enclosing deadline killed it with a message about the reconstruction.
 export async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
   if (!isMapsEnabled()) return null;
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(MAPS_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = (await res.json()) as {
       results?: { geometry?: { location?: { lat: number; lng: number } } }[];

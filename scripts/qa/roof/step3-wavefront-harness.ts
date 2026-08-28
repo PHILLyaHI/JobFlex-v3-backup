@@ -2,17 +2,11 @@
    12621 first (simplest carrier), then 12629 (the five-candidate knot).
    Prints per house: edge slopes chosen, facets before/after, Euler, tiling,
    area identity, validator codes, footage table, and writes overlays. */
+import { loadHarnessEnv } from "./env";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch { /* optional */ }
-}
+loadHarnessEnv();
 import type { InstantRoofData, RoofModel } from "@/lib/eagleview";
 import type { Raster } from "@/lib/solar";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";

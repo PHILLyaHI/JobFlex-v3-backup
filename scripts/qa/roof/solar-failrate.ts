@@ -9,21 +9,11 @@
  * point at a different host entirely (solar.ts gotcha 2). If the failures are
  * all on one of the two, that is the finding.
  */
+import { loadHarnessEnv } from "./env";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      // An EMPTY value counts as unset. `.env` in this repo ships
-      // GOOGLE_MAPS_API_KEY="" and Prisma loads `.env` at import time, so a
-      // `=== undefined` guard would keep that empty string and every Solar call
-      // would come back 403 "unregistered callers".
-      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch { /* optional */ }
-}
+loadHarnessEnv();
 const KEY = process.env.GOOGLE_MAPS_API_KEY!;
 const BASE = "https://solar.googleapis.com/v1";
 const CEILING_MS = 15_000;

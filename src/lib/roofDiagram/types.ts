@@ -222,6 +222,17 @@ export interface MeasurementProvenance {
     refused?: Array<{ facet: string; reason: string }>;
   };
   /**
+   * Why the lot boundary could not be looked up.
+   *
+   * Absent means it was had, or the point genuinely has no parcel on file.
+   * Present means the LOOKUP failed — and that matters to the reader, because
+   * the boundary is what decides which buildings on the tile belong to this
+   * property. Without it only the structure under the pin is measured, and a
+   * detached garage leaves the drawing without anything looking wrong: 629 of
+   * 2240 sq ft on 17028 NE 100th St.
+   */
+  parcelBlocked?: { kind: string; message: string };
+  /**
    * Why there is no reconstruction on this drawing.
    *
    * Absent means there IS one. Present means the plan is EagleView's outline

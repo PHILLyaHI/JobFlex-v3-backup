@@ -668,6 +668,7 @@ function provenanceOf(
       ...(notes?.instantSurvey ? { instantSurvey: notes.instantSurvey } : {}),
       ...(notes?.creases ? { creases: notes.creases } : {}),
       ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets, unrecognisedShare: notes.unrecognisedShare } : {}),
+      ...(recon?.parcelBlocked ? { parcelBlocked: recon.parcelBlocked } : {}),
       ...(notes?.reconUnavailable ? { reconUnavailable: notes.reconUnavailable } : {}),
       ...(notes?.completeness ? { completeness: notes.completeness } : {}),
       ...(notes?.wavefront ? { wavefront: notes.wavefront } : {}),

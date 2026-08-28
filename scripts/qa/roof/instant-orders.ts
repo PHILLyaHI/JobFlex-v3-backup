@@ -12,20 +12,12 @@
  * before the ledger existed (the two 12117 202nd St SE timeouts of 2026-08-26)
  * are not here and cannot be recovered by anyone.
  */
+import { loadHarnessEnv } from "./env";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createRequire } from "node:module";
 
-for (const file of [".env.local", ".env"]) {
-  try {
-    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
-      if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
-    }
-  } catch {
-    /* optional */
-  }
-}
+loadHarnessEnv();
 const req = createRequire(resolve(process.cwd(), "package.json"));
 
 import { pollInstantResult } from "../../../src/lib/eagleview";

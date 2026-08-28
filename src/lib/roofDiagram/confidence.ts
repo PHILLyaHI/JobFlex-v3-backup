@@ -192,6 +192,13 @@ export function assessRoof(input: {
    * building or a piece of footprint is not on the drawing at all — the figures
    * are short by it, and they must not be priced.
    */
+  /**
+   * The lot-boundary lookup failed. Not a gate — the drawing is fine and the
+   * measured structure is measured correctly — but the reader has to be told,
+   * because what may be missing is a whole other BUILDING, and nothing in the
+   * drawing looks wrong when one is absent.
+   */
+  parcelBlocked?: { kind: string; message: string } | null;
   completeness?: {
     findings: ReadonlyArray<{ level: "error" | "warn"; code: string; message: string }>;
     /** Instant's facet count minus ours, as a share of Instant's. */
@@ -372,6 +379,12 @@ export function assessRoof(input: {
     );
   }
   for (const w of (input.completeness?.findings ?? []).filter((f) => f.level === "warn")) reasons.push(w.message);
+
+  if (input.parcelBlocked) {
+    reasons.push(
+      `The lot boundary for this address could not be looked up (${input.parcelBlocked.message}), so only the buildings the aerial data puts under the pin were measured. If this property has a detached garage, shop or barn, check it is on the drawing.`,
+    );
+  }
 
   const occ = input.instantOcclusion ?? null;
   const occSev = occlusionSeverity(occ?.occlusion);
