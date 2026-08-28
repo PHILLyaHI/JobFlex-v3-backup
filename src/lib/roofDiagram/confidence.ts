@@ -58,6 +58,33 @@ export const ESTIMATE_BLOCKING_CODES: readonly string[] = ["R03", "R04"];
  * 30.4 % with one facet draining 168° from its drawn direction — that last
  * roof is the reason this gate exists, and it lands exactly on the floor.
  */
+/**
+ * EagleView scores how much of each roof IT could see, in its own words:
+ * `roof_occlusion_none|_minor|_major` and `tree_overhang_none|_minor|_major`.
+ * That is the same question our DSM coverage answers, asked of different
+ * imagery by a different vendor — so it is a second witness, not a duplicate.
+ *
+ * It is read as a CAP on confidence, never as a reason to refuse to draw:
+ * their classifier says how well the roof could be seen, not whether our
+ * geometry is sound. Where the two disagree the worse one wins, because a roof
+ * that either source calls obscured is a roof somebody should look at.
+ *
+ * The mapping carries no new tuned number — it lines their three words up with
+ * the three tiers this file already has, on the meaning the tiers already
+ * carry: "some of it could not be seen" is exactly what stops a measurement
+ * being `high`, and "most of it could not be seen" is what makes one `low`.
+ */
+export type OcclusionSeverity = "none" | "minor" | "major" | "unknown";
+
+export function occlusionSeverity(token: string | null | undefined): OcclusionSeverity {
+  if (!token) return "unknown";
+  const t = token.toLowerCase();
+  if (/(^|_)(none|no)$/.test(t) || t.endsWith("_none")) return "none";
+  if (t.endsWith("_minor") || t.includes("minor")) return "minor";
+  if (t.endsWith("_major") || t.includes("major") || t.includes("severe")) return "major";
+  return "unknown";
+}
+
 export const UNRECOGNISED_FLAG_SHARE = 1 - COVERAGE_CLEAR;
 export const UNRECOGNISED_UNUSABLE_SHARE = 1 - COVERAGE_FLOOR;
 
@@ -133,6 +160,17 @@ export function assessRoof(input: {
    * confidence for a reason that is not its fault.
    */
   pitchSource?: { source: "measured" | "instant"; reason: string; solarPanels?: boolean; trustedShare?: number } | null;
+  /**
+   * EagleView's own verdict on how much of this roof was visible, with the
+   * confidence it attached. A second source for the question our coverage
+   * answers — see OcclusionSeverity.
+   */
+  instantOcclusion?: {
+    occlusion: string | null;
+    treeOverhang: string | null;
+    occlusionConfidence?: number | null;
+    overhangConfidence?: number | null;
+  } | null;
 }): RoofAssessment {
   const { coverage, errorCodes } = input;
   const reasons: string[] = [];
@@ -257,7 +295,15 @@ export function assessRoof(input: {
     );
   }
 
-  const confidence: RoofConfidence =
+  // ── EagleView's own view of how much of this roof was visible ──
+  const occ = input.instantOcclusion ?? null;
+  const occSev = occlusionSeverity(occ?.occlusion);
+  const overSev = occlusionSeverity(occ?.treeOverhang);
+  const rank: Record<OcclusionSeverity, number> = { none: 0, unknown: 0, minor: 1, major: 2 };
+  const worstSev: OcclusionSeverity = rank[overSev] > rank[occSev] ? overSev : occSev;
+  const instantCap: RoofConfidence | null = worstSev === "major" ? "low" : worstSev === "minor" ? "medium" : null;
+
+  const ours: RoofConfidence =
     geometryBad || layoutUnusable
       ? "low"
       : (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0 || layoutFlagged
@@ -267,6 +313,35 @@ export function assessRoof(input: {
           : errorCodes.length > 0
             ? "medium"
             : "high";
+
+  // The worse of the two witnesses wins.
+  const tier: Record<RoofConfidence, number> = { high: 0, medium: 1, low: 2 };
+  const confidence: RoofConfidence =
+    instantCap && tier[instantCap] > tier[ours] ? instantCap : ours;
+
+  if (occ && worstSev !== "unknown" && worstSev !== "none") {
+    const what =
+      overSev === worstSev && occSev === worstSev
+        ? "tree cover and obstruction"
+        : overSev === worstSev
+          ? "tree cover"
+          : "obstruction";
+    const conf = overSev === worstSev ? occ.overhangConfidence : occ.occlusionConfidence;
+    const certainty = conf != null ? ` (its own certainty ${Math.round(conf * 100)}%)` : "";
+    if (instantCap && tier[instantCap] > tier[ours]) {
+      // the disagreement case: our own coverage looked fine, theirs does not
+      reasons.push(
+        `The aerial elevation data covered this roof, but EagleView's survey of the same building reports ${worstSev} ${what}${certainty} — two sources disagree about how much of it is actually visible, and the more cautious one is shown here.`,
+        "Check the plan against the aerial view before pricing.",
+      );
+    } else {
+      reasons.push(
+        `EagleView's own survey also reports ${worstSev} ${what} on this roof${certainty}.`,
+      );
+    }
+  } else if (occ && worstSev === "none" && ours !== "high") {
+    reasons.push("EagleView's own survey reports this roof as unobstructed, so what is uncertain here is our reading of it, not the view of it.");
+  }
 
   if (confidence === "medium" && reasons.length === 0) {
     reasons.push(

@@ -568,6 +568,34 @@ export interface InstantStructure {
   chimney: boolean | null;
   solarPanels: boolean | null;
   rooftopAcCount: number | null;
+  /**
+   * EagleView's OWN statement of how much of this roof it could see:
+   * `roof_occlusion_none` | `..._minor` | `..._major` (their vocabulary — kept
+   * verbatim, never re-scaled here). Null when the classifier is absent.
+   * This is a second opinion on the same question our DSM coverage answers.
+   */
+  occlusion: string | null;
+  /** Likewise for canopy over the roof: `tree_overhang_none|_minor|_major`. */
+  treeOverhang: string | null;
+  /**
+   * Per-field confidence exactly as EagleView scored it, keyed by OUR field
+   * name. Their `-1` means "not scored" and is dropped rather than recorded as
+   * zero confidence. Every one of these used to be thrown away by the value
+   * getters, which read `.value` and nothing else — including the 0.189 on
+   * `structure_roof_facet_count` that the vertex budget was trusting blindly.
+   */
+  confidence: Record<string, number> | null;
+  /**
+   * One polygon per roof MATERIAL — a second, independent outline of the same
+   * roof, free in every response. Not a facet segmentation: one material means
+   * one polygon. Used only to CHECK the outline we draw from, never to replace
+   * it.
+   */
+  materialRings: Array<{
+    material: string | null;
+    areaSqft: number | null;
+    ring: Array<{ lat: number; lng: number }>;
+  }> | null;
 }
 
 export interface InstantImage {
@@ -638,6 +666,15 @@ const pdBool = (v: unknown): boolean | null => {
   if (/^(no|false|absent)$/i.test(s)) return false;
   return null;
 };
+/**
+ * The confidence EagleView attached to a field. Their sentinel for "we did not
+ * score this" is -1, which must not be read as zero confidence; anything
+ * outside 0..1 is discarded the same way.
+ */
+const pdConf = (v: unknown): number | null => {
+  const n = Number((v as PdValue | undefined)?.confidence);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : null;
+};
 // The API splits pitch across the pair — { value: 10, unit: "over 12" } —
 // and some responses inline it ("10 over 12"). Normalize both to "10/12".
 const pdPitch = (v: unknown): string | null => {
@@ -661,6 +698,50 @@ const pdRing = (geom: unknown): Array<{ lat: number; lng: number }> | null => {
     .filter((p): p is { lng: number; lat: number } => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
   return pts.length >= 3 ? pts : null;
 };
+
+/** Confidence for every scored field, keyed by the name WE use for it. */
+function confidenceOf(roof: Record<string, unknown>, st: Record<string, unknown>): Record<string, number> | null {
+  const pairs: Array<[string, unknown]> = [
+    ["areaSqft", roof.structure_roof_area],
+    ["squares", roof.structure_roof_area_squares],
+    ["pitch", roof.structure_roof_predominant_pitch],
+    ["facetCount", roof.structure_roof_facet_count],
+    ["shape", roof.structure_roof_shape],
+    ["material", roof.structure_roof_material_primary],
+    ["conditionRating", roof.structure_roof_condition_rating],
+    ["roofAgeYears", roof.structure_roof_age],
+    ["solarPanels", roof.structure_roof_solar_panel_presence],
+    ["rooftopAcCount", roof.structure_roof_air_conditioner_count],
+    ["occlusion", roof.structure_roof_occlusion_classification],
+    ["treeOverhang", roof.structure_tree_overhang_classification],
+    ["eaveHeightFt", st.structure_eave_height],
+    ["footprintSqft", st.structure_footprint_sqft],
+    ["chimney", st.structure_chimney_presence],
+  ];
+  const out: Record<string, number> = {};
+  for (const [name, v] of pairs) {
+    const c = pdConf(v);
+    if (c != null) out[name] = c;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** The per-material polygons, as lat/lng rings. */
+function materialRingsOf(v: unknown): InstantStructure["materialRings"] {
+  if (!Array.isArray(v)) return null;
+  const out: NonNullable<InstantStructure["materialRings"]> = [];
+  for (const entry of v) {
+    const e = (entry ?? {}) as { geometry?: unknown; area?: unknown; value?: unknown };
+    const ring = pdRing(e.geometry);
+    if (!ring) continue;
+    out.push({
+      material: typeof e.value === "string" ? e.value : null,
+      areaSqft: pdNum(e.area),
+      ring,
+    });
+  }
+  return out.length ? out : null;
+}
 
 /**
  * Every Property Data key we have ever SEEN — read or deliberately left alone —
@@ -727,7 +808,12 @@ export function unknownPdKeys(raw: unknown): string[] {
   return out;
 }
 
-function parseInstantResult(raw: PdResult, requestId: string, input: EvOrderInput, completeAddress: string): InstantRoofData {
+/**
+ * Exported so a STORED raw body (InstantOrder.instantRawJson) can be re-parsed
+ * later without paying again — the reason for keeping it at all. A parser
+ * change can now be replayed over every body we have.
+ */
+export function parseInstantResult(raw: PdResult, requestId: string, input: EvOrderInput, completeAddress: string): InstantRoofData {
   const structures: InstantStructure[] = (Array.isArray(raw.structures) ? raw.structures : []).map(
     (entry) => {
       const s = (entry ?? {}) as {
@@ -763,6 +849,10 @@ function parseInstantResult(raw: PdResult, requestId: string, input: EvOrderInpu
         chimney: pdBool(s.structure_chimney_presence),
         solarPanels: pdBool(roof.structure_roof_solar_panel_presence),
         rooftopAcCount: pdNum(roof.structure_roof_air_conditioner_count),
+        occlusion: pdStr(roof.structure_roof_occlusion_classification),
+        treeOverhang: pdStr(roof.structure_tree_overhang_classification),
+        confidence: confidenceOf(roof, s),
+        materialRings: materialRingsOf(roof.structure_roof_materials),
       };
     },
   );

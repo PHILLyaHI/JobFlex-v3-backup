@@ -172,6 +172,34 @@ export interface MeasurementProvenance {
    * reproduced (gables it could not convert, pent wings, split slopes). The
    * open case list, filled from the field instead of from the head.
    */
+  /**
+   * What EagleView said about this roof BEYOND the numbers we print — its own
+   * view of how obstructed the roof is, the confidence it attached to each
+   * field, and how its roof-material polygon compares with the outline we drew
+   * from. All of it arrives free in every paid response and used to be dropped
+   * by the parser.
+   */
+  instantSurvey?: {
+    /** `roof_occlusion_none|_minor|_major`, EagleView's own wording. */
+    occlusion: string | null;
+    /** `tree_overhang_none|_minor|_major`. */
+    treeOverhang: string | null;
+    /** Per-field confidence 0–1, keyed by our field name; absent = not scored. */
+    confidence?: Record<string, number>;
+    /**
+     * The outline we draw from, checked against EagleView's independent
+     * roof-material polygon for the same building. A check, never a source.
+     */
+    outlineCheck?: {
+      outlineSqft: number;
+      materialSqft: number;
+      diffPct: number;
+      /** False when the two disagree by more than the coverage tolerance. */
+      agrees: boolean;
+      materialPoints: number;
+      outlinePoints: number;
+    };
+  };
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   /** Share of roof PLAN area sitting in those facets, 0–1 — the figure the
    *  confidence gate judges the layout on. */

@@ -69,6 +69,7 @@ import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled,
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
 import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
+import { readInstantSurvey, type InstantSurvey } from "@/lib/roofDiagram/instantSurvey";
 
 /** Which engine drew the interior, and why, exactly as provenance stores it. */
 type WavefrontProvenance = NonNullable<MeasurementProvenance["wavefront"]>;
@@ -592,6 +593,7 @@ function provenanceOf(
     unrecognisedShare?: number;
     wavefront?: WavefrontProvenance;
     visionStructure?: VisionStructureEvidence;
+    instantSurvey?: InstantSurvey;
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -623,6 +625,7 @@ function provenanceOf(
       ...(notes?.instantReuse ? { instantReuse: notes.instantReuse } : {}),
       ...(notes?.structures?.length ? { structures: notes.structures } : {}),
       ...(notes?.nestedOutlines ? { nestedOutlines: notes.nestedOutlines } : {}),
+      ...(notes?.instantSurvey ? { instantSurvey: notes.instantSurvey } : {}),
       ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets, unrecognisedShare: notes.unrecognisedShare } : {}),
       ...(notes?.wavefront ? { wavefront: notes.wavefront } : {}),
       ...(notes?.visionStructure ? { visionStructure: notes.visionStructure } : {}),
@@ -1518,6 +1521,22 @@ export async function measureRoofInstant(
     }
   }
 
+  // EagleView's own survey of this roof: how obstructed it says the building is,
+  // what confidence it attached to each figure, and whether its roof-material
+  // polygon agrees with the outline we drew from. Free, and until now discarded.
+  let instantSurvey: InstantSurvey | undefined;
+  try {
+    instantSurvey = readInstantSurvey(instant, origin ?? { lat: instant.lat ?? 0, lng: instant.lng ?? 0 }) ?? undefined;
+    const chk = instantSurvey?.outlineCheck;
+    if (chk && !chk.agrees) {
+      console.warn(
+        "[roofMeasurement] EagleView's own two outlines of this building disagree by %s%% (%d-corner outline %d sf vs %d-corner material polygon %d sf) — the traced outline is not reliable here",
+        chk.diffPct.toFixed(1), chk.outlinePoints, Math.round(chk.outlineSqft), chk.materialPoints, Math.round(chk.materialSqft),
+      );
+    }
+  } catch (err) {
+    console.warn("[roofMeasurement] instant survey skipped:", errorMessage(err, String(err)));
+  }
   const toSave: PersistInput = {
     organizationId,
     createdById: userId,
@@ -1555,6 +1574,7 @@ export async function measureRoofInstant(
       ...(structures?.length ? { structures } : {}),
       ...(nestedOutlines ? { nestedOutlines } : {}),
       ...(unrecognisedFacets?.length ? { unrecognisedFacets, unrecognisedShare } : {}),
+      ...(instantSurvey ? { instantSurvey } : {}),
       ...(wavefront ? { wavefront } : {}),
       ...(visionStructure ? { visionStructure } : {}),
     }),

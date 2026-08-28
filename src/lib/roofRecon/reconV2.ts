@@ -57,6 +57,20 @@ const MIN_FAMILY_SHARE = 0.85;
  * reconstruction diagnostics, before any Instant call.
  */
 const MULTI_MASS_SLACK = 2;
+/**
+ * Below this, EagleView's own score says its facet count is more likely wrong
+ * than right, and a number like that must not aim the vertex budget.
+ *
+ * Not a tuned figure — one half is where a confidence stops being evidence for
+ * a value and starts being evidence against it. It matters: on the one full
+ * response we still have (419 Prairie) `structure_roof_facet_count` came back
+ * as 22 with a confidence of 0.189, while every other field on the same roof
+ * scored 0.59 or better. The budget was aiming at that 22 without knowing.
+ *
+ * Absent confidence means the response predates us reading it (every frozen
+ * fixture) — that is not evidence of doubt, so those behave exactly as before.
+ */
+const FACET_COUNT_MIN_CONFIDENCE = 0.5;
 
 /** Regularisation thresholds, exposed ONLY so the breadth harness can vary
  *  them against a sample and report sensitivity. Production passes nothing and
@@ -176,10 +190,12 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
       report: { structures: [], nestedOverlapSqft: 0, facets: 0, gableEnds: 0, pitch12, facetDeficit: null, reasons: [...reasons, "Instant returned no outline"], synthesizeFailed: [] },
     };
   }
-  const facetCounts = [...instant.structures]
+  const orderedStructures = [...instant.structures]
     .filter((s) => s.outline && s.outline.length >= 3)
-    .sort((a, b) => (b.areaSqft ?? b.footprintSqft ?? 0) - (a.areaSqft ?? a.footprintSqft ?? 0))
-    .map((s) => s.facetCount ?? null);
+    .sort((a, b) => (b.areaSqft ?? b.footprintSqft ?? 0) - (a.areaSqft ?? a.footprintSqft ?? 0));
+  const facetCounts = orderedStructures.map((s) => s.facetCount ?? null);
+  /** EagleView's confidence in each of those counts; null = it did not score one. */
+  const facetConfidence = orderedStructures.map((s) => s.confidence?.facetCount ?? null);
 
   const tune = input.tuning ?? {};
   const cap = tune.maxVertices ?? MAX_VERTICES;
@@ -206,7 +222,16 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
     // On a single-mass roof aim the budget at Instant's facet count; on a
     // multi-mass one the contour is not supposed to match it, so leave the
     // ceiling alone.
-    const wanted = facetCounts[i];
+    const rawWanted = facetCounts[i];
+    const wantedConf = facetConfidence[i];
+    // A facet count EagleView itself doubts decides nothing.
+    const distrusted = wantedConf != null && wantedConf < FACET_COUNT_MIN_CONFIDENCE;
+    const wanted = distrusted ? null : rawWanted;
+    if (distrusted) {
+      notes.push(
+        `Instant's facet count ${rawWanted} ignored — EagleView scored it ${(wantedConf as number).toFixed(3)} confident, so the vertex budget stays at the ceiling`,
+      );
+    }
     const budget =
       !multiMass && wanted != null && Number.isFinite(wanted)
         ? Math.max(MIN_BUDGET_VERTICES, Math.min(cap, wanted))
