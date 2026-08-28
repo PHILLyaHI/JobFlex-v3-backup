@@ -97,6 +97,12 @@ export interface ReconResult {
     droppedSteep: number; //          rejected as too steep to be roof
     pitches12: number[]; //           final per-facet pitch, rise/12
     clusterSqft: number[]; //         3D surface area of each, same order as pitches12
+    clusterAzimuthDeg: number[]; //   downslope compass bearing of each, same order
+    clusterCentroidFt: Array<[number, number]>; // plan centroid, frame feet
+    /** Up to 64 sample points per cluster, frame feet. A centroid is not enough:
+     *  an L-shaped or crescent facet has its centroid off itself, so "which plane
+     *  is on this side of that line" cannot be answered from centroids alone. */
+    clusterSamplesFt: Array<Array<[number, number]>>;
     clusterTopFt: number[]; //        highest point of each cluster above ground
     clusterBotFt: number[]; //        lowest point of each cluster above ground
   };
@@ -1426,6 +1432,19 @@ export function reconstructRoof(
       droppedSteep: steep.droppedSteep,
       pitches12: clusters.map((c) => Math.hypot(c.plane.a, c.plane.b) * 12),
       clusterSqft: clusters.map((c) => c.areaSqft),
+      clusterAzimuthDeg: clusters.map((c) => planeAzimuth(c.plane)),
+      clusterSamplesFt: clusters.map((c) => {
+        const step = Math.max(1, Math.floor(c.pixels.length / 64));
+        const pts: Array<[number, number]> = [];
+        for (let i = 0; i < c.pixels.length; i += step) pts.push([g.x[c.pixels[i]], g.y[c.pixels[i]]]);
+        return pts;
+      }),
+      clusterCentroidFt: clusters.map((c) => {
+        let sx = 0, sy = 0;
+        for (const i of c.pixels) { sx += g.x[i]; sy += g.y[i]; }
+        const n = c.pixels.length || 1;
+        return [sx / n, sy / n] as [number, number];
+      }),
       clusterTopFt: clusters.map((c) => {
         let t = -Infinity;
         for (const i of c.pixels) if (g.z[i] > t) t = g.z[i];
