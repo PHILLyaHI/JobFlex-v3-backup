@@ -1769,3 +1769,40 @@ model InstantOrder {
 
   @@index([addressKey, status])
 }
+
+/// Google Solar answers for one place, frozen so a second measurement of the
+/// same address never depends on Google answering twice.
+///
+/// NOT organization-scoped, unlike InstantOrder: an Instant lookup is billed to
+/// an org and its ledger row is that org's receipt, while Solar imagery is a
+/// property of the PLACE. Two orgs measuring the same house should share it.
+///
+/// The rasters are held as gzipped little-endian float32, the same wire format
+/// the QA fixtures use (dsm.f32.gz / mask.f32.gz), about 1.2 MB each.
+model SolarCache {
+  id         String   @id @default(cuid())
+  /// Upper-cased, whitespace-collapsed address, or `@lat,lng` rounded to ~1 m
+  /// when the caller had only a pin. Same normalisation as the Instant ledger.
+  addressKey String   @unique
+  lat        Float
+  lng        Float
+
+  /// DataLayerUrls as returned, minus nothing — the URLs are re-keyed on use.
+  layersJson String
+  /// BuildingInsights, when Google answered; its failure is non-fatal upstream.
+  insightsJson String?
+
+  /// Raster metadata (width/height/pixelSizeM/originX/originY/epsg) …
+  dsmMetaJson  String
+  maskMetaJson String
+  /// … and the pixels, gzipped float32.
+  dsmData      Bytes
+  maskData     Bytes
+
+  /// Google's own capture date for this tile, surfaced to the user.
+  imageryDate String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([lat, lng])
+}

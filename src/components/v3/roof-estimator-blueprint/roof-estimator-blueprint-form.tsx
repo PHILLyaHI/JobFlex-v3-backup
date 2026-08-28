@@ -88,9 +88,13 @@ const MS_STAGES = ["Requesting data…", "Locating the structure…", "Tracing f
 const LAYER_ORDER: DiagramLayer[] = ["lengths", "pitch", "area", "ids", "north", "chimneys", "legend"];
 const RECENT_LIMIT = 12;
 
-const SOURCE_CHIP: Record<MeasurementSource, { label: string; tone: "ok" | "wait" }> = {
+// `instant-outline` is a FAILED measurement wearing the totals of a successful
+// one: EagleView's numbers are there, the roof is not. "Outline" in a warning
+// tone read as a variety of result rather than a shortfall, so the row invited
+// no second look — and on 2026-08-28 a retry was all it needed.
+const SOURCE_CHIP: Record<MeasurementSource, { label: string; tone: "ok" | "wait" | "bad" }> = {
   "instant+recon": { label: "Instant", tone: "ok" },
-  "instant-outline": { label: "Outline", tone: "wait" },
+  "instant-outline": { label: "No facets", tone: "bad" },
   recon: { label: "Estimate", tone: "wait" },
 };
 
@@ -788,8 +792,31 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
                         </>
                       ) : s === "FACETS UNAVAILABLE" ? (
                         <>
-                          No usable aerial elevation data for this address, so the plan shows EagleView’s building
-                          outline with the measured totals — facets, pitches and edge lengths are not drawn.
+                          Google has no high-resolution elevation data for this address, so the plan shows EagleView’s
+                          building outline with the measured totals — facets, pitches and edge lengths are not drawn.
+                          Measuring again will not change that; order an EagleView report to get the facets.
+                        </>
+                      ) : s === "ELEVATION DATA NOT RECEIVED" ? (
+                        <>
+                          The elevation data for this address did not arrive
+                          {measurement.provenance.reconUnavailable?.kind === "config"
+                            ? " because the imagery service rejected our request"
+                            : " in time"}
+                          , so the plan shows EagleView’s building outline with the measured totals — facets, pitches
+                          and edge lengths are not drawn. This is not a statement about the address: the data may well
+                          be there. Measure again — EagleView’s answer is already paid for and will be reused, so a
+                          retry costs nothing.
+                          {measurement.provenance.reconUnavailable?.message && (
+                            <span className="rf-why">{measurement.provenance.reconUnavailable.message}</span>
+                          )}
+                          <button
+                            type="button"
+                            className="btn btn-primary btn--sm"
+                            onClick={() => void runInstant()}
+                            disabled={instantBusy}
+                          >
+                            {instantBusy ? "Measuring…" : "Measure again — free"}
+                          </button>
                         </>
                       ) : null}
                     </div>

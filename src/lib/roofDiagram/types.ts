@@ -222,6 +222,25 @@ export interface MeasurementProvenance {
     refused?: Array<{ facet: string; reason: string }>;
   };
   /**
+   * Why there is no reconstruction on this drawing.
+   *
+   * Absent means there IS one. Present means the plan is EagleView's outline
+   * alone, and this says why — which the screen needs, because the two causes
+   * call for opposite actions. `timeout` and `error` are ours or the network's
+   * and a second press usually works; `no-coverage` is Google's final answer
+   * and pressing again is a waste of the user's time.
+   *
+   * Before this field the reason went to console.warn and nowhere else: the
+   * owner watched 12629 come out as a bare outline on 2026-08-28 and could not
+   * learn what happened, and neither could we — the evidence survived only
+   * because the dev server had not been restarted.
+   */
+  reconUnavailable?: {
+    kind: "timeout" | "no-coverage" | "config" | "error";
+    /** The message the thrown error carried, verbatim. */
+    message: string;
+  };
+  /**
    * Did anything go MISSING from this drawing? Every other check on this record
    * compares the model against itself; ROOF-STATE §J's first-level rule says
    * none of them can see an omission, because an omission looks like "less" and

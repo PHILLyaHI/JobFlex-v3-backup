@@ -64,7 +64,8 @@ import {
 import { isSolarEnabled } from "@/lib/solar";
 import type { Raster } from "@/lib/solar";
 import { deleteBlob, isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
-import { buildReconModel, type ReconBuild, type ReconBuildInput } from "@/lib/roofReconBuild";
+import { buildReconModel, ReconUnavailableError, type ReconBuild, type ReconBuildInput } from "@/lib/roofReconBuild";
+import { SOLAR_CALL_BUDGET_MS, SolarUnavailableError, type SolarFailureKind } from "@/lib/solar";
 import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled, type ReconV2Structure } from "@/lib/roofRecon/reconV2";
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
@@ -147,8 +148,18 @@ interface LatLng {
   lng: number;
 }
 
-/** Budget for the free reconstruction (Solar layers + raster decode + plane fit). */
-const RECON_DEADLINE_MS = 25_000;
+/**
+ * Budget for the free reconstruction (Solar layers + raster decode + plane fit).
+ *
+ * DERIVED, not chosen. buildReconModel makes three SEQUENTIAL Solar calls —
+ * dataLayers, then the DSM and mask together, then buildingInsights — so the
+ * deadline that does not cancel its own retries is three times what one call
+ * may now cost. At 25 s it did exactly that: on 2026-08-28 the reconstruction
+ * of 12629 was abandoned 15.8 s in, with no retry ever attempted, out of a
+ * measurement budget of five minutes.
+ */
+const SOLAR_CALL_SLOTS = 3;
+const RECON_DEADLINE_MS = SOLAR_CALL_SLOTS * SOLAR_CALL_BUDGET_MS;
 /** Budget for the ortho download + vision model call. */
 const VISION_DEADLINE_MS = 20_000;
 /** Budget for the AI roof-outline trace. A cached accepted ring returns
@@ -608,6 +619,7 @@ function provenanceOf(
     nestedOutlines?: { overlapSqft: number; pairs: string[] };
     unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
     unrecognisedShare?: number;
+    reconUnavailable?: { kind: SolarFailureKind; message: string };
     completeness?: CompletenessProvenance;
     wavefront?: WavefrontProvenance;
     visionStructure?: VisionStructureEvidence;
@@ -647,6 +659,7 @@ function provenanceOf(
       ...(notes?.instantSurvey ? { instantSurvey: notes.instantSurvey } : {}),
       ...(notes?.creases ? { creases: notes.creases } : {}),
       ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets, unrecognisedShare: notes.unrecognisedShare } : {}),
+      ...(notes?.reconUnavailable ? { reconUnavailable: notes.reconUnavailable } : {}),
       ...(notes?.completeness ? { completeness: notes.completeness } : {}),
       ...(notes?.wavefront ? { wavefront: notes.wavefront } : {}),
       ...(notes?.visionStructure ? { visionStructure: notes.visionStructure } : {}),
@@ -1234,6 +1247,23 @@ function buildV2Geometry(
 
 // ── the Instant order ledger ─────────────────────────────────────────────────
 
+/**
+ * What kind of failure stopped the reconstruction, from the thrown value.
+ *
+ * Both error classes now carry their own `kind`, so this reads it rather than
+ * pattern-matching on message text. The last branch exists for the abort that
+ * escapes as a bare DOMException — the exact shape that produced the 2026-08-28
+ * incident, whose only trace anywhere was the string "The operation was aborted
+ * due to timeout" in a console line.
+ */
+function reconFailureKind(err: unknown): SolarFailureKind {
+  if (err instanceof SolarUnavailableError || err instanceof ReconUnavailableError) return err.kind;
+  const name = err instanceof Error ? err.name : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  if (name === "TimeoutError" || name === "AbortError" || /abort|timed out|timeout/i.test(msg)) return "timeout";
+  return "error";
+}
+
 /** ParcelCache-style address key: upper-cased, whitespace-collapsed, equality only. */
 const instantAddressKey = (input: EvOrderInput): string =>
   [input.address, input.city, input.state, input.zip]
@@ -1400,6 +1430,8 @@ export async function measureRoofInstant(
   let instantReuse: { requestId: string; how: "stored" | "recovered" } | undefined;
   /** Set when Instant could not be used, with the reason — the fallback logs it. */
   let instantMissing: string | null = null;
+  /** Set when the reconstruction could not be built, with the reason — it ships. */
+  let reconUnavailable: { kind: SolarFailureKind; message: string } | undefined;
 
   try {
     const ctx = await requireEstimatorOrManager();
@@ -1418,7 +1450,15 @@ export async function measureRoofInstant(
     const [instantSettled, reconSettled] = await Promise.allSettled([
       obtainInstant(input, organizationId, opts?.forceNewOrder === true),
       isSolarEnabled()
-        ? withDeadline(buildReconModel(input), RECON_DEADLINE_MS, "Roof reconstruction")
+        ? // A forced re-order is the user saying "measure this address afresh at a
+          // cost". It would be odd for the billed half to be refetched and the
+          // free half to come back from a cache, so the same gesture drops the
+          // frozen Solar answer too.
+          withDeadline(
+            buildReconModel({ ...input, ...(opts?.forceNewOrder === true ? { refreshSolar: true } : {}) }),
+            RECON_DEADLINE_MS,
+            "Roof reconstruction",
+          )
         : Promise.reject<ReconBuild>(new Error("Google Solar is not configured")),
     ]);
 
@@ -1444,9 +1484,16 @@ export async function measureRoofInstant(
       recon = reconSettled.value;
     } else {
       recon = null;
+      // Kept, not just logged. This is the whole of what the screen can say
+      // about why it is showing an outline, and until 2026-08-28 it was thrown
+      // away here.
+      reconUnavailable = {
+        kind: reconFailureKind(reconSettled.reason),
+        message: errorMessage(reconSettled.reason, String(reconSettled.reason)),
+      };
       console.warn(
-        "[roofMeasurement] reconstruction unavailable, drawing the outline only:",
-        errorMessage(reconSettled.reason, String(reconSettled.reason)),
+        `[roofMeasurement] reconstruction unavailable (${reconUnavailable.kind}), drawing the outline only:`,
+        reconUnavailable.message,
       );
     }
   } catch (err) {
@@ -1674,6 +1721,7 @@ export async function measureRoofInstant(
       ...(structures?.length ? { structures } : {}),
       ...(nestedOutlines ? { nestedOutlines } : {}),
       ...(unrecognisedFacets?.length ? { unrecognisedFacets, unrecognisedShare } : {}),
+      ...(reconUnavailable ? { reconUnavailable } : {}),
       ...(completeness ? { completeness } : {}),
       ...(instantSurvey ? { instantSurvey } : {}),
       ...(creases ? { creases } : {}),

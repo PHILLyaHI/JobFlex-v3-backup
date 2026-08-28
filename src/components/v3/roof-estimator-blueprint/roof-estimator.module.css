@@ -595,6 +595,16 @@
 }
 .bp :global(.content .chip.ok) { color: var(--success); background: var(--success-soft); }
 .bp :global(.content .chip.wait) { color: var(--warning); background: var(--warning-soft); }
+.bp :global(.content .chip.bad) { color: var(--danger); background: var(--danger-soft); }
+
+/* The verbatim failure text under a notice — evidence, in the smaller voice. */
+.bp :global(.content .rf-why) {
+  display: block;
+  margin: 6px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
 
 /* Capped lists: <=4 in full, 5–10 scroll, >10 truncate + button */
 .bp :global(.content .list) { position: relative; }

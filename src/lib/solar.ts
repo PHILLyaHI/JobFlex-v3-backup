@@ -31,6 +31,100 @@ export function isSolarEnabled(): boolean {
   return Boolean(process.env.GOOGLE_MAPS_API_KEY);
 }
 
+// ── retry ────────────────────────────────────────────────────────────────────
+// Measured, 2026-08-28: a single 15 s abort on ONE of these three calls threw
+// away a whole reconstruction of 12629 NE 100th Pl — an address that had built
+// 16 facets two days earlier and builds them now. There was no retry anywhere,
+// the whole measurement gave up after 15.8 s of a 25 s budget, and the user saw
+// a drawing captioned "no usable aerial elevation data for this address", which
+// was false.
+//
+// The per-attempt ceiling stays at 15 s: it is the right answer to "this one
+// request has hung". What was missing is a second ask.
+
+/** How long ONE attempt may take. Unchanged — this was never the wrong number. */
+export const SOLAR_TIMEOUT_MS = 15_000;
+/** One try plus two retries. */
+export const SOLAR_ATTEMPTS = 3;
+/** First pause before retrying; doubles each time (1 s, 2 s). */
+const SOLAR_BACKOFF_MS = 1_000;
+
+/**
+ * The worst case ONE Solar call can take under this policy. Exported because
+ * the reconstruction deadline is derived from it rather than guessed: a caller
+ * that allows less than this is cancelling its own retries.
+ */
+export const SOLAR_CALL_BUDGET_MS =
+  SOLAR_ATTEMPTS * SOLAR_TIMEOUT_MS +
+  Array.from({ length: SOLAR_ATTEMPTS - 1 }, (_, i) => SOLAR_BACKOFF_MS << i).reduce((a, b) => a + b, 0);
+
+/** Why the Solar side could not answer — kept typed so the UI can tell the user. */
+export type SolarFailureKind =
+  /** The request hung or the network broke. Trying again is the right move. */
+  | "timeout"
+  /** Google says it has no high-resolution data here. Trying again changes nothing. */
+  | "no-coverage"
+  /** The key or its project is misconfigured. Ours to fix, not the user's. */
+  | "config"
+  /** Anything else Google returned. */
+  | "error";
+
+export class SolarUnavailableError extends Error {
+  constructor(
+    message: string,
+    readonly kind: SolarFailureKind,
+    readonly op: string,
+  ) {
+    super(message);
+    this.name = "SolarUnavailableError";
+  }
+}
+
+/**
+ * A definitive status is an ANSWER, not a failure to answer: 404 means Google
+ * has looked and has nothing here, 403 means the key is wrong. Asking twice
+ * cannot change either, and retrying them would turn a 0.2 s "no" into a 48 s
+ * one. Only 429 and 5xx — plus aborts and dropped connections — are worth a
+ * second ask.
+ */
+const isWorthRetrying = (status: number): boolean => status === 429 || status >= 500;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * One Solar request, with retries. Returns the successful Response; the caller
+ * reads the body. Every throw out of here is a SolarUnavailableError carrying
+ * the kind, so callers never have to pattern-match on message text.
+ */
+async function solarFetch(url: string, op: string): Promise<Response> {
+  let last: SolarUnavailableError | null = null;
+  for (let attempt = 1; attempt <= SOLAR_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(SOLAR_TIMEOUT_MS) });
+      if (res.ok) return res;
+      if (!isWorthRetrying(res.status)) throw await solarError(res, op);
+      last = new SolarUnavailableError(`Solar ${op} returned ${res.status}`, "error", op);
+    } catch (err) {
+      // A definitive status already came back as a SolarUnavailableError from
+      // solarError(); it must not be swallowed into another attempt.
+      if (err instanceof SolarUnavailableError && err.kind !== "timeout") throw err;
+      last =
+        err instanceof SolarUnavailableError
+          ? err
+          : new SolarUnavailableError(
+              `Google Solar did not answer in ${SOLAR_TIMEOUT_MS / 1000}s (${op})`,
+              "timeout",
+              op,
+            );
+    }
+    if (attempt < SOLAR_ATTEMPTS) {
+      console.warn(`[solar] ${op} attempt ${attempt}/${SOLAR_ATTEMPTS} failed (${last?.message}) — retrying`);
+      await sleep(SOLAR_BACKOFF_MS << (attempt - 1));
+    }
+  }
+  throw last ?? new SolarUnavailableError(`Solar ${op} failed`, "error", op);
+}
+
 // ── Building insights ────────────────────────────────────────────────────────
 // Google's own per-segment roof stats. We use these as a CROSS-CHECK and as a
 // prior for plane clustering — not as geometry. Each segment carries only an
@@ -80,8 +174,7 @@ export async function getBuildingInsights(
     `${SOLAR_BASE}/buildingInsights:findClosest` +
     `?location.latitude=${lat}&location.longitude=${lng}` +
     `&requiredQuality=HIGH&key=${process.env.GOOGLE_MAPS_API_KEY}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw await solarError(res, "buildingInsights");
+  const res = await solarFetch(url, "buildingInsights");
   const b = obj(await res.json());
   const sp = obj(b.solarPotential);
   const segments: SolarRoofSegment[] = arr(sp.roofSegmentStats)
@@ -133,8 +226,7 @@ export async function getDataLayers(
     `?location.latitude=${lat}&location.longitude=${lng}` +
     `&radiusMeters=${radiusMeters}&view=FULL_LAYERS&requiredQuality=HIGH` +
     `&pixelSizeMeters=0.1&key=${process.env.GOOGLE_MAPS_API_KEY}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw await solarError(res, "dataLayers");
+  const res = await solarFetch(url, "dataLayers");
   const d = obj(await res.json());
   const asUrl = (v: unknown) => (typeof v === "string" && v ? v : null);
   return {
@@ -162,10 +254,7 @@ export async function fetchRaster(url: string): Promise<Raster> {
   if (!isSolarEnabled()) throw new Error("Google Maps key is not configured");
   // The layer URLs carry no credentials of their own (gotcha 2).
   const sep = url.includes("?") ? "&" : "?";
-  const res = await fetch(`${url}${sep}key=${process.env.GOOGLE_MAPS_API_KEY}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`Solar raster fetch failed (${res.status})`);
+  const res = await solarFetch(`${url}${sep}key=${process.env.GOOGLE_MAPS_API_KEY}`, "raster");
   const buf = await res.arrayBuffer();
   const tiff = await fromArrayBuffer(buf);
   const img = await tiff.getImage();
@@ -193,7 +282,7 @@ export async function fetchRaster(url: string): Promise<Raster> {
 
 // Surface Google's own error text — a 403 here almost always means the Solar API
 // is not enabled on the key's project, which is invisible from the UI otherwise.
-async function solarError(res: Response, op: string): Promise<Error> {
+async function solarError(res: Response, op: string): Promise<SolarUnavailableError> {
   let detail = "";
   try {
     const message = obj(obj(await res.json()).error).message;
@@ -202,14 +291,22 @@ async function solarError(res: Response, op: string): Promise<Error> {
     /* non-JSON body */
   }
   if (res.status === 403) {
-    return new Error(
+    return new SolarUnavailableError(
       `Google Solar API rejected this key (403). Enable "Solar API" for this key's Cloud project.${detail ? ` — ${detail}` : ""}`,
+      "config",
+      op,
     );
   }
   if (res.status === 404) {
-    return new Error(
+    return new SolarUnavailableError(
       "Google has no high-resolution solar/roof data for this address. Order an EagleView report to measure it.",
+      "no-coverage",
+      op,
     );
   }
-  return new Error(`Solar ${op} failed (${res.status})${detail ? `: ${detail.slice(0, 160)}` : ""}`);
+  return new SolarUnavailableError(
+    `Solar ${op} failed (${res.status})${detail ? `: ${detail.slice(0, 160)}` : ""}`,
+    "error",
+    op,
+  );
 }
