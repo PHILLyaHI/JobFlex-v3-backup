@@ -362,6 +362,11 @@ function sharedEdges(facets: Facet[]): LayoutLine[] {
   console.log(`
 ${"=".repeat(78)}`);
   const valid = totals.filter((t) => t.green);
+  console.log("THIS METRIC IS CORRECT BUT SPARSE — read the denominators, not the percentages.");
+  console.log("Judging a line needs two DIFFERENT trusted measured facets on its two sides, and this");
+  console.log("data yields 2-7 such lines per house. A small denominator here means the ELEVATION DATA");
+  console.log("could not adjudicate, not that the reader did badly. For a dense score of the same");
+  console.log("reader use downhill-compare.ts, which judges one facet per case.\n");
   console.log(`control passed on ${valid.length} of ${totals.length} addresses (floor ${(CONTROL_FLOOR * 100).toFixed(0)}%)`);
   for (const t of totals) {
     console.log(

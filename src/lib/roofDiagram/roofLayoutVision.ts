@@ -1,4 +1,4 @@
-// READ THE LAYOUT — four questions, in order, each seeing the last answer.
+// READ THE LAYOUT — five questions, in order, each seeing the last answer.
 //
 // This replaces asking one model, once, "find the ridges" over a masked Google
 // ortho. What that produced, measured: 50% correct drain directions against 38%
@@ -21,9 +21,17 @@
 //     areas could not be read is a required field, not an apology. A variant of
 //     this was run earlier on this branch — half as many lines, each with a
 //     visual reason — and was never shipped.
-//  4. Four DIFFERENT questions rather than one asked four times. Masses, then
-//     gable-versus-hip, then main ridges, then valleys. Different questions
-//     make different mistakes; the same question repeated makes the same one.
+//  4. Five DIFFERENT questions rather than one asked five times. Masses, then
+//     gable-versus-hip, then main ridges, then valleys, then the facets and
+//     which way each drains. Different questions make different mistakes; the
+//     same question repeated makes the same one.
+//
+// The last pass exists for MEASURABILITY. Lines are what a drawing needs, but a
+// line can only be scored where two different trusted planes sit on its two
+// sides, and this data yields 2-7 such lines per house — too few to conclude
+// anything from. A facet with a named downhill direction is one judgeable case
+// each, which is how the earlier read produced 22 cases from five houses. Same
+// output shape, same metric, comparable number.
 //
 // EVERYTHING HERE IS A PROPOSAL. Nothing from this read reaches a drawing until
 // the geometric gate has passed it.
@@ -52,9 +60,28 @@ export interface UnreadableArea {
   why: string;
 }
 
+/**
+ * A facet with a named downhill direction — the SAME shape the earlier read
+ * produced, on purpose. It is the only output of a vision pass that can be
+ * scored densely: every facet is one judgeable case, whereas a line needs two
+ * different trusted planes on its two sides and this data yields only 2-7 such
+ * lines per house. Keeping the shape means the proven downhill-check metric
+ * applies unchanged and the new number is commensurable with the old 50%.
+ */
+export interface LayoutFacet {
+  /** Plan polygon, frame feet. */
+  polygon: Array<{ x: number; y: number }>;
+  /** One of the eight compass points, the way water runs off it. */
+  downhill: string;
+  cue: string;
+  confidence: number;
+}
+
 export interface LayoutRead {
   masses: Array<{ label: string; note: string }>;
   lines: LayoutLine[];
+  /** Facets with named drainage — for measurement, not for drawing. */
+  facets: LayoutFacet[];
   unreadable: UnreadableArea[];
   /** Passes the reader declined to answer. A refusal is a result, not an error. */
   refusedPasses: string[];
@@ -109,14 +136,15 @@ interface PassSpec {
 }
 
 /**
- * Four different questions. The order is the order a person uses: what are the
- * big pieces, how does each one end, where is its spine, then the details.
+ * Five different questions. The order is the order a person uses: what are the
+ * big pieces, how does each one end, where is its spine, then the details, and
+ * finally the facets themselves — the one answer that can be scored densely.
  */
 const PASSES: PassSpec[] = [
   {
     name: "masses",
     question: [
-      "QUESTION 1 of 4 — HOW MANY SEPARATE MASSES.",
+      "QUESTION 1 of 5 — HOW MANY SEPARATE MASSES.",
       'A "mass" is one block of the building with its own roof: a main house, a garage wing, an ell, a porch. Two masses meet at a valley, or one abuts the other as a wall.',
       "Clues: a step in eave height between sides; a change of ridge height; an outline that turns a corner and keeps going; a shadow line across the roof that is not a crease.",
       "Do NOT list facets. List masses.",
@@ -127,7 +155,7 @@ const PASSES: PassSpec[] = [
   {
     name: "ends",
     question: [
-      "QUESTION 2 of 4 — HOW EACH MASS ENDS.",
+      "QUESTION 2 of 5 — HOW EACH MASS ENDS.",
       "For every mass from question 1, decide how its short ends are framed:",
       "  GABLE — the end is a vertical triangle of wall; the roof edge runs UP the slope (a rake). You see a straight sloping edge with wall below it and no roof surface beyond.",
       "  HIP — the end is a sloping triangle of roof; you see roof surface running down to a horizontal eave on that side.",
@@ -139,7 +167,7 @@ const PASSES: PassSpec[] = [
   {
     name: "ridges",
     question: [
-      "QUESTION 3 of 4 — THE MAIN RIDGE OF EACH MASS.",
+      "QUESTION 3 of 5 — THE MAIN RIDGE OF EACH MASS.",
       "One line per mass, along its long axis, level end to end. A ridge separates two planes that drain in OPPOSITE directions — check that against the measured plane bearings you were given. If a mass is a shed (one plane, one direction), say so and give no ridge for it.",
       "The ridge of a mass runs BETWEEN the ends you classified in question 2: on a hipped end it stops short of the wall, on a gabled end it reaches it.",
     ].join("\n"),
@@ -149,7 +177,7 @@ const PASSES: PassSpec[] = [
   {
     name: "details",
     question: [
-      "QUESTION 4 of 4 — VALLEYS AND THE REMAINING LINES.",
+      "QUESTION 4 of 5 — VALLEYS AND THE REMAINING LINES.",
       "Now the lines that connect what you have already placed:",
       "  VALLEY — an inward crease where two slopes meet and water collects. Runs from an inside corner of the outline up toward a ridge end. Often darker in the photograph, because it holds debris and stays wet.",
       "  HIP — an outward crease from an outside corner of the outline up to a ridge end.",
@@ -157,6 +185,18 @@ const PASSES: PassSpec[] = [
     ].join("\n"),
     schema:
       '{"lines":[{"a":[x_ft,y_ft],"b":[x_ft,y_ft],"type":"VALLEY|HIP","cue":"","confidence":0.0}],"unreadable":[{"where":[x_ft,y_ft],"radiusFt":0,"why":""}]}',
+  },
+  {
+    name: "facets",
+    question: [
+      "QUESTION 5 of 5 — THE FACETS THEMSELVES, AND WHICH WAY EACH ONE DRAINS.",
+      "Divide the roof into its flat pieces — the surfaces bounded by the lines you have just placed — and for each one say which way water runs DOWN it.",
+      "The direction must be one of exactly these eight: N, NE, E, SE, S, SW, W, NW. North is up in both pictures.",
+      "This is the single most checkable thing you can tell us, so answer it carefully and leave out any facet you are not sure of. A facet you omit costs nothing; a facet pointed the wrong way is a wrongly-ordered roof.",
+      "Sanity check against what you were told: the measured plane bearings in the brief are this same quantity, measured independently. Where your reading of a facet disagrees with every measured bearing near it, prefer to omit the facet and say so.",
+    ].join("\n"),
+    schema:
+      '{"facets":[{"polygon":[[x_ft,y_ft],[x_ft,y_ft],[x_ft,y_ft]],"downhill":"N|NE|E|SE|S|SW|W|NW","cue":"","confidence":0.0}],"unreadable":[{"where":[x_ft,y_ft],"radiusFt":0,"why":""}]}',
   },
 ];
 
@@ -211,6 +251,34 @@ function readLines(o: Record<string, unknown>, pass: string): LayoutLine[] {
   return out;
 }
 
+const COMPASS = new Set(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
+
+function readFacets(o: Record<string, unknown>): LayoutFacet[] {
+  const raw = Array.isArray(o.facets) ? o.facets : [];
+  const out: LayoutFacet[] = [];
+  for (const item of raw as Array<Record<string, unknown>>) {
+    const poly = Array.isArray(item.polygon) ? item.polygon : [];
+    const pts: Array<{ x: number; y: number }> = [];
+    for (const c of poly as unknown[]) {
+      if (!Array.isArray(c) || c.length < 2) continue;
+      const x = num(c[0]);
+      const y = num(c[1]);
+      if (x != null && y != null) pts.push({ x, y });
+    }
+    const dir = String(item.downhill ?? "").toUpperCase().trim();
+    // A direction that is not a compass point cannot be scored, and a facet
+    // that cannot be scored is not kept — the whole purpose of this pass.
+    if (pts.length < 3 || !COMPASS.has(dir)) continue;
+    out.push({
+      polygon: pts,
+      downhill: dir,
+      cue: typeof item.cue === "string" ? item.cue : "",
+      confidence: num(item.confidence) ?? 0,
+    });
+  }
+  return out;
+}
+
 function readUnreadable(o: Record<string, unknown>): UnreadableArea[] {
   const raw = Array.isArray(o.unreadable) ? o.unreadable : [];
   const out: UnreadableArea[] = [];
@@ -233,6 +301,7 @@ export async function readRoofLayout(input: LayoutVisionInput): Promise<LayoutRe
   const base: LayoutRead = {
     masses: [],
     lines: [],
+    facets: [],
     unreadable: [],
     refusedPasses: [],
     model: layoutModel(),
@@ -288,16 +357,23 @@ export async function readRoofLayout(input: LayoutVisionInput): Promise<LayoutRe
       }
       const got = readLines(parsed, spec.name);
       const un = readUnreadable(parsed);
+      const fac = readFacets(parsed);
       base.lines.push(...got);
       base.unreadable.push(...un);
+      base.facets.push(...fac);
       if (spec.name === "masses" && Array.isArray(parsed.masses)) {
         for (const m of parsed.masses as Array<Record<string, unknown>>) {
           base.masses.push({ label: String(m.label ?? "?"), note: String(m.note ?? "") });
         }
       }
       // An explicitly empty answer is a refusal, and it is a valid one.
-      if (!got.length && !un.length) base.refusedPasses.push(spec.name);
-      base.passes.push({ name: spec.name, ms: Date.now() - t0, lines: got.length, refused: !got.length });
+      if (!got.length && !un.length && !fac.length) base.refusedPasses.push(spec.name);
+      base.passes.push({
+        name: spec.name,
+        ms: Date.now() - t0,
+        lines: got.length + fac.length,
+        refused: !got.length && !fac.length,
+      });
       carried += `\n[${spec.name}] ${JSON.stringify(parsed).slice(0, 1200)}`;
     } catch (err) {
       base.refusedPasses.push(spec.name);
