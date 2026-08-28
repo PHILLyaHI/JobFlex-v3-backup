@@ -399,14 +399,39 @@ function markNestedStructures(structures: ReconV2Structure[]): number {
  * before this was restricted). Clamped at 1 — a mask that spills past the
  * contour is not extra confidence.
  */
+/**
+ * How much of the roof the elevation data actually saw.
+ *
+ * TWO figures, and the difference between them is itself evidence. Measured on
+ * Kirkland: 92 % of what the mask was missing lay in bands along the perimeter,
+ * and nothing at all was missing deeper than 8 ft in — that is where Google's
+ * segmentation stops, not where the trees are. So the perimeter band measures
+ * agreement with somebody else's outline, while the interior measures whether
+ * the roof was actually visible.
+ *
+ *   · `insetShare` — the interior only, ignoring a band `insetFt` wide along
+ *     the boundary. This is what "was this roof visible" means, and it is what
+ *     the confidence tier is judged on.
+ *   · `share` — the whole contour, kept as the control.
+ *   · A wide gap between them says the mask disagrees with our outline at the
+ *     edge, which is a fact about the mask on this house and is recorded.
+ */
 export function measureCoverage(input: {
   mask: Raster;
   dsm: Raster;
   groundElevFt: number;
   /** The plan polygons the roof was drawn on, in frame feet. */
   rings: FootprintPoint[][];
-}): { seenSqft: number; contourSqft: number; share: number } | null {
+  /**
+   * Width of the perimeter band left out of the interior figure, feet. The
+   * default is the drawing's own eave-overhang allowance (drawing-rules spec
+   * §5 P2 puts it at 12–24 in, and the vision gate already uses 4 ft as "this
+   * vertex is still on the same wall") — not a new number.
+   */
+  insetFt?: number;
+}): { seenSqft: number; contourSqft: number; share: number; insetSeenSqft: number; insetSqft: number; insetShare: number | null } | null {
   const { mask, dsm, groundElevFt, rings } = input;
+  const insetFt = input.insetFt ?? 4;
   const usable = rings.filter((r) => r.length >= 3);
   if (!usable.length) return null;
   const contourSqft = usable.reduce((s2, r) => s2 + areaOf(r), 0);
@@ -437,19 +462,52 @@ export function measureCoverage(input: {
     return false;
   };
 
+  // distance from a point to the nearest boundary edge of any ring
+  const distToEdge = (x: number, y: number): number => {
+    let best = Infinity;
+    for (const r of usable) {
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i];
+        const b = r[(i + 1) % r.length];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const l2 = dx * dx + dy * dy;
+        const t = l2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l2));
+        best = Math.min(best, Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy)));
+      }
+    }
+    return best;
+  };
+
   let seen = 0;
+  let insetSeen = 0;
+  let insetCells = 0;
   for (let py = py0; py <= py1; py++) {
     for (let px = px0; px <= px1; px++) {
       const x = (px + 0.5 - w / 2) * stepFt;
       const y = (h / 2 - py - 0.5) * stepFt;
       if (!inside(x, y)) continue;
+      const deep = distToEdge(x, y) >= insetFt;
+      if (deep) insetCells++;
       if (!(mask.data[py * w + px] > 0)) continue;
       const z = dsm.data[py * w + px];
-      if (Number.isFinite(z) && z >= cutM) seen++;
+      if (Number.isFinite(z) && z >= cutM) {
+        seen++;
+        if (deep) insetSeen++;
+      }
     }
   }
   const seenSqft = seen * cellSqft;
-  return { seenSqft, contourSqft, share: Math.min(1, seenSqft / contourSqft) };
+  const insetSqft = insetCells * cellSqft;
+  return {
+    seenSqft,
+    contourSqft,
+    share: Math.min(1, seenSqft / contourSqft),
+    insetSeenSqft: insetSeen * cellSqft,
+    insetSqft,
+    // A roof too small to have an interior after the inset has no second
+    // opinion to give; the caller falls back on the whole-contour figure.
+    insetShare: insetSqft > 0 ? Math.min(1, (insetSeen * cellSqft) / insetSqft) : null,
+  };
 }
 
 export interface ReconV2FallbackInput {

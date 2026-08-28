@@ -95,9 +95,29 @@ export interface RoofCoverage {
   seenSqft: number;
   /** Area of the contour the roof was drawn on, sq ft. */
   contourSqft: number;
-  /** seenSqft / contourSqft. */
+  /** seenSqft / contourSqft — the CONTROL figure. */
   share: number;
+  /**
+   * The same, over the interior only, ignoring a 4 ft band along the boundary.
+   * This is what "was this roof visible" means and it is what the tier is
+   * judged on; null when the roof is too small to have an interior.
+   *
+   * Why the interior is the honest one, measured on Kirkland: 92 % of what the
+   * mask was missing lay in bands along the perimeter, and nothing at all was
+   * missing deeper than 8 ft in. The perimeter band measures agreement with
+   * Google's segmentation boundary, not whether trees were in the way.
+   */
+  insetShare?: number | null;
 }
+
+/**
+ * How far the interior figure and the whole-contour figure may disagree before
+ * the disagreement is itself a finding. Twice the clear tolerance: if more than
+ * two waste factors' worth of the roof behaves differently at the edge than in
+ * the middle, the mask does not agree with our outline on this house, whatever
+ * either number says on its own. No new constant.
+ */
+export const COVERAGE_EDGE_GAP = 2 * (1 - COVERAGE_CLEAR);
 
 export interface RoofAssessment {
   confidence: RoofConfidence;
@@ -184,8 +204,15 @@ export function assessRoof(input: {
   const share = coveredStructs?.length
     ? coveredStructs.reduce((s, st) => s + (st.share as number) * st.contourSqft, 0) /
       coveredStructs.reduce((s, st) => s + st.contourSqft, 0)
-    : coverage?.share ?? null;
+    : coverage?.insetShare ?? coverage?.share ?? null;
   const inferredShare = share == null ? null : Math.max(0, 1 - share);
+  // The control figure and how far it stands from the one we judged on.
+  const controlShare = coverage?.share ?? null;
+  const edgeGap =
+    coverage?.insetShare != null && controlShare != null
+      ? Math.abs(coverage.insetShare - controlShare)
+      : null;
+  const maskDisagrees = edgeGap != null && edgeGap > COVERAGE_EDGE_GAP;
 
   if (structs && coveredStructs && coveredStructs.length === 0) {
     // No structure at all is covered — this really is a roof nobody saw.
@@ -296,6 +323,12 @@ export function assessRoof(input: {
   }
 
   // ── EagleView's own view of how much of this roof was visible ──
+  if (maskDisagrees && edgeGap != null) {
+    reasons.push(
+      `The building outline the elevation data draws does not line up with this roof's edge: ${Math.round((coverage?.insetShare ?? 0) * 100)}% of the interior is covered against ${Math.round((controlShare ?? 0) * 100)}% of the whole outline. The middle of the roof was seen; the disagreement is at the perimeter, so treat the outer dimensions with more caution than the area.`,
+    );
+  }
+
   const occ = input.instantOcclusion ?? null;
   const occSev = occlusionSeverity(occ?.occlusion);
   const overSev = occlusionSeverity(occ?.treeOverhang);
@@ -306,7 +339,7 @@ export function assessRoof(input: {
   const ours: RoofConfidence =
     geometryBad || layoutUnusable
       ? "low"
-      : (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0 || layoutFlagged
+      : (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0 || layoutFlagged || maskDisagrees
         ? "medium"
         : input.cannotValidate || share == null
           ? "medium"

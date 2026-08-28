@@ -230,7 +230,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
               measurement.provenance.structures?.map((st) => ({
                 prefix: st.prefix,
                 contourSqft: st.contourSqft,
-                share: st.coverage?.share ?? null,
+                share: st.coverage?.insetShare ?? st.coverage?.share ?? null,
               })) ?? null,
             errorCodes: gate?.errorCodes ?? [],
             cannotValidate,

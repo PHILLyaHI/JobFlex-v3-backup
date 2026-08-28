@@ -135,7 +135,13 @@ export interface MeasurementProvenance {
    * (confidence.ts); absent when there was no reconstruction to measure it
    * from, which is itself not a reason to withhold anything.
    */
-  coverage?: { seenSqft: number; contourSqft: number; share: number };
+  /**
+   * How much of the roof the elevation data saw. `insetShare` ignores a 4 ft
+   * band along the boundary and is the figure the confidence tier is judged
+   * on; `share` covers the whole contour and is kept as the control. A wide
+   * gap between them is a fact about the mask on this house.
+   */
+  coverage?: { seenSqft: number; contourSqft: number; share: number; insetShare?: number | null };
   /**
    * Where the pitch came from and why. "instant" means the elevation data was
    * describing something ON the roof rather than the roof — a solar array is
@@ -268,7 +274,7 @@ export interface StructureProvenance {
   /** Facet-letter prefix (A, B, …) — facets map to structures by it. */
   prefix: string;
   contourSqft: number;
-  coverage: { seenSqft: number; share: number } | null;
+  coverage: { seenSqft: number; share: number; insetShare?: number | null } | null;
   /** Meets the per-structure coverage floor. */
   covered: boolean;
   registration?: {

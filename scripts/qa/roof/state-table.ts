@@ -60,10 +60,12 @@ const codes = (m: RoofModel): string[] =>
 
     const transforms = new Map<number, { dxFt: number; dyFt: number; thetaDeg: number }>();
     const perStruct: Array<{ prefix: string; contourSqft: number; share: number | null }> = [];
+    const controls: Array<number | null> = [];
     for (const [ki, k] of kept.entries()) {
       const ring = k.ring as FootprintPoint[];
       const reg = registerContourToRaster({ contour: ring, mask, dsm, groundElevFt: ground });
       let share: number | null = null;
+      let control: number | null = null;
       if (reg.applied) {
         const rad = (reg.transform.thetaDeg * Math.PI) / 180;
         const moved = ring.map((p) => ({
@@ -71,10 +73,12 @@ const codes = (m: RoofModel): string[] =>
           y: p.x * Math.sin(rad) + p.y * Math.cos(rad) + reg.transform.dyFt,
         }));
         const cov = measureCoverage({ mask, dsm, groundElevFt: ground, rings: [moved] });
-        share = cov ? cov.share : null;
+        share = cov ? (cov.insetShare ?? cov.share) : null;
+        control = cov ? cov.share : null;
         if (share != null && share >= 0.7) transforms.set(ki, reg.transform);
       }
       perStruct.push({ prefix: k.designator ?? String.fromCharCode(65 + ki), contourSqft: Math.abs(areaOf(ring)), share });
+      controls.push(control);
     }
 
     let model: RoofModel = first.model;
@@ -130,8 +134,12 @@ const codes = (m: RoofModel): string[] =>
     const covShare = aggregate.length
       ? aggregate.reduce((s, x) => s + (x.share as number) * x.contourSqft, 0) / aggregate.reduce((s, x) => s + x.contourSqft, 0)
       : null;
+    const ctrlPairs = perStruct.map((x, i) => ({ w: x.contourSqft, v: controls[i] })).filter((x) => x.v != null);
+    const ctrlShare = ctrlPairs.length
+      ? ctrlPairs.reduce((s2, x) => s2 + (x.v as number) * x.w, 0) / ctrlPairs.reduce((s2, x) => s2 + x.w, 0)
+      : null;
     const a = assessRoof({
-      coverage: covShare == null ? null : { seenSqft: 0, contourSqft: 0, share: covShare },
+      coverage: covShare == null ? null : { seenSqft: 0, contourSqft: 0, share: ctrlShare ?? covShare, insetShare: covShare },
       structures: perStruct,
       errorCodes: codes(model),
       unrecognisedFacets: unrec,
@@ -146,7 +154,7 @@ const codes = (m: RoofModel): string[] =>
     console.log(
       `${job.name.padEnd(17)} ${String(model.faces.length).padStart(5)} ${String(Math.round(model.totals.areaSqft)).padStart(9)} ` +
       `${pitchLabel.padEnd(15)} ${String(ft(model, "RIDGE")).padStart(4)} ${String(ft(model, "HIP")).padStart(5)} ${String(ft(model, "VALLEY")).padStart(6)} ${String(ft(model, "RAKE")).padStart(5)}  ` +
-      `${(covShare == null ? "  n/a" : `${Math.round(covShare * 100)}%`).padStart(8)}  ${a.confidence.padEnd(9)}  ` +
+      `${(covShare == null ? " n/a" : `${Math.round(covShare * 100)}/${ctrlShare == null ? "?" : Math.round(ctrlShare * 100)}%`).padStart(9)}  ${a.confidence.padEnd(9)}  ` +
       [wavefrontNote, creaseNote, unrecShare != null ? `${Math.round(unrecShare * 100)}% unrecognised` : "", a.footageReliable ? "" : "footage flagged"].filter(Boolean).join(" · "),
     );
     if (a.reasons.length) console.log(`${" ".repeat(18)}“${a.reasons[0]}”`);
