@@ -70,9 +70,14 @@ import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
 import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
 import { readInstantSurvey, type InstantSurvey } from "@/lib/roofDiagram/instantSurvey";
+import { fetchCloud } from "@/lib/roofRecon/lidarCloud";
+import { findCreases } from "@/lib/roofRecon/creases";
+import { applyCreases } from "@/lib/roofRecon/facetCut";
 
 /** Which engine drew the interior, and why, exactly as provenance stores it. */
 type WavefrontProvenance = NonNullable<MeasurementProvenance["wavefront"]>;
+/** What the 3DEP crease step did, and why, exactly as provenance stores it. */
+type CreaseProvenance = NonNullable<MeasurementProvenance["creases"]>;
 import { readVisionEvidence, type VisionStructureEvidence } from "@/lib/roofRecon/visionEvidence";
 import type { RoofStructureRead } from "@/lib/roofDiagram/roofStructureVision";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
@@ -148,6 +153,13 @@ const VISION_DEADLINE_MS = 20_000;
  *  instantly; a slow trace is dropped at the deadline and the pipeline then
  *  behaves exactly as without vision — the paid measurement is never at risk. */
 const OUTLINE_VISION_DEADLINE_MS = 8_000;
+/**
+ * The 3DEP crease step. Measured on the field set: 11-13 octree nodes,
+ * 2-4 MB, 180-300 ms warm and one to three seconds cold. Twenty seconds is
+ * far past anything observed, and the step is best-effort anyway - a roof
+ * that times out is drawn exactly as it was before.
+ */
+const LIDAR_DEADLINE_MS = 20_000;
 /** Candidates farther than this outside the model's bounds are noise (neighbour roofs). */
 const BOUNDS_MARGIN_FT = 5;
 
@@ -594,6 +606,7 @@ function provenanceOf(
     wavefront?: WavefrontProvenance;
     visionStructure?: VisionStructureEvidence;
     instantSurvey?: InstantSurvey;
+    creases?: CreaseProvenance;
   },
 ): StoredProvenanceWithValidation {
   // How much of this roof was actually visible from above — the one thing that
@@ -626,6 +639,7 @@ function provenanceOf(
       ...(notes?.structures?.length ? { structures: notes.structures } : {}),
       ...(notes?.nestedOutlines ? { nestedOutlines: notes.nestedOutlines } : {}),
       ...(notes?.instantSurvey ? { instantSurvey: notes.instantSurvey } : {}),
+      ...(notes?.creases ? { creases: notes.creases } : {}),
       ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets, unrecognisedShare: notes.unrecognisedShare } : {}),
       ...(notes?.wavefront ? { wavefront: notes.wavefront } : {}),
       ...(notes?.visionStructure ? { visionStructure: notes.visionStructure } : {}),
@@ -1459,7 +1473,70 @@ export async function measureRoofInstant(
     roofRegions = regions;
   }
 
-  const { model, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, wavefront, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, wavefront, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+
+  // ── the lidar crease step ────────────────────────────────────────────────
+  // A separate pass AFTER the model exists. The skeleton and the wavefront build
+  // the interior from the outline; where the real roof folds somewhere the
+  // outline cannot predict, they leave a flat facet and the DSM cannot fit a
+  // plane through it. USGS 3DEP is the only source that says a line runs HERE
+  // rather than that something here is wrong (ROOF-STATE, 2026-08-28).
+  //
+  // Every candidate passes four guards before it cuts: it must bend and beat one
+  // plane on residual; it must be typeable as ridge, hip or valley; the step
+  // across it must be no more than the search lattice could have invented at
+  // that bend, which is what rejects canopy and solar arrays; and neither half
+  // may be left without an eave. Each cut is then applied to a copy and rolled
+  // back unless Euler holds and the validator finds nothing new.
+  //
+  // Best-effort throughout: no coverage, a slow bucket or a throw all leave the
+  // drawing exactly as it was, with the reason recorded.
+  let model = builtModel;
+  let creases: CreaseProvenance | undefined;
+  if (origin) {
+    try {
+      const idx = buildIndexes(model);
+      const pts = model.faces.flatMap((f) => ringOf(f.lineIds, idx) ?? []);
+      if (pts.length >= 3) {
+        const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
+        const got = await withDeadline(
+          fetchCloud({
+            origin,
+            box: { x0: Math.min(...xs) - 15, x1: Math.max(...xs) + 15, y0: Math.min(...ys) - 15, y1: Math.max(...ys) + 15 },
+            timeoutMs: LIDAR_DEADLINE_MS,
+          }),
+          LIDAR_DEADLINE_MS,
+          "3DEP crease step",
+        );
+        if ("reason" in got) {
+          creases = { applied: false, reason: got.reason };
+        } else {
+          const candidates = findCreases({ model, cloud: got.cloud.points, groundFt: got.cloud.groundFt });
+          const report = applyCreases(model, candidates);
+          model = report.model;
+          creases = {
+            applied: report.applied.length > 0,
+            project: got.cloud.project,
+            points: got.cloud.points.length,
+            nodes: got.cloud.nodes,
+            ms: got.cloud.ms,
+            cuts: report.applied.map((a) => ({ facet: a.facet, type: a.type, lengthFt: a.lengthFt, bendDeg: a.bendDeg })),
+            refused: report.refused.map((r) => ({ facet: r.facet, reason: r.reason })),
+          };
+          if (report.applied.length) {
+            console.log(
+              "[roofMeasurement] 3DEP cut %d fold(s) into this roof: %s",
+              report.applied.length,
+              report.applied.map((a) => `${a.facet} ${a.type} ${a.lengthFt.toFixed(0)}ft`).join(", "),
+            );
+          }
+        }
+      }
+    } catch (err) {
+      creases = { applied: false, reason: errorMessage(err, String(err)) };
+      console.warn("[roofMeasurement] 3DEP crease step skipped:", creases.reason);
+    }
+  }
 
   // Chimneys: DSM posts on the RAW reconstruction (the rasters' frame — the
   // calibrated model stays in it, so no transform is needed) + vision boxes on
@@ -1575,6 +1652,7 @@ export async function measureRoofInstant(
       ...(nestedOutlines ? { nestedOutlines } : {}),
       ...(unrecognisedFacets?.length ? { unrecognisedFacets, unrecognisedShare } : {}),
       ...(instantSurvey ? { instantSurvey } : {}),
+      ...(creases ? { creases } : {}),
       ...(wavefront ? { wavefront } : {}),
       ...(visionStructure ? { visionStructure } : {}),
     }),

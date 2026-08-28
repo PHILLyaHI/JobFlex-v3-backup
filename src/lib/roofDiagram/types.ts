@@ -200,6 +200,21 @@ export interface MeasurementProvenance {
       outlinePoints: number;
     };
   };
+  /**
+   * The 3DEP crease step: folds the point cloud found inside facets the drawing
+   * had flat, and what happened to each. `applied: false` carries the reason —
+   * no coverage, a slow bucket, or every candidate refused by a guard.
+   */
+  creases?: {
+    applied: boolean;
+    reason?: string;
+    project?: string;
+    points?: number;
+    nodes?: number;
+    ms?: number;
+    cuts?: Array<{ facet: string; type: string; lengthFt: number; bendDeg: number }>;
+    refused?: Array<{ facet: string; reason: string }>;
+  };
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   /** Share of roof PLAN area sitting in those facets, 0–1 — the figure the
    *  confidence gate judges the layout on. */
