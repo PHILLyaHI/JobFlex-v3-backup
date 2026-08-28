@@ -70,12 +70,14 @@ import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
 import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
 import { readInstantSurvey, type InstantSurvey } from "@/lib/roofDiagram/instantSurvey";
+import { checkCompleteness } from "@/lib/roofRecon/completeness";
 import { fetchCloud } from "@/lib/roofRecon/lidarCloud";
 import { findCreases } from "@/lib/roofRecon/creases";
 import { applyCreases } from "@/lib/roofRecon/facetCut";
 
 /** Which engine drew the interior, and why, exactly as provenance stores it. */
 type WavefrontProvenance = NonNullable<MeasurementProvenance["wavefront"]>;
+type CompletenessProvenance = NonNullable<MeasurementProvenance["completeness"]>;
 /** What the 3DEP crease step did, and why, exactly as provenance stores it. */
 type CreaseProvenance = NonNullable<MeasurementProvenance["creases"]>;
 import { readVisionEvidence, type VisionStructureEvidence } from "@/lib/roofRecon/visionEvidence";
@@ -480,6 +482,8 @@ interface Geometry {
   /** V2 paths: facets whose measured drain the drawing does not reproduce. */
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   unrecognisedShare?: number;
+  /** V2 paths: whether anything went missing — the only check that looks outside the model. */
+  completeness?: CompletenessProvenance;
   /** V2 paths: which engine drew the interior. */
   wavefront?: WavefrontProvenance;
   /** V2 paths: what the AI structure read is scored against. */
@@ -539,6 +543,7 @@ function resolveGeometry(
           structures: v2.structures,
           ...(v2.nestedOutlines ? { nestedOutlines: v2.nestedOutlines } : {}),
           ...(v2.unrecognisedFacets ? { unrecognisedFacets: v2.unrecognisedFacets, unrecognisedShare: v2.unrecognisedShare } : {}),
+          ...(v2.completeness ? { completeness: v2.completeness } : {}),
           ...(v2.wavefront ? { wavefront: v2.wavefront } : {}),
           ...(v2.visionInputs ? { visionInputs: v2.visionInputs } : {}),
         };
@@ -603,6 +608,7 @@ function provenanceOf(
     nestedOutlines?: { overlapSqft: number; pairs: string[] };
     unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
     unrecognisedShare?: number;
+    completeness?: CompletenessProvenance;
     wavefront?: WavefrontProvenance;
     visionStructure?: VisionStructureEvidence;
     instantSurvey?: InstantSurvey;
@@ -641,6 +647,7 @@ function provenanceOf(
       ...(notes?.instantSurvey ? { instantSurvey: notes.instantSurvey } : {}),
       ...(notes?.creases ? { creases: notes.creases } : {}),
       ...(notes?.unrecognisedFacets?.length ? { unrecognisedFacets: notes.unrecognisedFacets, unrecognisedShare: notes.unrecognisedShare } : {}),
+      ...(notes?.completeness ? { completeness: notes.completeness } : {}),
       ...(notes?.wavefront ? { wavefront: notes.wavefront } : {}),
       ...(notes?.visionStructure ? { visionStructure: notes.visionStructure } : {}),
       imageryQuality: model.provenance?.imageryQuality,
@@ -1052,6 +1059,7 @@ function buildV2Geometry(
   nestedOutlines?: { overlapSqft: number; pairs: string[] };
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   unrecognisedShare?: number;
+  completeness?: CompletenessProvenance;
   wavefront?: WavefrontProvenance;
   /** Kept so the AI structure read can be scored against the same measurement. */
   visionInputs?: { contour: FootprintPoint[]; measurement: PitchMeasurement };
@@ -1204,6 +1212,21 @@ function buildV2Geometry(
     structures,
     ...(nestedOutlines ? { nestedOutlines } : {}),
     ...(unrecognised.length ? { unrecognisedFacets: unrecognised, unrecognisedShare } : {}),
+    // Checked against the model that SHIPS, not the first draft: the crease
+    // step and the surgeries both run after buildRoofV2, and a facet lost in
+    // one of them is exactly the kind of loss this exists to catch.
+    completeness: checkCompleteness({
+      model,
+      structures: first.report.structures.map((st) => ({
+        prefix: st.prefix,
+        ring: st.ring,
+        contourAreaSqft: st.contourAreaSqft,
+        ...(st.nestedIn ? { nestedIn: st.nestedIn } : {}),
+      })),
+      synthesizeFailed: first.report.synthesizeFailed,
+      instant,
+      facetCountConfidence: readInstantSurvey(instant, recon.origin)?.confidence?.facetCount ?? null,
+    }),
     wavefront,
     visionInputs: { contour: first.report.structures.find((st) => st.ring)!.ring as FootprintPoint[], measurement: measured },
   };
@@ -1473,7 +1496,7 @@ export async function measureRoofInstant(
     roofRegions = regions;
   }
 
-  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, wavefront, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, completeness, wavefront, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
 
   // ── the lidar crease step ────────────────────────────────────────────────
   // A separate pass AFTER the model exists. The skeleton and the wavefront build
@@ -1651,6 +1674,7 @@ export async function measureRoofInstant(
       ...(structures?.length ? { structures } : {}),
       ...(nestedOutlines ? { nestedOutlines } : {}),
       ...(unrecognisedFacets?.length ? { unrecognisedFacets, unrecognisedShare } : {}),
+      ...(completeness ? { completeness } : {}),
       ...(instantSurvey ? { instantSurvey } : {}),
       ...(creases ? { creases } : {}),
       ...(wavefront ? { wavefront } : {}),

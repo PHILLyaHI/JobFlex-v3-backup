@@ -239,6 +239,7 @@ export function RoofEstimatorBlueprintForm({ aiEnabled, company }: { aiEnabled: 
             unrecognisedFacets: measurement.provenance.unrecognisedFacets ?? null,
             visionCorroborated: measurement.provenance.visionStructure?.corroborated ?? null,
             unrecognisedShare: measurement.provenance.unrecognisedShare ?? null,
+            completeness: measurement.provenance.completeness ?? null,
             instantOcclusion: measurement.provenance.instantSurvey
               ? {
                   occlusion: measurement.provenance.instantSurvey.occlusion,

@@ -185,6 +185,18 @@ export function assessRoof(input: {
    * confidence it attached. A second source for the question our coverage
    * answers — see OcclusionSeverity.
    */
+  /**
+   * Did anything go MISSING? Section J's first-level rule: invariants check that
+   * a model agrees with itself, none checks that it is whole, and an omission
+   * looks like "less" rather than like an error. An `error` finding here means a
+   * building or a piece of footprint is not on the drawing at all — the figures
+   * are short by it, and they must not be priced.
+   */
+  completeness?: {
+    findings: ReadonlyArray<{ level: "error" | "warn"; code: string; message: string }>;
+    /** Instant's facet count minus ours, as a share of Instant's. */
+    facetDeficitShare?: number | null;
+  } | null;
   instantOcclusion?: {
     occlusion: string | null;
     treeOverhang: string | null;
@@ -194,6 +206,23 @@ export function assessRoof(input: {
 }): RoofAssessment {
   const { coverage, errorCodes } = input;
   const reasons: string[] = [];
+
+  // Completeness first. A roof that lost a building is not a low-confidence
+  // roof — it is a roof with a piece absent, and nothing below can put it back.
+  const missing = (input.completeness?.findings ?? []).filter((f) => f.level === "error");
+  if (missing.length) {
+    return {
+      confidence: "low",
+      drawable: true,
+      estimable: false,
+      footageReliable: false,
+      inferredShare: null,
+      reasons: [
+        ...missing.map((f) => f.message),
+        "Do not price from these figures until the missing part is accounted for — measure it on site or re-run the measurement.",
+      ],
+    };
+  }
 
   const structs = input.structures?.length ? input.structures : null;
   const coveredStructs = structs?.filter((st) => st.share != null && st.share >= COVERAGE_FLOOR) ?? null;
@@ -329,6 +358,21 @@ export function assessRoof(input: {
     );
   }
 
+  // EagleView counted more facets than we drew. Judged on the same two shares
+  // the layout gate uses, because it is the same kind of quantity: how much of
+  // the roof's detail is unaccounted for. Only consulted when EagleView's own
+  // confidence in that count allowed the comparison — completeness.ts gates it.
+  const deficitShare = input.completeness?.facetDeficitShare ?? null;
+  const deficitFlagged = deficitShare != null && deficitShare > UNRECOGNISED_FLAG_SHARE;
+  const deficitUnusable = deficitShare != null && deficitShare > UNRECOGNISED_UNUSABLE_SHARE;
+  if (deficitFlagged) {
+    reasons.push(
+      `EagleView's survey counts ${Math.round((deficitShare as number) * 100)}% more roof facets on this building than this plan draws — interior detail this drawing did not reproduce.` +
+        (deficitUnusable ? " That is enough of the roof's detail for the linear footage to be treated as indicative only; the area is checked separately and stands." : ""),
+    );
+  }
+  for (const w of (input.completeness?.findings ?? []).filter((f) => f.level === "warn")) reasons.push(w.message);
+
   const occ = input.instantOcclusion ?? null;
   const occSev = occlusionSeverity(occ?.occlusion);
   const overSev = occlusionSeverity(occ?.treeOverhang);
@@ -339,7 +383,7 @@ export function assessRoof(input: {
   const ours: RoofConfidence =
     geometryBad || layoutUnusable
       ? "low"
-      : (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0 || layoutFlagged || maskDisagrees
+      : (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0 || layoutFlagged || maskDisagrees || deficitFlagged
         ? "medium"
         : input.cannotValidate || share == null
           ? "medium"
@@ -384,7 +428,14 @@ export function assessRoof(input: {
     );
   }
 
-  return { confidence, drawable: true, estimable: !geometryBad, footageReliable: !layoutFlagged, inferredShare, reasons };
+  return {
+    confidence,
+    drawable: true,
+    estimable: !geometryBad,
+    footageReliable: !layoutFlagged && !deficitFlagged,
+    inferredShare,
+    reasons,
+  };
 }
 
 /** One short line for a badge. */

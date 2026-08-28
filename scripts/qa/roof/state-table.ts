@@ -17,6 +17,8 @@ import { fetchCloud } from "@/lib/roofRecon/lidarCloud";
 import { findCreases } from "@/lib/roofRecon/creases";
 import { applyCreases } from "@/lib/roofRecon/facetCut";
 import { readInstantSurvey } from "@/lib/roofDiagram/instantSurvey";
+import { checkCompleteness } from "@/lib/roofRecon/completeness";
+import { measureMassSpread, measureClusterSpread } from "@/lib/roofRecon/massSpread";
 import { assessRoof } from "@/lib/roofDiagram/confidence";
 import { validateRoofInvariants } from "@/lib/roofDiagram/validate";
 import { areaOf, type FootprintPoint } from "@/lib/roofRecon/footprint";
@@ -86,6 +88,8 @@ const codes = (m: RoofModel): string[] =>
     let unrec: Array<{ facet: string; diffDeg: number }> = [];
     let unrecShare: number | null = null;
     let wavefrontNote = "";
+    let massNote = "no DSM measurement";
+    let mass: ReturnType<typeof measureMassSpread> | null = null;
     let creaseNote = "";
     if (transforms.size) {
       const meas = measurePitchFromDsm({
@@ -117,6 +121,8 @@ const codes = (m: RoofModel): string[] =>
           creaseNote = rep.applied.length ? `+${rep.applied.length} fold` : "no fold kept";
         }
       }
+      mass = measureMassSpread(meas);
+      massNote = mass.reason;
       unrec = detectUnrecognisedFacets(model, meas).map((u) => ({ facet: u.facet, diffDeg: u.diffDeg }));
       const idx = buildIndexes(model);
       let total = 0, bad = 0;
@@ -130,6 +136,16 @@ const codes = (m: RoofModel): string[] =>
     }
 
     const survey = readInstantSurvey(instant, meta.origin);
+    const comp = checkCompleteness({
+      model,
+      structures: first.report.structures.map((st) => ({
+        prefix: st.prefix, ring: st.ring, contourAreaSqft: st.contourAreaSqft,
+        ...(st.nestedIn ? { nestedIn: st.nestedIn } : {}),
+      })),
+      synthesizeFailed: first.report.synthesizeFailed,
+      instant,
+      facetCountConfidence: survey?.confidence?.facetCount ?? null,
+    });
     const aggregate = perStruct.filter((s) => s.share != null);
     const covShare = aggregate.length
       ? aggregate.reduce((s, x) => s + (x.share as number) * x.contourSqft, 0) / aggregate.reduce((s, x) => s + x.contourSqft, 0)
@@ -144,6 +160,7 @@ const codes = (m: RoofModel): string[] =>
       errorCodes: codes(model),
       unrecognisedFacets: unrec,
       unrecognisedShare: unrecShare,
+      completeness: { findings: comp.findings, facetDeficitShare: comp.facetDeficitShare },
       instantOcclusion: survey ? {
         occlusion: survey.occlusion, treeOverhang: survey.treeOverhang,
         occlusionConfidence: survey.confidence?.occlusion ?? null,
@@ -157,6 +174,18 @@ const codes = (m: RoofModel): string[] =>
       `${(covShare == null ? " n/a" : `${Math.round(covShare * 100)}/${ctrlShare == null ? "?" : Math.round(ctrlShare * 100)}%`).padStart(9)}  ${a.confidence.padEnd(9)}  ` +
       [wavefrontNote, creaseNote, unrecShare != null ? `${Math.round(unrecShare * 100)}% unrecognised` : "", a.footageReliable ? "" : "footage flagged"].filter(Boolean).join(" · "),
     );
+    console.log(
+      `${" ".repeat(18)}completeness: ${comp.structuresDrawn}/${comp.structuresIn} structures · plan ${Math.round(comp.planSqft)} vs contour ${Math.round(comp.contourSqft)} sq ft ` +
+      `(${comp.planShortfallPct >= 0 ? "-" : "+"}${Math.abs(comp.planShortfallPct).toFixed(1)}%) · facet deficit ${comp.facetDeficit ?? "n/a"}` +
+      `${comp.facetDeficitShare != null ? ` (${Math.round(comp.facetDeficitShare * 100)}%)` : ""}`,
+    );
+    for (const f of comp.findings) console.log(`${" ".repeat(18)}${f.level.toUpperCase()} ${f.code}: ${f.message}`);
+    const cl = measureClusterSpread((meta.diagnostics.pitches12 as number[]) ?? [], (meta.diagnostics.clusterSqft as number[]) ?? []);
+    console.log(
+      `${" ".repeat(18)}mass spread — over OUR facets: ${mass ? (mass.multiMass ? "MULTI" : "single") : "—"} · ` +
+      `over RECON CLUSTERS: ${cl.multiMass ? "MULTI-MASS" : "single"} — ${cl.reason}`,
+    );
+    console.log(`${" ".repeat(18)}   Instant shape ${instant.structures[0]?.shape ?? "?"} · ${instant.totals?.facetCount ?? "?"} facets vs our ${model.faces.length}`);
     if (a.reasons.length) console.log(`${" ".repeat(18)}“${a.reasons[0]}”`);
   }
 })();

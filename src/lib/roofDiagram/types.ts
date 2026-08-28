@@ -221,6 +221,24 @@ export interface MeasurementProvenance {
     cuts?: Array<{ facet: string; type: string; lengthFt: number; bendDeg: number }>;
     refused?: Array<{ facet: string; reason: string }>;
   };
+  /**
+   * Did anything go MISSING from this drawing? Every other check on this record
+   * compares the model against itself; ROOF-STATE §J's first-level rule says
+   * none of them can see an omission, because an omission looks like "less" and
+   * re-summing the same set a second way loses the same term twice. These
+   * findings alone come from comparing a total against a value from OUTSIDE it:
+   * the contours that went in, and EagleView's own count and footprint.
+   */
+  completeness?: {
+    findings: Array<{ level: "error" | "warn"; code: string; message: string }>;
+    structuresIn: number;
+    structuresDrawn: number;
+    planSqft: number;
+    contourSqft: number;
+    /** EagleView's facet count minus ours, when its own confidence allowed the test. */
+    facetDeficit: number | null;
+    facetDeficitShare: number | null;
+  };
   unrecognisedFacets?: Array<{ facet: string; dsmAz: number; faceAz: number; diffDeg: number }>;
   /** Share of roof PLAN area sitting in those facets, 0–1 — the figure the
    *  confidence gate judges the layout on. */

@@ -96,6 +96,9 @@ export interface ReconResult {
     fragmentsMerged: number; //       how many were absorbed
     droppedSteep: number; //          rejected as too steep to be roof
     pitches12: number[]; //           final per-facet pitch, rise/12
+    clusterSqft: number[]; //         3D surface area of each, same order as pitches12
+    clusterTopFt: number[]; //        highest point of each cluster above ground
+    clusterBotFt: number[]; //        lowest point of each cluster above ground
   };
 }
 
@@ -1422,6 +1425,17 @@ export function reconstructRoof(
       fragmentsMerged: fragmentsBefore - clusters.length,
       droppedSteep: steep.droppedSteep,
       pitches12: clusters.map((c) => Math.hypot(c.plane.a, c.plane.b) * 12),
+      clusterSqft: clusters.map((c) => c.areaSqft),
+      clusterTopFt: clusters.map((c) => {
+        let t = -Infinity;
+        for (const i of c.pixels) if (g.z[i] > t) t = g.z[i];
+        return t === -Infinity ? 0 : t; // g.z is already height above ground
+      }),
+      clusterBotFt: clusters.map((c) => {
+        let b = Infinity;
+        for (const i of c.pixels) if (g.z[i] < b) b = g.z[i];
+        return b === Infinity ? 0 : b;
+      }),
     },
   };
 }
