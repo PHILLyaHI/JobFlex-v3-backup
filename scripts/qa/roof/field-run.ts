@@ -113,8 +113,17 @@ async function resolveInputs(a: Addr): Promise<Inputs | { skipped: string }> {
   const { parcelRingForPoint } = await import("../../../src/lib/parcelLookup");
   const recon = await buildReconModel(a);
   let instant: InstantRoofData | null = null;
+  // Keep the body EagleView actually sent. Four of the six frozen addresses
+  // were ordered through this harness and their raw bodies are gone for good;
+  // from here on the paid response is frozen whole, not only what we parse.
+  let instantRaw: string | null = null;
   try {
-    instant = await requestInstantRoofData(a, PD_DIAGRAM_PACKS);
+    instant = await requestInstantRoofData(a, PD_DIAGRAM_PACKS, {
+      onRaw: (body, unknown) => {
+        instantRaw = body;
+        if (unknown.length) console.log(`   Instant returned fields we have never seen: ${unknown.join(", ")}`);
+      },
+    });
   } catch (err) {
     console.log(`   Instant refused: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -138,6 +147,8 @@ async function resolveInputs(a: Addr): Promise<Inputs | { skipped: string }> {
   writeFileSync(resolve(dir, "mask.f32.gz"), gzipSync(bytes(recon.mask)));
   writeFileSync(resolve(dir, "meta.json"), JSON.stringify(meta, null, 1));
   if (instant) writeFileSync(resolve(dir, "instant.json"), JSON.stringify(instant, null, 1));
+  // byte-for-byte, exactly as received — the fixture's audit trail
+  if (instantRaw) writeFileSync(resolve(dir, "instant-raw.json"), instantRaw);
   return {
     meta,
     dsm: recon.dsm,
