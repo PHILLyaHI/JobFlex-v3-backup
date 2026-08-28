@@ -21,20 +21,24 @@ import type { BuildingInsights, DataLayerUrls, Raster } from "@/lib/solar";
  * there is no address text — rounded to five decimals, about 1 m, which is far
  * below the 40 m tile radius and so cannot straddle two different tiles.
  */
-export function solarCacheKey(input: {
-  address?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
-  lat?: number;
-  lng?: number;
-}): string | null {
+export function solarCacheKey(
+  input: { address?: string; city?: string; state?: string; zip?: string; lat?: number; lng?: number },
+  radiusM: number,
+): string | null {
   const addr = [input.address, input.city, input.state, input.zip]
     .map((part) => (part ?? "").toUpperCase().replace(/\s+/g, " ").trim())
     .join("|");
-  if (addr.replace(/\|/g, "")) return addr;
-  if (input.lat != null && input.lng != null) return `@${input.lat.toFixed(5)},${input.lng.toFixed(5)}`;
-  return null;
+  const place = addr.replace(/\|/g, "")
+    ? addr
+    : input.lat != null && input.lng != null
+      ? `@${input.lat.toFixed(5)},${input.lng.toFixed(5)}`
+      : null;
+  // The RADIUS is part of the identity, not decoration. The tile is sized from
+  // the contour now, so the same address can legitimately want 20 m on one run
+  // and the 40 m default on another (Instant missing). Keying on the place
+  // alone would hand back a tile that does not cover what the caller asked for
+  // — silently, since a smaller raster looks like a perfectly good raster.
+  return place === null ? null : `${place}#r${radiusM}`;
 }
 
 export interface CachedSolar {

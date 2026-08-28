@@ -213,12 +213,47 @@ export interface DataLayerUrls {
   rgbUrl: string | null;
 }
 
-// radiusMeters 40 gives an 80 m tile — comfortably larger than any residential
-// roof while keeping the raster at 800x800 (≈740 KB for the DSM).
+/**
+ * The largest tile Google will serve. MEASURED, not from the docs: 95 and 100
+ * return HIGH imagery with layer URLs, 105 and everything above return
+ * `400 Request contains an invalid argument`. A property that needs more than
+ * this cannot be covered by one Solar tile at all.
+ */
+export const SOLAR_MAX_RADIUS_M = 100;
+/**
+ * Radii are quantised to this. Two reasons, and the second is the interesting
+ * one: (a) a house's contour does not need metre precision in its tile, and
+ * (b) every distinct (lat, lng, radius, quality) is a distinct request to
+ * Google, and the failure measurement of 2026-08-28 found that REPEATING one
+ * tuple never failed (0 of 30) while walking many failed a third of the time.
+ * Snapping the radius makes repeat measurements of an address land on the same
+ * tuple instead of a near-miss, which is a reliability argument, not a tidiness
+ * one.
+ */
+export const SOLAR_RADIUS_STEP_M = 5;
+/**
+ * What to ask for when nothing is known about the building — the recon-only
+ * path, where no Instant contour exists to size the tile from. Unchanged from
+ * when it was the only behaviour.
+ */
+export const SOLAR_DEFAULT_RADIUS_M = 40;
+
+/** Snap up to a servable radius. */
+export function quantiseRadiusM(metres: number): number {
+  const stepped = Math.ceil(metres / SOLAR_RADIUS_STEP_M) * SOLAR_RADIUS_STEP_M;
+  return Math.min(SOLAR_MAX_RADIUS_M, Math.max(SOLAR_RADIUS_STEP_M, stepped));
+}
+
+// radiusMeters was a fixed 40 — "comfortably larger than any residential roof".
+// Measured on the six field addresses, that was 6-7x too many PIXELS for a
+// suburban house (they need 15-20 m, and pixels go as the square of the radius)
+// and too SMALL for a 20-building farm, which needs 105 m and so cannot be
+// fully covered at all. Callers now size it from the contour; the default is
+// kept for callers that have none.
 export async function getDataLayers(
   lat: number,
   lng: number,
-  radiusMeters = 40,
+  radiusMeters: number = SOLAR_DEFAULT_RADIUS_M,
 ): Promise<DataLayerUrls> {
   if (!isSolarEnabled()) throw new Error("Google Maps key is not configured");
   const url =

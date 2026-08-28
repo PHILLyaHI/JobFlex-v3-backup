@@ -151,14 +151,23 @@ interface LatLng {
 /**
  * Budget for the free reconstruction (Solar layers + raster decode + plane fit).
  *
- * DERIVED, not chosen. buildReconModel makes three SEQUENTIAL Solar calls —
- * dataLayers, then the DSM and mask together, then buildingInsights — so the
- * deadline that does not cancel its own retries is three times what one call
- * may now cost. At 25 s it did exactly that: on 2026-08-28 the reconstruction
- * of 12629 was abandoned 15.8 s in, with no retry ever attempted, out of a
- * measurement budget of five minutes.
+ * DERIVED, not chosen: the deadline is the critical path times what one call
+ * may cost under the retry policy. At 25 s it was shorter than a single call's
+ * own budget and so cancelled its own retries — on 2026-08-28 the
+ * reconstruction of 12629 was abandoned 15.8 s in, with no retry ever
+ * attempted, out of a measurement budget of five minutes.
+ *
+ * First written as three slots, which was wrong: it counted the Solar calls in
+ * source order rather than the chain of dependencies. buildingInsights depends
+ * on nothing dataLayers produces.
  */
-const SOLAR_CALL_SLOTS = 3;
+/**
+ * Slots are the CRITICAL PATH, counted by dependency — not by how many Solar
+ * calls appear in the function. buildingInsights and the parcel ring need only
+ * lat/lng and now start immediately, so Solar's chain is two long: dataLayers,
+ * then the two rasters together.
+ */
+const SOLAR_CALL_SLOTS = 2;
 const RECON_DEADLINE_MS = SOLAR_CALL_SLOTS * SOLAR_CALL_BUDGET_MS;
 /** Budget for the ortho download + vision model call. */
 const VISION_DEADLINE_MS = 20_000;
@@ -1447,15 +1456,31 @@ export async function measureRoofInstant(
     // configured it is rejected up front instead of being attempted, and a
     // slow one is abandoned at the deadline — either way the outline-only path
     // takes over below.
-    const [instantSettled, reconSettled] = await Promise.allSettled([
-      obtainInstant(input, organizationId, opts?.forceNewOrder === true),
+    // These used to start together. They no longer can, and the reason is worth
+    // stating: the Solar tile is now SIZED from EagleView's outlines, so the
+    // outlines have to exist before the tile is requested. A fixed radius was
+    // measured as 6-7x too many pixels for a suburban house and too small for a
+    // 20-building farm, and no single number fixes both.
+    //
+    // The cost is real — the two no longer overlap — and it is paid on the
+    // Instant path only. Everything inside buildReconModel that needs just the
+    // pin still runs concurrently there.
+    const instantSettled = (await Promise.allSettled([obtainInstant(input, organizationId, opts?.forceNewOrder === true)]))[0];
+    const contours = (instantSettled.status === "fulfilled" ? instantSettled.value.instant.structures : [])
+      .map((st) => st.outline ?? [])
+      .filter((ring) => ring.length >= 3);
+    const [reconSettled] = await Promise.allSettled([
       isSolarEnabled()
         ? // A forced re-order is the user saying "measure this address afresh at a
           // cost". It would be odd for the billed half to be refetched and the
           // free half to come back from a cache, so the same gesture drops the
           // frozen Solar answer too.
           withDeadline(
-            buildReconModel({ ...input, ...(opts?.forceNewOrder === true ? { refreshSolar: true } : {}) }),
+            buildReconModel({
+              ...input,
+              ...(opts?.forceNewOrder === true ? { refreshSolar: true } : {}),
+              ...(contours.length ? { contours } : {}),
+            }),
             RECON_DEADLINE_MS,
             "Roof reconstruction",
           )
