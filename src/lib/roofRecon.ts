@@ -478,6 +478,11 @@ function computeGeometry(
 
 // ── 3. plane segmentation by region growing ──────────────────────────────────
 
+/** The region-growing tolerance: a pixel belongs to a plane within this
+ *  distance. Exported so the stitch judges its cells by the SAME figure the
+ *  clustering grew them with. */
+export const DEFAULT_PLANE_TOL_FT = 0.6;
+
 interface Cluster {
   id: number;
   plane: Plane;
@@ -923,7 +928,7 @@ export function reconstructRoof(
 ): ReconResult {
   const half = opts.normalWindow ?? 2;
   const angleTolDeg = opts.angleTolDeg ?? 14;
-  const planeTolFt = opts.planeTolFt ?? 0.6;
+  const planeTolFt = opts.planeTolFt ?? DEFAULT_PLANE_TOL_FT;
   // 12 sqft, measured: at 25 the small dormer/entry facets were dropped (15 vs
   // EagleView's 22) and their edges lost with them; at 6 the count is right but
   // noise clusters survive and area falls to -9%. 12 keeps the real small facets
