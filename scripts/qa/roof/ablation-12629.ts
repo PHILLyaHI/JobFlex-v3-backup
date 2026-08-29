@@ -16,16 +16,14 @@
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { gunzipSync } from "node:zlib";
 import { decode, encode } from "fast-png";
 import { loadHarnessEnv } from "./env";
 
 loadHarnessEnv();
 
 import type { InstantRoofData, InstantStructure, RoofModel } from "@/lib/eagleview";
-import type { Raster } from "@/lib/solar";
 import { reconstructRoof } from "@/lib/roofRecon";
-import { buildRoofV2, measureCoverage } from "@/lib/roofRecon/reconV2";
+import { buildRoofV2 } from "@/lib/roofRecon/reconV2";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
 import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
