@@ -72,6 +72,7 @@ import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
 import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
 import { readInstantSurvey, type InstantSurvey } from "@/lib/roofDiagram/instantSurvey";
 import { checkCompleteness } from "@/lib/roofRecon/completeness";
+import { lotMaskFromPair, ringWhollyOutsideLot, type LotMask } from "@/lib/roofDiagram/parcelMask";
 import { fetchCloud } from "@/lib/roofRecon/lidarCloud";
 import { findCreases } from "@/lib/roofRecon/creases";
 import { applyCreases } from "@/lib/roofRecon/facetCut";
@@ -536,12 +537,50 @@ function outlineGeometry(recon: ReconBuild | null, instant: InstantRoofData, inp
  * is one, else the outline. Never throws — a calibration failure degrades to
  * the outline so the billed numbers still reach the user.
  */
+/**
+ * The masked/clear pair for the WIDEST framing that has both, subtracted into
+ * a lot mask. Best-effort with a hard 8 s budget: the veto it powers is a
+ * guard, and no guard is worth stalling a measurement for. The image tokens
+ * are already paid for with the Instant lookup — this costs nothing.
+ */
+async function lotMaskFor(instant: InstantRoofData, origin: LatLng | null): Promise<LotMask | null> {
+  if (!origin) return null;
+  const groups = new Map<string, typeof instant.imagery>();
+  for (const im of instant.imagery) {
+    if (im.view !== "ortho" || !im.bbox || typeof im.masked !== "boolean") continue;
+    const [a, b, c, d] = im.bbox;
+    if (!(origin.lng >= a && origin.lng <= c && origin.lat >= b && origin.lat <= d)) continue;
+    const k = im.bbox.join(",");
+    groups.set(k, [...(groups.get(k) ?? []), im]);
+  }
+  const area = (b: [number, number, number, number]) => (b[2] - b[0]) * (b[3] - b[1]);
+  const pair = [...groups.values()]
+    .filter((g) => g.some((i) => i.masked) && g.some((i) => !i.masked))
+    .sort((x, y) => area(y[0].bbox!) - area(x[0].bbox!))[0];
+  if (!pair) return null;
+  try {
+    const fetched = await withDeadline(
+      Promise.all([
+        fetchPropertyImage(pair.find((i) => !i.masked)!.token),
+        fetchPropertyImage(pair.find((i) => i.masked)!.token),
+      ]),
+      8_000,
+      "Parcel mask imagery",
+    );
+    return lotMaskFromPair(new Uint8Array(fetched[0].bytes), new Uint8Array(fetched[1].bytes), pair[0].bbox!);
+  } catch (err) {
+    console.warn("[roofMeasurement] parcel mask unavailable:", errorMessage(err, String(err)));
+    return null;
+  }
+}
+
 function resolveGeometry(
   recon: ReconBuild | null,
   instant: InstantRoofData,
   input: EvOrderInput,
   visionOutline?: CalibrateVisionOutline,
   roofRegions?: Array<Array<{ x: number; y: number }>>,
+  lotMask?: LotMask | null,
 ): Geometry {
   if (!recon) return outlineGeometry(null, instant, input);
   // ── ROOF_RECON_V2: topology first, then pitch measured into it ──
@@ -550,7 +589,7 @@ function resolveGeometry(
   let v2Fallthrough: { reason: string } | undefined;
   if (roofReconV2Enabled()) {
     try {
-      const v2 = buildV2Geometry(recon, instant);
+      const v2 = buildV2Geometry(recon, instant, lotMask);
       if (v2) {
         return {
           model: v2.model,
@@ -1074,6 +1113,7 @@ const faceStructureIndex = (rawFaceId: string): number => {
 function buildV2Geometry(
   recon: ReconBuild,
   instant: InstantRoofData,
+  lotMask?: LotMask | null,
 ): {
   model: RoofModel;
   registration: RegistrationProvenance;
@@ -1249,6 +1289,21 @@ function buildV2Geometry(
       synthesizeFailed: first.report.synthesizeFailed,
       instant,
       facetCountConfidence: readInstantSurvey(instant, recon.origin)?.confidence?.facetCount ?? null,
+      // The parcel-mask veto, in its one safe direction (parcelMask.ts).
+      foreignStructures: lotMask
+        ? first.report.structures
+            .filter((st) => st.ring && st.ring.length >= 3)
+            .filter((st) =>
+              ringWhollyOutsideLot(
+                lotMask,
+                st.ring!.map((q) => ({
+                  lat: recon.origin.lat + q.y / (D2R * EARTH_R_M * FT_PER_M),
+                  lng: recon.origin.lng + q.x / (D2R * Math.cos(recon.origin.lat * D2R) * EARTH_R_M * FT_PER_M),
+                })),
+              ),
+            )
+            .map((st) => st.prefix)
+        : undefined,
     }),
     wavefront,
     visionInputs: { contour: first.report.structures.find((st) => st.ring)!.ring as FootprintPoint[], measurement: measured },
@@ -1569,7 +1624,8 @@ export async function measureRoofInstant(
     roofRegions = regions;
   }
 
-  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, completeness, wavefront, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions);
+  const lotMask = roofReconV2Enabled() && recon ? await lotMaskFor(instant, recon.origin) : null;
+  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, completeness, wavefront, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions, lotMask);
 
   // ── the lidar crease step ────────────────────────────────────────────────
   // A separate pass AFTER the model exists. The skeleton and the wavefront build

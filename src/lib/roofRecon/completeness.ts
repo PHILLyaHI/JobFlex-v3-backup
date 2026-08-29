@@ -41,7 +41,7 @@ const FACET_COUNT_MIN_CONFIDENCE = 0.5;
 export interface CompletenessFinding {
   /** `error` means something is missing from the drawing, not merely uncertain. */
   level: "error" | "warn";
-  code: "STRUCTURE_MISSING" | "PLAN_AREA_SHORT" | "FACETS_SHORT" | "FOOTPRINT_MISMATCH";
+  code: "STRUCTURE_MISSING" | "PLAN_AREA_SHORT" | "FACETS_SHORT" | "FOOTPRINT_MISMATCH" | "STRUCTURE_FOREIGN";
   message: string;
 }
 
@@ -75,6 +75,15 @@ export interface CompletenessInput {
   instant?: InstantRoofData | null;
   /** EagleView's confidence in its own facet count, when it scored one. */
   facetCountConfidence?: number | null;
+  /**
+   * Structures vetoed by the parcel mask: every vertex of their outline lies
+   * outside the lot-plus-margin region subtracted from EagleView's own
+   * masked/clear imagery pair. The region is a measured SUPERSET of the
+   * cadastre (100% containment on 4 of 4 comparable addresses), so nothing of
+   * this parcel's can be wholly outside it — a structure that is, is certainly
+   * someone else's, and its area and footage are inflating the figures.
+   */
+  foreignStructures?: readonly string[];
 }
 
 const planAreaOf = (m: RoofModel): number => {
@@ -108,6 +117,18 @@ export function checkCompleteness(input: CompletenessInput): CompletenessReport 
       level: "error",
       code: "STRUCTURE_MISSING",
       message: `Building ${s.prefix} could not be turned into a usable outline, so it is not on this drawing at all. Everything below describes the rest of the lot.`,
+    });
+  }
+
+  // ── the parcel-mask veto: buildings that are certainly not ours ──
+  // A warn, not an error, deliberately: the veto has never fired on the field
+  // sample (its 4/4 was measured on containment, not on catches), and a signal
+  // untested in battle does not get to block an estimate on its first day.
+  for (const prefix of input.foreignStructures ?? []) {
+    findings.push({
+      level: "warn",
+      code: "STRUCTURE_FOREIGN",
+      message: `Building ${prefix} lies entirely outside this property's lot as EagleView's own imagery masks it — it is almost certainly a neighbour's, and the area and linear footage below include it. Check the drawing against the lot line before pricing.`,
     });
   }
 
