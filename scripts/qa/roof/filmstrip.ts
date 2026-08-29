@@ -33,10 +33,8 @@ import { findCreases } from "@/lib/roofRecon/creases";
 import { applyCreases } from "@/lib/roofRecon/facetCut";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { areaOf, type FootprintPoint } from "@/lib/roofRecon/footprint";
-import { Overlay, LINE_COLORS } from "./overlay";
+import { Overlay } from "./overlay";
 import { loadFixture, type FixtureMeta } from "./fixture";
-
-const FT_PER_M = 3.28084;
 
 // ── the ledger: every address with a frozen Instant answer ──
 const LEDGER: Array<{ key: string; slug: string; dir: string; fixture?: string }> = [
