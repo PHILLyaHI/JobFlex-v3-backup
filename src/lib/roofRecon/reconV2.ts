@@ -576,11 +576,15 @@ export function buildRoofV2FromRecon(input: ReconV2FallbackInput): ReconV2Result
   // The AI regions may only kill DETACHED masses — never the building itself.
   // The old path learned this the hard way: an earlier version of the same
   // idea cut 242 sq ft of real roof off 419 Prairie Ridge Ln, and the fix was
-  // to exempt the largest connected component from the vision test. The same
-  // exemption applies here, so a trace that saw only part of the house (the
-  // 12629 read covers about a third of it — tree shadow) can shrink nothing
-  // that matters; it can still remove the slab, deck or carport the height
-  // gate let through, which is the whole job.
+  // to exempt the building's own connected component from the vision test. The
+  // exemption goes to the component UNDER THE PIN, never to the largest:
+  // isolateBuilding documents the counter-example on this very lot — 419's
+  // biggest blob in the tile is the NEIGHBOUR's house (3,769 sq ft against the
+  // subject's 3,403). Handing the neighbour the exemption would put the
+  // SUBJECT under the region test, and a trace that saw only part of the house
+  // (the 12629 read covers about a third of it — tree shadow) would then
+  // shrink exactly what the exemption exists to protect. Largest is only the
+  // fallback when the pin lands on a gap.
   let droppedByRegions = 0;
   if (regions.length) {
     const w = mask.width;
@@ -613,8 +617,10 @@ export function buildRoofV2FromRecon(input: ReconV2FallbackInput): ReconV2Result
       }
       if (size > bestSize) { bestSize = size; best = id; }
     }
+    const centreComp = comp[Math.floor(h / 2) * w + Math.floor(w / 2)];
+    const exempt = centreComp >= 0 ? centreComp : best;
     for (let i = 0; i < heightGated.length; i++) {
-      if (!(heightGated[i] > 0) || comp[i] === best) continue;
+      if (!(heightGated[i] > 0) || comp[i] === exempt) continue;
       if (inRegions(i % w, Math.floor(i / w))) continue;
       heightGated[i] = 0;
       droppedByRegions++;

@@ -32,7 +32,7 @@ import { measurePitchFromDsm, structurePitch, DSM_NOISE_FLOOR_FT } from "@/lib/r
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { normalizedRingToFrame } from "@/lib/roofDiagram/outlineVision";
 import { readInstantSurvey } from "@/lib/roofDiagram/instantSurvey";
-import { contrastMap } from "@/lib/roofDiagram/orthoPrep";
+import { contrastMap, cropToOutline, drawPinMarker } from "@/lib/roofDiagram/orthoPrep";
 import { readRoofLayout } from "@/lib/roofDiagram/roofLayoutVision";
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { loadFixture, type FixtureMeta } from "./fixture";
@@ -191,13 +191,20 @@ async function orthoBytes(key: string, token: string): Promise<Uint8Array> {
     console.log(`    OLD  ${o.tested} judged · ${o.within45} right (${pct(o.within45, o.tested)}) · within 90° ${pct(o.within90, o.tested)} · ${o.noHost} landed on no trusted facet`);
 
     // ── NEW reader, live ──
+    // The reader now gets everything the anchoring work added: the CHOSEN clear
+    // frame, cropped to the outline +15 ft, the pin drawn on the photo (clean
+    // contrast map), the ground size and the centre/pin transform. This is the
+    // first measurement with none of the known input defects.
     const img = clearOrtho(instant, meta.origin);
     let n: Tally = { tested: 0, within45: 0, within90: 0, noHost: 0, badDir: 0 };
     if (!img?.bbox) {
       console.log("    NEW: no clear ortho");
     } else {
-      const photo = await orthoBytes(job.key, img.token);
-      const cm = contrastMap(photo);
+      const raw = await orthoBytes(job.key, img.token);
+      const outline = instant.structures[0].outline ?? [];
+      const cropped = outline.length >= 3 ? cropToOutline(raw, img.bbox, outline, 15) : { png: raw, bbox: img.bbox };
+      const photo = drawPinMarker(cropped.png, cropped.bbox, meta.origin);
+      const cm = contrastMap(cropped.png);
       const survey = readInstantSurvey(instant, meta.origin);
       const planes = ((meta.diagnostics.pitches12 as number[]) ?? []).map((p, i) => ({
         pitch12: p,
@@ -207,6 +214,9 @@ async function orthoBytes(key: string, token: string): Promise<Uint8Array> {
       const read = await readRoofLayout({
         photo,
         contrast: cm.bytes,
+        bbox: cropped.bbox,
+        origin: meta.origin,
+        anchorMode: "marker",
         instant,
         structure: instant.structures[0],
         contour,
@@ -218,7 +228,8 @@ async function orthoBytes(key: string, token: string): Promise<Uint8Array> {
       });
       for (let rep = 0; rep < REPEATS; rep++) {
         const r = rep === 0 ? read : await readRoofLayout({
-          photo, contrast: cm.bytes, instant, structure: instant.structures[0], contour,
+          photo, contrast: cm.bytes, bbox: cropped.bbox, origin: meta.origin, anchorMode: "marker",
+          instant, structure: instant.structures[0], contour,
           ours: {
             clusters: planes.length ? planes : undefined,
             occlusion: survey ? { occlusion: survey.occlusion, treeOverhang: survey.treeOverhang, confidence: survey.confidence } : null,

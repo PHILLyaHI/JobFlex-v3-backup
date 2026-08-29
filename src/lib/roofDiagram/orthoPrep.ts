@@ -181,3 +181,94 @@ export function chooseVisionFrame(
       (scored.length > 1 && Math.abs(scored[0].shadow - scored[1].shadow) < 0.02 ? ", tie on shadow broken by scale/tightness" : ""),
   };
 }
+
+
+// ── target anchoring ─────────────────────────────────────────────────────────
+//
+// Measured failure this closes: the reader was handed a frame WIDER than the
+// lot with neighbours in it and never told which building is the subject. A
+// frame plus "read the roof" is an invitation to read the most legible roof in
+// the frame — which on 12629's wide frame is the neighbour with solar panels.
+// The defect is not the model's; it is the absence of a target.
+
+import { decode as pngDecode, encode as pngEncode } from "fast-png";
+
+/** Crop the ortho to the outline plus a margin. Returns the new bbox with it. */
+export function cropToOutline(
+  photoPng: Uint8Array,
+  bbox: [number, number, number, number],
+  outline: ReadonlyArray<{ lat: number; lng: number }>,
+  marginFt = 15,
+): { png: Uint8Array; bbox: [number, number, number, number] } {
+  const img = pngDecode(photoPng);
+  const ch = (img as unknown as { channels?: number }).channels ?? 3;
+  const w = img.width;
+  const h = img.height;
+  const [minLon, minLat, maxLon, maxLat] = bbox;
+  const midLat = (minLat + maxLat) / 2;
+  const degPerFtX = 1 / (D2R * Math.cos(midLat * D2R) * EARTH_R_M * FT_PER_M);
+  const degPerFtY = 1 / (D2R * EARTH_R_M * FT_PER_M);
+  const lons = outline.map((p) => p.lng);
+  const lats = outline.map((p) => p.lat);
+  const cminLon = Math.max(minLon, Math.min(...lons) - marginFt * degPerFtX);
+  const cmaxLon = Math.min(maxLon, Math.max(...lons) + marginFt * degPerFtX);
+  const cminLat = Math.max(minLat, Math.min(...lats) - marginFt * degPerFtY);
+  const cmaxLat = Math.min(maxLat, Math.max(...lats) + marginFt * degPerFtY);
+  const x0 = Math.max(0, Math.floor(((cminLon - minLon) / (maxLon - minLon)) * w));
+  const x1 = Math.min(w, Math.ceil(((cmaxLon - minLon) / (maxLon - minLon)) * w));
+  const y0 = Math.max(0, Math.floor(((maxLat - cmaxLat) / (maxLat - minLat)) * h));
+  const y1 = Math.min(h, Math.ceil(((maxLat - cminLat) / (maxLat - minLat)) * h));
+  const cw = x1 - x0;
+  const chh = y1 - y0;
+  if (cw < 50 || chh < 50) return { png: photoPng, bbox }; // degenerate — keep the original
+  const out = new Uint8Array(cw * chh * ch);
+  const d = img.data as Uint8Array;
+  for (let y = 0; y < chh; y++) {
+    out.set(d.subarray(((y0 + y) * w + x0) * ch, ((y0 + y) * w + x1) * ch), y * cw * ch);
+  }
+  return {
+    png: pngEncode({ width: cw, height: chh, data: out, channels: ch as 1 | 2 | 3 | 4, depth: 8 }),
+    bbox: [
+      minLon + (x0 / w) * (maxLon - minLon),
+      maxLat - (y1 / h) * (maxLat - minLat),
+      minLon + (x1 / w) * (maxLon - minLon),
+      maxLat - (y0 / h) * (maxLat - minLat),
+    ],
+  };
+}
+
+/** Draw a crosshair marker at the pin. Returns a NEW png; the input is untouched. */
+export function drawPinMarker(
+  photoPng: Uint8Array,
+  bbox: [number, number, number, number],
+  origin: { lat: number; lng: number },
+): Uint8Array {
+  const img = pngDecode(photoPng);
+  const ch = (img as unknown as { channels?: number }).channels ?? 3;
+  const w = img.width;
+  const h = img.height;
+  const d = new Uint8Array(img.data as Uint8Array);
+  const px = Math.round(((origin.lng - bbox[0]) / (bbox[2] - bbox[0])) * w);
+  const py = Math.round(((bbox[3] - origin.lat) / (bbox[3] - bbox[1])) * h);
+  const put = (x: number, y: number, r: number, g: number, b: number) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    const i = (y * w + x) * ch;
+    d[i] = r;
+    if (ch > 1) d[i + 1] = g;
+    if (ch > 2) d[i + 2] = b;
+  };
+  // A ring plus a cross, with a dark outline so it reads on any roof colour.
+  for (let a = 0; a < 360; a += 2) {
+    const rad = (a * Math.PI) / 180;
+    for (const rr of [14, 15]) put(Math.round(px + rr * Math.cos(rad)), Math.round(py + rr * Math.sin(rad)), 255, 230, 0);
+    put(Math.round(px + 16 * Math.cos(rad)), Math.round(py + 16 * Math.sin(rad)), 20, 20, 20);
+  }
+  for (let t = -22; t <= 22; t++) {
+    if (Math.abs(t) < 6) continue; // keep the centre visible
+    put(px + t, py, 255, 230, 0);
+    put(px, py + t, 255, 230, 0);
+    put(px + t, py + 1, 20, 20, 20);
+    put(px + 1, py + t, 20, 20, 20);
+  }
+  return pngEncode({ width: w, height: h, data: d, channels: ch as 1 | 2 | 3 | 4, depth: 8 });
+}

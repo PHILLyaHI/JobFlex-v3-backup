@@ -78,6 +78,8 @@ export interface LayoutFacet {
 }
 
 export interface LayoutRead {
+  /** What target anchoring was passed, verbatim — for provenance. */
+  anchor: string;
   masses: Array<{ label: string; note: string }>;
   lines: LayoutLine[];
   /** Facets with named drainage — for measurement, not for drawing. */
@@ -108,6 +110,17 @@ export interface LayoutVisionInput {
    */
   bbox?: [number, number, number, number];
   origin?: { lat: number; lng: number };
+  /**
+   * How the TARGET building is pointed out to the reader. Requires bbox+origin.
+   *   "prompt"  a line naming the pin's pixel coordinates in both pictures;
+   *   "marker"  the same line, plus the pin is DRAWN on both pictures as a
+   *             yellow crosshair (the caller passes photo/contrast already
+   *             marked — this module only words the prompt accordingly).
+   * Measured need: a frame wider than the lot with neighbours in it, and no
+   * target — the reader described the most legible roof in the frame, which on
+   * 12629's wide frame is the neighbour with solar panels.
+   */
+  anchorMode?: "prompt" | "marker";
   instant: InstantRoofData;
   structure: InstantStructure;
   contour: Array<{ x: number; y: number }>;
@@ -313,6 +326,7 @@ function readUnreadable(o: Record<string, unknown>): UnreadableArea[] {
 /** Run the chain. Never throws: a failed pass is recorded and the rest continue. */
 export async function readRoofLayout(input: LayoutVisionInput): Promise<LayoutRead> {
   const base: LayoutRead = {
+    anchor: "none — no georeference supplied",
     masses: [],
     lines: [],
     facets: [],
@@ -345,6 +359,23 @@ export async function readRoofLayout(input: LayoutVisionInput): Promise<LayoutRe
   const toCentre = (p: { x: number; y: number }) => ({ x: p.x - offX, y: p.y - offY });
   const toPin = (p: { x: number; y: number }) => ({ x: p.x + offX, y: p.y + offY });
 
+  // ── the target line ──
+  let anchorLine = "";
+  if (input.bbox && input.origin) {
+    // Pixel position of the pin, stated for BOTH pictures (same framing). The
+    // dimensions come from the decoded contrast map's grid via the bbox ratio,
+    // but pixels are what the model sees, so state fractions too.
+    const [minLon2, minLat2, maxLon2, maxLat2] = input.bbox;
+    const fx = ((input.origin.lng - minLon2) / (maxLon2 - minLon2)) * 100;
+    const fy = ((maxLat2 - input.origin.lat) / (maxLat2 - minLat2)) * 100;
+    const marked = input.anchorMode === "marker";
+    anchorLine =
+      `THE TARGET BUILDING. The surveyed address's pin sits at ${fx.toFixed(0)}% from the left, ${fy.toFixed(0)}% from the top of both pictures` +
+      (marked ? ", and is DRAWN on both pictures as a yellow crosshair in a ring" : "") +
+      ". Read THAT building only. Neighbouring roofs in the frame are context, not the subject — a line on a neighbour's roof is a wrong answer even if it is correct about the neighbour.";
+    base.anchor = marked ? `marker + prompt (pin at ${fx.toFixed(0)}%,${fy.toFixed(0)}%)` : `prompt only (pin at ${fx.toFixed(0)}%,${fy.toFixed(0)}%)`;
+  }
+
   const brief = buildRoofBrief(input.instant, input.structure, input.contour.map(toCentre), input.ours, input.confidences);
   const client = getOpenAI();
   const model = layoutModel();
@@ -356,6 +387,7 @@ export async function readRoofLayout(input: LayoutVisionInput): Promise<LayoutRe
       COMMON,
       groundW > 0 ? `
 THE PICTURE'S GROUND SIZE: ${groundW.toFixed(0)} ft east-west by ${groundH.toFixed(0)} ft north-south. Use it to keep your feet honest.` : "",
+      anchorLine,
       "",
       brief,
       "",
