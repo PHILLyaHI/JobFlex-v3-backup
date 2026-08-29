@@ -103,6 +103,12 @@ export interface ReconResult {
      *  an L-shaped or crescent facet has its centroid off itself, so "which plane
      *  is on this side of that line" cannot be answered from centroids alone. */
     clusterSamplesFt: Array<Array<[number, number]>>;
+    /** Fitted plane z = a·x + b·y + c per cluster (frame feet), same order. */
+    clusterPlanes: Array<{ a: number; b: number; c: number }>;
+    /** Per-pixel cluster id (-1 = none). Same raster grid as the DSM. Heavy
+     *  (w·h int32) but the DSM-layout measurement needs adjacency, and
+     *  re-deriving it outside would be a second segmentation (§K7). */
+    assign: Int32Array;
     clusterTopFt: number[]; //        highest point of each cluster above ground
     clusterBotFt: number[]; //        lowest point of each cluster above ground
   };
@@ -1433,6 +1439,8 @@ export function reconstructRoof(
       pitches12: clusters.map((c) => Math.hypot(c.plane.a, c.plane.b) * 12),
       clusterSqft: clusters.map((c) => c.areaSqft),
       clusterAzimuthDeg: clusters.map((c) => planeAzimuth(c.plane)),
+      clusterPlanes: clusters.map((c) => ({ a: c.plane.a, b: c.plane.b, c: c.plane.c })),
+      assign,
       clusterSamplesFt: clusters.map((c) => {
         const step = Math.max(1, Math.floor(c.pixels.length / 64));
         const pts: Array<[number, number]> = [];

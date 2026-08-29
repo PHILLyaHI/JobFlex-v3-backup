@@ -222,6 +222,16 @@ export function assessRoof(input: {
    * drawing looks wrong when one is absent.
    */
   parcelBlocked?: { kind: string; message: string } | null;
+  /**
+   * What the vision reader could NOT see, by its own account — named
+   * obstructions with places. Part of vision's promoted role as a witness
+   * (owner's decision 2026-08-28): its refusals and named confounders face the
+   * user; its lines still draw nothing.
+   */
+  visionRead?: {
+    unreadable: ReadonlyArray<{ why: string }>;
+    refusedPasses: readonly string[];
+  } | null;
   completeness?: {
     findings: ReadonlyArray<{ level: "error" | "warn"; code: string; message: string }>;
     /** Instant's facet count minus ours, as a share of Instant's. */
@@ -415,6 +425,17 @@ export function assessRoof(input: {
   if (layoutCollapsed) {
     reasons.push(
       `The aerial elevation data could trace only ${Math.round((mass!.claimShare as number) * 100)}% of this roof back to a ridge, so the line layout on this plan is unreliable: a building whose ridges cannot be resolved usually has more than one roof mass, and this plan draws them as one. The total area and the outer dimensions are affected far less — check the ridge, hip, valley and rake lengths against the aerial view before ordering trim.`,
+    );
+  }
+
+  // ── what the vision witness says it could not see ──
+  const vr = input.visionRead ?? null;
+  if (vr && vr.unreadable.length) {
+    // One reason, the distinct causes folded together — ten near-identical
+    // shadow entries must not become ten rows on the screen.
+    const whys = [...new Set(vr.unreadable.map((u) => u.why.split(";")[0].trim()).filter(Boolean))].slice(0, 3);
+    reasons.push(
+      `An AI read of the aerial photo could not see ${vr.unreadable.length > 1 ? "parts" : "part"} of this roof: ${whys.join("; ")}. Those areas rely on the elevation data alone.`,
     );
   }
 

@@ -129,7 +129,9 @@ async function orthoBytes(key: string, token: string): Promise<Uint8Array> {
   // that noise, so the new side is run several times and the SPREAD is
   // reported. One run would be an anecdote dressed as a measurement.
   const repeatArg = process.argv.find((a) => a.startsWith("--repeat="));
-  const REPEATS = repeatArg ? Math.max(1, Number(repeatArg.split("=")[1])) : 1;
+  // Default 3, by rule (ROOF-STATE, роль зрения): any published vision number
+  // requires repeats — the reader's own spread measured 56-73%.
+  const REPEATS = repeatArg ? Math.max(1, Number(repeatArg.split("=")[1])) : 3;
   const newRuns: Tally[] = Array.from({ length: REPEATS }, () => ({ tested: 0, within45: 0, within90: 0, noHost: 0, badDir: 0 }));
   const oldT: Tally = { tested: 0, within45: 0, within90: 0, noHost: 0, badDir: 0 };
   const newT: Tally = { tested: 0, within45: 0, within90: 0, noHost: 0, badDir: 0 };

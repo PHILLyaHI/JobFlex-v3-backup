@@ -81,6 +81,14 @@ export interface GateInput {
   dsmPoints: ReadonlyArray<{ x: number; y: number; z: number }>;
   /** Lines two independent finders already put on this roof, frame feet. */
   corroborators?: ReadonlyArray<{ a: FootprintPoint; b: FootprintPoint; source: string }>;
+  /**
+   * The vision reader's lines — a WITNESS WITH WEIGHT, not a source (owner's
+   * decision, 2026-08-28, after the honest re-measure landed at 56-73% against
+   * 50/38). Vision agreement lifts a corroborated line to a FULL WITNESS in
+   * the check detail; vision alone never passes a line, because every third
+   * facet it reads still drains the wrong way.
+   */
+  visionLines?: ReadonlyArray<{ a: FootprintPoint; b: FootprintPoint }>;
 }
 
 const inRing = (p: { x: number; y: number }, r: readonly { x: number; y: number }[]): boolean => {
@@ -236,7 +244,16 @@ export function gateLayoutLines(input: GateInput): GateResult {
       fail("corroborated", "no independent line finder — neither the lidar folds nor the photograph's own edges — puts a line here");
       continue;
     }
-    checks.push({ name: "corroborated", passed: true, detail: `the ${hit.source} independently puts a line here` });
+    const visionAgrees = (input.visionLines ?? []).some(
+      (v) => distToSeg(mid, v.a, v.b) <= SAME_LINE_FT && Math.min(distToSeg(line.a, v.a, v.b), distToSeg(line.b, v.a, v.b)) <= SAME_LINE_FT,
+    );
+    checks.push({
+      name: "corroborated",
+      passed: true,
+      detail: visionAgrees
+        ? `FULL WITNESS: the ${hit.source} puts a line here and the vision read independently agrees`
+        : `the ${hit.source} independently puts a line here`,
+    });
 
     // Survivor: hand it to the same cut machinery the lidar folds go through.
     survivors.push({
