@@ -79,7 +79,7 @@ const angDiff = (a: number, b: number): number => {
   return d > 180 ? 360 - d : d;
 };
 
-interface DsmLine { a: FootprintPoint; b: FootprintPoint; type: string; lengthFt: number; between: [number, number] }
+interface DsmLine { a: FootprintPoint; b: FootprintPoint; type: string; lengthFt: number; between: [number, number]; medGapFt: number }
 
 (async () => {
   const only = process.argv[2];
@@ -154,22 +154,43 @@ interface DsmLine { a: FootprintPoint; b: FootprintPoint; type: string; lengthFt
 
     // ── lines: intersections of ADJACENT in-contour clusters ──
     const pairKey = (a: number, b: number) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+    // Shared borders, and — the valley diagnosis — pairs separated only by a
+    // thin strip of UNASSIGNED pixels. Valley pixels are the noisiest on the
+    // roof (water line, debris, deepest shadows), so region growing drops them
+    // and two clusters that really meet at a valley can fail plain adjacency.
+    // The bridge width is DERIVED: one probe of the crease classifier (6 ft),
+    // the distance at which two planes are still being compared about the same
+    // fold — beyond it they are talking about different places.
+    const BRIDGE_PX = Math.max(1, Math.round(PROBE_FT / stepFt));
     const shared = new Map<string, FootprintPoint[]>();
+    const gapWidths = new Map<string, number[]>();
     for (let i = 0; i < w * h; i++) {
       const a = d.assign[i];
       if (a < 0 || !clusterIn[a]) continue;
       const x = i % w;
       const y = (i - x) / w;
-      for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx >= w || ny >= h) continue;
-        const b = d.assign[ny * w + nx];
+      for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) {
+        // Walk up to BRIDGE_PX unassigned pixels; the first assigned pixel on
+        // the far side decides whether this is a border (0 gap) or a bridge.
+        let gap = 0;
+        let b = -1;
+        for (let step2 = 1; step2 <= BRIDGE_PX + 1; step2++) {
+          const nx = x + dx * step2;
+          const ny = y + dy * step2;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) break;
+          const v = d.assign[ny * w + nx];
+          if (v === a) { b = -1; break; }
+          if (v >= 0) { b = v; break; }
+          gap++;
+        }
         if (b < 0 || b === a || !clusterIn[b]) continue;
         const k = pairKey(a, b);
         const rec = shared.get(k) ?? [];
         rec.push(ftOf(i));
         shared.set(k, rec);
+        const gw = gapWidths.get(k) ?? [];
+        gw.push(gap * stepFt);
+        gapWidths.set(k, gw);
       }
     }
     const lines: DsmLine[] = [];
@@ -199,18 +220,36 @@ interface DsmLine { a: FootprintPoint; b: FootprintPoint; type: string; lengthFt
       }
       const a2 = { x: px0.x + dir.x * t0, y: px0.y + dir.y * t0 };
       const b2 = { x: px0.x + dir.x * t1, y: px0.y + dir.y * t1 };
-      // The crease classifier's own rule, verbatim (creases.ts): convex/concave
-      // by the two planes' heights a PROBE off the line, level by along-line pitch.
+      // The crease classifier's rule — with the normal ORIENTED EMPIRICALLY,
+      // which the first version failed to do and paid for with zero valleys on
+      // all six addresses: sign(da·da/nrm + db·db/nrm) is sign(nrm), always
+      // positive, so plane A was routinely evaluated on plane B's side and
+      // concave pairs read as convex. creases.ts orients against the measured
+      // side split; here the same is done with cluster A's own pixels.
       const creaseP12 = Math.abs(A.a * dir.x + A.b * dir.y) * 12;
-      const sgn = Math.sign(da * (da / nrm) + db * (db / nrm)) || 1;
-      const ncx2 = (da / nrm) * sgn;
+      let aSide = 0;
+      {
+        // Which side of the line does cluster A actually occupy?
+        let n2 = 0;
+        for (let ii = 0; ii < w * h && n2 < 400; ii++) {
+          if (d.assign[ii] !== ai) continue;
+          const p2 = ftOf(ii);
+          if (Math.hypot(p2.x - px0.x, p2.y - px0.y) > 30) continue;
+          aSide += Math.sign((p2.x - px0.x) * (da / nrm) + (p2.y - px0.y) * (db / nrm));
+          n2++;
+        }
+      }
+      const sgn = Math.sign(aSide) || 1;
+      const ncx2 = (da / nrm) * sgn; // now points INTO cluster A's side
       const ncy2 = (db / nrm) * sgn;
       const zc = A.a * px0.x + A.b * px0.y + A.c;
-      const zL = A.a * (px0.x - ncx2 * PROBE_FT) + A.b * (px0.y - ncy2 * PROBE_FT) + A.c;
-      const zR = B.a * (px0.x + ncx2 * PROBE_FT) + B.b * (px0.y + ncy2 * PROBE_FT) + B.c;
-      const type = zL > zc && zR > zc ? "VALLEY" : zL < zc && zR < zc ? (creaseP12 <= LEVEL_PITCH12 ? "RIDGE" : "HIP") : "OTHER";
+      const zA = A.a * (px0.x + ncx2 * PROBE_FT) + A.b * (px0.y + ncy2 * PROBE_FT) + A.c;
+      const zB = B.a * (px0.x - ncx2 * PROBE_FT) + B.b * (px0.y - ncy2 * PROBE_FT) + B.c;
+      const type = zA > zc && zB > zc ? "VALLEY" : zA < zc && zB < zc ? (creaseP12 <= LEVEL_PITCH12 ? "RIDGE" : "HIP") : "OTHER";
       if (type === "OTHER") continue; // bends without folding — not a roof line
-      lines.push({ a: a2, b: b2, type, lengthFt: t1 - t0, between: [ai, bi] });
+      const gaps = (gapWidths.get(k) ?? []).sort((x2, y3) => x2 - y3);
+      const medGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
+      lines.push({ a: a2, b: b2, type, lengthFt: t1 - t0, between: [ai, bi], medGapFt: medGap });
     }
 
     // ── contour edges: eave or rake, from the dominant inside cluster's drain ──
@@ -305,7 +344,7 @@ interface DsmLine { a: FootprintPoint; b: FootprintPoint; type: string; lengthFt
       );
     }
     for (const l of lines.sort((x, y2) => y2.lengthFt - x.lengthFt).slice(0, 10)) {
-      console.log(`    line ${l.type.padEnd(6)} ${l.lengthFt.toFixed(0).padStart(3)} ft between ${l.between[0]} and ${l.between[1]}`);
+      console.log(`    line ${l.type.padEnd(6)} ${l.lengthFt.toFixed(0).padStart(3)} ft between ${l.between[0]} and ${l.between[1]}${l.medGapFt > 0 ? ` · через зазор ${l.medGapFt.toFixed(1)} ft` : ""}`);
     }
   }
 })();
