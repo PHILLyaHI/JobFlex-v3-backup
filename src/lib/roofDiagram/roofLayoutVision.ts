@@ -94,6 +94,20 @@ export interface LayoutVisionInput {
   /** The clear ortho as served, and its contrast map. */
   photo: Uint8Array;
   contrast: Uint8Array;
+  /**
+   * The photo's georeference: [minLon, minLat, maxLon, maxLat] and the pin the
+   * frame coordinates are anchored to. When given, TWO anchoring gaps close:
+   * the prompt states the picture's true ground size (without it the reader
+   * has no scale at all — measured: an empty-brief run answered in a small
+   * central cluster), and the reader's picture-centre coordinates are
+   * translated to the pin frame on the way out, with the brief's contour
+   * translated the other way on the way in. Without this the prompt said
+   * "origin at the centre of the picture" while the contour it embedded was
+   * pin-framed, and the answers were drawn as if pin-framed — two frames ~8 ft
+   * apart on the tight crop, silently mixed.
+   */
+  bbox?: [number, number, number, number];
+  origin?: { lat: number; lng: number };
   instant: InstantRoofData;
   structure: InstantStructure;
   contour: Array<{ x: number; y: number }>;
@@ -310,7 +324,28 @@ export async function readRoofLayout(input: LayoutVisionInput): Promise<LayoutRe
   };
   if (!isOpenAIEnabled()) return { ...base, reasons: ["OPENAI_API_KEY is not set"] };
 
-  const brief = buildRoofBrief(input.instant, input.structure, input.contour, input.ours, input.confidences);
+  // Picture-centre against the pin, in frame feet. Zero when no georeference
+  // was supplied — the transform then degrades to the old behaviour.
+  const FT_PER_M = 3.28084;
+  const EARTH_R_M = 6378137;
+  const D2R = Math.PI / 180;
+  let offX = 0;
+  let offY = 0;
+  let groundW = 0;
+  let groundH = 0;
+  if (input.bbox && input.origin) {
+    const [minLon, minLat, maxLon, maxLat] = input.bbox;
+    const midLat = (minLat + maxLat) / 2;
+    const midLon = (minLon + maxLon) / 2;
+    offX = (midLon - input.origin.lng) * D2R * Math.cos(input.origin.lat * D2R) * EARTH_R_M * FT_PER_M;
+    offY = (midLat - input.origin.lat) * D2R * EARTH_R_M * FT_PER_M;
+    groundW = (maxLon - minLon) * D2R * Math.cos(midLat * D2R) * EARTH_R_M * FT_PER_M;
+    groundH = (maxLat - minLat) * D2R * EARTH_R_M * FT_PER_M;
+  }
+  const toCentre = (p: { x: number; y: number }) => ({ x: p.x - offX, y: p.y - offY });
+  const toPin = (p: { x: number; y: number }) => ({ x: p.x + offX, y: p.y + offY });
+
+  const brief = buildRoofBrief(input.instant, input.structure, input.contour.map(toCentre), input.ours, input.confidences);
   const client = getOpenAI();
   const model = layoutModel();
   let carried = "";
@@ -319,6 +354,8 @@ export async function readRoofLayout(input: LayoutVisionInput): Promise<LayoutRe
     const t0 = Date.now();
     const prompt = [
       COMMON,
+      groundW > 0 ? `
+THE PICTURE'S GROUND SIZE: ${groundW.toFixed(0)} ft east-west by ${groundH.toFixed(0)} ft north-south. Use it to keep your feet honest.` : "",
       "",
       brief,
       "",
@@ -355,9 +392,9 @@ export async function readRoofLayout(input: LayoutVisionInput): Promise<LayoutRe
         base.reasons.push(`pass "${spec.name}" returned nothing parseable`);
         continue;
       }
-      const got = readLines(parsed, spec.name);
-      const un = readUnreadable(parsed);
-      const fac = readFacets(parsed);
+      const got = readLines(parsed, spec.name).map((l) => ({ ...l, a: toPin(l.a), b: toPin(l.b) }));
+      const un = readUnreadable(parsed).map((u) => ({ ...u, where: toPin(u.where) }));
+      const fac = readFacets(parsed).map((f) => ({ ...f, polygon: f.polygon.map(toPin) }));
       base.lines.push(...got);
       base.unreadable.push(...un);
       base.facets.push(...fac);

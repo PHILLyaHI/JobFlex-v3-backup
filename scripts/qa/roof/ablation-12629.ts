@@ -30,7 +30,7 @@ import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
 import { fetchCloud } from "@/lib/roofRecon/lidarCloud";
 import { findCreases } from "@/lib/roofRecon/creases";
 import { applyCreases } from "@/lib/roofRecon/facetCut";
-import { contrastMap } from "@/lib/roofDiagram/orthoPrep";
+import { contrastMap, chooseVisionFrame } from "@/lib/roofDiagram/orthoPrep";
 import { readRoofLayout, type LayoutRead } from "@/lib/roofDiagram/roofLayoutVision";
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { loadFixture, type FixtureMeta } from "./fixture";
@@ -243,13 +243,30 @@ interface RunResult {
 
   // ── 5. VISION ONLY ──
   {
-    const cacheFile = resolve(OUT, "vision-only.json");
+    const cacheFile = resolve(OUT, "vision-only-v2.json");
     let read: LayoutRead;
+    let frameReason = "";
     let ms = 0;
     if (existsSync(cacheFile)) {
-      read = JSON.parse(readFileSync(cacheFile, "utf8")) as LayoutRead;
+      const c = JSON.parse(readFileSync(cacheFile, "utf8")) as { read: LayoutRead; frameReason: string };
+      read = c.read;
+      frameReason = c.frameReason;
     } else {
-      const photo = new Uint8Array(readFileSync(resolve(".cache/roof-diagram", "clear-12629.png")));
+      // The frame is CHOSEN, not first-found: clear only, least shadow, finest
+      // scale — and the choice with its reason goes into the stats verbatim.
+      const cands = instant.imagery
+        .filter((im) => im.view === "ortho" && im.bbox && typeof im.masked === "boolean")
+        .map((im) => {
+          const wideArea = Math.max(...instant.imagery.filter((x) => x.bbox).map((x) => (x.bbox![2] - x.bbox![0]) * (x.bbox![3] - x.bbox![1])));
+          const isWide = (im.bbox![2] - im.bbox![0]) * (im.bbox![3] - im.bbox![1]) === wideArea;
+          const file = resolve(".cache/roof-diagram", `pair-12629-${isWide ? "wide" : "tight"}-${im.masked ? "masked" : "clear"}.png`);
+          return { token: im.token, masked: im.masked, bbox: im.bbox!, bytes: new Uint8Array(readFileSync(file)) };
+        });
+      const choice = chooseVisionFrame(cands, origin, instant.structures[0].outline ?? undefined);
+      if (!choice) throw new Error("no usable clear frame");
+      frameReason = choice.reason;
+      const chosen = cands[choice.index];
+      const photo = chosen.bytes;
       const cm = contrastMap(photo);
       // A survey stub of nothing: vision-only means the reader gets pictures
       // and no numbers. Every brief line reads "unknown".
@@ -262,13 +279,15 @@ interface RunResult {
       read = await readRoofLayout({
         photo,
         contrast: cm.bytes,
+        bbox: chosen.bbox,
+        origin,
         instant: { ...instant, structures: [stub], totals: {} as never, imagery: [] },
         structure: stub,
         contour: [],
         ours: {},
       });
       ms = t() - t0;
-      writeFileSync(cacheFile, JSON.stringify(read, null, 1));
+      writeFileSync(cacheFile, JSON.stringify({ read, frameReason }, null, 1));
     }
     const img = freshCanvas();
     for (const f of read.facets) {
@@ -285,6 +304,7 @@ interface RunResult {
         masses: read.masses.length,
         refused: read.refusedPasses,
         unreadable: read.unreadable.length,
+        frame: frameReason,
         singleRun: "один прогон — по §J это одна реализация, не число",
       },
       cannot: [
