@@ -29,6 +29,7 @@ import type { Raster } from "@/lib/solar";
 import { buildRoofV2 } from "@/lib/roofRecon/reconV2";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { segmentMasses } from "@/lib/roofRecon/massSegments";
+import { ridgeTopology } from "@/lib/roofRecon/ridgeTopology";
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { loadFixture, type FixtureMeta } from "./fixture";
 
@@ -141,6 +142,34 @@ const compass = (deg: number): string => ["N", "NNE", "NE", "ENE", "E", "ESE", "
     if (flash) console.log(`\n  CROSS-CHECK flashing drawn by the old path: ${flash}`);
     if (wave) console.log(`  CROSS-CHECK wavefront refusal: ${wave}`);
 
-    writeFileSync(resolve(OUT, `${job.key}.json`), JSON.stringify(seg, null, 1));
+    // ── RIDGE TOPOLOGY, the other question entirely ──
+    // Height steps find walls. This finds summits and the saddles between them,
+    // which is what separates masses that meet at a valley.
+    const topo = ridgeTopology({
+      heightFt,
+      width: dsm.width,
+      height: dsm.height,
+      pixelFt: stepFt,
+      originPx: { x: (0.5 - dsm.width / 2) * stepFt, y: (dsm.height / 2 - 0.5) * stepFt },
+      contour: moved,
+    });
+    const real = topo.summits.filter((s) => s.persistenceFt >= topo.saddleFloorFt);
+    console.log(`
+  RIDGE TOPOLOGY — ${topo.summits.length} local maxima, ${real.length} clear the ${topo.saddleFloorFt} ft saddle floor`);
+    console.log("   summit   peak ft   persistence   ridge run        drains sf");
+    for (const s of real.slice(0, 12)) {
+      console.log(
+        `   ${String(s.id).padStart(6)} ${s.peakFt.toFixed(1).padStart(9)}   ` +
+          `${(s.persistenceFt === Infinity ? "the roof" : `${s.persistenceFt.toFixed(2)} ft`).padStart(11)}   ` +
+          `${s.ridgeFt.toFixed(0).padStart(3)} ft ${compass(s.ridgeDeg).padEnd(3)}   ${s.planSqft.toFixed(0).padStart(9)}`,
+      );
+    }
+    if (real.length > 12) console.log(`   … and ${real.length - 12} more`);
+    console.log(`  SADDLES: ${topo.saddles.length}; deepest —`);
+    for (const sd of topo.saddles.slice(0, 8)) {
+      console.log(`   between ${sd.a} and ${sd.b} at ${sd.atFt.toFixed(1)} ft · depth ${sd.depthFt.toFixed(2)} ft · at (${sd.where.x.toFixed(0)}, ${sd.where.y.toFixed(0)})`);
+    }
+
+    writeFileSync(resolve(OUT, `${job.key}.json`), JSON.stringify({ seg, topo }, null, 1));
   }
 })();
