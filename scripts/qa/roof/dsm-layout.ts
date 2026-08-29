@@ -20,7 +20,7 @@
  * ortho, same scale. Owner's traces for 12629/419 exist only as words — the
  * comparison there is by eye against the photo.
  */
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { loadHarnessEnv } from "./env";
@@ -274,7 +274,7 @@ interface DsmLine { a: FootprintPoint; b: FootprintPoint; type: string; lengthFt
       else {
         const r2 = await fetchPropertyImage(wide.token);
         bytes = new Uint8Array(r2.bytes);
-        require("node:fs").writeFileSync(cacheF, Buffer.from(bytes));
+        writeFileSync(cacheF, Buffer.from(bytes));
       }
       const ov = new Overlay(bytes, wide.bbox, meta.origin);
       const COLORS: Record<string, [number, number, number]> = { RIDGE: [255, 60, 60], HIP: [255, 165, 0], VALLEY: [60, 120, 255], RAKE: [40, 200, 90], EAVE: [30, 30, 30] };
