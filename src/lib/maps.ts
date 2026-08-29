@@ -1,3 +1,5 @@
+import { ExternalCallError, externalFetch } from "@/lib/externalCall";
+
 export function isMapsEnabled() {
   return Boolean(process.env.GOOGLE_MAPS_API_KEY);
 }
@@ -47,8 +49,7 @@ export async function geocodeAddress(parts: {
   url.searchParams.set("region", "us");
   url.searchParams.set("key", process.env.GOOGLE_MAPS_API_KEY!);
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(MAPS_TIMEOUT_MS) });
-    if (!res.ok) return null;
+    const res = await externalFetch("maps", "geocodeAddress", url.toString(), {}, { timeoutMs: MAPS_TIMEOUT_MS });
     const data = (await res.json()) as {
       status?: string;
       results?: { geometry?: { location?: { lat: number; lng: number } } }[];
@@ -59,28 +60,35 @@ export async function geocodeAddress(parts: {
     }
     return { lat: loc.lat, lng: loc.lng };
   } catch {
+    // Best-effort by contract: lead matching falls back to zip or neutral
+    // distance scoring, so the reason is deliberately not surfaced here.
     return null;
   }
 }
 
-// Geocode an address string → lat/lng. Null when maps disabled or geocode failed.
+// Geocode an address string → lat/lng.
 //
 // This one is on the roof-measurement path — buildReconModel calls it whenever
-// the caller supplied no coordinates — and until 2026-08-28 it had no ceiling
-// at all, so a hung request would have held the whole measurement until the
-// enclosing deadline killed it with a message about the reconstruction.
+// the caller supplied no coordinates — so its two failure modes must not be one:
+//
+//   null                 Google ANSWERED and has no such address. Retrying is
+//                        pointless; the address itself is the problem.
+//   ExternalCallError    Google did not answer (timeout, network, 5xx after
+//                        retries). The address may be fine; try again later.
+//
+// Until 2026-08-28 both came back as null (and before that, with no ceiling at
+// all, a hung request held the whole measurement). A Maps outage therefore read
+// as "couldn't locate that address" — the wrong claim, inviting the user to fix
+// an address that was never wrong.
 export async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
   if (!isMapsEnabled()) return null;
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(MAPS_TIMEOUT_MS) });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      results?: { geometry?: { location?: { lat: number; lng: number } } }[];
-    };
-    const loc = data.results?.[0]?.geometry?.location;
-    return loc ? { lat: loc.lat, lng: loc.lng } : null;
-  } catch {
-    return null;
-  }
+  const res = await externalFetch("maps", "geocode", url, {}, { timeoutMs: MAPS_TIMEOUT_MS });
+  const data = (await res.json()) as {
+    results?: { geometry?: { location?: { lat: number; lng: number } } }[];
+  };
+  const loc = data.results?.[0]?.geometry?.location;
+  return loc ? { lat: loc.lat, lng: loc.lng } : null;
 }
+
+export { ExternalCallError as MapsCallError };

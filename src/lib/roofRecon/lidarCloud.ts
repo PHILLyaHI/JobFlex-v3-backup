@@ -17,6 +17,7 @@
 // Best-effort by contract: every failure returns null with a reason, and the
 // caller draws exactly what it would have drawn without it.
 
+import { externalFetch } from "@/lib/externalCall";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -68,8 +69,7 @@ async function fetchCached(url: string, file: string, timeoutMs: number): Promis
   } catch {
     /* unreadable cache is a miss */
   }
-  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+  const res = await externalFetch("3dep", file, url, {}, { timeoutMs });
   const buf = Buffer.from(await res.arrayBuffer());
   try {
     mkdirSync(CACHE_DIR(), { recursive: true });

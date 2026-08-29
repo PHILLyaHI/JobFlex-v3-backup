@@ -31,6 +31,7 @@ export interface RegridResponse {
   buildings?: { features?: RegridFeature[] };
 }
 
+import { ExternalCallError, externalFetch } from "@/lib/externalCall";
 export function isRegridEnabled(): boolean {
   return Boolean(process.env.REGRID_API_KEY);
 }
@@ -109,9 +110,16 @@ export async function fetchRegridPoint(
   const url = `https://app.regrid.com/api/v2/parcels/point.json?lat=${lat}&lon=${lng}&token=${encodeURIComponent(
     process.env.REGRID_API_KEY as string,
   )}`;
-  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(REGRID_TIMEOUT_MS) });
-  if (!res.ok) return { data: null, status: res.status };
-  return { data: (await res.json()) as RegridResponse, status: res.status };
+  try {
+    const res = await externalFetch("regrid", "parcel point", url, {}, { timeoutMs: REGRID_TIMEOUT_MS });
+    return { data: (await res.json()) as RegridResponse, status: res.status };
+  } catch (err) {
+    // The {data, status} contract predates the wrapper and fenceBoundary reads
+    // the status, so an HTTP failure stays a status here; only the unanswered
+    // case propagates as a throw, exactly as the bare fetch used to.
+    if (err instanceof ExternalCallError && err.httpStatus != null) return { data: null, status: err.httpStatus };
+    throw err;
+  }
 }
 
 /**
@@ -176,15 +184,12 @@ export async function fetchParcelRing(lat: number, lng: number): Promise<ParcelR
     // ANSWER, and it is deliberately not `blocked`.
     return { ring };
   } catch (err) {
-    const name = err instanceof Error ? err.name : "";
-    const timedOut = name === "TimeoutError" || name === "AbortError";
+    const unanswered = err instanceof ExternalCallError && err.kind === "unreachable";
     return {
       ring: [],
       blocked: {
-        kind: timedOut ? "timeout" : "error",
-        message: timedOut
-          ? `Regrid did not answer in ${REGRID_TIMEOUT_MS / 1000}s`
-          : `Regrid parcel lookup failed (${err instanceof Error ? err.message : String(err)})`,
+        kind: unanswered ? "timeout" : "error",
+        message: err instanceof Error ? err.message : String(err),
       },
     };
   }

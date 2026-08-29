@@ -17,6 +17,7 @@
 //   · geometry (geom_as_wkt, EPSG:4326) is returned always; no returnGeometry.
 //   · rpp=0 returns just the count without spending parcel quota.
 
+import { ExternalCallError, externalFetch } from "@/lib/externalCall";
 const BASE = "https://reportallusa.com/api/parcels";
 
 /** The allowance the key ships with — for the log line, not a limit we enforce. */
@@ -108,43 +109,66 @@ function normalize(r: RawResult): Parcel | null {
   };
 }
 
+/**
+ * Read the spend headers off ANY ReportAll response. The header is the ONLY
+ * authoritative count — a locally kept tally drifted 17 results ahead of the
+ * truth before this (992 believed, 975 real). Persisted on every response, in
+ * one place, so no code path can observe a header and forget to record it.
+ * Fire-and-forget: bookkeeping is never worth failing a parcel lookup over,
+ * and the dynamic import keeps this module usable from routes that bundle
+ * without the Prisma client.
+ */
+function readQuotaHeaders(res: Response): void {
+  const used = res.headers.get("x-reportall-api-parcels-request-quota-used");
+  const left = res.headers.get("x-reportall-api-parcels-quota-remaining");
+  if (!used && !left) return;
+  const n = Number(left);
+  if (Number.isFinite(n)) {
+    lastQuotaRemaining = n;
+    void import("@/lib/db")
+      .then(({ db }) =>
+        db.syncState.upsert({
+          where: { key: "reportall:quota-remaining" },
+          update: { cursor: String(n) },
+          create: { key: "reportall:quota-remaining", cursor: String(n) },
+        }),
+      )
+      .catch(() => {});
+  }
+  console.log(`[reportall] parcel ${used ?? "?"}/${QUOTA_ALLTIME} spent, ${left ?? "?"} remaining`);
+}
+
 async function call(params: Record<string, string>): Promise<Parcel[]> {
   const key = process.env.REPORTALL_CLIENT_KEY;
   if (!key) throw new ReportAllError("REPORTALL_CLIENT_KEY is not set", 0);
   const qs = new URLSearchParams({ client: key, v: "9", ...params });
-  const res = await fetch(`${BASE}?${qs}`, {
-    cache: "no-store",
-    signal: AbortSignal.timeout(15000),
-  });
+  let res: Response;
+  try {
+    res = await externalFetch("reportall", "parcels", `${BASE}?${qs}`, {}, {
+      timeoutMs: 15_000,
+      // NOT the default retry set: ReportAll's 429 means an ALLTIME allowance
+      // of 1,000 lookups is exhausted or throttled — an answer about the
+      // account, not a hiccup — and asking again cannot un-spend it. Only 5xx
+      // and unanswered attempts are retried.
+      retryOn: (st) => st >= 500,
+      onResponse: readQuotaHeaders,
+    });
+  } catch (err) {
+    if (err instanceof ExternalCallError) {
+      throw new ReportAllError(
+        err.httpStatus === 429 ? "ReportAll rate limit / quota exhausted" : err.message,
+        err.httpStatus ?? 0,
+      );
+    }
+    throw err;
+  }
 
   // Spend visibility — server console only, never the client response. The
   // remaining count is also kept in memory so a caller can refuse to spend the
   // last of an ALLTIME allowance before it makes the request (parcelLookup.ts).
-  const used = res.headers.get("x-reportall-api-parcels-request-quota-used");
-  const left = res.headers.get("x-reportall-api-parcels-quota-remaining");
-  if (used || left) {
-    const n = Number(left);
-    if (Number.isFinite(n)) {
-      lastQuotaRemaining = n;
-      // The header is the ONLY authoritative count — a locally kept tally
-      // drifted 17 results ahead of the truth before this (992 believed, 975
-      // real). Persist it on EVERY response, here rather than in the callers,
-      // so no code path can observe a header and forget to record it.
-      // Fire-and-forget: the count is bookkeeping, never worth failing a
-      // parcel lookup over. Dynamic import keeps this module usable from
-      // routes that bundle without the Prisma client.
-      void import("@/lib/db")
-        .then(({ db }) =>
-          db.syncState.upsert({
-            where: { key: "reportall:quota-remaining" },
-            update: { cursor: String(n) },
-            create: { key: "reportall:quota-remaining", cursor: String(n) },
-          }),
-        )
-        .catch(() => {});
-    }
-    console.log(`[reportall] parcel ${used ?? "?"}/${QUOTA_ALLTIME} spent, ${left ?? "?"} remaining`);
-  }
+  // Quota headers were read by the onResponse hook above — on EVERY response,
+  // failures included, which the old inline read could not do once retries
+  // existed: a 429's own headers carry the final count.
 
   if (res.status === 429) throw new ReportAllError("ReportAll rate limit / quota exhausted", 429);
   if (!res.ok) throw new ReportAllError(`ReportAll request failed (${res.status})`, res.status);

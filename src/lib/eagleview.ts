@@ -10,6 +10,7 @@
 // sandbox host for the token returns an Apigee "environment is not defined"
 // 500. Both hosts are overridable via env.
 
+import { ExternalCallError, externalFetch, type ExternalFailureKind } from "@/lib/externalCall";
 const TOKEN_BASE = process.env.EAGLEVIEW_TOKEN_BASE_URL || "https://apicenter.eagleview.com";
 const API_BASE = process.env.EAGLEVIEW_API_BASE_URL || "https://sandbox.apicenter.eagleview.com";
 
@@ -82,45 +83,27 @@ export class EagleViewUnavailableError extends Error {
   }
 }
 
-const evKindFor = (status: number): EvFailureKind =>
-  status === 401 || status === 403 ? "auth" : status === 404 ? "no-data" : status === 429 || status >= 500 ? "busy" : "error";
-
-const evWorthRetrying = (status: number): boolean => status === 429 || status >= 500;
-
-const evSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const evKindFor = (k: ExternalFailureKind): EvFailureKind =>
+  k === "auth" ? "auth" : k === "no-data" ? "no-data" : k === "unreachable" ? "timeout" : "error";
 
 /**
- * One EagleView request, with a ceiling and retries. Returns the successful
- * Response; the caller reads the body. Every throw is an
- * EagleViewUnavailableError carrying the kind.
+ * One EagleView request, with a ceiling and retries — the shared external-call
+ * contract, with EagleView's own kind names kept because callers already read
+ * them. 202 is passed through: the Property Data poll uses it for "not ready
+ * yet", which is an answer, not a failure.
  */
-async function evRequest(url: string, init: RequestInit, op: string): Promise<Response> {
-  let last: EagleViewUnavailableError | null = null;
-  for (let attempt = 1; attempt <= EV_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(EV_TIMEOUT_MS) });
-      if (res.ok || res.status === 202) return res;
-      const kind = evKindFor(res.status);
-      const err = new EagleViewUnavailableError(`EagleView ${op} failed (${res.status})`, kind, op, res.status);
-      if (!evWorthRetrying(res.status)) throw err;
-      last = err;
-    } catch (err) {
-      if (err instanceof EagleViewUnavailableError && err.kind !== "busy") throw err;
-      last =
-        err instanceof EagleViewUnavailableError
-          ? err
-          : new EagleViewUnavailableError(
-              `EagleView did not answer in ${EV_TIMEOUT_MS / 1000}s (${op})`,
-              "timeout",
-              op,
-            );
-    }
-    if (attempt < EV_ATTEMPTS) {
-      console.warn(`[eagleview] ${op} attempt ${attempt}/${EV_ATTEMPTS} failed (${last?.message}) — retrying`);
-      await evSleep(EV_BACKOFF_MS << (attempt - 1));
-    }
+async function evRequest(url: string, init: RequestInit, op: string, attempts = EV_ATTEMPTS): Promise<Response> {
+  try {
+    return await externalFetch("eagleview", op, url, init, {
+      timeoutMs: EV_TIMEOUT_MS,
+      attempts,
+      backoffMs: EV_BACKOFF_MS,
+      acceptStatuses: [202],
+    });
+  } catch (err) {
+    if (!(err instanceof ExternalCallError)) throw err;
+    throw new EagleViewUnavailableError(err.message, evKindFor(err.kind), op, err.httpStatus);
   }
-  throw last ?? new EagleViewUnavailableError(`EagleView ${op} failed`, "error", op);
 }
 
 let tokenCache: { token: string; expiresAt: number } | null = null;
@@ -1034,27 +1017,28 @@ export async function submitInstantOrder(
 
   let res: Response;
   try {
-    res = await fetch(`${PROPERTY_API_BASE}/property/v2/request`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      cache: "no-store",
-      signal: AbortSignal.timeout(20_000),
-    });
+    // attempts = 1, and that is the point — see the doc comment above: this
+    // POST places a billed order, and a timeout does not say whether it landed.
+    res = await evRequest(
+      `${PROPERTY_API_BASE}/property/v2/request`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      "property request",
+      1,
+    );
   } catch (err) {
-    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+    if (err instanceof EagleViewUnavailableError && err.kind === "timeout") {
       throw new Error("Property Data order submission timed out after 20 s — the order may or may not have been placed.");
     }
-    throw err;
-  }
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    if (res.status === 401 && /sandbox app credentials/i.test(detail)) {
+    if (err instanceof EagleViewUnavailableError && err.httpStatus === 401 && /sandbox app credentials/i.test(err.message)) {
       throw new Error(
         "These EagleView credentials are for the other environment — Property Data requests must match the account (production keys → apis.eagleview.com).",
       );
     }
-    throw new Error(`Property Data request failed (${res.status})${detail ? `: ${detail.slice(0, 140)}` : ""}`);
+    throw err;
   }
   const accepted = (await res.json()) as { request?: { id?: string; status?: string } };
   const requestId = accepted?.request?.id;

@@ -148,7 +148,19 @@ export async function buildReconModel(input: ReconBuildInput): Promise<ReconBuil
   if (lat == null || lng == null) {
     const query = [input.address, input.city, input.state, input.zip].filter(Boolean).join(", ");
     if (!query) throw new ReconUnavailableError("Enter an address first.", "error");
-    const hit = await geocode(query);
+    // geocode's two failures are different claims and get different kinds:
+    // null means Google looked and found no such address (retrying is
+    // pointless), a throw means Google never answered (the address may be
+    // fine). Before 2026-08-28 both read "couldn't locate that address".
+    let hit: Awaited<ReturnType<typeof geocode>>;
+    try {
+      hit = await geocode(query);
+    } catch (err) {
+      throw new ReconUnavailableError(
+        `The address lookup did not answer (${err instanceof Error ? err.message : String(err)}) — the address may be fine; try again.`,
+        "timeout",
+      );
+    }
     if (!hit) throw new ReconUnavailableError("Couldn't locate that address.", "error");
     lat = hit.lat;
     lng = hit.lng;
