@@ -59,3 +59,12 @@ marketing/ads/v2-real-ui/download-page.html
 marketing/ad-batch-v2-review.html
 marketing/jobflex-ad-pack.zip
 .shots/
+
+# roof-diagram eval harness: cached (billed) Instant responses
+.cache/
+
+# skills installed from the downloads bundle (not part of the repo)
+.claude/skills/roof-geometry/
+.claude/skills/motion-design/
+.claude/skills/client-finder/
+scripts/qa/roof/filmstrip/

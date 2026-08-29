@@ -867,22 +867,40 @@ export interface RegularizeReport {
  * the traced polygon has a dozen real corners a few degrees off it), and the
  * point of one pass is that the SAME contour comes out either way.
  */
-export function regularizeRing(raw: FootprintPoint[], opts: FootprintOptions = {}): { ring: FootprintPoint[]; report: RegularizeReport } {
+export function regularizeRing(
+  raw: FootprintPoint[],
+  opts: FootprintOptions = {},
+  /**
+   * Debug tap: called with the ring AFTER each named sub-operation, in order.
+   * Exists for the filmstrip tool, which films the REAL intermediates of the
+   * real function rather than re-implementing the sequence (§K7). Never
+   * changes behaviour; the ring handed out is a copy.
+   */
+  onStep?: (name: string, ring: FootprintPoint[]) => void,
+): { ring: FootprintPoint[]; report: RegularizeReport } {
   const o = { ...DEFAULTS, ...opts };
   const reasons: string[] = [];
   const rawAreaSqft = areaOf(raw);
+  const tap = (name: string, r: FootprintPoint[]) => onStep?.(name, r.map((p) => ({ ...p })));
 
   let ring = dropCollinear(douglasPeucker(raw, o.simplifyFt));
+  tap("Дуглас–Пекер + сброс коллинеарных", ring);
   const axisDeg = dominantAxisDeg(ring, o.snapTolDeg);
   const snapped = snapToAxis(ring, axisDeg, o.snapTolDeg, o.maxCornerShiftFt);
   ring = snapped.ring;
+  tap("снап к доминирующим осям", ring);
   ring = mergeCollinear(ring, o.collinearMergeDeg);
+  tap("слияние коллинеарных", ring);
   ring = dropShortEdges(ring, o.minEdgeFt);
+  tap("сброс коротких рёбер", ring);
   const cleaned = dropOffFamilyEdges(ring, axisDeg, o.maxCornerShiftFt, 0.01);
   ring = mergeCollinear(cleaned.ring, o.collinearMergeDeg);
+  tap("сброс рёбер вне семейства осей", ring);
   const budget = dropToVertexBudget(ring, o.maxVertices, o.maxCornerShiftFt, 0.01, 0.02);
   ring = mergeCollinear(budget.ring, o.collinearMergeDeg);
+  tap("бюджет вершин", ring);
   ring = ensureCCW(dropCollinear(ring));
+  tap("итог регуляризации (CCW)", ring);
 
   const area = areaOf(ring);
   const simple = isSimpleRing(ring);

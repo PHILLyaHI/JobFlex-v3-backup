@@ -86,6 +86,10 @@ export interface ReconV2Tuning {
 }
 
 export interface ReconV2Input {
+  /** Debug tap forwarded into regularizeRing — the filmstrip films the real
+   *  intermediates. When the vertex budget forces a second regularisation the
+   *  tap fires for both sequences; a consumer keeps the last full one. */
+  onRegularizeStep?: (name: string, ring: FootprintPoint[]) => void;
   instant: InstantRoofData;
   origin: { lat: number; lng: number };
   /** Plane clusters the DSM segmentation found — the multi-mass detector. */
@@ -213,7 +217,7 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
     const notes: string[] = [];
     // First pass at the ceiling, only to learn how many sides the contour
     // really has once it is square — the multi-mass test needs that number.
-    const probe = regularizeRing(ring, { ...opts, maxVertices: cap });
+    const probe = regularizeRing(ring, { ...opts, maxVertices: cap }, input.onRegularizeStep);
     // The detector runs on the WHOLE roof's cluster count, so it is only
     // meaningful on a single-ring lot; on a multi-ring lot the clusters belong
     // to several buildings and cannot be attributed to one contour.
@@ -236,7 +240,7 @@ export function buildRoofV2(input: ReconV2Input): ReconV2Result {
       !multiMass && wanted != null && Number.isFinite(wanted)
         ? Math.max(MIN_BUDGET_VERTICES, Math.min(cap, wanted))
         : cap;
-    const reg = budget === cap ? probe : regularizeRing(ring, { ...opts, maxVertices: budget });
+    const reg = budget === cap ? probe : regularizeRing(ring, { ...opts, maxVertices: budget }, input.onRegularizeStep);
     const edges = reg.ring.length;
     // The budget is an aim, not a gate: only the skeleton's own ceiling can
     // refuse a contour. Falling short means some corners are load-bearing.
