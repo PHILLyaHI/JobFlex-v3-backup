@@ -30,6 +30,7 @@ import { buildRoofV2 } from "@/lib/roofRecon/reconV2";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { segmentMasses } from "@/lib/roofRecon/massSegments";
 import { ridgeTopology } from "@/lib/roofRecon/ridgeTopology";
+import { ridgeLines } from "@/lib/roofRecon/ridgeLines";
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { loadFixture, type FixtureMeta } from "./fixture";
 
@@ -170,6 +171,31 @@ const compass = (deg: number): string => ["N", "NNE", "NE", "ENE", "E", "ESE", "
       console.log(`   between ${sd.a} and ${sd.b} at ${sd.atFt.toFixed(1)} ft · depth ${sd.depthFt.toFixed(2)} ft · at (${sd.where.x.toFixed(0)}, ${sd.where.y.toFixed(0)})`);
     }
 
-    writeFileSync(resolve(OUT, `${job.key}.json`), JSON.stringify({ seg, topo }, null, 1));
+    // ── RIDGES, and the ground each one claims ──
+    const rl = ridgeLines({
+      heightFt,
+      width: dsm.width,
+      height: dsm.height,
+      pixelFt: stepFt,
+      originPx: { x: (0.5 - dsm.width / 2) * stepFt, y: (dsm.height / 2 - 0.5) * stepFt },
+      contour: moved,
+    });
+    console.log(
+      `
+  RIDGES — ${rl.ridges.length} kept (${rl.droppedShort} dropped under ${rl.minRidgeFt} ft, the length the lidar can confirm) · ` +
+        `${rl.ridgePx} ridge pixels · ${rl.claimedPx} of ${rl.roofPx} roof pixels claimed`,
+    );
+    console.log("   id   len ft   height   bearing    pitches L/R    claims sf   at");
+    for (const r of rl.ridges.slice(0, 10)) {
+      console.log(
+        `   ${String(r.id).padStart(2)} ${r.lengthFt.toFixed(0).padStart(7)} ${r.heightFt.toFixed(1).padStart(8)}   ` +
+          `${r.dirDeg.toFixed(0).padStart(3)}° ${compass(r.dirDeg).padEnd(3)}  ` +
+          `${r.pitchLeft12.toFixed(1).padStart(4)}/${r.pitchRight12.toFixed(1).padEnd(4)}  ` +
+          `${r.claimSqft.toFixed(0).padStart(9)}   (${r.a.x.toFixed(0)},${r.a.y.toFixed(0)})–(${r.b.x.toFixed(0)},${r.b.y.toFixed(0)})`,
+      );
+    }
+    if (rl.ridges.length > 10) console.log(`   … and ${rl.ridges.length - 10} more`);
+
+    writeFileSync(resolve(OUT, `${job.key}.json`), JSON.stringify({ seg, topo, rl }, null, 1));
   }
 })();
