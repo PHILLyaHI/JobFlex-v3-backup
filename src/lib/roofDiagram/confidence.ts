@@ -186,6 +186,29 @@ export function assessRoof(input: {
    * answers — see OcclusionSeverity.
    */
   /**
+   * What the mass split could and could not do on this roof.
+   *
+   * `claimShare` is the fraction of the roof that some ridge accounts for.
+   * Above COVERAGE_CLEAR the masses are built on; below COVERAGE_FLOOR the
+   * elevation data did not resolve this roof's layout at all, and that is worth
+   * telling a contractor, because the drawing looks no different when it
+   * happens. 12621 ships today at 19 per cent with a 4 ft ridge on a 2,924
+   * sq ft house, `medium`, and nothing said.
+   *
+   * A SECOND TEST WAS TRIED AND DROPPED, and the reason belongs here: "the
+   * drawn ridge is shorter than the L - W an equal-pitch hip on this footprint
+   * would give" cannot fire on a nearly square building, because there L - W is
+   * about zero — and nearly square is exactly the footprint whose ridge
+   * collapses. 12621's own minimum-area rectangle is 56 x 54 ft, so the test
+   * was structurally unable to catch the one case it was written for. Firing on
+   * the share alone, at the floor the pipeline already uses for "not resolved",
+   * is honest; adding a second condition that never fires would only have
+   * looked more careful.
+   */
+  massing?: {
+    claimShare: number | null;
+  } | null;
+  /**
    * Did anything go MISSING? Section J's first-level rule: invariants check that
    * a model agrees with itself, none checks that it is whole, and an omission
    * looks like "less" rather than like an error. An `error` finding here means a
@@ -386,6 +409,15 @@ export function assessRoof(input: {
     );
   }
 
+  // ── the elevation data could not resolve this roof's layout ──
+  const mass = input.massing ?? null;
+  const layoutCollapsed = mass?.claimShare != null && mass.claimShare < COVERAGE_FLOOR;
+  if (layoutCollapsed) {
+    reasons.push(
+      `The aerial elevation data could trace only ${Math.round((mass!.claimShare as number) * 100)}% of this roof back to a ridge, so the line layout on this plan is unreliable: a building whose ridges cannot be resolved usually has more than one roof mass, and this plan draws them as one. The total area and the outer dimensions are affected far less — check the ridge, hip, valley and rake lengths against the aerial view before ordering trim.`,
+    );
+  }
+
   const occ = input.instantOcclusion ?? null;
   const occSev = occlusionSeverity(occ?.occlusion);
   const overSev = occlusionSeverity(occ?.treeOverhang);
@@ -396,7 +428,7 @@ export function assessRoof(input: {
   const ours: RoofConfidence =
     geometryBad || layoutUnusable
       ? "low"
-      : (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0 || layoutFlagged || maskDisagrees || deficitFlagged
+      : (share != null && share < COVERAGE_CLEAR) || (uncoveredStructs?.length ?? 0) > 0 || layoutFlagged || maskDisagrees || deficitFlagged || layoutCollapsed
         ? "medium"
         : input.cannotValidate || share == null
           ? "medium"
@@ -445,7 +477,9 @@ export function assessRoof(input: {
     confidence,
     drawable: true,
     estimable: !geometryBad,
-    footageReliable: !layoutFlagged && !deficitFlagged,
+    // A collapsed layout must not be bought from: linear footage is exactly the
+    // figure it corrupts, and it is the one a contractor orders trim against.
+    footageReliable: !layoutFlagged && !deficitFlagged && !layoutCollapsed,
     inferredShare,
     reasons,
   };

@@ -28,6 +28,7 @@ import type { InstantRoofData } from "@/lib/eagleview";
 import type { Raster } from "@/lib/solar";
 import { buildRoofV2 } from "@/lib/roofRecon/reconV2";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
+import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
 import { segmentMasses } from "@/lib/roofRecon/massSegments";
 import { ridgeTopology } from "@/lib/roofRecon/ridgeTopology";
 import { ridgeLines } from "@/lib/roofRecon/ridgeLines";
@@ -108,6 +109,12 @@ const compass = (deg: number): string => ["N", "NNE", "NE", "ENE", "E", "ESE", "
       if (mask.data[i] <= 0) continue;
       heightFt[i] = dsm.data[i] * FT_PER_M - ground;
     }
+
+    const meas2 = reg?.applied
+      ? measurePitchFromDsm({ model: first.model!, mask, dsm, transform: reg.transform, transformFor: () => reg.transform, sectionTolerance12: 0.75 })
+      : null;
+    const sp2 = meas2 ? structurePitch(meas2, instant.totals?.predominantPitch ?? null, { solarPanels: instant.structures.some((st) => st.solarPanels === true) }) : null;
+    const model = sp2 ? buildRoofV2({ instant, origin: meta.origin, clusters, pitchOverride12: sp2.pitch12 }).model : first.model;
 
     const seg = segmentMasses({
       heightFt,
@@ -195,6 +202,48 @@ const compass = (deg: number): string => ["N", "NNE", "NE", "ENE", "E", "ESE", "
       );
     }
     if (rl.ridges.length > 10) console.log(`   … and ${rl.ridges.length - 10} more`);
+
+    // ── the verdict, and the signal it feeds ──
+    // The building's OWN long and short sides, not the axis-aligned box. These
+    // houses sit at an angle to north: 12621's axis-aligned box is 56 x 55 ft
+    // and gives a nonsense 1 ft minimum ridge, while the building itself is
+    // 43.5 x 34.6 and gives 8.9. Rotating calipers over the contour.
+    let L = Infinity;
+    let W = Infinity;
+    for (let i = 0; i < contour.length; i++) {
+      const j = (i + 1) % contour.length;
+      const ex = contour[j].x - contour[i].x;
+      const ey = contour[j].y - contour[i].y;
+      const len = Math.hypot(ex, ey);
+      if (len < 1) continue;
+      const ux = ex / len;
+      const uy = ey / len;
+      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (const p of contour) {
+        const u = p.x * ux + p.y * uy;
+        const v = -p.x * uy + p.y * ux;
+        if (u < u0) u0 = u; if (u > u1) u1 = u;
+        if (v < v0) v0 = v; if (v > v1) v1 = v;
+      }
+      const a = u1 - u0;
+      const b = v1 - v0;
+      if (a * b < L * W) { L = Math.max(a, b); W = Math.min(a, b); }
+    }
+    const minRidge = Number.isFinite(L) ? Math.max(0, L - W) : 0;
+    // The SHIPPED model's ridge — the figure a contractor reads — not the first
+    // draft's. The wavefront shortens it, and that is the number that matters.
+    const drawnRidge = model?.totals.footageByType?.RIDGE ?? first.model?.totals.footageByType?.RIDGE ?? 0;
+    console.log(
+      `
+  VERDICT — claimed ${(rl.claimShare * 100).toFixed(0)}% ` +
+        `${rl.accepted ? "· ACCEPTED, build per mass" : `· below ${(0.95 * 100).toFixed(0)}%, build as one mass`}`,
+    );
+    console.log(
+      `  drawn ridge ${drawnRidge.toFixed(0)} ft vs the ${minRidge.toFixed(0)} ft a single equal-pitch hip on ${L.toFixed(0)}x${W.toFixed(0)} ft would give` +
+        `${drawnRidge < minRidge ? "  ← COLLAPSED" : ""}`,
+    );
+    const flagged = rl.claimShare < 0.7; // COVERAGE_FLOOR — the pipeline's own "not resolved" line
+    console.log(`  layout-unreliable signal: ${flagged ? "FIRES" : "silent"}`);
 
     writeFileSync(resolve(OUT, `${job.key}.json`), JSON.stringify({ seg, topo, rl }, null, 1));
   }

@@ -23,6 +23,7 @@
 // keep.
 import { fitPlane } from "@/lib/roofRecon";
 import { DSM_NOISE_FLOOR_FT } from "@/lib/roofRecon/pitchFromDsm";
+import { COVERAGE_CLEAR } from "@/lib/roofDiagram/confidence";
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 
 /**
@@ -64,6 +65,23 @@ export interface RidgeLine {
 
 export interface RidgeMassing {
   ridges: RidgeLine[];
+  /** Share of the roof some ridge accounts for, 0-1. */
+  claimShare: number;
+  /**
+   * Whether the massing may be BUILT ON. The threshold is COVERAGE_CLEAR, and
+   * it is not a new number nor a chosen one: that constant states how much of a
+   * roof may be inferred rather than measured before the figures stop fitting
+   * inside the waste factor a contractor already carries. Roof no ridge claims
+   * is roof this method cannot draw, which is inference in exactly that sense.
+   *
+   * Measured 2026-08-28 on six addresses: 93, 71, 58, 54, 32, 19 per cent.
+   * NOTHING clears 95. 9903 misses by two points, and it is the one address
+   * where the split is demonstrably right. Relaxing the bar to 90 would admit
+   * exactly that one address, which is a threshold chosen to fit an answer, so
+   * it is not done here — the bar stays where the pipeline already put it and
+   * the shortfall is reported.
+   */
+  accepted: boolean;
   /** Roof pixels, and how many were claimed by some ridge. */
   roofPx: number;
   claimedPx: number;
@@ -291,5 +309,15 @@ export function ridgeLines(input: RidgeLinesInput): RidgeMassing {
   }
 
   ridges.sort((a, b) => b.claimSqft - a.claimSqft);
-  return { ridges, roofPx, claimedPx, ridgePx, droppedShort, minRidgeFt: MIN_RIDGE_FT };
+  const claimShare = roofPx ? claimedPx / roofPx : 0;
+  return {
+    ridges,
+    claimShare,
+    accepted: claimShare >= COVERAGE_CLEAR && ridges.length > 0,
+    roofPx,
+    claimedPx,
+    ridgePx,
+    droppedShort,
+    minRidgeFt: MIN_RIDGE_FT,
+  };
 }
