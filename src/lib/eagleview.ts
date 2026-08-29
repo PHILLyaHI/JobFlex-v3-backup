@@ -37,6 +37,92 @@ export const EV_PRODUCT = {
 // ── Auth ─────────────────────────────────────────────────────────────────────
 // Client-credentials token, cached in-module until ~2 min before expiry. Server
 // processes are long-lived, so this avoids a token round-trip on every call.
+// ── timeouts and retries ────────────────────────────────────────────────────
+//
+// Modelled on solarFetch (solar.ts), and for the same reason it was written:
+// on 2026-08-28 one 15 s abort with no retry threw away a whole reconstruction.
+// The audit that followed found EagleView in the same state — four calls with a
+// ceiling and no retry, and one helper, evFetch, with NO CEILING AT ALL, which
+// is the legacy Reports API: getAvailableProducts, getReportSummary,
+// getMeasurementModel and getReportFile could hang forever.
+//
+// What is retried is what a second ask could answer differently. 4xx other than
+// 429 is an ANSWER — the request was understood and refused — and asking again
+// turns a fast no into a slow one. 429, 5xx, aborts and dropped connections are
+// the cases where nothing was answered at all.
+
+/** One attempt's ceiling. The value the billed calls already carried. */
+const EV_TIMEOUT_MS = 20_000;
+/** One try plus two retries. */
+const EV_ATTEMPTS = 3;
+/** First pause before retrying; doubles (1 s, 2 s). */
+const EV_BACKOFF_MS = 1_000;
+
+/** Why an EagleView call could not be answered — typed so callers need not read messages. */
+export type EvFailureKind =
+  /** The request hung or the connection broke. Trying again is right. */
+  | "timeout"
+  /** Credentials or entitlement. Ours to fix, not the user's, and not retryable. */
+  | "auth"
+  /** EagleView answered and the answer is no data for this address. */
+  | "no-data"
+  /** Rate limited or a server fault — worth a second ask. */
+  | "busy"
+  | "error";
+
+export class EagleViewUnavailableError extends Error {
+  constructor(
+    message: string,
+    readonly kind: EvFailureKind,
+    readonly op: string,
+    readonly httpStatus?: number,
+  ) {
+    super(message);
+    this.name = "EagleViewUnavailableError";
+  }
+}
+
+const evKindFor = (status: number): EvFailureKind =>
+  status === 401 || status === 403 ? "auth" : status === 404 ? "no-data" : status === 429 || status >= 500 ? "busy" : "error";
+
+const evWorthRetrying = (status: number): boolean => status === 429 || status >= 500;
+
+const evSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * One EagleView request, with a ceiling and retries. Returns the successful
+ * Response; the caller reads the body. Every throw is an
+ * EagleViewUnavailableError carrying the kind.
+ */
+async function evRequest(url: string, init: RequestInit, op: string): Promise<Response> {
+  let last: EagleViewUnavailableError | null = null;
+  for (let attempt = 1; attempt <= EV_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(EV_TIMEOUT_MS) });
+      if (res.ok || res.status === 202) return res;
+      const kind = evKindFor(res.status);
+      const err = new EagleViewUnavailableError(`EagleView ${op} failed (${res.status})`, kind, op, res.status);
+      if (!evWorthRetrying(res.status)) throw err;
+      last = err;
+    } catch (err) {
+      if (err instanceof EagleViewUnavailableError && err.kind !== "busy") throw err;
+      last =
+        err instanceof EagleViewUnavailableError
+          ? err
+          : new EagleViewUnavailableError(
+              `EagleView did not answer in ${EV_TIMEOUT_MS / 1000}s (${op})`,
+              "timeout",
+              op,
+            );
+    }
+    if (attempt < EV_ATTEMPTS) {
+      console.warn(`[eagleview] ${op} attempt ${attempt}/${EV_ATTEMPTS} failed (${last?.message}) — retrying`);
+      await evSleep(EV_BACKOFF_MS << (attempt - 1));
+    }
+  }
+  throw last ?? new EagleViewUnavailableError(`EagleView ${op} failed`, "error", op);
+}
+
 let tokenCache: { token: string; expiresAt: number } | null = null;
 
 async function getToken(): Promise<string> {
@@ -45,17 +131,18 @@ async function getToken(): Promise<string> {
   const secret = process.env.EAGLEVIEW_CLIENT_SECRET;
   if (!id || !secret) throw new Error("EagleView is not configured");
   const basic = Buffer.from(`${id}:${secret}`).toString("base64");
-  const res = await fetch(`${TOKEN_BASE}/oauth2/v1/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${basic}`,
-      "Content-Type": "application/x-www-form-urlencoded",
+  const res = await evRequest(
+    `${TOKEN_BASE}/oauth2/v1/token`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basic}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "grant_type=client_credentials",
     },
-    body: "grant_type=client_credentials",
-    cache: "no-store",
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`EagleView auth failed (${res.status})`);
+    "auth",
+  );
   const data = (await res.json()) as { access_token: string; expires_in: number };
   tokenCache = {
     token: data.access_token,
@@ -64,16 +151,25 @@ async function getToken(): Promise<string> {
   return data.access_token;
 }
 
+/**
+ * The legacy Reports API. Until 2026-08-28 this had NO timeout: four exported
+ * methods went through it and any one of them could hang indefinitely. Not on
+ * the roof-diagram path, which is why it survived that long — but a call with
+ * no ceiling is a call that will eventually hold something open.
+ */
 async function evFetch(path: string, init?: RequestInit): Promise<Response> {
   const token = await getToken();
-  return fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers ?? {}),
+  return evRequest(
+    `${API_BASE}${path}`,
+    {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(init?.headers ?? {}),
+      },
     },
-    cache: "no-store",
-  });
+    `reports ${path.split("?")[0]}`,
+  );
 }
 
 // Build a human error from a failed response. The sandbox is a mock — it 400s
@@ -915,6 +1011,14 @@ export const instantCompleteAddress = (input: EvOrderInput): string =>
  * ever fetch (this is exactly what happened twice on 12117 202nd St SE).
  * The POST carries its own 20 s ceiling — it used to be the one uncovered
  * stage of the paid path, able to hang a user for minutes.
+ *
+ * IT IS DELIBERATELY NOT RETRIED, unlike every other EagleView call. This POST
+ * PLACES A BILLED ORDER, and a timeout does not say whether it was placed —
+ * that is the whole reason the catch below says "may or may not have been".
+ * Asking again could buy the same roof twice. Retrying would need an
+ * idempotency key from EagleView, and there is no evidence they support one.
+ * The safe failure is to stop and let the ledger's recovery path collect any
+ * order that did land.
  */
 export async function submitInstantOrder(
   input: EvOrderInput,
@@ -991,12 +1095,14 @@ export async function pollInstantResult(
   do {
     if (maxWaitMs > 0) await new Promise((r) => setTimeout(r, first ? 1500 : 2000));
     first = false;
-    const rr = await fetch(`${PROPERTY_API_BASE}/property/v2/result/${requestId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!rr.ok && rr.status !== 202) throw new Error(`Property Data result failed (${rr.status})`);
+    // Idempotent: fetching a result cannot place or change an order, so a
+    // hung poll is safe to ask again. The 202 that means "not ready yet" is
+    // passed through by evRequest rather than treated as a failure.
+    const rr = await evRequest(
+      `${PROPERTY_API_BASE}/property/v2/result/${requestId}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      "property result",
+    );
     // Read the body as TEXT first: `res.json()` would leave nothing to keep.
     const body = await rr.text().catch(() => "");
     let data: PdResult | null = null;
@@ -1054,11 +1160,10 @@ export async function fetchPropertyImage(
   imageToken: string,
 ): Promise<{ bytes: ArrayBuffer; contentType: string }> {
   const token = await getToken();
-  const res = await fetch(`${PROPERTY_API_BASE}/property/v2/image/${encodeURIComponent(imageToken)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`Property Data image failed (${res.status})`);
+  const res = await evRequest(
+    `${PROPERTY_API_BASE}/property/v2/image/${encodeURIComponent(imageToken)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    "property image",
+  );
   return { bytes: await res.arrayBuffer(), contentType: res.headers.get("content-type") ?? "image/png" };
 }
