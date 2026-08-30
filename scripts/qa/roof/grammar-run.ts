@@ -33,6 +33,7 @@ const JOBS = [
   { key: "12618", dir: "scripts/qa/roof/field/12618-ne-100th-st-kirkland-wa", fixture: undefined },
   { key: "9903", dir: "scripts/qa/roof/field/9903-117th-pl-ne-kirkland-wa", fixture: undefined },
   { key: "419", dir: "scripts/qa/roof/fixtures/prairie-419-prairie-ridge-ln", fixture: "prairie-419-prairie-ridge-ln" },
+  { key: "12117", dir: "scripts/qa/roof/field/12117-202nd-st-se-snohomish-wa", fixture: undefined },
 ];
 
 const coordRe = /\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)/;
@@ -61,7 +62,9 @@ const coordRe = /\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)/;
       transform: reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 },
       skeleton: first.model!,
     });
-    const model = res.model ?? res.rejectedCandidate!;
+    // судим КАНДИДАТА сшивки: при отказе гейта res.model — скелет,
+    // а разбирать надо то, что гейт увидел
+    const model = res.rejectedCandidate ?? res.model!;
     // истинное кольцо — валидаторная сшивка периметра искажается швами
     const v = validateRoofInvariants(model, { footprint: contour.map((p2) => [p2.x, p2.y] as [number, number]) });
     const g = v.results.filter((r) => r.level === "error" && r.id.startsWith("G"));

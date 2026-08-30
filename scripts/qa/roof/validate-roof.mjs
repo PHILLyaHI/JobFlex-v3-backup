@@ -383,12 +383,13 @@ export function validateRoof(model) {
         a: [l.a[0], l.a[1], l.a[2] ?? 0],
         b: [l.b[0], l.b[1], l.b[2] ?? 0],
         t: gMap(l.type),
+        d: l.type,
         facets: (l.facets ?? []).map((id) => ({ id })),
       });
     }
   } else {
     for (const e of [...byType.eave, ...byType.rake, ...byType.ridge, ...byType.hip, ...byType.valley, ...byType.unknown])
-      gAllEdges0.push({ a: e.a, b: e.b, t: e.type ?? 'unknown', facets: e.facets });
+      gAllEdges0.push({ a: e.a, b: e.b, t: e.type ?? 'unknown', d: '', facets: e.facets });
   }
   const gTypeOf = (e) => e.t;
   const gCreases = gAllEdges0.filter((e) => ['ridge', 'hip', 'valley'].includes(e.t));
@@ -478,7 +479,10 @@ export function validateRoof(model) {
         okEnd = isNode || corner === 'convex' || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) || onSeam;
         why = ringD > STUB_FT ? "обрывается в поле" : corner ? "упирается не в свой угол" : "выходит на карниз серединой";
       } else {
-        okEnd = isNode || corner !== null || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'rake')) || onSeam;
+        // узел легализует конец конька только со СКЛАДКОЙ в составе:
+        // узел из одних осколков (OTHER/STEPFLASH) — не вальмовый узел
+        const creasesAt = arr.filter((o) => o !== e && ['ridge', 'hip', 'valley'].includes(gTypeOf(o))).length;
+        okEnd = (isNode && creasesAt >= 1) || corner !== null || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'rake')) || onSeam;
         why = "конёк висит без вальм/ендов/фронтона";
       }
       if (!okEnd) err('G2', `${t}: терминация вне грамматики в (${p[0].toFixed(1)},${p[1].toFixed(1)}) — ${why}`);
@@ -520,6 +524,79 @@ export function validateRoof(model) {
       err('G4', `конёк (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) не перпендикулярен градиенту своей грани (${((worst * 180) / Math.PI).toFixed(1)}°)`);
   }
   if (!out.some((r) => r.id === 'G4')) ok('G4', "коньки параллельны своим карнизам");
+
+  // ── G5–G7 (2026-08-30): существование по месту и связность — пятёрка
+  //    мест владельца на 12629, которую G1–G4 пропускала ──
+  const gPairKey = (e) => {
+    const ka = key([e.a[0], e.a[1]]);
+    const kb = key([e.b[0], e.b[1]]);
+    return ka < kb ? ka + "#" + kb : kb + "#" + ka;
+  };
+  const gByPair = new Map();
+  for (const e of gAllEdges0) {
+    const k = gPairKey(e);
+    const arr = gByPair.get(k) ?? [];
+    arr.push(e);
+    gByPair.set(k, arr);
+  }
+  // СТУПЕНЬ (стена) существует только от переписного пола Δz: бимодальный
+  // census перепадов дал зазор 1.8–2.2 ft между «невязкой подгонки» и
+  // «стеной массы» — порог 2.0. Меньший Δz близнецов — не архитектура.
+  const G_STEP_DZ = 2.0;
+  const gTwinDz = (e) => {
+    const zMid = (e.a[2] + e.b[2]) / 2;
+    return (gByPair.get(gPairKey(e)) ?? [])
+      .filter((o) => o !== e)
+      .reduce((m2, o) => Math.max(m2, Math.abs((o.a[2] + o.b[2]) / 2 - zMid)), 0);
+  };
+  const gMid = (e) => [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2, 0];
+  // G5 — EAVE и RAKE существуют ТОЛЬКО на внешнем контуре структуры:
+  // любой внутренний отрезок этих типов — нарушение (приказ владельца,
+  // 2026-08-30, без исключений). «Внутри поля» = середина внутри полигона
+  // контура И дальше STUB_FT от его границы; чужая структура (вне
+  // полигона) не судится об этот контур.
+  for (const e of gAllEdges0) {
+    if (e.d !== 'EAVE' && e.d !== 'RAKE') continue;
+    const m5 = gMid(e);
+    if (!pointInPoly([m5[0], m5[1]], fp)) continue;
+    const worst = Math.max(gRingDist(e.a), gRingDist(e.b), gRingDist(m5));
+    if (worst <= STUB_FT) continue;
+    // единственное законное исключение — верх НАСТОЯЩЕЙ ступени (близнец
+    // с Δz от переписного пола): над нижней крышей карниз настоящий
+    if (gTwinDz(e) >= G_STEP_DZ) continue;
+    err('G5', `${e.d} (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) внутри поля крыши (до контура ${worst.toFixed(1)} ft) — карниз/фронтон живёт только на внешнем контуре`);
+  }
+  if (!out.some((r) => r.id === 'G5')) ok('G5', "карнизы и фронтоны только на контуре");
+  // G6 — FLASHING существует только на стыке с вертикалью (есть Δz):
+  // на внешнем контуре без ступени-близнеца запрещён.
+  for (const e of gAllEdges0) {
+    if (e.d !== 'FLASHING') continue;
+    const onRing = Math.max(gRingDist(e.a), gRingDist(e.b), gRingDist(gMid(e))) <= STUB_FT;
+    if (!onRing) continue;
+    const dz = gTwinDz(e);
+    if (dz < G_STEP_DZ)
+      err('G6', `FLASHING (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) на внешнем контуре без ступени (Δz близнеца ${dz.toFixed(2)} ft) — флешинг живёт на стыке с вертикалью`);
+  }
+  if (!out.some((r) => r.id === 'G6')) ok('G6', "флешинг только на стыках с вертикалью");
+  // G7 — связность: конец внутренней линии обязан лежать в узле — совпадать
+  // с концом другой линии, точкой контура или лежать на другой линии
+  // (Т-стык, легальный по G2) в допуске сварки STUB_FT. Зазоров нет.
+  for (const e of gAllEdges0) {
+    for (const p of [e.a, e.b]) {
+      if (gRingDist(p) <= STUB_FT) continue;
+      if (!pointInPoly([p[0], p[1]], fp)) continue; // чужая структура — не об этот контур
+      let best = Infinity;
+      for (const o of gAllEdges0) {
+        if (o === e) continue;
+        best = Math.min(best, gDistSeg(p, o.a, o.b));
+        if (best <= STUB_FT) break;
+      }
+      if (best > STUB_FT)
+        err('G7', `${e.t}: конец (${p[0].toFixed(1)},${p[1].toFixed(1)}) висит в зазоре ${Number.isFinite(best) ? best.toFixed(1) : '∞'} ft от ближайшей линии — концы лежат в узлах`);
+    }
+  }
+  if (!out.some((r) => r.id === 'G7')) ok('G7', "все концы в узлах — зазоров нет");
+
 
 
   // ─ 11b. R17: конёк по центру пролёта при равных уклонах (инвариант №13)
