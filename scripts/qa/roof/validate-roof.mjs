@@ -540,14 +540,22 @@ export function validateRoof(model) {
     gByPair.set(k, arr);
   }
   // СТУПЕНЬ (стена) существует только от переписного пола Δz: бимодальный
-  // census перепадов дал зазор 1.8–2.2 ft между «невязкой подгонки» и
-  // «стеной массы» — порог 2.0. Меньший Δz близнецов — не архитектура.
-  const G_STEP_DZ = 2.0;
+  // census перепадов дал зазор [1.8, 2.2] между «невязкой подгонки» и
+  // «стеной массы» — порог на НИЖНЕМ краю зазора, тем же числом, что и
+  // конвейер (STEP_DZ_FT): линейка и источник мерят одной линейкой.
+  const G_STEP_DZ = 1.8;
   const gTwinDz = (e) => {
-    const zMid = (e.a[2] + e.b[2]) / 2;
+    // Δz близнеца — ПО КОНЦАМ, максимумом (закон клин-стены: обрыв
+    // сужается вдоль линии, середина разбавляла 3.4 ft до 1.7)
+    const key1 = key([e.a[0], e.a[1]]);
     return (gByPair.get(gPairKey(e)) ?? [])
       .filter((o) => o !== e)
-      .reduce((m2, o) => Math.max(m2, Math.abs((o.a[2] + o.b[2]) / 2 - zMid)), 0);
+      .reduce((m2, o) => {
+        const same = key([o.a[0], o.a[1]]) === key1;
+        const oa = same ? o.a : o.b;
+        const ob = same ? o.b : o.a;
+        return Math.max(m2, Math.abs(oa[2] - e.a[2]), Math.abs(ob[2] - e.b[2]));
+      }, 0);
   };
   const gMid = (e) => [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2, 0];
   // G5 — EAVE и RAKE существуют ТОЛЬКО на внешнем контуре структуры:

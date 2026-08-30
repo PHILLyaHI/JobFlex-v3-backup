@@ -1,23 +1,24 @@
-/* Зрение-критик — второй эшелон ПОСЛЕ G* = 0 (грамматика мерит внутреннюю
- * связность; критик мерит модель О ФОТОГРАФИЮ). Рендер против ортофото:
- * модель зрения получает чистый орто-кадр и тот же кадр с наложенными
- * линиями чертежа и перечисляет ТОЛЬКО расхождения — складки фото, которых
- * нет в чертеже; линии чертежа, которых нет на фото; смещения.
+/* Зрение-критик v2 — второй эшелон ПОСЛЕ G* = 0 (грамматика мерит внутреннюю
+ * связность; критик мерит модель О ФОТОГРАФИЮ). Провал v1 на проверке
+ * владельца разобран (2026-08-30), чинится по всем трём пунктам диагноза:
+ *   1. КРОПЫ ПО ЗОНАМ — квадранты контура с 2× увеличением, не весь лот
+ *      (дом был ~6 px/ft, крошка 0.5–2 ft = 3–12 px — ниже разрешения);
+ *   2. ЛЕГЕНДА ТИПОВ в промпте (цвета линий чертежа);
+ *   3. вопрос «легальна ли линия ЭТОГО ТИПА в этом месте» (kind=illegal),
+ *      не только missing/phantom/offset.
+ * Порог 2/3 НЕ тронут — он работал как задуман.
  *
  *   npx tsx scripts/qa/roof/vision-critic.ts [--repeat=3] [ключ]
  *
- * Дисциплина:
- *   • --repeat=3 — три независимых прогона на дом; расхождение публикуется
- *     в сводке только если повторилось в ≥2 прогонах (кластеризация точек
- *     радиусом 6 ft — ширина пробника классификатора, §J);
- *   • критик НИЧЕГО не чинит: его сводка — список кандидатов, чинится лишь
- *     то, что затем подтверждено геометрией (DSM/маской) у источника;
- *   • расход: только вызовы модели зрения (кэшированные орто-кадры,
- *     ни одного лукапа EagleView).
+ * Дисциплина прежняя: расхождение публикуется только если повторилось в ≥2
+ * прогонах (кластер 6 ft — ширина пробника, §J); критик ничего не чинит —
+ * чинится лишь подтверждённое геометрией (DSM/маской). Расход: только
+ * вызовы модели зрения, ноль лукапов.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { decode, encode } from "fast-png";
 import { loadHarnessEnv } from "./env";
 
 loadHarnessEnv();
@@ -37,7 +38,8 @@ if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 
 const REPEAT = Number((process.argv.find((a) => a.startsWith("--repeat=")) ?? "--repeat=3").split("=")[1]);
 const ONLY = process.argv.slice(2).find((a) => !a.startsWith("--"));
-const CLUSTER_FT = 6; // ширина пробника классификатора (§J: величина уже в задаче)
+const CLUSTER_FT = 6; // ширина пробника классификатора (§J)
+const MARGIN_FT = 6;
 
 const JOBS = [
   { key: "12629", dir: "scripts/qa/roof/fixtures/kirkland-12629-ne-100th-pl", fixture: "kirkland-12629-ne-100th-pl" },
@@ -47,20 +49,18 @@ const JOBS = [
   { key: "419", dir: "scripts/qa/roof/fixtures/prairie-419-prairie-ridge-ln", fixture: "prairie-419-prairie-ridge-ln" },
 ];
 
-interface Finding {
-  x: number;
-  y: number;
-  kind: string;
-  what: string;
-}
+interface Finding { x: number; y: number; kind: string; what: string }
 
-const PROMPT = `Первое изображение — ортофото крыши сверху. Второе — то же фото с наложенным чертежом крыши (цветные линии: коньки, вальмы, ендовы, карнизы).
-Перечисли ТОЛЬКО расхождения между чертежом и фотографией:
-- "missing": складка/ребро, ЯВНО видимое на фото, но без линии в чертеже;
-- "phantom": линия чертежа там, где на фото нет никакой складки;
-- "offset": линия чертежа, смещённая от видимой складки более чем на ~2 фута.
-НЕ перечисляй совпадения. НЕ комментируй стиль. Игнорируй тени, деревья, машины и соседние крыши. Если расхождений нет — верни пустой массив.
-Ответ СТРОГО JSON-массивом: [{"px": <число, пиксель x на изображении>, "py": <число, пиксель y>, "kind": "missing|phantom|offset", "what": "<короткое описание>"}]`;
+const PROMPT = `Первое изображение — фрагмент ортофото крыши сверху (увеличено 2×). Второе — тот же фрагмент с наложенным чертежом крыши.
+ЛЕГЕНДА линий чертежа: красная = конёк (ridge), оранжевая = вальма (hip), синяя = ендова (valley), чёрная тонкая = карниз (eave), зелёная = фронтон (rake), пурпурная/розовая = флешинг (стык с вертикалью: стена, труба, ступень), белая = нейтральный переход.
+ГРАММАТИКА (законы существования): карниз и фронтон живут ТОЛЬКО на внешнем краю крыши (исключение: верх настоящей ступени над нижней крышей); флешинг — только у видимой стены/трубы/перепада высоты; конёк — по гребню; вальма — по выпуклому ребру к углу; ендова — по вогнутой ложбине.
+Перечисли ТОЛЬКО дефекты чертежа против фотографии и грамматики:
+- "missing": складка/ребро, явно видимое на фото, но без линии;
+- "phantom": линия там, где на фото нет никакой складки;
+- "offset": линия смещена от видимой складки более чем на ~2 фута;
+- "illegal": линия ЭТОГО ТИПА не имеет права быть в ЭТОМ месте (карниз посреди ската, флешинг на ровном краю без стены, вальма в ложбине и т.п.).
+НЕ перечисляй совпадения. Игнорируй тени, деревья, машины, соседние крыши и обрез кадра. Если дефектов нет — верни пустой массив.
+Ответ СТРОГО JSON-массивом: [{"px": <пиксель x>, "py": <пиксель y>, "kind": "missing|phantom|offset|illegal", "what": "<коротко>"}]`;
 
 (async () => {
   if (!isOpenAIEnabled()) {
@@ -92,49 +92,94 @@ const PROMPT = `Первое изображение — ортофото кры�
       transform: reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 },
       skeleton: first.model!,
     });
-    const model = res.model ?? res.rejectedCandidate!;
+    const model = (res.rejectedCandidate ?? res.model)!;
 
     const wide = instant.imagery.filter((im) => im.view === "ortho" && im.bbox && im.masked === false)
       .sort((x, y) => (y.bbox![2] - y.bbox![0]) * (y.bbox![3] - y.bbox![1]) - (x.bbox![2] - x.bbox![0]) * (x.bbox![3] - x.bbox![1]))[0]!;
     const cacheF = resolve(".cache/roof-diagram", `pair-${job.key}-wide-clear.png`);
     if (!existsSync(cacheF)) { console.log(`${job.key}: нет кэшированного орто (${cacheF}) — пропуск`); continue; }
     const clearBytes = readFileSync(cacheF);
+    const ovClear = new Overlay(new Uint8Array(clearBytes), wide.bbox!, meta.origin);
+    ovClear.reset();
+    const clearF = join(OUT, `${job.key}-v2-clear.png`);
+    ovClear.save(clearF);
     const ov = new Overlay(new Uint8Array(clearBytes), wide.bbox!, meta.origin);
     ov.reset();
     ov.model(model);
-    const overlayF = join(OUT, `${job.key}-overlay.png`);
+    const overlayF = join(OUT, `${job.key}-v2-overlay.png`);
     ov.save(overlayF);
-    const overlayBytes = readFileSync(overlayF);
+
+    const imgClear = decode(new Uint8Array(readFileSync(clearF)));
+    const imgOver = decode(new Uint8Array(readFileSync(overlayF)));
+    const chC = (imgClear as unknown as { channels?: number }).channels ?? 3;
+    const chO = (imgOver as unknown as { channels?: number }).channels ?? 3;
+
+    // квадранты контура (+поля), в пикселях полного кадра
+    const xs = contour.map((p) => p.x);
+    const ys = contour.map((p) => p.y);
+    const lo = ov.toPx({ x: Math.min(...xs) - MARGIN_FT, y: Math.max(...ys) + MARGIN_FT });
+    const hi = ov.toPx({ x: Math.max(...xs) + MARGIN_FT, y: Math.min(...ys) - MARGIN_FT });
+    const x0 = Math.max(0, Math.round(lo.x));
+    const y0 = Math.max(0, Math.round(lo.y));
+    const x1 = Math.min(imgOver.width, Math.round(hi.x));
+    const y1 = Math.min(imgOver.height, Math.round(hi.y));
+    const midX = Math.round((x0 + x1) / 2);
+    const midY = Math.round((y0 + y1) / 2);
+    const OVERLAP = 12; // px ≈ 2 ft перекрытия, чтобы дефект на шве зоны не потерялся
+    const zones = [
+      { x0, y0, x1: midX + OVERLAP, y1: midY + OVERLAP },
+      { x0: midX - OVERLAP, y0, x1, y1: midY + OVERLAP },
+      { x0, y0: midY - OVERLAP, x1: midX + OVERLAP, y1 },
+      { x0: midX - OVERLAP, y0: midY - OVERLAP, x1, y1 },
+    ];
+    const crop2x = (img: { width: number; height: number; data: Uint8Array | Uint16Array }, ch: number, z: { x0: number; y0: number; x1: number; y1: number }): Buffer => {
+      const w = z.x1 - z.x0;
+      const h = z.y1 - z.y0;
+      const out = new Uint8Array(w * 2 * h * 2 * 3);
+      for (let yy = 0; yy < h * 2; yy++) for (let xx = 0; xx < w * 2; xx++) {
+        const sx = z.x0 + (xx >> 1);
+        const sy = z.y0 + (yy >> 1);
+        for (let c = 0; c < 3; c++) out[(yy * w * 2 + xx) * 3 + c] = (img.data as Uint8Array)[(sy * img.width + sx) * ch + c];
+      }
+      return Buffer.from(encode({ width: w * 2, height: h * 2, data: out, channels: 3, depth: 8 }));
+    };
 
     const runs: Finding[][] = [];
     for (let r = 0; r < REPEAT; r++) {
-      const resp = await openai.chat.completions.create({
-        model: getOpenAIModel(),
-        messages: [{
-          role: "user",
-          content: [
-            { type: "text", text: PROMPT },
-            { type: "image_url", image_url: { url: `data:image/png;base64,${clearBytes.toString("base64")}`, detail: "high" } },
-            { type: "image_url", image_url: { url: `data:image/png;base64,${overlayBytes.toString("base64")}`, detail: "high" } },
-          ],
-        }],
-      });
-      const text = resp.choices[0]?.message?.content ?? "[]";
-      const m = text.match(/\[[\s\S]*\]/);
-      let items: Array<{ px: number; py: number; kind: string; what: string }> = [];
-      try { items = m ? JSON.parse(m[0]) : []; } catch { /* мусорный ответ = пустой прогон */ }
       const fs2: Finding[] = [];
-      for (const it of items) {
-        if (typeof it.px !== "number" || typeof it.py !== "number") continue;
-        const ft = ov.toFt({ x: it.px, y: it.py });
-        fs2.push({ x: ft.x, y: ft.y, kind: String(it.kind), what: String(it.what ?? "") });
+      for (let zi = 0; zi < zones.length; zi++) {
+        const z = zones[zi];
+        const clearCrop = crop2x(imgClear as never, chC, z);
+        const overCrop = crop2x(imgOver as never, chO, z);
+        if (r === 0) writeFileSync(join(OUT, `${job.key}-v2-z${zi}.png`), overCrop);
+        const resp = await openai.chat.completions.create({
+          model: getOpenAIModel(),
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: PROMPT },
+              { type: "image_url", image_url: { url: `data:image/png;base64,${clearCrop.toString("base64")}`, detail: "high" } },
+              { type: "image_url", image_url: { url: `data:image/png;base64,${overCrop.toString("base64")}`, detail: "high" } },
+            ],
+          }],
+        });
+        const text = resp.choices[0]?.message?.content ?? "[]";
+        const m = text.match(/\[[\s\S]*\]/);
+        let items: Array<{ px: number; py: number; kind: string; what: string }> = [];
+        try { items = m ? JSON.parse(m[0]) : []; } catch { /* мусор = пусто */ }
+        for (const it of items) {
+          if (typeof it.px !== "number" || typeof it.py !== "number") continue;
+          const fullPx = { x: z.x0 + it.px / 2, y: z.y0 + it.py / 2 };
+          const ft = ov.toFt(fullPx);
+          fs2.push({ x: ft.x, y: ft.y, kind: String(it.kind), what: String(it.what ?? "") });
+        }
       }
       runs.push(fs2);
-      console.log(`${job.key} прогон ${r + 1}: ${fs2.length} расхождений`);
+      console.log(`${job.key} прогон ${r + 1}: ${fs2.length} упоминаний`);
       for (const f of fs2) console.log(`   [${f.kind}] (${f.x.toFixed(1)},${f.y.toFixed(1)}) ${f.what}`);
     }
 
-    // сводка: кластер точек одного kind в радиусе CLUSTER_FT, ≥2 прогонов
+    // сводка: кластер одного kind в радиусе CLUSTER_FT, ≥2 прогонов
     const all = runs.flatMap((fs2, ri) => fs2.map((f) => ({ ...f, ri })));
     const used = new Set<number>();
     const stable: Array<Finding & { votes: number }> = [];
@@ -161,6 +206,6 @@ const PROMPT = `Первое изображение — ортофото кры�
       report.push(line);
     }
   }
-  writeFileSync(join(OUT, "report.txt"), report.join("\n"));
-  console.log(`\nСводка → .cache/critic/report.txt — чинится лишь подтверждённое геометрией (DSM/маска), не словами модели`);
+  writeFileSync(join(OUT, "report-v2.txt"), report.join("\n"));
+  console.log(`\nСводка → .cache/critic/report-v2.txt — чинится лишь подтверждённое геометрией`);
 })();

@@ -110,7 +110,13 @@ export function mergeCollinearChains(
       if (chord < 1e-9) continue;
       const perp = Math.abs((P.x - A.x) * (B.y - A.y) - (P.y - A.y) * (B.x - A.x)) / chord;
       const tol = Math.max(tolFt, tolOf?.(l1.id) ?? 0, tolOf?.(l2.id) ?? 0);
-      if (perp > tol) continue;
+      // §J: звено короче 2σ⊥ (коридор его опоры) направления НЕ НЕСЁТ —
+      // излом с безнаправленным звеном не форма, а лесенка трассировки:
+      // цепь 0.5–1.5 ft звеньев с углами 25–101° сливается в хорду
+      const len1 = Math.hypot(P.x - A.x, P.y - A.y);
+      const len2 = Math.hypot(B.x - P.x, B.y - P.y);
+      const directionless = Math.min(len1, len2) < 2 * tol;
+      if (perp > tol && !directionless) continue;
       // the faces on both sides must reference BOTH lines (degree-2 seam of
       // the same boundary), else the vertex carries other structure
       const owners = model.faces.filter((f) => f.lineIds.includes(l1.id) || f.lineIds.includes(l2.id));

@@ -44,7 +44,14 @@ const MIN_FACET_SQFT = 15;
  *  (boundary-step-census.ts) is bimodal — 79 boundaries under 1 ft, a gap at
  *  1.8–2.2, a tail to 5.3 — so the threshold reads off the gap. Above it the
  *  two planes do not meet: the boundary is a wall between roof LEVELS. */
-const STEP_DZ_FT = 2.0;
+// Переписной пол ступени: бимодальный census перепадов дал зазор
+// [1.8, 2.2] между модой невязки и модой стены — любой порог в зазоре
+// эквивалентен ПО ПЕРЕПИСИ. Берём НИЖНИЙ край: порог служит и полом
+// заявления стены, и потолком сварки вершин (одно число — ОДНА работа:
+// «стена ↔ не сваривать»); при 2.0 пограничные стены ~1.8-1.9 сваривались,
+// сваренная точка вставала на ~0.9 над плоскостью и flatten разносил это
+// в поворот градиента грани до 13° (G4 на 12618).
+const STEP_DZ_FT = 1.8;
 
 export type FaceProvenance = "measured-dsm" | "fill";
 
@@ -874,7 +881,9 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   //    meeting planes imply) turns "on the surface" into "a polyhedron":
   //    R03 planarity by construction, at the validator's 0.08 ft, which raw
   //    surface samples (noise 0.12 ft) can never hold on their own. ──
-  const flat = flattenFacets(assembled);
+  // сварка переписным полом связала вершины в узлы по 3+ граней — системе
+  // нужно больше раундов, чем расщеплённой (24 оставляли 0.63 ft)
+  const flat = flattenFacets(assembled, { iterations: 96 });
   const candidate = flat.model;
   // ── СЛОЙ ВЫПРЯМЛЕНИЯ: коллинеарное слияние звеньев (до типизации) ──
   const preStraighten = input.onStage ? (JSON.parse(JSON.stringify(candidate)) as RoofModel) : undefined;
@@ -1037,6 +1046,17 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       return null;
     };
     const zOfLine = (l: (typeof candidate.lines)[number]) => (ptById.get(l.aId)!.z + ptById.get(l.bId)!.z) / 2;
+    // ── ПОЛОСА КРАЕВОЙ СМЕСИ (2026-08-30) ──
+    // Кайма кровля+земля вдоль внешнего контура рождала hip↔valley крошку
+    // (12629: цепь A4/A6 в 1–2 ft внутри диагонали SE). В полосе шириной
+    // пробника (PROBE_FT) z-пробы классификатора не судят — тип берётся
+    // продолжением изнутри (петля непрерывности ниже; у неё есть
+    // одноконцовое наследование для кусков, упирающихся в кольцо).
+    const inBand = (l: (typeof candidate.lines)[number]): boolean => {
+      const a = ptById.get(l.aId)!;
+      const b = ptById.get(l.bId)!;
+      return distRing({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }) <= PROBE_FT;
+    };
     const footage2 = {} as Record<string, number>;
     const bump = (t: string, v: number) => { footage2[t] = (footage2[t] ?? 0) + v; };
     for (const g of groupsL.values()) {
@@ -1048,8 +1068,25 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         // бимодальный зазор 1.8–2.2): порог различения уровней 0.16 — это
         // «нельзя сварить», а не «есть ступень» (§K12: 25 фантомных пар
         // EAVE/FLASHING на 12629 при Δz 0.16–1.5 — невязка подгонки,
-        // опубликованная как архитектура; честные клифы трубы 2.15–2.43)
-        if (Math.max(...zs) - Math.min(...zs) >= STEP_DZ_FT) {
+        // опубликованная как архитектура; честные клифы трубы 2.15–2.43).
+        // Δz меряется ПО КОНЦАМ, максимумом: стена-клин (обрыв конька к
+        // нижнему крылу) сужается вдоль линии, и серединное усреднение
+        // разбавляло 3.4 ft на конце до 1.7 — стена не заявлялась, конёк
+        // висел (12621 (11.8,2.9), 12618 (-0.3,-19.3), гребень 12629)
+        let dzEnds = 0;
+        for (let i2 = 0; i2 < g.length; i2++) {
+          for (let j2 = i2 + 1; j2 < g.length; j2++) {
+            const a1 = ptById.get(g[i2].aId)!;
+            const b1 = ptById.get(g[i2].bId)!;
+            const a2 = ptById.get(g[j2].aId)!;
+            const b2 = ptById.get(g[j2].bId)!;
+            const same = planKey(g[i2].aId) === planKey(g[j2].aId);
+            const dz1 = Math.abs(a1.z - (same ? a2.z : b2.z));
+            const dz2 = Math.abs(b1.z - (same ? b2.z : a2.z));
+            dzEnds = Math.max(dzEnds, dz1, dz2);
+          }
+        }
+        if (dzEnds >= STEP_DZ_FT) {
           // ступень: верхняя сторона EAVE, нижняя FLASHING; погонаж — обе
           const top = Math.max(...zs);
           for (const l of g) l.type = zOfLine(l) >= top - 1e-6 ? "EAVE" : "FLASHING";
@@ -1062,7 +1099,15 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         // нейтральный переход OTHER; STEPFLASH — только кромка разбиения
         // одновладельца, легенда не заявляет немеренного
         const allOwners = [...new Set(g.flatMap((l) => ownersOf.get(l.id) ?? []))];
-        const t = creaseType(l0, allOwners) ?? (onRing ? l0.type : allOwners.length >= 2 ? "OTHER" : "STEPFLASH");
+        let fb = l0.type as string;
+        if (onRing && (fb === "FLASHING" || fb === "STEPFLASH")) {
+          // осиротевший шов НА КОНТУРЕ (близнец сварен переписным полом):
+          // контурное ребро живёт типами контура (закон шага 1)
+          const a0 = ptById.get(l0.aId)!;
+          const b0 = ptById.get(l0.bId)!;
+          fb = Math.abs(a0.z - b0.z) <= Math.max(0.08, LEVEL_SLOPE * Math.hypot(b0.x - a0.x, b0.y - a0.y)) ? "EAVE" : "RAKE";
+        }
+        const t = (inBand(l0) ? null : creaseType(l0, allOwners)) ?? (onRing ? fb : allOwners.length >= 2 ? "OTHER" : "STEPFLASH");
         for (const l of g) l.type = t as (typeof l0)["type"];
         bump(t, l0.lengthFt);
         continue;
@@ -1070,21 +1115,40 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       // одиночная линия
       const owners = ownersOf.get(l0.id) ?? [];
       if (owners.length >= 2) {
-        const t = creaseType(l0, owners);
+        const t = inBand(l0) ? null : creaseType(l0, owners);
         if (t) l0.type = t as (typeof l0)["type"];
         // нерешённый перегиб ВНЕ кольца не имеет права зваться RAKE/EAVE —
         // на контуре типы шага 1 остаются, внутри крыши это OTHER
         else if (!onRing && (l0.type === "RAKE" || l0.type === "EAVE")) l0.type = "OTHER";
+        // шов, ЦЕЛИКОМ лежащий на внешнем контуре (G6-домен: обе точки и
+        // середина ≤ STUB), без переписного близнеца — не стык с вертикалью,
+        // а хвост границы у кольца: OTHER. Внутренние швы не трогаем — они
+        // законные терминаторы складок (G2)
+        else if ((l0.type === "FLASHING" || l0.type === "STEPFLASH")) {
+          const a6 = ptById.get(l0.aId)!;
+          const b6 = ptById.get(l0.bId)!;
+          const m6 = { x: (a6.x + b6.x) / 2, y: (a6.y + b6.y) / 2 };
+          if (Math.max(distRing(a6), distRing(b6), distRing(m6)) <= 1.0) l0.type = "OTHER";
+        }
       } else if (!onRing) {
         // одновладельная внутренняя — кромка разбиения
         l0.type = "STEPFLASH";
+      } else if (l0.type === "FLASHING" || l0.type === "STEPFLASH") {
+        // осиротевший шов НА КОНТУРЕ (близнец сварен переписным полом):
+        // контурное ребро живёт типами контура — ровное EAVE, наклонное
+        // RAKE (закон классификатора шага 1)
+        const a = ptById.get(l0.aId)!;
+        const b = ptById.get(l0.bId)!;
+        const run = Math.hypot(b.x - a.x, b.y - a.y);
+        l0.type = Math.abs(a.z - b.z) <= Math.max(0.08, LEVEL_SLOPE * run) ? "EAVE" : "RAKE";
       }
       bump(l0.type, l0.lengthFt);
     }
     // непрерывность: OTHER-кусок с двумя владельцами, оба конца которого
     // продолжают складку одного типа, — часть этой складки (нейтральные
     // куски рвали цепи и плодили ложные G2-терминации)
-    for (let round = 0; round < 3; round++) {
+    // раундов — по длине наибольшей цепи (3 обрезало полосу каймы)
+    for (let round = 0; round < candidate.lines.length; round++) {
       const byEnd = new Map<string, Array<(typeof candidate.lines)[number]>>();
       for (const l of candidate.lines) {
         for (const pid of [l.aId, l.bId]) {
@@ -1119,6 +1183,71 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         }
       }
       if (!changed) break;
+    }
+    // ── пост-типизационное слияние лесенок ──
+    // Слой выпрямления бежит ДО типизации: цепи границ ещё не HIP/VALLEY,
+    // и §J-слияние безнаправленных звеньев (короче 2σ⊥) их не видело.
+    // После типизации — второй проход; погонаж пересчитывается заново
+    // той же группировкой (ступень — обе стороны, близнецы — один раз).
+    {
+      const rep2 = mergeCollinearChains(candidate, m.stepFt, corridorOfLine);
+      // ── обрезка ШПОР ──
+      // Одновладельный хвост, чей свободный конец никого не встречает
+      // (план-степень 1), — шпора кольца: партнёр сварен переписным полом,
+      // кольцо ходит туда-обратно по нулевой площади (класс R02, G7-зазоры).
+      // Двухвладельные линии — структурные, не трогаются.
+      let trimmed = 0;
+      for (let round2 = 0; round2 < 32; round2++) {
+        const pById4 = new Map(candidate.points.map((pt) => [pt.id, pt]));
+        const pk4 = (pid: string) => {
+          const pt = pById4.get(pid)!;
+          return `${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`;
+        };
+        const deg4 = new Map<string, number>();
+        for (const l of candidate.lines) {
+          for (const pid of [l.aId, l.bId]) deg4.set(pk4(pid), (deg4.get(pk4(pid)) ?? 0) + 1);
+        }
+        const spur = candidate.lines.find((l) => {
+          const own = ownersOf.get(l.id) ?? [];
+          if (own.length > 1) return false;
+          return deg4.get(pk4(l.aId)) === 1 || deg4.get(pk4(l.bId)) === 1;
+        });
+        if (!spur) break;
+        candidate.lines = candidate.lines.filter((l) => l.id !== spur.id);
+        for (const f of candidate.faces) f.lineIds = f.lineIds.filter((id) => id !== spur.id);
+        const used = new Set(candidate.lines.flatMap((l) => [l.aId, l.bId]));
+        candidate.points = candidate.points.filter((pt) => used.has(pt.id));
+        trimmed++;
+      }
+      if (trimmed > 0) reasons.push(`шпоры: ${trimmed} одновладельных хвостов обрезано`);
+      if (rep2.merged > 0 || trimmed > 0) {
+        const pById3 = new Map(candidate.points.map((pt) => [pt.id, pt]));
+        const pk3 = (pid: string) => {
+          const pt = pById3.get(pid)!;
+          return `${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`;
+        };
+        const groups3 = new Map<string, Array<(typeof candidate.lines)[number]>>();
+        for (const l of candidate.lines) {
+          const ka = pk3(l.aId);
+          const kb = pk3(l.bId);
+          const k = ka < kb ? `${ka}#${kb}` : `${kb}#${ka}`;
+          const arr = groups3.get(k) ?? [];
+          arr.push(l);
+          groups3.set(k, arr);
+        }
+        const f3 = {} as Record<string, number>;
+        for (const g3 of groups3.values()) {
+          const types = new Set(g3.map((l) => l.type));
+          if (g3.length >= 2 && types.size > 1) {
+            for (const l of g3) f3[l.type] = (f3[l.type] ?? 0) + l.lengthFt;
+          } else {
+            f3[g3[0].type] = (f3[g3[0].type] ?? 0) + g3[0].lengthFt;
+          }
+        }
+        for (const t of Object.keys(footage2)) footage2[t] = 0;
+        for (const [t, v] of Object.entries(f3)) footage2[t] = v;
+        if (rep2.merged > 0) reasons.push(`лесенки: ${rep2.merged} безнаправленных звеньев слито после типизации`);
+      }
     }
     for (const t of ["EAVE", "RIDGE", "VALLEY", "HIP", "RAKE", "FLASHING", "STEPFLASH", "OTHER"]) footage2[t] = footage2[t] ?? 0;
     candidate.totals = { ...candidate.totals, footageByType: footage2 as typeof candidate.totals.footageByType };

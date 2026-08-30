@@ -50,6 +50,10 @@ export interface ReconOptions {
    *  rounded. Empty = snap to the nearest integer. */
   pitchPriors12?: number[];
   pitchSnapMax12?: number; //    refuse to move a pitch further than this (0 disables)
+  /** Заявленные кольца пенетраций (Instant ROOFPENETRATION), в футах
+   *  РАСТРОВОГО кадра (x восток, y север от центра растра). Их пиксели
+   *  исключаются из подгонки плоскостей и роста регионов. */
+  penetrationRingsFt?: Array<Array<{ x: number; y: number }>>;
   maxPitch12?: number; //        steeper than this is a wall, not roof (default 24)
   wallProbeFt?: number; //       how far past an edge to look for a wall
   wallStepFt?: number; //        height rise that counts as a wall
@@ -79,6 +83,8 @@ export interface ReconResult {
   model: RoofModel;
   diagnostics: {
     buildingPx: number;
+    /** Пиксели маски пенетраций (индексы растра) — для штриховки и учёта. */
+    penetrationPx: number[];
     clusters: number;
     droppedClusters: number;
     groundElevFt: number;
@@ -971,9 +977,115 @@ export function reconstructRoof(
   const groundElevFt =
     (offRoof.length ? offRoof[Math.floor(offRoof.length * 0.2)] : 0) * FT_PER_M;
 
-  const g = computeGeometry(dsm, building, groundElevFt, half);
+  // ── МАСКА ПЕНЕТРАЦИЙ (2026-08-30) ──────────────────────────────────────────
+  // Труба/вент загрязняет подгонку плоскостей и рост регионов ИЗНУТРИ
+  // кластера (12629: z-рассогласование A7/A3 до 3.8 ft у гребня, куст
+  // осколков A1, шпилька ендовы). Пиксели пенетраций исключаются ДО
+  // кластеризации, не постфактум. Источники: заявленные кольца
+  // (opts.penetrationRingsFt) и DSM-клифы — блоб пикселей над медианой
+  // окружающего кольца на ≥ переписной пол ступени (2.0 ft, бимодальный
+  // зазор 1.8–2.2) площадью ≤ minFacetSqft (меньше грани — не
+  // архитектура). Радиусы кольца — из того же minFacetSqft: полуширина
+  // блоба √12/2 ≈ 1.7 ft → внутренний 2 ft, внешний 4 ft.
+  const pen = new Uint8Array(w * h);
+  {
+    const PEN_DZ_FT = 2.0;
+    const rIn = Math.max(1, Math.ceil(2 / stepFt));
+    const rOut = Math.max(rIn + 1, Math.ceil(4 / stepFt));
+    const zft = (i: number): number => dsm.data[i] * FT_PER_M - groundElevFt;
+    const cand = new Uint8Array(w * h);
+    const base = new Float32Array(w * h);
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const i = py * w + px;
+        if (!building[i]) continue;
+        const ringZ: number[] = [];
+        for (let dy = -rOut; dy <= rOut; dy++) {
+          for (let dx = -rOut; dx <= rOut; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) < rIn) continue;
+            const qx = px + dx;
+            const qy = py + dy;
+            if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
+            const q = qy * w + qx;
+            if (building[q]) ringZ.push(zft(q));
+          }
+        }
+        if (ringZ.length < 8) continue;
+        ringZ.sort((a2, b2) => a2 - b2);
+        const med = ringZ[Math.floor(ringZ.length / 2)];
+        if (zft(i) - med >= PEN_DZ_FT) { cand[i] = 1; base[i] = med; }
+      }
+    }
+    const capPx = Math.ceil(minFacetSqft / (stepFt * stepFt));
+    const seenP = new Uint8Array(w * h);
+    for (let s2 = 0; s2 < cand.length; s2++) {
+      if (!cand[s2] || seenP[s2]) continue;
+      // возвышенный объект мерится ЦЕЛИКОМ: разлив от кандидата по всем
+      // пикселям выше ЕГО базы (медианы кольца) на ≥ порог — угол дормера
+      // локально неотличим от трубы, но разлив охватывает весь дормер
+      // (30 sf > cap → архитектура), а трубу — только её квадрат
+      const med0 = base[s2];
+      const blob: number[] = [s2];
+      seenP[s2] = 1;
+      for (let bi = 0; bi < blob.length; bi++) {
+        const i = blob[bi];
+        const bx = i % w;
+        const by = Math.floor(i / w);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const qx = bx + dx;
+          const qy = by + dy;
+          if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
+          const q = qy * w + qx;
+          if (seenP[q] || !building[q]) continue;
+          if (zft(q) - med0 >= PEN_DZ_FT) { seenP[q] = 1; blob.push(q); }
+        }
+      }
+      // компактность: пенетрация — квадратный блоб (труба), не дуга вдоль
+      // ребра настоящей ступени/дормера (обод даёт кандидатов шириной в
+      // пиксель — маска не смеет есть архитектуру). Сторона bbox ≤
+      // √minFacetSqft ≈ 3.5 ft — из того же закона «меньше грани».
+      let minX = w, maxX = 0, minY = h, maxY = 0;
+      for (const i of blob) {
+        const bx = i % w;
+        const by = Math.floor(i / w);
+        minX = Math.min(minX, bx); maxX = Math.max(maxX, bx);
+        minY = Math.min(minY, by); maxY = Math.max(maxY, by);
+      }
+      const sidePx = Math.ceil(Math.sqrt(minFacetSqft) / stepFt);
+      const compact = maxX - minX + 1 <= sidePx && maxY - minY + 1 <= sidePx;
+      if (compact && blob.length <= capPx) for (const i of blob) pen[i] = 1;
+    }
+    const inPoly = (x: number, y: number, ring: Array<{ x: number; y: number }>): boolean => {
+      let ins = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a2 = ring[i];
+        const b2 = ring[j];
+        if (a2.y > y !== b2.y > y && x < ((b2.x - a2.x) * (y - a2.y)) / (b2.y - a2.y) + a2.x) ins = !ins;
+      }
+      return ins;
+    };
+    const cx2 = w / 2;
+    const cy2 = h / 2;
+    for (const ring of opts.penetrationRingsFt ?? []) {
+      if (ring.length < 3) continue;
+      for (let py = 0; py < h; py++) {
+        for (let px = 0; px < w; px++) {
+          const i = py * w + px;
+          if (!building[i] || pen[i]) continue;
+          if (inPoly((px + 0.5 - cx2) * stepFt, (cy2 - py - 0.5) * stepFt, ring)) pen[i] = 1;
+        }
+      }
+    }
+  }
+  const penetrationPx: number[] = [];
+  for (let i = 0; i < pen.length; i++) if (pen[i]) penetrationPx.push(i);
+  // partic — участники измерения: контур/периметр/земля остаются на building
+  const partic = building.slice() as Uint8Array;
+  for (const i of penetrationPx) partic[i] = 0;
+
+  const g = computeGeometry(dsm, partic, groundElevFt, half);
   const minPx = Math.max(8, Math.round(minFacetSqft / (stepFt * stepFt)));
-  const seg = segmentPlanes(dsm, building, g, angleTolDeg, planeTolFt, minPx);
+  const seg = segmentPlanes(dsm, partic, g, angleTolDeg, planeTolFt, minPx);
   const { assign, dropped } = seg;
   let clusters = seg.clusters;
 
@@ -1422,6 +1534,7 @@ export function reconstructRoof(
     model,
     diagnostics: {
       buildingPx,
+      penetrationPx,
       clusters: clusters.length,
       droppedClusters: dropped,
       groundElevFt,
