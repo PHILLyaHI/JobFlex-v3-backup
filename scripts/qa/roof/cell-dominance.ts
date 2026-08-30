@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { loadHarnessEnv } from "./env";
+import { productionSkeleton } from "./prodflow";
 
 loadHarnessEnv();
 
@@ -45,15 +46,14 @@ function rasterFrom(file: string, meta: FixtureMeta): Raster {
     let dsm: Raster, mask: Raster;
     if (job.fixture) { const fx = loadFixture(job.fixture); dsm = fx.dsm; mask = fx.mask; }
     else { dsm = rasterFrom(resolve(job.dir, "dsm.f32.gz"), meta); mask = rasterFrom(resolve(job.dir, "mask.f32.gz"), meta); }
-    const first = buildRoofV2({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null });
-    if (!first.model) continue;
-    const contour = first.report.structures.find((s) => s.ring)?.ring as FootprintPoint[] | undefined;
-    if (!contour) continue;
-    const reg = registerContourToRaster({ contour, mask, dsm, groundElevFt: meta.diagnostics.groundElevFt as number });
+    // §J: производственный поток, не своя сборка
+    const prod = productionSkeleton({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null, dsm, mask, groundElevFt: meta.diagnostics.groundElevFt as number });
+    if (!prod) continue;
+    const contour = prod.contour;
     const res = buildMeasuredRoof({
       dsm, mask, contour,
-      transform: reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 },
-      skeleton: first.model,
+      transform: prod.transform,
+      skeleton: prod.skeleton,
     });
     for (const c of res.cellStats) all.push({ addr: job.name, area: c.areaSqft, dom: Math.min(1, c.rmsFt), samples: 0 });
     const rows = res.cellStats

@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { loadHarnessEnv } from "./env";
+import { productionSkeleton } from "./prodflow";
 loadHarnessEnv();
 import type { InstantRoofData, RoofModel } from "@/lib/eagleview";
 import type { Raster } from "@/lib/solar";
@@ -56,13 +57,14 @@ const figures = (mo: RoofModel) => {
       };
       dsm = r("dsm.f32.gz"); mask = r("mask.f32.gz");
     }
-    const first = buildRoofV2({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null });
-    const contour = first.report.structures.find((s) => s.ring)!.ring as FootprintPoint[];
-    const reg = registerContourToRaster({ contour, mask, dsm, groundElevFt: meta.diagnostics.groundElevFt as number });
+    // §J: производственный поток, не своя сборка
+    const prod = productionSkeleton({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null, dsm, mask, groundElevFt: meta.diagnostics.groundElevFt as number });
+    if (!prod) continue;
+    const contour = prod.contour;
     const res = buildMeasuredRoof({
       dsm, mask, contour,
-      transform: reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 },
-      skeleton: first.model!,
+      transform: prod.transform,
+      skeleton: prod.skeleton,
       onStage: () => {},
     });
     const after = res.model ?? res.rejectedCandidate!;

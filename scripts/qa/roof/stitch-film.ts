@@ -11,6 +11,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { loadHarnessEnv } from "./env";
+import { productionSkeleton } from "./prodflow";
 
 loadHarnessEnv();
 
@@ -55,10 +56,11 @@ function rasterFrom(file: string, meta: FixtureMeta): Raster {
   else { dsm = rasterFrom(resolve(job.dir, "dsm.f32.gz"), meta); mask = rasterFrom(resolve(job.dir, "mask.f32.gz"), meta); }
   const ground = meta.diagnostics.groundElevFt as number;
 
-  const first = buildRoofV2({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null });
-  const contour = first.report.structures.find((s) => s.ring)!.ring as FootprintPoint[];
-  const reg = registerContourToRaster({ contour, mask, dsm, groundElevFt: ground });
-  const T = reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 };
+  // §J: стенд ходит производственным потоком (prodflow), не своей сборкой
+  const prod = productionSkeleton({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null, dsm, mask, groundElevFt: ground });
+  if (!prod) throw new Error("производственный поток не построил скелет");
+  const contour = prod.contour;
+  const T = prod.transform;
   const th = (T.thetaDeg * Math.PI) / 180;
   const fwd = (p: FootprintPoint): FootprintPoint => ({ x: p.x * Math.cos(th) - p.y * Math.sin(th) + T.dxFt, y: p.x * Math.sin(th) + p.y * Math.cos(th) + T.dyFt });
   const inv = (p: FootprintPoint): FootprintPoint => {
@@ -72,7 +74,7 @@ function rasterFrom(file: string, meta: FixtureMeta): Raster {
   const res = buildMeasuredRoof({
     dsm, mask, contour,
     transform: T,
-    skeleton: first.model!,
+    skeleton: prod.skeleton,
     onStage: (stage, polys) => stages.set(stage, polys),
   });
   console.log(`engine: ${res.engine} · этапов снято: ${[...stages.keys()].join(", ")}`);
