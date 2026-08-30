@@ -70,6 +70,7 @@ import { buildRoofV2, buildRoofV2FromRecon, measureCoverage, roofReconV2Enabled,
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
 import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
+import { buildMeasuredRoof, type FaceProvenance } from "@/lib/roofRecon/measuredRoof";
 import { readInstantSurvey, type InstantSurvey } from "@/lib/roofDiagram/instantSurvey";
 import { checkCompleteness } from "@/lib/roofRecon/completeness";
 import { lotMaskFromPair, ringWhollyOutsideLot, type LotMask } from "@/lib/roofDiagram/parcelMask";
@@ -507,10 +508,25 @@ interface Geometry {
   completeness?: CompletenessProvenance;
   /** V2 paths: which engine drew the interior. */
   wavefront?: WavefrontProvenance;
+  /** V2 paths: the measured-arrangement stitch — the primary interior where
+   *  measured coverage clears its floor; the skeleton is the fallback. */
+  stitch?: StitchProvenance;
   /** V2 paths: what the AI structure read is scored against. */
   visionInputs?: { contour: FootprintPoint[]; measurement: PitchMeasurement };
   source: MeasurementSource;
   origin: LatLng | null;
+}
+
+export interface StitchProvenance {
+  applied: boolean;
+  engine: "measured-dsm" | "skeleton-fill";
+  measuredShare: number;
+  /** Inter-cluster boundary accounting: how much of the layout the measured
+   *  lines straightened vs stayed as traced pixel membership. */
+  boundary?: { straightenedFt: number; raggedFt: number } | null;
+  /** Per-face provenance of the accepted model. */
+  faces?: Record<string, FaceProvenance>;
+  reasons: string[];
 }
 
 /**
@@ -604,6 +620,7 @@ function resolveGeometry(
           ...(v2.unrecognisedFacets ? { unrecognisedFacets: v2.unrecognisedFacets, unrecognisedShare: v2.unrecognisedShare } : {}),
           ...(v2.completeness ? { completeness: v2.completeness } : {}),
           ...(v2.wavefront ? { wavefront: v2.wavefront } : {}),
+          ...(v2.stitch ? { stitch: v2.stitch } : {}),
           ...(v2.visionInputs ? { visionInputs: v2.visionInputs } : {}),
         };
       }
@@ -670,6 +687,7 @@ function provenanceOf(
     reconUnavailable?: { kind: SolarFailureKind; message: string };
     completeness?: CompletenessProvenance;
     wavefront?: WavefrontProvenance;
+    stitch?: StitchProvenance;
     visionStructure?: VisionStructureEvidence;
     instantSurvey?: InstantSurvey;
     creases?: CreaseProvenance;
@@ -711,6 +729,7 @@ function provenanceOf(
       ...(notes?.reconUnavailable ? { reconUnavailable: notes.reconUnavailable } : {}),
       ...(notes?.completeness ? { completeness: notes.completeness } : {}),
       ...(notes?.wavefront ? { wavefront: notes.wavefront } : {}),
+      ...(notes?.stitch ? { stitch: notes.stitch } : {}),
       ...(notes?.visionStructure ? { visionStructure: notes.visionStructure } : {}),
       imageryQuality: model.provenance?.imageryQuality,
       imageryDate: model.provenance?.imageryDate,
@@ -1124,6 +1143,7 @@ function buildV2Geometry(
   unrecognisedShare?: number;
   completeness?: CompletenessProvenance;
   wavefront?: WavefrontProvenance;
+  stitch?: StitchProvenance;
   /** Kept so the AI structure read can be scored against the same measurement. */
   visionInputs?: { contour: FootprintPoint[]; measurement: PitchMeasurement };
 } | null {
@@ -1236,6 +1256,48 @@ function buildV2Geometry(
     }
   }
 
+  // ── the measured-arrangement stitch: the PRIMARY interior ──
+  // Cells from the DSM's own cluster regions, boundaries straightened by the
+  // measured analytic lines, nodes at exact plane meets, steps split into
+  // levels. The guards (Euler, tiling, R03/R04) accept or the skeleton
+  // stays — the stitch may never ship worse topology than what it replaces.
+  // Single-structure lots, same restriction as the wavefront.
+  let stitch: StitchProvenance = { applied: false, engine: "skeleton-fill", measuredShare: 0, reasons: ["not attempted"] };
+  if (usable.length === 1 && headline.registration?.transform) {
+    try {
+      const res = buildMeasuredRoof({
+        dsm: recon.dsm as never,
+        mask: recon.mask as never,
+        contour: usable[0].ring as FootprintPoint[],
+        transform: headline.registration.transform,
+        skeleton: model,
+      });
+      stitch = {
+        applied: res.engine === "measured-dsm",
+        engine: res.engine,
+        measuredShare: res.measuredShare,
+        boundary: res.boundary,
+        ...(res.provenance ? { faces: res.provenance.faces } : {}),
+        reasons: res.reasons,
+      };
+      if (res.engine === "measured-dsm" && res.model) {
+        model = res.model;
+        console.log(
+          "[roofMeasurement] stitch drew this roof: %d faces, %d%% measured, границы %s/%s ft",
+          model.faces.length,
+          Math.round(res.measuredShare * 100),
+          res.boundary ? res.boundary.straightenedFt.toFixed(0) : "-",
+          res.boundary ? res.boundary.raggedFt.toFixed(0) : "-",
+        );
+      }
+    } catch (err) {
+      stitch = { applied: false, engine: "skeleton-fill", measuredShare: 0, reasons: [`stitch threw: ${errorMessage(err, String(err))}`] };
+      console.warn("[roofMeasurement] stitch skipped:", stitch.reasons[0]);
+    }
+  } else if (usable.length !== 1) {
+    stitch.reasons = [`${usable.length} structures on this lot — the stitch is single-structure only`];
+  }
+
   // The unrecognised-case detector: what the drawing did NOT reproduce. Runs
   // on the model that will actually ship, so a wavefront that fixed a gable
   // is credited and one that did not is still caught.
@@ -1259,6 +1321,7 @@ function buildV2Geometry(
   }
   return {
     model,
+    stitch,
     registration: {
       applied: true,
       transform: headline.registration!.transform!,
@@ -1625,7 +1688,7 @@ export async function measureRoofInstant(
   }
 
   const lotMask = roofReconV2Enabled() && recon ? await lotMaskFor(instant, recon.origin) : null;
-  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, completeness, wavefront, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions, lotMask);
+  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, completeness, wavefront, stitch, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions, lotMask);
 
   // ── the lidar crease step ────────────────────────────────────────────────
   // A separate pass AFTER the model exists. The skeleton and the wavefront build
@@ -1808,6 +1871,7 @@ export async function measureRoofInstant(
       ...(instantSurvey ? { instantSurvey } : {}),
       ...(creases ? { creases } : {}),
       ...(wavefront ? { wavefront } : {}),
+      ...(stitch ? { stitch } : {}),
       ...(visionStructure ? { visionStructure } : {}),
     }),
   };

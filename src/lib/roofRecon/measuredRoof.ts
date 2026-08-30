@@ -68,6 +68,8 @@ export interface MeasuredRoofResult {
 export interface MeasuredRoofInput {
   dsm: Raster;
   mask: Raster;
+  /** Лента по этапам — passed through to the region-cell construction. */
+  onStage?: (stage: "traced" | "straightened" | "nodes" | "terminals", polys: Array<{ pts: FootprintPoint[]; pair: [number, number] }>) => void;
   /** Regularised Instant contour, Instant frame. */
   contour: FootprintPoint[];
   /** Registration Instant→raster. */
@@ -378,6 +380,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       stepFt,
       contour: movedRing,
       lines: lines2,
+      onStage: input.onStage,
       absorbed: (p) => {
         // A 5×5 window with fewer assigned pixels than the recon's own
         // minimum plane-fit support (6 — roofRecon needs pts.length >= 6 to
@@ -521,112 +524,6 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // meet EXISTS — three planes intersect in one point, two in a line — and
   // the vertex moves there. Pixel traces stay provenance; analytic geometry
   // is the model.
-  // The assembly-level vertex reconciliation drove R03 down to 3 faces on
-  // 12621 but its ring surgery broke topology on the other addresses —
-  // the exact construction belongs INSIDE the region graph (see ROOF-STATE).
-  if (process.env.ENABLE_RECON_V) {
-    const vKey0 = (q: FootprintPoint) => `${Math.round(q.x * 1000)}|${Math.round(q.y * 1000)}`;
-    const byKey = new Map<string, { p: FootprintPoint; cis: CellInfo[] }>();
-    for (const ci of infos) for (const q of ci.cell.ring) {
-      const k = vKey0(q);
-      const rec = byKey.get(k) ?? { p: q, cis: [] };
-      if (!rec.cis.includes(ci)) rec.cis.push(ci);
-      byKey.set(k, rec);
-    }
-    const moves = new Map<string, FootprintPoint>();
-    let reconciled = 0;
-    for (const [k, rec] of byKey) {
-      const meas = rec.cis.filter((ci) => ci.plane && ci.prov !== "fill");
-      const planes: Plane[] = [];
-      const seen2 = new Set<number>();
-      for (const ci of meas) {
-        if (ci.cluster === null || seen2.has(ci.cluster)) continue;
-        seen2.add(ci.cluster);
-        planes.push(ci.plane!);
-      }
-      if (planes.length < 2) continue;
-      // Levels first: a step vertex carries several z-groups; the position is
-      // reconciled within the LARGEST group's planes (the other levels follow
-      // at their own z via the level grouping downstream).
-      const zed = planes.map((pl) => ({ pl, z: pl.a * rec.p.x + pl.b * rec.p.y + pl.c })).sort((x2, y2) => x2.z - y2.z);
-      const pGroups: Array<Array<{ pl: Plane; z: number }>> = [];
-      for (const e of zed) {
-        const g = pGroups[pGroups.length - 1];
-        if (g && e.z - g[g.length - 1].z <= STEP_DZ_FT) g.push(e);
-        else pGroups.push([e]);
-      }
-      const big = pGroups.slice().sort((x2, y2) => y2.length - x2.length)[0];
-      if (big.length < 2) continue;
-      const gz = big.map((e) => e.z);
-      const mismatch = Math.max(...gz) - Math.min(...gz);
-      if (mismatch <= 0.05) continue;
-      const gPlanes = big.map((e) => e.pl);
-      let target: FootprintPoint | null = null;
-      if (gPlanes.length >= 3) {
-        // exact meet of the first three planes: solve for (x, y)
-        const [P1, P2, P3] = gPlanes;
-        const a11 = P1.a - P2.a, a12 = P1.b - P2.b, b1 = P2.c - P1.c;
-        const a21 = P1.a - P3.a, a22 = P1.b - P3.b, b2 = P3.c - P1.c;
-        const det = a11 * a22 - a12 * a21;
-        if (Math.abs(det) > 1e-9) target = { x: (b1 * a22 - b2 * a12) / det, y: (a11 * b2 - a21 * b1) / det };
-      }
-      if (!target && gPlanes.length >= 2) {
-        // nearest point on the pair's intersection line
-        const [P1, P2] = gPlanes;
-        const da = P1.a - P2.a, db = P1.b - P2.b;
-        const nrm = Math.hypot(da, db);
-        if (nrm > 1e-6) {
-          const off = (da * rec.p.x + db * rec.p.y + (P1.c - P2.c)) / nrm;
-          target = { x: rec.p.x - (da / nrm) * off, y: rec.p.y - (db / nrm) * off };
-        }
-      }
-      if (!target) continue;
-      const moveFt = Math.hypot(target.x - rec.p.x, target.y - rec.p.y);
-      if (moveFt > PROBE_FT || !inRing(target, movedRing)) continue;
-      // no collapses: one vertex per meet point — a second candidate for the
-      // same target stays put (a whole ragged run near a triple junction
-      // would otherwise fold into one point and figure-eight the ring)
-      let collides = false;
-      for (const t2 of moves.values()) {
-        if (Math.hypot(t2.x - target.x, t2.y - target.y) < 0.3) { collides = true; break; }
-      }
-      if (!collides) {
-        for (const [k2, rec2] of byKey) {
-          if (k2 === k) continue;
-          if (Math.hypot(rec2.p.x - target.x, rec2.p.y - target.y) < 0.3 && !moves.has(k2)) { collides = true; break; }
-        }
-      }
-      if (collides) continue;
-      moves.set(k, target);
-      reconciled++;
-    }
-    if (moves.size) {
-      for (const ci of infos) {
-        const ring2 = ci.cell.ring.map((q) => moves.get(vKey0(q)) ?? q);
-        const edges2 = ci.cell.edges.map((e) => ({
-          ...e,
-          a: moves.get(vKey0(e.a)) ?? e.a,
-          b: moves.get(vKey0(e.b)) ?? e.b,
-        }));
-        // neighbouring vertices may reconcile into the SAME point — drop the
-        // zero-length edges (ring and edge arrays stay index-aligned)
-        const keepRing: typeof ring2 = [];
-        const keepEdges: typeof edges2 = [];
-        for (let i = 0; i < ring2.length; i++) {
-          const nxt = ring2[(i + 1) % ring2.length];
-          if (Math.hypot(nxt.x - ring2[i].x, nxt.y - ring2[i].y) < 0.05) continue;
-          keepRing.push(ring2[i]);
-          keepEdges.push(edges2[i]);
-        }
-        if (keepRing.length >= 3) {
-          ci.cell.ring = keepRing;
-          ci.cell.edges = keepEdges;
-        }
-      }
-      reasons.push(`${reconciled} вершин сведено в точные пересечения плоскостей`);
-    }
-  }
-
   // ── fill planes: the skeleton's plane at the cell, datum-aligned to the
   //    measured neighbours (recon z is ground-relative, skeleton z is not) ──
   const skelIdx = buildIndexes(skeleton);

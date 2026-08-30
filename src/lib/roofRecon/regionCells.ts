@@ -61,6 +61,9 @@ export interface RegionCellsInput {
   absorbed?: (p: FootprintPoint) => boolean;
   probeFt?: number;
   minCellSqft?: number;
+  /** Лента по этапам: copies of the boundary geometry after each construction
+   *  stage, raster frame — purely observational. */
+  onStage?: (stage: "traced" | "straightened" | "nodes" | "terminals", polys: Array<{ pts: FootprintPoint[]; pair: [number, number] }>) => void;
 }
 
 export interface RegionCellEdge {
@@ -278,9 +281,6 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   const clusterPairKey = (ca: number, cb: number) => (ca < cb ? `${ca}|${cb}` : `${cb}|${ca}`);
   lineGeom.forEach((l, i) => lineForPair.set(clusterPairKey(l.between[0], l.between[1]), i));
   const clusterOfRegion = (r: number): number => input.clusterOf[r] ?? -1;
-  const controls = (li: number, p: FootprintPoint): boolean => {
-    const l = lineGeom[li];
-    const rel = { x: p.x - l.a.x, y: p.y - l.a.y };
     const perp = Math.abs(rel.x * l.n.x + rel.y * l.n.y);
     if (perp > l.corridor) return false;
     const t = rel.x * l.d.x + rel.y * l.d.y;
@@ -328,6 +328,10 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
     return { pts, pair: vp.pair, li, interCluster: ca >= 0 && cb >= 0 };
   });
+  const emitStage = (stage: "traced" | "straightened" | "nodes" | "terminals"): void => {
+    input.onStage?.(stage, simped.map((sp) => ({ pts: sp.pts.map((q) => ({ x: q.x, y: q.y })), pair: sp.pair })));
+  };
+  emitStage("traced");
   const refuse = { reach: 0, perp: 0, cross: 0 };
   let lastCross = "";
   const segsCross = (a: FootprintPoint, b: FootprintPoint, skipPoly: number, skipIdx: number[]): boolean => {
@@ -398,6 +402,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       sp.pts[i] = { ...target, c: true };
     }
   }
+  emitStage("straightened");
   // ── 5b. NODE CONSTRUCTION — exact, per junction, AFTER straightening ──
   // Order matters: nodes resolve against STRAIGHTENED neighbours, so their
   // new first segments are checked against final geometry (resolving before
@@ -583,6 +588,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
   }
   if (nodeMoves || nodeKept) report.push(`узлы: ${nodeMoves} построено в точных встречах, ${nodeKept} несходящихся — оставлены измеренными`);
+  emitStage("nodes");
 
   // ── 5c. TERMINAL CONSTRUCTION — a line's boundary end on the contour
   //        belongs at the LINE ∩ RING point ──
@@ -641,6 +647,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
   }
   if (termMoves) report.push(`терминалы: ${termMoves} построено в точках линия∩кольцо`);
+  emitStage("terminals");
   if (termRefused.length) report.push(`терминалы-отказы: ${termRefused.map((d2) => (d2 < 0 ? "нет цели" : d2.toFixed(1))).join(", ")}`);
   if (refuse.reach + refuse.perp + refuse.cross > 0) report.push(`отказы спрямления: reach ${refuse.reach} · perp ${refuse.perp} · crossing ${refuse.cross}`);
 
