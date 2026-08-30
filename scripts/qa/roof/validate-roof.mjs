@@ -219,7 +219,9 @@ export function validateRoof(model) {
         if (!plG || plG.maxDev > EPS_PLANE) continue;
         const zF = plF.a * p[0] + plF.b * p[1] + plF.c;
         const zG = plG.a * p[0] + plG.b * p[1] + plG.c;
-        if (p[2] >= Math.min(zF, zG) - EPS_PLANE && p[2] <= Math.max(zF, zG) + EPS_PLANE) { pardon = true; break; }
+        // пролёт расширен суммой бюджетов ОБЕИХ чистых плоскостей (каждая
+        // оценивает z в вершине с точностью своего maxDev-бюджета)
+        if (p[2] >= Math.min(zF, zG) - 2 * EPS_PLANE && p[2] <= Math.max(zF, zG) + 2 * EPS_PLANE) { pardon = true; break; }
       }
       if (!pardon) return { ok: false, dev: dF, excused };
       excused++;

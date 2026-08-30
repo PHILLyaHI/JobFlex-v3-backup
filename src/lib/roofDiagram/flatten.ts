@@ -58,6 +58,10 @@ export interface FlattenOptions {
    *  alone still flattens a facet; where vertices are shared the solve settles
    *  on the best compromise. */
   zOnly?: boolean;
+  /** Замороженный градиент грани (a, b в ft/ft): направление плоскости —
+   *  ИЗМЕРЕНИЕ (§J), свободная подгонка кольца вращала его на градусы ради
+   *  сварных вершин. С градиентом рефитится только высота (c). */
+  frozenGradFor?: (faceId: string) => [number, number] | null | undefined;
 }
 
 // Measured on 12629 NE 100th Pl (the worst warp in the fixtures): at 2.5 ft ×
@@ -230,7 +234,18 @@ export function flattenFacets(
     for (const f of model.faces) {
       const ring = ringOf(f.lineIds, idx);
       if (!ring || ring.length < 3) continue;
-      const pl = fitPlane(ring);
+      let pl = fitPlane(ring);
+      const fg = opts.frozenGradFor?.(f.id);
+      if (fg) {
+        // плоскость с измеренным направлением: n из (a,b), d — среднее по кольцу
+        const nn = Math.hypot(fg[0], fg[1], 1);
+        const nx = -fg[0] / nn;
+        const ny = -fg[1] / nn;
+        const nzv = 1 / nn;
+        let dm = 0;
+        for (const q of ring) dm += nx * q.x + ny * q.y + nzv * q.z;
+        pl = { nx, ny, nz: nzv, d: dm / ring.length };
+      }
       if (!pl) continue;
       planeByFace.set(f.id, pl);
       for (const p of ring) {

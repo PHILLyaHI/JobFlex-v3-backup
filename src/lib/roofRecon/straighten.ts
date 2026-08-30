@@ -75,6 +75,10 @@ export function mergeCollinearChains(
   /** Неопределённость узла по линии: коридор пары (planeTol/|∇A−∇B| + квант)
    *  — излом ниже её не форма. Нет данных — растровый квант. */
   tolOf?: (lineId: string) => number,
+  /** Линии под запретом слияния (например, план-близнецы стен: слияние
+   *  одной стороны пары ломает симметрию близнецов — лишнее ребро в
+   *  план-графе, Эйлер падает, территория рвётся). */
+  skipLine?: (lineId: string) => boolean,
 ): StraightenReport {
   const collapsed = collapseShortCreases(model, 4);
   let merged = 0;
@@ -100,6 +104,7 @@ export function mergeCollinearChains(
       // приёмка глазами — про складки; швы и контур несут парность
       // уровней и плановую чётность Эйлера, их звенья не трогаем
       if (l1.type !== "RIDGE" && l1.type !== "HIP" && l1.type !== "VALLEY") continue;
+      if (skipLine && (skipLine(l1.id) || skipLine(l2.id))) continue;
       const aId = l1.aId === pid ? l1.bId : l1.aId;
       const bId = l2.aId === pid ? l2.bId : l2.aId;
       if (aId === bId) continue; // а degenerate loop is not a chain
@@ -121,7 +126,27 @@ export function mergeCollinearChains(
       // the same boundary), else the vertex carries other structure
       const owners = model.faces.filter((f) => f.lineIds.includes(l1.id) || f.lineIds.includes(l2.id));
       if (owners.some((f) => !(f.lineIds.includes(l1.id) && f.lineIds.includes(l2.id)))) continue;
+      // хорда не смеет совпасть с существующей линией: каскадное слияние
+      // изломанного близнеца выдавало точную копию его пары (dup план-ребра,
+      // Эйлер 1 -> 0, разрыв территории на 419)
+      const pkM = (q: { x: number; y: number }) => `${Math.round(q.x * 100)}|${Math.round(q.y * 100)}`;
+      const chordKey = pkM(A) < pkM(B) ? `${pkM(A)}#${pkM(B)}` : `${pkM(B)}#${pkM(A)}`;
+      let dupChord = false;
+      for (const lx of model.lines) {
+        if (lx === l1 || lx === l2) continue;
+        const qa = ptById.get(lx.aId)!;
+        const qb = ptById.get(lx.bId)!;
+        const kx = pkM(qa) < pkM(qb) ? `${pkM(qa)}#${pkM(qb)}` : `${pkM(qb)}#${pkM(qa)}`;
+        if (kx === chordKey) { dupChord = true; break; }
+      }
+      if (dupChord) continue;
       // merge: l1 becomes A—B, l2 and P die
+      if (process.env.DBG_MERGE) {
+        const pkE = new Map(model.points.map((q) => [q.id, `${Math.round(q.x * 1000)}|${Math.round(q.y * 1000)}`]));
+        const vs = new Set(pkE.values());
+        const es = new Set(model.lines.map((lx) => { const a3 = pkE.get(lx.aId)!; const b3 = pkE.get(lx.bId)!; return a3 < b3 ? a3 + "#" + b3 : b3 + "#" + a3; }));
+        console.log(`[merge] ${l1.type} (${A.x.toFixed(1)},${A.y.toFixed(1)})-(${P.x.toFixed(1)},${P.y.toFixed(1)})-(${B.x.toFixed(1)},${B.y.toFixed(1)}) euler-до=${vs.size - es.size + model.faces.length}`);
+      }
       l1.aId = aId;
       l1.bId = bId;
       l1.lengthFt = Math.hypot(B.x - A.x, B.y - A.y, B.z - A.z);

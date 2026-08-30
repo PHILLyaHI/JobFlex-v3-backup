@@ -921,7 +921,10 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   //    R03 planarity by construction, at the validator's 0.08 ft, which raw
   //    surface samples (noise 0.12 ft) can never hold on their own. ──
   // сварка переписным полом связала вершины в узлы по 3+ граней — системе
-  // нужно больше раундов, чем расщеплённой (24 оставляли 0.63 ft)
+  // нужно больше раундов, чем расщеплённой (24 оставляли 0.63 ft).
+  // NB: замороженные градиенты через f.orientation НЕ подключать без
+  // выверенной конвенции угла — заморозка в чужом направлении дала G4
+  // до 83° (замерено 2026-08-30)
   const flat = flattenFacets(assembled, { iterations: 96 });
   const candidate = flat.model;
   // ── СЛОЙ ВЫПРЯМЛЕНИЯ: коллинеарное слияние звеньев (до типизации) ──
@@ -952,7 +955,9 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       return best;
     };
   })();
+  if (process.env.DBG_EULER) console.log("[euler] после flatten:", eulerOf(candidate));
   const straighten = mergeCollinearChains(candidate, m.stepFt, corridorOfLine);
+  if (process.env.DBG_EULER) console.log("[euler] после выпрямления:", eulerOf(candidate));
   if (straighten.merged || straighten.collapsed) reasons.push(`выпрямление: ${straighten.collapsed} огрызков схлопнуто (< 4 ft — шумовой пол шага 1), ${straighten.merged} звеньев слито; канон: ${rc.canonSnapped} линий`);
   reasons.push(`flatten: dev ${flat.report.devBeforeFt} → ${flat.report.devAfterFt} ft, ${flat.report.pointsMoved} vertices, max move ${flat.report.maxMoveFt} ft`);
   // figures follow the flattened geometry: pitch and area per face refit
@@ -1270,7 +1275,27 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       // пол допуска слияния — σ⊥ измеренной складки (0.5 ft, та же величина,
       // что в G4 линеек): излом 7.8° при ногах 5–7 ft (перп ~0.5) — ниже
       // шума направления трассы, не форма
-      const rep2 = mergeCollinearChains(candidate, Math.max(m.stepFt, 0.5), corridorOfLine);
+      // близнецам слияние запрещено: спрямление одной стороны пары ломает
+      // её симметрию (Эйлер 1 -> 0 на 419, разрыв территории 4.5 sf)
+      const twinIds = new Set<string>();
+      {
+        const pk6 = (pid: string) => {
+          const pt = ptById.get(pid)!;
+          return `${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`;
+        };
+        const byPair6 = new Map<string, string[]>();
+        for (const l of candidate.lines) {
+          const ka = pk6(l.aId);
+          const kb = pk6(l.bId);
+          const k = ka < kb ? `${ka}#${kb}` : `${kb}#${ka}`;
+          const arr = byPair6.get(k) ?? [];
+          arr.push(l.id);
+          byPair6.set(k, arr);
+        }
+        for (const g6 of byPair6.values()) if (g6.length >= 2) for (const id of g6) twinIds.add(id);
+      }
+      const rep2 = mergeCollinearChains(candidate, Math.max(m.stepFt, 0.5), corridorOfLine, (id) => twinIds.has(id));
+      if (process.env.DBG_EULER) console.log("[euler] после пост-слияния:", eulerOf(candidate));
       // ── обрезка ШПОР ──
       // Одновладельный хвост, чей свободный конец никого не встречает
       // (план-степень 1), — шпора кольца: партнёр сварен переписным полом,
@@ -1300,6 +1325,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         trimmed++;
       }
       if (trimmed > 0) reasons.push(`шпоры: ${trimmed} одновладельных хвостов обрезано`);
+      if (process.env.DBG_EULER) console.log("[euler] после шпор:", eulerOf(candidate), "| после слияния лесенок... trimmed:", trimmed, "merged:", rep2.merged);
       if (rep2.merged > 0 || trimmed > 0) {
         const pById3 = new Map(candidate.points.map((pt) => [pt.id, pt]));
         const pk3 = (pid: string) => {
@@ -1328,6 +1354,20 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         for (const [t, v] of Object.entries(f3)) footage2[t] = v;
         if (rep2.merged > 0) reasons.push(`лесенки: ${rep2.merged} безнаправленных звеньев слито после типизации`);
       }
+    }
+    // ── второй flatten: хирургии двигали план (слияния, шпоры, канон),
+    //    а z остались от старых позиций — остатки 0.1-0.3 на гранях у
+    //    сварных зон; вершины снова садятся на плоскости (сваренные — в
+    //    LS-точку МЕЖДУ планами, помилование R03 v2 их принимает)
+    {
+      // корректирующий, не пере-решающий: класс остатков 0.08-0.29 ft;
+      // полный решатель (24 ит., ход 3.5) вращал измеренные градиенты
+      // (G4 7.5°) и сжимал переписные клифы (G5) — потолок хода равен
+      // классу остатков, итераций три
+      const flat2 = flattenFacets(candidate, { iterations: 3, maxMoveFt: 0.35 });
+      candidate.points = flat2.model.points;
+      candidate.lines = flat2.model.lines;
+      candidate.faces = flat2.model.faces;
     }
     // ── ФИНАЛЬНЫЙ РЕФИТ ФИГУР: после шпор/слияний кольца дочинились,
     //    а уклоны у части граней остались от щипнутого состояния (A2 на

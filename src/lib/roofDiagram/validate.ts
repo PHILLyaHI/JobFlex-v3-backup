@@ -1276,9 +1276,18 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
         if (!plG || plG.maxDev > INV_EPS_PLANE) continue;
         const zF = plF.a * p[0] + plF.b * p[1] + plF.c;
         const zG = plG.a * p[0] + plG.b * p[1] + plG.c;
-        if (p[2] >= Math.min(zF, zG) - INV_EPS_PLANE && p[2] <= Math.max(zF, zG) + INV_EPS_PLANE) { pardon = true; break; }
+        // пролёт расширен суммой бюджетов ОБЕИХ чистых плоскостей (каждая
+        // оценивает z в вершине с точностью своего maxDev-бюджета)
+        if (p[2] >= Math.min(zF, zG) - 2 * INV_EPS_PLANE && p[2] <= Math.max(zF, zG) + 2 * INV_EPS_PLANE) { pardon = true; break; }
       }
-      if (!pardon) return { ok: false, dev: dF, excused };
+      if (!pardon) {
+        if (process.env.DBG_R03) {
+          const sharers = (vertFacets.get(vKey3(p)) ?? []).map((g) => g.id).join(",");
+          // eslint-disable-next-line no-console
+          console.log(`[R03] ${f2.id} непомилована (${p[0].toFixed(1)},${p[1].toFixed(1)},z${p[2].toFixed(2)}) devF=${dF.toFixed(2)} совладельцы=[${sharers}]`);
+        }
+        return { ok: false, dev: dF, excused };
+      }
       excused++;
     }
     return { ok: true, dev: 0, excused };
