@@ -104,5 +104,45 @@ const insideRing = (p: FootprintPoint) => p.x > -25 && p.x < 25 && p.y > -25 && 
   check("правая ячейка ≈ счёту пикселей", areas[1], want[1], 40);
 }
 
+// ── C. апекс, раздробленный растром на стыки в футе ──
+{
+  console.log("РАЗДРОБЛЕННЫЙ АПЕКС — три диагональные границы, один узел в (0,0)");
+  const labels = new Int32Array(W * H).fill(-1);
+  for (let iy = 0; iy < H; iy++) {
+    for (let ix = 0; ix < W; ix++) {
+      const p = centerOf(ix, iy);
+      if (!insideRing(p)) continue;
+      labels[iy * W + ix] = p.x < -Math.abs(p.y) ? 0 : p.y >= 0 ? 1 : 2;
+    }
+  }
+  const r = buildRegionCells({
+    labels,
+    regionKind: ["cluster", "cluster", "cluster"],
+    clusterOf: [0, 1, 2],
+    width: W, height: H, stepFt: STEP,
+    contour: RING,
+    lines: [
+      { a: { x: -8, y: 8 }, b: { x: -1.5, y: 1.5 }, between: [0, 1], sigmaPerpFt: 0.3, gradDiffPerFt: 1 },
+      { a: { x: -8, y: -8 }, b: { x: -1.5, y: -1.5 }, between: [0, 2], sigmaPerpFt: 0.3, gradDiffPerFt: 1 },
+      { a: { x: 1.5, y: 0 }, b: { x: 8, y: 0 }, between: [1, 2], sigmaPerpFt: 0.3, gradDiffPerFt: 1 },
+    ],
+  });
+  check("ячеек", r.cells.length, 3, 0);
+  check("Euler", r.euler, 1, 0);
+  check("замощение %", r.tilingPct, 0, 0.15);
+  const areas = r.cells.map((c) => c.areaSqft).sort((a, b) => a - b);
+  check("A (клин) sf", areas[0], 625, 8);
+  check("B sf", areas[1], 937.5, 8);
+  check("C sf", areas[2], 937.5, 8);
+  const near = new Set<string>();
+  for (const c of r.cells) for (const p of c.ring) {
+    if (Math.hypot(p.x, p.y) < 2) near.add(`${p.x.toFixed(2)}|${p.y.toFixed(2)}`);
+  }
+  check("вершин в 2 ft от апекса (одна)", near.size, 1, 0);
+  const one = [...near][0]?.split("|").map(Number) ?? [9, 9];
+  check("узел в (0,0), ft", Math.hypot(one[0], one[1]), 0, 0.15);
+  for (const line of r.report) console.log(`    – ${line}`);
+}
+
 console.log(failures ? `\n${failures} FAIL` : "\nALL PASS");
 process.exit(failures ? 1 : 0);

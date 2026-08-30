@@ -706,10 +706,10 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     }
     const out = new Map<CellInfo, { z: number; tag?: string }>();
     // Residual disagreement that averaging cannot hide: the validator allows
-    // a face 0.08 ft of planarity, so a same-level mismatch beyond 2×0.08
-    // cannot be split between two faces by a mean — the vertex honestly
+    // a face 0.08 ft of planarity, and the LS refit does not split a vertex
+    // mean evenly — so any same-level mismatch beyond that very budget
     // SPLITS into a micro-seam (each side on its own plane), like a step.
-    const SPLIT_TOL = 0.16;
+    const SPLIT_TOL = 0.08;
     {
       const regrouped: typeof groups = [];
       for (const g of groups) {
@@ -855,7 +855,122 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     p.y = q.y;
   }
 
-  // provenance per face: replicate the assembler's stable area-rank order
+  // ── типизация на готовом полиэдре: только УЧЁТ, не структура ──
+  // Merging seam LINES structurally broke rings (their endpoints are split
+  // points); the model keeps its dual seam lines, and the FOOTAGE counts one
+  // line per plan position (z-gap < STEP_DZ), typed by the crease rule on
+  // the final face planes — the same работа the old path did after synthesis.
+  {
+    const ptById = new Map(candidate.points.map((pt) => [pt.id, pt]));
+    const idxT = buildIndexes(candidate);
+    const facePlane = new Map<string, Plane>();
+    for (const f of candidate.faces) {
+      const r = ringOf(f.lineIds, idxT);
+      if (!r || r.length < 3) continue;
+      const pl = fitPlane(r);
+      if (pl) facePlane.set(f.id, pl);
+    }
+    const faceCentroid = new Map<string, FootprintPoint>();
+    for (const f of candidate.faces) {
+      const r = ringOf(f.lineIds, idxT);
+      if (!r || r.length < 3) continue;
+      faceCentroid.set(f.id, {
+        x: r.reduce((s2, q) => s2 + q.x, 0) / r.length,
+        y: r.reduce((s2, q) => s2 + q.y, 0) / r.length,
+      });
+    }
+    const ownersOf = new Map<string, string[]>();
+    for (const f of candidate.faces) for (const id of f.lineIds) {
+      const arr = ownersOf.get(id) ?? [];
+      arr.push(f.id);
+      ownersOf.set(id, arr);
+    }
+    const planKey = (pid: string) => {
+      const pt = ptById.get(pid)!;
+      return `${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`;
+    };
+    interface LGroup { lines: Array<(typeof candidate.lines)[number]>; }
+    const groupsL = new Map<string, LGroup>();
+    for (const l of candidate.lines) {
+      const a = planKey(l.aId);
+      const b = planKey(l.bId);
+      const k = a < b ? `${a}#${b}` : `${b}#${a}`;
+      const g = groupsL.get(k) ?? { lines: [] };
+      g.lines.push(l);
+      groupsL.set(k, g);
+    }
+    // the standing crease law (creases.ts): a fold "runs level" within 0.5/12
+    const LEVEL_SLOPE = 0.5 / 12;
+    const footage2 = {} as Record<string, number>;
+    const bump = (t: string, v: number) => { footage2[t] = (footage2[t] ?? 0) + v; };
+    for (const g of groupsL.values()) {
+      const zsp = g.lines.map((l) => (ptById.get(l.aId)!.z + ptById.get(l.bId)!.z) / 2);
+      const isSeamPair = g.lines.length >= 2 && Math.max(...zsp) - Math.min(...zsp) < STEP_DZ_FT;
+      if (!isSeamPair) {
+        // interior lines retype by the final planes too — inherited step-1
+        // types were measured on pre-construction geometry
+        for (const l of g.lines) {
+          const own2 = (ownersOf.get(l.id) ?? [])
+            .map((fid) => ({ pl: facePlane.get(fid), c: faceCentroid.get(fid) }))
+            .filter((x): x is { pl: Plane; c: FootprintPoint } => !!x.pl && !!x.c);
+          if (own2.length === 2) {
+            const a2 = ptById.get(l.aId)!;
+            const b2 = ptById.get(l.bId)!;
+            const run2 = Math.hypot(b2.x - a2.x, b2.y - a2.y);
+            if (run2 > 1e-6) {
+              const level2 = Math.abs(a2.z - b2.z) <= Math.max(0.08, LEVEL_SLOPE * run2);
+              const mid2 = { x: (a2.x + b2.x) / 2, y: (a2.y + b2.y) / 2 };
+              const zc2 = (a2.z + b2.z) / 2;
+              const dir2 = { x: (b2.x - a2.x) / run2, y: (b2.y - a2.y) / run2 };
+              const per2 = { x: -dir2.y, y: dir2.x };
+              const side = (o: { pl: Plane; c: FootprintPoint }) =>
+                Math.sign((o.c.x - mid2.x) * per2.x + (o.c.y - mid2.y) * per2.y) || 1;
+              const s1 = side(own2[0]);
+              const s2b = side(own2[1]);
+              const zp1 = own2[0].pl.a * (mid2.x + per2.x * s1 * PROBE_FT) + own2[0].pl.b * (mid2.y + per2.y * s1 * PROBE_FT) + own2[0].pl.c;
+              const zp2 = own2[1].pl.a * (mid2.x + per2.x * s2b * PROBE_FT) + own2[1].pl.b * (mid2.y + per2.y * s2b * PROBE_FT) + own2[1].pl.c;
+              if (zp1 > zc2 && zp2 > zc2) l.type = "VALLEY";
+              else if (zp1 < zc2 && zp2 < zc2) l.type = level2 ? "RIDGE" : "HIP";
+            }
+          }
+          bump(l.type, l.lengthFt);
+        }
+        continue;
+      }
+      // one physical line: retype by the crease rule across BOTH sides' faces
+      const own = g.lines
+        .flatMap((l) => ownersOf.get(l.id) ?? [])
+        .map((fid) => ({ pl: facePlane.get(fid), c: faceCentroid.get(fid) }))
+        .filter((x): x is { pl: Plane; c: FootprintPoint } => !!x.pl && !!x.c);
+      const l0 = g.lines[0];
+      const a = ptById.get(l0.aId)!;
+      const b = ptById.get(l0.bId)!;
+      const run = Math.hypot(b.x - a.x, b.y - a.y);
+      let type: string = l0.type;
+      if (own.length >= 2 && run > 1e-6) {
+        const level = Math.abs(a.z - b.z) <= Math.max(0.08, LEVEL_SLOPE * run);
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const zc = (a.z + b.z) / 2;
+        const dir = { x: (b.x - a.x) / run, y: (b.y - a.y) / run };
+        const per = { x: -dir.y, y: dir.x };
+        const sideG = (o: { pl: Plane; c: FootprintPoint }) =>
+          Math.sign((o.c.x - mid.x) * per.x + (o.c.y - mid.y) * per.y) || 1;
+        const sg1 = sideG(own[0]);
+        const sg2 = sideG(own[1]);
+        const z1 = own[0].pl.a * (mid.x + per.x * sg1 * PROBE_FT) + own[0].pl.b * (mid.y + per.y * sg1 * PROBE_FT) + own[0].pl.c;
+        const z2 = own[1].pl.a * (mid.x + per.x * sg2 * PROBE_FT) + own[1].pl.b * (mid.y + per.y * sg2 * PROBE_FT) + own[1].pl.c;
+        if (z1 > zc && z2 > zc) type = "VALLEY";
+        else if (z1 < zc && z2 < zc) type = level ? "RIDGE" : "HIP";
+      }
+      // the drawing shows one line: both twins carry the merged type
+      for (const l of g.lines) l.type = type as (typeof l)["type"];
+      bump(type, l0.lengthFt);
+    }
+    for (const t of ["EAVE", "RIDGE", "VALLEY", "HIP", "RAKE", "FLASHING", "STEPFLASH", "OTHER"]) footage2[t] = footage2[t] ?? 0;
+    candidate.totals = { ...candidate.totals, footageByType: footage2 as typeof candidate.totals.footageByType };
+  }
+
+  // provenance per face: replicate the assembler's stable area-rank order  // provenance per face: replicate the assembler's stable area-rank order
   const order = infos
     .map((ci, i) => ({ i, area: Math.abs(signedArea(ci.cell.ring)) }))
     .sort((x, y) => x.area - y.area);
