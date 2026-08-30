@@ -57,6 +57,8 @@ export interface RegionCellsInput {
    *  12621: 80% of border pixels do, med 0.35 ft from the analytic line. When
    *  given, straightening trusts it instead of the corridor width. */
   dualFit?: (p: FootprintPoint, line: RegionLine) => boolean;
+  /** True when p lies in dilation-absorbed territory (no assigned pixels). */
+  absorbed?: (p: FootprintPoint) => boolean;
   probeFt?: number;
   minCellSqft?: number;
 }
@@ -87,6 +89,8 @@ export interface RegionCellsResult {
   /** Inter-cluster boundary accounting — the stop-condition numbers. */
   straightenedFt: number;
   raggedFt: number;
+  /** Straightened only by the absorbed-territory rule (dilation artifacts). */
+  artifactFt: number;
   report: string[];
 }
 
@@ -435,6 +439,9 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   const edges: FinalEdge[] = [];
   let straightenedFt = 0;
   let raggedFt = 0;
+  // artifactFt stays 0 until the absorbed-territory straightening lands with
+  // the in-graph exact construction (see ROOF-STATE, final-block record).
+  const artifactFt = 0;
   for (const sp of simped) {
     for (let i = 0; i + 1 < sp.pts.length; i++) {
       const u = nodeAt(sp.pts[i]);
@@ -575,5 +582,5 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   const total = cells0.reduce((s, f) => s + f.area, 0);
   const tilingPct = contourArea > 0 ? (Math.abs(total - contourArea) / contourArea) * 100 : 0;
 
-  return { cells, euler, tilingPct, straightenedFt, raggedFt, report };
+  return { cells, euler, tilingPct, straightenedFt, raggedFt, artifactFt, report };
 }
