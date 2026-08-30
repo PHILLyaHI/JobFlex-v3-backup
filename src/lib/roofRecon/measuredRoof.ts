@@ -925,6 +925,28 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // NB: замороженные градиенты через f.orientation НЕ подключать без
   // выверенной конвенции угла — заморозка в чужом направлении дала G4
   // до 83° (замерено 2026-08-30)
+  if (process.env.DBG_COVER) {
+    const idxC = buildIndexes(assembled);
+    const ringsC: FootprintPoint[][] = [];
+    for (const f of assembled.faces) {
+      const rC = ringOf(f.lineIds, idxC);
+      if (rC && rC.length >= 3) ringsC.push(rC.map((q) => ({ x: q.x, y: q.y })));
+    }
+    const inPC = (x: number, y: number, ring: FootprintPoint[]): boolean => {
+      let ins = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        if (ring[i].y > y !== ring[j].y > y && x < ((ring[j].x - ring[i].x) * (y - ring[i].y)) / (ring[j].y - ring[i].y) + ring[i].x) ins = !ins;
+      }
+      return ins;
+    };
+    let unC = 0;
+    let cxs = 0, cys = 0;
+    for (let y = -40; y <= 40; y += 0.75) for (let x = -40; x <= 40; x += 0.75) {
+      if (!inRing({ x, y }, movedRing)) continue;
+      if (!ringsC.some((rg) => inPC(x, y, rg))) { unC++; cxs += x; cys += y; }
+    }
+    console.log(`[cover] после сборки: непокрыто ${(unC * 0.5625).toFixed(1)} sf${unC ? ` центр (${(cxs / unC).toFixed(1)},${(cys / unC).toFixed(1)})` : ""}`);
+  }
   const flat = flattenFacets(assembled, { iterations: 96 });
   const candidate = flat.model;
   // ── СЛОЙ ВЫПРЯМЛЕНИЯ: коллинеарное слияние звеньев (до типизации) ──
@@ -1171,8 +1193,17 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         const t = inBand(l0) ? null : creaseType(l0, owners);
         if (t) l0.type = t as (typeof l0)["type"];
         // нерешённый перегиб ВНЕ кольца не имеет права зваться RAKE/EAVE —
-        // на контуре типы шага 1 остаются, внутри крыши это OTHER
+        // на контуре типы шага 1 остаются, внутри крыши это OTHER.
+        // В ПОЛОСЕ каймы гасится и предтипизационный тип складки: тип в
+        // полосе живёт только продолжением изнутри (наклонный «RIDGE»
+        // 0.42 ft/ft у кольца 419 переживал полосу со старым типом)
         else if (!onRing && (l0.type === "RAKE" || l0.type === "EAVE")) l0.type = "OTHER";
+        // и складка, которую ФИНАЛЬНЫЕ плоскости не подтверждают (пробы
+        // монотонны/копланарны -> null), не наследует предтипизационный
+        // тип: заявка складки — только от плоскостей (наклонный «RIDGE»
+        // 0.42 ft/ft на 419 переживал типизацию старым типом). Петля
+        // непрерывности вернёт тип, если своя пара продолжается.
+        else if (!onRing && (l0.type === "RIDGE" || l0.type === "HIP" || l0.type === "VALLEY")) l0.type = "OTHER";
         // шов, ЦЕЛИКОМ лежащий на внешнем контуре (G6-домен: обе точки и
         // середина ≤ STUB), без переписного близнеца — не стык с вертикалью,
         // а хвост границы у кольца: OTHER. Внутренние швы не трогаем — они
@@ -1266,6 +1297,52 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       }
       if (!changed) break;
     }
+    const dbgCover = (tag: string): void => {
+      if (!process.env.DBG_COVER) return;
+      const idxC = buildIndexes(candidate);
+      const ringsC: FootprintPoint[][] = [];
+      for (const f of candidate.faces) {
+        const rC = ringOf(f.lineIds, idxC);
+        if (rC && rC.length >= 3) ringsC.push(rC.map((q) => ({ x: q.x, y: q.y })));
+      }
+      const inPC = (x: number, y: number, ring: FootprintPoint[]): boolean => {
+        let ins = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          if (ring[i].y > y !== ring[j].y > y && x < ((ring[j].x - ring[i].x) * (y - ring[i].y)) / (ring[j].y - ring[i].y) + ring[i].x) ins = !ins;
+        }
+        return ins;
+      };
+      let unC = 0, cxs = 0, cys = 0;
+      for (let y = -40; y <= 40; y += 0.75) for (let x = -40; x <= 40; x += 0.75) {
+        if (!inPC(x, y, contour as never)) continue;
+        if (!ringsC.some((rg) => inPC(x, y, rg))) { unC++; cxs += x; cys += y; }
+      }
+      console.log(`[cover] ${tag}: ${(unC * 0.5625).toFixed(1)} sf${unC ? ` центр (${(cxs / unC).toFixed(1)},${(cys / unC).toFixed(1)})` : ""}`);
+      if (process.env.DBG_WHO) {
+        const [wx, wy] = process.env.DBG_WHO.split(",").map(Number);
+        const idxW = buildIndexes(candidate);
+        const holders: string[] = [];
+        for (const f of candidate.faces) {
+          const rW = ringOf(f.lineIds, idxW);
+          if (rW && rW.length >= 3 && inPC(wx, wy, rW.map((q) => ({ x: q.x, y: q.y })))) holders.push(f.designator + "(" + rW.length + "тчк)");
+          if (!rW || rW.length < 3) holders.push(f.designator + "(PINCH)");
+        }
+        console.log(`[who] ${tag}: (${wx},${wy}) в: ${holders.join(", ") || "НИКТО"}`);
+        const fW = candidate.faces.find((f2) => f2.designator === process.env.DBG_WHO_FACE);
+        if (fW) {
+          const pById9 = new Map(candidate.points.map((pt) => [pt.id, pt]));
+          const descW = [...new Set(fW.lineIds)].map((id) => {
+            const l9 = candidate.lines.find((l2) => l2.id === id);
+            if (!l9) return id + ":МЁРТВАЯ";
+            const a9 = pById9.get(l9.aId)!;
+            const b9 = pById9.get(l9.bId)!;
+            return `${id}(${a9.x.toFixed(1)},${a9.y.toFixed(1)})-(${b9.x.toFixed(1)},${b9.y.toFixed(1)})`;
+          });
+          console.log(`[who] ${fW.designator} линии: ${descW.join(" ")}`);
+        }
+      }
+    };
+    dbgCover("до пост-слияния");
     // ── пост-типизационное слияние лесенок ──
     // Слой выпрямления бежит ДО типизации: цепи границ ещё не HIP/VALLEY,
     // и §J-слияние безнаправленных звеньев (короче 2σ⊥) их не видело.
@@ -1294,8 +1371,22 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         }
         for (const g6 of byPair6.values()) if (g6.length >= 2) for (const id of g6) twinIds.add(id);
       }
-      const rep2 = mergeCollinearChains(candidate, Math.max(m.stepFt, 0.5), corridorOfLine, (id) => twinIds.has(id));
+      // и только НАСТОЯЩУЮ границу двух граней: слияние одновладельной
+      // цепи спрямляет одну сторону близнецов, и полоса между ними
+      // сиротеет (дыра 7.3 sf на 419 открывалась именно здесь — замер
+      // покрытия по стадиям)
+      // коридор подходных звеньев — от ПАР ПЛОСКОСТЕЙ их владельцев
+      // (planeTol/|∇A−∇B| + шаг): rcLines их не матчит, и звенья у узлов
+      // держали изломы 32-64°, которые раньше молча телепортировал снос
+      const ownersCorridor = (id: string): number => {
+        const own = (ownersOf.get(id) ?? []).map((fid) => facePlane.get(fid)).filter((x): x is Plane => !!x);
+        if (own.length < 2) return 0;
+        const gd = Math.hypot(own[0].a - own[1].a, own[0].b - own[1].b);
+        return gd > 1e-6 ? DEFAULT_PLANE_TOL_FT / gd + m.stepFt : 6; // копланарные: направления нет, PROBE
+      };
+      const rep2 = mergeCollinearChains(candidate, Math.max(m.stepFt, 0.5), (id) => Math.max(corridorOfLine(id), ownersCorridor(id)), (id) => twinIds.has(id) || (ownersOf.get(id) ?? []).length < 2);
       if (process.env.DBG_EULER) console.log("[euler] после пост-слияния:", eulerOf(candidate));
+      dbgCover("после пост-слияния");
       // ── обрезка ШПОР ──
       // Одновладельный хвост, чей свободный конец никого не встречает
       // (план-степень 1), — шпора кольца: партнёр сварен переписным полом,
@@ -1325,6 +1416,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         trimmed++;
       }
       if (trimmed > 0) reasons.push(`шпоры: ${trimmed} одновладельных хвостов обрезано`);
+      dbgCover("после шпор");
       if (process.env.DBG_EULER) console.log("[euler] после шпор:", eulerOf(candidate), "| после слияния лесенок... trimmed:", trimmed, "merged:", rep2.merged);
       if (rep2.merged > 0 || trimmed > 0) {
         const pById3 = new Map(candidate.points.map((pt) => [pt.id, pt]));
@@ -1360,14 +1452,91 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     //    сварных зон; вершины снова садятся на плоскости (сваренные — в
     //    LS-точку МЕЖДУ планами, помилование R03 v2 их принимает)
     {
-      // корректирующий, не пере-решающий: класс остатков 0.08-0.29 ft;
-      // полный решатель (24 ит., ход 3.5) вращал измеренные градиенты
-      // (G4 7.5°) и сжимал переписные клифы (G5) — потолок хода равен
-      // классу остатков, итераций три
-      const flat2 = flattenFacets(candidate, { iterations: 3, maxMoveFt: 0.35 });
-      candidate.points = flat2.model.points;
-      candidate.lines = flat2.model.lines;
-      candidate.faces = flat2.model.faces;
+      // ── финальная пересадка z ──
+      // Хирургии двигали ПЛАН (слияния, шпоры), z оставались от старых
+      // позиций — вершины вылезали из пролёта плоскостей (R03 не миловал).
+      // Каждая вершина получает z из плоскостей СВОИХ граней в финальной
+      // позиции: подпереписной разброс — среднее (ровно то, что милует
+      // R03 v2: вершина между честными плоскостями); разброс от стены —
+      // не трогаем (это стык уровней, у сторон свои точки).
+      {
+        const faceOfLine = new Map<string, string[]>();
+        for (const f of candidate.faces) for (const id of new Set(f.lineIds)) {
+          const arr = faceOfLine.get(id) ?? [];
+          if (!arr.includes(f.id)) arr.push(f.id);
+          faceOfLine.set(id, arr);
+        }
+        const facesOfPt = new Map<string, Set<string>>();
+        for (const l of candidate.lines) {
+          for (const pid of [l.aId, l.bId]) {
+            const set5 = facesOfPt.get(pid) ?? new Set<string>();
+            for (const fid of faceOfLine.get(l.id) ?? []) set5.add(fid);
+            facesOfPt.set(pid, set5);
+          }
+        }
+        // плоскости — от ФИНАЛЬНЫХ колец (facePlane снят до хирургий и
+        // устарел), с итерацией подгонка-пересадка: линейка мерит те же
+        // кольца, самосогласованность обязательна
+        let rezed = 0;
+        for (let round7 = 0; round7 < 3; round7++) {
+          const idx7 = buildIndexes(candidate);
+          const pl7 = new Map<string, Plane>();
+          for (const f of candidate.faces) {
+            let r7 = ringOf(f.lineIds, idx7);
+            if (!r7 || r7.length < 3) {
+              const seen7 = new Set<string>();
+              const cloud7: (typeof candidate.points)[number][] = [];
+              for (const id of new Set(f.lineIds)) {
+                const l7 = candidate.lines.find((l2) => l2.id === id);
+                if (!l7) continue;
+                for (const pid of [l7.aId, l7.bId]) {
+                  if (seen7.has(pid)) continue;
+                  seen7.add(pid);
+                  const q7 = candidate.points.find((q) => q.id === pid);
+                  if (q7) cloud7.push(q7);
+                }
+              }
+              r7 = cloud7.length >= 3 ? cloud7 : null;
+            }
+            if (!r7) continue;
+            const fit7 = fitPlane(r7);
+            if (fit7) pl7.set(f.id, fit7);
+          }
+          let moved7 = 0;
+          for (const pt of candidate.points) {
+            const pls = [...(facesOfPt.get(pt.id) ?? [])].map((fid) => pl7.get(fid)).filter((x): x is Plane => !!x);
+            if (!pls.length) continue;
+            const zs5 = pls.map((pl5) => pl5.a * pt.x + pl5.b * pt.y + pl5.c);
+            if (Math.max(...zs5) - Math.min(...zs5) >= STEP_DZ_FT) continue;
+            const zNew = zs5.reduce((s5, z5) => s5 + z5, 0) / zs5.length;
+            if (Math.abs(zNew - pt.z) > 0.01) { pt.z = zNew; moved7++; }
+          }
+          rezed = Math.max(rezed, moved7);
+          if (!moved7) break;
+        }
+        if (rezed) {
+          const pById7 = new Map(candidate.points.map((q) => [q.id, q]));
+          for (const l of candidate.lines) {
+            const a7 = pById7.get(l.aId);
+            const b7 = pById7.get(l.bId);
+            if (a7 && b7) l.lengthFt = Math.hypot(b7.x - a7.x, b7.y - a7.y, b7.z - a7.z);
+          }
+          reasons.push(`пересадка z: ${rezed} вершин на плоскости своих граней`);
+          // пересадка меняет высоты ПОСЛЕ типизации — ровность конька
+          // перепроверяется по финальным z (конёк, ставший наклонным на
+          // 0.42 ft/ft, — вальма по закону складок)
+          for (const l of candidate.lines) {
+            if (l.type !== "RIDGE") continue;
+            const a8 = pById7.get(l.aId);
+            const b8 = pById7.get(l.bId);
+            if (!a8 || !b8) continue;
+            const run8 = Math.hypot(b8.x - a8.x, b8.y - a8.y);
+            if (run8 < 1e-6) continue;
+            if (Math.abs(a8.z - b8.z) > Math.max(0.08, LEVEL_SLOPE * run8)) l.type = "HIP";
+          }
+        }
+      }
+      dbgCover("после пересадки z");
     }
     // ── ФИНАЛЬНЫЙ РЕФИТ ФИГУР: после шпор/слияний кольца дочинились,
     //    а уклоны у части граней остались от щипнутого состояния (A2 на

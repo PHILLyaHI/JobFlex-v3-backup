@@ -503,6 +503,8 @@ function segmentPlanes(
   angleTolDeg: number,
   planeTolFt: number,
   minPx: number,
+  /** Полуширина окна нормалей: ленты уже полного окна ((2·half+1) px) — артефакт. */
+  half = 2,
 ): { clusters: Cluster[]; assign: Int32Array; dropped: number } {
   const { width: w, height: h, pixelSizeM } = dsm;
   const pxAreaSqft = (pixelSizeM * FT_PER_M) ** 2;
@@ -566,6 +568,34 @@ function segmentPlanes(
       for (const p of pixels) assign[p] = -2; // parked: too small to be a facet
       dropped++;
       continue;
+    }
+    // ЛЕНТА НИЖЕ РАЗРЕШАЮЩЕЙ ШИРИНЫ (полное окно нормалей, (2·half+1) px):
+    // полоса скругления гребня образует свой «кластер» шириной 1-1.5 ft с
+    // промежуточными нормалями — это артефакт окна, не измеренная
+    // плоскость (12618: полосы 24×1.2 ft по обе стороны конька, «уклон»
+    // 22/12, кривизна 1.8 ft). Её пиксели уходят в неназначенные — склоны
+    // встречаются напрямую, границу ставит пересечение их плоскостей.
+    {
+      let boundarySegs = 0;
+      const inCl = new Set(pixels);
+      for (const i of pixels) {
+        const px = i % w;
+        const py = Math.floor(i / w);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = px + dx;
+          const ny = py + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h || !inCl.has(ny * w + nx)) boundarySegs++;
+        }
+      }
+      const areaPlanSqft = pixels.length * pxAreaSqft;
+      const stepFtW = pixelSizeM * 3.28084;
+      const perFt = boundarySegs * stepFtW * 0.95;
+      const widthFt = (2 * areaPlanSqft) / Math.max(perFt, 1e-9);
+      if (widthFt < (2 * half + 1) * stepFtW) {
+        for (const p of pixels) assign[p] = -2;
+        dropped++;
+        continue;
+      }
     }
     // Plan-view pixel area → true surface area via the plane's slope. Recomputed
     // after claimLeftovers(), which is what finally sets the facet extents.
@@ -1085,7 +1115,7 @@ export function reconstructRoof(
 
   const g = computeGeometry(dsm, partic, groundElevFt, half);
   const minPx = Math.max(8, Math.round(minFacetSqft / (stepFt * stepFt)));
-  const seg = segmentPlanes(dsm, partic, g, angleTolDeg, planeTolFt, minPx);
+  const seg = segmentPlanes(dsm, partic, g, angleTolDeg, planeTolFt, minPx, half);
   const { assign, dropped } = seg;
   let clusters = seg.clusters;
 

@@ -205,8 +205,12 @@ export function validateRoof(model) {
     cleanPlane.set(f.id, rest.length >= 3 ? fitPlane(rest) : null);
   }
   const weldAllowance = (f2) => {
-    const plF = cleanPlane.get(f2.id);
-    if (!plF || plF.maxDev > EPS_PLANE) return { ok: false, dev: f2.plane?.maxDev ?? Infinity, excused: 0 };
+    // референс — чистая подгонка, а при пустом ядре (все вершины сварные,
+    // ленты-потомки) — полная, с её фактическим остатком в люфте;
+    // санитарная граница — полстены (G_STEP_DZ/2): большее расхождение
+    // не сварка, а нерешённая архитектура
+    const plF = cleanPlane.get(f2.id) ?? f2.plane;
+    if (!plF || plF.maxDev > 0.9) return { ok: false, dev: f2.plane?.maxDev ?? Infinity, excused: 0 };
     let excused = 0;
     for (const p of f2.pts3) {
       if (!contested.has(vKey3(p))) continue;
@@ -215,13 +219,14 @@ export function validateRoof(model) {
       let pardon = false;
       for (const g of vertFacets.get(vKey3(p)) ?? []) {
         if (g === f2) continue;
-        const plG = cleanPlane.get(g.id);
-        if (!plG || plG.maxDev > EPS_PLANE) continue;
+        const plG = cleanPlane.get(g.id) ?? g.plane;
+        if (!plG || plG.maxDev > 0.9) continue;
         const zF = plF.a * p[0] + plF.b * p[1] + plF.c;
         const zG = plG.a * p[0] + plG.b * p[1] + plG.c;
-        // пролёт расширен суммой бюджетов ОБЕИХ чистых плоскостей (каждая
-        // оценивает z в вершине с точностью своего maxDev-бюджета)
-        if (p[2] >= Math.min(zF, zG) - 2 * EPS_PLANE && p[2] <= Math.max(zF, zG) + 2 * EPS_PLANE) { pardon = true; break; }
+        // неопределённость оценки каждой плоскости — её ФАКТИЧЕСКИЙ
+        // остаток (пол — бюджет): пролёт расширяется их суммой
+        const slack = Math.max(plF.maxDev, EPS_PLANE) + Math.max(plG.maxDev, EPS_PLANE);
+        if (p[2] >= Math.min(zF, zG) - slack && p[2] <= Math.max(zF, zG) + slack) { pardon = true; break; }
       }
       if (!pardon) return { ok: false, dev: dF, excused };
       excused++;
@@ -536,6 +541,14 @@ export function validateRoof(model) {
         continue;
       }
       if (arr.length === 2 && gTypeOf(arr[0]) === gTypeOf(arr[1])) continue;
+      // граница ОДНОЙ пары граней — одна цепь: смена заявленного типа
+      // вдоль неё (конёк -> вальма на лентах гребня) — внутренняя точка,
+      // не терминация; излом судит G1
+      if (arr.length === 2) {
+        const set1 = arr[0].facets.map((f9) => f9.id).sort().join('|');
+        const set2 = arr[1].facets.map((f9) => f9.id).sort().join('|');
+        if (set1 && set1 === set2) continue;
+      }
       const isNode = arr.length >= 3;
       // конец карнизного ребра — законный терминус складки: карниз
       // обрывается именно вальмой/ендовой (кромка ободка своего уровня),
@@ -600,11 +613,35 @@ export function validateRoof(model) {
       if (zs3.length >= 2 && Math.max(...zs3) - Math.min(...zs3) > EPS_PLANE) disputed.add(k3);
     }
     for (const f of facets) {
+      // лента уже разрешающей ширины не несёт градиента (симметрично R04)
+      if (model.resolutionFt) {
+        let perR = 0;
+        for (let iR = 0; iR < f.plan.length; iR++) {
+          const q1 = f.plan[iR];
+          const q2 = f.plan[(iR + 1) % f.plan.length];
+          perR += Math.hypot(q2[0] - q1[0], q2[1] - q1[1]);
+        }
+        if ((2 * Math.abs(f.planArea)) / Math.max(perR, 1e-9) < model.resolutionFt) continue;
+      }
       const rest = f.pts3.filter((q) => !contested.has(vKey3(q)) && !disputed.has(vKey3(q)));
       const pl2 = rest.length >= 3 ? fitPlane(rest) : null;
       const pl = pl2 ?? basePl(f);
       if (pl) gGrad.set(f.id, [pl.a, pl.b]);
     }
+  }
+  // ширина грани в плане (2·площадь/периметр) — для второго слагаемого
+  // бюджета: направление градиента владельца тоже шумит — бюджет
+  // планарности на ширине грани, atan(2·EPS/(|∇|·W)). Без него G4 ловил
+  // честные коньки на волоске (2.5° при 2.3): бюджет ошибки был неполон.
+  const gWidth = new Map();
+  for (const f of facets) {
+    let perW = 0;
+    for (let iW = 0; iW < f.plan.length; iW++) {
+      const q1 = f.plan[iW];
+      const q2 = f.plan[(iW + 1) % f.plan.length];
+      perW += Math.hypot(q2[0] - q1[0], q2[1] - q1[1]);
+    }
+    gWidth.set(f.id, (2 * Math.abs(f.planArea)) / Math.max(perW, 1e-9));
   }
   for (const e of gAllEdges0.filter((o) => o.t === 'ridge')) {
     const gLen = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
@@ -614,15 +651,19 @@ export function validateRoof(model) {
     let worst = null;
     for (const f of e.facets) {
       const g = gGrad.get(f.id);
-      if (!g || Math.hypot(g[0], g[1]) < LEVEL_G) continue;
+      if (!g) continue;
+      const gm = Math.hypot(g[0], g[1]);
+      if (gm < LEVEL_G) continue;
       const gd = Math.atan2(g[1], g[0]);
       let d = Math.abs(rd - gd) % Math.PI;
       if (d > Math.PI / 2) d = Math.PI - d;
-      const off = Math.abs(Math.PI / 2 - d);
+      const wF = gWidth.get(f.id) ?? 0;
+      const tolF = wF > 0 ? (Math.atan((2 * EPS_PLANE) / (gm * wF)) * 180) / Math.PI : 0;
+      const off = (Math.abs(Math.PI / 2 - d) * 180) / Math.PI - tolF;
       if (worst === null || off > worst) worst = off;
     }
-    if (worst !== null && (worst * 180) / Math.PI > G4_DEG)
-      err('G4', `конёк (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) не перпендикулярен градиенту своей грани (${((worst * 180) / Math.PI).toFixed(1)}°)`);
+    if (worst !== null && worst > G4_DEG)
+      err('G4', `конёк (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) не перпендикулярен градиенту своей грани (сверх бюджета ${worst.toFixed(1)}°)`);
   }
   if (!out.some((r) => r.id === 'G4')) ok('G4', "коньки параллельны своим карнизам");
 

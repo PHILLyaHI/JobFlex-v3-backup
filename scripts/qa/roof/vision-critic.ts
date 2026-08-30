@@ -28,6 +28,9 @@ import type { Raster } from "@/lib/solar";
 import { buildRoofV2 } from "@/lib/roofRecon/reconV2";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { buildMeasuredRoof } from "@/lib/roofRecon/measuredRoof";
+import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
+import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
+import type { RoofModel } from "@/lib/eagleview";
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { getOpenAI, getOpenAIModel, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { Overlay } from "./overlay";
@@ -47,6 +50,7 @@ const JOBS = [
   { key: "12618", dir: "scripts/qa/roof/field/12618-ne-100th-st-kirkland-wa", fixture: undefined },
   { key: "9903", dir: "scripts/qa/roof/field/9903-117th-pl-ne-kirkland-wa", fixture: undefined },
   { key: "419", dir: "scripts/qa/roof/fixtures/prairie-419-prairie-ridge-ln", fixture: "prairie-419-prairie-ridge-ln" },
+  { key: "12117", dir: "scripts/qa/roof/field/12117-202nd-st-se-snohomish-wa", fixture: undefined },
 ];
 
 interface Finding { x: number; y: number; kind: string; what: string }
@@ -84,15 +88,29 @@ const PROMPT = `Первое изображение — фрагмент орт�
       };
       dsm = r("dsm.f32.gz"); mask = r("mask.f32.gz");
     }
-    const first = buildRoofV2({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null });
+    // производственный поток скелета — критик смотрит то, что шьёт продакшен
+    const clustersN = (meta.diagnostics.clusters as number) ?? null;
+    const first = buildRoofV2({ instant, origin: meta.origin, clusters: clustersN });
     const contour = first.report.structures.find((s) => s.ring)!.ring as FootprintPoint[];
     const reg = registerContourToRaster({ contour, mask, dsm, groundElevFt: meta.diagnostics.groundElevFt as number });
+    let skeleton: RoofModel = first.model!;
+    if (reg.applied) {
+      const meas = measurePitchFromDsm({ model: first.model!, mask, dsm, transform: reg.transform, transformFor: () => reg.transform, sectionTolerance12: 0.75 });
+      const sp = structurePitch(meas, instant.totals?.predominantPitch ?? null, { solarPanels: instant.structures.some((s2) => s2.solarPanels === true) });
+      skeleton = buildRoofV2({ instant, origin: meta.origin, clusters: clustersN, pitchOverride12: sp.pitch12 }).model ?? first.model!;
+      if (first.report.structures.filter((s2) => s2.ring).length === 1) {
+        try {
+          const g2 = tryWavefront({ contour, skeletonModel: skeleton, measurement: meas, structurePitch12: sp.pitch12, structureIndex: 0 });
+          if (g2.model) skeleton = g2.model;
+        } catch { /* keep */ }
+      }
+    }
     const res = buildMeasuredRoof({
       dsm, mask, contour,
       transform: reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 },
-      skeleton: first.model!,
+      skeleton,
     });
-    const model = (res.rejectedCandidate ?? res.model)!;
+    const model = (res.model ?? res.rejectedCandidate ?? skeleton)!;
 
     const wide = instant.imagery.filter((im) => im.view === "ortho" && im.bbox && im.masked === false)
       .sort((x, y) => (y.bbox![2] - y.bbox![0]) * (y.bbox![3] - y.bbox![1]) - (x.bbox![2] - x.bbox![0]) * (x.bbox![3] - x.bbox![1]))[0]!;

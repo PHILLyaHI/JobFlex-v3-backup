@@ -19,6 +19,9 @@ import type { Raster } from "@/lib/solar";
 import { buildRoofV2 } from "@/lib/roofRecon/reconV2";
 import { registerContourToRaster } from "@/lib/roofRecon/register";
 import { buildMeasuredRoof } from "@/lib/roofRecon/measuredRoof";
+import { measurePitchFromDsm, structurePitch } from "@/lib/roofRecon/pitchFromDsm";
+import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
+import type { RoofModel } from "@/lib/eagleview";
 import { validateRoofInvariants } from "@/lib/roofDiagram/validate";
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { Overlay } from "./overlay";
@@ -54,13 +57,30 @@ const coordRe = /\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)/;
       };
       dsm = r("dsm.f32.gz"); mask = r("mask.f32.gz");
     }
-    const first = buildRoofV2({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null });
+    // ПРОИЗВОДСТВЕННЫЙ поток скелета (как в экшене и stitch-persist):
+    // упрощённый скелет давал ленте более лёгкий вход, чем шьёт продакшен —
+    // §K13 в собственном инструменте (12618 в ленте проходил, в продакшене
+    // падал)
+    const clustersN = (meta.diagnostics.clusters as number) ?? null;
+    const first = buildRoofV2({ instant, origin: meta.origin, clusters: clustersN });
     const contour = first.report.structures.find((s) => s.ring)!.ring as FootprintPoint[];
     const reg = registerContourToRaster({ contour, mask, dsm, groundElevFt: meta.diagnostics.groundElevFt as number });
+    let skeleton: RoofModel = first.model!;
+    if (reg.applied) {
+      const meas = measurePitchFromDsm({ model: first.model!, mask, dsm, transform: reg.transform, transformFor: () => reg.transform, sectionTolerance12: 0.75 });
+      const sp = structurePitch(meas, instant.totals?.predominantPitch ?? null, { solarPanels: instant.structures.some((s2) => s2.solarPanels === true) });
+      skeleton = buildRoofV2({ instant, origin: meta.origin, clusters: clustersN, pitchOverride12: sp.pitch12 }).model ?? first.model!;
+      if (first.report.structures.filter((s2) => s2.ring).length === 1) {
+        try {
+          const g2 = tryWavefront({ contour, skeletonModel: skeleton, measurement: meas, structurePitch12: sp.pitch12, structureIndex: 0 });
+          if (g2.model) skeleton = g2.model;
+        } catch { /* keep */ }
+      }
+    }
     const res = buildMeasuredRoof({
       dsm, mask, contour,
       transform: reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 },
-      skeleton: first.model!,
+      skeleton,
     });
     // судим КАНДИДАТА сшивки: при отказе гейта res.model — скелет,
     // а разбирать надо то, что гейт увидел

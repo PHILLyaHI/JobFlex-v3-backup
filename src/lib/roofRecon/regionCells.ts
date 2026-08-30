@@ -831,6 +831,15 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   const removed = pruneDanglingEdges(edges);
   if (removed.length) report.push(`${removed.length} висячих рёбер границ отсечено`);
   const { faces, halves } = walkPlanarFaces(nodes, edges);
+  if (process.env.DBG_HOLE) {
+    const [hx, hy] = process.env.DBG_HOLE.split(",").map(Number);
+    for (const f of faces) {
+      const near = f.ring.some((ni) => Math.hypot(nodes[ni].x - hx, nodes[ni].y - hy) < 4);
+      if (!near) continue;
+      const pts = f.ring.map((ni) => `(${nodes[ni].x.toFixed(1)},${nodes[ni].y.toFixed(1)})`).join(" ");
+      console.log(`[hole] цикл area=${f.area.toFixed(1)}: ${pts.slice(0, 400)}`);
+    }
+  }
   let cells0 = faces.filter((f) => f.area > EPS);
   const merged = mergeSmallFaces(nodes, edges, halves, cells0, minCell, report);
   cells0 = merged.faces;

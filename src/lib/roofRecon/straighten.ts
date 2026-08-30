@@ -37,10 +37,13 @@ function collapseShortCreases(model: RoofModel, minFt: number): number {
       .filter((l) => {
         if (l.type !== "RIDGE" && l.type !== "HIP" && l.type !== "VALLEY") return false;
         if (l.lengthFt >= minFt) return false;
-        // сдвигать можно только ВИСЯЧИЙ конец (степень ≤ 2): стык-стык
-        // огрызок — настоящий короткий конёк между апексами, и его снос
-        // двигал узлы на футы (12618: площадь уехала на 1.8 %)
-        return Math.min(deg.get(l.aId) ?? 0, deg.get(l.bId) ?? 0) <= 2;
+        // сдвигать можно только ПО-НАСТОЯЩЕМУ висячий конец (степень 1):
+        // deg 2 — это любое звено цепи, и после сварки переписным полом
+        // (цепи стали складками, а не швами) схлопывание телепортировало
+        // концы звеньев на футы — дыра 7.3 sf на 419 (грань A5 теряла
+        // выпуклость 1.65 ft). Звенья цепей сливает mergeCollinearChains
+        // по коридору, снос — только для огрызков из ниоткуда.
+        return Math.min(deg.get(l.aId) ?? 0, deg.get(l.bId) ?? 0) <= 1;
       })
       .sort((x, y) => x.lengthFt - y.lengthFt)[0];
     if (!victim) break;
@@ -83,6 +86,10 @@ export function mergeCollinearChains(
   const collapsed = collapseShortCreases(model, 4);
   let merged = 0;
   let passes = 0;
+  // поглощённые вершины каждой линии: хорда обязана держать в коридоре
+  // ВСЕ съеденные точки, не только последнюю — пошаговый каскад с малым
+  // перпом на каждом шаге накапливал дрейф 1.65 ft (дыра 7.3 sf на 419)
+  const absorbedPts = new Map<string, Array<{ x: number; y: number }>>();
   for (let pass = 0; pass < 2000; pass++) {
     passes = pass + 1;
     const byPoint = new Map<string, string[]>(); // pointId -> lineIds
@@ -113,15 +120,17 @@ export function mergeCollinearChains(
       const B = ptById.get(bId)!;
       const chord = Math.hypot(B.x - A.x, B.y - A.y);
       if (chord < 1e-9) continue;
-      const perp = Math.abs((P.x - A.x) * (B.y - A.y) - (P.y - A.y) * (B.x - A.x)) / chord;
+      const perpOf = (q: { x: number; y: number }): number => Math.abs((q.x - A.x) * (B.y - A.y) - (q.y - A.y) * (B.x - A.x)) / chord;
+      const swallowed = [...(absorbedPts.get(l1.id) ?? []), ...(absorbedPts.get(l2.id) ?? []), { x: P.x, y: P.y }];
+      const perp = Math.max(...swallowed.map(perpOf));
       const tol = Math.max(tolFt, tolOf?.(l1.id) ?? 0, tolOf?.(l2.id) ?? 0);
-      // §J: звено короче 2σ⊥ (коридор его опоры) направления НЕ НЕСЁТ —
-      // излом с безнаправленным звеном не форма, а лесенка трассировки:
-      // цепь 0.5–1.5 ft звеньев с углами 25–101° сливается в хорду
-      const len1 = Math.hypot(P.x - A.x, P.y - A.y);
-      const len2 = Math.hypot(B.x - P.x, B.y - P.y);
-      const directionless = Math.min(len1, len2) < 2 * tol;
-      if (perp > tol && !directionless) continue;
+      // §J снимает УГОЛ короткого звена, но не позиционный коридор:
+      // безусловная льгота коротким звеньям давала каскаду неограниченный
+      // дрейф (выпуклость 1.65 ft съедена хордой на 419 — дыра 7.3 sf).
+      // Единственный закон слияния — перп удаляемой вершины от хорды в
+      // пределах коридора (tol с полом σ⊥ 0.5): позиция вершины измерена,
+      // хорда дальше её неопределённости — выдумка
+      if (perp > tol) continue;
       // the faces on both sides must reference BOTH lines (degree-2 seam of
       // the same boundary), else the vertex carries other structure
       const owners = model.faces.filter((f) => f.lineIds.includes(l1.id) || f.lineIds.includes(l2.id));
@@ -140,6 +149,13 @@ export function mergeCollinearChains(
         if (kx === chordKey) { dupChord = true; break; }
       }
       if (dupChord) continue;
+      // кольца владельцев обязаны сшиваться и ПОСЛЕ слияния: щипок кольца
+      // делает грань невидимой для покрытия/валидатора (дыра 7.3 sf на 419
+      // от почти-коллинеарного слияния) — проверка с откатом
+      const undoA = l1.aId;
+      const undoB = l1.bId;
+      const undoLen = l1.lengthFt;
+      const undoFaces = owners.map((f) => ({ f, ids: f.lineIds.slice() }));
       // merge: l1 becomes A—B, l2 and P die
       if (process.env.DBG_MERGE) {
         const pkE = new Map(model.points.map((q) => [q.id, `${Math.round(q.x * 1000)}|${Math.round(q.y * 1000)}`]));
@@ -153,6 +169,26 @@ export function mergeCollinearChains(
       for (const f of owners) f.lineIds = f.lineIds.filter((id) => id !== l2.id);
       model.lines = model.lines.filter((l) => l.id !== l2.id);
       model.points = model.points.filter((p) => p.id !== pid);
+      {
+        const { buildIndexes: bIm, ringOf: rOm } = require("@/components/estimator/roof/roofGeometry");
+        const idxM = bIm(model);
+        const broke = owners.some((f) => {
+          const rm = rOm(f.lineIds, idxM);
+          return !rm || rm.length < 3;
+        });
+        if (broke) {
+          // откат
+          l1.aId = undoA;
+          l1.bId = undoB;
+          l1.lengthFt = undoLen;
+          for (const u of undoFaces) u.f.lineIds = u.ids;
+          model.lines.push(l2);
+          model.points.push(P);
+          continue;
+        }
+      }
+      absorbedPts.set(l1.id, swallowed);
+      absorbedPts.delete(l2.id);
       merged++;
       did = true;
       break; // maps are stale — rebuild

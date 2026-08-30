@@ -55,7 +55,9 @@ function rasterFrom(file: string, meta: FixtureMeta): Raster {
   const { PrismaClient } = await import("@prisma/client");
   const db = new PrismaClient();
 
+  const skipKeys = new Set((args[args.indexOf("--skip") + 1] ?? "").split(",").filter((x) => args.includes("--skip") && x));
   for (const job of JOBS) {
+    if (skipKeys.has(job.key)) { console.log(`${job.key}: пропущен (--skip)`); continue; }
     if (!existsSync(resolve(job.dir, "meta.json"))) { console.log(`${job.key}: нет кэша — пропуск`); continue; }
     const meta = JSON.parse(readFileSync(resolve(job.dir, "meta.json"), "utf8")) as FixtureMeta;
     const instant = JSON.parse(readFileSync(resolve(job.dir, "instant.json"), "utf8")) as InstantRoofData;
