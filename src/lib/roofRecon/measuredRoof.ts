@@ -1161,12 +1161,85 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
             dzEnds = Math.max(dzEnds, dz1, dz2);
           }
         }
-        if (dzEnds >= STEP_DZ_FT) {
+        // ЗАЯВКА СТЕНЫ СВЕРЯЕТСЯ С ПРЯМЫМ DSM-ПЕРЕПАДОМ (закон владельца,
+        // 2026-08-30): dzEnds меряется план-эвалами плоскостей, а у границ
+        // мега-граней плоскости экстраполируют за опору — фантомные стены
+        // Δz 1.1–5.2 при DSM-перепаде поперёк 0.0–0.8 (12629 SE-диагональ;
+        // настоящие стены в тех же данных: 4.0–17.0). Порог — переписной
+        // пол, меренный напрямую: медиана |z(+2ft)−z(−2ft)| по трём
+        // станциям вдоль линии.
+        const dsmWallOk = (): boolean => {
+          const a9 = ptById.get(l0.aId)!;
+          const b9 = ptById.get(l0.bId)!;
+          const run9 = Math.hypot(b9.x - a9.x, b9.y - a9.y);
+          if (run9 < 1e-6) return true;
+          const per9 = { x: -(b9.y - a9.y) / run9, y: (b9.x - a9.x) / run9 };
+          const drops: number[] = [];
+          for (const t9 of [0.25, 0.5, 0.75]) {
+            const mid9 = { x: a9.x + (b9.x - a9.x) * t9, y: a9.y + (b9.y - a9.y) * t9 };
+            const zSide = (s9: number): number => {
+              const q9 = fwd({ x: mid9.x + per9.x * s9 * 2, y: mid9.y + per9.y * s9 * 2 });
+              const pi9 = m.pxOf(q9);
+              if (pi9 < 0 || mask.data[pi9] <= 0.5) return NaN;
+              return dsm.data[pi9] * FT_PER_M - groundElevFt;
+            };
+            const d9 = Math.abs(zSide(1) - zSide(-1));
+            if (Number.isFinite(d9)) drops.push(d9);
+          }
+          if (!drops.length) return true; // мерить не обо что (край кадра)
+          drops.sort((x9, y9) => x9 - y9);
+          return drops[Math.floor(drops.length / 2)] >= STEP_DZ_FT;
+        };
+        if (dzEnds >= STEP_DZ_FT && dsmWallOk()) {
+          // у СТЕНЫ один план на обе стороны: стороны, разошедшиеся на
+          // ~0.1 ft (канон/слияния двигали по одной), рвут ключи близнецов
+          // (G5-исключение слепнет) и двоят рендер — план сваривается в
+          // среднее по совмещённым концам, z остаются раздельными
+          {
+            const endsW = new Map<string, Array<(typeof candidate.points)[number]>>();
+            for (const l of g) for (const pid of [l.aId, l.bId]) {
+              const ptW = ptById.get(pid)!;
+              const kW = `${Math.round(ptW.x * 2)}|${Math.round(ptW.y * 2)}`; // ячейка 0.5 ft
+              (endsW.get(kW) ?? endsW.set(kW, []).get(kW)!).push(ptW);
+            }
+            for (const ptsW of endsW.values()) {
+              if (ptsW.length < 2) continue;
+              const mx = ptsW.reduce((sW, qW) => sW + qW.x, 0) / ptsW.length;
+              const my = ptsW.reduce((sW, qW) => sW + qW.y, 0) / ptsW.length;
+              for (const qW of ptsW) { qW.x = mx; qW.y = my; }
+            }
+            for (const l of g) {
+              const aW = ptById.get(l.aId)!;
+              const bW = ptById.get(l.bId)!;
+              l.lengthFt = Math.hypot(bW.x - aW.x, bW.y - aW.y, bW.z - aW.z);
+            }
+          }
           // ступень: верхняя сторона EAVE, нижняя FLASHING; погонаж — обе
           const top = Math.max(...zs);
           for (const l of g) l.type = zOfLine(l) >= top - 1e-6 ? "EAVE" : "FLASHING";
           for (const l of g) bump(l.type, l.lengthFt);
           continue;
+        }
+        if (dzEnds >= STEP_DZ_FT) {
+          // фантомная стена: DSM перепада не видит — близнецы СВАРИВАЮТСЯ
+          // по совмещённым концам (одна высота), пара уходит в путь
+          // одноуровневых (складка от плоскостей или OTHER); 3D-поверхность
+          // замыкается
+          const ends = new Map<string, Array<(typeof candidate.points)[number]>>();
+          for (const l of g) for (const pid of [l.aId, l.bId]) {
+            const pt9 = ptById.get(pid)!;
+            const k9 = `${Math.round(pt9.x * 100)}|${Math.round(pt9.y * 100)}`;
+            (ends.get(k9) ?? ends.set(k9, []).get(k9)!).push(pt9);
+          }
+          for (const pts9 of ends.values()) {
+            const zm = pts9.reduce((s9, q9) => s9 + q9.z, 0) / pts9.length;
+            for (const q9 of pts9) q9.z = zm;
+          }
+          for (const l of g) {
+            const a9 = ptById.get(l.aId)!;
+            const b9 = ptById.get(l.bId)!;
+            l.lengthFt = Math.hypot(b9.x - a9.x, b9.y - a9.y, b9.z - a9.z);
+          }
         }
         // близнецы одного уровня: один тип складки на всех, счёт один раз.
         // Складки нет (пробы монотонны — перелом уклона одной стороны, напр.

@@ -576,22 +576,33 @@ function segmentPlanes(
     // 22/12, кривизна 1.8 ft). Её пиксели уходят в неназначенные — склоны
     // встречаются напрямую, границу ставит пересечение их плоскостей.
     {
-      let boundarySegs = 0;
+      // ширина меряется ЭРОЗИЕЙ (глубина ядра), не 2A/P: рваный пиксельный
+      // периметр занижал 2A/P, и настоящие скаты с бахромой умирали как
+      // «ленты» (12629: сегментация падала до 7 кластеров, грани-монстры
+      // 507/423 sf накрывали по два ската). Лента — блоб, чьё ядро мельче
+      // половины окна нормалей: эрозия до пустоты за ≤ half проходов.
       const inCl = new Set(pixels);
-      for (const i of pixels) {
-        const px = i % w;
-        const py = Math.floor(i / w);
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-          const nx = px + dx;
-          const ny = py + dy;
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h || !inCl.has(ny * w + nx)) boundarySegs++;
+      let core = pixels.slice();
+      let passes = 0;
+      while (core.length && passes <= half) {
+        const next: number[] = [];
+        const coreSet = new Set(core);
+        for (const i of core) {
+          const px = i % w;
+          const py = Math.floor(i / w);
+          let interior = true;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+            const nx = px + dx;
+            const ny = py + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h || !coreSet.has(ny * w + nx)) { interior = false; break; }
+          }
+          if (interior) next.push(i);
         }
+        core = next;
+        passes++;
+        if (!core.length) break;
       }
-      const areaPlanSqft = pixels.length * pxAreaSqft;
-      const stepFtW = pixelSizeM * 3.28084;
-      const perFt = boundarySegs * stepFtW * 0.95;
-      const widthFt = (2 * areaPlanSqft) / Math.max(perFt, 1e-9);
-      if (widthFt < (2 * half + 1) * stepFtW) {
+      if (!core.length && passes <= half) {
         for (const p of pixels) assign[p] = -2;
         dropped++;
         continue;
