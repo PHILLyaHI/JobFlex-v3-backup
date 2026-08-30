@@ -90,7 +90,15 @@ function toValidatorSchema(model: RoofModel): unknown {
     [Math.max(...xs), Math.max(...ys)],
     [Math.min(...xs), Math.max(...ys)],
   ];
-  return { material: "asphalt", footprint, vertices: verts, facets };
+  const ptById2 = new Map(model.points.map((pt) => [pt.id, pt]));
+  const lines = model.lines
+    .map((l) => {
+      const a = ptById2.get(l.aId);
+      const b = ptById2.get(l.bId);
+      return a && b ? { a: [a.x, a.y], b: [b.x, b.y], type: l.type } : null;
+    })
+    .filter((x): x is { a: number[]; b: number[]; type: string } => x !== null);
+  return { material: "asphalt", footprint, vertices: verts, facets, lines };
 }
 
 async function savedModel(rowId: string): Promise<RoofModel | null> {

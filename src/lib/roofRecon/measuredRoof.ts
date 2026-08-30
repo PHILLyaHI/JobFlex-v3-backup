@@ -565,6 +565,108 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     if (!arr2.includes(ci)) arr2.push(ci);
     vCells.set(vKey(p), arr2);
   }
+  // ── СХОДИМОСТЬ ПЛОСКОСТЕЙ (2026-08-30) ──
+  // Микрошвы ломали грамматику, среднее группы ломало планарность. Выход —
+  // не выбор между ними, а настоящая сходимость: у наклонов (a,b) тоже есть
+  // неопределённость подгонки, и в её пределах плоскости ДВИГАЮТСЯ так,
+  // чтобы встретиться в общих вершинах. Чередование: цель вершины = среднее
+  // группы; каждая плоскость кластера рефитится по СВОИМ пикселям плюс
+  // вершинным целям с весом (σ_px/σ_v)² = (0.6/0.08)² — обе σ из задачи
+  // (допуск роста и бюджет планарности валидатора).
+  {
+    const W_V = Math.pow(DEFAULT_PLANE_TOL_FT / 0.08, 2);
+    // пиксельные нормальные уравнения на кластер (один раз)
+    interface Norm { xx: number; xy: number; x: number; yy: number; y: number; n: number; xz: number; yz: number; z: number }
+    const pxNorm = new Map<number, Norm>();
+    for (const ci of infos) {
+      if (ci.prov === "fill" || ci.cluster === null || !ci.plane) continue;
+      const acc = pxNorm.get(ci.cluster) ?? { xx: 0, xy: 0, x: 0, yy: 0, y: 0, n: 0, xz: 0, yz: 0, z: 0 };
+      const xs = ci.cell.ring.map((q) => q.x);
+      const ys = ci.cell.ring.map((q) => q.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const step = Math.max(stepFt, Math.min(maxX - minX, maxY - minY) / 12);
+      for (let y = minY + step / 2; y < maxY; y += step) {
+        for (let x = minX + step / 2; x < maxX; x += step) {
+          if (!inRing({ x, y }, ci.cell.ring)) continue;
+          const pi = m.pxOf({ x, y });
+          if (pi < 0 || mask.data[pi] <= 0.5) continue;
+          if (d.assign[pi] !== ci.cluster) continue;
+          const z = dsm.data[pi] * FT_PER_M - groundElevFt;
+          acc.xx += x * x; acc.xy += x * y; acc.x += x;
+          acc.yy += y * y; acc.y += y; acc.n += 1;
+          acc.xz += x * z; acc.yz += y * z; acc.z += z;
+        }
+      }
+      pxNorm.set(ci.cluster, acc);
+    }
+    // вершины на кластер (те же группы уровней, что и ниже: разрыв > ступени
+    // остаётся раздельным)
+    interface VRef { p: FootprintPoint; cis: CellInfo[] }
+    const vGroups: VRef[] = [];
+    for (const [k, cis] of vCells) {
+      const p2 = cis[0].cell.ring.find((q) => vKey(q) === k)!;
+      const meas = cis.filter((c2) => c2.prov !== "fill" && c2.plane && c2.cluster !== null);
+      if (meas.length < 2) continue;
+      // одна группа уровня: сортировка по z, цепь с разрывом > ступени
+      const entries = meas.map((c2) => ({ c2, z: measuredZAt(c2, p2) })).sort((a3, b3) => a3.z - b3.z);
+      let g: typeof entries = [];
+      for (const e3 of entries) {
+        if (g.length && e3.z - g[g.length - 1].z > STEP_DZ_FT) {
+          if (g.length >= 2) vGroups.push({ p: p2, cis: g.map((x2) => x2.c2) });
+          g = [];
+        }
+        g.push(e3);
+      }
+      if (g.length >= 2) vGroups.push({ p: p2, cis: g.map((x2) => x2.c2) });
+    }
+    for (let round = 0; round < 6; round++) {
+      // цели вершин
+      const targets = vGroups.map((vg) => vg.cis.reduce((s2, c2) => s2 + measuredZAt(c2, vg.p), 0) / vg.cis.length);
+      // рефит на кластер
+      const acc2 = new Map<number, Norm>();
+      vGroups.forEach((vg, gi) => {
+        const zt = targets[gi];
+        for (const c2 of vg.cis) {
+          const a2 = acc2.get(c2.cluster!) ?? { xx: 0, xy: 0, x: 0, yy: 0, y: 0, n: 0, xz: 0, yz: 0, z: 0 };
+          const { x, y } = vg.p;
+          a2.xx += W_V * x * x; a2.xy += W_V * x * y; a2.x += W_V * x;
+          a2.yy += W_V * y * y; a2.y += W_V * y; a2.n += W_V;
+          a2.xz += W_V * x * zt; a2.yz += W_V * y * zt; a2.z += W_V * zt;
+          acc2.set(c2.cluster!, a2);
+        }
+      });
+      for (const [cl, pl] of clusterPlane) {
+        const px2 = pxNorm.get(cl);
+        const vx = acc2.get(cl);
+        if (!px2 || px2.n < 6) continue;
+        const A2 = [
+          [px2.xx + (vx?.xx ?? 0), px2.xy + (vx?.xy ?? 0), px2.x + (vx?.x ?? 0)],
+          [px2.xy + (vx?.xy ?? 0), px2.yy + (vx?.yy ?? 0), px2.y + (vx?.y ?? 0)],
+          [px2.x + (vx?.x ?? 0), px2.y + (vx?.y ?? 0), px2.n + (vx?.n ?? 0)],
+        ];
+        const B2 = [px2.xz + (vx?.xz ?? 0), px2.yz + (vx?.yz ?? 0), px2.z + (vx?.z ?? 0)];
+        const det3 = (mm: number[][]) =>
+          mm[0][0] * (mm[1][1] * mm[2][2] - mm[1][2] * mm[2][1]) -
+          mm[0][1] * (mm[1][0] * mm[2][2] - mm[1][2] * mm[2][0]) +
+          mm[0][2] * (mm[1][0] * mm[2][1] - mm[1][1] * mm[2][0]);
+        const dd = det3(A2);
+        if (Math.abs(dd) < 1e-9) continue;
+        const col = (k2: number) => A2.map((row, i3) => row.map((v3, j3) => (j3 === k2 ? B2[i3] : v3)));
+        pl.a = det3(col(0)) / dd;
+        pl.b = det3(col(1)) / dd;
+        pl.c = det3(col(2)) / dd;
+      }
+    }
+    // остаточная несходимость — в отчёт
+    let worst = 0;
+    vGroups.forEach((vg) => {
+      const zs = vg.cis.map((c2) => measuredZAt(c2, vg.p));
+      worst = Math.max(worst, Math.max(...zs) - Math.min(...zs));
+    });
+    reasons.push(`сходимость плоскостей: ${vGroups.length} общих вершин, остаточный разрыв ${worst.toFixed(3)} ft`);
+  }
+
   const fillDz = new Map<CellInfo, number>();
   {
     const deltas: number[] = [];
@@ -609,7 +711,13 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     // a face 0.08 ft of planarity, and the LS refit does not split a vertex
     // mean evenly — so any same-level mismatch beyond that very budget
     // SPLITS into a micro-seam (each side on its own plane), like a step.
-    const SPLIT_TOL = 0.08;
+    // Порог расщепления — ПОСЛЕ сходимости плоскостей: всё, что могло
+    // сойтись, сошлось (чередующийся фит выше), и оставшийся разрыв —
+    // настоящий перепад (дормер, борт), а не шум подгонки. 2×0.08 — бюджет
+    // планарности валидатора на обе стороны. Старый порог 0.08 ДО
+    // сходимости плодил микрошвы и ломал грамматику (62 «rake внутри
+    // крыши»); порог «только ступени 2.0» ломал планарность.
+    const SPLIT_TOL = 0.16;
     {
       const regrouped: typeof groups = [];
       for (const g of groups) {
@@ -660,6 +768,16 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   const typeForPair = new Map<string, "RIDGE" | "HIP" | "VALLEY">();
   for (const l of m.lines) typeForPair.set(clusterPairKey(l.between[0], l.between[1]), l.type);
 
+  const planEdgeKey = (a: FootprintPoint, b: FootprintPoint) => {
+    const k1 = `${Math.round(a.x * 20)}|${Math.round(a.y * 20)}`;
+    const k2 = `${Math.round(b.x * 20)}|${Math.round(b.y * 20)}`;
+    return k1 < k2 ? `${k1}#${k2}` : `${k2}#${k1}`;
+  };
+  const planEdgeCount = new Map<string, number>();
+  for (const ci of infos) for (const e of ci.cell.edges) {
+    const k = planEdgeKey(e.a, e.b);
+    planEdgeCount.set(k, (planEdgeCount.get(k) ?? 0) + 1);
+  }
   const cells: AssembleCell[] = infos.map((ci) => {
     const grad = ci.plane && ci.prov !== "fill"
       ? { a: ci.plane.a, b: ci.plane.b }
@@ -670,9 +788,15 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     // downhill azimuth reported in the INSTANT frame
     const dh = { x: -grad.a * Math.cos(-th) + grad.b * Math.sin(-th), y: -grad.a * Math.sin(-th) - grad.b * Math.cos(-th) };
     const vAt = (p: FootprintPoint) => vzOf.get(vKey(p))?.get(ci) ?? { z: zOfInfo(ci, p) };
-    // an edge is a STEP side when either endpoint splits into levels here
-    const isStepEdge = (e: (typeof ci.cell.edges)[number]): boolean =>
-      (vzOf.get(vKey(e.a))?.get(ci)?.tag !== undefined) || (vzOf.get(vKey(e.b))?.get(ci)?.tag !== undefined);
+    // an edge is a STEP side when either endpoint splits into levels here,
+    // ИЛИ когда у ребра есть плановый близнец в другой ячейке (шов без метки
+    // вершины падал в геометрический классификатор и выходил «rake внутри
+    // крыши» — грамматика G2 поймала это массово)
+    const isStepEdge = (e: (typeof ci.cell.edges)[number]): boolean => {
+      if ((vzOf.get(vKey(e.a))?.get(ci)?.tag !== undefined) || (vzOf.get(vKey(e.b))?.get(ci)?.tag !== undefined)) return true;
+      const twins = planEdgeCount.get(planEdgeKey(e.a, e.b)) ?? 0;
+      return twins >= 2 && e.prov !== "contour";
+    };
     const upperAt = (e: (typeof ci.cell.edges)[number]): boolean => {
       // this cell is the UPPER side when its z at the edge midpoint exceeds
       // the neighbour's — compare against every other cell sharing the edge

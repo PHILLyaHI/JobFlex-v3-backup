@@ -98,8 +98,11 @@ const TOL: Record<Source, SourceTol> = {
     covWarn: 0.03,
     covErr: 0.08,
     epsZ: 0.5,
-    angleWarn: 6,
-    angleErr: 12,
+    // R12 restored to strength (2026-08-30): the general-corner formula
+    // handles unequal pitches and non-square corners, so the old 12° blanket
+    // is gone; 6° = atan(2σ⊥/L) of a measured crease at σ⊥ ≤ 0.5 ft, L ≥ 10.
+    angleWarn: 3,
+    angleErr: 6,
     soft: "warn",
     eulerLevel: "warn",
   },
@@ -1439,6 +1442,169 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     if (e.type === "valley" && c !== "concave") err("R13", "ендова (valley) выходит из выпуклого угла контура — там должна быть вальма");
   }
   if (!out.some((r) => r.id === "R13")) ok("R13", "вальмы на выпуклых углах, ендовы на вогнутых");
+
+  // ── G1–G4: ГРАММАТИКА ЛИНИЙ (skill roof-geometry: существование и
+  //    терминация — линия есть прямая балка от узла до узла) ──
+  // Грамматика судит ЗАЯВЛЕННЫЕ типы (ими рисуется чертёж) — геометрическая
+  // переклассификация нестабильна на коротких осколках и назвала звенья
+  // конька «unknown», а швы «rake». Модельные линии сопоставляются рёбрам по
+  // план-паре концов; швы (FLASHING/STEPFLASH) — легальный терминатор.
+  const gAllEdges0 = [...byType.eave, ...byType.rake, ...byType.ridge, ...byType.hip, ...byType.valley, ...byType.unknown];
+  const gDeclared = new Map<string, string>();
+  {
+    const pById = new Map(model.points.map((pt) => [pt.id, pt]));
+    for (const l of model.lines) {
+      const a = pById.get(l.aId);
+      const b = pById.get(l.bId);
+      if (!a || !b) continue;
+      const ka = invKey([a.x, a.y]);
+      const kb = invKey([b.x, b.y]);
+      const k = ka < kb ? ka + "#" + kb : kb + "#" + ka;
+      if (!gDeclared.has(k)) gDeclared.set(k, l.type);
+    }
+  }
+  const gTypeOf = (e: InvEdge): string => {
+    const ka = invKey([e.a[0], e.a[1]]);
+    const kb = invKey([e.b[0], e.b[1]]);
+    const k = ka < kb ? ka + "#" + kb : kb + "#" + ka;
+    const t = gDeclared.get(k);
+    if (t === "RIDGE") return "ridge";
+    if (t === "HIP") return "hip";
+    if (t === "VALLEY") return "valley";
+    if (t === "EAVE") return "eave";
+    if (t === "RAKE") return "rake";
+    if (t === "FLASHING" || t === "STEPFLASH") return "seam";
+    return e.type ?? "unknown";
+  };
+  const gCreases = gAllEdges0.filter((e) => ["ridge", "hip", "valley"].includes(gTypeOf(e)));
+  const gAllEdges = gAllEdges0;
+  // ШВЫ (ступени секций, инвариант 19): пара рёбер с одной план-позицией и
+  // разным z — стена между уровнями. Это не rake, и складка ВПРАВЕ на нём
+  // терминироваться.
+  const gSeams: InvEdge[] = gAllEdges0.filter((e) => gTypeOf(e) === "seam");
+  const gIsSeam = new Set(gSeams);
+  const gDeg = new Map<string, InvEdge[]>();
+  for (const e of gAllEdges) {
+    for (const p of [e.a, e.b]) {
+      const k = invKey([p[0], p[1]]);
+      const arr = gDeg.get(k) ?? [];
+      arr.push(e);
+      gDeg.set(k, arr);
+    }
+  }
+  const gDistSeg = (p: IPt3, a: IPt3, b: IPt3): number => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const L2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2));
+    return Math.hypot(p[0] - (a[0] + dx * t), p[1] - (a[1] + dy * t));
+  };
+  const gRingDist = (p: IPt3): number => {
+    let best = Infinity;
+    for (let i = 0; i < fp.length; i++) {
+      const a = fp[i];
+      const b = fp[(i + 1) % fp.length];
+      best = Math.min(best, gDistSeg(p, [a[0], a[1], 0], [b[0], b[1], 0]));
+    }
+    return best;
+  };
+  const gCorner = (p: IPt3): string | null => {
+    for (const v of fp) {
+      if (Math.hypot(p[0] - v[0], p[1] - v[1]) <= STUB_FT) return convexity.get(invKey(v)) ?? null;
+    }
+    return null;
+  };
+  const gOn = (p: IPt3, list: InvEdge[]): boolean => list.some((r) => gDistSeg(p, r.a, r.b) <= STUB_FT);
+  // G1 — перелом без узла: точка степени 2 с двумя складками одного типа,
+  // излом больше atan(EPS_PLANE / min(L)) — лишний угол в прямой балке
+  for (const [k, arr] of gDeg) {
+    if (arr.length !== 2) continue;
+    const [e1, e2] = arr;
+    if (gTypeOf(e1) !== gTypeOf(e2) || !gCreases.includes(e1)) continue;
+    // перелом УКЛОНА оправдывает угол: если пары граней различны, это узел
+    // (апекс двух вальм и т.п.), а не согнутая балка
+    const set1 = e1.facets.map((f) => f.id).sort().join("|");
+    const set2 = e2.facets.map((f) => f.id).sort().join("|");
+    if (set1 !== set2) continue;
+    const other = (e: InvEdge): IPt3 => (invKey([e.a[0], e.a[1]]) === k ? e.b : e.a);
+    const P = invKey([e1.a[0], e1.a[1]]) === k ? e1.a : e1.b;
+    const A = other(e1);
+    const B = other(e2);
+    const l1 = Math.hypot(P[0] - A[0], P[1] - A[1]);
+    const l2 = Math.hypot(B[0] - P[0], B[1] - P[1]);
+    if (l1 < 1e-6 || l2 < 1e-6) continue;
+    const a1 = Math.atan2(P[1] - A[1], P[0] - A[0]);
+    const a2 = Math.atan2(B[1] - P[1], B[0] - P[0]);
+    let dth = Math.abs(a2 - a1);
+    if (dth > Math.PI) dth = 2 * Math.PI - dth;
+    const gTol = Math.atan(INV_EPS_PLANE / Math.min(l1, l2));
+    if (dth > gTol)
+      err("G1", `${e1.type}: излом ${((dth * 180) / Math.PI).toFixed(1)}° в точке (${P[0].toFixed(1)},${P[1].toFixed(1)}) без узла — прямая балка так не гнётся`);
+  }
+  if (!out.some((r) => r.id === "G1")) ok("G1", "каждая складка — прямая от узла до узла");
+  // G2/G3 — терминация по типам и висячие концы
+  for (const e of gCreases) {
+    if (gIsSeam.has(e)) continue; // сторона шва живёт грамматикой ступени
+    for (const p of [e.a, e.b]) {
+      const k = invKey([p[0], p[1]]);
+      const arr = gDeg.get(k) ?? [];
+      if (arr.length === 1) {
+        err("G3", `${gTypeOf(e)}: висячий конец в (${p[0].toFixed(1)},${p[1].toFixed(1)}) — линий из ниоткуда не бывает`);
+        continue;
+      }
+      // внутренняя точка цепи того же ЗАЯВЛЕННОГО типа — не терминация
+      if (arr.length === 2 && gTypeOf(arr[0]) === gTypeOf(arr[1])) continue;
+      const isNode = arr.length >= 3;
+      const corner = gCorner(p);
+      const ringD = gRingDist(p);
+      const t = gTypeOf(e);
+      let okEnd = false;
+      let why = "";
+      const onSeam = gOn(p, gSeams);
+      if (t === "valley") {
+        okEnd = isNode || corner === "concave" || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === "ridge")) || onSeam;
+        why = ringD > STUB_FT ? "обрывается в поле" : corner ? `упирается в ${corner === "convex" ? "выпуклый" : ""} угол` : "выходит на карниз серединой";
+      } else if (t === "hip") {
+        okEnd = isNode || corner === "convex" || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === "ridge")) || onSeam;
+        why = ringD > STUB_FT ? "обрывается в поле" : corner ? "упирается не в свой угол" : "выходит на карниз серединой";
+      } else {
+        okEnd = isNode || corner !== null || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === "rake")) || onSeam;
+        why = "конёк висит без вальм/ендов/фронтона";
+      }
+      if (!okEnd && process.env.DBG_G) {
+        const near = gAllEdges.filter((o) => Math.min(Math.hypot(o.a[0] - p[0], o.a[1] - p[1]), Math.hypot(o.b[0] - p[0], o.b[1] - p[1])) < 0.5);
+        err("G2", `${t}: терминация вне грамматики в (${p[0].toFixed(1)},${p[1].toFixed(1)}) — ${why} [deg=${arr.length}; рядом: ${near.map((o) => o.type + (gIsSeam.has(o) ? "*" : "")).join(",")}; швов=${gSeams.length}]`);
+      } else if (!okEnd) err("G2", `${t}: терминация вне грамматики в (${p[0].toFixed(1)},${p[1].toFixed(1)}) — ${why}`);
+    }
+  }
+  // G2 для rake: фронтонное ребро живёт только на контуре
+  for (const e of gAllEdges0.filter((o) => gTypeOf(o) === "rake")) {
+    if (gIsSeam.has(e)) continue; // шов, не фронтон
+    if (gRingDist(e.a) > STUB_FT || gRingDist(e.b) > STUB_FT)
+      err("G2", `rake в (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)}) не лежит на контуре`);
+  }
+  if (!out.some((r) => r.id === "G2")) ok("G2", "терминация линий по грамматике (углы, узлы, коньки, фронтоны)");
+  if (!out.some((r) => r.id === "G3")) ok("G3", "висячих концов нет");
+  // G4 — конёк параллелен карнизам своих граней (допуск 6°: atan(2σ⊥/L)
+  // измеренных складок при σ⊥ ≤ 0.5 ft и L ≥ 10 ft)
+  const G4_DEG = 6;
+  for (const e of gAllEdges0.filter((o) => gTypeOf(o) === "ridge")) {
+    const rd = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+    let bestDiff: number | null = null;
+    for (const f of e.facets) {
+      for (const [, o] of edges) {
+        if (gTypeOf(o) !== "eave" || !o.facets.includes(f)) continue;
+        const ed = Math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]);
+        let d = Math.abs(rd - ed) % Math.PI;
+        if (d > Math.PI / 2) d = Math.PI - d;
+        if (bestDiff === null || d < bestDiff) bestDiff = d;
+      }
+    }
+    if (bestDiff !== null && (bestDiff * 180) / Math.PI > G4_DEG)
+      err("G4", `конёк (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) не параллелен карнизам своих граней (${((bestDiff * 180) / Math.PI).toFixed(1)}°)`);
+  }
+  if (!out.some((r) => r.id === "G4")) ok("G4", "коньки параллельны своим карнизам");
+
 
   // R17 — a ridge sits at mid-span when both facets share a pitch (invariant 13)
   const perpDistToEaves = (e: InvEdge, f: (typeof facets)[number]): number | null => {

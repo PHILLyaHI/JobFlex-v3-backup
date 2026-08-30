@@ -363,6 +363,151 @@ export function validateRoof(model) {
   if (!out.some((r) => r.id === 'R13'))
     ok('R13', 'вальмы на выпуклых углах, ендовы на вогнутых');
 
+  // ── G1–G4: ГРАММАТИКА ЛИНИЙ (skill roof-geometry: существование и
+  //    терминация — линия есть прямая балка от узла до узла) ──
+  // грамматика судит ЗАЯВЛЕННЫЕ типы, когда модель их несёт (schema-поле
+  // lines: [{a:[x,y], b:[x,y], type}]); геометрия — фолбэк для чистых фикстур
+  const gAllEdges0 = [...byType.eave, ...byType.rake, ...byType.ridge, ...byType.hip, ...byType.valley, ...byType.unknown];
+  const gDeclared = new Map();
+  for (const l of model.lines ?? []) {
+    const ka = key([l.a[0], l.a[1]]);
+    const kb = key([l.b[0], l.b[1]]);
+    const k = ka < kb ? ka + '#' + kb : kb + '#' + ka;
+    if (!gDeclared.has(k)) gDeclared.set(k, l.type);
+  }
+  const gTypeOf = (e) => {
+    const ka = key([e.a[0], e.a[1]]);
+    const kb = key([e.b[0], e.b[1]]);
+    const t = gDeclared.get(ka < kb ? ka + '#' + kb : kb + '#' + ka);
+    if (t === 'RIDGE') return 'ridge';
+    if (t === 'HIP') return 'hip';
+    if (t === 'VALLEY') return 'valley';
+    if (t === 'EAVE') return 'eave';
+    if (t === 'RAKE') return 'rake';
+    if (t === 'FLASHING' || t === 'STEPFLASH') return 'seam';
+    return e.type ?? 'unknown';
+  };
+  const gCreases = gAllEdges0.filter((e) => ['ridge', 'hip', 'valley'].includes(gTypeOf(e)));
+  const gAllEdges = gAllEdges0;
+  const gSeams = gAllEdges0.filter((e) => gTypeOf(e) === 'seam');
+  const gIsSeam = new Set(gSeams);
+  const gDeg = new Map();
+  for (const e of gAllEdges) {
+    for (const p of [e.a, e.b]) {
+      const k = key([p[0], p[1]]);
+      const arr = gDeg.get(k) ?? [];
+      arr.push(e);
+      gDeg.set(k, arr);
+    }
+  }
+  const gDistSeg = (p, a, b) => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const L2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2));
+    return Math.hypot(p[0] - (a[0] + dx * t), p[1] - (a[1] + dy * t));
+  };
+  const gRingDist = (p) => {
+    let best = Infinity;
+    for (let i = 0; i < fp.length; i++) {
+      const a = fp[i];
+      const b = fp[(i + 1) % fp.length];
+      best = Math.min(best, gDistSeg(p, [a[0], a[1], 0], [b[0], b[1], 0]));
+    }
+    return best;
+  };
+  const gCorner = (p) => {
+    for (const v of fp) {
+      if (Math.hypot(p[0] - v[0], p[1] - v[1]) <= STUB_FT) return convexity.get(key(v)) ?? null;
+    }
+    return null;
+  };
+  const gOn = (p, list) => list.some((r) => gDistSeg(p, r.a, r.b) <= STUB_FT);
+  // G1 — перелом без узла: точка степени 2 с двумя складками одного типа,
+  // излом больше atan(EPS_PLANE / min(L)) — лишний угол в прямой балке
+  for (const [k, arr] of gDeg) {
+    if (arr.length !== 2) continue;
+    const [e1, e2] = arr;
+    if (gTypeOf(e1) !== gTypeOf(e2) || !gCreases.includes(e1)) continue;
+    const set1 = e1.facets.map((f) => f.id).sort().join('|');
+    const set2 = e2.facets.map((f) => f.id).sort().join('|');
+    if (set1 !== set2) continue;
+    const other = (e) => (key([e.a[0], e.a[1]]) === k ? e.b : e.a);
+    const P = key([e1.a[0], e1.a[1]]) === k ? e1.a : e1.b;
+    const A = other(e1);
+    const B = other(e2);
+    const l1 = Math.hypot(P[0] - A[0], P[1] - A[1]);
+    const l2 = Math.hypot(B[0] - P[0], B[1] - P[1]);
+    if (l1 < 1e-6 || l2 < 1e-6) continue;
+    const a1 = Math.atan2(P[1] - A[1], P[0] - A[0]);
+    const a2 = Math.atan2(B[1] - P[1], B[0] - P[0]);
+    let dth = Math.abs(a2 - a1);
+    if (dth > Math.PI) dth = 2 * Math.PI - dth;
+    const gTol = Math.atan(EPS_PLANE / Math.min(l1, l2));
+    if (dth > gTol)
+      err('G1', `${e1.type}: излом ${((dth * 180) / Math.PI).toFixed(1)}° в точке (${P[0].toFixed(1)},${P[1].toFixed(1)}) без узла — прямая балка так не гнётся`);
+  }
+  if (!out.some((r) => r.id === 'G1')) ok('G1', "каждая складка — прямая от узла до узла");
+  // G2/G3 — терминация по типам и висячие концы
+  for (const e of gCreases) {
+    if (gIsSeam.has(e)) continue;
+    for (const p of [e.a, e.b]) {
+      const k = key([p[0], p[1]]);
+      const arr = gDeg.get(k) ?? [];
+      if (arr.length === 1) {
+        err('G3', `${gTypeOf(e)}: висячий конец в (${p[0].toFixed(1)},${p[1].toFixed(1)}) — линий из ниоткуда не бывает`);
+        continue;
+      }
+      if (arr.length === 2 && gTypeOf(arr[0]) === gTypeOf(arr[1])) continue;
+      const isNode = arr.length >= 3;
+      const corner = gCorner(p);
+      const ringD = gRingDist(p);
+      const t = gTypeOf(e);
+      let okEnd = false;
+      let why = "";
+      const onSeam = gOn(p, gSeams);
+      if (t === 'valley') {
+        okEnd = isNode || corner === 'concave' || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) || onSeam;
+        why = ringD > STUB_FT ? "обрывается в поле" : corner ? `упирается в ${corner === 'convex' ? "выпуклый" : ""} угол` : "выходит на карниз серединой";
+      } else if (t === 'hip') {
+        okEnd = isNode || corner === 'convex' || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) || onSeam;
+        why = ringD > STUB_FT ? "обрывается в поле" : corner ? "упирается не в свой угол" : "выходит на карниз серединой";
+      } else {
+        okEnd = isNode || corner !== null || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'rake')) || onSeam;
+        why = "конёк висит без вальм/ендов/фронтона";
+      }
+      if (!okEnd) err('G2', `${t}: терминация вне грамматики в (${p[0].toFixed(1)},${p[1].toFixed(1)}) — ${why}`);
+    }
+  }
+  // G2 для rake: фронтонное ребро живёт только на контуре
+  for (const e of gAllEdges0.filter((o) => gTypeOf(o) === 'rake')) {
+    if (gIsSeam.has(e)) continue;
+    if (gRingDist(e.a) > STUB_FT || gRingDist(e.b) > STUB_FT)
+      err('G2', `rake в (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)}) не лежит на контуре`);
+  }
+  if (!out.some((r) => r.id === 'G2')) ok('G2', "терминация линий по грамматике (углы, узлы, коньки, фронтоны)");
+  if (!out.some((r) => r.id === 'G3')) ok('G3', "висячих концов нет");
+  // G4 — конёк параллелен карнизам своих граней (допуск 6°: atan(2σ⊥/L)
+  // измеренных складок при σ⊥ ≤ 0.5 ft и L ≥ 10 ft)
+  const G4_DEG = 6;
+  for (const e of gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) {
+    const rd = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+    let bestDiff = null;
+    for (const f of e.facets) {
+      for (const [, o] of edges) {
+        if (gTypeOf(o) !== 'eave' || !o.facets.includes(f)) continue;
+        const ed = Math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]);
+        let d = Math.abs(rd - ed) % Math.PI;
+        if (d > Math.PI / 2) d = Math.PI - d;
+        if (bestDiff === null || d < bestDiff) bestDiff = d;
+      }
+    }
+    if (bestDiff !== null && (bestDiff * 180) / Math.PI > G4_DEG)
+      err('G4', `конёк (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) не параллелен карнизам своих граней (${((bestDiff * 180) / Math.PI).toFixed(1)}°)`);
+  }
+  if (!out.some((r) => r.id === 'G4')) ok('G4', "коньки параллельны своим карнизам");
+
+
   // ─ 11b. R17: конёк по центру пролёта при равных уклонах (инвариант №13)
   //   Предикат на «два почти-параллельных конька»: если обе смежные грани
   //   одного уклона, перпендикулярные расстояния от конька до их карнизов

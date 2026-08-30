@@ -256,7 +256,15 @@ function toValidatorSchema(model: RoofModel, footprint: FootprintPoint[]): unkno
     if (!ring || ring.length < 3) continue;
     facets.push({ id: String(f.designator || f.id), pitch: Number(f.pitch) || 0, v: ring.map(vid) });
   }
-  return { material: "asphalt", footprint: footprint.map((p) => [+p.x.toFixed(3), +p.y.toFixed(3)]), vertices: verts, facets };
+  const ptById = new Map(model.points.map((pt) => [pt.id, pt]));
+  const lines = model.lines
+    .map((l) => {
+      const a = ptById.get(l.aId);
+      const b = ptById.get(l.bId);
+      return a && b ? { a: [+a.x.toFixed(3), +a.y.toFixed(3)], b: [+b.x.toFixed(3), +b.y.toFixed(3)], type: l.type } : null;
+    })
+    .filter((x): x is { a: number[]; b: number[]; type: string } => x !== null);
+  return { material: "asphalt", footprint: footprint.map((p) => [+p.x.toFixed(3), +p.y.toFixed(3)]), vertices: verts, facets, lines };
 }
 
 function runMjs(schema: unknown): { errors: number; warnings: number; codes: string[] } {
