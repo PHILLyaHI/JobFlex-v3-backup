@@ -257,13 +257,22 @@ function toValidatorSchema(model: RoofModel, footprint: FootprintPoint[]): unkno
     facets.push({ id: String(f.designator || f.id), pitch: Number(f.pitch) || 0, v: ring.map(vid) });
   }
   const ptById = new Map(model.points.map((pt) => [pt.id, pt]));
+  const lineOwners = new Map<string, string[]>();
+  for (const f of model.faces) for (const id of new Set(f.lineIds)) {
+    const arr = lineOwners.get(id) ?? [];
+    const d = String(f.designator || f.id);
+    if (!arr.includes(d)) arr.push(d);
+    lineOwners.set(id, arr);
+  }
   const lines = model.lines
     .map((l) => {
       const a = ptById.get(l.aId);
       const b = ptById.get(l.bId);
-      return a && b ? { a: [+a.x.toFixed(3), +a.y.toFixed(3)], b: [+b.x.toFixed(3), +b.y.toFixed(3)], type: l.type } : null;
+      return a && b
+        ? { a: [a.x, a.y, a.z], b: [b.x, b.y, b.z], type: l.type, facets: lineOwners.get(l.id) ?? [] }
+        : null;
     })
-    .filter((x): x is { a: number[]; b: number[]; type: string } => x !== null);
+    .filter((x): x is { a: number[]; b: number[]; type: string; facets: string[] } => x !== null);
   return { material: "asphalt", footprint: footprint.map((p) => [+p.x.toFixed(3), +p.y.toFixed(3)]), vertices: verts, facets, lines };
 }
 

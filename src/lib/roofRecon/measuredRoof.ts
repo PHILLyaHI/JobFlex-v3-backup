@@ -104,7 +104,7 @@ const eulerOf = (m: RoofModel): number => {
   return verts.size - planEdges.size + m.faces.length;
 };
 
-function guardsOf(m: RoofModel, contourSqft: number) {
+function guardsOf(m: RoofModel, contourSqft: number, footprint?: FootprintPoint[]) {
   const idx = buildIndexes(m);
   let plan = 0;
   let small = 0;
@@ -115,7 +115,16 @@ function guardsOf(m: RoofModel, contourSqft: number) {
     plan += a;
     if (a < MIN_FACET_SQFT) small++;
   }
-  const errorCodes = [...new Set(validateRoofInvariants(m).results.filter((x) => x.level === "error").map((x) => x.id))];
+  // контур передаётся валидатору обязательно: его собственная сшивка
+  // периметра искажается швами (§K — линейка, искажающая измеряемое),
+  // и гейт мерил бы модель о свой шов, а не об истинное кольцо
+  const errorCodes = [
+    ...new Set(
+      validateRoofInvariants(m, footprint ? { footprint: footprint.map((q) => [q.x, q.y] as [number, number]) } : undefined)
+        .results.filter((x) => x.level === "error")
+        .map((x) => x.id),
+    ),
+  ];
   return {
     euler: eulerOf(m),
     tilingPct: contourSqft > 0 ? Math.abs(plan - contourSqft) / contourSqft * 100 : 0,
@@ -938,7 +947,25 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     const facePlane = new Map<string, Plane>();
     const faceCentroid = new Map<string, FootprintPoint>();
     for (const f of candidate.faces) {
-      const r = ringOf(f.lineIds, idxT);
+      // кольцо с щипком не сшивается, но плоскости порядок обхода не нужен:
+      // берём точки линий грани как облако — иначе близнецы конька без
+      // плоскости владельца пережимались фолбэком в STEPFLASH (магента)
+      let r = ringOf(f.lineIds, idxT);
+      if (!r || r.length < 3) {
+        const seen = new Set<string>();
+        const cloud: (typeof candidate.points)[number][] = [];
+        for (const id of new Set(f.lineIds)) {
+          const l = candidate.lines.find((l2) => l2.id === id);
+          if (!l) continue;
+          for (const pid of [l.aId, l.bId]) {
+            if (seen.has(pid)) continue;
+            seen.add(pid);
+            const pt = ptById.get(pid);
+            if (pt) cloud.push(pt);
+          }
+        }
+        r = cloud.length >= 3 ? cloud : null;
+      }
       if (!r || r.length < 3) continue;
       const pl = fitPlane(r);
       if (pl) facePlane.set(f.id, pl);
@@ -1019,9 +1046,13 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           for (const l of g) bump(l.type, l.lengthFt);
           continue;
         }
-        // близнецы одного уровня: один тип складки на всех, счёт один раз
+        // близнецы одного уровня: один тип складки на всех, счёт один раз.
+        // Складки нет (пробы монотонны — перелом уклона одной стороны, напр.
+        // 7.8/12 → 5.6/12 у гребня 12629): измеренная граница двух граней —
+        // нейтральный переход OTHER; STEPFLASH — только кромка разбиения
+        // одновладельца, легенда не заявляет немеренного
         const allOwners = [...new Set(g.flatMap((l) => ownersOf.get(l.id) ?? []))];
-        const t = creaseType(l0, allOwners) ?? (onRing ? l0.type : "STEPFLASH");
+        const t = creaseType(l0, allOwners) ?? (onRing ? l0.type : allOwners.length >= 2 ? "OTHER" : "STEPFLASH");
         for (const l of g) l.type = t as (typeof l0)["type"];
         bump(t, l0.lengthFt);
         continue;
@@ -1104,12 +1135,13 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     prov: ci.prov,
   }));
 
-  const guards = guardsOf(candidate, contourSqft);
+  const guards = guardsOf(candidate, contourSqft, contour);
   if (rc.euler !== 1) reasons.push(`region graph Euler ${rc.euler} — построение не то, чем назвалось`);
   if (rc.tilingPct > 0.5) reasons.push(`region tiling off by ${rc.tilingPct.toFixed(2)}%`);
 
   // The stitch must not ship worse topology than the skeleton it replaces.
-  if (guards.euler !== 1 || guards.errorCodes.includes("R03") || guards.errorCodes.includes("R04") || guards.tilingPct > 0.5) {
+  const gViolated = guards.errorCodes.some((c) => c.startsWith("G"));
+  if (guards.euler !== 1 || guards.errorCodes.includes("R03") || guards.errorCodes.includes("R04") || gViolated || guards.tilingPct > 0.5) {
     reasons.push(
       `stitched model fails hard guards (Euler ${guards.euler}, tiling ${guards.tilingPct.toFixed(2)}%, codes ${guards.errorCodes.join("/") || "none"}) — skeleton kept`,
     );

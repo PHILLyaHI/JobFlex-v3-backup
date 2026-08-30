@@ -367,27 +367,31 @@ export function validateRoof(model) {
   //    терминация — линия есть прямая балка от узла до узла) ──
   // грамматика судит ЗАЯВЛЕННЫЕ типы, когда модель их несёт (schema-поле
   // lines: [{a:[x,y], b:[x,y], type}]); геометрия — фолбэк для чистых фикстур
-  const gAllEdges0 = [...byType.eave, ...byType.rake, ...byType.ridge, ...byType.hip, ...byType.valley, ...byType.unknown];
-  const gDeclared = new Map();
-  for (const l of model.lines ?? []) {
-    const ka = key([l.a[0], l.a[1]]);
-    const kb = key([l.b[0], l.b[1]]);
-    const k = ka < kb ? ka + '#' + kb : kb + '#' + ka;
-    if (!gDeclared.has(k)) gDeclared.set(k, l.type);
+  // Граф грамматики — из ЗАЯВЛЕННЫХ ЛИНИЙ напрямую (schema lines:
+  // [{a:[x,y,z], b, type, facets}]): кольцо грани с щипком не сшивается и
+  // прятало от графа половину мира (швы, соседние складки) — легальная
+  // терминация на шве читалась «обрывом в поле». Фолбэк — рёбра колец.
+  const gAllEdges0 = [];
+  const gMap = (t) =>
+    t === 'RIDGE' ? 'ridge' : t === 'HIP' ? 'hip' : t === 'VALLEY' ? 'valley' :
+    t === 'EAVE' ? 'eave' : t === 'RAKE' ? 'rake' :
+    t === 'FLASHING' || t === 'STEPFLASH' ? 'seam' : 'unknown';
+  if (model.lines?.length) {
+    for (const l of model.lines) {
+      if (Math.hypot(l.b[0] - l.a[0], l.b[1] - l.a[1]) < 1e-6) continue;
+      gAllEdges0.push({
+        a: [l.a[0], l.a[1], l.a[2] ?? 0],
+        b: [l.b[0], l.b[1], l.b[2] ?? 0],
+        t: gMap(l.type),
+        facets: (l.facets ?? []).map((id) => ({ id })),
+      });
+    }
+  } else {
+    for (const e of [...byType.eave, ...byType.rake, ...byType.ridge, ...byType.hip, ...byType.valley, ...byType.unknown])
+      gAllEdges0.push({ a: e.a, b: e.b, t: e.type ?? 'unknown', facets: e.facets });
   }
-  const gTypeOf = (e) => {
-    const ka = key([e.a[0], e.a[1]]);
-    const kb = key([e.b[0], e.b[1]]);
-    const t = gDeclared.get(ka < kb ? ka + '#' + kb : kb + '#' + ka);
-    if (t === 'RIDGE') return 'ridge';
-    if (t === 'HIP') return 'hip';
-    if (t === 'VALLEY') return 'valley';
-    if (t === 'EAVE') return 'eave';
-    if (t === 'RAKE') return 'rake';
-    if (t === 'FLASHING' || t === 'STEPFLASH') return 'seam';
-    return e.type ?? 'unknown';
-  };
-  const gCreases = gAllEdges0.filter((e) => ['ridge', 'hip', 'valley'].includes(gTypeOf(e)));
+  const gTypeOf = (e) => e.t;
+  const gCreases = gAllEdges0.filter((e) => ['ridge', 'hip', 'valley'].includes(e.t));
   const gAllEdges = gAllEdges0;
   const gSeams = gAllEdges0.filter((e) => gTypeOf(e) === 'seam');
   const gIsSeam = new Set(gSeams);
@@ -443,9 +447,10 @@ export function validateRoof(model) {
     const a2 = Math.atan2(B[1] - P[1], B[0] - P[0]);
     let dth = Math.abs(a2 - a1);
     if (dth > Math.PI) dth = 2 * Math.PI - dth;
-    const gTol = Math.atan(EPS_PLANE / Math.min(l1, l2));
-    if (dth > gTol)
-      err('G1', `${e1.type}: излом ${((dth * 180) / Math.PI).toFixed(1)}° в точке (${P[0].toFixed(1)},${P[1].toFixed(1)}) без узла — прямая балка так не гнётся`);
+    const chord = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1;
+    const perpP = Math.abs((P[0] - A[0]) * (B[1] - A[1]) - (P[1] - A[1]) * (B[0] - A[0])) / chord;
+    if (perpP > EPS_PLANE)
+      err('G1', `${e1.t}: излом ${((dth * 180) / Math.PI).toFixed(1)}° в точке (${P[0].toFixed(1)},${P[1].toFixed(1)}) без узла — прямая балка так не гнётся`);
   }
   if (!out.some((r) => r.id === 'G1')) ok('G1', "каждая складка — прямая от узла до узла");
   // G2/G3 — терминация по типам и висячие концы
@@ -487,23 +492,32 @@ export function validateRoof(model) {
   }
   if (!out.some((r) => r.id === 'G2')) ok('G2', "терминация линий по грамматике (углы, узлы, коньки, фронтоны)");
   if (!out.some((r) => r.id === 'G3')) ok('G3', "висячих концов нет");
-  // G4 — конёк параллелен карнизам своих граней (допуск 6°: atan(2σ⊥/L)
-  // измеренных складок при σ⊥ ≤ 0.5 ft и L ≥ 10 ft)
-  const G4_DEG = 6;
-  for (const e of gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) {
+  // G4 — конёк есть горизонталь своей плоскости, а горизонталь плоскости
+  // перпендикулярна её градиенту. Допуск — собственная неопределённость
+  // направления линии atan(2σ⊥/L) при σ⊥ = 0.5 ft; линия короче 2σ⊥
+  // направления не несёт (§J). Прежняя форма «параллелен карнизам» — прокси,
+  // ломавшийся на гранях, чей низ — ендовы и ступени, а карниза почти нет.
+  const G4_SIGMA = 0.5; // σ⊥ измеренной складки, ft
+  const LEVEL_G = 0.5 / 12; // ровная грань направления градиента не несёт
+  const gGrad = new Map();
+  for (const f of facets) if (f.plane) gGrad.set(f.id, [f.plane.a, f.plane.b]);
+  for (const e of gAllEdges0.filter((o) => o.t === 'ridge')) {
+    const gLen = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
+    if (gLen < 2 * G4_SIGMA) continue; // §J: 2σ⊥ ≥ L — направления нет
+    const G4_DEG = (Math.atan((2 * G4_SIGMA) / gLen) * 180) / Math.PI;
     const rd = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
-    let bestDiff = null;
+    let worst = null;
     for (const f of e.facets) {
-      for (const [, o] of edges) {
-        if (gTypeOf(o) !== 'eave' || !o.facets.includes(f)) continue;
-        const ed = Math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]);
-        let d = Math.abs(rd - ed) % Math.PI;
-        if (d > Math.PI / 2) d = Math.PI - d;
-        if (bestDiff === null || d < bestDiff) bestDiff = d;
-      }
+      const g = gGrad.get(f.id);
+      if (!g || Math.hypot(g[0], g[1]) < LEVEL_G) continue;
+      const gd = Math.atan2(g[1], g[0]);
+      let d = Math.abs(rd - gd) % Math.PI;
+      if (d > Math.PI / 2) d = Math.PI - d;
+      const off = Math.abs(Math.PI / 2 - d);
+      if (worst === null || off > worst) worst = off;
     }
-    if (bestDiff !== null && (bestDiff * 180) / Math.PI > G4_DEG)
-      err('G4', `конёк (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) не параллелен карнизам своих граней (${((bestDiff * 180) / Math.PI).toFixed(1)}°)`);
+    if (worst !== null && (worst * 180) / Math.PI > G4_DEG)
+      err('G4', `конёк (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) не перпендикулярен градиенту своей грани (${((worst * 180) / Math.PI).toFixed(1)}°)`);
   }
   if (!out.some((r) => r.id === 'G4')) ok('G4', "коньки параллельны своим карнизам");
 

@@ -91,13 +91,22 @@ function toValidatorSchema(model: RoofModel): unknown {
     [Math.min(...xs), Math.max(...ys)],
   ];
   const ptById2 = new Map(model.points.map((pt) => [pt.id, pt]));
+  const lineOwners = new Map<string, string[]>();
+  for (const f of model.faces) for (const id of new Set(f.lineIds)) {
+    const arr = lineOwners.get(id) ?? [];
+    const d = String(f.designator || f.id);
+    if (!arr.includes(d)) arr.push(d);
+    lineOwners.set(id, arr);
+  }
   const lines = model.lines
     .map((l) => {
       const a = ptById2.get(l.aId);
       const b = ptById2.get(l.bId);
-      return a && b ? { a: [a.x, a.y], b: [b.x, b.y], type: l.type } : null;
+      return a && b
+        ? { a: [a.x, a.y, a.z], b: [b.x, b.y, b.z], type: l.type, facets: lineOwners.get(l.id) ?? [] }
+        : null;
     })
-    .filter((x): x is { a: number[]; b: number[]; type: string } => x !== null);
+    .filter((x): x is { a: number[]; b: number[]; type: string; facets: string[] } => x !== null);
   return { material: "asphalt", footprint, vertices: verts, facets, lines };
 }
 
