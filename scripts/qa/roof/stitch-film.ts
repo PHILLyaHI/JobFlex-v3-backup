@@ -114,6 +114,14 @@ function rasterFrom(file: string, meta: FixtureMeta): Raster {
     }
     ov.save(join(OUT, `${key}-${name}.png`));
   }
+  // stage 5b: ДО выпрямления (модель со звеньями и огрызками)
+  if (res.preStraighten) {
+    const pt0 = new Map(res.preStraighten.points.map((p) => [p.id, p]));
+    const ov = new Overlay(bytes, wide.bbox!, meta.origin);
+    ov.reset();
+    for (const l of res.preStraighten.lines) ov.seg(pt0.get(l.aId)!, pt0.get(l.bId)!, [230, 230, 230]);
+    ov.save(join(OUT, `${key}-6a-prestraighten.png`));
+  }
   // stage 6: полиэдр — final model lines uniformly (structure without types)
   const model = res.model ?? res.rejectedCandidate;
   if (model) {

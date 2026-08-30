@@ -29,6 +29,7 @@ import type { Raster } from "@/lib/solar";
 import { reconstructRoof, DEFAULT_PLANE_TOL_FT } from "@/lib/roofRecon";
 import { measureDsmLayout, PROBE_FT, type ReconLayoutDiagnostics } from "@/lib/roofRecon/measuredLines";
 import { buildRegionCells, type RegionCell } from "@/lib/roofRecon/regionCells";
+import { mergeCollinearChains } from "@/lib/roofRecon/straighten";
 import { assembleRoofModel, type AssembleCell } from "@/lib/roofRecon/assembleModel";
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { validateRoofInvariants } from "@/lib/roofDiagram/validate";
@@ -62,6 +63,8 @@ export interface MeasuredRoofResult {
   guards: { euler: number; tilingPct: number; errorCodes: string[]; smallFacets: number };
   /** Per-cell fit census (RMS against the candidate plane, ft). */
   cellStats: Array<{ areaSqft: number; rmsFt: number; prov: FaceProvenance }>;
+  /** Для ленты: модель до слоя выпрямления (только при onStage). */
+  preStraighten?: RoofModel;
   reasons: string[];
 }
 
@@ -721,6 +724,36 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   //    surface samples (noise 0.12 ft) can never hold on their own. ──
   const flat = flattenFacets(assembled);
   const candidate = flat.model;
+  // ── СЛОЙ ВЫПРЯМЛЕНИЯ: коллинеарное слияние звеньев (до типизации) ──
+  const preStraighten = input.onStage ? (JSON.parse(JSON.stringify(candidate)) as RoofModel) : undefined;
+  // коридор на линию модели — сопоставлением с несущими (обе точки в
+  // пределах коридора от одной несущей)
+  const corridorOfLine = (() => {
+    const geo = rcLines.map((l) => {
+      const L = Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y) || 1;
+      const d2 = { x: (l.b.x - l.a.x) / L, y: (l.b.y - l.a.y) / L };
+      const n2 = { x: -d2.y, y: d2.x };
+      const corr = l.gradDiffPerFt > 1e-6 ? DEFAULT_PLANE_TOL_FT / l.gradDiffPerFt + m.stepFt : m.stepFt;
+      return { a: l.a, n: n2, corr };
+    });
+    const ptById3 = new Map(candidate.points.map((pt) => [pt.id, pt]));
+    return (lineId: string): number => {
+      const l = candidate.lines.find((x) => x.id === lineId);
+      if (!l) return 0;
+      const A = ptById3.get(l.aId);
+      const B = ptById3.get(l.bId);
+      if (!A || !B) return 0;
+      let best = 0;
+      for (const g of geo) {
+        const pa = Math.abs((A.x - g.a.x) * g.n.x + (A.y - g.a.y) * g.n.y);
+        const pb = Math.abs((B.x - g.a.x) * g.n.x + (B.y - g.a.y) * g.n.y);
+        if (pa <= g.corr && pb <= g.corr) best = Math.max(best, g.corr);
+      }
+      return best;
+    };
+  })();
+  const straighten = mergeCollinearChains(candidate, m.stepFt, corridorOfLine);
+  if (straighten.merged || straighten.collapsed) reasons.push(`выпрямление: ${straighten.collapsed} огрызков схлопнуто (< 4 ft — шумовой пол шага 1), ${straighten.merged} звеньев слито; канон: ${rc.canonSnapped} линий`);
   reasons.push(`flatten: dev ${flat.report.devBeforeFt} → ${flat.report.devAfterFt} ft, ${flat.report.pointsMoved} vertices, max move ${flat.report.maxMoveFt} ft`);
   // figures follow the flattened geometry: pitch and area per face refit
   {
@@ -914,6 +947,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
 
   return {
     model: candidate,
+    ...(preStraighten ? { preStraighten } : {}),
     engine: "measured-dsm",
     measuredShare: m.measuredShare,
     provenance,

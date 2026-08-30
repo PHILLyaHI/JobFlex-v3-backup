@@ -94,6 +94,8 @@ export interface RegionCellsResult {
   raggedFt: number;
   /** Straightened only by the absorbed-territory rule (dilation artifacts). */
   artifactFt: number;
+  /** Финишный слой: линии, доведённые до канона (оси дома, ±45°). */
+  canonSnapped: number;
   report: string[];
 }
 
@@ -277,6 +279,54 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     const corridor = l.gradDiffPerFt > 1e-6 ? DEFAULT_PLANE_TOL_FT / l.gradDiffPerFt + stepFt : stepFt;
     return { ...l, L, d, n, E, corridor };
   });
+  // ── КАНОН НАПРАВЛЕНИЙ ──
+  // Крыша сделана из прямых балок под каноническими углами: оси дома (из
+  // рёбер контура, взвешенно по длине, mod 90°) и диагонали ±45°. Линия,
+  // чьё направление в пределах СВОЕЙ угловой неопределённости от канона —
+  // доводится (поворот вокруг середины); предел θmax = atan(2σ⊥/L): поворот
+  // на θmax сдвигает концы на ≤ σ⊥ — внутри разброса измерения, не поверх
+  // него. Вне предела линия остаётся измеренной: дом бывает неканоническим,
+  // измерение главнее красоты.
+  let canonSnapped = 0;
+  {
+    // house axis from the ring, length-weighted circular mean mod 90°
+    let cs = 0;
+    let sn = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const len2 = Math.hypot(b.x - a.x, b.y - a.y);
+      const th4 = Math.atan2(b.y - a.y, b.x - a.x) * 4; // mod 90° = period π/2
+      cs += len2 * Math.cos(th4);
+      sn += len2 * Math.sin(th4);
+    }
+    const axis = Math.atan2(sn, cs) / 4;
+    const canon = [axis, axis + Math.PI / 4, axis + Math.PI / 2, axis + (3 * Math.PI) / 4];
+    for (const l of lineGeom) {
+      if (l.L < EPS) continue;
+      const th2 = Math.atan2(l.d.y, l.d.x);
+      const thMax = Math.atan((2 * Math.max(l.sigmaPerpFt, stepFt)) / l.L);
+      let best: number | null = null;
+      let bestD = Infinity;
+      for (const c2 of canon) {
+        // direction is unsigned (period π)
+        let dd = th2 - c2;
+        while (dd > Math.PI / 2) dd -= Math.PI;
+        while (dd < -Math.PI / 2) dd += Math.PI;
+        if (Math.abs(dd) < bestD) { bestD = Math.abs(dd); best = th2 - dd; }
+      }
+      if (best === null || bestD > thMax || bestD < 1e-9) continue;
+      const mid = { x: (l.a.x + l.b.x) / 2, y: (l.a.y + l.b.y) / 2 };
+      const half = l.L / 2;
+      const d2 = { x: Math.cos(best), y: Math.sin(best) };
+      l.a = { x: mid.x - d2.x * half, y: mid.y - d2.y * half };
+      l.b = { x: mid.x + d2.x * half, y: mid.y + d2.y * half };
+      l.d = d2;
+      l.n = { x: -d2.y, y: d2.x };
+      canonSnapped++;
+    }
+    if (canonSnapped) report.push(`канон: ${canonSnapped} линий доведено до осей/диагоналей (в пределах atan(2σ⊥/L))`);
+  }
   const lineForPair = new Map<string, number>();
   const clusterPairKey = (ca: number, cb: number) => (ca < cb ? `${ca}|${cb}` : `${cb}|${ca}`);
   lineGeom.forEach((l, i) => lineForPair.set(clusterPairKey(l.between[0], l.between[1]), i));
@@ -842,5 +892,5 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   const total = cells0.reduce((s, f) => s + f.area, 0);
   const tilingPct = contourArea > 0 ? (Math.abs(total - contourArea) / contourArea) * 100 : 0;
 
-  return { cells, euler, tilingPct, straightenedFt, raggedFt, artifactFt, report };
+  return { cells, euler, tilingPct, straightenedFt, raggedFt, artifactFt, canonSnapped, report };
 }
