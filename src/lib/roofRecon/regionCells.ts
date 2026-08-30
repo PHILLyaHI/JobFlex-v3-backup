@@ -288,58 +288,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   };
 
   const vKeyQ = (p: FootprintPoint) => `${Math.round(p.x / Math.max(WELD, 1e-6))}|${Math.round(p.y / Math.max(WELD, 1e-6))}`;
-  const junctionAt = new Map<string, { p: FootprintPoint; polyEnds: Array<{ poly: number; end: 0 | 1 }> }>();
-  vpolys.forEach((vp, pi) => {
-    for (const end of [0, 1] as const) {
-      if (vp.endsOnRing[end]) continue;
-      const p = end === 0 ? vp.pts[0] : vp.pts[vp.pts.length - 1];
-      const k = vKeyQ(p);
-      const rec = junctionAt.get(k) ?? { p, polyEnds: [] };
-      rec.polyEnds.push({ poly: pi, end });
-      junctionAt.set(k, rec);
-    }
-  });
-  let nodeMoves = 0;
-  let nodeCapped = 0;
-  for (const rec of junctionAt.values()) {
-    if (rec.polyEnds.length < 3) continue;
-    const ctrl = new Set<number>();
-    for (const pe of rec.polyEnds) {
-      const vp = vpolys[pe.poly];
-      const ca = clusterOfRegion(vp.pair[0]);
-      const cb = clusterOfRegion(vp.pair[1]);
-      if (ca < 0 || cb < 0) continue;
-      const li = lineForPair.get(clusterPairKey(ca, cb));
-      if (li !== undefined && controls(li, rec.p)) ctrl.add(li);
-    }
-    if (ctrl.size < 2) continue;
-    // least-squares point: minimise Σ ((p − a_i)·n_i)²
-    let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
-    for (const li of ctrl) {
-      const l = lineGeom[li];
-      const rhs = l.a.x * l.n.x + l.a.y * l.n.y;
-      a11 += l.n.x * l.n.x;
-      a12 += l.n.x * l.n.y;
-      a22 += l.n.y * l.n.y;
-      b1 += l.n.x * rhs;
-      b2 += l.n.y * rhs;
-    }
-    const det = a11 * a22 - a12 * a12;
-    if (Math.abs(det) < 1e-9) continue;
-    const px = (b1 * a22 - b2 * a12) / det;
-    const py = (a11 * b2 - a12 * b1) / det;
-    const move = Math.hypot(px - rec.p.x, py - rec.p.y);
-    const moveCap = Math.max(...[...ctrl].map((li) => lineGeom[li].corridor));
-    if (move > moveCap) { nodeCapped++; continue; }
-    const np = { x: px, y: py };
-    nodeMoves++;
-    for (const pe of rec.polyEnds) {
-      const vp = vpolys[pe.poly];
-      if (pe.end === 0) vp.pts[0] = np;
-      else vp.pts[vp.pts.length - 1] = np;
-    }
-  }
-  if (nodeMoves || nodeCapped) report.push(`узлы: ${nodeMoves} сведено по линиям, ${nodeCapped} за пробником — оставлены измеренными`);
+
 
   // ── 5. straightening: simplify first, then project vertex by vertex with
   //       the normalisation rule — a move that makes an adjacent segment
@@ -379,6 +328,8 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
     return { pts, pair: vp.pair, li, interCluster: ca >= 0 && cb >= 0 };
   });
+  const refuse = { reach: 0, perp: 0, cross: 0 };
+  let lastCross = "";
   const segsCross = (a: FootprintPoint, b: FootprintPoint, skipPoly: number, skipIdx: number[]): boolean => {
     // the exact ring participates: a projection must not cross the contour
     for (const rs of ringSegs) {
@@ -389,7 +340,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       const t = ((rs.a.x - a.x) * d2.y - (rs.a.y - a.y) * d2.x) / den;
       const u = ((rs.a.x - a.x) * d1.y - (rs.a.y - a.y) * d1.x) / den;
       const tol = 1e-7;
-      if (t > tol && t < 1 - tol && u > tol && u < 1 - tol) return true;
+      if (t > tol && t < 1 - tol && u > tol && u < 1 - tol) { lastCross = "ring"; return true; }
     }
     for (let pi = 0; pi < simped.length; pi++) {
       const sp = simped[pi];
@@ -404,38 +355,295 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         const t = ((p1.x - a.x) * d2.y - (p1.y - a.y) * d2.x) / den;
         const u = ((p1.x - a.x) * d1.y - (p1.y - a.y) * d1.x) / den;
         const tol = 1e-7;
-        if (t > tol && t < 1 - tol && u > tol && u < 1 - tol) return true;
+        if (t > tol && t < 1 - tol && u > tol && u < 1 - tol) { lastCross = `poly ${pi} [${sp.pair[0]}|${sp.pair[1]}] seg ${i} (${sp.pts[i].x.toFixed(1)},${sp.pts[i].y.toFixed(1)})`; return true; }
       }
     }
     return false;
   };
-  for (let pi = 0; pi < simped.length; pi++) {
-    const sp = simped[pi];
-    if (sp.li === undefined) continue;
-    const l = lineGeom[sp.li];
-    for (let i = 0; i < sp.pts.length; i++) {
+  {
+    // one pass, ordered by |perp| ascending: the smallest projections land
+    // first and clear the way for larger ones (index order tripped the
+    // crossing guard on not-yet-projected neighbours of the same run)
+    interface StraightCand { pi: number; i: number; perpAbs: number }
+    const cands: StraightCand[] = [];
+    for (let pi = 0; pi < simped.length; pi++) {
+      const sp = simped[pi];
+      if (sp.li === undefined) continue;
+      const l = lineGeom[sp.li];
+      for (let i = 0; i < sp.pts.length; i++) {
+        const p = sp.pts[i];
+        const rel = { x: p.x - l.a.x, y: p.y - l.a.y };
+        const perp = rel.x * l.n.x + rel.y * l.n.y;
+        cands.push({ pi, i, perpAbs: Math.abs(perp) });
+      }
+    }
+    cands.sort((x, y) => x.perpAbs - y.perpAbs);
+    for (const cd of cands) {
+      const sp = simped[cd.pi];
+      const l = lineGeom[sp.li!];
+      const i = cd.i;
       const isEnd = i === 0 || i === sp.pts.length - 1;
       const p = sp.pts[i];
       const rel = { x: p.x - l.a.x, y: p.y - l.a.y };
       const perp = rel.x * l.n.x + rel.y * l.n.y;
       const t = rel.x * l.d.x + rel.y * l.d.y;
-      if (t < -l.E || t > l.L + l.E) continue;
-      // The polyhedron commitment: in the drawn model the fold IS the pair's
-      // plane intersection, so the traced boundary straightens onto it along
-      // its whole run — the surface's wander around the fold (measured: real
-      // creases meander 1-2 ft, roofs sag) is the model's honest error, not
-      // its topology. One probe bounds the reach; the per-vertex crossing
-      // refusal below guards the topology.
-      if (Math.abs(perp) > probe) continue;
+      if (t < -l.E || t > l.L + l.E) { refuse.reach++; continue; }
+      const viaAbsorbed = Math.abs(perp) > probe;
+      if (viaAbsorbed && !input.absorbed?.(p)) { refuse.perp++; continue; }
       if (isEnd) { sp.pts[i].c = true; continue; }
       const target = { x: p.x - perp * l.n.x, y: p.y - perp * l.n.y };
-      // the normalisation rule: both adjacent segments must stay clean
       const prev = sp.pts[i - 1];
       const next = sp.pts[i + 1];
-      if (segsCross(prev, target, pi, [i - 1, i]) || segsCross(target, next, pi, [i - 1, i]) || !inRingPt(target)) continue;
+      if (segsCross(prev, target, cd.pi, [i - 1, i]) || segsCross(target, next, cd.pi, [i - 1, i]) || !inRingPt(target)) { refuse.cross++; if (process.env.DBG_CROSS) report.push(`  x-отказ poly ${cd.pi} [${sp.pair[0]}|${sp.pair[1]}] v(${p.x.toFixed(1)},${p.y.toFixed(1)}) perp ${perp.toFixed(1)} блок: ${lastCross}`); continue; }
       sp.pts[i] = { ...target, c: true };
     }
   }
+  // ── 5b. NODE CONSTRUCTION — exact, per junction, AFTER straightening ──
+  // Order matters: nodes resolve against STRAIGHTENED neighbours, so their
+  // new first segments are checked against final geometry (resolving before
+  // straightening tripped the crossing guard on still-ragged traces).
+  // Per-junction resolution replaces positional pre-gathering: the raster
+  // splits one apex into pieces, but each piece resolves onto the SAME exact
+  // intersection of the same lines — they meet in one node by construction;
+  // two REAL apexes nearby (a 4-ft ridge between hip peaks) resolve to their
+  // own two points, which pre-gathering wrongly fused. Only junctions that
+  // FAIL resolution gather (pair-sharing union-find within one probe) so a
+  // split apex without enough candidates still closes as one traced node.
+  const crossesSimped = (a: FootprintPoint, b: FootprintPoint, skipEnds: Array<{ poly: number; end: 0 | 1 }>): boolean => {
+    const skip = new Set(skipEnds.map((pe) => `${pe.poly}|${pe.end}`));
+    const segHit = (p1: FootprintPoint, p2: FootprintPoint): boolean => {
+      const d1 = { x: b.x - a.x, y: b.y - a.y };
+      const d2 = { x: p2.x - p1.x, y: p2.y - p1.y };
+      const den = d1.x * d2.y - d1.y * d2.x;
+      if (Math.abs(den) < 1e-12) return false;
+      const t = ((p1.x - a.x) * d2.y - (p1.y - a.y) * d2.x) / den;
+      const u = ((p1.x - a.x) * d1.y - (p1.y - a.y) * d1.x) / den;
+      const tol = 1e-7;
+      return t > tol && t < 1 - tol && u > tol && u < 1 - tol;
+    };
+    for (let pi = 0; pi < simped.length; pi++) {
+      const pts = simped[pi].pts;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        if (i === 0 && skip.has(`${pi}|0`)) continue;
+        if (i === pts.length - 2 && skip.has(`${pi}|1`)) continue;
+        if (segHit(pts[i], pts[i + 1])) return true;
+      }
+    }
+    for (const rs of ringSegs) if (segHit(rs.a, rs.b)) return true;
+    return false;
+  };
+  const inRingPt0 = inRingPt;
+  interface Junction { p: FootprintPoint; polyEnds: Array<{ poly: number; end: 0 | 1 }> }
+  const junctions: Junction[] = [];
+  {
+    const at = new Map<string, Junction>();
+    simped.forEach((sp, pi) => {
+      for (const end of [0, 1] as const) {
+        if (vpolys[pi].endsOnRing[end]) continue;
+        const pt = end === 0 ? sp.pts[0] : sp.pts[sp.pts.length - 1];
+        const k = vKeyQ(pt);
+        const rec = at.get(k) ?? { p: pt, polyEnds: [] };
+        rec.polyEnds.push({ poly: pi, end });
+        at.set(k, rec);
+      }
+    });
+    junctions.push(...at.values());
+  }
+  const applyNode = (j: Junction, np: FootprintPoint, mark: boolean): void => {
+    for (const pe of j.polyEnds) {
+      const sp = simped[pe.poly];
+      const moved = { ...np, c: mark && sp.li !== undefined ? true : undefined } as FootprintPoint & { c?: boolean };
+      if (pe.end === 0) sp.pts[0] = moved;
+      else sp.pts[sp.pts.length - 1] = moved;
+    }
+  };
+  let nodeMoves = 0;
+  const failed: Junction[] = [];
+  // a resolved point may be SHARED only by junctions sharing a boundary pair
+  // (the split-apex law); an unrelated junction claiming an occupied point is
+  // refused — otherwise distinct nodes fused and bred mega-faces (44 dup
+  // vertices in one ring on 12629)
+  const claimed: Array<{ pt: FootprintPoint; pairs: Set<string> }> = [];
+  const pairsOfJ = (j: Junction): Set<string> => new Set(j.polyEnds.map((pe) => `${simped[pe.poly].pair[0]}|${simped[pe.poly].pair[1]}`));
+  for (const j of junctions) {
+    const cand = new Set<number>();
+    for (const pe of j.polyEnds) {
+      const sp = simped[pe.poly];
+      if (sp.li !== undefined) {
+        const l = lineGeom[sp.li];
+        const t = (j.p.x - l.a.x) * l.d.x + (j.p.y - l.a.y) * l.d.y;
+        if (t >= -l.E && t <= l.L + l.E) cand.add(sp.li);
+      }
+    }
+    let np: FootprintPoint | null = null;
+    if (cand.size === 1) {
+      // a joint between two runs of ONE boundary is a point ON its line
+      const l = lineGeom[[...cand][0]];
+      const rel = { x: j.p.x - l.a.x, y: j.p.y - l.a.y };
+      const perp = rel.x * l.n.x + rel.y * l.n.y;
+      if (Math.abs(perp) <= probe) {
+        const pt = { x: j.p.x - perp * l.n.x, y: j.p.y - perp * l.n.y };
+        let ok = inRingPt0(pt);
+        if (ok) {
+          for (const pe of j.polyEnds) {
+            const sp = simped[pe.poly];
+            const adj = pe.end === 0 ? sp.pts[1] : sp.pts[sp.pts.length - 2];
+            if (adj && crossesSimped(pt, adj, j.polyEnds)) { ok = false; break; }
+          }
+        }
+        if (ok) np = pt;
+      }
+    }
+    if (cand.size >= 2) {
+      const arr = [...cand];
+      let best: { i: number; j: number; x: number } | null = null;
+      for (let i = 0; i < arr.length; i++) {
+        for (let k2 = i + 1; k2 < arr.length; k2++) {
+          const c2 = Math.abs(lineGeom[arr[i]].d.x * lineGeom[arr[k2]].d.y - lineGeom[arr[i]].d.y * lineGeom[arr[k2]].d.x);
+          if (!best || c2 > best.x) best = { i: arr[i], j: arr[k2], x: c2 };
+        }
+      }
+      if (best && best.x > 1e-3) {
+        const l1 = lineGeom[best.i];
+        const l2 = lineGeom[best.j];
+        const den = l1.d.x * l2.d.y - l1.d.y * l2.d.x;
+        const t1 = ((l2.a.x - l1.a.x) * l2.d.y - (l2.a.y - l1.a.y) * l2.d.x) / den;
+        const pt = { x: l1.a.x + l1.d.x * t1, y: l1.a.y + l1.d.y * t1 };
+        let ok = Math.hypot(pt.x - j.p.x, pt.y - j.p.y) <= probe && inRingPt0(pt);
+        if (ok) {
+          for (const li of cand) {
+            const l = lineGeom[li];
+            const perp = Math.abs((pt.x - l.a.x) * l.n.x + (pt.y - l.a.y) * l.n.y);
+            if (perp > l.corridor) { ok = false; break; }
+          }
+        }
+        if (ok) {
+          for (const pe of j.polyEnds) {
+            const sp = simped[pe.poly];
+            const adj = pe.end === 0 ? sp.pts[1] : sp.pts[sp.pts.length - 2];
+            if (adj && crossesSimped(pt, adj, j.polyEnds)) { ok = false; break; }
+          }
+        }
+        if (ok) {
+          const myPairs = pairsOfJ(j);
+          for (const c3 of claimed) {
+            if (Math.hypot(c3.pt.x - pt.x, c3.pt.y - pt.y) > 0.3) continue;
+            let shares = false;
+            for (const kk of myPairs) if (c3.pairs.has(kk)) { shares = true; break; }
+            if (!shares) { ok = false; break; }
+          }
+          if (ok) {
+            claimed.push({ pt, pairs: myPairs });
+          }
+        }
+        if (ok) np = pt;
+      }
+    }
+    if (np) { nodeMoves++; applyNode(j, np, true); }
+    else failed.push(j);
+  }
+  // failed junctions: pair-sharing gathering within one probe, traced mean
+  let nodeKept = 0;
+  {
+    const parent = failed.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const pairsOf = (j: Junction): Set<string> => new Set(j.polyEnds.map((pe) => `${simped[pe.poly].pair[0]}|${simped[pe.poly].pair[1]}`));
+    for (let i = 0; i < failed.length; i++) {
+      for (let k2 = i + 1; k2 < failed.length; k2++) {
+        if (Math.hypot(failed[i].p.x - failed[k2].p.x, failed[i].p.y - failed[k2].p.y) > probe) continue;
+        const pa = pairsOf(failed[i]);
+        let shares = false;
+        for (const kk of pairsOf(failed[k2])) if (pa.has(kk)) { shares = true; break; }
+        if (shares) parent[find(i)] = find(k2);
+      }
+    }
+    const groups3 = new Map<number, Junction[]>();
+    for (let i = 0; i < failed.length; i++) {
+      const r = find(i);
+      const arr = groups3.get(r) ?? [];
+      arr.push(failed[i]);
+      groups3.set(r, arr);
+    }
+    for (const arr of groups3.values()) {
+      nodeKept++;
+      if (arr.length < 2) continue;
+      const mx2 = arr.reduce((s2, j) => s2 + j.p.x, 0) / arr.length;
+      const my2 = arr.reduce((s2, j) => s2 + j.p.y, 0) / arr.length;
+      const mean = { x: mx2, y: my2 };
+      let ok = true;
+      for (const j of arr) {
+        for (const pe of j.polyEnds) {
+          const sp = simped[pe.poly];
+          const adj = pe.end === 0 ? sp.pts[1] : sp.pts[sp.pts.length - 2];
+          if (adj && crossesSimped(mean, adj, arr.flatMap((j2) => j2.polyEnds))) { ok = false; break; }
+        }
+        if (!ok) break;
+      }
+      if (ok) for (const j of arr) applyNode(j, mean, false);
+    }
+  }
+  if (nodeMoves || nodeKept) report.push(`узлы: ${nodeMoves} построено в точных встречах, ${nodeKept} несходящихся — оставлены измеренными`);
+
+  // ── 5c. TERMINAL CONSTRUCTION — a line's boundary end on the contour
+  //        belongs at the LINE ∩ RING point ──
+  let termMoves = 0;
+  const termRefused: number[] = [];
+  {
+    // one pass, deterministic order: nearest targets land first so a
+    // neighbour's not-yet-moved ragged end cannot block an exact terminal
+    interface TermCand { pi: number; end: 0 | 1; pt: FootprintPoint; seg: number; t: number; dist: number }
+    const cands: TermCand[] = [];
+    simped.forEach((sp, pi) => {
+      if (sp.li === undefined) return;
+      const l = lineGeom[sp.li];
+      const vp = vpolys[pi];
+      for (const end of [0, 1] as const) {
+        if (!vp.endsOnRing[end]) continue;
+        const cur = end === 0 ? sp.pts[0] : sp.pts[sp.pts.length - 1];
+        let best: { pt: FootprintPoint; seg: number; t: number; dist: number } | null = null;
+        for (let j = 0; j < ringSegs.length; j++) {
+          const rs = ringSegs[j];
+          const ex = rs.b.x - rs.a.x;
+          const ey = rs.b.y - rs.a.y;
+          const den = l.d.x * ey - l.d.y * ex;
+          if (Math.abs(den) < 1e-12) continue;
+          const tt = ((rs.a.x - l.a.x) * ey - (rs.a.y - l.a.y) * ex) / den;
+          const u = ((rs.a.x - l.a.x) * l.d.y - (rs.a.y - l.a.y) * l.d.x) / -den;
+          if (u < -1e-9 || u > 1 + 1e-9) continue;
+          if (tt < -l.E || tt > l.L + l.E) continue;
+          const pt = { x: l.a.x + l.d.x * tt, y: l.a.y + l.d.y * tt };
+          const dist = Math.hypot(pt.x - cur.x, pt.y - cur.y);
+          if (!best || dist < best.dist) best = { pt, seg: j, t: Math.max(0, Math.min(1, u)), dist };
+        }
+        for (let j = 0; j < ring.length; j++) {
+          const v = ring[j];
+          const perpV = Math.abs((v.x - l.a.x) * l.n.x + (v.y - l.a.y) * l.n.y);
+          if (perpV > l.corridor) continue;
+          const tV = (v.x - l.a.x) * l.d.x + (v.y - l.a.y) * l.d.y;
+          if (tV < -l.E || tV > l.L + l.E) continue;
+          const dist = Math.hypot(v.x - cur.x, v.y - cur.y);
+          if (!best || dist < best.dist) best = { pt: { x: v.x, y: v.y }, seg: j, t: 0, dist };
+        }
+        if (!best || best.dist > probe) { termRefused.push(best ? best.dist : -1); continue; }
+        cands.push({ pi, end, ...best });
+      }
+    });
+    cands.sort((a, b) => a.dist - b.dist);
+    for (const c3 of cands) {
+      const sp = simped[c3.pi];
+      const adj = c3.end === 0 ? sp.pts[1] : sp.pts[sp.pts.length - 2];
+      if (adj && crossesSimped(c3.pt, adj, [{ poly: c3.pi, end: c3.end }])) { termRefused.push(0); continue; }
+      const moved = { ...c3.pt, c: true } as FootprintPoint & { c?: boolean };
+      if (c3.end === 0) sp.pts[0] = moved;
+      else sp.pts[sp.pts.length - 1] = moved;
+      vpolys[c3.pi].endsOnRing[c3.end] = { seg: c3.seg, t: c3.t };
+      termMoves++;
+    }
+  }
+  if (termMoves) report.push(`терминалы: ${termMoves} построено в точках линия∩кольцо`);
+  if (termRefused.length) report.push(`терминалы-отказы: ${termRefused.map((d2) => (d2 < 0 ? "нет цели" : d2.toFixed(1))).join(", ")}`);
+  if (refuse.reach + refuse.perp + refuse.cross > 0) report.push(`отказы спрямления: reach ${refuse.reach} · perp ${refuse.perp} · crossing ${refuse.cross}`);
+
   const edges: FinalEdge[] = [];
   let straightenedFt = 0;
   let raggedFt = 0;
@@ -458,6 +666,56 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
           ? { u, v, prov: "measured-line", lineIndex: sp.li }
           : { u, v, prov: "region-boundary", pair: sp.pair },
       );
+    }
+  }
+
+  // ── 5d. LINE CANONICALISATION — every crossing guard is blind to
+  //        COLLINEAR overlap (parallel denominators), so two runs of one
+  //        boundary straightened onto the same support could overlap along it
+  //        silently and fuse faces in the walk. Each line's edges re-emit as
+  //        one monotone chain of its t-breakpoints — overlap-free by
+  //        construction. ──
+  {
+    const byLine = new Map<number, number[]>();
+    edges.forEach((e, ei) => {
+      if (e.prov === "measured-line" && e.lineIndex !== undefined) {
+        const arr = byLine.get(e.lineIndex) ?? [];
+        arr.push(ei);
+        byLine.set(e.lineIndex, arr);
+      }
+    });
+    const drop = new Set<number>();
+    const added: FinalEdge[] = [];
+    for (const [li, eis] of byLine) {
+      if (eis.length < 2) continue;
+      const l = lineGeom[li];
+      const tOf = (n: number) => (nodes[n].x - l.a.x) * l.d.x + (nodes[n].y - l.a.y) * l.d.y;
+      // node ids that sit ON this line (endpoints of its edges)
+      const lineNodes = new Map<number, number>();
+      for (const ei of eis) for (const n of [edges[ei].u, edges[ei].v]) lineNodes.set(n, tOf(n));
+      for (const ei of eis) {
+        const tu = tOf(edges[ei].u);
+        const tv = tOf(edges[ei].v);
+        const lo = Math.min(tu, tv);
+        const hi = Math.max(tu, tv);
+        const inner = [...lineNodes.entries()]
+          .filter(([n, t]) => n !== edges[ei].u && n !== edges[ei].v && t > lo + 1e-6 && t < hi - 1e-6)
+          .sort((x, y) => x[1] - y[1])
+          .map(([n]) => n);
+        if (!inner.length) continue;
+        drop.add(ei);
+        const chain = tu < tv ? [edges[ei].u, ...inner, edges[ei].v] : [edges[ei].v, ...inner, edges[ei].u];
+        for (let k2 = 0; k2 + 1 < chain.length; k2++) {
+          if (chain[k2] === chain[k2 + 1]) continue;
+          added.push({ u: chain[k2], v: chain[k2 + 1], prov: "measured-line", lineIndex: li });
+        }
+      }
+    }
+    edges.push(...added);
+    if (drop.size) {
+      const kept = edges.filter((_, ei) => !drop.has(ei));
+      edges.length = 0;
+      edges.push(...kept);
     }
   }
 

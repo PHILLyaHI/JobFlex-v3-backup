@@ -168,6 +168,79 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   const recon = reconstructRoof(dsm as never, mask as never);
   const d = recon.diagnostics as unknown as ReconLayoutDiagnostics;
   const groundElevFt = (recon.diagnostics as unknown as { groundElevFt: number }).groundElevFt ?? 0;
+  // ── intercept harmonisation, FIRST ──
+  // Node construction accepts only CONCURRING lines, and lines built from
+  // un-harmonised planes miss triple points by the intercept noise (measured:
+  // 6-10 of ~8 apexes per address rejected as non-concurring). The slopes are
+  // the measurement and stay; the intercepts close their gaps along the
+  // pairs' SHARED BORDERS by least squares, before any line is built.
+  {
+    const w0 = dsm.width;
+    const h0 = dsm.height;
+    const step0 = dsm.pixelSizeM * 3.28084;
+    const cx0 = w0 / 2;
+    const cy0 = h0 / 2;
+    interface PairAcc { n: number; sum: number }
+    const acc = new Map<string, PairAcc>();
+    for (let i = 0; i < w0 * h0; i++) {
+      const a = d.assign[i];
+      if (a < 0) continue;
+      const x = i % w0;
+      const y = (i - x) / w0;
+      for (const [dx2, dy2] of [[1, 0], [0, 1]] as const) {
+        const nx = x + dx2;
+        const ny = y + dy2;
+        if (nx >= w0 || ny >= h0) continue;
+        const b = d.assign[ny * w0 + nx];
+        if (b < 0 || b === a) continue;
+        const px2 = (x + 0.5 - cx0) * step0;
+        const py2 = (cy0 - y - 0.5) * step0;
+        const A = d.clusterPlanes[a];
+        const B = d.clusterPlanes[b];
+        const dz = (A.a * px2 + A.b * py2 + A.c) - (B.a * px2 + B.b * py2 + B.c);
+        if (Math.abs(dz) > STEP_DZ_FT) continue; // a step is not a gap to close
+        const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+        const rec = acc.get(k) ?? { n: 0, sum: 0 };
+        rec.n++;
+        rec.sum += a < b ? dz : -dz;
+        acc.set(k, rec);
+      }
+    }
+    const ids = [...new Set([...acc.keys()].flatMap((k) => k.split("|").map(Number)))];
+    const idxOf = new Map(ids.map((c, i) => [c, i]));
+    const n = ids.length;
+    if (n > 1) {
+      const A2 = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+      const B2 = new Array<number>(n).fill(0);
+      for (let i2 = 0; i2 < n; i2++) A2[i2][i2] += 1e-6;
+      for (const [k, rec] of acc) {
+        if (rec.n * step0 < 4) continue; // under the border noise floor
+        const [ca, cb] = k.split("|").map(Number);
+        const i1 = idxOf.get(ca)!;
+        const j1 = idxOf.get(cb)!;
+        const delta = rec.sum / rec.n; // mean z_a - z_b on the border
+        const wgt = rec.n;
+        A2[i1][i1] += wgt; A2[j1][j1] += wgt; A2[i1][j1] -= wgt; A2[j1][i1] -= wgt;
+        B2[i1] -= wgt * delta; B2[j1] += wgt * delta;
+      }
+      for (let col = 0; col < n; col++) {
+        let piv = col;
+        for (let r = col + 1; r < n; r++) if (Math.abs(A2[r][col]) > Math.abs(A2[piv][col])) piv = r;
+        [A2[col], A2[piv]] = [A2[piv], A2[col]];
+        [B2[col], B2[piv]] = [B2[piv], B2[col]];
+        if (Math.abs(A2[col][col]) < 1e-12) continue;
+        for (let r = 0; r < n; r++) {
+          if (r === col) continue;
+          const f = A2[r][col] / A2[col][col];
+          for (let c2 = col; c2 < n; c2++) A2[r][c2] -= f * A2[col][c2];
+          B2[r] -= f * B2[col];
+        }
+      }
+      for (const [c, i2] of idxOf) {
+        if (Math.abs(A2[i2][i2]) > 1e-12) d.clusterPlanes[c].c += B2[i2] / A2[i2][i2];
+      }
+    }
+  }
   const m = measureDsmLayout({ dsm, diagnostics: d, movedRings: [movedRing] });
 
   const skeletonWhole = (why: string): MeasuredRoofResult => {
@@ -632,6 +705,24 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       else groups.push([e]);
     }
     const out = new Map<CellInfo, { z: number; tag?: string }>();
+    // Residual disagreement that averaging cannot hide: the validator allows
+    // a face 0.08 ft of planarity, so a same-level mismatch beyond 2×0.08
+    // cannot be split between two faces by a mean — the vertex honestly
+    // SPLITS into a micro-seam (each side on its own plane), like a step.
+    const SPLIT_TOL = 0.16;
+    {
+      const regrouped: typeof groups = [];
+      for (const g of groups) {
+        let cur: (typeof g[number])[] = [];
+        for (const e of g) {
+          if (cur.length && e.z - cur[cur.length - 1].z > SPLIT_TOL) { regrouped.push(cur); cur = []; }
+          cur.push(e);
+        }
+        if (cur.length) regrouped.push(cur);
+      }
+      groups.length = 0;
+      groups.push(...regrouped);
+    }
     const groupZ = (g: Array<{ ci: CellInfo; z: number }>): number => {
       // Measured planes carry the vertex; fill planes (skeleton + datum
       // offset) FOLLOW — averaging them in bent measured faces by 0.5-1 ft.
