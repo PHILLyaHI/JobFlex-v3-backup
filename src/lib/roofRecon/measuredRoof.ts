@@ -362,6 +362,11 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     }
   }
 
+  if (process.env.DBG_REGIONS) {
+    const px2: Record<number, number> = {};
+    for (let i = 0; i < w * h; i++) if (region[i] >= 0) px2[region[i]] = (px2[region[i]] ?? 0) + 1;
+    reasons.push(`регионы: ${regionKind.map((k2, i) => `${i}:${k2 === "cluster" ? "c" + clusterOf[i] : "fill"}(${Math.round((px2[i] ?? 0) * stepFt * stepFt)}sf)`).join(" ")}`);
+  }
   // ── region cells: boundaries from membership, straightened by lines ──
   // Two passes. The first traces boundaries with the step-1 lines; every
   // cluster|cluster boundary still ragged after it gets a VIRTUAL line —
@@ -620,7 +625,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       }
       if (g.length >= 2) vGroups.push({ p: p2, cis: g.map((x2) => x2.c2) });
     }
-    for (let round = 0; round < 6; round++) {
+    for (let round = 0; round < 20; round++) {
       // цели вершин
       const targets = vGroups.map((vg) => vg.cis.reduce((s2, c2) => s2 + measuredZAt(c2, vg.p), 0) / vg.cis.length);
       // рефит на кластер
@@ -717,7 +722,10 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     // планарности валидатора на обе стороны. Старый порог 0.08 ДО
     // сходимости плодил микрошвы и ломал грамматику (62 «rake внутри
     // крыши»); порог «только ступени 2.0» ломал планарность.
-    const SPLIT_TOL = 0.16;
+    // 0.08 = бюджет планарности: LS-подгонка не делит расхождение поровну,
+    // и 0.16 оставлял грани на 0.09-0.11. ПОСЛЕ сходимости упрямых вершин
+    // единицы — это не довоенный поток микрошвов.
+    const SPLIT_TOL = 0.08;
     {
       const regrouped: typeof groups = [];
       for (const g of groups) {
@@ -824,16 +832,22 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           const vl = rcLines[e.lineIndex];
           const known = typeForPair.get(clusterPairKey(vl.between[0], vl.between[1]));
           if (known) return known;
-          // a virtual line: type it by the crease rule off the pair planes
-          return undefined;
+          // виртуальная линия без типа шага 1: placeholder OTHER — иначе
+          // геометрический классификатор сборки звал её RAKE внутри крыши;
+          // перетипизация по финальным плоскостям даст честный тип
+          return "OTHER";
         }
         if (e.prov === "region-boundary" && e.pair) {
           const ca = clusterOf[e.pair[0]] ?? -1;
           const cb = clusterOf[e.pair[1]] ?? -1;
-          return ca >= 0 && cb >= 0 ? typeForPair.get(clusterPairKey(ca, cb)) : undefined;
+          if (ca >= 0 && cb >= 0) return typeForPair.get(clusterPairKey(ca, cb));
+          // заполнитель не заявляет тип, которого не мерил: граница с fill —
+          // OTHER (нейтральная линия), не RAKE от геометрического классификатора
+          return "OTHER";
         }
         if (e.prov === "contour" && e.contourIndex !== undefined) return typeByRingEdge[e.contourIndex];
-        return undefined;
+        // рёбра fill-ячеек внутри крыши — тоже без заявлений
+        return e.prov !== "contour" ? "OTHER" : undefined;
       }),
     };
   });
@@ -909,116 +923,161 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     p.y = q.y;
   }
 
-  // ── типизация на готовом полиэдре: только УЧЁТ, не структура ──
-  // Merging seam LINES structurally broke rings (their endpoints are split
-  // points); the model keeps its dual seam lines, and the FOOTAGE counts one
-  // line per plan position (z-gap < STEP_DZ), typed by the crease rule on
-  // the final face planes — the same работа the old path did after synthesis.
+  // ── ТИПИЗАЦИЯ НА ГОТОВОМ ПОЛИЭДРЕ: один проход, явный приоритет ──
+  // 1. контурные рёбра — EAVE/RAKE шага 1;
+  // 2. линия двух граней — правило складки по ФИНАЛЬНЫМ плоскостям,
+  //    сторонозависимо (§K12), ровность 0.5/12;
+  // 3. плановые близнецы (расщеплённые уровни): Δz ≥ SPLIT — ступень
+  //    (верх EAVE / низ FLASHING); меньше — один тип складки на пару;
+  // 4. одновладельная внутренняя линия — кромка разбиения STEPFLASH:
+  //    заполнитель и осколки не заявляют тип, которого не мерили.
+  // Погонаж: одна линия на план-позицию, ступень считает обе стороны.
   {
     const ptById = new Map(candidate.points.map((pt) => [pt.id, pt]));
     const idxT = buildIndexes(candidate);
     const facePlane = new Map<string, Plane>();
+    const faceCentroid = new Map<string, FootprintPoint>();
     for (const f of candidate.faces) {
       const r = ringOf(f.lineIds, idxT);
       if (!r || r.length < 3) continue;
       const pl = fitPlane(r);
       if (pl) facePlane.set(f.id, pl);
-    }
-    const faceCentroid = new Map<string, FootprintPoint>();
-    for (const f of candidate.faces) {
-      const r = ringOf(f.lineIds, idxT);
-      if (!r || r.length < 3) continue;
       faceCentroid.set(f.id, {
         x: r.reduce((s2, q) => s2 + q.x, 0) / r.length,
         y: r.reduce((s2, q) => s2 + q.y, 0) / r.length,
       });
     }
     const ownersOf = new Map<string, string[]>();
-    for (const f of candidate.faces) for (const id of f.lineIds) {
+    for (const f of candidate.faces) for (const id of new Set(f.lineIds)) {
       const arr = ownersOf.get(id) ?? [];
-      arr.push(f.id);
+      if (!arr.includes(f.id)) arr.push(f.id);
       ownersOf.set(id, arr);
     }
     const planKey = (pid: string) => {
       const pt = ptById.get(pid)!;
       return `${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`;
     };
-    interface LGroup { lines: Array<(typeof candidate.lines)[number]>; }
-    const groupsL = new Map<string, LGroup>();
+    const groupsL = new Map<string, Array<(typeof candidate.lines)[number]>>();
     for (const l of candidate.lines) {
       const a = planKey(l.aId);
       const b = planKey(l.bId);
       const k = a < b ? `${a}#${b}` : `${b}#${a}`;
-      const g = groupsL.get(k) ?? { lines: [] };
-      g.lines.push(l);
+      const g = groupsL.get(k) ?? [];
+      g.push(l);
       groupsL.set(k, g);
     }
-    // the standing crease law (creases.ts): a fold "runs level" within 0.5/12
-    const LEVEL_SLOPE = 0.5 / 12;
+    const distRing = (pt: { x: number; y: number }): number => {
+      let best = Infinity;
+      for (let i = 0; i < contour.length; i++) {
+        const a = contour[i];
+        const b = contour[(i + 1) % contour.length];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const L2 = dx * dx + dy * dy || 1;
+        const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / L2));
+        best = Math.min(best, Math.hypot(pt.x - (a.x + dx * t), pt.y - (a.y + dy * t)));
+      }
+      return best;
+    };
+    const LEVEL_SLOPE = 0.5 / 12; // закон складок (creases.ts)
+    const creaseType = (l: (typeof candidate.lines)[number], ownerIds: string[]): string | null => {
+      const own = ownerIds
+        .map((fid) => ({ pl: facePlane.get(fid), c: faceCentroid.get(fid) }))
+        .filter((x): x is { pl: Plane; c: FootprintPoint } => !!x.pl && !!x.c);
+      if (own.length < 2) return null;
+      const a = ptById.get(l.aId)!;
+      const b = ptById.get(l.bId)!;
+      const run = Math.hypot(b.x - a.x, b.y - a.y);
+      if (run < 1e-6) return null;
+      const level = Math.abs(a.z - b.z) <= Math.max(0.08, LEVEL_SLOPE * run);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const zc = (a.z + b.z) / 2;
+      const dir = { x: (b.x - a.x) / run, y: (b.y - a.y) / run };
+      const per = { x: -dir.y, y: dir.x };
+      const side = (o: { pl: Plane; c: FootprintPoint }) =>
+        Math.sign((o.c.x - mid.x) * per.x + (o.c.y - mid.y) * per.y) || 1;
+      const s1 = side(own[0]);
+      const s2b = side(own[1]);
+      const z1 = own[0].pl.a * (mid.x + per.x * s1 * PROBE_FT) + own[0].pl.b * (mid.y + per.y * s1 * PROBE_FT) + own[0].pl.c;
+      const z2 = own[1].pl.a * (mid.x + per.x * s2b * PROBE_FT) + own[1].pl.b * (mid.y + per.y * s2b * PROBE_FT) + own[1].pl.c;
+      if (z1 > zc && z2 > zc) return "VALLEY";
+      if (z1 < zc && z2 < zc) return level ? "RIDGE" : "HIP";
+      return null;
+    };
+    const zOfLine = (l: (typeof candidate.lines)[number]) => (ptById.get(l.aId)!.z + ptById.get(l.bId)!.z) / 2;
     const footage2 = {} as Record<string, number>;
     const bump = (t: string, v: number) => { footage2[t] = (footage2[t] ?? 0) + v; };
     for (const g of groupsL.values()) {
-      const zsp = g.lines.map((l) => (ptById.get(l.aId)!.z + ptById.get(l.bId)!.z) / 2);
-      const isSeamPair = g.lines.length >= 2 && Math.max(...zsp) - Math.min(...zsp) < STEP_DZ_FT;
-      if (!isSeamPair) {
-        // interior lines retype by the final planes too — inherited step-1
-        // types were measured on pre-construction geometry
-        for (const l of g.lines) {
-          const own2 = (ownersOf.get(l.id) ?? [])
-            .map((fid) => ({ pl: facePlane.get(fid), c: faceCentroid.get(fid) }))
-            .filter((x): x is { pl: Plane; c: FootprintPoint } => !!x.pl && !!x.c);
-          if (own2.length === 2) {
-            const a2 = ptById.get(l.aId)!;
-            const b2 = ptById.get(l.bId)!;
-            const run2 = Math.hypot(b2.x - a2.x, b2.y - a2.y);
-            if (run2 > 1e-6) {
-              const level2 = Math.abs(a2.z - b2.z) <= Math.max(0.08, LEVEL_SLOPE * run2);
-              const mid2 = { x: (a2.x + b2.x) / 2, y: (a2.y + b2.y) / 2 };
-              const zc2 = (a2.z + b2.z) / 2;
-              const dir2 = { x: (b2.x - a2.x) / run2, y: (b2.y - a2.y) / run2 };
-              const per2 = { x: -dir2.y, y: dir2.x };
-              const side = (o: { pl: Plane; c: FootprintPoint }) =>
-                Math.sign((o.c.x - mid2.x) * per2.x + (o.c.y - mid2.y) * per2.y) || 1;
-              const s1 = side(own2[0]);
-              const s2b = side(own2[1]);
-              const zp1 = own2[0].pl.a * (mid2.x + per2.x * s1 * PROBE_FT) + own2[0].pl.b * (mid2.y + per2.y * s1 * PROBE_FT) + own2[0].pl.c;
-              const zp2 = own2[1].pl.a * (mid2.x + per2.x * s2b * PROBE_FT) + own2[1].pl.b * (mid2.y + per2.y * s2b * PROBE_FT) + own2[1].pl.c;
-              if (zp1 > zc2 && zp2 > zc2) l.type = "VALLEY";
-              else if (zp1 < zc2 && zp2 < zc2) l.type = level2 ? "RIDGE" : "HIP";
-            }
-          }
-          bump(l.type, l.lengthFt);
+      const l0 = g[0];
+      const onRing = distRing(ptById.get(l0.aId)!) <= 1 && distRing(ptById.get(l0.bId)!) <= 1;
+      if (g.length >= 2) {
+        const zs = g.map(zOfLine);
+        if (Math.max(...zs) - Math.min(...zs) >= 0.16) {
+          // ступень: верхняя сторона EAVE, нижняя FLASHING; погонаж — обе
+          const top = Math.max(...zs);
+          for (const l of g) l.type = zOfLine(l) >= top - 1e-6 ? "EAVE" : "FLASHING";
+          for (const l of g) bump(l.type, l.lengthFt);
+          continue;
         }
+        // близнецы одного уровня: один тип складки на всех, счёт один раз
+        const allOwners = [...new Set(g.flatMap((l) => ownersOf.get(l.id) ?? []))];
+        const t = creaseType(l0, allOwners) ?? (onRing ? l0.type : "STEPFLASH");
+        for (const l of g) l.type = t as (typeof l0)["type"];
+        bump(t, l0.lengthFt);
         continue;
       }
-      // one physical line: retype by the crease rule across BOTH sides' faces
-      const own = g.lines
-        .flatMap((l) => ownersOf.get(l.id) ?? [])
-        .map((fid) => ({ pl: facePlane.get(fid), c: faceCentroid.get(fid) }))
-        .filter((x): x is { pl: Plane; c: FootprintPoint } => !!x.pl && !!x.c);
-      const l0 = g.lines[0];
-      const a = ptById.get(l0.aId)!;
-      const b = ptById.get(l0.bId)!;
-      const run = Math.hypot(b.x - a.x, b.y - a.y);
-      let type: string = l0.type;
-      if (own.length >= 2 && run > 1e-6) {
-        const level = Math.abs(a.z - b.z) <= Math.max(0.08, LEVEL_SLOPE * run);
-        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        const zc = (a.z + b.z) / 2;
-        const dir = { x: (b.x - a.x) / run, y: (b.y - a.y) / run };
-        const per = { x: -dir.y, y: dir.x };
-        const sideG = (o: { pl: Plane; c: FootprintPoint }) =>
-          Math.sign((o.c.x - mid.x) * per.x + (o.c.y - mid.y) * per.y) || 1;
-        const sg1 = sideG(own[0]);
-        const sg2 = sideG(own[1]);
-        const z1 = own[0].pl.a * (mid.x + per.x * sg1 * PROBE_FT) + own[0].pl.b * (mid.y + per.y * sg1 * PROBE_FT) + own[0].pl.c;
-        const z2 = own[1].pl.a * (mid.x + per.x * sg2 * PROBE_FT) + own[1].pl.b * (mid.y + per.y * sg2 * PROBE_FT) + own[1].pl.c;
-        if (z1 > zc && z2 > zc) type = "VALLEY";
-        else if (z1 < zc && z2 < zc) type = level ? "RIDGE" : "HIP";
+      // одиночная линия
+      const owners = ownersOf.get(l0.id) ?? [];
+      if (owners.length >= 2) {
+        const t = creaseType(l0, owners);
+        if (t) l0.type = t as (typeof l0)["type"];
+        // нерешённый перегиб ВНЕ кольца не имеет права зваться RAKE/EAVE —
+        // на контуре типы шага 1 остаются, внутри крыши это OTHER
+        else if (!onRing && (l0.type === "RAKE" || l0.type === "EAVE")) l0.type = "OTHER";
+      } else if (!onRing) {
+        // одновладельная внутренняя — кромка разбиения
+        l0.type = "STEPFLASH";
       }
-      // the drawing shows one line: both twins carry the merged type
-      for (const l of g.lines) l.type = type as (typeof l)["type"];
-      bump(type, l0.lengthFt);
+      bump(l0.type, l0.lengthFt);
+    }
+    // непрерывность: OTHER-кусок с двумя владельцами, оба конца которого
+    // продолжают складку одного типа, — часть этой складки (нейтральные
+    // куски рвали цепи и плодили ложные G2-терминации)
+    for (let round = 0; round < 3; round++) {
+      const byEnd = new Map<string, Array<(typeof candidate.lines)[number]>>();
+      for (const l of candidate.lines) {
+        for (const pid of [l.aId, l.bId]) {
+          const k2 = planKey(pid);
+          const arr = byEnd.get(k2) ?? [];
+          arr.push(l);
+          byEnd.set(k2, arr);
+        }
+      }
+      let changed = false;
+      for (const l of candidate.lines) {
+        if (l.type !== "OTHER") continue;
+        if ((ownersOf.get(l.id) ?? []).length < 2) continue;
+        const endTypes = (pid: string): Set<string> => {
+          const out2 = new Set<string>();
+          for (const o of byEnd.get(planKey(pid)) ?? []) {
+            if (o === l) continue;
+            if (o.type === "RIDGE" || o.type === "HIP" || o.type === "VALLEY") out2.add(o.type);
+          }
+          return out2;
+        };
+        const ta = endTypes(l.aId);
+        const tb = endTypes(l.bId);
+        const both = [...ta].filter((t) => tb.has(t));
+        const one = both.length === 1 ? both[0] : (ta.size === 1 && tb.size === 0 ? [...ta][0] : (tb.size === 1 && ta.size === 0 ? [...tb][0] : null));
+        if (one) {
+          // погонаж уже посчитан как OTHER — переложим
+          footage2["OTHER"] = (footage2["OTHER"] ?? 0) - l.lengthFt;
+          footage2[one] = (footage2[one] ?? 0) + l.lengthFt;
+          l.type = one as (typeof l)["type"];
+          changed = true;
+        }
+      }
+      if (!changed) break;
     }
     for (const t of ["EAVE", "RIDGE", "VALLEY", "HIP", "RAKE", "FLASHING", "STEPFLASH", "OTHER"]) footage2[t] = footage2[t] ?? 0;
     candidate.totals = { ...candidate.totals, footageByType: footage2 as typeof candidate.totals.footageByType };

@@ -225,6 +225,11 @@ export function measureDsmLayout(input: MeasureDsmLayoutInput): DsmLayoutMeasure
       perpSS += perp * perp;
     }
     const sigmaPerpFt = Math.sqrt(perpSS / pts.length);
+    // Линия, чей поперечный разброс сравним с длиной, направления не несёт:
+    // угловая неопределённость atan(2σ⊥/L) ≥ 45° — это шумовая полоса, а не
+    // складка (найдено по «ендове» 4 ft с σ⊥ 4.1, чья граница блокировала
+    // спрямление настоящей вальмы и рожала изломы G1 на 12629).
+    if (sigmaPerpFt * 2 >= t1 - t0) continue;
     lines.push({ a: a2, b: b2, type, lengthFt: t1 - t0, between: [ai, bi], medGapFt: medGap, sigmaPerpFt, gradDiffPerFt: nrm });
   }
 

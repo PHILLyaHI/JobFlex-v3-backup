@@ -62,7 +62,8 @@ const coordRe = /\((-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)/;
       skeleton: first.model!,
     });
     const model = res.model ?? res.rejectedCandidate!;
-    const v = validateRoofInvariants(model);
+    // истинное кольцо — валидаторная сшивка периметра искажается швами
+    const v = validateRoofInvariants(model, { footprint: contour.map((p2) => [p2.x, p2.y] as [number, number]) });
     const g = v.results.filter((r) => r.level === "error" && r.id.startsWith("G"));
     console.log(`\n${job.key}: engine ${res.engine} · G-нарушений ${g.length}`);
     totalG += g.length;

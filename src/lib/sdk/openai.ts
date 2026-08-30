@@ -17,4 +17,16 @@ export function getOpenAI() {
   return client;
 }
 
-export const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+/** Model name read at CALL time. Module-level consts are captured when the
+ *  module first evaluates — under a tsx harness whose .env loader runs after
+ *  imports hoist, that silently pins the default model even though
+ *  OPENAI_MODEL is set. Vision paths (chimneyVision, outlineVision) must use
+ *  this getter so harness and server agree on the model. */
+export function getOpenAIModel(): string {
+  return process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+}
+
+/** Import-time snapshot, kept for existing call sites that run only on the
+ *  server (where the env is loaded before any import). New code — and anything
+ *  a tsx harness can reach — should call getOpenAIModel() instead. */
+export const OPENAI_MODEL = getOpenAIModel();
