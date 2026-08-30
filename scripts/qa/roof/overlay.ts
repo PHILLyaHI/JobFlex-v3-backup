@@ -69,6 +69,16 @@ export class Overlay {
     };
   }
 
+  /** Pixel → frame feet — точная инверсия toPx (зрение-критик отдаёт пиксели). */
+  toFt(p: { x: number; y: number }): { x: number; y: number } {
+    const lng = this.bbox[0] + (p.x / this.w) * (this.bbox[2] - this.bbox[0]);
+    const lat = this.bbox[3] - (p.y / this.h) * (this.bbox[3] - this.bbox[1]);
+    return {
+      x: (lng - this.origin.lng) * D2R * Math.cos(this.origin.lat * D2R) * EARTH_R_M * FT_PER_M,
+      y: (lat - this.origin.lat) * D2R * EARTH_R_M * FT_PER_M,
+    };
+  }
+
   px(x: number, y: number, rgb: RGB): void {
     const xi = Math.round(x);
     const yi = Math.round(y);
