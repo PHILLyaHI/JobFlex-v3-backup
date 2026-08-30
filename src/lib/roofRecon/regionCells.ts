@@ -281,11 +281,6 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   const clusterPairKey = (ca: number, cb: number) => (ca < cb ? `${ca}|${cb}` : `${cb}|${ca}`);
   lineGeom.forEach((l, i) => lineForPair.set(clusterPairKey(l.between[0], l.between[1]), i));
   const clusterOfRegion = (r: number): number => input.clusterOf[r] ?? -1;
-    const perp = Math.abs(rel.x * l.n.x + rel.y * l.n.y);
-    if (perp > l.corridor) return false;
-    const t = rel.x * l.d.x + rel.y * l.d.y;
-    return t >= -l.E && t <= l.L + l.E;
-  };
 
   const vKeyQ = (p: FootprintPoint) => `${Math.round(p.x / Math.max(WELD, 1e-6))}|${Math.round(p.y / Math.max(WELD, 1e-6))}`;
 
