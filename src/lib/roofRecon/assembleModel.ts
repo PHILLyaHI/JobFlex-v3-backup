@@ -15,6 +15,10 @@ export interface P3 {
   x: number;
   y: number;
   z: number;
+  /** Level tag: points weld by PLAN position AND tag. A roof is a height
+   *  function except at STEPS between roof levels — there the two sides
+   *  carry different z at the same plan point and must stay separate. */
+  tag?: string;
 }
 
 export interface AssembleCell {
@@ -42,7 +46,7 @@ export function assembleRoofModel(input: AssembleInput): RoofModel | null {
   const points: RoofPoint[] = [];
   const pIds = new Map<string, string>();
   const pt = (p: P3): string => {
-    const k = `${Math.round(p.x / Q)}|${Math.round(p.y / Q)}`;
+    const k = `${Math.round(p.x / Q)}|${Math.round(p.y / Q)}|${p.tag ?? ""}`;
     let id = pIds.get(k);
     if (!id) {
       id = `${idPrefix}P${points.length + 1}`;

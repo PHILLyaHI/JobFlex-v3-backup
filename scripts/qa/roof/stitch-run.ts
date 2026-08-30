@@ -101,6 +101,10 @@ const ftOf = (m: RoofModel, t: string): number => Math.round((m.totals.footageBy
         `    кандидат (отбракован): RIDGE ${ftOf(c, "RIDGE")} · HIP ${ftOf(c, "HIP")} · VALLEY ${ftOf(c, "VALLEY")} · RAKE ${ftOf(c, "RAKE")} ft · ${c.faces.length} граней`,
       );
     }
+    if (res.boundary) {
+      const tot = res.boundary.straightenedFt + res.boundary.raggedFt;
+      console.log(`    границы: спрямлено ${res.boundary.straightenedFt.toFixed(0)} ft · рваных ${res.boundary.raggedFt.toFixed(0)} ft (${tot > 0 ? ((res.boundary.raggedFt / tot) * 100).toFixed(0) : 0}%)`);
+    }
     for (const r2 of res.reasons) console.log(`    – ${r2}`);
     if (res.conform) console.log(`    conform: ${res.conform.vertsMoved} verts moved (max ${res.conform.maxMoveFt} ft), reverted ${res.conform.reverted}`);
 

@@ -38,6 +38,12 @@ export interface MeasuredLine {
   lengthFt: number;
   between: [number, number];
   medGapFt: number;
+  /** RMS perpendicular scatter of the shared-border pixels around the
+   *  analytic line — the direction-uncertainty scale (angular error ~ σ⊥/L). */
+  sigmaPerpFt: number;
+  /** |∇A − ∇B| of the pair — the membership-ambiguity half-width is
+   *  planeTol / gradDiff (a pixel between the planes fits either within it). */
+  gradDiffPerFt: number;
 }
 
 export interface TypedContourEdge {
@@ -213,7 +219,13 @@ export function measureDsmLayout(input: MeasureDsmLayoutInput): DsmLayoutMeasure
     if (type === "OTHER") continue; // bends without folding — not a roof line
     const gaps = (gapWidths.get(k) ?? []).sort((x2, y3) => x2 - y3);
     const medGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0;
-    lines.push({ a: a2, b: b2, type, lengthFt: t1 - t0, between: [ai, bi], medGapFt: medGap });
+    let perpSS = 0;
+    for (const p of pts) {
+      const perp = (p.x - px0.x) * (da / nrm) + (p.y - px0.y) * (db / nrm);
+      perpSS += perp * perp;
+    }
+    const sigmaPerpFt = Math.sqrt(perpSS / pts.length);
+    lines.push({ a: a2, b: b2, type, lengthFt: t1 - t0, between: [ai, bi], medGapFt: medGap, sigmaPerpFt, gradDiffPerFt: nrm });
   }
 
   // ── contour edges: eave or rake, from the dominant inside cluster's drain ──

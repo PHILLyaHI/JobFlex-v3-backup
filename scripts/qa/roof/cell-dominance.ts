@@ -1,9 +1,7 @@
-/* The cell-dominance census — the data the cell-assignment rule is derived
- * from (§J). For every arrangement cell on the six addresses: what share of
- * its assigned samples the leading cluster holds. If the distribution is
- * bimodal (cells are either ~pure or ~split), the threshold reads off the
- * valley between the modes; if it is continuous, any threshold is arbitrary
- * and the ambiguous-cell-to-fill rule stands instead.
+/* The cell-fit census (§J). Historically: the dominance census that REJECTED
+ * the 70% vote threshold (continuous 7/5/7/10/9/30 per decade — recorded in
+ * ROOF-STATE). Now the cells are cluster regions and the recorded figure is
+ * the plane-fit RMS per cell against the recon's own growth tolerance.
  *
  *   npx tsx scripts/qa/roof/cell-dominance.ts
  */
@@ -57,13 +55,13 @@ function rasterFrom(file: string, meta: FixtureMeta): Raster {
       transform: reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 },
       skeleton: first.model,
     });
-    for (const c of res.cellStats) all.push({ addr: job.name, area: c.areaSqft, dom: c.domShare, samples: c.samples });
+    for (const c of res.cellStats) all.push({ addr: job.name, area: c.areaSqft, dom: Math.min(1, c.rmsFt), samples: 0 });
     const rows = res.cellStats
       .slice()
-      .sort((x, y) => x.domShare - y.domShare)
-      .map((c) => `${(c.domShare * 100).toFixed(0)}%(${Math.round(c.areaSqft)}sf)`)
+      .sort((x, y) => x.rmsFt - y.rmsFt)
+      .map((c) => `${Number.isFinite(c.rmsFt) ? c.rmsFt.toFixed(2) : "—"}(${Math.round(c.areaSqft)}sf${c.prov === "fill" ? "·fill" : ""})`)
       .join(" ");
-    console.log(`${job.name.padEnd(6)} ${res.cellStats.length} ячеек: ${rows}`);
+    console.log(`${job.name.padEnd(6)} ${res.cellStats.length} ячеек, RMS ft: ${rows}`);
   }
 
   // histogram by cell count and by area, 10% bins

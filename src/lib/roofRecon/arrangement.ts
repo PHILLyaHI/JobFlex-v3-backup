@@ -409,26 +409,12 @@ export function buildArrangement(input: ArrangeInput): Arrangement {
   }
 
   // ── 4. prune dangles (a dangling edge cannot bound two cells) ──
+  const removedDangles = pruneDanglingEdges(edges);
   const dropFt = new Map<number, number>();
-  for (let pass = 0; pass < 100; pass++) {
-    const deg = new Map<number, number>();
-    for (const e of edges) {
-      deg.set(e.u, (deg.get(e.u) ?? 0) + 1);
-      deg.set(e.v, (deg.get(e.v) ?? 0) + 1);
-    }
-    let removed = false;
-    for (let i = edges.length - 1; i >= 0; i--) {
-      const e = edges[i];
-      if ((deg.get(e.u) ?? 0) <= 1 || (deg.get(e.v) ?? 0) <= 1) {
-        if (e.source.kind === "line") {
-          const ftLen = Math.hypot(nodes[e.u].x - nodes[e.v].x, nodes[e.u].y - nodes[e.v].y);
-          dropFt.set(e.source.index, (dropFt.get(e.source.index) ?? 0) + ftLen);
-        }
-        edges.splice(i, 1);
-        removed = true;
-      }
-    }
-    if (!removed) break;
+  for (const e of removedDangles) {
+    if (e.source.kind !== "line") continue;
+    const ftLen = Math.hypot(nodes[e.u].x - nodes[e.v].x, nodes[e.u].y - nodes[e.v].y);
+    dropFt.set(e.source.index, (dropFt.get(e.source.index) ?? 0) + ftLen);
   }
   for (const [index, ftLen] of dropFt) {
     if (ftLen < MIN_EDGE_FT) continue;
@@ -450,119 +436,20 @@ export function buildArrangement(input: ArrangeInput): Arrangement {
   }
   if (recross > 0) report.push(`ПРОВЕРКА НЕ ПРОШЛА: ${recross} пар рёбер пересеклись после нормализации`);
 
-  // ── 6. face walk (half-edges, next = clockwise-most turn) ──
-  interface Half { from: number; to: number; edge: number; next?: number }
-  const halves: Half[] = [];
-  for (let ei = 0; ei < edges.length; ei++) {
-    halves.push({ from: edges[ei].u, to: edges[ei].v, edge: ei });
-    halves.push({ from: edges[ei].v, to: edges[ei].u, edge: ei });
-  }
-  const outAt = new Map<number, number[]>();
-  for (let hi = 0; hi < halves.length; hi++) {
-    const arr = outAt.get(halves[hi].from) ?? [];
-    arr.push(hi);
-    outAt.set(halves[hi].from, arr);
-  }
-  for (const [n, arr] of outAt) {
-    arr.sort((x, y) => {
-      const hx = halves[x];
-      const hy = halves[y];
-      const ax = Math.atan2(nodes[hx.to].y - nodes[n].y, nodes[hx.to].x - nodes[n].x);
-      const ay = Math.atan2(nodes[hy.to].y - nodes[n].y, nodes[hy.to].x - nodes[n].x);
-      return ax - ay;
-    });
-  }
-  const twinOf = (hi: number) => (hi % 2 === 0 ? hi + 1 : hi - 1);
-  for (let hi = 0; hi < halves.length; hi++) {
-    const tw = twinOf(hi);
-    const at = halves[hi].to;
-    const arr = outAt.get(at)!;
-    const pos = arr.indexOf(tw);
-    // next outgoing CLOCKWISE from the twin => faces keep interior on the left
-    halves[hi].next = arr[(pos - 1 + arr.length) % arr.length];
-  }
-  const seen = new Array<boolean>(halves.length).fill(false);
-  interface RawFace { ring: number[]; halfEdges: number[]; area: number }
-  const rawFaces: RawFace[] = [];
-  for (let h0 = 0; h0 < halves.length; h0++) {
-    if (seen[h0]) continue;
-    const idxs: number[] = [];
-    let h = h0;
-    for (let k = 0; k < halves.length + 1; k++) {
-      seen[h] = true;
-      idxs.push(h);
-      h = halves[h].next!;
-      if (h === h0) break;
-    }
-    const ringIds = idxs.map((x) => halves[x].from);
-    const pts = ringIds.map((n) => nodes[n]);
-    rawFaces.push({ ring: ringIds, halfEdges: idxs, area: signedArea(pts) });
-  }
+  // ── 6. face walk (shared helper — the same walk the region engine uses) ──
+  const { faces: rawFaces, halves } = walkPlanarFaces(nodes, edges);
   let cellsRaw = rawFaces.filter((f) => f.area > EPS);
 
   // ── 7. sliver merge: cells under the facet floor dissolve into the
   //       neighbour they share the most boundary with ──
-  const edgeCellCount = () => {
-    const m = new Map<number, RawFace[]>();
-    for (const f of cellsRaw) for (const hi of f.halfEdges) {
-      const arr = m.get(halves[hi].edge) ?? [];
-      arr.push(f);
-      m.set(halves[hi].edge, arr);
+  const mergedRes = mergeSmallFaces(nodes, edges, halves, cellsRaw, minCell, report);
+  cellsRaw = mergedRes.faces;
+  for (const ei of mergedRes.dissolvedEdges) {
+    const e = edges[ei];
+    if (e.source.kind === "line") {
+      const l2 = Math.hypot(nodes[e.u].x - nodes[e.v].x, nodes[e.u].y - nodes[e.v].y);
+      dissolvedFt.set(e.source.index, (dissolvedFt.get(e.source.index) ?? 0) + l2);
     }
-    return m;
-  };
-  for (let pass = 0; pass < 50; pass++) {
-    const small = cellsRaw.filter((f) => f.area < minCell).sort((x, y) => x.area - y.area)[0];
-    if (!small) break;
-    const byEdge = edgeCellCount();
-    const shareLen = new Map<RawFace, number>();
-    for (const hi of small.halfEdges) {
-      const ei = halves[hi].edge;
-      for (const f2 of byEdge.get(ei) ?? []) {
-        if (f2 === small) continue;
-        const l2 = Math.hypot(nodes[edges[ei].u].x - nodes[edges[ei].v].x, nodes[edges[ei].u].y - nodes[edges[ei].v].y);
-        shareLen.set(f2, (shareLen.get(f2) ?? 0) + l2);
-      }
-    }
-    const host = [...shareLen.entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
-    if (!host) break; // bounded by contour alone — the guard will count it
-    const sharedEdges = new Set<number>();
-    for (const hi of small.halfEdges) {
-      const ei = halves[hi].edge;
-      if ((byEdge.get(ei) ?? []).includes(host)) sharedEdges.add(ei);
-    }
-    for (const ei of sharedEdges) {
-      const e = edges[ei];
-      if (e.source.kind === "line") {
-        const l2 = Math.hypot(nodes[e.u].x - nodes[e.v].x, nodes[e.u].y - nodes[e.v].y);
-        dissolvedFt.set(e.source.index, (dissolvedFt.get(e.source.index) ?? 0) + l2);
-      }
-    }
-    const keep = [...host.halfEdges, ...small.halfEdges].filter((hi) => !sharedEdges.has(halves[hi].edge));
-    // chain the surviving directed edges into one ring
-    const byFrom = new Map<number, number[]>();
-    for (const hi of keep) {
-      const arr = byFrom.get(halves[hi].from) ?? [];
-      arr.push(hi);
-      byFrom.set(halves[hi].from, arr);
-    }
-    const chained: number[] = [];
-    let cur = keep[0];
-    for (let k = 0; k < keep.length; k++) {
-      chained.push(cur);
-      const nexts = byFrom.get(halves[cur].to) ?? [];
-      const nx = nexts.find((hi) => !chained.includes(hi));
-      if (nx === undefined) break;
-      cur = nx;
-    }
-    if (chained.length !== keep.length) { report.push(`слияние ячейки ${small.area.toFixed(1)} sf не замкнулось — оставлена`); break; }
-    const merged: RawFace = {
-      ring: chained.map((hi) => halves[hi].from),
-      halfEdges: chained,
-      area: host.area + small.area,
-    };
-    cellsRaw = cellsRaw.filter((f) => f !== host && f !== small);
-    cellsRaw.push(merged);
   }
 
   // ── 8. output + the by-construction claims, verified ──
@@ -587,4 +474,157 @@ export function buildArrangement(input: ArrangeInput): Arrangement {
   }));
 
   return { cells, euler, tilingPct, droppedLines, dissolvedFt, report };
+}
+
+// ── shared planar-graph helpers: the arrangement engine and the region-cell
+//    engine walk faces with the SAME code (§K7) ──
+
+export interface PlanarHalf { from: number; to: number; edge: number; next?: number }
+export interface PlanarFace { ring: number[]; halfEdges: number[]; area: number }
+
+/** Remove degree-1 edges iteratively; returns the removed edges. */
+export function pruneDanglingEdges<E extends { u: number; v: number }>(edges: E[]): E[] {
+  const removed: E[] = [];
+  for (let pass = 0; pass < 200; pass++) {
+    const deg = new Map<number, number>();
+    for (const e of edges) {
+      deg.set(e.u, (deg.get(e.u) ?? 0) + 1);
+      deg.set(e.v, (deg.get(e.v) ?? 0) + 1);
+    }
+    let any = false;
+    for (let i = edges.length - 1; i >= 0; i--) {
+      const e = edges[i];
+      if ((deg.get(e.u) ?? 0) <= 1 || (deg.get(e.v) ?? 0) <= 1) {
+        removed.push(e);
+        edges.splice(i, 1);
+        any = true;
+      }
+    }
+    if (!any) break;
+  }
+  return removed;
+}
+
+/** Half-edge face traversal: next = clockwise-most turn, faces keep interior
+ *  on the left; the outer face comes back with negative area. */
+export function walkPlanarFaces(
+  nodes: ReadonlyArray<FootprintPoint>,
+  edges: ReadonlyArray<{ u: number; v: number }>,
+): { faces: PlanarFace[]; halves: PlanarHalf[] } {
+  const halves: PlanarHalf[] = [];
+  for (let ei = 0; ei < edges.length; ei++) {
+    halves.push({ from: edges[ei].u, to: edges[ei].v, edge: ei });
+    halves.push({ from: edges[ei].v, to: edges[ei].u, edge: ei });
+  }
+  const outAt = new Map<number, number[]>();
+  for (let hi = 0; hi < halves.length; hi++) {
+    const arr = outAt.get(halves[hi].from) ?? [];
+    arr.push(hi);
+    outAt.set(halves[hi].from, arr);
+  }
+  for (const [n, arr] of outAt) {
+    arr.sort((x, y) => {
+      const hx = halves[x];
+      const hy = halves[y];
+      const ax = Math.atan2(nodes[hx.to].y - nodes[n].y, nodes[hx.to].x - nodes[n].x);
+      const ay = Math.atan2(nodes[hy.to].y - nodes[n].y, nodes[hy.to].x - nodes[n].x);
+      return ax - ay;
+    });
+  }
+  const twinOf = (hi: number) => (hi % 2 === 0 ? hi + 1 : hi - 1);
+  for (let hi = 0; hi < halves.length; hi++) {
+    const tw = twinOf(hi);
+    const arr = outAt.get(halves[hi].to)!;
+    const pos = arr.indexOf(tw);
+    halves[hi].next = arr[(pos - 1 + arr.length) % arr.length];
+  }
+  const seen = new Array<boolean>(halves.length).fill(false);
+  const faces: PlanarFace[] = [];
+  for (let h0 = 0; h0 < halves.length; h0++) {
+    if (seen[h0]) continue;
+    const idxs: number[] = [];
+    let h = h0;
+    for (let k = 0; k < halves.length + 1; k++) {
+      seen[h] = true;
+      idxs.push(h);
+      h = halves[h].next!;
+      if (h === h0) break;
+    }
+    const ringIds = idxs.map((x) => halves[x].from);
+    faces.push({ ring: ringIds, halfEdges: idxs, area: signedArea(ringIds.map((n) => nodes[n])) });
+  }
+  return { faces, halves };
+}
+
+/** Dissolve faces under minArea into the neighbour sharing the longest
+ *  boundary. Returns surviving faces and the dissolved edge indices. */
+export function mergeSmallFaces(
+  nodes: ReadonlyArray<FootprintPoint>,
+  edges: ReadonlyArray<{ u: number; v: number }>,
+  halves: ReadonlyArray<PlanarHalf>,
+  facesIn: PlanarFace[],
+  minArea: number,
+  report: string[],
+): { faces: PlanarFace[]; dissolvedEdges: number[] } {
+  let faces = facesIn.slice();
+  const dissolvedEdges: number[] = [];
+  const facesByEdge = () => {
+    const m = new Map<number, PlanarFace[]>();
+    for (const f of faces) for (const hi of f.halfEdges) {
+      const arr = m.get(halves[hi].edge) ?? [];
+      arr.push(f);
+      m.set(halves[hi].edge, arr);
+    }
+    return m;
+  };
+  for (let pass = 0; pass < 200; pass++) {
+    const small = faces.filter((f) => f.area < minArea).sort((x, y) => x.area - y.area)[0];
+    if (!small) break;
+    const byEdge = facesByEdge();
+    const shareLen = new Map<PlanarFace, number>();
+    for (const hi of small.halfEdges) {
+      const ei = halves[hi].edge;
+      for (const f2 of byEdge.get(ei) ?? []) {
+        if (f2 === small) continue;
+        const l2 = Math.hypot(nodes[edges[ei].u].x - nodes[edges[ei].v].x, nodes[edges[ei].u].y - nodes[edges[ei].v].y);
+        shareLen.set(f2, (shareLen.get(f2) ?? 0) + l2);
+      }
+    }
+    const host = [...shareLen.entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
+    if (!host) break; // bounded by the contour alone — the guard will count it
+    const sharedEdges = new Set<number>();
+    for (const hi of small.halfEdges) {
+      const ei = halves[hi].edge;
+      if ((byEdge.get(ei) ?? []).includes(host)) sharedEdges.add(ei);
+    }
+    dissolvedEdges.push(...sharedEdges);
+    const keep = [...host.halfEdges, ...small.halfEdges].filter((hi) => !sharedEdges.has(halves[hi].edge));
+    const byFrom = new Map<number, number[]>();
+    for (const hi of keep) {
+      const arr = byFrom.get(halves[hi].from) ?? [];
+      arr.push(hi);
+      byFrom.set(halves[hi].from, arr);
+    }
+    const chained: number[] = [];
+    let cur = keep[0];
+    for (let k = 0; k < keep.length; k++) {
+      chained.push(cur);
+      const nexts = byFrom.get(halves[cur].to) ?? [];
+      const nx = nexts.find((hi) => !chained.includes(hi));
+      if (nx === undefined) break;
+      cur = nx;
+    }
+    if (chained.length !== keep.length) {
+      report.push(`слияние ячейки ${small.area.toFixed(1)} sf не замкнулось — оставлена`);
+      break;
+    }
+    const merged: PlanarFace = {
+      ring: chained.map((hi) => halves[hi].from),
+      halfEdges: chained,
+      area: host.area + small.area,
+    };
+    faces = faces.filter((f) => f !== host && f !== small);
+    faces.push(merged);
+  }
+  return { faces, dissolvedEdges };
 }
