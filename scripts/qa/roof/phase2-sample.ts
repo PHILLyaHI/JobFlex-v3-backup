@@ -273,7 +273,7 @@ function toValidatorSchema(model: RoofModel, footprint: FootprintPoint[]): unkno
         : null;
     })
     .filter((x): x is { a: number[]; b: number[]; type: string; facets: string[] } => x !== null);
-  return { material: "asphalt", footprint: footprint.map((p) => [+p.x.toFixed(3), +p.y.toFixed(3)]), vertices: verts, facets, lines };
+  return { material: "asphalt", resolutionFt: model.resolutionFt, footprint: footprint.map((p) => [+p.x.toFixed(3), +p.y.toFixed(3)]), vertices: verts, facets, lines };
 }
 
 function runMjs(schema: unknown): { errors: number; warnings: number; codes: string[] } {

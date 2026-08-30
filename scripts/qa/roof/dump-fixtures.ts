@@ -107,7 +107,7 @@ function toValidatorSchema(model: RoofModel): unknown {
         : null;
     })
     .filter((x): x is { a: number[]; b: number[]; type: string; facets: string[] } => x !== null);
-  return { material: "asphalt", footprint, vertices: verts, facets, lines };
+  return { material: "asphalt", resolutionFt: model.resolutionFt, footprint, vertices: verts, facets, lines };
 }
 
 async function savedModel(rowId: string): Promise<RoofModel | null> {

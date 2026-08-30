@@ -565,9 +565,24 @@ export function mergeSmallFaces(
   facesIn: PlanarFace[],
   minArea: number,
   report: string[],
+  /** Пол разрешающей ШИРИНЫ (ft): грань уже него — лента ниже разрешения
+   *  измерения (полоса скругления гребня от окна нормалей, коридор между
+   *  близнецами трасс) и не существует: 24×1.2 ft «грань» вдоль конька
+   *  12618 проходила площадной порог и ломала R03/R04/Эйлера. Ширина
+   *  оценивается как 2·площадь/периметр. 0 — выключено. */
+  widthFloorFt = 0,
 ): { faces: PlanarFace[]; dissolvedEdges: number[] } {
   let faces = facesIn.slice();
   const dissolvedEdges: number[] = [];
+  const perimOf = (f: PlanarFace): number => {
+    let per = 0;
+    for (const hi of f.halfEdges) {
+      const e = edges[halves[hi].edge];
+      per += Math.hypot(nodes[e.u].x - nodes[e.v].x, nodes[e.u].y - nodes[e.v].y);
+    }
+    return per;
+  };
+  const ribbon = (f: PlanarFace): boolean => widthFloorFt > 0 && (2 * f.area) / Math.max(perimOf(f), 1e-9) < widthFloorFt;
   const facesByEdge = () => {
     const m = new Map<number, PlanarFace[]>();
     for (const f of faces) for (const hi of f.halfEdges) {
@@ -578,7 +593,7 @@ export function mergeSmallFaces(
     return m;
   };
   for (let pass = 0; pass < 200; pass++) {
-    const small = faces.filter((f) => f.area < minArea).sort((x, y) => x.area - y.area)[0];
+    const small = faces.filter((f) => f.area < minArea || ribbon(f)).sort((x, y) => x.area - y.area)[0];
     if (!small) break;
     const byEdge = facesByEdge();
     const shareLen = new Map<PlanarFace, number>();

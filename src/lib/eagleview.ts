@@ -395,6 +395,10 @@ export interface RoofProvenance {
 }
 
 export interface RoofModel {
+  /** Разрешающая ширина измерения (полное окно нормалей DSM-реконструкции,
+   *  ft): грань уже неё — лента ниже разрешения, собственного уклона не
+   *  несёт (R04 её не судит). Присутствует только у измеренных моделей. */
+  resolutionFt?: number;
   reportId?: number;
   source?: RoofModelSource; //     absent = "eagleview" (all pre-existing models)
   provenance?: RoofProvenance; // synthetic models only

@@ -174,17 +174,86 @@ export function validateRoof(model) {
   if (!out.some((r) => r.id === 'R01' || r.id === 'R02'))
     ok('R01/R02', `${facets.length} граней — простые, невырожденные`);
 
-  // ─ 2. Планарность и соответствие уклона
+  // ─ 2. Планарность и соответствие уклона.
+  // УТОЧНЕНИЕ ЗАКОНА (решение владельца, 2026-08-30): в вершине допускается
+  // невязка, равная измеренному расхождению аналитических плоскостей двух
+  // граней в этой точке, ПРИ УСЛОВИИ что обе плоскости чистые (остальное
+  // кольцо каждой — в бюджете без этой вершины) и вершина лежит МЕЖДУ
+  // плоскостями: сварка обязана положить вершину между двумя честными
+  // плоскостями, эта невязка — неопределённость места стыка, а не дефект
+  // модели. Допуск — свойство проверки; геометрия остаётся сваренной.
+  const vertFacets = new Map();
+  const vKey3 = (p) => key([p[0], p[1]]) + '|' + Math.round(p[2] * 1000);
+  for (const f of facets) for (const p of f.pts3) {
+    const arr = vertFacets.get(vKey3(p)) ?? [];
+    if (!arr.includes(f)) arr.push(f);
+    vertFacets.set(vKey3(p), arr);
+  }
+  const devTo = (pl, p) => Math.abs(pl.a * p[0] + pl.b * p[1] + pl.c - p[2]);
+  // двухпроходно: (1) спорные вершины — где ЛЮБАЯ владеющая грань видит
+  // отклонение сверх бюджета; (2) чистая плоскость грани — подгонка БЕЗ
+  // спорных вершин; помилование спорной вершины — она лежит между чистыми
+  // плоскостями двух граней, деливших её (сварка кладёт между).
+  const contested = new Set();
   for (const f of facets) {
-    if (!f.plane) { err('R03', `${f.id}: не удалось построить плоскость`); continue; }
-    if (f.plane.maxDev > EPS_PLANE)
-      err('R03', `${f.id}: грань не плоская, отклонение ${f.plane.maxDev.toFixed(2)} ft`);
-    const measured = gradMag(f.plane) * 12;
+    if (!f.plane) continue;
+    for (const p of f.pts3) if (devTo(f.plane, p) > EPS_PLANE) contested.add(vKey3(p));
+  }
+  const cleanPlane = new Map();
+  for (const f of facets) {
+    const rest = f.pts3.filter((p) => !contested.has(vKey3(p)));
+    cleanPlane.set(f.id, rest.length >= 3 ? fitPlane(rest) : null);
+  }
+  const weldAllowance = (f2) => {
+    const plF = cleanPlane.get(f2.id);
+    if (!plF || plF.maxDev > EPS_PLANE) return { ok: false, dev: f2.plane?.maxDev ?? Infinity, excused: 0 };
+    let excused = 0;
+    for (const p of f2.pts3) {
+      if (!contested.has(vKey3(p))) continue;
+      const dF = devTo(plF, p);
+      if (dF <= EPS_PLANE) continue;
+      let pardon = false;
+      for (const g of vertFacets.get(vKey3(p)) ?? []) {
+        if (g === f2) continue;
+        const plG = cleanPlane.get(g.id);
+        if (!plG || plG.maxDev > EPS_PLANE) continue;
+        const zF = plF.a * p[0] + plF.b * p[1] + plF.c;
+        const zG = plG.a * p[0] + plG.b * p[1] + plG.c;
+        if (p[2] >= Math.min(zF, zG) - EPS_PLANE && p[2] <= Math.max(zF, zG) + EPS_PLANE) { pardon = true; break; }
+      }
+      if (!pardon) return { ok: false, dev: dF, excused };
+      excused++;
+    }
+    return { ok: true, dev: 0, excused };
+  };
+  let weldExcused = 0;
+  for (const f of facets) {
+    if (!f.plane) {
+      err('R03', f.id + ": не удалось построить плоскость");
+      continue;
+    }
+    if (f.plane.maxDev > EPS_PLANE) {
+      const wa = weldAllowance(f);
+      if (!wa.ok) err('R03', f.id + ": грань не плоская, отклонение " + wa.dev.toFixed(2) + " ft");
+      else weldExcused += wa.excused;
+    }
+    // уклон меряется по ЧИСТОЙ плоскости (без спорных сварных вершин);
+    // лента уже разрешающей ширины (model.resolutionFt) уклона не несёт
+    if (model.resolutionFt) {
+      let perR = 0;
+      for (let iR = 0; iR < f.plan.length; iR++) {
+        const q1 = f.plan[iR];
+        const q2 = f.plan[(iR + 1) % f.plan.length];
+        perR += Math.hypot(q2[0] - q1[0], q2[1] - q1[1]);
+      }
+      if ((2 * Math.abs(f.planArea)) / Math.max(perR, 1e-9) < model.resolutionFt) continue;
+    }
+    const measured = gradMag(cleanPlane.get(f.id) ?? f.plane) * 12;
     if (f.pitch != null && Math.abs(measured / 12 - f.pitch / 12) > EPS_PITCH)
-      err('R04', `${f.id}: заявлен уклон ${f.pitch}/12, по геометрии ${measured.toFixed(2)}/12`);
+      err('R04', f.id + ": заявлен уклон " + f.pitch + "/12, по геометрии " + measured.toFixed(2) + "/12");
   }
   if (!out.some((r) => r.id === 'R03' || r.id === 'R04'))
-    ok('R03/R04', 'все грани плоские, уклоны совпадают с геометрией');
+    ok('R03/R04', 'все грани плоские, уклоны совпадают с геометрией' + (weldExcused ? ' (' + weldExcused + ' вершин на сварных допусках)' : ''));
 
   // ─ 3. Покрытие футпринта
   const fpArea = area2(fp);
@@ -466,6 +535,10 @@ export function validateRoof(model) {
       }
       if (arr.length === 2 && gTypeOf(arr[0]) === gTypeOf(arr[1])) continue;
       const isNode = arr.length >= 3;
+      // конец карнизного ребра — законный терминус складки: карниз
+      // обрывается именно вальмой/ендовой (кромка ободка своего уровня),
+      // даже когда угол внешнего контура стоит в стороне
+      const atEaveEnd = gAllEdges0.some((o) => (o.t === 'eave' || o.t === 'rake') && (Math.hypot(o.a[0] - p[0], o.a[1] - p[1]) <= STUB_FT || Math.hypot(o.b[0] - p[0], o.b[1] - p[1]) <= STUB_FT));
       const corner = gCorner(p);
       const ringD = gRingDist(p);
       const t = gTypeOf(e);
@@ -473,10 +546,10 @@ export function validateRoof(model) {
       let why = "";
       const onSeam = gOn(p, gSeams);
       if (t === 'valley') {
-        okEnd = isNode || corner === 'concave' || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) || onSeam;
+        okEnd = isNode || corner === 'concave' || atEaveEnd || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) || onSeam;
         why = ringD > STUB_FT ? "обрывается в поле" : corner ? `упирается в ${corner === 'convex' ? "выпуклый" : ""} угол` : "выходит на карниз серединой";
       } else if (t === 'hip') {
-        okEnd = isNode || corner === 'convex' || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) || onSeam;
+        okEnd = isNode || corner === 'convex' || atEaveEnd || gOn(p, gAllEdges0.filter((o) => gTypeOf(o) === 'ridge')) || onSeam;
         why = ringD > STUB_FT ? "обрывается в поле" : corner ? "упирается не в свой угол" : "выходит на карниз серединой";
       } else {
         // узел легализует конец конька только со СКЛАДКОЙ в составе:
@@ -504,7 +577,33 @@ export function validateRoof(model) {
   const G4_SIGMA = 0.5; // σ⊥ измеренной складки, ft
   const LEVEL_G = 0.5 / 12; // ровная грань направления градиента не несёт
   const gGrad = new Map();
-  for (const f of facets) if (f.plane) gGrad.set(f.id, [f.plane.a, f.plane.b]);
+  // градиент — от ЧИСТОЙ плоскости: невязка стыка не смеет вращать
+  // судимое направление. Сварное смещение когерентно ВРАЩАЕТ LS-подгонку
+  // (A8 на 12621: кольцо давало −6.9° при пиксельной плоскости −0.4°),
+  // и R03-спор его не видит. Проход 2: вершина, где чистые плоскости
+  // владельцев расходятся сверх бюджета (сварка легла между) — не
+  // участвует в подгонке направления.
+  {
+    const basePl = (f2) => cleanPlane.get(f2.id) ?? f2.plane;
+    const disputed = new Set();
+    for (const [k3, fs3] of vertFacets) {
+      if (fs3.length < 2) continue;
+      const p3 = fs3[0].pts3.find((q) => vKey3(q) === k3);
+      if (!p3) continue;
+      const zs3 = [];
+      for (const g3 of fs3) {
+        const pl3 = basePl(g3);
+        if (pl3) zs3.push(pl3.a * p3[0] + pl3.b * p3[1] + pl3.c);
+      }
+      if (zs3.length >= 2 && Math.max(...zs3) - Math.min(...zs3) > EPS_PLANE) disputed.add(k3);
+    }
+    for (const f of facets) {
+      const rest = f.pts3.filter((q) => !contested.has(vKey3(q)) && !disputed.has(vKey3(q)));
+      const pl2 = rest.length >= 3 ? fitPlane(rest) : null;
+      const pl = pl2 ?? basePl(f);
+      if (pl) gGrad.set(f.id, [pl.a, pl.b]);
+    }
+  }
   for (const e of gAllEdges0.filter((o) => o.t === 'ridge')) {
     const gLen = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
     if (gLen < 2 * G4_SIGMA) continue; // §J: 2σ⊥ ≥ L — направления нет

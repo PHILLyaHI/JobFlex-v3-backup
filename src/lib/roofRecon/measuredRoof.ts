@@ -431,6 +431,41 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       },
       minCellSqft: MIN_FACET_SQFT,
     });
+  // ── снап измеренных линий пар на пересечение плоскостей ──
+  // Линии шага 1 аналитические ДЛЯ СВОИХ пар, но их КОНЦЫ обрезаны
+  // трассой; после канона/спрямления линия может отойти. Пересечение
+  // плоскостей — истина направления пары: проекция в пределах
+  //2·max(σ⊥, окно нормалей) (§J; окно half=2 — измерение размыто им).
+  // Стены (Δz ≥ переписного пола) не трогаются. На 12629 off=0.00 везде
+  // (линии уже на месте — снап нем); на 419 вальма A5/A7 стояла в 9.5°
+  // от аналитической и садилась в 2.2 ft от угла ободка.
+  {
+    let snapped = 0;
+    for (const l of baseLines) {
+      const A = d.clusterPlanes[l.between[0]];
+      const B = d.clusterPlanes[l.between[1]];
+      if (!A || !B) continue;
+      const da = A.a - B.a;
+      const db = A.b - B.b;
+      const nrm = Math.hypot(da, db);
+      if (nrm < 1e-4) continue;
+      const mx = (l.a.x + l.b.x) / 2;
+      const my = (l.a.y + l.b.y) / 2;
+      const dzAtBoundary = Math.abs((A.a * mx + A.b * my + A.c) - (B.a * mx + B.b * my + B.c));
+      if (dzAtBoundary > STEP_DZ_FT) continue;
+      const off = (da * mx + db * my + (A.c - B.c)) / nrm;
+      if (Math.abs(off) < 1e-3 || Math.abs(off) > 2 * Math.max(l.sigmaPerpFt, 2 * stepFt)) continue;
+      const px0 = { x: mx - (da / nrm) * off, y: my - (db / nrm) * off };
+      const dirL = { x: -db / nrm, y: da / nrm };
+      for (const q of [l.a, l.b]) {
+        const tq = (q.x - px0.x) * dirL.x + (q.y - px0.y) * dirL.y;
+        q.x = px0.x + dirL.x * tq;
+        q.y = px0.y + dirL.y * tq;
+      }
+      snapped++;
+    }
+    if (snapped) reasons.push(`снап на пересечение плоскостей: ${snapped} линий пар (в пределах 2·max(σ⊥, окно))`);
+  }
   let rcLines = baseLines;
   let rc = runCells(rcLines);
   {
@@ -657,26 +692,20 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           acc2.set(c2.cluster!, a2);
         }
       });
+      // НАПРАВЛЕНИЕ ПЛОСКОСТИ — ИЗМЕРЕНИЕ (§J): при опоре в сотни-тысячи
+      // пикселей σ направления ничтожна, а полная 3×3-подгонка с вершинными
+      // целями ВРАЩАЛА измеренные плоскости на 1.7–5.4° (12621: cl3
+      // −0.4→−4.0°, cl8 уклон 10→8.4) — кольца граней выходили когерентно
+      // повёрнутыми (A8: −6.9° при пиксельной −0.4°), G4 ловил, гейт ронял.
+      // Сходимость двигает только ВЫСОТУ (c); невязку стыка, которую высота
+      // не закрывает, несут сварка и её допуск (R03 v2), не направление.
       for (const [cl, pl] of clusterPlane) {
         const px2 = pxNorm.get(cl);
         const vx = acc2.get(cl);
         if (!px2 || px2.n < 6) continue;
-        const A2 = [
-          [px2.xx + (vx?.xx ?? 0), px2.xy + (vx?.xy ?? 0), px2.x + (vx?.x ?? 0)],
-          [px2.xy + (vx?.xy ?? 0), px2.yy + (vx?.yy ?? 0), px2.y + (vx?.y ?? 0)],
-          [px2.x + (vx?.x ?? 0), px2.y + (vx?.y ?? 0), px2.n + (vx?.n ?? 0)],
-        ];
-        const B2 = [px2.xz + (vx?.xz ?? 0), px2.yz + (vx?.yz ?? 0), px2.z + (vx?.z ?? 0)];
-        const det3 = (mm: number[][]) =>
-          mm[0][0] * (mm[1][1] * mm[2][2] - mm[1][2] * mm[2][1]) -
-          mm[0][1] * (mm[1][0] * mm[2][2] - mm[1][2] * mm[2][0]) +
-          mm[0][2] * (mm[1][0] * mm[2][1] - mm[1][1] * mm[2][0]);
-        const dd = det3(A2);
-        if (Math.abs(dd) < 1e-9) continue;
-        const col = (k2: number) => A2.map((row, i3) => row.map((v3, j3) => (j3 === k2 ? B2[i3] : v3)));
-        pl.a = det3(col(0)) / dd;
-        pl.b = det3(col(1)) / dd;
-        pl.c = det3(col(2)) / dd;
+        const num = (px2.z - pl.a * px2.x - pl.b * px2.y) + ((vx?.z ?? 0) - pl.a * (vx?.x ?? 0) - pl.b * (vx?.y ?? 0));
+        const den = px2.n + (vx?.n ?? 0);
+        if (den > 0) pl.c = num / den;
       }
     }
     // остаточная несходимость — в отчёт
@@ -686,6 +715,16 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       worst = Math.max(worst, Math.max(...zs) - Math.min(...zs));
     });
     reasons.push(`сходимость плоскостей: ${vGroups.length} общих вершин, остаточный разрыв ${worst.toFixed(3)} ft`);
+    if (process.env.DBG_CONC) {
+      for (const [cl, pl] of clusterPlane) {
+        const d0 = d.clusterPlanes[cl];
+        const az0 = (Math.atan2(d0.b, d0.a) * 180) / Math.PI;
+        const az1 = (Math.atan2(pl.b, pl.a) * 180) / Math.PI;
+        let rot = Math.abs(az1 - az0) % 360;
+        if (rot > 180) rot = 360 - rot;
+        if (rot > 1) console.log(`[conc] cl${cl}: азимут ${az0.toFixed(1)} → ${az1.toFixed(1)} (поворот ${rot.toFixed(1)}°), pitch ${(Math.hypot(d0.a, d0.b) * 12).toFixed(1)} → ${(Math.hypot(pl.a, pl.b) * 12).toFixed(1)}`);
+      }
+    }
   }
 
   const fillDz = new Map<CellInfo, number>();
@@ -1026,6 +1065,15 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         .map((fid) => ({ pl: facePlane.get(fid), c: faceCentroid.get(fid) }))
         .filter((x): x is { pl: Plane; c: FootprintPoint } => !!x.pl && !!x.c);
       if (own.length < 2) return null;
+      // складки между копланарными гранями НЕ БЫВАЕТ: |∇A−∇B| ниже кванта
+      // ровности (0.5/12) — один скат, разрезанный кластеризацией; пробы
+      // на волоске шума звали такую границу ендовой (шпилька 77.7° на
+      // 12618: A9/B4 с |∇diff| = 0.00)
+      if (own.length >= 2) {
+        const g1 = own[0].pl;
+        const g2v = own[1].pl;
+        if (Math.hypot(g1.a - g2v.a, g1.b - g2v.b) < LEVEL_SLOPE) return null;
+      }
       const a = ptById.get(l.aId)!;
       const b = ptById.get(l.bId)!;
       const run = Math.hypot(b.x - a.x, b.y - a.y);
@@ -1162,10 +1210,16 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       for (const l of candidate.lines) {
         if (l.type !== "OTHER") continue;
         if ((ownersOf.get(l.id) ?? []).length < 2) continue;
+        const ownKey = (l2: (typeof candidate.lines)[number]): string => (ownersOf.get(l2.id) ?? []).slice().sort().join("|");
+        const myOwn = ownKey(l);
         const endTypes = (pid: string): Set<string> => {
           const out2 = new Set<string>();
           for (const o of byEnd.get(planKey(pid)) ?? []) {
             if (o === l) continue;
+            // продолжаться может только СВОЯ складка: тот же набор
+            // владельцев (шпилька [A9,B4] заражалась HIP от чужой пары
+            // [B4,B5], чьи сегменты случайно коллинеарны)
+            if (ownKey(o) !== myOwn) continue;
             if (o.type === "RIDGE" || o.type === "HIP" || o.type === "VALLEY") out2.add(o.type);
           }
           return out2;
@@ -1173,7 +1227,30 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         const ta = endTypes(l.aId);
         const tb = endTypes(l.bId);
         const both = [...ta].filter((t) => tb.has(t));
-        const one = both.length === 1 ? both[0] : (ta.size === 1 && tb.size === 0 ? [...ta][0] : (tb.size === 1 && ta.size === 0 ? [...tb][0] : null));
+        // ПРОДОЛЖЕНИЕ — это коллинеарность: мостик между двумя РАЗНЫМИ
+        // складками одного типа (конёк N-S и конёк E-W на 419, разошлись
+        // концы узла) — не продолжение и типа не наследует
+        const dirOf = (l2: (typeof candidate.lines)[number]) => {
+          const a2 = ptById.get(l2.aId)!;
+          const b2 = ptById.get(l2.bId)!;
+          const r2 = Math.hypot(b2.x - a2.x, b2.y - a2.y) || 1;
+          return { x: (b2.x - a2.x) / r2, y: (b2.y - a2.y) / r2 };
+        };
+        const collinearNeighbors = (t: string): boolean => {
+          const na = (byEnd.get(planKey(l.aId)) ?? []).filter((o) => o !== l && o.type === t);
+          const nb = (byEnd.get(planKey(l.bId)) ?? []).filter((o) => o !== l && o.type === t);
+          if (!na.length || !nb.length) return true; // одноконцовое — как было
+          for (const oa of na) for (const ob of nb) {
+            const da2 = dirOf(oa);
+            const db2 = dirOf(ob);
+            const cross = Math.abs(da2.x * db2.y - da2.y * db2.x);
+            const lmin = Math.min(oa.lengthFt, ob.lengthFt) || 1;
+            if (cross <= Math.sin(Math.atan((2 * 0.5) / lmin))) return true; // §J: atan(2σ⊥/L)
+          }
+          return false;
+        };
+        const one0 = both.length === 1 ? both[0] : (ta.size === 1 && tb.size === 0 ? [...ta][0] : (tb.size === 1 && ta.size === 0 ? [...tb][0] : null));
+        const one = one0 && (ta.size === 0 || tb.size === 0 || collinearNeighbors(one0)) ? one0 : null;
         if (one) {
           // погонаж уже посчитан как OTHER — переложим
           footage2["OTHER"] = (footage2["OTHER"] ?? 0) - l.lengthFt;
@@ -1190,7 +1267,10 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     // После типизации — второй проход; погонаж пересчитывается заново
     // той же группировкой (ступень — обе стороны, близнецы — один раз).
     {
-      const rep2 = mergeCollinearChains(candidate, m.stepFt, corridorOfLine);
+      // пол допуска слияния — σ⊥ измеренной складки (0.5 ft, та же величина,
+      // что в G4 линеек): излом 7.8° при ногах 5–7 ft (перп ~0.5) — ниже
+      // шума направления трассы, не форма
+      const rep2 = mergeCollinearChains(candidate, Math.max(m.stepFt, 0.5), corridorOfLine);
       // ── обрезка ШПОР ──
       // Одновладельный хвост, чей свободный конец никого не встречает
       // (план-степень 1), — шпора кольца: партнёр сварен переписным полом,
@@ -1248,6 +1328,30 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         for (const [t, v] of Object.entries(f3)) footage2[t] = v;
         if (rep2.merged > 0) reasons.push(`лесенки: ${rep2.merged} безнаправленных звеньев слито после типизации`);
       }
+    }
+    // ── ФИНАЛЬНЫЙ РЕФИТ ФИГУР: после шпор/слияний кольца дочинились,
+    //    а уклоны у части граней остались от щипнутого состояния (A2 на
+    //    12618 несла кластерные 6.23 при кольцевых 4.61 — R04). Лента
+    //    ниже разрешающей ширины (4·stepFt, окно нормалей) не несёт
+    //    кластерного уклона — её уклон и есть уклон её кольца.
+    {
+      const idxF = buildIndexes(candidate);
+      let totalF = 0;
+      for (const f of candidate.faces) {
+        const rF = ringOf(f.lineIds, idxF);
+        if (!rF || rF.length < 3) continue;
+        const plF = fitPlane(rF);
+        if (!plF) continue;
+        const gF = Math.hypot(plF.a, plF.b) * 12;
+        if (Number.isFinite(gF) && gF < 24) f.pitch = gF;
+        const planF = Math.abs(signedArea(rF.map((q) => ({ x: q.x, y: q.y }))));
+        f.areaSqft = planF * Math.sqrt(1 + (f.pitch / 12) ** 2);
+        totalF += f.areaSqft;
+      }
+      if (totalF > 0) candidate.totals = { ...candidate.totals, areaSqft: totalF, squares: totalF / 100 };
+      // разрешающая ширина измерения — полное окно нормалей (2·half+1 px):
+      // линейки не судят собственный уклон лент уже неё
+      candidate.resolutionFt = 5 * m.stepFt;
     }
     for (const t of ["EAVE", "RIDGE", "VALLEY", "HIP", "RAKE", "FLASHING", "STEPFLASH", "OTHER"]) footage2[t] = footage2[t] ?? 0;
     candidate.totals = { ...candidate.totals, footageByType: footage2 as typeof candidate.totals.footageByType };
