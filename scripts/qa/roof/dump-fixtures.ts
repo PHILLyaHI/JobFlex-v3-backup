@@ -80,7 +80,7 @@ function toValidatorSchema(model: RoofModel): unknown {
   for (const f of model.faces) {
     const ring = ringOf(f.lineIds, idx);
     if (!ring || ring.length < 3) continue;
-    facets.push({ id: String(f.designator || f.id), pitch: Number(f.pitch) || 0, v: ring.map(vid) });
+    facets.push({ id: String(f.designator || f.id), pitch: Number(f.pitch) || 0, v: ring.map(vid), ...((f as { provenance?: string }).provenance === "fill" ? { fill: true } : {}) });
   }
   const xs = verts.map((v) => v[0]);
   const ys = verts.map((v) => v[1]);

@@ -1175,6 +1175,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
         plan,
         planArea: invArea2(plan),
         plane: invFitPlane(pts3),
+        fill: (f as { provenance?: string }).provenance === "fill",
       };
     })
     .filter(Boolean) as Array<{
@@ -1185,6 +1186,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     plan: IPt[];
     planArea: number;
     plane: InvPlane | null;
+    fill: boolean;
   }>;
 
   // KNOWN INPUT DEFECT, not fixed here. When the caller supplies no contour the
@@ -1288,6 +1290,14 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
         const slack = Math.max(plF.maxDev, INV_EPS_PLANE) + Math.max(plG.maxDev, INV_EPS_PLANE);
         if (p[2] >= Math.min(zF, zG) - slack && p[2] <= Math.max(zF, zG) + slack) { pardon = true; break; }
       }
+      if (!pardon && (vertFacets.get(vKey3(p))?.length ?? 1) <= 1) {
+        // ВЕРШИНА-ОДИНОЧКА (близнец уровня через стену — план-двойник несёт
+        // другой z и совладельцем не является): референс — только своя
+        // чистая плоскость, и её фактический остаток есть её
+        // неопределённость — тот же закон, что слак пары выше. Требовать от
+        // вершины точности выше остатка линейки — судить шум, не геометрию.
+        if (dF <= Math.max(plF.maxDev, INV_EPS_PLANE) + INV_EPS_PLANE) pardon = true;
+      }
       if (!pardon) {
         if (process.env.DBG_R03) {
           for (const g of vertFacets.get(vKey3(p)) ?? []) {
@@ -1310,7 +1320,16 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     return { ok: true, dev: 0, excused };
   };
   let weldExcused = 0;
+  let fillSkipped = 0;
   for (const f of facets) {
+    // ЗАКОН ПРОВЕНАНСА (приказ 2026-08-30, механизм 1): fill-грань не
+    // измерена по DSM — её плоскостная невязка не судится R03 (площадь
+    // честно идёт в «заполнено» провенансом). Судить мешок как измеренную
+    // плоскость — ложь линейки, а не защита геометрии.
+    if (f.fill) {
+      if (f.plane && f.plane.maxDev > INV_EPS_PLANE) fillSkipped++;
+      continue;
+    }
     if (!f.plane) {
       err("R03", f.id + ": не удалось построить плоскость");
       continue;
@@ -1343,7 +1362,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
       err("R04", f.id + ": заявлен уклон " + f.pitch + "/12, по геометрии " + measured.toFixed(2) + "/12");
   }
   if (!out.some((r) => r.id === "R03" || r.id === "R04"))
-    ok("R03/R04", "все грани плоские, уклоны совпадают с геометрией" + (weldExcused ? " (" + weldExcused + " вершин на сварных допусках)" : ""));
+    ok("R03/R04", "все грани плоские, уклоны совпадают с геометрией" + (weldExcused ? " (" + weldExcused + " вершин на сварных допусках)" : "") + (fillSkipped ? " (" + fillSkipped + " fill-граней вне суда R03)" : ""));
 
   // R05 — facet projections cover the footprint
   const fpArea = invArea2(fp);

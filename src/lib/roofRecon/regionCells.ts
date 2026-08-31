@@ -756,22 +756,33 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       // node ids that sit ON this line (endpoints of its edges)
       const lineNodes = new Map<number, number>();
       for (const ei of eis) for (const n of [edges[ei].u, edges[ei].v]) lineNodes.set(n, tOf(n));
-      for (const ei of eis) {
-        const tu = tOf(edges[ei].u);
-        const tv = tOf(edges[ei].v);
-        const lo = Math.min(tu, tv);
-        const hi = Math.max(tu, tv);
-        const inner = [...lineNodes.entries()]
-          .filter(([n, t]) => n !== edges[ei].u && n !== edges[ei].v && t > lo + 1e-6 && t < hi - 1e-6)
-          .sort((x, y) => x[1] - y[1])
-          .map(([n]) => n);
-        if (!inner.length) continue;
-        drop.add(ei);
-        const chain = tu < tv ? [edges[ei].u, ...inner, edges[ei].v] : [edges[ei].v, ...inner, edges[ei].u];
-        for (let k2 = 0; k2 + 1 < chain.length; k2++) {
-          if (chain[k2] === chain[k2 + 1]) continue;
-          added.push({ u: chain[k2], v: chain[k2 + 1], prov: "measured-line", lineIndex: li });
-        }
+      // Замер 12621 (механизм 2): пере-эмит ПО КАЖДОМУ ребру размножал
+      // общие пролёты перекрывающихся пробегов в 2–4 копии — обход строил
+      // нулевые грани и щели. Закон: объединение t-интервалов пробегов,
+      // один эмит на пролёт; разрывы покрытия не заполняются — граница
+      // не изобретается.
+      const ivs = eis
+        .map((ei) => {
+          const tu = tOf(edges[ei].u);
+          const tv = tOf(edges[ei].v);
+          return [Math.min(tu, tv), Math.max(tu, tv)] as [number, number];
+        })
+        .sort((x, y) => x[0] - y[0]);
+      const covered: Array<[number, number]> = [];
+      for (const iv of ivs) {
+        const last = covered[covered.length - 1];
+        if (last && iv[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], iv[1]);
+        else covered.push([iv[0], iv[1]]);
+      }
+      for (const ei of eis) drop.add(ei);
+      const chain = [...lineNodes.entries()].sort((x, y) => x[1] - y[1]);
+      for (let k2 = 0; k2 + 1 < chain.length; k2++) {
+        const [n1, t1] = chain[k2];
+        const [n2, t2] = chain[k2 + 1];
+        if (n1 === n2) continue;
+        const mid = (t1 + t2) / 2;
+        if (!covered.some((iv) => mid >= iv[0] - 1e-6 && mid <= iv[1] + 1e-6)) continue;
+        added.push({ u: n1, v: n2, prov: "measured-line", lineIndex: li });
       }
     }
     edges.push(...added);
@@ -806,6 +817,50 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
   }
 
+  // ── 6a'. СВАРКА БЛИЗНЕЦОВ И ДЕДУП РЁБЕР (приказ 2026-08-30, механизм 2) ──
+  // Замер 12621: пары узлов в 0.001–0.33 ft друг от друга (суб-пиксельные
+  // копии одного угла от разных цепей) и пары узлов, повторённые рёбрами.
+  // Обход на этом строил нулевые грани и щели — Euler −8, граница cl0|cl2
+  // не делила ничего (мега-ячейка 1283 sf). Порог сварки ВЫВЕДЕН: шаг
+  // решётки — ниже пикселя решётка две точки границы не различает.
+  const weldAndDedupe = (label: string): void => {
+    const parent = nodes.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const used = new Set<number>();
+    for (const e of edges) { used.add(e.u); used.add(e.v); }
+    const un = [...used];
+    let weldsN = 0;
+    for (let i = 0; i < un.length; i++) {
+      for (let j = i + 1; j < un.length; j++) {
+        const a = nodes[un[i]];
+        const b = nodes[un[j]];
+        if (Math.hypot(a.x - b.x, a.y - b.y) <= stepFt && find(un[i]) !== find(un[j])) {
+          parent[find(un[j])] = find(un[i]);
+          weldsN++;
+        }
+      }
+    }
+    let dropsN = 0;
+    if (weldsN) for (const e of edges) { e.u = find(e.u); e.v = find(e.v); }
+    const seenE = new Map<string, number>();
+    const keep: FinalEdge[] = [];
+    for (const e of edges) {
+      if (e.u === e.v) { dropsN++; continue; }
+      const k = e.u < e.v ? `${e.u}|${e.v}` : `${e.v}|${e.u}`;
+      const prev = seenE.get(k);
+      if (prev === undefined) { seenE.set(k, keep.length); keep.push(e); }
+      else {
+        dropsN++;
+        // измеренная линия главнее трассы в дубле
+        if (keep[prev].prov !== "measured-line" && e.prov === "measured-line") keep[prev] = e;
+      }
+    }
+    edges.length = 0;
+    edges.push(...keep);
+    if (weldsN || dropsN) report.push(`сварка графа${label}: ${weldsN} узлов-близнецов слито (порог — шаг решётки ${stepFt.toFixed(2)} ft), ${dropsN} рёбер-дублей/петель убрано`);
+  };
+  weldAndDedupe("");
+
   // ── 6b. planarity census: crossings break the face walk — count them by
   //        source pair so the mechanism has a name, not a guess ──
   {
@@ -839,6 +894,111 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   }
 
   // ── 7. faces from the shared walk ──
+  // ── 6c. СШИВКА ВИСЯЧИХ ХВОСТОВ (приказ 2026-08-30, механизм 2) ──
+  // Висячесть — свойство ГРАФА, не полилинии: тройник соединяет цепи трёх
+  // попарно разных пар, и хвост, «пришитый» к точке встречи, всё равно
+  // висит, если дерево целиком не замыкается в разбиение. Прежде пруна
+  // молча съедала такой хвост вместе с границей (23 ребра на 12621 —
+  // среди них вся граница cl0|cl2, отсюда мега-ячейка 1283 sf). Закон:
+  // конец степени 1 шьётся в ближайший узел графа в пределах пробника
+  // (страж — запрет пересечений и кольцо); недошиваемое честно уходит
+  // в пруну с отчётом.
+  {
+    const segCross = (a: FootprintPoint, b: FootprintPoint, skipNodes: Set<number>): boolean => {
+      for (const e of edges) {
+        if (skipNodes.has(e.u) && skipNodes.has(e.v)) continue;
+        const p1 = nodes[e.u];
+        const p2 = nodes[e.v];
+        const d1 = { x: b.x - a.x, y: b.y - a.y };
+        const d2 = { x: p2.x - p1.x, y: p2.y - p1.y };
+        const den = d1.x * d2.y - d1.y * d2.x;
+        if (Math.abs(den) < 1e-12) continue;
+        const t = ((p1.x - a.x) * d2.y - (p1.y - a.y) * d2.x) / den;
+        const u = ((p1.x - a.x) * d1.y - (p1.y - a.y) * d1.x) / den;
+        const tol = 1e-7;
+        if (t > tol && t < 1 - tol && u > tol && u < 1 - tol) return true;
+      }
+      return false;
+    };
+    let tailWelds = 0;
+    let tailSplits = 0;
+    for (let pass = 0; pass < 50; pass++) {
+      const deg = new Map<number, number>();
+      for (const e of edges) {
+        deg.set(e.u, (deg.get(e.u) ?? 0) + 1);
+        deg.set(e.v, (deg.get(e.v) ?? 0) + 1);
+      }
+      const tips = [...deg.entries()].filter(([, dg]) => dg === 1).map(([n]) => n).sort((x, y) => x - y);
+      let progress = false;
+      for (const tip of tips) {
+        if ((deg.get(tip) ?? 0) !== 1) continue; // мог зашиться в этом же проходе
+        const inc = edges.filter((e) => e.u === tip || e.v === tip);
+        if (inc.length !== 1) continue;
+        const other = inc[0].u === tip ? inc[0].v : inc[0].u;
+        interface TailTarget { d: number; n?: number; ei?: number; t?: number; pt?: FootprintPoint }
+        const cand: TailTarget[] = [...deg.entries()]
+          .filter(([n]) => n !== tip && n !== other)
+          .map(([n]) => ({ n, d: Math.hypot(nodes[n].x - nodes[tip].x, nodes[n].y - nodes[tip].y) }))
+          .filter((c2) => c2.d <= probe);
+        // T-стык: проекция хвоста внутрь ребра (кольцо в том числе) —
+        // «терминал — в ближайшую точку кольца» (механизм 3)
+        for (let ei = 0; ei < edges.length; ei++) {
+          const e = edges[ei];
+          if (e.u === tip || e.v === tip) continue;
+          const a = nodes[e.u];
+          const b = nodes[e.v];
+          const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+          if (L2 < 1e-12) continue;
+          const t2 = ((nodes[tip].x - a.x) * (b.x - a.x) + (nodes[tip].y - a.y) * (b.y - a.y)) / L2;
+          // зажим МЕТРИЧЕСКИЙ (шаг решётки), не параметрический: t=0.01 на
+          // 25-ft ребре — это 0.25 ft от узла, и новый узел вырождался в
+          // близнеца (нулевое ребро 59 на 12621)
+          const L1 = Math.sqrt(L2);
+          if (t2 * L1 <= stepFt || (1 - t2) * L1 <= stepFt) continue; // концы покрыты узлами
+          const q = { x: a.x + (b.x - a.x) * t2, y: a.y + (b.y - a.y) * t2 };
+          const dd = Math.hypot(q.x - nodes[tip].x, q.y - nodes[tip].y);
+          if (dd <= probe) cand.push({ d: dd, ei, t: t2, pt: q });
+        }
+        cand.sort((x, y) => x.d - y.d || (x.n ?? 1e9) - (y.n ?? 1e9));
+        for (const c2 of cand) {
+          if (c2.n !== undefined) {
+            // не создавать дубль ребра other—target
+            if (edges.some((e) => (e.u === other && e.v === c2.n) || (e.v === other && e.u === c2.n))) continue;
+            if (segCross(nodes[other], nodes[c2.n], new Set([tip, other, c2.n]))) continue;
+            for (const e of edges) {
+              if (e.u === tip) e.u = c2.n;
+              if (e.v === tip) e.v = c2.n;
+            }
+            deg.set(c2.n, (deg.get(c2.n) ?? 0) + 1);
+            deg.set(tip, 0);
+            tailWelds++;
+          } else {
+            // расщепить ребро в точке проекции, хвост — в новый узел
+            const host = edges[c2.ei!];
+            if (segCross(nodes[other], c2.pt!, new Set([tip, other, host.u, host.v]))) continue;
+            const newN = nodes.length;
+            nodes.push({ x: c2.pt!.x, y: c2.pt!.y });
+            const tail = { ...host, u: newN, v: host.v };
+            host.v = newN;
+            edges.push(tail);
+            for (const e of edges) {
+              if (e === tail) continue;
+              if (e.u === tip) e.u = newN;
+              if (e.v === tip) e.v = newN;
+            }
+            deg.set(newN, 3);
+            deg.set(tip, 0);
+            tailSplits++;
+          }
+          progress = true;
+          break;
+        }
+      }
+      if (!progress) break;
+    }
+    if (tailWelds || tailSplits) report.push(`сшивка хвостов: ${tailWelds} концов сшито в узлы, ${tailSplits} T-стыков в рёбра/кольцо (пробник ${probe} ft)`);
+    if (tailWelds || tailSplits) weldAndDedupe(" (после сшивки)");
+  }
   const removed = pruneDanglingEdges(edges);
   if (removed.length) report.push(`${removed.length} висячих рёбер границ отсечено`);
   const { faces, halves } = walkPlanarFaces(nodes, edges);
@@ -902,6 +1062,18 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     };
   });
 
+  if (process.env.DBG_NEAR) {
+    const [nx, ny, nr] = process.env.DBG_NEAR.split(",").map(Number);
+    const near = (p: FootprintPoint) => Math.hypot(p.x - nx, p.y - ny) <= nr;
+    const deg2 = new Map<number, number>();
+    for (const e of edges) { deg2.set(e.u, (deg2.get(e.u) ?? 0) + 1); deg2.set(e.v, (deg2.get(e.v) ?? 0) + 1); }
+    for (let ei = 0; ei < edges.length; ei++) {
+      const e = edges[ei];
+      if (!near(nodes[e.u]) && !near(nodes[e.v])) continue;
+      console.log(`[near] ребро ${ei} ${e.prov} li=${e.lineIndex ?? "-"} pair=${e.pair ?? "-"} (${nodes[e.u].x.toFixed(1)},${nodes[e.u].y.toFixed(1)})[deg${deg2.get(e.u)}]→(${nodes[e.v].x.toFixed(1)},${nodes[e.v].y.toFixed(1)})[deg${deg2.get(e.v)}]`);
+    }
+    for (let ri = 0; ri < ring.length; ri++) if (near(ring[ri])) console.log(`[near] ring[${ri}] (${ring[ri].x.toFixed(1)},${ring[ri].y.toFixed(1)})`);
+  }
   const usedNodes = new Set<number>();
   const usedEdges = new Set<number>();
   for (const f of cells0) for (const hi of f.halfEdges) {
@@ -909,6 +1081,38 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     usedEdges.add(halves[hi].edge);
   }
   const euler = usedNodes.size - usedEdges.size + cells0.length;
+  if (process.env.DBG_RC) {
+    console.log(`[rc] nodes ${nodes.length} (used ${usedNodes.size}) · edges ${edges.length} (used ${usedEdges.size}) · faces walk ${faces.length} · cells0 ${cells0.length} · euler ${euler}`);
+    // щели: ребро, обе половинки которого в одной грани
+    const faceOfHalf = new Map<number, number>();
+    faces.forEach((f, fi) => { for (const hi of f.halfEdges) faceOfHalf.set(hi, fi); });
+    for (let ei = 0; ei < edges.length; ei++) {
+      const f1 = faceOfHalf.get(2 * ei);
+      const f2 = faceOfHalf.get(2 * ei + 1);
+      if (f1 !== undefined && f1 === f2) {
+        const e = edges[ei];
+        console.log(`[rc]   ЩЕЛЬ: ребро ${ei} ${e.prov} li=${e.lineIndex ?? "-"} pair=${e.pair ?? "-"} deg(u)=${edges.filter((x) => x.u === e.u || x.v === e.u).length} deg(v)=${edges.filter((x) => x.u === e.v || x.v === e.v).length} (${nodes[e.u].x.toFixed(1)},${nodes[e.u].y.toFixed(1)})→(${nodes[e.v].x.toFixed(1)},${nodes[e.v].y.toFixed(1)}) в грани ${f1} area ${faces[f1!].area.toFixed(0)}`);
+      }
+    }
+    const pairSeen = new Map<string, number>();
+    for (const e of edges) {
+      const k = e.u < e.v ? `${e.u}|${e.v}` : `${e.v}|${e.u}`;
+      pairSeen.set(k, (pairSeen.get(k) ?? 0) + 1);
+    }
+    for (const [k, n] of pairSeen) if (n > 1) {
+      const [u, v] = k.split("|").map(Number);
+      console.log(`[rc]   ДУБЛЬ x${n}: узлы ${k} (${nodes[u].x.toFixed(1)},${nodes[u].y.toFixed(1)})→(${nodes[v].x.toFixed(1)},${nodes[v].y.toFixed(1)})`);
+    }
+    console.log(`[rc]   нулевых граней обхода: ${faces.filter((f) => Math.abs(f.area) <= EPS).length}`);
+    const usedN = new Set<number>();
+    for (const e of edges) { usedN.add(e.u); usedN.add(e.v); }
+    const un = [...usedN];
+    for (let i = 0; i < un.length; i++) for (let j = i + 1; j < un.length; j++) {
+      const dd = Math.hypot(nodes[un[i]].x - nodes[un[j]].x, nodes[un[i]].y - nodes[un[j]].y);
+      if (dd < stepFt) console.log(`[rc]   БЛИЗКИЕ УЗЛЫ ${un[i]}|${un[j]} dist ${dd.toFixed(3)} ft (${nodes[un[i]].x.toFixed(2)},${nodes[un[i]].y.toFixed(2)})`);
+    }
+    for (const f of cells0) console.log(`[rc]   cell area ${f.area.toFixed(0)}`);
+  }
   const total = cells0.reduce((s, f) => s + f.area, 0);
   const tilingPct = contourArea > 0 ? (Math.abs(total - contourArea) / contourArea) * 100 : 0;
 

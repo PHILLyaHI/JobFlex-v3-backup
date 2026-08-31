@@ -254,7 +254,7 @@ function toValidatorSchema(model: RoofModel, footprint: FootprintPoint[]): unkno
   for (const f of model.faces) {
     const ring = ringOf(f.lineIds, idx);
     if (!ring || ring.length < 3) continue;
-    facets.push({ id: String(f.designator || f.id), pitch: Number(f.pitch) || 0, v: ring.map(vid) });
+    facets.push({ id: String(f.designator || f.id), pitch: Number(f.pitch) || 0, v: ring.map(vid), ...((f as { provenance?: string }).provenance === "fill" ? { fill: true } : {}) });
   }
   const ptById = new Map(model.points.map((pt) => [pt.id, pt]));
   const lineOwners = new Map<string, string[]>();

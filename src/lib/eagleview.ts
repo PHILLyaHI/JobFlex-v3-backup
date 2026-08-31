@@ -377,6 +377,13 @@ export interface RoofFace {
   areaSqft: number;
   orientation: number; // degrees
   lineIds: string[];
+  /**
+   * По-гранный провенанс сшивки (приказ 2026-08-30): «fill» — грань не
+   * измерена по DSM (нет доверенного кластера с опорой), её плоскостная
+   * невязка не судится R03, площадь идёт в «заполнено». Модель несёт свой
+   * провенанс сама — оба валидатора читают его из одного места.
+   */
+  provenance?: "measured-dsm" | "fill";
 }
 // Where a model's geometry came from. "eagleview" is an ordered, human-QC'd
 // report — contract-grade. "synthetic" is reconstructed from Google Solar DSM

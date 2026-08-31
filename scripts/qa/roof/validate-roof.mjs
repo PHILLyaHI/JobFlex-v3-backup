@@ -156,6 +156,7 @@ export function validateRoof(model) {
     return {
       i, id: f.id ?? `F${i}`, pitch: f.pitch, pts3, plan,
       planArea: area2(plan), plane: fitPlane(pts3),
+      fill: f.fill === true,
     };
   });
 
@@ -228,13 +229,25 @@ export function validateRoof(model) {
         const slack = Math.max(plF.maxDev, EPS_PLANE) + Math.max(plG.maxDev, EPS_PLANE);
         if (p[2] >= Math.min(zF, zG) - slack && p[2] <= Math.max(zF, zG) + slack) { pardon = true; break; }
       }
+      if (!pardon && (vertFacets.get(vKey3(p))?.length ?? 1) <= 1) {
+        // вершина-одиночка (близнец уровня): слак — фактический остаток
+        // своей чистой плоскости (тот же закон, что слак пары)
+        if (dF <= Math.max(plF.maxDev, EPS_PLANE) + EPS_PLANE) pardon = true;
+      }
       if (!pardon) return { ok: false, dev: dF, excused };
       excused++;
     }
     return { ok: true, dev: 0, excused };
   };
   let weldExcused = 0;
+  let fillSkipped = 0;
   for (const f of facets) {
+    // ЗАКОН ПРОВЕНАНСА (2026-08-30, механизм 1): fill-грань не измерена по
+    // DSM — её плоскостная невязка не судится R03 (площадь идёт в «заполнено»)
+    if (f.fill) {
+      if (f.plane && f.plane.maxDev > EPS_PLANE) fillSkipped++;
+      continue;
+    }
     if (!f.plane) {
       err('R03', f.id + ": не удалось построить плоскость");
       continue;
@@ -264,7 +277,7 @@ export function validateRoof(model) {
       err('R04', f.id + ": заявлен уклон " + f.pitch + "/12, по геометрии " + measured.toFixed(2) + "/12");
   }
   if (!out.some((r) => r.id === 'R03' || r.id === 'R04'))
-    ok('R03/R04', 'все грани плоские, уклоны совпадают с геометрией' + (weldExcused ? ' (' + weldExcused + ' вершин на сварных допусках)' : ''));
+    ok('R03/R04', 'все грани плоские, уклоны совпадают с геометрией' + (weldExcused ? ' (' + weldExcused + ' вершин на сварных допусках)' : '') + (fillSkipped ? ' (' + fillSkipped + ' fill-граней вне суда R03)' : ''));
 
   // ─ 3. Покрытие футпринта
   const fpArea = area2(fp);

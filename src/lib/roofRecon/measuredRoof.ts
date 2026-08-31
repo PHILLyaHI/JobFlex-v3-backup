@@ -490,6 +490,36 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // Вердикт не двигает геометрию (двигает пересечение) — он ставится в
   // провенанс: «локатор+аналитика» / «analytic-only» / «локатор спорит».
   // Стены (Δz ≥ переписного пола) не трогаются: их пересечение — фикция.
+  // ── ПРЯМОЙ DSM-ПЕРЕПАД ПОПЕРЁК ЛИНИИ (единый закон стены) ──
+  // Стену судит только прямой замер, никогда план-эвалы плоскостей:
+  // экстраполяция за опору давала Δz 2.8 на гладком скате (SE-ободок
+  // 12629) — фиктивные стены рожали близнецов, фантомную сшивку и G2.
+  // Медиана по трём станциям; на станции — максимум по смещениям
+  // 2·step / 4·step / 2 ft (клин у ободка бывает уже пробника).
+  const directWallDrop = (a0: FootprintPoint, b0: FootprintPoint, toRaster?: (p: FootprintPoint) => FootprintPoint): number => {
+    const run0 = Math.hypot(b0.x - a0.x, b0.y - a0.y);
+    if (run0 < 1e-6) return 0;
+    const per0 = { x: -(b0.y - a0.y) / run0, y: (b0.x - a0.x) / run0 };
+    const drops0: number[] = [];
+    for (const t0 of [0.25, 0.5, 0.75]) {
+      const mid0 = { x: a0.x + (b0.x - a0.x) * t0, y: a0.y + (b0.y - a0.y) * t0 };
+      let dMax = NaN;
+      for (const off0 of [2 * stepFt, 4 * stepFt, 2]) {
+        const zAt = (s0: number): number => {
+          const q0 = { x: mid0.x + per0.x * s0 * off0, y: mid0.y + per0.y * s0 * off0 };
+          const pi0 = m.pxOf(toRaster ? toRaster(q0) : q0);
+          if (pi0 < 0 || mask.data[pi0] <= 0.5) return NaN;
+          return dsm.data[pi0] * FT_PER_M - groundElevFt;
+        };
+        const d0 = Math.abs(zAt(1) - zAt(-1));
+        if (Number.isFinite(d0) && (!Number.isFinite(dMax) || d0 > dMax)) dMax = d0;
+      }
+      if (Number.isFinite(dMax)) drops0.push(dMax);
+    }
+    if (!drops0.length) return Number.POSITIVE_INFINITY; // мерить не обо что — не мешать
+    drops0.sort((x0, y0) => x0 - y0);
+    return drops0[Math.floor(drops0.length / 2)];
+  };
   const LOC_SCAN_FT = 4;
   const LOC_STEP_FT = 0.5;
   const LOC_GATE_DEG = 20;
@@ -542,8 +572,8 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     if (nrm < 1e-4) return;
     const mx = (l.a.x + l.b.x) / 2;
     const my = (l.a.y + l.b.y) / 2;
-    const dzAtBoundary = Math.abs((A.a * mx + A.b * my + A.c) - (B.a * mx + B.b * my + B.c));
-    if (dzAtBoundary > STEP_DZ_FT) return;
+    // стену судит ТОЛЬКО прямой DSM-перепад (план-эвалы экстраполируют)
+    if (directWallDrop(l.a, l.b) >= STEP_DZ_FT) return;
     const off = (da * mx + db * my + (A.c - B.c)) / nrm;
     const nx = da / nrm;
     const ny = db / nrm;
@@ -608,10 +638,15 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       const my = pts.reduce((s2, q) => s2 + q.y, 0) / pts.length;
       // A STEP pair's plane intersection is fiction — the boundary is a wall,
       // not a fold; projecting the wall trace onto it dragged geometry tens
-      // of feet and bred a 176-edge mega-face. Judged at the traced boundary,
-      // where the two planes actually stand apart.
-      const dzAtBoundary = Math.abs((A.a * mx + A.b * my + A.c) - (B.a * mx + B.b * my + B.c));
-      if (dzAtBoundary > STEP_DZ_FT) continue;
+      // of feet and bred a 176-edge mega-face. Стену судит ТОЛЬКО прямой
+      // DSM-перепад вдоль трассы (план-эвалы экстраполируют за опору).
+      let wSpan = { a: pts[0], b: pts[0] };
+      let wBest = 0;
+      for (const q of pts) for (const q2 of pts) {
+        const dd2 = Math.hypot(q.x - q2.x, q.y - q2.y);
+        if (dd2 > wBest) { wBest = dd2; wSpan = { a: q, b: q2 }; }
+      }
+      if (directWallDrop(wSpan.a, wSpan.b) >= STEP_DZ_FT) continue;
       const off = (da * mx + db * my + (A.c - B.c)) / nrm;
       const px0 = { x: mx - (da / nrm) * off, y: my - (db / nrm) * off };
       let t0 = Infinity;
@@ -677,38 +712,63 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // strips were unassigned precisely because they fit no plane at the growth
   // tolerance — counting them against the cell rejected half of 12621's area
   // as "fill" on the first region run. They stay acknowledged unknowns.
-  const cellRms = (cell: RegionCell, pl: Plane, cl: number): number => {
+  // ── ЗАКОН СОСТАВА ЯЧЕЙКИ (приказ 2026-08-30, механизм 1) ──
+  // Прежний cellRms считал только пиксели СВОЕГО кластера — мешок 1283 sf
+  // на 12621 (cl0+cl2+cl1+cl4) прошёл с rms 0.21 по 543 sf кластера cl0:
+  // линейка была слепа к чужим. Перепись теперь полная: опора (свои),
+  // чужаки-невписавшиеся (пиксели других кластеров вне допуска к
+  // заявленной плоскости), без хозяина. Грань — одна плоскость: ячейка
+  // с опорой меньше пола грани или с чужим невписавшимся составом
+  // ≥ пола грани — НЕ измеренная; она fill с честным провенансом.
+  const cellCensus = (cell: RegionCell, pl: Plane, cl: number): { rms: number; ownSf: number; foreignMisfitSf: number } => {
     const xs = cell.ring.map((p) => p.x);
     const ys = cell.ring.map((p) => p.y);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
     const step = Math.max(stepFt, Math.min(maxX - minX, maxY - minY) / 12);
+    const cellSf = step * step;
     let ss = 0;
     let n = 0;
+    let foreignMisfit = 0;
     for (let y = minY + step / 2; y < maxY; y += step) {
       for (let x = minX + step / 2; x < maxX; x += step) {
         if (!inRing({ x, y }, cell.ring)) continue;
         const pi = m.pxOf({ x, y });
         if (pi < 0 || mask.data[pi] <= 0.5) continue;
-        if (d.assign[pi] !== cl) continue;
+        const asg = d.assign[pi];
         const z = dsm.data[pi] * FT_PER_M - groundElevFt;
         const dz = z - (pl.a * x + pl.b * y + pl.c);
-        ss += dz * dz;
-        n++;
+        if (asg === cl) {
+          ss += dz * dz;
+          n++;
+        } else if (asg >= 0 && m.clusterIn[asg] && Math.abs(dz) > DEFAULT_PLANE_TOL_FT) {
+          // чужой доверенный кластер, и поверхность там НЕ наша плоскость
+          foreignMisfit += cellSf;
+        }
+        // безхозные пиксели — признанные неизвестные (полоса поглощения),
+        // прежний закон сохранён: против ячейки не считаются
       }
     }
-    return n >= 3 ? Math.sqrt(ss / n) : Number.POSITIVE_INFINITY;
+    return { rms: n >= 3 ? Math.sqrt(ss / n) : Number.POSITIVE_INFINITY, ownSf: n * cellSf, foreignMisfitSf: foreignMisfit };
   };
+  let demotedSupport = 0;
+  let demotedTrespass = 0;
   const infos: CellInfo[] = rc.cells.map((cell) => {
     const cl = cell.regionId >= 0 && regionKind[cell.regionId] === "cluster" ? clusterOf[cell.regionId] : -1;
     const pl = cl >= 0 ? clusterPlane.get(cl) : undefined;
     if (pl) {
-      const rms = cellRms(cell, pl, cl);
-      if (rms <= DEFAULT_PLANE_TOL_FT) return { cell, rmsFt: rms, cluster: cl, plane: pl, prov: "measured-dsm" };
-      return { cell, rmsFt: rms, cluster: null, plane: null, prov: "fill" };
+      const cs = cellCensus(cell, pl, cl!);
+      if (cs.rms <= DEFAULT_PLANE_TOL_FT && cs.ownSf >= MIN_FACET_SQFT && cs.foreignMisfitSf < MIN_FACET_SQFT)
+        return { cell, rmsFt: cs.rms, cluster: cl, plane: pl, prov: "measured-dsm" };
+      if (cs.rms <= DEFAULT_PLANE_TOL_FT) {
+        if (cs.ownSf < MIN_FACET_SQFT) demotedSupport++;
+        else demotedTrespass++;
+      }
+      return { cell, rmsFt: cs.rms, cluster: null, plane: null, prov: "fill" };
     }
     return { cell, rmsFt: Number.POSITIVE_INFINITY, cluster: null, plane: null, prov: "fill" };
   });
+  if (demotedSupport || demotedTrespass) reasons.push(`закон состава: ${demotedSupport} ячеек без опоры (< ${MIN_FACET_SQFT} sf своих) и ${demotedTrespass} с чужим невписавшимся составом ≥ пола — понижены в fill`);
 
   // ── vertex reconciliation: the polyhedron's own points ──
   // Whatever the polyline bookkeeping missed, the assembly-level pass closes:
@@ -828,6 +888,14 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       groups.length = 0;
       groups.push(...regrouped);
     }
+    // NB (2026-08-30, механизм 3 — остановлено с описанием): попытка
+    // подчинить расщепление уровней прямому DSM-перепаду смежного ребра
+    // (единый закон стены) чинила фиктивную ступень SE-ободка 12629
+    // (G2→G1) и Euler 419, но ломала 12621: у УГЛА настоящей стены клиф в
+    // DSM выцветает, а groupZ смешивает экстраполирующий план-эвал с
+    // честным (15.1 из 13.1) — нужен groupZ с локальной опорой, не
+    // среднее. Замер и механика — в ROOF-STATE; откат до лучшего
+    // состояния (12621+12618+9903 на measured-dsm).
     const groupZ = (g: Array<{ ci: CellInfo; z: number }>): number => {
       // Measured planes carry the vertex; fill planes (skeleton + datum
       // offset) FOLLOW — averaging them in bent measured faces by 0.5-1 ft.
@@ -1288,19 +1356,35 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           const drops: number[] = [];
           for (const t9 of [0.25, 0.5, 0.75]) {
             const mid9 = { x: a9.x + (b9.x - a9.x) * t9, y: a9.y + (b9.y - a9.y) * t9 };
-            const zSide = (s9: number): number => {
-              const q9 = fwd({ x: mid9.x + per9.x * s9 * 2, y: mid9.y + per9.y * s9 * 2 });
+            const zSide = (s9: number, off9: number): number => {
+              const q9 = fwd({ x: mid9.x + per9.x * s9 * off9, y: mid9.y + per9.y * s9 * off9 });
               const pi9 = m.pxOf(q9);
               if (pi9 < 0 || mask.data[pi9] <= 0.5) return NaN;
               return dsm.data[pi9] * FT_PER_M - groundElevFt;
             };
-            const d9 = Math.abs(zSide(1) - zSide(-1));
-            if (Number.isFinite(d9)) drops.push(d9);
+            // смещение станции — не одно: у ободка над крылом верхний клин
+            // уже пробника (±2 ft перескакивал клин и мерил крыло об крыло —
+            // dsmWallOk=false при честной стене 2.8, 12629 SE-терминус).
+            // Максимум по смещениям, выведенным из шага решётки: 2·step
+            // (сразу за размытием окна), 4·step, 2 ft (прежний пробник).
+            let d9max = NaN;
+            for (const off9 of [2 * m.stepFt, 4 * m.stepFt, 2]) {
+              const d9 = Math.abs(zSide(1, off9) - zSide(-1, off9));
+              if (Number.isFinite(d9) && (!Number.isFinite(d9max) || d9 > d9max)) d9max = d9;
+            }
+            if (Number.isFinite(d9max)) drops.push(d9max);
           }
           if (!drops.length) return true; // мерить не обо что (край кадра)
           drops.sort((x9, y9) => x9 - y9);
           return drops[Math.floor(drops.length / 2)] >= STEP_DZ_FT;
         };
+        if (process.env.DBG_TYPEAT) {
+          const [qx, qy] = process.env.DBG_TYPEAT.split(",").map(Number);
+          const aT = ptById.get(l0.aId)!;
+          const bT = ptById.get(l0.bId)!;
+          if (Math.hypot((aT.x + bT.x) / 2 - qx, (aT.y + bT.y) / 2 - qy) <= 3)
+            console.log(`[typeat] группа ${g.map((l) => l.id).join("+")} (${aT.x.toFixed(1)},${aT.y.toFixed(1)})→(${bT.x.toFixed(1)},${bT.y.toFixed(1)}) dzEnds=${dzEnds.toFixed(2)} dsmWallOk=${dsmWallOk()} zs=${g.map((l) => zOfLine(l).toFixed(1)).join("/")}`);
+        }
         if (dzEnds >= STEP_DZ_FT && dsmWallOk()) {
           // у СТЕНЫ один план на обе стороны: стороны, разошедшиеся на
           // ~0.1 ft (канон/слияния двигали по одной), рвут ключи близнецов
@@ -1405,7 +1489,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     // ── ТОПОЛОГИЧЕСКАЯ СШИВКА ФАНТОМНЫХ СТЕН (один чистый проход) ──
     // DSM перепада не видел: сторонам границы — одна точка на конец,
     // дубль-линии сливаются; z назначит финальный z-солвер
-    if (phantomGroups.length) {
+    if (phantomGroups.length && !process.env.DBG_NO_PHSTITCH) {
       let stitched = 0;
       for (const g of phantomGroups) {
         const liveG = new Set(candidate.lines.map((l) => l.id));
@@ -1419,17 +1503,35 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           (endsM.get(k9) ?? endsM.set(k9, []).get(k9)!).push(pt9);
         }
         for (const ptsM of endsM.values()) {
-          const uniq = [...new Set(ptsM)];
-          if (uniq.length < 2) continue;
-          const keep = uniq[0];
-          for (const q of uniq.slice(1)) {
-            for (const l of candidate.lines) {
-              if (l.aId === q.id) l.aId = keep.id;
-              if (l.bId === q.id) l.bId = keep.id;
-            }
-            candidate.points = candidate.points.filter((q2) => q2.id !== q.id);
+          const uniqAll = [...new Set(ptsM)];
+          if (uniqAll.length < 2) continue;
+          // z-ГЕЙТ (приказ 2026-08-30, механизм 2): на стыке фантомной
+          // границы с НАСТОЯЩЕЙ стеной в одной план-клетке живут близнецы
+          // уровня (Δz ≥ переписного пола) — сварка без z-гейта сливала их
+          // и втягивала верхний уровень в нижнее кольцо (A4 на 12621:
+          // z16.66 в кольце z~10). Сваривается только внутри уровня:
+          // цепная группировка по z с разрывом на пол переписи. Фикция
+          // «расщепления гладкого ската» убита выше — стены везде судит
+          // прямой DSM-перепад, фиктивные пары не рождаются.
+          const byZ = uniqAll.slice().sort((q1, q2) => q1.z - q2.z);
+          const levels: Array<typeof byZ> = [];
+          for (const q of byZ) {
+            const cur = levels[levels.length - 1];
+            if (cur && q.z - cur[cur.length - 1].z < STEP_DZ_FT) cur.push(q);
+            else levels.push([q]);
           }
-          stitched++;
+          for (const uniq of levels) {
+            if (uniq.length < 2) continue;
+            const keep = uniq[0];
+            for (const q of uniq.slice(1)) {
+              for (const l of candidate.lines) {
+                if (l.aId === q.id) l.aId = keep.id;
+                if (l.bId === q.id) l.bId = keep.id;
+              }
+              candidate.points = candidate.points.filter((q2) => q2.id !== q.id);
+            }
+            stitched++;
+          }
         }
         const seenPair = new Map<string, string>();
         for (const l of gl) {
@@ -1791,6 +1893,12 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     if (ci.prov === "measured-dsm") measuredSqft += o.area;
     else fillSqft += o.area;
   });
+  // модель несёт провенанс по-гранно (механизм 1): валидаторы читают
+  // fill из самой модели — один источник, оба согласны по построению
+  for (const f of candidate.faces) {
+    const src = faceSrc.get(f.id);
+    if (src !== undefined) f.provenance = infos[src].prov;
+  }
   const googleReport = googleArbiterOf();
   const provenance = { measuredSqft, fillSqft, faces: provFaces, ...(googleReport ? { google: googleReport } : {}) };
   const boundary = { straightenedFt: rc.straightenedFt, raggedFt: rc.raggedFt };
