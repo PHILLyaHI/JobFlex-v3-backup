@@ -65,6 +65,9 @@ export interface RegionCellsInput {
   dualFit?: (p: FootprintPoint, line: RegionLine) => boolean;
   /** True when p lies in dilation-absorbed territory (no assigned pixels). */
   absorbed?: (p: FootprintPoint) => boolean;
+  /** Прямой DSM-перепад поперёк сегмента (максимум станций): гейт
+   *  атомарного переноса конца — конец СТЕНЫ живёт трассой. */
+  wallDropOf?: (a: FootprintPoint, b: FootprintPoint) => number;
   probeFt?: number;
   minCellSqft?: number;
   /** Лента по этапам: copies of the boundary geometry after each construction
@@ -470,6 +473,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   // own two points, which pre-gathering wrongly fused. Only junctions that
   // FAIL resolution gather (pair-sharing union-find within one probe) so a
   // split apex without enough candidates still closes as one traced node.
+  let lastCrossRef = "";
   const crossesSimped = (a: FootprintPoint, b: FootprintPoint, skipEnds: Array<{ poly: number; end: 0 | 1 }>): boolean => {
     const skip = new Set(skipEnds.map((pe) => `${pe.poly}|${pe.end}`));
     const segHit = (p1: FootprintPoint, p2: FootprintPoint): boolean => {
@@ -487,10 +491,10 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       for (let i = 0; i + 1 < pts.length; i++) {
         if (i === 0 && skip.has(`${pi}|0`)) continue;
         if (i === pts.length - 2 && skip.has(`${pi}|1`)) continue;
-        if (segHit(pts[i], pts[i + 1])) return true;
+        if (segHit(pts[i], pts[i + 1])) { lastCrossRef = `poly ${pi} [${simped[pi].pair[0]}|${simped[pi].pair[1]}] seg ${i} (${pts[i].x.toFixed(1)},${pts[i].y.toFixed(1)})→(${pts[i + 1].x.toFixed(1)},${pts[i + 1].y.toFixed(1)})`; return true; }
       }
     }
-    for (const rs of ringSegs) if (segHit(rs.a, rs.b)) return true;
+    for (let ri = 0; ri < ringSegs.length; ri++) if (segHit(ringSegs[ri].a, ringSegs[ri].b)) { lastCrossRef = `ring seg ${ri} (${ringSegs[ri].a.x.toFixed(1)},${ringSegs[ri].a.y.toFixed(1)})→(${ringSegs[ri].b.x.toFixed(1)},${ringSegs[ri].b.y.toFixed(1)})`; return true; }
     return false;
   };
   const inRingPt0 = inRingPt;
@@ -535,6 +539,11 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         const t = (j.p.x - l.a.x) * l.d.x + (j.p.y - l.a.y) * l.d.y;
         if (t >= -l.E && t <= l.L + l.E) cand.add(sp.li);
       }
+    }
+    if (process.env.DBG_NODE) {
+      const [qx, qy] = process.env.DBG_NODE.split(",").map(Number);
+      if (Math.hypot(j.p.x - qx, j.p.y - qy) <= 2)
+        console.log(`[node] узел (${j.p.x.toFixed(1)},${j.p.y.toFixed(1)}): цепей ${j.polyEnds.length} [${j.polyEnds.map((pe) => `p${pe.poly}(${simped[pe.poly].pair[0]}|${simped[pe.poly].pair[1]})li=${simped[pe.poly].li ?? "-"}`).join(" ")}] контролирующих линий ${cand.size}`);
     }
     let np: FootprintPoint | null = null;
     if (cand.size === 1) {
@@ -720,7 +729,11 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     for (const c3 of cands) {
       const sp = simped[c3.pi];
       const adj = c3.end === 0 ? sp.pts[1] : sp.pts[sp.pts.length - 2];
-      if (adj && crossesSimped(c3.pt, adj, [{ poly: c3.pi, end: c3.end }])) { termRefused.push(0); continue; }
+      if (adj && crossesSimped(c3.pt, adj, [{ poly: c3.pi, end: c3.end }])) {
+        if (process.env.DBG_TERM) console.log(`[term] X-ОТКАЗ poly ${c3.pi} цель (${c3.pt.x.toFixed(1)},${c3.pt.y.toFixed(1)}) блок: ${lastCrossRef}`);
+        termRefused.push(0);
+        continue;
+      }
       const moved = { ...c3.pt, c: true } as FootprintPoint & { c?: boolean };
       if (c3.end === 0) sp.pts[0] = moved;
       else sp.pts[sp.pts.length - 1] = moved;
@@ -920,6 +933,161 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   }
 
   // ── 7. faces from the shared walk ──
+  // ── 6b'. УЗЛЫ, ОСТАВЛЕННЫЕ ТРАССОЙ (приказ 2026-08-30) ──
+  // Узел — точка согласия кольца и трассы. Операция атомарна и живёт на
+  // ГРАФЕ (полилинийная стадия рвала vpolys/simped: R02, tiling 34.7%):
+  // (1) конец цепи несущей линии, пришитый к кольцу не в точке
+  //     support ∩ контур, переносится в неё: контурное ребро расщепляется
+  //     в точке пересечения, конец цепи перешивается атомарно; старый
+  //     узел остаётся рядовой точкой кольца. Гейт — разложение: сдвиг
+  //     вдоль несущей ≤ её длины (продление линии законно), перпендикуляр
+  //     ≤ пробника; страж — запрет пересечений.
+  // (2) узел строго между двумя рёбрами ОДНОЙ несущей (два пробега одной
+  //     пары — одна аналитическая линия, узел фиктивен) проецируется на
+  //     несущую: излом умирает (12629: 36.6° в середине вальмы A2|A7).
+  {
+    const segCrossB = (a: FootprintPoint, b: FootprintPoint, skipNodes: Set<number>): boolean => {
+      for (const e of edges) {
+        if (skipNodes.has(e.u) && skipNodes.has(e.v)) continue;
+        const p1 = nodes[e.u];
+        const p2 = nodes[e.v];
+        const d1 = { x: b.x - a.x, y: b.y - a.y };
+        const d2 = { x: p2.x - p1.x, y: p2.y - p1.y };
+        const den = d1.x * d2.y - d1.y * d2.x;
+        if (Math.abs(den) < 1e-12) continue;
+        const t = ((p1.x - a.x) * d2.y - (p1.y - a.y) * d2.x) / den;
+        const u = ((p1.x - a.x) * d1.y - (p1.y - a.y) * d1.x) / den;
+        const tol = 1e-7;
+        if (t > tol && t < 1 - tol && u > tol && u < 1 - tol) return true;
+      }
+      return false;
+    };
+    let termMoved = 0;
+    let midProjected = 0;
+    const degB = new Map<number, FinalEdge[]>();
+    const rebuildDeg = (): void => {
+      degB.clear();
+      for (const e of edges) {
+        (degB.get(e.u) ?? degB.set(e.u, []).get(e.u)!).push(e);
+        (degB.get(e.v) ?? degB.set(e.v, []).get(e.v)!).push(e);
+      }
+    };
+    rebuildDeg();
+    // (1) атомарные терминалы: экстремальные узлы каждой несущей на кольце
+    const byLineB = new Map<number, FinalEdge[]>();
+    for (const e of edges) if (e.prov === "measured-line" && e.lineIndex !== undefined) {
+      (byLineB.get(e.lineIndex) ?? byLineB.set(e.lineIndex, []).get(e.lineIndex)!).push(e);
+    }
+    for (const [li, les] of byLineB) {
+      const l = lineGeom[li];
+      const tOfN = (n: number): number => (nodes[n].x - l.a.x) * l.d.x + (nodes[n].y - l.a.y) * l.d.y;
+      const nodeSet = new Set<number>();
+      for (const e of les) { nodeSet.add(e.u); nodeSet.add(e.v); }
+      const ext = [...nodeSet].sort((x, y) => tOfN(x) - tOfN(y));
+      for (const n0 of [ext[0], ext[ext.length - 1]]) {
+        const inc = degB.get(n0) ?? [];
+        if (inc.length < 2) continue; // висячий — судьба решится в 6c
+        // конец, стоящий НА своей несущей, уже согласован; чинится только
+        // конец, ушедший с неё (перпендикуляр больше шага решётки)
+        const relN = { x: nodes[n0].x - l.a.x, y: nodes[n0].y - l.a.y };
+        const perpN = Math.abs(relN.x * l.n.x + relN.y * l.n.y);
+        if (perpN <= stepFt) continue;
+        // ближайшее пересечение несущей с ЧУЖИМИ рёбрами графа (кольцо,
+        // трасса стены, чужая цепь) — узел = точка согласия двух свидетелей
+        let bestQ: { pt: FootprintPoint; ei: number; d: number; moveNode?: boolean } | null = null;
+        for (let ei = 0; ei < edges.length; ei++) {
+          const e = edges[ei];
+          if (e.prov === "measured-line" && e.lineIndex === li) continue;
+          const p1 = nodes[e.u];
+          const p2 = nodes[e.v];
+          const ex = p2.x - p1.x;
+          const ey = p2.y - p1.y;
+          const den = l.d.x * ey - l.d.y * ex;
+          if (Math.abs(den) < 1e-9) continue;
+          const tt = ((p1.x - l.a.x) * ey - (p1.y - l.a.y) * ex) / den;
+          const u2 = ((p1.x - l.a.x) * l.d.y - (p1.y - l.a.y) * l.d.x) / den;
+          const L2 = Math.hypot(ex, ey);
+          const incident = e.u === n0 || e.v === n0;
+          // у чужого узла новый узел не рождается; но пересечение на
+          // ребре, ИНЦИДЕНТНОМ n0, — это показание «узел должен стоять
+          // здесь»: не расщепление, а перенос самого n0 (все цепи следуют)
+          const nearFar = e.u === n0 ? (1 - u2) * L2 : e.v === n0 ? u2 * L2 : Math.min(u2 * L2, (1 - u2) * L2);
+          if (!incident && (u2 * L2 <= stepFt || (1 - u2) * L2 <= stepFt)) continue;
+          if (incident && nearFar <= stepFt) continue; // за дальним узлом хозяина
+          const q = { x: l.a.x + l.d.x * tt, y: l.a.y + l.d.y * tt };
+          const dd = Math.hypot(q.x - nodes[n0].x, q.y - nodes[n0].y);
+          // чужая цепь (стена/трасса) свидетельствует только У УЗЛА —
+          // пересечение дальше пробника от него не её показание; кольцу
+          // хватает разложения ниже (продление вдоль несущей законно)
+          if (e.prov !== "contour" && dd > probe) continue;
+          if (incident && dd > probe) continue;
+          if (!bestQ || dd < bestQ.d) bestQ = { pt: q, ei, d: dd, moveNode: incident };
+        }
+        const dbgA = process.env.DBG_ANODE ? ((): boolean => { const [ax, ay] = process.env.DBG_ANODE!.split(",").map(Number); return Math.hypot(nodes[n0].x - ax, nodes[n0].y - ay) <= 3; })() : false;
+        if (!bestQ || bestQ.d < stepFt) { if (dbgA) console.log(`[anode] li=${li} n0 (${nodes[n0].x.toFixed(1)},${nodes[n0].y.toFixed(1)}): ${bestQ ? `уже на месте d=${bestQ.d.toFixed(2)}` : "пересечения нет"}`); continue; }
+        // гейт разложением от старого узла
+        const dxq = bestQ.pt.x - nodes[n0].x;
+        const dyq = bestQ.pt.y - nodes[n0].y;
+        const perpQ = Math.abs(dxq * l.n.x + dyq * l.n.y);
+        const alongQ = Math.abs(dxq * l.d.x + dyq * l.d.y);
+        if (dbgA) console.log(`[anode] li=${li} n0 (${nodes[n0].x.toFixed(1)},${nodes[n0].y.toFixed(1)}) → q (${bestQ.pt.x.toFixed(1)},${bestQ.pt.y.toFixed(1)}) d=${bestQ.d.toFixed(2)} perp=${perpQ.toFixed(2)} along=${alongQ.toFixed(2)} L=${l.L.toFixed(1)}`);
+        if (perpQ > probe || alongQ > l.L) continue;
+        // конец цепи: ребро несущей у n0, его другой узел — опора шва
+        const lineEdge = inc.find((e) => e.prov === "measured-line" && e.lineIndex === li);
+        if (!lineEdge) continue;
+        const prevN = lineEdge.u === n0 ? lineEdge.v : lineEdge.u;
+        // конец СТЕНЫ живёт трассой: при перепаде поперёк последнего
+        // сегмента >= переписи перенос дальше ширины размытия клифа
+        // (4·step) — фикция «пересечения плоскостей» (юг vzof-synth уезжал
+        // на 2.8 ft к сланту); сдвиг в пределах размытия — уточнение
+        // (12621: 1.23 ft чинил кольцо A7)
+        if ((input.wallDropOf?.(nodes[prevN], nodes[n0]) ?? 0) >= 1.8 && bestQ.d > 4 * stepFt) continue;
+        if (segCrossB(nodes[prevN], bestQ.pt, new Set([n0, prevN, edges[bestQ.ei].u, edges[bestQ.ei].v]))) { if (dbgA) console.log(`[anode]   X-отказ пересечением`); continue; }
+        if (bestQ.moveNode) {
+          // перенос узла в точку согласия: все инцидентные цепи следуют;
+          // страж — ни один сдвинутый сегмент не создаёт пересечения
+          let okM = true;
+          for (const e of inc) {
+            const far = e.u === n0 ? e.v : e.u;
+            if (segCrossB(nodes[far], bestQ.pt, new Set([n0, far]))) { okM = false; break; }
+          }
+          if (!okM) continue;
+          nodes[n0] = { x: bestQ.pt.x, y: bestQ.pt.y };
+          termMoved++;
+          continue;
+        }
+        // атомарно: расщепить контурное ребро, перешить конец цепи
+        const host = edges[bestQ.ei];
+        const newN = nodes.length;
+        nodes.push({ x: bestQ.pt.x, y: bestQ.pt.y });
+        const tail = { ...host, u: newN, v: host.v };
+        host.v = newN;
+        edges.push(tail);
+        if (lineEdge.u === n0) lineEdge.u = newN;
+        else lineEdge.v = newN;
+        termMoved++;
+        rebuildDeg();
+      }
+    }
+    // (2) фиктивные срединные узлы: строго два ребра одной несущей
+    for (const [n0, inc] of degB) {
+      if (inc.length !== 2) continue;
+      const [e1, e2] = inc;
+      if (e1.prov !== "measured-line" || e2.prov !== "measured-line") continue;
+      if (e1.lineIndex === undefined || e1.lineIndex !== e2.lineIndex) continue;
+      const l = lineGeom[e1.lineIndex];
+      const rel = { x: nodes[n0].x - l.a.x, y: nodes[n0].y - l.a.y };
+      const perp = rel.x * l.n.x + rel.y * l.n.y;
+      if (Math.abs(perp) < 1e-6 || Math.abs(perp) > probe) continue;
+      const q = { x: nodes[n0].x - perp * l.n.x, y: nodes[n0].y - perp * l.n.y };
+      const others = [e1.u === n0 ? e1.v : e1.u, e2.u === n0 ? e2.v : e2.u];
+      if (segCrossB(nodes[others[0]], q, new Set([n0, others[0]])) || segCrossB(q, nodes[others[1]], new Set([n0, others[1]]))) continue;
+      nodes[n0] = { x: q.x, y: q.y };
+      midProjected++;
+    }
+    if (termMoved || midProjected) report.push(`узлы трассы: ${termMoved} концов несущих переведено в support∩контур (атомарно, с расщеплением кольца), ${midProjected} фиктивных срединных узлов спроецировано на несущую`);
+  }
+
   // ── 6c. СШИВКА ВИСЯЧИХ ХВОСТОВ (приказ 2026-08-30, механизм 2) ──
   // Висячесть — свойство ГРАФА, не полилинии: тройник соединяет цепи трёх
   // попарно разных пар, и хвост, «пришитый» к точке встречи, всё равно
@@ -1013,6 +1181,8 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
           if (dd <= probe) cand.push({ d: dd, ei, t: t2, pt: q });
         }
         cand.sort((x, y) => x.d - y.d || (x.n ?? 1e9) - (y.n ?? 1e9));
+        const dbgT = !!process.env.DBG_TAIL;
+        if (dbgT) console.log(`[tail] хвост (${nodes[tip].x.toFixed(1)},${nodes[tip].y.toFixed(1)}) ${inc[0].prov} li=${inc[0].lineIndex ?? "-"}: целей ${cand.length}`);
         for (const c2 of cand) {
           if (c2.n !== undefined) {
             // не создавать дубль ребра other—target
@@ -1043,6 +1213,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
             deg.set(tip, 0);
             tailSplits++;
           }
+          if (dbgT) console.log(`[tail]   → ${c2.n !== undefined ? `узел (${nodes[c2.n].x.toFixed(1)},${nodes[c2.n].y.toFixed(1)})` : `T-стык (${c2.pt!.x.toFixed(1)},${c2.pt!.y.toFixed(1)})`} d=${c2.d.toFixed(2)}`);
           progress = true;
           break;
         }

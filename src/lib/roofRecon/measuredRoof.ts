@@ -450,6 +450,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       contour: movedRing,
       lines: lines2,
       onStage: input.onStage,
+      wallDropOf: (a, b) => directWallDrop(a, b),
       absorbed: (p) => {
         // A 5×5 window with fewer assigned pixels than the recon's own
         // minimum plane-fit support (6 — roofRecon needs pts.length >= 6 to
@@ -517,9 +518,17 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       if (Number.isFinite(dMax)) drops0.push(dMax);
     }
     if (!drops0.length) return Number.POSITIVE_INFINITY; // мерить не обо что — не мешать
-    drops0.sort((x0, y0) => x0 - y0);
-    return drops0[Math.floor(drops0.length / 2)];
+    // МАКСИМУМ станций, не медиана: стена-клин сужается вдоль линии
+    // (тот же закон, что dzEnds «по концам, максимумом») — медиана
+    // разбавляла выцветающий клиф 1.9/1.25/0.6 → 1.25 и смешанная
+    // граница объявлялась складкой целиком (vzof-synth, юг стены)
+    return Math.max(...drops0);
   };
+  // Перепад ПО ТРАССЕ пары: стена живёт у границы ЛАБЕЛЕЙ, не у линии
+  // (линия шага 1 — пересечение плоскостей, у стены оно фикция и стоит в
+  // стороне — vzof-synth мерил перепад восточнее клифа и стены не видел).
+  // Для лабельно-смежных пикселей пары: z на 2px вглубь каждой стороны,
+  // перепад — максимум (закон клина, как dzEnds «по концам максимумом»).
   const LOC_SCAN_FT = 4;
   const LOC_STEP_FT = 0.5;
   const LOC_GATE_DEG = 20;
@@ -562,7 +571,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     return bestD >= LOC_GATE_DEG ? bestT : null;
   };
   const snapCounts = { loc: 0, anal: 0, disp: 0, onSpot: 0 };
-  const snapLineToIntersection = (l: (typeof baseLines)[number]): void => {
+  const snapLineToIntersection = (l: (typeof baseLines)[number]): void | "wall" => {
     const A = d.clusterPlanes[l.between[0]];
     const B = d.clusterPlanes[l.between[1]];
     if (!A || !B) return;
@@ -572,8 +581,9 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     if (nrm < 1e-4) return;
     const mx = (l.a.x + l.b.x) / 2;
     const my = (l.a.y + l.b.y) / 2;
-    // стену судит ТОЛЬКО прямой DSM-перепад (план-эвалы экстраполируют)
-    if (directWallDrop(l.a, l.b) >= STEP_DZ_FT) return;
+    // стену судит ТОЛЬКО прямой DSM-перепад поперёк линии (максимум
+    // станций — закон клина); план-эвалы экстраполируют
+    if (directWallDrop(l.a, l.b) >= STEP_DZ_FT) return "wall";
     const off = (da * mx + db * my + (A.c - B.c)) / nrm;
     const nx = da / nrm;
     const ny = db / nrm;
@@ -605,7 +615,11 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     }
     l.snapCorridorFt = Number.POSITIVE_INFINITY;
   };
-  for (const l of baseLines) snapLineToIntersection(l);
+  {
+    let walls0 = 0;
+    for (const l of baseLines) if (snapLineToIntersection(l) === "wall") walls0++;
+    if (walls0) reasons.push(`${walls0} линий пар с клифом на трассе не снапятся (пересечение для стены — фикция); вершины у клифа держит вето`);
+  }
   let rcLines = baseLines;
   let rc = runCells(rcLines);
   {
@@ -636,17 +650,6 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       const dir = { x: -db / nrm, y: da / nrm };
       const mx = pts.reduce((s2, q) => s2 + q.x, 0) / pts.length;
       const my = pts.reduce((s2, q) => s2 + q.y, 0) / pts.length;
-      // A STEP pair's plane intersection is fiction — the boundary is a wall,
-      // not a fold; projecting the wall trace onto it dragged geometry tens
-      // of feet and bred a 176-edge mega-face. Стену судит ТОЛЬКО прямой
-      // DSM-перепад вдоль трассы (план-эвалы экстраполируют за опору).
-      let wSpan = { a: pts[0], b: pts[0] };
-      let wBest = 0;
-      for (const q of pts) for (const q2 of pts) {
-        const dd2 = Math.hypot(q.x - q2.x, q.y - q2.y);
-        if (dd2 > wBest) { wBest = dd2; wSpan = { a: q, b: q2 }; }
-      }
-      if (directWallDrop(wSpan.a, wSpan.b) >= STEP_DZ_FT) continue;
       const off = (da * mx + db * my + (A.c - B.c)) / nrm;
       const px0 = { x: mx - (da / nrm) * off, y: my - (db / nrm) * off };
       let t0 = Infinity;
@@ -660,6 +663,10 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         perpSS += perp * perp;
       }
       if (!(t1 > t0)) continue;
+      // A STEP pair's plane intersection is fiction — the boundary is a wall,
+      // not a fold. Стену судит ТОЛЬКО прямой DSM-перепад поперёк пролёта
+      // (максимум станций — закон клина); план-эвалы экстраполируют.
+      if (directWallDrop({ x: px0.x + dir.x * t0, y: px0.y + dir.y * t0 }, { x: px0.x + dir.x * t1, y: px0.y + dir.y * t1 }) >= STEP_DZ_FT) continue;
       // виртуальная линия УЖЕ на пересечении; коридор проекции — измеренное
       // смещение трассы + разброс + окно (тот же закон, что у снапа выше)
       const vLine = {
@@ -694,6 +701,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       rc = runCells(rcLines);
       reasons.push(`${virtual.length} виртуальных линий из плоскостей пар — межкластерные границы спрямлены`);
     }
+    if (process.env.DBG_RCLINES) rcLines.forEach((l, i) => console.log(`[rcl] li=${i} between=[${l.between[0]}|${l.between[1]}] (${l.a.x.toFixed(1)},${l.a.y.toFixed(1)})→(${l.b.x.toFixed(1)},${l.b.y.toFixed(1)}) σ⊥=${l.sigmaPerpFt.toFixed(2)}`));
     const totalSnap = snapCounts.loc + snapCounts.anal + snapCounts.disp;
     if (totalSnap || snapCounts.onSpot) reasons.push(`границы пар на пересечении плоскостей: ${totalSnap} поставлено (${snapCounts.loc} локатор+аналитика, ${snapCounts.anal} analytic-only, ${snapCounts.disp} локатор спорит), ${snapCounts.onSpot} уже на месте; точность локатора ${LOC_ACC_FT.toFixed(2)} ft (окно 2·step + полшага скана)`);
   }
@@ -1132,6 +1140,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         (ownersZ.get(qid) ?? ownersZ.set(qid, new Set()).get(qid)!).add(src);
       }
     }
+    const pById0 = new Map(candidate.points.map((q0) => [q0.id, q0]));
     const resZ = solveVertexZ({
       points: candidate.points,
       refsOf: (pid) => {
@@ -1148,6 +1157,22 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         });
       },
       stepDzFt: STEP_DZ_FT,
+      // прямой замер как судья уровневого конфликта: медиана DSM 3×3 в
+      // точке (единый закон — прямой замер главнее опоры)
+      dsmZOf: (pid) => {
+        const q0 = pById0.get(pid);
+        if (!q0) return null;
+        const pr0 = frame === "instant" ? fwd({ x: q0.x, y: q0.y }) : { x: q0.x, y: q0.y };
+        const zs0: number[] = [];
+        for (let dy0 = -1; dy0 <= 1; dy0++) for (let dx0 = -1; dx0 <= 1; dx0++) {
+          const pi0 = m.pxOf({ x: pr0.x + dx0 * m.stepFt, y: pr0.y + dy0 * m.stepFt });
+          if (pi0 < 0 || mask.data[pi0] <= 0.5) continue;
+          zs0.push(dsm.data[pi0] * FT_PER_M - groundElevFt);
+        }
+        if (!zs0.length) return null;
+        zs0.sort((a0, b0) => a0 - b0);
+        return zs0[Math.floor(zs0.length / 2)];
+      },
     });
     if (process.env.DBG_ZPT) {
       const [qx, qy] = process.env.DBG_ZPT.split(",").map(Number);

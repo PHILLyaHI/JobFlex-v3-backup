@@ -202,8 +202,30 @@ export function validateRoof(model) {
   }
   const cleanPlane = new Map();
   for (const f of facets) {
-    const rest = f.pts3.filter((p) => !contested.has(vKey3(p)));
-    cleanPlane.set(f.id, rest.length >= 3 ? fitPlane(rest) : null);
+    // чистая плоскость — консенсусная, обрезным фитом (см. порт)
+    let rest = f.pts3.filter((p) => !contested.has(vKey3(p)));
+    if (rest.length < 3) {
+      rest = f.pts3.slice();
+      let pl = fitPlane(rest);
+      while (rest.length > 3 && pl && pl.maxDev > EPS_PLANE) {
+        // якорь — вершины без сварочного люфта (см. порт): сперва худшая
+        // совладельческая, одиночка — в последнюю очередь
+        let worst = -1, worstD = -1, worstSole = -1, worstSoleD = -1;
+        for (let i2 = 0; i2 < rest.length; i2++) {
+          const d2 = devTo(pl, rest[i2]);
+          const sole = (vertFacets.get(vKey3(rest[i2]))?.length ?? 1) <= 1;
+          if (!sole && d2 > worstD) { worstD = d2; worst = i2; }
+          if (sole && d2 > worstSoleD) { worstSoleD = d2; worstSole = i2; }
+        }
+        const drop = worst >= 0 && worstD > EPS_PLANE ? worst : worstSole;
+        if (drop < 0) break;
+        rest = rest.filter((_, i2) => i2 !== drop);
+        pl = fitPlane(rest);
+      }
+      cleanPlane.set(f.id, pl);
+      continue;
+    }
+    cleanPlane.set(f.id, fitPlane(rest));
   }
   const weldAllowance = (f2) => {
     // референс — чистая подгонка, а при пустом ядре (все вершины сварные,

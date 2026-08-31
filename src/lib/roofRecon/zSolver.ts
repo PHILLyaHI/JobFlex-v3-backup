@@ -32,6 +32,13 @@ export interface ZSolveInput {
   refsOf: (pointId: string) => ZPlaneRef[];
   /** Переписной пол ступени: расхождение ≥ него не сглаживается. */
   stepDzFt: number;
+  /**
+   * ПРЯМОЙ ЗАМЕР как судья уровневого конфликта (приказ 2026-08-30,
+   * единый закон): когда группы расходятся на ≥ пол переписи, побеждает
+   * группа, чей z ближе к измеренной поверхности в точке; без замера —
+   * прежний закон большей опоры. null — замера в точке нет.
+   */
+  dsmZOf?: (pointId: string) => number | null;
 }
 
 export interface ZSolveResult {
@@ -66,11 +73,31 @@ export function solveVertexZ(input: ZSolveInput): ZSolveResult {
     if (groups.length > 1) crossLevel++;
     let best = groups[0];
     let bestW = best.reduce((s, e) => s + e.w, 0);
-    for (const g of groups.slice(1)) {
-      const wg = g.reduce((s, e) => s + e.w, 0);
-      if (wg > bestW) {
-        best = g;
-        bestW = wg;
+    const dsmZ = groups.length > 1 ? input.dsmZOf?.(p.id) ?? null : null;
+    let refereed = false;
+    if (groups.length > 1 && dsmZ !== null && Number.isFinite(dsmZ)) {
+      // прямой замер судит ТОЛЬКО когда явно берёт сторону: поверхность
+      // в полполе переписи от одной группы и дальше полполя от всех
+      // остальных (середина размытого клифа — не свидетель, монетку
+      // решает прежний закон опоры)
+      const ds = groups.map((g) => {
+        const wg = g.reduce((s, e) => s + e.w, 0);
+        const zg = g.reduce((s, e) => s + e.w * e.z, 0) / wg;
+        return { g, wg, dd: Math.abs(zg - dsmZ) };
+      }).sort((a, b) => a.dd - b.dd);
+      if (ds[0].dd <= input.stepDzFt / 2 && ds[1].dd > input.stepDzFt / 2) {
+        best = ds[0].g;
+        bestW = ds[0].wg;
+        refereed = true;
+      }
+    }
+    if (!refereed) {
+      for (const g of groups.slice(1)) {
+        const wg = g.reduce((s, e) => s + e.w, 0);
+        if (wg > bestW) {
+          best = g;
+          bestW = wg;
+        }
       }
     }
     const z = best.reduce((s, e) => s + e.w * e.z, 0) / bestW;

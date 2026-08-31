@@ -1260,8 +1260,40 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
   }
   const cleanPlane = new Map<string, InvPlane | null>();
   for (const f of facets) {
-    const rest = f.pts3.filter((p) => !contested.has(vKey3(p)));
-    cleanPlane.set(f.id, rest.length >= 3 ? invFitPlane(rest) : null);
+    // чистая плоскость — КОНСЕНСУСНАЯ, обрезным фитом: один сварной выброс
+    // кренит полный фит так, что спорными выглядят почти все вершины
+    // (rest < 3 → fallback на грязный полный фит → грань «не плоская» при
+    // шести честных вершинах из семи). Сбрасываем худшую, пока фит не
+    // сойдётся в бюджет или не останется 3 вершины.
+    let rest = f.pts3.filter((p) => !contested.has(vKey3(p)));
+    if (rest.length < 3) {
+      rest = f.pts3.slice();
+      let pl = invFitPlane(rest);
+      while (rest.length > 3 && pl && pl.maxDev > INV_EPS_PLANE) {
+        // ЯКОРЬ — вершины без сварочного люфта: совладельческая вершина
+        // несёт помилование пролётом (её отклонение ожидаемо), одиночка —
+        // нет; трим сбрасывает сперва худшую СОВЛАДЕЛЬЧЕСКУЮ, одиночку —
+        // только когда совладельческих не осталось (A2 12621: трим ронял
+        // честную одиночку с большим плечом и держал скошенную сварную)
+        let worst = -1;
+        let worstD = -1;
+        let worstSole = -1;
+        let worstSoleD = -1;
+        for (let i2 = 0; i2 < rest.length; i2++) {
+          const d2 = devTo(pl, rest[i2]);
+          const sole = (vertFacets.get(vKey3(rest[i2]))?.length ?? 1) <= 1;
+          if (!sole && d2 > worstD) { worstD = d2; worst = i2; }
+          if (sole && d2 > worstSoleD) { worstSoleD = d2; worstSole = i2; }
+        }
+        const drop = worst >= 0 && worstD > INV_EPS_PLANE ? worst : worstSole;
+        if (drop < 0) break;
+        rest = rest.filter((_, i2) => i2 !== drop);
+        pl = invFitPlane(rest);
+      }
+      cleanPlane.set(f.id, pl);
+      continue;
+    }
+    cleanPlane.set(f.id, invFitPlane(rest));
   }
   const weldAllowance = (f2: (typeof facets)[number]): { ok: boolean; dev: number; excused: number } => {
     // референс — чистая подгонка, а при пустом ядре (все вершины сварные,
