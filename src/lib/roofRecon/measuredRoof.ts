@@ -2012,12 +2012,32 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         // уровня (Δz < переписи) свариваются в одну, между уровнями —
         // получают ОБЩИЙ план (среднее), z раздельные.
         {
-          const cellK = (q: { x: number; y: number }): string => `${Math.round(q.x * 2)}|${Math.round(q.y * 2)}`;
+          // группировка союзом по ФАКТИЧЕСКОМУ расстоянию (клетка страддлила
+          // двойников на 0.33 ft по разные стороны границы 0.5-клетки)
+          const ptsAll = candidate.points;
+          const parentC = ptsAll.map((_, i) => i);
+          const findC = (i: number): number => (parentC[i] === i ? i : (parentC[i] = findC(parentC[i])));
+          const gridC = new Map<string, number[]>();
+          const gk = (q: { x: number; y: number }): [number, number] => [Math.round(q.x * 2), Math.round(q.y * 2)];
+          ptsAll.forEach((q, i) => {
+            const [gx, gy] = gk(q);
+            const k = `${gx}|${gy}`;
+            (gridC.get(k) ?? gridC.set(k, []).get(k)!).push(i);
+          });
+          ptsAll.forEach((q, i) => {
+            const [gx, gy] = gk(q);
+            for (let dx9 = -1; dx9 <= 1; dx9++) for (let dy9 = -1; dy9 <= 1; dy9++) {
+              for (const j of gridC.get(`${gx + dx9}|${gy + dy9}`) ?? []) {
+                if (j <= i) continue;
+                if (Math.hypot(ptsAll[j].x - q.x, ptsAll[j].y - q.y) <= m.stepFt && findC(i) !== findC(j)) parentC[findC(j)] = findC(i);
+              }
+            }
+          });
           const byCell = new Map<string, Array<(typeof candidate.points)[number]>>();
-          for (const q of candidate.points) {
-            const k = cellK(q);
+          ptsAll.forEach((q, i) => {
+            const k = `u${findC(i)}`;
             (byCell.get(k) ?? byCell.set(k, []).get(k)!).push(q);
-          }
+          });
           let welded9 = 0;
           let coplanned9 = 0;
           for (const pts9 of byCell.values()) {

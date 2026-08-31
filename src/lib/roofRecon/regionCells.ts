@@ -487,16 +487,49 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     return best.st.wall && (best.st.zHi ?? 0) - (best.st.zLo ?? 0) >= 1.8;
   };
 
-  const simped: SimpPoly[] = vpolys.map((vp) => {
+  const simped: SimpPoly[] = vpolys.map((vp, vpi) => {
     const ca = clusterOfRegion(vp.pair[0]);
     const cb = clusterOfRegion(vp.pair[1]);
     const li = ca >= 0 && cb >= 0 ? lineForPair.get(clusterPairKey(ca, cb)) : undefined;
-    const pts = dp(vp.pts, stepFt).map((p) => ({ ...p })) as Array<FootprintPoint & { c?: boolean }>;
+    // ── FADE-ВЕРШИНЫ ПЕРВОГО КЛАССА (приказ 2026-08-31): точка смены
+    // wallStrong профиля — законный излом того же ряда, что ступень и
+    // терминал. Вставляется как вершина (позиция — середина
+    // гистерезисного перехода), DP бежит ПО СЕГМЕНТАМ между ними и
+    // обязан их держать; спрямление их не проецирует (флаг f).
+    const pr0 = profiles[vpi];
+    type FPt = FootprintPoint & { c?: boolean; f?: boolean };
+    let pts: FPt[];
+    if (pr0 && pr0.stations.length === vp.pts.length) {
+      const strong = pr0.stations.map((st) => st.wall && (st.zHi ?? 0) - (st.zLo ?? 0) >= 1.8);
+      const segs: FPt[][] = [];
+      let cur: FPt[] = [{ ...vp.pts[0] }];
+      for (let i = 0; i + 1 < vp.pts.length; i++) {
+        if (strong[i + 1] !== strong[i]) {
+          const fade: FPt = { x: (vp.pts[i].x + vp.pts[i + 1].x) / 2, y: (vp.pts[i].y + vp.pts[i + 1].y) / 2, f: true };
+          cur.push(fade);
+          segs.push(cur);
+          cur = [fade];
+        }
+        cur.push({ ...vp.pts[i + 1] });
+      }
+      segs.push(cur);
+      pts = [];
+      for (const seg of segs) {
+        const d2 = dp(seg, stepFt).map((q) => ({ ...q })) as FPt[];
+        // концы сегмента сохраняют флаг fade
+        d2[0].f = (seg[0] as FPt).f;
+        d2[d2.length - 1].f = (seg[seg.length - 1] as FPt).f;
+        if (pts.length) pts.pop(); // общий стык
+        pts.push(...d2);
+      }
+    } else {
+      pts = dp(vp.pts, stepFt).map((q) => ({ ...q })) as FPt[];
+    }
     // clamp stray vertices into the exact ring (half-pixel excursions)
     for (let i = 1; i + 1 < pts.length; i++) {
       if (!inRingPt(pts[i])) {
         const pr = projectToRing(pts[i]);
-        pts[i] = { ...pr.pt };
+        pts[i] = { ...pr.pt, f: pts[i].f };
       }
     }
     return { pts, pair: vp.pair, li, interCluster: ca >= 0 && cb >= 0 };
@@ -579,6 +612,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       // там — фикция пересечения; близнецы и типизация читают ТОТ ЖЕ
       // профиль, потому изломов «стены, названной складкой» не будет.
       if (wallAtChain(cd.pi, p) === true) { refuse.perp++; continue; }
+      if ((p as { f?: boolean }).f) continue; // fade-вершина первого класса — фиксирована
       const target = { x: p.x - perp * l.n.x, y: p.y - perp * l.n.y };
       const prev = sp.pts[i - 1];
       const next = sp.pts[i + 1];
@@ -701,6 +735,11 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       const sp = simped[pi];
       if (sp.pts.length < 2 || !profiles[pi]) continue;
       const verd = sp.pts.map((q) => wallAtChain(pi, q) === true);
+      // fade-вершина — фиксированный конец wall-подцепи: включаем её
+      for (let i2 = 0; i2 < sp.pts.length; i2++) {
+        if (!(sp.pts[i2] as { f?: boolean }).f) continue;
+        if ((i2 > 0 && verd[i2 - 1]) || (i2 + 1 < sp.pts.length && verd[i2 + 1])) verd[i2] = true;
+      }
       const newPts: Array<FootprintPoint & { c?: boolean }> = [];
       let changed = false;
       let k = 0;
