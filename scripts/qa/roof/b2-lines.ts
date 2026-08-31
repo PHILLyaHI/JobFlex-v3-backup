@@ -55,7 +55,7 @@ for (const job of JOBS) {
   }
   const prod = productionSkeleton({ instant, origin: meta.origin, clusters: (meta.diagnostics.clusters as number) ?? null, dsm, mask, groundElevFt: meta.diagnostics.groundElevFt as number })!;
   const res = buildMeasuredRoof({ dsm, mask, contour: prod.contour, transform: prod.transform, skeleton: prod.skeleton });
-  const model = (res.model ?? res.rejectedCandidate)!;
+  const model = (res.rejectedCandidate ?? res.model)!; // судим кандидата сшивки, как grammar-run
   const T = prod.transform;
   const th = (T.thetaDeg * Math.PI) / 180;
   const fwd = (p: { x: number; y: number }) => ({ x: p.x * Math.cos(th) - p.y * Math.sin(th) + T.dxFt, y: p.x * Math.sin(th) + p.y * Math.cos(th) + T.dyFt });

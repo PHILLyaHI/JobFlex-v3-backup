@@ -71,6 +71,8 @@ import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { detectUnrecognisedFacets } from "@/lib/roofRecon/surgeries";
 import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
 import { buildMeasuredRoof, type FaceProvenance } from "@/lib/roofRecon/measuredRoof";
+import { getBuildingInsights } from "@/lib/solar";
+import type { ArbiterSegment, GoogleArbiterReport } from "@/lib/roofRecon/googleArbiter";
 import { readInstantSurvey, type InstantSurvey } from "@/lib/roofDiagram/instantSurvey";
 import { checkCompleteness } from "@/lib/roofRecon/completeness";
 import { lotMaskFromPair, ringWhollyOutsideLot, type LotMask } from "@/lib/roofDiagram/parcelMask";
@@ -526,6 +528,8 @@ export interface StitchProvenance {
   boundary?: { straightenedFt: number; raggedFt: number } | null;
   /** Per-face provenance of the accepted model. */
   faces?: Record<string, FaceProvenance>;
+  /** Google-арбитр состава (roofSegmentStats): вердикт, не геометрия. */
+  google?: GoogleArbiterReport;
   reasons: string[];
 }
 
@@ -590,6 +594,28 @@ async function lotMaskFor(instant: InstantRoofData, origin: LatLng | null): Prom
   }
 }
 
+/**
+ * Сегменты Google Solar для арбитра состава (приказ 2026-08-30) — в кадр-ft
+ * от origin. Solar бесплатен; отказ сети не валит замер: арбитр — свидетель,
+ * не условие.
+ */
+async function googleSegsFor(origin: { lat: number; lng: number }): Promise<ArbiterSegment[] | null> {
+  if (!isSolarEnabled()) return null;
+  try {
+    const bi = await getBuildingInsights(origin.lat, origin.lng);
+    return bi.segments.map((s) => ({
+      azDeg: s.azimuthDegrees,
+      pitchDeg: s.pitchDegrees,
+      areaSf: s.areaMeters2 * FT_PER_M * FT_PER_M,
+      xFt: (s.centerLng - origin.lng) * D2R * EARTH_R_M * Math.cos(origin.lat * D2R) * FT_PER_M,
+      yFt: (s.centerLat - origin.lat) * D2R * EARTH_R_M * FT_PER_M,
+    }));
+  } catch (err) {
+    console.warn("[roofMeasurement] Google-арбитр недоступен:", errorMessage(err, String(err)));
+    return null;
+  }
+}
+
 function resolveGeometry(
   recon: ReconBuild | null,
   instant: InstantRoofData,
@@ -597,6 +623,7 @@ function resolveGeometry(
   visionOutline?: CalibrateVisionOutline,
   roofRegions?: Array<Array<{ x: number; y: number }>>,
   lotMask?: LotMask | null,
+  googleSegs?: ArbiterSegment[] | null,
 ): Geometry {
   if (!recon) return outlineGeometry(null, instant, input);
   // ── ROOF_RECON_V2: topology first, then pitch measured into it ──
@@ -605,7 +632,7 @@ function resolveGeometry(
   let v2Fallthrough: { reason: string } | undefined;
   if (roofReconV2Enabled()) {
     try {
-      const v2 = buildV2Geometry(recon, instant, lotMask);
+      const v2 = buildV2Geometry(recon, instant, lotMask, googleSegs);
       if (v2) {
         return {
           model: v2.model,
@@ -1133,6 +1160,7 @@ function buildV2Geometry(
   recon: ReconBuild,
   instant: InstantRoofData,
   lotMask?: LotMask | null,
+  googleSegs?: ArbiterSegment[] | null,
 ): {
   model: RoofModel;
   registration: RegistrationProvenance;
@@ -1271,6 +1299,7 @@ function buildV2Geometry(
         contour: usable[0].ring as FootprintPoint[],
         transform: headline.registration.transform,
         skeleton: model,
+        google: googleSegs ?? null,
       });
       stitch = {
         applied: res.engine === "measured-dsm",
@@ -1278,6 +1307,7 @@ function buildV2Geometry(
         measuredShare: res.measuredShare,
         boundary: res.boundary,
         ...(res.provenance ? { faces: res.provenance.faces } : {}),
+        ...(res.provenance?.google ? { google: res.provenance.google } : {}),
         reasons: res.reasons,
       };
       if (res.engine === "measured-dsm" && res.model) {
@@ -1351,7 +1381,9 @@ function buildV2Geometry(
       })),
       synthesizeFailed: first.report.synthesizeFailed,
       instant,
-      facetCountConfidence: readInstantSurvey(instant, recon.origin)?.confidence?.facetCount ?? null,
+      // Google-арбитр (сшивка) — детектор пропущенных скатов; Instant
+      // facetCount отставлен (приказ 2026-08-30).
+      google: stitch.google ? { segmentCount: stitch.google.segments, missedSlopes: stitch.google.missedSlopes.length } : null,
       // The parcel-mask veto, in its one safe direction (parcelMask.ts).
       foreignStructures: lotMask
         ? first.report.structures
@@ -1688,7 +1720,8 @@ export async function measureRoofInstant(
   }
 
   const lotMask = roofReconV2Enabled() && recon ? await lotMaskFor(instant, recon.origin) : null;
-  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, completeness, wavefront, stitch, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions, lotMask);
+  const googleSegs = roofReconV2Enabled() && recon ? await googleSegsFor(recon.origin) : null;
+  const { model: builtModel, calibration, validation, pipeline, planarize, synthesize, graft, outlineSource, visionOutline: visionNote, source, origin, registration, pitchSource, v2Fallthrough, structures, nestedOutlines, unrecognisedFacets, unrecognisedShare, completeness, wavefront, stitch, visionInputs } = resolveGeometry(recon, instant, input, visionOutline, roofRegions, lotMask, googleSegs);
 
   // ── the lidar crease step ────────────────────────────────────────────────
   // A separate pass AFTER the model exists. The skeleton and the wavefront build

@@ -38,6 +38,12 @@ export interface RegionLine {
   sigmaPerpFt: number;
   /** |∇A − ∇B| of the pair; the straightening corridor derives from it. */
   gradDiffPerFt: number;
+  /**
+   * Линия поставлена на аналитическое пересечение плоскостей пары (приказ
+   * 2026-08-30): допуск проекции трассы на неё = max(probe, это значение) —
+   * измеренное смещение трассы + окно; трасса обязана дойти до пересечения.
+   */
+  snapCorridorFt?: number;
 }
 
 export interface RegionCellsInput {
@@ -304,6 +310,10 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     const canon = [axis, axis + Math.PI / 4, axis + Math.PI / 2, axis + (3 * Math.PI) / 4];
     for (const l of lineGeom) {
       if (l.L < EPS) continue;
+      // Линия на аналитическом пересечении плоскостей (приказ 2026-08-30):
+      // её направление — измерение с точностью плоскостей, не трассы; канон
+      // (красота осей) её не трогает — измерение главнее красоты.
+      if (l.snapCorridorFt !== undefined) continue;
       const th2 = Math.atan2(l.d.y, l.d.x);
       const thMax = Math.atan((2 * Math.max(l.sigmaPerpFt, stepFt)) / l.L);
       let best: number | null = null;
@@ -437,7 +447,8 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       const perp = rel.x * l.n.x + rel.y * l.n.y;
       const t = rel.x * l.d.x + rel.y * l.d.y;
       if (t < -l.E || t > l.L + l.E) { refuse.reach++; continue; }
-      const viaAbsorbed = Math.abs(perp) > probe;
+      const perpAllow = l.snapCorridorFt !== undefined ? Math.max(probe, l.snapCorridorFt) : probe;
+      const viaAbsorbed = Math.abs(perp) > perpAllow;
       if (viaAbsorbed && !input.absorbed?.(p)) { refuse.perp++; continue; }
       if (isEnd) { sp.pts[i].c = true; continue; }
       const target = { x: p.x - perp * l.n.x, y: p.y - perp * l.n.y };

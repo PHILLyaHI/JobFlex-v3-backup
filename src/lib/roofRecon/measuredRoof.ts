@@ -34,6 +34,7 @@ import { assembleRoofModel, type AssembleCell } from "@/lib/roofRecon/assembleMo
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { validateRoofInvariants } from "@/lib/roofDiagram/validate";
 import { solveVertexZ } from "@/lib/roofRecon/zSolver";
+import { googleCompositionArbiter, type ArbiterSegment, type GoogleArbiterReport } from "@/lib/roofRecon/googleArbiter";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { areaOf, signedArea, type FootprintPoint } from "@/lib/roofRecon/footprint";
 
@@ -63,7 +64,7 @@ export interface MeasuredRoofResult {
   engine: "measured-dsm" | "skeleton-fill";
   measuredShare: number;
   /** Plan-area shares of the candidate's cells by provenance. */
-  provenance: { measuredSqft: number; fillSqft: number; faces: Record<string, FaceProvenance> } | null;
+  provenance: { measuredSqft: number; fillSqft: number; faces: Record<string, FaceProvenance>; google?: GoogleArbiterReport } | null;
   /** Inter-cluster boundary accounting — the stop-condition numbers. */
   boundary: { straightenedFt: number; raggedFt: number } | null;
   conform: { vertsMoved: number; maxMoveFt: number; reverted: number } | null;
@@ -86,6 +87,11 @@ export interface MeasuredRoofInput {
   transform: { dxFt: number; dyFt: number; thetaDeg: number };
   /** The skeleton for this structure — the filler and the fallback. */
   skeleton: RoofModel;
+  /**
+   * Сегменты Google Solar (roofSegmentStats) в кадре-ft — арбитр состава
+   * (googleArbiter.ts). Геометрию не правит: вердикт идёт в провенанс.
+   */
+  google?: ArbiterSegment[] | null;
 }
 
 const inRing = (p: { x: number; y: number }, r: ReadonlyArray<{ x: number; y: number }>): boolean => {
@@ -264,13 +270,52 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   }
   const m = measureDsmLayout({ dsm, diagnostics: d, movedRings: [movedRing] });
 
+  // ── GOOGLE-АРБИТР СОСТАВА (провенанс/достоверность, геометрию не правит) ──
+  // Считается от КЛАСТЕРОВ (сегментация готова до любых гейтов), поэтому
+  // живёт и на домах, где сшивка не состоялась (пол покрытия, отказ гейтов).
+  const googleArbiterOf = (): GoogleArbiterReport | undefined => {
+    if (!input.google || !input.google.length) return undefined;
+    const wA = dsm.width;
+    const hA = dsm.height;
+    const stepA = m.stepFt;
+    const byCl = new Map<number, { n: number; sx: number; sy: number }>();
+    for (let i = 0; i < d.assign.length; i++) {
+      const cl = d.assign[i];
+      if (cl < 0) continue;
+      const e = byCl.get(cl) ?? { n: 0, sx: 0, sy: 0 };
+      e.n++;
+      e.sx += ((i % wA) + 0.5 - wA / 2) * stepA;
+      e.sy += (hA / 2 - Math.floor(i / wA) - 0.5) * stepA;
+      byCl.set(cl, e);
+    }
+    const oursCl = [...byCl.entries()].map(([cl, e]) => {
+      const pl = d.clusterPlanes[cl];
+      return {
+        cl,
+        sf: e.n * stepA * stepA,
+        xFt: e.sx / e.n,
+        yFt: e.sy / e.n,
+        compass: ((Math.atan2(-pl.a, -pl.b) * 180) / Math.PI + 360) % 360,
+        pitch12: Math.hypot(pl.a, pl.b) * 12,
+      };
+    });
+    const rep = googleCompositionArbiter(input.google, oursCl);
+    for (const n of rep.notes) reasons.push(n);
+    if (rep.missedSlopes.length)
+      reasons.push(`Google-арбитр: пропущенные скаты — ${rep.missedSlopes.map((s) => `${s.areaSf.toFixed(0)}sf@${s.azDeg.toFixed(0)}°`).join(", ")}`);
+    if (rep.mergeCandidates.length)
+      reasons.push(`Google-арбитр: кандидаты на слияние — ${rep.mergeCandidates.map((mc) => `[${mc.cls.join("+")}]`).join(", ")}`);
+    return rep;
+  };
+
   const skeletonWhole = (why: string): MeasuredRoofResult => {
     reasons.push(why);
+    const google = googleArbiterOf();
     return {
       model: skeleton,
       engine: "skeleton-fill",
       measuredShare: m.measuredShare,
-      provenance: null,
+      provenance: google ? { measuredSqft: 0, fillSqft: 0, faces: {}, google } : null,
       boundary: null,
       conform: null,
       guards: guardsOf(skeleton, contourSqft),
@@ -393,7 +438,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // measurement). Without this, ragged crease vertices sit off the true
   // fold and no z makes both faces planar (measured: R03 0.13-0.94 ft
   // against the validator's 0.08).
-  const baseLines = m.lines.map((l) => ({ a: l.a, b: l.b, between: l.between, sigmaPerpFt: l.sigmaPerpFt, gradDiffPerFt: l.gradDiffPerFt }));
+  const baseLines = m.lines.map((l) => ({ a: l.a, b: l.b, between: l.between, sigmaPerpFt: l.sigmaPerpFt, gradDiffPerFt: l.gradDiffPerFt, snapCorridorFt: undefined as number | undefined }));
   const runCells = (lines2: typeof baseLines) =>
     buildRegionCells({
       labels: region,
@@ -431,41 +476,106 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       },
       minCellSqft: MIN_FACET_SQFT,
     });
-  // ── снап измеренных линий пар на пересечение плоскостей ──
-  // Линии шага 1 аналитические ДЛЯ СВОИХ пар, но их КОНЦЫ обрезаны
-  // трассой; после канона/спрямления линия может отойти. Пересечение
-  // плоскостей — истина направления пары: проекция в пределах
-  //2·max(σ⊥, окно нормалей) (§J; окно half=2 — измерение размыто им).
-  // Стены (Δz ≥ переписного пола) не трогаются. На 12629 off=0.00 везде
-  // (линии уже на месте — снап нем); на 419 вальма A5/A7 стояла в 9.5°
-  // от аналитической и садилась в 2.2 ft от угла ободка.
-  {
-    let snapped = 0;
-    for (const l of baseLines) {
-      const A = d.clusterPlanes[l.between[0]];
-      const B = d.clusterPlanes[l.between[1]];
-      if (!A || !B) continue;
-      const da = A.a - B.a;
-      const db = A.b - B.b;
-      const nrm = Math.hypot(da, db);
-      if (nrm < 1e-4) continue;
-      const mx = (l.a.x + l.b.x) / 2;
-      const my = (l.a.y + l.b.y) / 2;
-      const dzAtBoundary = Math.abs((A.a * mx + A.b * my + A.c) - (B.a * mx + B.b * my + B.c));
-      if (dzAtBoundary > STEP_DZ_FT) continue;
-      const off = (da * mx + db * my + (A.c - B.c)) / nrm;
-      if (Math.abs(off) < 1e-3 || Math.abs(off) > 2 * Math.max(l.sigmaPerpFt, 2 * stepFt)) continue;
-      const px0 = { x: mx - (da / nrm) * off, y: my - (db / nrm) * off };
-      const dirL = { x: -db / nrm, y: da / nrm };
-      for (const q of [l.a, l.b]) {
-        const tq = (q.x - px0.x) * dirL.x + (q.y - px0.y) * dirL.y;
-        q.x = px0.x + dirL.x * tq;
-        q.y = px0.y + dirL.y * tq;
-      }
-      snapped++;
+  // ── ГРАНИЦЫ ПАР НА ПЕРЕСЕЧЕНИИ ПЛОСКОСТЕЙ + АЗИМУТ-ЛОКАТОР ──
+  // Приказ 2026-08-30 (блок 2 → конвейер): граница пары кластеров СТАВИТСЯ
+  // на аналитическое пересечение их чистых плоскостей — это единственная
+  // точка, где обе плоскости дают один z (варп блока 1 жил именно на
+  // границах вне пересечений). Прежний потолок 2·max(σ⊥, окно) снят:
+  // трасса — свидетель СОСТАВА границы, не её положения.
+  // Локатор — полевой свидетель: азимут стока (LSQ-градиент 5×5, то же
+  // окно half=2, что у нормалей) вдоль перпендикуляра; максимум |Δазимут|
+  // соседних станций ≥ 20° — переход. Точность выведена из данных: размытие
+  // окна 2·step + полшага сканирования (на 14 подтверждённых границах
+  // блока 2 расхождение локатор−аналитика ≤ 0.7 ft — внутри предела).
+  // Вердикт не двигает геометрию (двигает пересечение) — он ставится в
+  // провенанс: «локатор+аналитика» / «analytic-only» / «локатор спорит».
+  // Стены (Δz ≥ переписного пола) не трогаются: их пересечение — фикция.
+  const LOC_SCAN_FT = 4;
+  const LOC_STEP_FT = 0.5;
+  const LOC_GATE_DEG = 20;
+  const LOC_ACC_FT = 2 * stepFt + LOC_STEP_FT / 2;
+  const azAt = (p: FootprintPoint): number | null => {
+    let sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0, n = 0;
+    for (let dy2 = -2; dy2 <= 2; dy2++) for (let dx2 = -2; dx2 <= 2; dx2++) {
+      const pi = m.pxOf({ x: p.x + dx2 * stepFt, y: p.y + dy2 * stepFt });
+      if (pi < 0 || mask.data[pi] <= 0.5) continue;
+      const x = dx2 * stepFt;
+      const y = dy2 * stepFt;
+      const z = dsm.data[pi] * FT_PER_M;
+      sx += x; sy += y; sz += z; sxx += x * x; sxy += x * y; syy += y * y; sxz += x * z; syz += y * z; n++;
     }
-    if (snapped) reasons.push(`снап на пересечение плоскостей: ${snapped} линий пар (в пределах 2·max(σ⊥, окно))`);
-  }
+    if (n < 6) return null;
+    const det = sxx * (syy * n - sy * sy) - sxy * (sxy * n - sy * sx) + sx * (sxy * sy - syy * sx);
+    if (Math.abs(det) < 1e-9) return null;
+    const ga = (sxz * (syy * n - sy * sy) - sxy * (syz * n - sy * sz) + sx * (syz * sy - syy * sz)) / det;
+    const gb = (sxx * (syz * n - sy * sz) - sxz * (sxy * n - sx * sy) + sx * (sxy * sz - syz * sx)) / det;
+    if (Math.hypot(ga, gb) < 0.5 / 12) return null; // ровное — вне поля
+    return Math.atan2(gb, ga);
+  };
+  // позиция перехода вдоль перпендикуляра (nx,ny) от точки mid; null — молчит
+  const locatorAt = (mid: FootprintPoint, nx: number, ny: number): number | null => {
+    let bestT: number | null = null;
+    let bestD = 0;
+    let prev: number | null = null;
+    let prevT = 0;
+    for (let t = -LOC_SCAN_FT; t <= LOC_SCAN_FT + 1e-9; t += LOC_STEP_FT) {
+      const az = azAt({ x: mid.x + nx * t, y: mid.y + ny * t });
+      if (az === null) { prev = null; continue; }
+      if (prev !== null) {
+        let dAz = (Math.abs(az - prev) * 180) / Math.PI;
+        if (dAz > 180) dAz = 360 - dAz;
+        if (dAz > bestD) { bestD = dAz; bestT = (t + prevT) / 2; }
+      }
+      prev = az;
+      prevT = t;
+    }
+    return bestD >= LOC_GATE_DEG ? bestT : null;
+  };
+  const snapCounts = { loc: 0, anal: 0, disp: 0, onSpot: 0 };
+  const snapLineToIntersection = (l: (typeof baseLines)[number]): void => {
+    const A = d.clusterPlanes[l.between[0]];
+    const B = d.clusterPlanes[l.between[1]];
+    if (!A || !B) return;
+    const da = A.a - B.a;
+    const db = A.b - B.b;
+    const nrm = Math.hypot(da, db);
+    if (nrm < 1e-4) return;
+    const mx = (l.a.x + l.b.x) / 2;
+    const my = (l.a.y + l.b.y) / 2;
+    const dzAtBoundary = Math.abs((A.a * mx + A.b * my + A.c) - (B.a * mx + B.b * my + B.c));
+    if (dzAtBoundary > STEP_DZ_FT) return;
+    const off = (da * mx + db * my + (A.c - B.c)) / nrm;
+    const nx = da / nrm;
+    const ny = db / nrm;
+    // Трасса — свидетель состава границы, не положения: её вершины обязаны
+    // дойти до пересечения с ЛЮБОГО расстояния (перп-допуск снят; держат
+    // reach-гейт, запрет пересечений и кольцо). На 12618 трасса стояла в
+    // 9.6–11.9 ft от аналитической линии — прежний probe 6 ft её не пускал.
+    if (Math.abs(off) < 1e-3) { snapCounts.onSpot++; l.snapCorridorFt = Number.POSITIVE_INFINITY; return; }
+    // вердикт локатора ДО переноса: три станции вдоль линии, медиана
+    const ts: number[] = [];
+    for (const f of [0.3, 0.5, 0.7]) {
+      const st = { x: l.a.x + (l.b.x - l.a.x) * f, y: l.a.y + (l.b.y - l.a.y) * f };
+      const t = locatorAt(st, nx, ny);
+      if (t !== null) ts.push(t);
+    }
+    if (!ts.length) snapCounts.anal++;
+    else {
+      ts.sort((u, v) => u - v);
+      const med = ts[Math.floor(ts.length / 2)];
+      if (Math.abs(med - off) <= LOC_ACC_FT) snapCounts.loc++;
+      else snapCounts.disp++;
+    }
+    const px0 = { x: mx - nx * off, y: my - ny * off };
+    const dirL = { x: -ny, y: nx };
+    for (const q of [l.a, l.b]) {
+      const tq = (q.x - px0.x) * dirL.x + (q.y - px0.y) * dirL.y;
+      q.x = px0.x + dirL.x * tq;
+      q.y = px0.y + dirL.y * tq;
+    }
+    l.snapCorridorFt = Number.POSITIVE_INFINITY;
+  };
+  for (const l of baseLines) snapLineToIntersection(l);
   let rcLines = baseLines;
   let rc = runCells(rcLines);
   {
@@ -515,19 +625,42 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         perpSS += perp * perp;
       }
       if (!(t1 > t0)) continue;
-      virtual.push({
+      // виртуальная линия УЖЕ на пересечении; коридор проекции — измеренное
+      // смещение трассы + разброс + окно (тот же закон, что у снапа выше)
+      const vLine = {
         a: { x: px0.x + dir.x * t0, y: px0.y + dir.y * t0 },
         b: { x: px0.x + dir.x * t1, y: px0.y + dir.y * t1 },
-        between: [ca, cb],
+        between: [ca, cb] as [number, number],
         sigmaPerpFt: Math.sqrt(perpSS / pts.length),
         gradDiffPerFt: nrm,
-      });
+        snapCorridorFt: Number.POSITIVE_INFINITY,
+      };
+      if (Math.abs(off) >= 1e-3) {
+        const ts: number[] = [];
+        const nx = da / nrm;
+        const ny = db / nrm;
+        for (const f of [0.3, 0.5, 0.7]) {
+          const st = { x: mx + (vLine.b.x - vLine.a.x) * (f - 0.5), y: my + (vLine.b.y - vLine.a.y) * (f - 0.5) };
+          const t = locatorAt(st, nx, ny);
+          if (t !== null) ts.push(t);
+        }
+        if (!ts.length) snapCounts.anal++;
+        else {
+          ts.sort((u, v) => u - v);
+          const med = ts[Math.floor(ts.length / 2)];
+          if (Math.abs(med - off) <= LOC_ACC_FT) snapCounts.loc++;
+          else snapCounts.disp++;
+        }
+      } else snapCounts.onSpot++;
+      virtual.push(vLine);
     }
     if (virtual.length) {
       rcLines = [...baseLines, ...virtual];
       rc = runCells(rcLines);
       reasons.push(`${virtual.length} виртуальных линий из плоскостей пар — межкластерные границы спрямлены`);
     }
+    const totalSnap = snapCounts.loc + snapCounts.anal + snapCounts.disp;
+    if (totalSnap || snapCounts.onSpot) reasons.push(`границы пар на пересечении плоскостей: ${totalSnap} поставлено (${snapCounts.loc} локатор+аналитика, ${snapCounts.anal} analytic-only, ${snapCounts.disp} локатор спорит), ${snapCounts.onSpot} уже на месте; точность локатора ${LOC_ACC_FT.toFixed(2)} ft (окно 2·step + полшага скана)`);
   }
   for (const r of rc.report) reasons.push(r);
   if (rc.artifactFt > 0.5) reasons.push(`${rc.artifactFt.toFixed(0)} ft границ спрямлено во впитанной территории (dilation-artifact — аналитическая линия без пиксельных свидетельств)`);
@@ -1658,7 +1791,8 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     if (ci.prov === "measured-dsm") measuredSqft += o.area;
     else fillSqft += o.area;
   });
-  const provenance = { measuredSqft, fillSqft, faces: provFaces };
+  const googleReport = googleArbiterOf();
+  const provenance = { measuredSqft, fillSqft, faces: provFaces, ...(googleReport ? { google: googleReport } : {}) };
   const boundary = { straightenedFt: rc.straightenedFt, raggedFt: rc.raggedFt };
   const cellStats = infos.map((ci) => ({
     areaSqft: Math.abs(signedArea(ci.cell.ring)),

@@ -36,7 +36,6 @@ const AREA_TOLERANCE = 0.05;
  * own score says the count is more likely wrong than right (measured: 0.189 on
  * 419 Prairie, against 0.59+ for every other field on that roof).
  */
-const FACET_COUNT_MIN_CONFIDENCE = 0.5;
 
 export interface CompletenessFinding {
   /** `error` means something is missing from the drawing, not merely uncertain. */
@@ -73,8 +72,13 @@ export interface CompletenessInput {
   synthesizeFailed?: readonly string[];
   /** Present on the Instant path — the external count and footprint. */
   instant?: InstantRoofData | null;
-  /** EagleView's confidence in its own facet count, when it scored one. */
-  facetCountConfidence?: number | null;
+  /**
+   * Google-арбитр состава (приказ 2026-08-30): счёт сегментов
+   * roofSegmentStats и число пропущенных скатов — сегментов Google, на
+   * которые не пришёлся ни один наш кластер. Заменил Instant facetCount
+   * (confidence 0.19 на поле) как детектор дефицита НАВСЕГДА.
+   */
+  google?: { segmentCount: number; missedSlopes: number } | null;
   /**
    * Structures vetoed by the parcel mask: every vertex of their outline lies
    * outside the lot-plus-margin region subtracted from EagleView's own
@@ -148,13 +152,13 @@ export function checkCompleteness(input: CompletenessInput): CompletenessReport 
     });
   }
 
-  // ── 3. EagleView's own count, when EagleView believes it ──
-  const instantFacets = instant?.totals?.facetCount ?? null;
-  const conf = input.facetCountConfidence ?? null;
-  const countTrusted = instantFacets != null && (conf == null || conf >= FACET_COUNT_MIN_CONFIDENCE);
-  const facetDeficit = countTrusted ? (instantFacets as number) - model.faces.length : null;
+  // ── 3. состав по Google Solar — арбитр состава (приказ 2026-08-30) ──
+  // Instant facetCount отставлен навсегда: его полевая confidence 0.19 не
+  // давала сравнению права решать. Дефицит теперь — прямой сигнал арбитра:
+  // сегменты Google без нашего кластера («пропущен скат»).
+  const facetDeficit = input.google ? input.google.missedSlopes : null;
   const facetDeficitShare =
-    facetDeficit != null && instantFacets ? facetDeficit / instantFacets : null;
+    facetDeficit != null && input.google?.segmentCount ? facetDeficit / input.google.segmentCount : null;
 
   // ── 4. EagleView's own footprint, the external value nothing has ever read ──
   const instantFootprint = instant?.totals?.footprintSqft ?? null;
