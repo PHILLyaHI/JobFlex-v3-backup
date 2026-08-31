@@ -651,7 +651,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     const manhattanize = (pts: Array<FootprintPoint & { c?: boolean }>): Array<FootprintPoint & { c?: boolean }> | null => {
       const A = pts[0];
       const B = pts[pts.length - 1];
-      interface Run { di: number; len: number; cx: number; cy: number }
+      interface Run { di: number; len: number; cx: number; cy: number; lcx: number; lcy: number; llen: number }
       const runs: Run[] = [];
       for (let k = 0; k + 1 < pts.length; k++) {
         const a = pts[k];
@@ -674,16 +674,28 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
           last.cx = (last.cx * last.len + mx * len) / (last.len + len);
           last.cy = (last.cy * last.len + my * len) / (last.len + len);
           last.len += len;
-        } else runs.push({ di, len, cx: mx, cy: my });
+          if (len > last.llen) { last.llen = len; last.lcx = mx; last.lcy = my; }
+        } else runs.push({ di, len, cx: mx, cy: my, lcx: mx, lcy: my, llen: len });
       }
       if (!runs.length) return null;
+      const keep = new Set<Run>();
       for (let pass2 = 0; pass2 < 8; pass2++) {
         let k = -1;
-        for (let i2 = 0; i2 < runs.length; i2++) if (runs[i2].len < 3 && runs.length > 1) { k = i2; break; }
+        for (let i2 = 0; i2 < runs.length; i2++) if (runs[i2].len < 3 && runs.length > 1 && !keep.has(runs[i2])) { k = i2; break; }
         if (k < 0) break;
         const nb = k === 0 ? 1 : k === runs.length - 1 ? k - 1 : (runs[k - 1].len >= runs[k + 1].len ? k - 1 : k + 1);
         const host = runs[nb];
         const small = runs[k];
+        // хвост, стоящий ПОПЕРЁК больше шага решётки от линии хозяина, —
+        // не шум вдоль, а носитель уровня: поглощение тащило линию
+        // хозяина (0.78-ft хвост сдвигал 6.3-ft стену [6|9] на 12618 на
+        // 0.6 — граница пары отъезжала от фактической стены)
+        {
+          const dH = dirs0[host.di];
+          const nH = { x: -dH.y, y: dH.x };
+          const perpS = Math.abs((small.cx - host.lcx) * nH.x + (small.cy - host.lcy) * nH.y);
+          if (perpS > stepFt) { keep.add(small); continue; }
+        }
         host.cx = (host.cx * host.len + small.cx * small.len) / (host.len + small.len);
         host.cy = (host.cy * host.len + small.cy * small.len) / (host.len + small.len);
         host.len += small.len;
@@ -1086,6 +1098,43 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       }
     }
     if (tailsInherit) report.push(`хвосты несущих: ${tailsInherit} кривых концов слито в одно звено (наследуют линию)`);
+  }
+  // ── ПО-СЕГМЕНТНОЕ СПРЯМЛЕНИЕ (отмашка 2026-08-31, завершение
+  //    по-сегментного закона): сегмент трассы между двумя ЗАКОННЫМИ
+  //    вершинами (fade / конец цепи = узел/терминал) без wall-вердикта
+  //    профиля — ПРЯМАЯ между ними; изломов внутри не существует.
+  //    Законные вершины не двигаются; страж — запрет пересечений. ──
+  {
+    let straightSegs = 0;
+    for (let pi = 0; pi < simped.length; pi++) {
+      const sp = simped[pi];
+      if (sp.pts.length < 3) continue;
+      // законные отметки: концы + fade-вершины
+      const marks: number[] = [0];
+      for (let k = 1; k + 1 < sp.pts.length; k++) if ((sp.pts[k] as { f?: boolean }).f) marks.push(k);
+      marks.push(sp.pts.length - 1);
+      const newPts: Array<FootprintPoint & { c?: boolean; f?: boolean }> = [];
+      let changed = false;
+      for (let mi = 0; mi + 1 < marks.length; mi++) {
+        const a = marks[mi];
+        const b = marks[mi + 1];
+        if (!newPts.length) newPts.push(sp.pts[a]);
+        if (b - a < 2) { for (let k = a + 1; k <= b; k++) newPts.push(sp.pts[k]); continue; }
+        // wall-вердикт внутри интервала?
+        let hasWall = false;
+        for (let k = a; k <= b; k++) if (wallAtChain(pi, sp.pts[k]) === true) { hasWall = true; break; }
+        if (hasWall) { for (let k = a + 1; k <= b; k++) newPts.push(sp.pts[k]); continue; }
+        // прямая между законными вершинами; страж — пересечения
+        if (segsCross(sp.pts[a], sp.pts[b], pi, [...Array(sp.pts.length - 1).keys()])) {
+          for (let k = a + 1; k <= b; k++) newPts.push(sp.pts[k]);
+          continue;
+        }
+        newPts.push(sp.pts[b]);
+        changed = true;
+      }
+      if (changed) { sp.pts = newPts; straightSegs++; }
+    }
+    if (straightSegs) report.push(`по-сегментное спрямление: ${straightSegs} цепей — crease-сегменты прямыми между законными вершинами`);
   }
   emitStage("terminals");
   if (termRefused.length) report.push(`терминалы-отказы: ${termRefused.map((d2) => (d2 < 0 ? "нет цели" : d2.toFixed(1))).join(", ")}`);

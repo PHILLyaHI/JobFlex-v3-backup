@@ -1057,6 +1057,13 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       });
     }
     vzOf.set(k, out);
+    if (process.env.DBG_VZAT) {
+      const [qx9, qy9] = process.env.DBG_VZAT.split(",").map(Number);
+      if (Math.hypot(p.x - qx9, p.y - qy9) <= 1.5) {
+        const stD = entries.length >= 2 ? rc.wallStationAt(entries[0].ci.cell.regionId, entries[entries.length - 1].ci.cell.regionId, p) : null;
+        console.log(`[vzat] (${p.x.toFixed(2)},${p.y.toFixed(2)}) клеток ${entries.length} [${entries.map((e) => `r${e.ci.cell.regionId}:${e.z.toFixed(1)}`).join(" ")}] групп ${groups.length} st=${stD ? `${stD.wall ? "WALL" : "нет"} ${stD.zHi.toFixed(1)}/${stD.zLo.toFixed(1)}` : "null"}`);
+      }
+    }
   }
 
   // ── assemble in the raster frame (lengths/areas are rotation-invariant),
@@ -1203,6 +1210,32 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // flatten удалён: его z-власть заменил единый финальный z-солвер
   const candidate = assembled;
 
+  // прямой след вершины по стадиям (DBG_TRACE="x,y" в кадре кандидата)
+  const dbgTrace = (stage: string, preInvT = false): void => {
+    if (!process.env.DBG_TRACE) return;
+    const [qx, qy] = process.env.DBG_TRACE.split(",").map(Number);
+    // до invT точки живут в растровом кадре — сравниваем в instant-кадре
+    const at = (q: { x: number; y: number }): { x: number; y: number } => (preInvT ? invT(q) : q);
+    const pB = new Map(candidate.points.map((q) => [q.id, q]));
+    let best: (typeof candidate.points)[number] | null = null;
+    let bd = Infinity;
+    for (const q of candidate.points) {
+      const qq = at(q);
+      const d0 = Math.hypot(qq.x - qx, qq.y - qy);
+      if (d0 < bd) { bd = d0; best = q; }
+    }
+    if (!best || bd > 2.5) { console.log(`[trace ${stage}] точек рядом нет (${bd.toFixed(1)})`); return; }
+    const inc = candidate.lines.filter((l) => l.aId === best!.id || l.bId === best!.id);
+    const segs = inc.map((l) => {
+      const o0 = pB.get(l.aId === best!.id ? l.bId : l.aId);
+      const o = o0 ? at(o0) : null;
+      return `${l.id}:${l.type}→(${o?.x.toFixed(1)},${o?.y.toFixed(1)})`;
+    });
+    const bp = at(best);
+    console.log(`[trace ${stage}] ${best.id} (${bp.x.toFixed(2)},${bp.y.toFixed(2)},z${best.z.toFixed(2)}) deg${inc.length}: ${segs.join(" ")}`);
+  };
+  dbgTrace("assembly", true);
+
   // ── ЕДИНЫЙ ФИНАЛЬНЫЙ Z-СОЛВЕР (zSolver.ts) ──
   // Все прежние власти над z (сходимость, flatten, пересадка, цепная
   // сварка) удалены; z каждой вершины — взвешенная МНК по инцидентным
@@ -1270,6 +1303,27 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         }
         if (!zs0.length) return null;
         zs0.sort((a0, b0) => a0 - b0);
+        // рефери судит только ОДНУ поверхность: окно на кромке ступени
+        // бимодально (разброс ≥ переписи) — медиана смеси не замер (она
+        // тянула нижнего близнеца 15.4 к 19.7 на 12618 ML40, dzEnds падал
+        // ниже пола и стена сваривалась). На кромке окно режется по
+        // наибольшему зазору, судит мода СВОЕЙ стороны: сторону выбирает
+        // текущий z точки (уровень vzOf от станции), значение — прямой
+        // замер.
+        if (zs0[zs0.length - 1] - zs0[0] >= STEP_DZ_FT) {
+          let gi0 = 0;
+          let gv0 = -1;
+          for (let i0 = 0; i0 + 1 < zs0.length; i0++) {
+            const g0 = zs0[i0 + 1] - zs0[i0];
+            if (g0 > gv0) { gv0 = g0; gi0 = i0; }
+          }
+          const lo0 = zs0.slice(0, gi0 + 1);
+          const hi0 = zs0.slice(gi0 + 1);
+          const med0 = (arr0: number[]): number => arr0[Math.floor(arr0.length / 2)];
+          const mLo = med0(lo0);
+          const mHi = med0(hi0);
+          return Math.abs(q0.z - mLo) <= Math.abs(q0.z - mHi) ? mLo : mHi;
+        }
         return zs0[Math.floor(zs0.length / 2)];
       },
     });
@@ -1326,6 +1380,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     };
   })();
   if (process.env.DBG_EULER) console.log("[euler] после flatten:", eulerOf(candidate));
+  dbgTrace("pre-straighten", true);
   const straighten = mergeCollinearChains(candidate, m.stepFt, corridorOfLine);
   if (process.env.DBG_EULER) console.log("[euler] после выпрямления:", eulerOf(candidate));
   if (straighten.merged || straighten.collapsed) reasons.push(`выпрямление: ${straighten.collapsed} огрызков схлопнуто (< 4 ft — шумовой пол шага 1), ${straighten.merged} звеньев слито; канон: ${rc.canonSnapped} линий`);
@@ -1359,6 +1414,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     p.y = q.y;
   }
 
+  dbgTrace("post-straighten");
   // z-солвер, проход A: типизация читает честные высоты
   applyZSolver("instant");
   // ── ТИПИЗАЦИЯ НА ГОТОВОМ ПОЛИЭДРЕ: один проход, явный приоритет ──
@@ -1463,6 +1519,33 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         Math.sign((o.c.x - mid.x) * per.x + (o.c.y - mid.y) * per.y) || 1;
       const s1 = side(own[0]);
       const s2b = side(own[1]);
+      // ── DSM-РЕФЕРИ СТОРОН (2026-08-31): сторону складки судит прямой
+      // замер рельефа, не LS-плоскости владельцев — склеенный состав
+      // (maxDev 3.9 у MF10 на 419) давал мусорную плоскость, ендова
+      // типизировалась OTHER и конёк «висел» (G2). Проба зажата на
+      // собственный масштаб линии (не дальше полудлины — плоскостная
+      // проба на 2 ft перелетала конёк узкого клина). Плоскости — фолбэк.
+      const probeD = Math.min(PROBE_FT, Math.max(run / 2, 2 * m.stepFt));
+      const dsmZAt = (q: FootprintPoint): number | null => {
+        const pr9 = fwd(q);
+        const zs9: number[] = [];
+        for (let dy9 = -1; dy9 <= 1; dy9++) for (let dx9 = -1; dx9 <= 1; dx9++) {
+          const pi9 = m.pxOf({ x: pr9.x + dx9 * m.stepFt, y: pr9.y + dy9 * m.stepFt });
+          if (pi9 < 0 || mask.data[pi9] <= 0.5 || penSet.has(pi9)) continue;
+          zs9.push(dsm.data[pi9] * FT_PER_M - groundElevFt);
+        }
+        if (!zs9.length) return null;
+        zs9.sort((a9, b9) => a9 - b9);
+        return zs9[Math.floor(zs9.length / 2)];
+      };
+      const dz1 = dsmZAt({ x: mid.x + per.x * probeD, y: mid.y + per.y * probeD });
+      const dz2 = dsmZAt({ x: mid.x - per.x * probeD, y: mid.y - per.y * probeD });
+      const dzc = dsmZAt(mid);
+      if (dz1 !== null && dz2 !== null && dzc !== null) {
+        if (dz1 > dzc && dz2 > dzc) return "VALLEY";
+        if (dz1 < dzc && dz2 < dzc) return level ? "RIDGE" : "HIP";
+        return null;
+      }
       const z1 = own[0].pl.a * (mid.x + per.x * s1 * PROBE_FT) + own[0].pl.b * (mid.y + per.y * s1 * PROBE_FT) + own[0].pl.c;
       const z2 = own[1].pl.a * (mid.x + per.x * s2b * PROBE_FT) + own[1].pl.b * (mid.y + per.y * s2b * PROBE_FT) + own[1].pl.c;
       if (z1 > zc && z2 > zc) return "VALLEY";
@@ -1493,7 +1576,11 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       const g = g0.filter((l) => live.has(l.id) && ptById.has(l.aId) && ptById.has(l.bId));
       if (!g.length) continue;
       const l0 = g[0];
-      const onRing = distRing(ptById.get(l0.aId)!) <= 1 && distRing(ptById.get(l0.bId)!) <= 1;
+      // контурное ребро живёт НА кольце — порог регистрации 0.15, та же
+      // линейка, что rings-закон и pullCrumbEdges (было ≤1: огрызок
+      // пик→fade на 9903 в 0.65 от кольца типизировался RAKE и валил
+      // rings-check; закон одной линейки)
+      const onRing = distRing(ptById.get(l0.aId)!) <= 0.15 && distRing(ptById.get(l0.bId)!) <= 0.15;
       if (g.length >= 2) {
         const zs = g.map(zOfLine);
         // СТЕНА заявляется только от переписного пола ступени (STEP_DZ_FT,
@@ -1652,7 +1739,25 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       // одиночная линия
       const owners = ownersOf.get(l0.id) ?? [];
       if (owners.length >= 2) {
-        const t = inBand(l0) ? null : creaseType(l0, owners);
+        // ── ОДИНОЧНАЯ СТЕНА (2026-08-31): ступень, у которой обход не
+        // оставил близнеца, — всё равно стена: вердикт читается у ПРОФИЛЯ
+        // (единый закон стены), не выводится из отсутствия пары. Без
+        // этого ML40 на 12618 (перепад 2.3–3 ft прямым замером) падал в
+        // OTHER и конёк «висел» (G2).
+        const wallSingle = (): boolean => {
+          if (onRing) return false;
+          const aW = ptById.get(l0.aId)!;
+          const bW = ptById.get(l0.bId)!;
+          // G6-домен: у внешнего контура FLASHING без близнеца незаконен —
+          // кромка массы носит типы своего уровня (та же линейка ≤1, что
+          // у контурного хвоста ниже)
+          const mW = { x: (aW.x + bW.x) / 2, y: (aW.y + bW.y) / 2 };
+          if (Math.max(distRing(aW), distRing(bW), distRing(mW)) <= 1.0) return false;
+          const votes = [0.25, 0.5, 0.75].map((t9) =>
+            rc.wallAtPoint(fwd({ x: aW.x + (bW.x - aW.x) * t9, y: aW.y + (bW.y - aW.y) * t9 })));
+          return votes.filter((v) => v === true).length >= 2;
+        };
+        const t = inBand(l0) ? null : (creaseType(l0, owners) ?? (wallSingle() ? "FLASHING" : null));
         if (t) l0.type = t as (typeof l0)["type"];
         // нерешённый перегиб ВНЕ кольца не имеет права зваться RAKE/EAVE —
         // на контуре типы шага 1 остаются, внутри крыши это OTHER.
@@ -1995,6 +2100,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         for (const t of Object.keys(footage2)) footage2[t] = 0;
         for (const [t, v] of Object.entries(f3)) footage2[t] = v;
         if (rep2.merged > 0) reasons.push(`лесенки: ${rep2.merged} безнаправленных звеньев слито после типизации`);
+        dbgTrace("post-ladders");
       }
     }
     // ── второй flatten: хирургии двигали план (слияния, шпоры, канон),
@@ -2104,6 +2210,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           if (drop9.size) candidate.lines = candidate.lines.filter((l) => !drop9.has(l.id));
           for (const f of candidate.faces) f.lineIds = f.lineIds.filter((id, idx) => f.lineIds.indexOf(id) === idx || candidate.lines.some((l) => l.id === id));
           if (welded9 || coplanned9) reasons.push(`план-коагулятор: ${welded9} точек сварено внутри уровней, ${coplanned9} клеток стен получили общий план`);
+          dbgTrace("post-coagulator");
 
           // NB (§K25): модельное втягивание крошки снято — звено крошки
           // бывает ЧАСТЬЮ КОЛЬЦА грани, и удаление без пересборки колец
@@ -2111,6 +2218,89 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           // на ГРАФЕ (pullCrumbEdges до обхода) — там кольца строятся
           // ПОСЛЕ. Модельные крошки-остатки — в стоп-описание.
         }
+        // ── ПО-СЕГМЕНТНОЕ СПРЯМЛЕНИЕ НА МОДЕЛИ (отмашка 2026-08-31):
+        // излом на deg-2 вершине crease-цепи между законными вершинами
+        // (узел deg≥3, шов-близнец, кольцо) не существует — вершина
+        // сносится, линии сливаются. Переборчиво: одна вершина за проход,
+        // коридор 3 ft, ступень (Δz ≥ переписи на звене) не трогается.
+        {
+          const twinDzV = (q: (typeof candidate.points)[number]): number => {
+            let mx = 0;
+            for (const q2 of candidate.points) {
+              if (q2.id === q.id) continue;
+              if (Math.hypot(q2.x - q.x, q2.y - q.y) <= 0.6) mx = Math.max(mx, Math.abs(q2.z - q.z));
+            }
+            return mx;
+          };
+          let mergedS = 0;
+          for (let round = 0; round < 200; round++) {
+            const pByIdS = new Map(candidate.points.map((q) => [q.id, q]));
+            const incS = new Map<string, Array<(typeof candidate.lines)[number]>>();
+            for (const l of candidate.lines) {
+              (incS.get(l.aId) ?? incS.set(l.aId, []).get(l.aId)!).push(l);
+              (incS.get(l.bId) ?? incS.set(l.bId, []).get(l.bId)!).push(l);
+            }
+            let did = false;
+            for (const v of candidate.points) {
+              const inc = incS.get(v.id) ?? [];
+              if (inc.length !== 2) continue;
+              const [l1, l2] = inc;
+              if (l1.type !== l2.type) continue;
+              const aId = l1.aId === v.id ? l1.bId : l1.aId;
+              const cId = l2.aId === v.id ? l2.bId : l2.aId;
+              if (aId === cId) continue;
+              const a = pByIdS.get(aId);
+              const c = pByIdS.get(cId);
+              if (!a || !c) continue;
+              // Δz вдоль звена — уклон, не ступень (класс 1c): ступень
+              // живёт близнецами, их ловит twinDzV ниже
+              // законные вершины неприкосновенны: шов-близнец и кольцо
+              const dbgS = process.env.DBG_SEGSTR ? ((): ((why: string) => void) | null => {
+                const [sx, sy] = process.env.DBG_SEGSTR!.split(",").map(Number);
+                if (Math.hypot(v.x - sx, v.y - sy) > 1) return null;
+                return (why) => console.log(`[segstr] ${v.id} (${v.x.toFixed(2)},${v.y.toFixed(2)}) skip: ${why}`);
+              })() : null;
+              if (twinDzV(v) >= STEP_DZ_FT - 0.2) { dbgS?.(`twin dz=${twinDzV(v).toFixed(2)}`); continue; }
+              if (distRing(v) <= 0.15) { dbgS?.(`ring d=${distRing(v).toFixed(2)}`); continue; } // на кольце — держит контур (порог регистрации, как в pullCrumbEdges)
+              const runAC = Math.hypot(c.x - a.x, c.y - a.y);
+              if (runAC < 1e-6) continue;
+              const cross = Math.abs((c.x - a.x) * (v.y - a.y) - (c.y - a.y) * (v.x - a.x)) / runAC;
+              if (cross < 1e-3) continue; // уже прямая
+              // излом deg-2 цепи одного типа незаконен при ЛЮБОМ угле (G1);
+              // вместо коридора — guard: новое звено не режет чужие линии
+              const hitsOther = candidate.lines.some((lx) => {
+                if (lx.id === l1.id || lx.id === l2.id) return false;
+                const p1 = pByIdS.get(lx.aId);
+                const p2 = pByIdS.get(lx.bId);
+                if (!p1 || !p2) return false;
+                if (p1.id === aId || p1.id === cId || p2.id === aId || p2.id === cId) return false;
+                const d = (px: { x: number; y: number }, qx: { x: number; y: number }, rx: { x: number; y: number }): number =>
+                  (qx.x - px.x) * (rx.y - px.y) - (qx.y - px.y) * (rx.x - px.x);
+                const d1 = d(a, c, p1);
+                const d2 = d(a, c, p2);
+                const d3 = d(p1, p2, a);
+                const d4 = d(p1, p2, c);
+                return d1 * d2 < 0 && d3 * d4 < 0;
+              });
+              if (hitsOther) { dbgS?.("guard: пересекает чужую линию"); continue; }
+              // снос v: l2 вливается в l1
+              if (l1.aId === v.id) l1.aId = cId; else l1.bId = cId;
+              candidate.lines = candidate.lines.filter((x) => x.id !== l2.id);
+              candidate.points = candidate.points.filter((q) => q.id !== v.id);
+              for (const f of candidate.faces) {
+                f.lineIds = f.lineIds.map((id) => (id === l2.id ? l1.id : id));
+                f.lineIds = f.lineIds.filter((id, ix) => f.lineIds.indexOf(id) === ix);
+              }
+              mergedS++;
+              did = true;
+              break;
+            }
+            if (!did) break;
+          }
+          if (mergedS > 0) reasons.push(`по-сегментное спрямление (модель): ${mergedS} изломов crease-цепей слито`);
+          dbgTrace("post-segstraight");
+        }
+
         const crossB = applyZSolver("instant");
         if (crossB) reasons.push(`z-солвер: ${crossB} вершин с расхождением ≥ переписи (топология уровней)`);
         // ровность коньков по финальным z: конёк, ставший наклонным, — вальма
