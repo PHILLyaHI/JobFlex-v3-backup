@@ -2040,10 +2040,27 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           });
           let welded9 = 0;
           let coplanned9 = 0;
+          const distRingC = (q: { x: number; y: number }): number => {
+            let best = Infinity;
+            for (let i9 = 0; i9 < contour.length; i9++) {
+              const a9 = contour[i9];
+              const b9 = contour[(i9 + 1) % contour.length];
+              const dx9 = b9.x - a9.x;
+              const dy9 = b9.y - a9.y;
+              const L29 = dx9 * dx9 + dy9 * dy9 || 1;
+              const t9 = Math.max(0, Math.min(1, ((q.x - a9.x) * dx9 + (q.y - a9.y) * dy9) / L29));
+              best = Math.min(best, Math.hypot(q.x - (a9.x + dx9 * t9), q.y - (a9.y + dy9 * t9)));
+            }
+            return best;
+          };
           for (const pts9 of byCell.values()) {
             if (pts9.length < 2) continue;
-            const mx = pts9.reduce((s9, q) => s9 + q.x, 0) / pts9.length;
-            const my = pts9.reduce((s9, q) => s9 + q.y, 0) / pts9.length;
+            // кольцо неприкосновенно: если в группе есть кольцевая точка,
+            // план группы — ЕЁ план (усреднение стягивало RAKE-вершины
+            // внутрь на 0.24–0.67 — rings-check ловил)
+            const ringPt = pts9.find((q) => distRingC(q) <= 0.15);
+            const mx = ringPt ? ringPt.x : pts9.reduce((s9, q) => s9 + q.x, 0) / pts9.length;
+            const my = ringPt ? ringPt.y : pts9.reduce((s9, q) => s9 + q.y, 0) / pts9.length;
             // двойник — суб-пиксельная копия: разброс плана больше шага
             // решётки означает соседей, не двойников (двигать — ломать G1)
             if (pts9.some((q) => Math.hypot(q.x - mx, q.y - my) > m.stepFt)) continue;
@@ -2087,6 +2104,12 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           if (drop9.size) candidate.lines = candidate.lines.filter((l) => !drop9.has(l.id));
           for (const f of candidate.faces) f.lineIds = f.lineIds.filter((id, idx) => f.lineIds.indexOf(id) === idx || candidate.lines.some((l) => l.id === id));
           if (welded9 || coplanned9) reasons.push(`план-коагулятор: ${welded9} точек сварено внутри уровней, ${coplanned9} клеток стен получили общий план`);
+
+          // NB (§K25): модельное втягивание крошки снято — звено крошки
+          // бывает ЧАСТЬЮ КОЛЬЦА грани, и удаление без пересборки колец
+          // рвёт поверхность (419: Euler −1, G8/G5). Крошка втягивается
+          // на ГРАФЕ (pullCrumbEdges до обхода) — там кольца строятся
+          // ПОСЛЕ. Модельные крошки-остатки — в стоп-описание.
         }
         const crossB = applyZSolver("instant");
         if (crossB) reasons.push(`z-солвер: ${crossB} вершин с расхождением ≥ переписи (топология уровней)`);

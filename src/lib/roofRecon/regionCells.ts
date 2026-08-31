@@ -25,7 +25,7 @@
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { signedArea } from "@/lib/roofRecon/footprint";
 import { PROBE_FT } from "@/lib/roofRecon/measuredLines";
-import { walkPlanarFaces, mergeSmallFaces, pruneDanglingEdges } from "@/lib/roofRecon/arrangement";
+import { walkPlanarFaces, mergeSmallFaces, pruneDanglingEdges, pullCrumbEdges } from "@/lib/roofRecon/arrangement";
 import { DEFAULT_PLANE_TOL_FT } from "@/lib/roofRecon";
 
 export type RegionEdgeProv = "measured-line" | "region-boundary" | "contour";
@@ -1568,6 +1568,12 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
     if (tailWelds || tailSplits) report.push(`сшивка хвостов: ${tailWelds} концов сшито в узлы, ${tailSplits} T-стыков в рёбра/кольцо (пробник ${probe} ft)`);
     if (tailWelds || tailSplits) weldAndDedupe(" (после сшивки)");
+  }
+  // крошка у узлов — переборчиво (§K25), до пруны и обхода
+  {
+    const ringDistC = (q: FootprintPoint): number => projectToRing(q).dist;
+    const pulled = pullCrumbEdges(nodes, edges, stepFt, (n) => ringDistC(nodes[n]) <= 0.15);
+    if (pulled) report.push(`крошка у узлов: ${pulled} звеньев ≤ шага втянуто в узлы (переборчиво, без цепочек)`);
   }
   const removed = pruneDanglingEdges(edges);
   if (removed.length) report.push(`${removed.length} висячих рёбер границ отсечено`);

@@ -483,6 +483,84 @@ export interface PlanarHalf { from: number; to: number; edge: number; next?: num
 export interface PlanarFace { ring: number[]; halfEdges: number[]; area: number }
 
 /** Remove degree-1 edges iteratively; returns the removed edges. */
+/**
+ * КРОШКА У УЗЛОВ (приказ 2026-08-31, переборчивый закон — §K25): звено
+ * длиной <= шага решётки между узлами РАЗНЫХ цепей втягивается в узел —
+ * по кандидату, отдельным вердиктом; кандидаты замораживаются ДО
+ * применения и уже втянутые концы пропускаются — транзитивные цепочки не
+ * образуются ПО ПОСТРОЕНИЮ (эпсилон-порог сварки рвал 419: Euler 0,
+ * G-счёт 21->29). «Разных цепей»: наборы источников (lineIndex/pair)
+ * инцидентных рёбер концов не совпадают. Выживший узел — конец большей
+ * степени; крошка удаляется, рёбра переключаются, петли/дубли чистятся.
+ */
+export function pullCrumbEdges<E extends { u: number; v: number; lineIndex?: number; pair?: [number, number] }>(
+  nodes: Array<{ x: number; y: number }>,
+  edges: E[],
+  stepFt: number,
+  /** Неприкосновенный узел (кольцо): всегда выживает; оба — не втягивать. */
+  isFixed?: (n: number) => boolean,
+): number {
+  const srcKey = (e: E): string => (e.lineIndex !== undefined ? `L${e.lineIndex}` : e.pair ? `P${e.pair[0]}|${e.pair[1]}` : "C");
+  const degOf = (): Map<number, E[]> => {
+    const m = new Map<number, E[]>();
+    for (const e of edges) {
+      (m.get(e.u) ?? m.set(e.u, []).get(e.u)!).push(e);
+      (m.get(e.v) ?? m.set(e.v, []).get(e.v)!).push(e);
+    }
+    return m;
+  };
+  const deg0 = degOf();
+  // замороженный список кандидатов
+  const cands: Array<{ ei: number; u: number; v: number }> = [];
+  edges.forEach((e, ei) => {
+    const len = Math.hypot(nodes[e.u].x - nodes[e.v].x, nodes[e.u].y - nodes[e.v].y);
+    // порог крошки — 1.25 шага: вилка синтетики (0.9×шаг втянуть,
+    // 1.5×шаг нет); это порог ЗАКОНА КРОШКИ, не порог сварки (§K25)
+    if (len > stepFt * 1.25 || len < 1e-9) return;
+    const iu = deg0.get(e.u) ?? [];
+    const iv = deg0.get(e.v) ?? [];
+    if (iu.length < 2 || iv.length < 2) return; // хвосты — не узлы
+    const su = new Set(iu.filter((x) => x !== e).map(srcKey));
+    const sv = new Set(iv.filter((x) => x !== e).map(srcKey));
+    let share = false;
+    for (const k of su) if (sv.has(k)) { share = true; break; }
+    if (share) return; // одна цепь — не крошка, а её звено
+    cands.push({ ei, u: e.u, v: e.v });
+  });
+  const touched = new Set<number>();
+  let pulled = 0;
+  for (const cd of cands) {
+    if (touched.has(cd.u) || touched.has(cd.v)) continue; // без цепочек
+    const e = edges[cd.ei];
+    if (!e || e.u !== cd.u || e.v !== cd.v) continue;
+    const fu = isFixed?.(cd.u) ?? false;
+    const fv = isFixed?.(cd.v) ?? false;
+    if (fu && fv) continue; // оба на кольце — контур неприкосновенен
+    const deg = degOf();
+    const du = (deg.get(cd.u) ?? []).length;
+    const dv = (deg.get(cd.v) ?? []).length;
+    const keep = fu ? cd.u : fv ? cd.v : du >= dv ? cd.u : cd.v;
+    const gone = keep === cd.u ? cd.v : cd.u;
+    for (const e2 of edges) {
+      if (e2.u === gone) e2.u = keep;
+      if (e2.v === gone) e2.v = keep;
+    }
+    // петли и дубли после втягивания
+    const seen = new Set<string>();
+    for (let i2 = edges.length - 1; i2 >= 0; i2--) {
+      const e2 = edges[i2];
+      if (e2.u === e2.v) { edges.splice(i2, 1); continue; }
+      const k = e2.u < e2.v ? `${e2.u}|${e2.v}` : `${e2.v}|${e2.u}`;
+      if (seen.has(k)) edges.splice(i2, 1);
+      else seen.add(k);
+    }
+    touched.add(cd.u);
+    touched.add(cd.v);
+    pulled++;
+  }
+  return pulled;
+}
+
 export function pruneDanglingEdges<E extends { u: number; v: number }>(edges: E[]): E[] {
   const removed: E[] = [];
   for (let pass = 0; pass < 200; pass++) {
