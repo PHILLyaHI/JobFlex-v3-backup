@@ -1267,7 +1267,10 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     // санитарная граница — полстены (G_STEP_DZ/2): большее расхождение
     // не сварка, а нерешённая архитектура
     const plF = cleanPlane.get(f2.id) ?? f2.plane;
-    if (!plF || plF.maxDev > 0.9) return { ok: false, dev: f2.plane?.maxDev ?? Infinity, excused: 0 };
+    if (!plF || plF.maxDev > 0.9) {
+      if (process.env.DBG_R03) console.log(`[R03·plF] ${f2.id}: plF ${plF ? "dev " + plF.maxDev.toFixed(2) : "нет"}`);
+      return { ok: false, dev: f2.plane?.maxDev ?? Infinity, excused: 0 };
+    }
     let excused = 0;
     for (const p of f2.pts3) {
       if (!contested.has(vKey3(p))) continue;
@@ -1277,7 +1280,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
       for (const g of vertFacets.get(vKey3(p)) ?? []) {
         if (g === f2) continue;
         const plG = cleanPlane.get(g.id) ?? g.plane;
-        if (!plG || plG.maxDev > 0.9) continue;
+        if (!plG || plG.maxDev > 0.9) { if (process.env.DBG_R03) console.log(`[R03·plG] ${f2.id}|${g.id}: plG ${plG ? "dev " + plG.maxDev.toFixed(2) : "нет"}`); continue; }
         const zF = plF.a * p[0] + plF.b * p[1] + plF.c;
         const zG = plG.a * p[0] + plG.b * p[1] + plG.c;
         // неопределённость оценки каждой плоскости — её ФАКТИЧЕСКИЙ
@@ -1752,9 +1755,19 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
       }
       const rest = f.pts3.filter((q) => !contested.has(vKey3(q)) && !disputed.has(vKey3(q)));
       const pl2 = rest.length >= 4 ? invFitPlane(rest) : null;
-      // санитарно: вырожденный rest даёт дикий градиент (50.9° на честном
-      // коньке) — доверяем второй чистке только при вменяемом уклоне
-      const pl = pl2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
+      // санитарно: вырожденный rest (дикий уклон ИЛИ без плановой ширины —
+      // точки почти на прямой вертят направление) не даёт градиента
+      let spread2 = 0;
+      if (pl2) {
+        let mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity;
+        for (const q of rest) {
+          mnx = Math.min(mnx, q[0]); mxx = Math.max(mxx, q[0]);
+          mny = Math.min(mny, q[1]); mxy = Math.max(mxy, q[1]);
+        }
+        spread2 = Math.min(mxx - mnx, mxy - mny);
+      }
+      const wide2 = spread2 >= (model.resolutionFt ?? 1.6);
+      const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(model.faces[f.i].id, [pl.a, pl.b]);
     }
   }

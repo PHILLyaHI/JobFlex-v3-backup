@@ -629,9 +629,19 @@ export function validateRoof(model) {
       }
       const rest = f.pts3.filter((q) => !contested.has(vKey3(q)) && !disputed.has(vKey3(q)));
       const pl2 = rest.length >= 4 ? fitPlane(rest) : null;
-      // санитарно: вырожденный rest даёт дикий градиент (50.9° на честном
-      // коньке) — доверяем второй чистке только при вменяемом уклоне
-      const pl = pl2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
+      // санитарно: вырожденный rest (дикий уклон ИЛИ без плановой ширины —
+      // точки почти на прямой вертят направление) не даёт градиента
+      let spread2 = 0;
+      if (pl2) {
+        let mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity;
+        for (const q of rest) {
+          mnx = Math.min(mnx, q[0]); mxx = Math.max(mxx, q[0]);
+          mny = Math.min(mny, q[1]); mxy = Math.max(mxy, q[1]);
+        }
+        spread2 = Math.min(mxx - mnx, mxy - mny);
+      }
+      const wide2 = spread2 >= (model.resolutionFt ?? 1.6);
+      const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(f.id, [pl.a, pl.b]);
     }
   }

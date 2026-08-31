@@ -33,7 +33,7 @@ import { mergeCollinearChains } from "@/lib/roofRecon/straighten";
 import { assembleRoofModel, type AssembleCell } from "@/lib/roofRecon/assembleModel";
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
 import { validateRoofInvariants } from "@/lib/roofDiagram/validate";
-import { flattenFacets } from "@/lib/roofDiagram/flatten";
+import { solveVertexZ } from "@/lib/roofRecon/zSolver";
 import { buildIndexes, ringOf } from "@/components/estimator/roof/roofGeometry";
 import { areaOf, signedArea, type FootprintPoint } from "@/lib/roofRecon/footprint";
 
@@ -621,112 +621,8 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     if (!arr2.includes(ci)) arr2.push(ci);
     vCells.set(vKey(p), arr2);
   }
-  // ── СХОДИМОСТЬ ПЛОСКОСТЕЙ (2026-08-30) ──
-  // Микрошвы ломали грамматику, среднее группы ломало планарность. Выход —
-  // не выбор между ними, а настоящая сходимость: у наклонов (a,b) тоже есть
-  // неопределённость подгонки, и в её пределах плоскости ДВИГАЮТСЯ так,
-  // чтобы встретиться в общих вершинах. Чередование: цель вершины = среднее
-  // группы; каждая плоскость кластера рефитится по СВОИМ пикселям плюс
-  // вершинным целям с весом (σ_px/σ_v)² = (0.6/0.08)² — обе σ из задачи
-  // (допуск роста и бюджет планарности валидатора).
-  {
-    const W_V = Math.pow(DEFAULT_PLANE_TOL_FT / 0.08, 2);
-    // пиксельные нормальные уравнения на кластер (один раз)
-    interface Norm { xx: number; xy: number; x: number; yy: number; y: number; n: number; xz: number; yz: number; z: number }
-    const pxNorm = new Map<number, Norm>();
-    for (const ci of infos) {
-      if (ci.prov === "fill" || ci.cluster === null || !ci.plane) continue;
-      const acc = pxNorm.get(ci.cluster) ?? { xx: 0, xy: 0, x: 0, yy: 0, y: 0, n: 0, xz: 0, yz: 0, z: 0 };
-      const xs = ci.cell.ring.map((q) => q.x);
-      const ys = ci.cell.ring.map((q) => q.y);
-      const minX = Math.min(...xs), maxX = Math.max(...xs);
-      const minY = Math.min(...ys), maxY = Math.max(...ys);
-      const step = Math.max(stepFt, Math.min(maxX - minX, maxY - minY) / 12);
-      for (let y = minY + step / 2; y < maxY; y += step) {
-        for (let x = minX + step / 2; x < maxX; x += step) {
-          if (!inRing({ x, y }, ci.cell.ring)) continue;
-          const pi = m.pxOf({ x, y });
-          if (pi < 0 || mask.data[pi] <= 0.5) continue;
-          if (d.assign[pi] !== ci.cluster) continue;
-          const z = dsm.data[pi] * FT_PER_M - groundElevFt;
-          acc.xx += x * x; acc.xy += x * y; acc.x += x;
-          acc.yy += y * y; acc.y += y; acc.n += 1;
-          acc.xz += x * z; acc.yz += y * z; acc.z += z;
-        }
-      }
-      pxNorm.set(ci.cluster, acc);
-    }
-    // вершины на кластер (те же группы уровней, что и ниже: разрыв > ступени
-    // остаётся раздельным)
-    interface VRef { p: FootprintPoint; cis: CellInfo[] }
-    const vGroups: VRef[] = [];
-    for (const [k, cis] of vCells) {
-      const p2 = cis[0].cell.ring.find((q) => vKey(q) === k)!;
-      const meas = cis.filter((c2) => c2.prov !== "fill" && c2.plane && c2.cluster !== null);
-      if (meas.length < 2) continue;
-      // одна группа уровня: сортировка по z, цепь с разрывом > ступени
-      const entries = meas.map((c2) => ({ c2, z: measuredZAt(c2, p2) })).sort((a3, b3) => a3.z - b3.z);
-      let g: typeof entries = [];
-      for (const e3 of entries) {
-        if (g.length && e3.z - g[g.length - 1].z > STEP_DZ_FT) {
-          if (g.length >= 2) vGroups.push({ p: p2, cis: g.map((x2) => x2.c2) });
-          g = [];
-        }
-        g.push(e3);
-      }
-      if (g.length >= 2) vGroups.push({ p: p2, cis: g.map((x2) => x2.c2) });
-    }
-    for (let round = 0; round < 20; round++) {
-      // цели вершин
-      const targets = vGroups.map((vg) => vg.cis.reduce((s2, c2) => s2 + measuredZAt(c2, vg.p), 0) / vg.cis.length);
-      // рефит на кластер
-      const acc2 = new Map<number, Norm>();
-      vGroups.forEach((vg, gi) => {
-        const zt = targets[gi];
-        for (const c2 of vg.cis) {
-          const a2 = acc2.get(c2.cluster!) ?? { xx: 0, xy: 0, x: 0, yy: 0, y: 0, n: 0, xz: 0, yz: 0, z: 0 };
-          const { x, y } = vg.p;
-          a2.xx += W_V * x * x; a2.xy += W_V * x * y; a2.x += W_V * x;
-          a2.yy += W_V * y * y; a2.y += W_V * y; a2.n += W_V;
-          a2.xz += W_V * x * zt; a2.yz += W_V * y * zt; a2.z += W_V * zt;
-          acc2.set(c2.cluster!, a2);
-        }
-      });
-      // НАПРАВЛЕНИЕ ПЛОСКОСТИ — ИЗМЕРЕНИЕ (§J): при опоре в сотни-тысячи
-      // пикселей σ направления ничтожна, а полная 3×3-подгонка с вершинными
-      // целями ВРАЩАЛА измеренные плоскости на 1.7–5.4° (12621: cl3
-      // −0.4→−4.0°, cl8 уклон 10→8.4) — кольца граней выходили когерентно
-      // повёрнутыми (A8: −6.9° при пиксельной −0.4°), G4 ловил, гейт ронял.
-      // Сходимость двигает только ВЫСОТУ (c); невязку стыка, которую высота
-      // не закрывает, несут сварка и её допуск (R03 v2), не направление.
-      for (const [cl, pl] of clusterPlane) {
-        const px2 = pxNorm.get(cl);
-        const vx = acc2.get(cl);
-        if (!px2 || px2.n < 6) continue;
-        const num = (px2.z - pl.a * px2.x - pl.b * px2.y) + ((vx?.z ?? 0) - pl.a * (vx?.x ?? 0) - pl.b * (vx?.y ?? 0));
-        const den = px2.n + (vx?.n ?? 0);
-        if (den > 0) pl.c = num / den;
-      }
-    }
-    // остаточная несходимость — в отчёт
-    let worst = 0;
-    vGroups.forEach((vg) => {
-      const zs = vg.cis.map((c2) => measuredZAt(c2, vg.p));
-      worst = Math.max(worst, Math.max(...zs) - Math.min(...zs));
-    });
-    reasons.push(`сходимость плоскостей: ${vGroups.length} общих вершин, остаточный разрыв ${worst.toFixed(3)} ft`);
-    if (process.env.DBG_CONC) {
-      for (const [cl, pl] of clusterPlane) {
-        const d0 = d.clusterPlanes[cl];
-        const az0 = (Math.atan2(d0.b, d0.a) * 180) / Math.PI;
-        const az1 = (Math.atan2(pl.b, pl.a) * 180) / Math.PI;
-        let rot = Math.abs(az1 - az0) % 360;
-        if (rot > 180) rot = 360 - rot;
-        if (rot > 1) console.log(`[conc] cl${cl}: азимут ${az0.toFixed(1)} → ${az1.toFixed(1)} (поворот ${rot.toFixed(1)}°), pitch ${(Math.hypot(d0.a, d0.b) * 12).toFixed(1)} → ${(Math.hypot(pl.a, pl.b) * 12).toFixed(1)}`);
-      }
-    }
-  }
-
+  // Сходимость плоскостей удалена: её z-власть заменил единый финальный
+  // z-солвер (zSolver.ts). Плоскости кластеров остаются как измерены.
   const fillDz = new Map<CellInfo, number>();
   {
     const deltas: number[] = [];
@@ -879,6 +775,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       return true;
     };
     return {
+      srcIndex: infos.indexOf(ci),
       ring: ci.cell.ring.map((p) => {
         const v = vAt(p);
         return { x: p.x, y: p.y, z: v.z, tag: v.tag };
@@ -912,7 +809,8 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     };
   });
 
-  const assembled = assembleRoofModel({ cells, base: skeleton, idPrefix: "M", structureIndex: 0 });
+  const faceSrc = new Map<string, number>();
+  const assembled = assembleRoofModel({ cells, base: skeleton, idPrefix: "M", structureIndex: 0, faceSrcOut: faceSrc });
   if (!assembled) return skeletonWhole("assembly failed on a degenerate cell — skeleton fill");
 
   // ── flatten: the DSM settled every vertex on the surface; the global
@@ -920,35 +818,106 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   //    meeting planes imply) turns "on the surface" into "a polyhedron":
   //    R03 planarity by construction, at the validator's 0.08 ft, which raw
   //    surface samples (noise 0.12 ft) can never hold on their own. ──
-  // сварка переписным полом связала вершины в узлы по 3+ граней — системе
-  // нужно больше раундов, чем расщеплённой (24 оставляли 0.63 ft).
-  // NB: замороженные градиенты через f.orientation НЕ подключать без
-  // выверенной конвенции угла — заморозка в чужом направлении дала G4
-  // до 83° (замерено 2026-08-30)
-  if (process.env.DBG_COVER) {
-    const idxC = buildIndexes(assembled);
-    const ringsC: FootprintPoint[][] = [];
-    for (const f of assembled.faces) {
-      const rC = ringOf(f.lineIds, idxC);
-      if (rC && rC.length >= 3) ringsC.push(rC.map((q) => ({ x: q.x, y: q.y })));
+  // flatten удалён: его z-власть заменил единый финальный z-солвер
+  const candidate = assembled;
+
+  // ── ЕДИНЫЙ ФИНАЛЬНЫЙ Z-СОЛВЕР (zSolver.ts) ──
+  // Все прежние власти над z (сходимость, flatten, пересадка, цепная
+  // сварка) удалены; z каждой вершины — взвешенная МНК по инцидентным
+  // чистым плоскостям (вес — пиксельная опора), уровни — по топологии
+  // vzOf (переписной пол). Вызывается после планарной работы; второй
+  // вызов после пост-типизационных планарных хирургий — та же функция,
+  // тот же результат на той же геометрии (детерминизм).
+  // ЛОКАЛЬНАЯ опора: вес плоскости в вершине — её пиксели ВОЗЛЕ вершины
+  // (клетки 3 ft, окрестность ±7.5 ft). Глобальная опора позволяла
+  // плоскости голосовать там, где у неё нет ни одного пикселя
+  // (экстраполяция за опору — ободки, сшитые экс-фантомы): большие грани
+  // варпались до 1.8-2.3 ft. Плоскость без местных свидетельств голоса
+  // не имеет (вес-пол 1 наравне с заполнителем).
+  const CELL9 = 3;
+  const clusterCellPx = new Map<number, Map<string, number>>();
+  {
+    const w9 = dsm.width;
+    const stepFt9 = m.stepFt;
+    const cx9 = w9 / 2;
+    const cy9 = dsm.height / 2;
+    for (let i = 0; i < d.assign.length; i++) {
+      const cl = d.assign[i];
+      if (cl < 0) continue;
+      const x9 = ((i % w9) + 0.5 - cx9) * stepFt9;
+      const y9 = (cy9 - Math.floor(i / w9) - 0.5) * stepFt9;
+      const k9 = `${Math.floor(x9 / CELL9)}|${Math.floor(y9 / CELL9)}`;
+      const m9 = clusterCellPx.get(cl) ?? clusterCellPx.set(cl, new Map()).get(cl)!;
+      m9.set(k9, (m9.get(k9) ?? 0) + 1);
     }
-    const inPC = (x: number, y: number, ring: FootprintPoint[]): boolean => {
-      let ins = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        if (ring[i].y > y !== ring[j].y > y && x < ((ring[j].x - ring[i].x) * (y - ring[i].y)) / (ring[j].y - ring[i].y) + ring[i].x) ins = !ins;
-      }
-      return ins;
-    };
-    let unC = 0;
-    let cxs = 0, cys = 0;
-    for (let y = -40; y <= 40; y += 0.75) for (let x = -40; x <= 40; x += 0.75) {
-      if (!inRing({ x, y }, movedRing)) continue;
-      if (!ringsC.some((rg) => inPC(x, y, rg))) { unC++; cxs += x; cys += y; }
-    }
-    console.log(`[cover] после сборки: непокрыто ${(unC * 0.5625).toFixed(1)} sf${unC ? ` центр (${(cxs / unC).toFixed(1)},${(cys / unC).toFixed(1)})` : ""}`);
   }
-  const flat = flattenFacets(assembled, { iterations: 96 });
-  const candidate = flat.model;
+  const localSupport = (cluster: number, xr: number, yr: number): number => {
+    const m9 = clusterCellPx.get(cluster);
+    if (!m9) return 0;
+    const cxq = Math.floor(xr / CELL9);
+    const cyq = Math.floor(yr / CELL9);
+    let n9 = 0;
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) n9 += m9.get(`${cxq + dx}|${cyq + dy}`) ?? 0;
+    return n9;
+  };
+  const applyZSolver = (frame: "raster" | "instant"): number => {
+    const idxZ = buildIndexes(candidate);
+    const ownersZ = new Map<string, Set<number>>();
+    for (const f of candidate.faces) {
+      const src = faceSrc.get(f.id);
+      if (src === undefined) continue;
+      let rZ = ringOf(f.lineIds, idxZ);
+      if (!rZ || rZ.length < 3) {
+        const seenZ = new Set<string>();
+        const cloudZ: (typeof candidate.points)[number][] = [];
+        for (const id of new Set(f.lineIds)) {
+          const l = candidate.lines.find((l2) => l2.id === id);
+          if (!l) continue;
+          for (const pid of [l.aId, l.bId]) {
+            if (seenZ.has(pid)) continue;
+            seenZ.add(pid);
+            const q = candidate.points.find((q2) => q2.id === pid);
+            if (q) cloudZ.push(q);
+          }
+        }
+        rZ = cloudZ.length >= 3 ? cloudZ : null;
+      }
+      if (!rZ) continue;
+      for (const q of rZ) {
+        const qid = (q as { id?: string }).id;
+        if (!qid) continue;
+        (ownersZ.get(qid) ?? ownersZ.set(qid, new Set()).get(qid)!).add(src);
+      }
+    }
+    const resZ = solveVertexZ({
+      points: candidate.points,
+      refsOf: (pid) => {
+        const pt9 = candidate.points.find((q) => q.id === pid)!;
+        const pr = frame === "instant" ? fwd({ x: pt9.x, y: pt9.y }) : { x: pt9.x, y: pt9.y };
+        return [...(ownersZ.get(pid) ?? [])].map((si) => {
+          const ci = infos[si];
+          return {
+            evalAt: (x: number, y: number) => zOfInfo(ci, frame === "instant" ? fwd({ x, y }) : { x, y }),
+            // локальная опора в точке; плоскость без местных пикселей —
+            // голос заполнителя (1): экстраполяция за опору не голосует
+            w: ci.prov === "fill" || ci.cluster === null ? 1 : Math.max(1, localSupport(ci.cluster, pr.x, pr.y)),
+          };
+        });
+      },
+      stepDzFt: STEP_DZ_FT,
+    });
+    for (const pt of candidate.points) {
+      const z = resZ.z.get(pt.id);
+      if (z !== undefined) pt.z = z;
+    }
+    const pByIdZ = new Map(candidate.points.map((q) => [q.id, q]));
+    for (const l of candidate.lines) {
+      const a = pByIdZ.get(l.aId);
+      const b = pByIdZ.get(l.bId);
+      if (a && b) l.lengthFt = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    }
+    return resZ.crossLevel;
+  };
   // ── СЛОЙ ВЫПРЯМЛЕНИЯ: коллинеарное слияние звеньев (до типизации) ──
   const preStraighten = input.onStage ? (JSON.parse(JSON.stringify(candidate)) as RoofModel) : undefined;
   // коридор на линию модели — сопоставлением с несущими (обе точки в
@@ -981,7 +950,6 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   const straighten = mergeCollinearChains(candidate, m.stepFt, corridorOfLine);
   if (process.env.DBG_EULER) console.log("[euler] после выпрямления:", eulerOf(candidate));
   if (straighten.merged || straighten.collapsed) reasons.push(`выпрямление: ${straighten.collapsed} огрызков схлопнуто (< 4 ft — шумовой пол шага 1), ${straighten.merged} звеньев слито; канон: ${rc.canonSnapped} линий`);
-  reasons.push(`flatten: dev ${flat.report.devBeforeFt} → ${flat.report.devAfterFt} ft, ${flat.report.pointsMoved} vertices, max move ${flat.report.maxMoveFt} ft`);
   // figures follow the flattened geometry: pitch and area per face refit
   {
     const idx2 = buildIndexes(candidate);
@@ -1012,6 +980,8 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     p.y = q.y;
   }
 
+  // z-солвер, проход A: типизация читает честные высоты
+  applyZSolver("instant");
   // ── ТИПИЗАЦИЯ НА ГОТОВОМ ПОЛИЭДРЕ: один проход, явный приоритет ──
   // 1. контурные рёбра — EAVE/RAKE шага 1;
   // 2. линия двух граней — правило складки по ФИНАЛЬНЫМ плоскостям,
@@ -1127,14 +1097,22 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     // пробника (PROBE_FT) z-пробы классификатора не судят — тип берётся
     // продолжением изнутри (петля непрерывности ниже; у неё есть
     // одноконцовое наследование для кусков, упирающихся в кольцо).
-    const inBand = (l: (typeof candidate.lines)[number]): boolean => {
-      const a = ptById.get(l.aId)!;
-      const b = ptById.get(l.bId)!;
-      return distRing({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }) <= PROBE_FT;
-    };
+    // ОТСТАВКА ПОЛОСЫ (замер 2026-08-30): полоса строилась против шумовой
+    // hip/valley-крошки каймы, но её с тех пор закрыл пол видимости
+    // перегиба (|∇A−∇B| ≥ 0.5/12 — пробы по ПЛОСКОСТЯМ шумов не несут);
+    // сама же полоса душила честные складки у ободков — OTHER вместо HIP,
+    // коньки «висели» (G2). Пробы теперь судят везде.
+    const inBand = (_l: (typeof candidate.lines)[number]): boolean => false;
     const footage2 = {} as Record<string, number>;
     const bump = (t: string, v: number) => { footage2[t] = (footage2[t] ?? 0) + v; };
-    for (const g of groupsL.values()) {
+    const phantomGroups: Array<Array<(typeof candidate.lines)[number]>> = [];
+    const liveLineIds = () => new Set(candidate.lines.map((l) => l.id));
+    for (const g0 of groupsL.values()) {
+      // топологическая сшивка фантомных стен удаляет линии/точки — группа
+      // фильтруется по живым
+      const live = liveLineIds();
+      const g = g0.filter((l) => live.has(l.id) && ptById.has(l.aId) && ptById.has(l.bId));
+      if (!g.length) continue;
       const l0 = g[0];
       const onRing = distRing(ptById.get(l0.aId)!) <= 1 && distRing(ptById.get(l0.bId)!) <= 1;
       if (g.length >= 2) {
@@ -1221,25 +1199,12 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           continue;
         }
         if (dzEnds >= STEP_DZ_FT) {
-          // фантомная стена: DSM перепада не видит — близнецы СВАРИВАЮТСЯ
-          // по совмещённым концам (одна высота), пара уходит в путь
-          // одноуровневых (складка от плоскостей или OTHER); 3D-поверхность
-          // замыкается
-          const ends = new Map<string, Array<(typeof candidate.points)[number]>>();
-          for (const l of g) for (const pid of [l.aId, l.bId]) {
-            const pt9 = ptById.get(pid)!;
-            const k9 = `${Math.round(pt9.x * 100)}|${Math.round(pt9.y * 100)}`;
-            (ends.get(k9) ?? ends.set(k9, []).get(k9)!).push(pt9);
-          }
-          for (const pts9 of ends.values()) {
-            const zm = pts9.reduce((s9, q9) => s9 + q9.z, 0) / pts9.length;
-            for (const q9 of pts9) q9.z = zm;
-          }
-          for (const l of g) {
-            const a9 = ptById.get(l.aId)!;
-            const b9 = ptById.get(l.bId)!;
-            l.lengthFt = Math.hypot(b9.x - a9.x, b9.y - a9.y, b9.z - a9.z);
-          }
+          // фантомная стена: DSM перепада не видит. Здесь только ПОМЕТКА
+          // (нейтральный тип); топологическая сшивка — одним чистым
+          // проходом после цикла (мутировать линии под циклом нельзя)
+          phantomGroups.push(g);
+          for (const l of g) { l.type = "OTHER"; bump("OTHER", l.lengthFt); }
+          continue;
         }
         // близнецы одного уровня: один тип складки на всех, счёт один раз.
         // Складки нет (пробы монотонны — перелом уклона одной стороны, напр.
@@ -1304,6 +1269,76 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     // непрерывность: OTHER-кусок с двумя владельцами, оба конца которого
     // продолжают складку одного типа, — часть этой складки (нейтральные
     // куски рвали цепи и плодили ложные G2-терминации)
+    // ── ТОПОЛОГИЧЕСКАЯ СШИВКА ФАНТОМНЫХ СТЕН (один чистый проход) ──
+    // DSM перепада не видел: сторонам границы — одна точка на конец,
+    // дубль-линии сливаются; z назначит финальный z-солвер
+    if (phantomGroups.length) {
+      let stitched = 0;
+      for (const g of phantomGroups) {
+        const liveG = new Set(candidate.lines.map((l) => l.id));
+        const gl = g.filter((l) => liveG.has(l.id));
+        const pById9 = new Map(candidate.points.map((q) => [q.id, q]));
+        const endsM = new Map<string, Array<(typeof candidate.points)[number]>>();
+        for (const l of gl) for (const pid of [l.aId, l.bId]) {
+          const pt9 = pById9.get(pid);
+          if (!pt9) continue;
+          const k9 = `${Math.round(pt9.x * 2)}|${Math.round(pt9.y * 2)}`;
+          (endsM.get(k9) ?? endsM.set(k9, []).get(k9)!).push(pt9);
+        }
+        for (const ptsM of endsM.values()) {
+          const uniq = [...new Set(ptsM)];
+          if (uniq.length < 2) continue;
+          const keep = uniq[0];
+          for (const q of uniq.slice(1)) {
+            for (const l of candidate.lines) {
+              if (l.aId === q.id) l.aId = keep.id;
+              if (l.bId === q.id) l.bId = keep.id;
+            }
+            candidate.points = candidate.points.filter((q2) => q2.id !== q.id);
+          }
+          stitched++;
+        }
+        const seenPair = new Map<string, string>();
+        for (const l of gl) {
+          const k9 = l.aId < l.bId ? `${l.aId}#${l.bId}` : `${l.bId}#${l.aId}`;
+          const first = seenPair.get(k9);
+          if (!first) { seenPair.set(k9, l.id); continue; }
+          candidate.lines = candidate.lines.filter((l2) => l2.id !== l.id);
+          for (const f of candidate.faces) f.lineIds = f.lineIds.map((id) => (id === l.id ? first : id));
+        }
+      }
+      if (stitched) reasons.push(`фантомные стены: ${stitched} концов сшито топологически`);
+      // сшитая граница — честная складка двух граней: тип от плоскостей
+      {
+        const ownersOf9 = new Map<string, string[]>();
+        for (const f of candidate.faces) for (const id of new Set(f.lineIds)) {
+          const arr = ownersOf9.get(id) ?? [];
+          if (!arr.includes(f.id)) arr.push(f.id);
+          ownersOf9.set(id, arr);
+        }
+        const live9 = new Set(candidate.lines.map((l) => l.id));
+        for (const g of phantomGroups) {
+          for (const l of g) {
+            if (!live9.has(l.id) || l.type !== "OTHER") continue;
+            const own9 = ownersOf9.get(l.id) ?? [];
+            if (own9.length < 2) continue;
+            const t9 = creaseType(l, own9);
+            if (t9) {
+              footage2["OTHER"] = (footage2["OTHER"] ?? 0) - l.lengthFt;
+              footage2[t9] = (footage2[t9] ?? 0) + l.lengthFt;
+              l.type = t9 as (typeof l)["type"];
+            }
+          }
+        }
+      }
+      // страховка целостности (наружу, не молча)
+      const liveIds = new Set(candidate.points.map((q) => q.id));
+      const before9 = candidate.lines.length;
+      candidate.lines = candidate.lines.filter((l) => liveIds.has(l.aId) && liveIds.has(l.bId));
+      if (before9 !== candidate.lines.length) reasons.push(`целостность: ${before9 - candidate.lines.length} линий снято`);
+      const lineIds9 = new Set(candidate.lines.map((l) => l.id));
+      for (const f of candidate.faces) f.lineIds = f.lineIds.filter((id) => lineIds9.has(id));
+    }
     // раундов — по длине наибольшей цепи (3 обрезало полосу каймы)
     for (let round = 0; round < candidate.lines.length; round++) {
       const byEnd = new Map<string, Array<(typeof candidate.lines)[number]>>();
@@ -1525,142 +1560,23 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     //    сварных зон; вершины снова садятся на плоскости (сваренные — в
     //    LS-точку МЕЖДУ планами, помилование R03 v2 их принимает)
     {
-      // ── финальная пересадка z ──
-      // Хирургии двигали ПЛАН (слияния, шпоры), z оставались от старых
-      // позиций — вершины вылезали из пролёта плоскостей (R03 не миловал).
-      // Каждая вершина получает z из плоскостей СВОИХ граней в финальной
-      // позиции: подпереписной разброс — среднее (ровно то, что милует
-      // R03 v2: вершина между честными плоскостями); разброс от стены —
-      // не трогаем (это стык уровней, у сторон свои точки).
+      // ── z-солвер, финальный проход (после планарных хирургий) ──
       {
-        const faceOfLine = new Map<string, string[]>();
-        for (const f of candidate.faces) for (const id of new Set(f.lineIds)) {
-          const arr = faceOfLine.get(id) ?? [];
-          if (!arr.includes(f.id)) arr.push(f.id);
-          faceOfLine.set(id, arr);
-        }
-        const facesOfPt = new Map<string, Set<string>>();
+        const crossB = applyZSolver("instant");
+        if (crossB) reasons.push(`z-солвер: ${crossB} вершин с расхождением ≥ переписи (топология уровней)`);
+        // ровность коньков по финальным z: конёк, ставший наклонным, — вальма
+        const pByIdL = new Map(candidate.points.map((q) => [q.id, q]));
         for (const l of candidate.lines) {
-          for (const pid of [l.aId, l.bId]) {
-            const set5 = facesOfPt.get(pid) ?? new Set<string>();
-            for (const fid of faceOfLine.get(l.id) ?? []) set5.add(fid);
-            facesOfPt.set(pid, set5);
-          }
-        }
-        // плоскости — от ФИНАЛЬНЫХ колец (facePlane снят до хирургий и
-        // устарел), с итерацией подгонка-пересадка: линейка мерит те же
-        // кольца, самосогласованность обязательна
-        let rezed = 0;
-        for (let round7 = 0; round7 < 8; round7++) {
-          const idx7 = buildIndexes(candidate);
-          const pl7 = new Map<string, Plane>();
-          // владение точками — из САМИХ КОЛЕЦ (учёт через lineIds терял
-          // вершины: сироты держали старый z, R03 ловил хвосты 0.17-0.31)
-          const facesOfPtR = new Map<string, Set<string>>();
-          for (const f of candidate.faces) {
-            let r7 = ringOf(f.lineIds, idx7);
-            if (!r7 || r7.length < 3) {
-              const seen7 = new Set<string>();
-              const cloud7: (typeof candidate.points)[number][] = [];
-              for (const id of new Set(f.lineIds)) {
-                const l7 = candidate.lines.find((l2) => l2.id === id);
-                if (!l7) continue;
-                for (const pid of [l7.aId, l7.bId]) {
-                  if (seen7.has(pid)) continue;
-                  seen7.add(pid);
-                  const q7 = candidate.points.find((q) => q.id === pid);
-                  if (q7) cloud7.push(q7);
-                }
-              }
-              r7 = cloud7.length >= 3 ? cloud7 : null;
-            }
-            if (!r7) continue;
-            const fit7 = fitPlane(r7);
-            if (fit7) pl7.set(f.id, fit7);
-            for (const q7 of r7) {
-              if (!("id" in q7)) continue;
-              const id7 = (q7 as { id: string }).id;
-              (facesOfPtR.get(id7) ?? facesOfPtR.set(id7, new Set()).get(id7)!).add(f.id);
-            }
-          }
-          let moved7 = 0;
-          for (const pt of candidate.points) {
-            const own7 = facesOfPtR.get(pt.id) ?? facesOfPt.get(pt.id) ?? new Set<string>();
-            const pls = [...own7].map((fid) => pl7.get(fid)).filter((x): x is Plane => !!x);
-            if (!pls.length) continue;
-            const zs5 = pls.map((pl5) => pl5.a * pt.x + pl5.b * pt.y + pl5.c);
-            if (Math.max(...zs5) - Math.min(...zs5) >= STEP_DZ_FT) continue;
-            const zNew = zs5.reduce((s5, z5) => s5 + z5, 0) / zs5.length;
-            if (Math.abs(zNew - pt.z) > 0.01) { pt.z = zNew; moved7++; }
-          }
-          rezed = Math.max(rezed, moved7);
-          if (!moved7) break;
-        }
-        // план-совпадающие ДВОЙНИКИ точек (разные id, один план): разброс
-        // ниже переписного пола — один уровень, сваривается в среднее
-        // (пересадка выше ходит по id и близнецов не видела — хвосты
-        // клин-стен оставались раздвоенными на 1.5–1.7, G8 ловил)
-        {
-          // точки ПОДТВЕРЖДЁННЫХ стен (FLASHING) сварке не подлежат: у
-          // заявки стены и у сварки один арбитр — прямой DSM; модельный
-          // разброс 1.62 при DSM-перепаде 2.0+ (маргинальная зона) уже
-          // решён в пользу стены, сварка не смеет переезжать вердикт
-          // МОДЕЛЬНЫЙ ПОЛ СТЕНЫ: переписной минус сумма бюджетов краёв
-          // (копии — план-эвалы плоскостей, каждая ±2·бюджет планарности).
-          // Один критерий с линейками: ниже пола — сварка, выше — стена.
-          // DSM-защита точек убрана: зонд ±2 ft на узких полосах перелетал
-          // на нижнюю массу и ложно подтверждал стену.
-          const MODEL_WALL_FLOOR = STEP_DZ_FT - 4 * 0.08;
-          const byPlan7 = new Map<string, Array<(typeof candidate.points)[number]>>();
-          for (const pt of candidate.points) {
-            const k7 = `${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`;
-            (byPlan7.get(k7) ?? byPlan7.set(k7, []).get(k7)!).push(pt);
-          }
-          for (const pts7 of byPlan7.values()) {
-            if (pts7.length < 2) continue;
-            // ЦЕПОЧНАЯ группировка по зазорам (закон vzOf): у трёхуровневого
-            // узла нижняя пара [20.9,22.3] — один уровень (зазор < пола),
-            // верхняя 24.2 — стена; всё-или-ничего оставляло нижнюю пару
-            // раздвоенной (G8 1.38)
-            const sorted7 = [...pts7].sort((q1, q2) => q1.z - q2.z);
-            let run7: typeof sorted7 = [];
-            const flush7 = (): void => {
-              if (run7.length >= 2) {
-                const zm7 = run7.reduce((s7, q7) => s7 + q7.z, 0) / run7.length;
-                for (const q7 of run7) q7.z = zm7;
-              }
-              run7 = [];
-            };
-            for (const q7 of sorted7) {
-              if (run7.length && q7.z - run7[run7.length - 1].z >= MODEL_WALL_FLOOR) flush7();
-              run7.push(q7);
-            }
-            flush7();
-          }
-        }
-        if (rezed) {
-          const pById7 = new Map(candidate.points.map((q) => [q.id, q]));
-          for (const l of candidate.lines) {
-            const a7 = pById7.get(l.aId);
-            const b7 = pById7.get(l.bId);
-            if (a7 && b7) l.lengthFt = Math.hypot(b7.x - a7.x, b7.y - a7.y, b7.z - a7.z);
-          }
-          reasons.push(`пересадка z: ${rezed} вершин на плоскости своих граней`);
-          // пересадка меняет высоты ПОСЛЕ типизации — ровность конька
-          // перепроверяется по финальным z (конёк, ставший наклонным на
-          // 0.42 ft/ft, — вальма по закону складок)
-          for (const l of candidate.lines) {
-            if (l.type !== "RIDGE") continue;
-            const a8 = pById7.get(l.aId);
-            const b8 = pById7.get(l.bId);
-            if (!a8 || !b8) continue;
-            const run8 = Math.hypot(b8.x - a8.x, b8.y - a8.y);
-            if (run8 < 1e-6) continue;
-            if (Math.abs(a8.z - b8.z) > Math.max(0.08, LEVEL_SLOPE * run8)) l.type = "HIP";
-          }
+          if (l.type !== "RIDGE") continue;
+          const a8 = pByIdL.get(l.aId);
+          const b8 = pByIdL.get(l.bId);
+          if (!a8 || !b8) continue;
+          const run8 = Math.hypot(b8.x - a8.x, b8.y - a8.y);
+          if (run8 < 1e-6) continue;
+          if (Math.abs(a8.z - b8.z) > Math.max(0.08, LEVEL_SLOPE * run8)) l.type = "HIP";
         }
       }
-      dbgCover("после пересадки z");
+      dbgCover("после z-солвера");
     }
     // ── ПОСТ-СВАРОЧНАЯ РЕВИЗИЯ ТИПОВ (G5-домен) ──
     // Сварки финала меняют оправдания: ободок, сваренный с крылом

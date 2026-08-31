@@ -29,12 +29,16 @@ export interface AssembleCell {
   zOf: (x: number, y: number) => number;
   /** Known type per boundary edge (by ring index); undefined = classify. */
   edgeTypes?: Array<EvLineType | undefined>;
+  /** Индекс исходной ячейки (CellInfo) — для z-солвера. */
+  srcIndex?: number;
 }
 
 export interface AssembleInput {
   cells: AssembleCell[];
   /** Copied onto the model shell (location, provenance fields). */
   base: RoofModel;
+  /** Заполняется сборкой: face id -> srcIndex ячейки (для z-солвера). */
+  faceSrcOut?: Map<string, number>;
   idPrefix: string;
   structureIndex: number;
 }
@@ -124,6 +128,7 @@ export function assembleRoofModel(input: AssembleInput): RoofModel | null {
     const sf = Math.sqrt(1 + (f.cell.pitch12 / 12) ** 2);
     const area = plan * sf;
     totalArea += area;
+    if (input.faceSrcOut && f.cell.srcIndex !== undefined) input.faceSrcOut.set(`s${input.structureIndex}:${idPrefix}F${rank + 1}`, f.cell.srcIndex);
     faces.push({
       id: `s${input.structureIndex}:${idPrefix}F${rank + 1}`,
       designator: `${String.fromCharCode(65 + Math.floor(rank / 9))}${(rank % 9) + 1}`,
