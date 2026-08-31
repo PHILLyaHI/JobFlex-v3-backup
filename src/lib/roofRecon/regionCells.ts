@@ -461,6 +461,12 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       sp.pts[i] = { ...target, c: true };
     }
   }
+  // NB (класс 2, стоп с описанием): проход спрямления БЕСХОЗНЫХ стеновых
+  // цепей (кластер|fill) на продолжение рёбер кольца снят — рвал 12618
+  // (G1: концы цепи не проецируются, излом на стыке), а зигзаг 12629
+  // сложен из кусков < 3 ft, которым нужно СЛИЯНИЕ вдоль одного
+  // контурного направления до спрямления. Кластерные пары покрыты
+  // масс-границами в measuredRoof (12621, 419).
   emitStage("straightened");
   // ── 5b. NODE CONSTRUCTION — exact, per junction, AFTER straightening ──
   // Order matters: nodes resolve against STRAIGHTENED neighbours, so their

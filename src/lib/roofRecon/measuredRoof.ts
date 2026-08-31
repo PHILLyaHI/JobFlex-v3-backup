@@ -195,6 +195,10 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   const recon = reconstructRoof(dsm as never, mask as never);
   const d = recon.diagnostics as unknown as ReconLayoutDiagnostics;
   const groundElevFt = (recon.diagnostics as unknown as { groundElevFt: number }).groundElevFt ?? 0;
+  // Пенетрации — не свидетели перепада (класс 1b смотра RM-6KT8LW):
+  // вент-ряд у конька 12629 продавливал dsmWallOk (клин-максимум по
+  // буграм) и рожал фиктивную стену EAVE/FLASHING над ровной кровлей.
+  const penSet = new Set((recon.diagnostics as unknown as { penetrationPx?: number[] }).penetrationPx ?? []);
   // ── intercept harmonisation, FIRST ──
   // Node construction accepts only CONCURRING lines, and lines built from
   // un-harmonised planes miss triple points by the intercept noise (measured:
@@ -509,10 +513,20 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         const zAt = (s0: number): number => {
           const q0 = { x: mid0.x + per0.x * s0 * off0, y: mid0.y + per0.y * s0 * off0 };
           const pi0 = m.pxOf(toRaster ? toRaster(q0) : q0);
-          if (pi0 < 0 || mask.data[pi0] <= 0.5) return NaN;
+          if (pi0 < 0 || mask.data[pi0] <= 0.5 || penSet.has(pi0)) return NaN;
           return dsm.data[pi0] * FT_PER_M - groundElevFt;
         };
-        const d0 = Math.abs(zAt(1) - zAt(-1));
+        // СТУПЕНЬ — РАЗРЫВ, не градиент (класс 1c смотра RM-6KT8LW):
+        // |z(+o)−z(−o)| на крутом скате поперёк горизонтали — это
+        // уклон·2o (8/12 давал 2.7 «стены» на гладкой плоскости).
+        // Вторая разность вычитает непрерывный уклон: на гладком — 0,
+        // на ступени — её высота. Без внешних образцов — старая разность.
+        const z1 = zAt(1);
+        const z2 = zAt(-1);
+        const zo1 = zAt(2);
+        const zo2 = zAt(-2);
+        let d0 = Math.abs(z1 - z2);
+        if (Number.isFinite(zo1) && Number.isFinite(zo2) && Number.isFinite(d0)) d0 = Math.abs((z1 - z2) - (zo1 - z1) - (z2 - zo2));
         if (Number.isFinite(d0) && (!Number.isFinite(dMax) || d0 > dMax)) dMax = d0;
       }
       if (Number.isFinite(dMax)) drops0.push(dMax);
@@ -639,6 +653,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       }
     }
     const virtual: typeof baseLines = [];
+    let massEdges = 0;
     for (const [k, pts] of boundaryPts) {
       const [ca, cb] = k.split("|").map(Number);
       const A = d.clusterPlanes[ca];
@@ -666,7 +681,62 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       // A STEP pair's plane intersection is fiction — the boundary is a wall,
       // not a fold. Стену судит ТОЛЬКО прямой DSM-перепад поперёк пролёта
       // (максимум станций — закон клина); план-эвалы экстраполируют.
-      if (directWallDrop({ x: px0.x + dir.x * t0, y: px0.y + dir.y * t0 }, { x: px0.x + dir.x * t1, y: px0.y + dir.y * t1 }) >= STEP_DZ_FT) continue;
+      if (directWallDrop({ x: px0.x + dir.x * t0, y: px0.y + dir.y * t0 }, { x: px0.x + dir.x * t1, y: px0.y + dir.y * t1 }) >= STEP_DZ_FT) {
+        // МАСС-ГРАНИЦА ПО КОНТУРУ (класс 2 смотра RM-6KT8LW): ступень,
+        // совпадающая с ИЗЛОМОМ КОНТУРА, — край верхней массы; её след
+        // прям, и его направление задаёт контур Instant (обмер, не
+        // план-эвал — закон «стены живут трассой» о фикции пересечения
+        // плоскостей, контур фикцией не является). Стеновая цепь,
+        // коллинеарная смежному ребру контура (≤25°) и стоящая от его
+        // ПРОДОЛЖЕНИЯ не дальше пробника, получает это продолжение
+        // несущей: спрямление, узлы и атомарные терминалы дальше работают
+        // штатно — вальма/ендова верхней массы кончаются на этом крае.
+        const mDir = { x: dir.x, y: dir.y }; // главное направление цепи (PCA по span)
+        let best: { a: FootprintPoint; b: FootprintPoint; d: number } | null = null;
+        for (let ri = 0; ri < movedRing.length; ri++) {
+          const ra = movedRing[ri];
+          const rb = movedRing[(ri + 1) % movedRing.length];
+          const eL = Math.hypot(rb.x - ra.x, rb.y - ra.y);
+          if (eL < 2) continue;
+          const ed = { x: (rb.x - ra.x) / eL, y: (rb.y - ra.y) / eL };
+          const cosA = Math.abs(ed.x * mDir.x + ed.y * mDir.y);
+          if (cosA < Math.cos((25 * Math.PI) / 180)) continue;
+          // расстояние центра цепи от ЛИНИИ ребра (продолжение допустимо)
+          const en = { x: -ed.y, y: ed.x };
+          // ВСЯ цепь в пробнике от продолжения (центра мало: длинная цепь
+          // с дальним хвостом на первом заходе рвала 12618 — R02/Euler 0)
+          let dMax2 = 0;
+          for (const q of pts) dMax2 = Math.max(dMax2, Math.abs((q.x - ra.x) * en.x + (q.y - ra.y) * en.y));
+          if (dMax2 > PROBE_FT) continue;
+          if (!best || dMax2 < best.d) best = { a: ra, b: rb, d: dMax2 };
+        }
+        if (best) {
+          const eL = Math.hypot(best.b.x - best.a.x, best.b.y - best.a.y);
+          const ed = { x: (best.b.x - best.a.x) / eL, y: (best.b.y - best.a.y) / eL };
+          let s0 = Infinity;
+          let s1 = -Infinity;
+          let pSS = 0;
+          for (const q of pts) {
+            const t = (q.x - best.a.x) * ed.x + (q.y - best.a.y) * ed.y;
+            if (t < s0) s0 = t;
+            if (t > s1) s1 = t;
+            const pp = (q.x - best.a.x) * -ed.y + (q.y - best.a.y) * ed.x;
+            pSS += pp * pp;
+          }
+          if (s1 > s0) {
+            virtual.push({
+              a: { x: best.a.x + ed.x * s0, y: best.a.y + ed.y * s0 },
+              b: { x: best.a.x + ed.x * s1, y: best.a.y + ed.y * s1 },
+              between: [ca, cb] as [number, number],
+              sigmaPerpFt: Math.sqrt(pSS / pts.length),
+              gradDiffPerFt: nrm,
+              snapCorridorFt: Number.POSITIVE_INFINITY,
+            });
+            massEdges++;
+          }
+        }
+        continue;
+      }
       // виртуальная линия УЖЕ на пересечении; коридор проекции — измеренное
       // смещение трассы + разброс + окно (тот же закон, что у снапа выше)
       const vLine = {
@@ -699,7 +769,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     if (virtual.length) {
       rcLines = [...baseLines, ...virtual];
       rc = runCells(rcLines);
-      reasons.push(`${virtual.length} виртуальных линий из плоскостей пар — межкластерные границы спрямлены`);
+      reasons.push(`${virtual.length} виртуальных линий из плоскостей пар — межкластерные границы спрямлены${massEdges ? ` (из них ${massEdges} масс-границ по контуру)` : ""}`);
     }
     if (process.env.DBG_RCLINES) rcLines.forEach((l, i) => console.log(`[rcl] li=${i} between=[${l.between[0]}|${l.between[1]}] (${l.a.x.toFixed(1)},${l.a.y.toFixed(1)})→(${l.b.x.toFixed(1)},${l.b.y.toFixed(1)}) σ⊥=${l.sigmaPerpFt.toFixed(2)}`));
     const totalSnap = snapCounts.loc + snapCounts.anal + snapCounts.disp;
@@ -1044,6 +1114,34 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       const twins = planEdgeCount.get(planEdgeKey(e.a, e.b)) ?? 0;
       return twins >= 2 && e.prov !== "contour";
     };
+    // КРАЙ СЕКЦИИ (класс 1a смотра RM-6KT8LW): FLASHING живёт только
+    // между ДВУМЯ кровлями; если по одну из сторон большинство станций —
+    // не крыша (земля/за маской), ступень — край массы: нижняя сторона
+    // носит EAVE/RAKE своего уровня, красного не рисуем.
+    const stepEdgeOuter = (e: (typeof ci.cell.edges)[number]): boolean => {
+      const runE = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y);
+      if (runE < 1e-6) return false;
+      const perE = { x: -(e.b.y - e.a.y) / runE, y: (e.b.x - e.a.x) / runE };
+      let r1 = 0;
+      let r2 = 0;
+      let n = 0;
+      for (const t of [0.25, 0.5, 0.75]) {
+        const mid = { x: e.a.x + (e.b.x - e.a.x) * t, y: e.a.y + (e.b.y - e.a.y) * t };
+        // судит БЛИЖАЙШИЙ валидный образец: «хоть где-то крыша» дотягивался
+        // через 3-ft вырез до другой лопасти маски
+        const isRoof = (sgn: number): boolean => {
+          for (const off of [2 * m.stepFt, 4 * m.stepFt, 2]) {
+            const pi = m.pxOf({ x: mid.x + perE.x * sgn * off, y: mid.y + perE.y * sgn * off });
+            if (pi >= 0) return mask.data[pi] > 0.5;
+          }
+          return false;
+        };
+        n++;
+        if (isRoof(1)) r1++;
+        if (isRoof(-1)) r2++;
+      }
+      return r1 * 2 <= n || r2 * 2 <= n;
+    };
     const upperAt = (e: (typeof ci.cell.edges)[number]): boolean => {
       // this cell is the UPPER side when its z at the edge midpoint exceeds
       // the neighbour's — compare against every other cell sharing the edge
@@ -1067,7 +1165,16 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       orientationDeg: ((Math.atan2(dh.x, dh.y) * 180) / Math.PI + 360) % 360,
       zOf: (x, y) => zOfInfo(ci, { x, y }),
       edgeTypes: ci.cell.edges.map((e) => {
-        if (e.prov !== "contour" && isStepEdge(e)) return upperAt(e) ? "EAVE" : "FLASHING";
+        if (e.prov !== "contour" && isStepEdge(e)) {
+          if (upperAt(e)) return "EAVE";
+          if (stepEdgeOuter(e)) {
+            const za = zOfInfo(ci, e.a);
+            const zb = zOfInfo(ci, e.b);
+            const runE = Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) || 1;
+            return Math.abs(za - zb) / runE >= 1 / 12 ? "RAKE" : "EAVE";
+          }
+          return "FLASHING";
+        }
         if (e.prov === "measured-line" && e.lineIndex !== undefined) {
           const vl = rcLines[e.lineIndex];
           const known = typeForPair.get(clusterPairKey(vl.between[0], vl.between[1]));
@@ -1438,7 +1545,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
             const zSide = (s9: number, off9: number): number => {
               const q9 = fwd({ x: mid9.x + per9.x * s9 * off9, y: mid9.y + per9.y * s9 * off9 });
               const pi9 = m.pxOf(q9);
-              if (pi9 < 0 || mask.data[pi9] <= 0.5) return NaN;
+              if (pi9 < 0 || mask.data[pi9] <= 0.5 || penSet.has(pi9)) return NaN;
               return dsm.data[pi9] * FT_PER_M - groundElevFt;
             };
             // смещение станции — не одно: у ободка над крылом верхний клин
@@ -1448,11 +1555,18 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
             // (сразу за размытием окна), 4·step, 2 ft (прежний пробник).
             let d9max = NaN;
             for (const off9 of [2 * m.stepFt, 4 * m.stepFt, 2]) {
-              const d9 = Math.abs(zSide(1, off9) - zSide(-1, off9));
+              // вторая разность: ступень — разрыв, не градиент (класс 1c)
+              const z1 = zSide(1, off9);
+              const z2 = zSide(-1, off9);
+              const zo1 = zSide(1, 2 * off9);
+              const zo2 = zSide(-1, 2 * off9);
+              let d9 = Math.abs(z1 - z2);
+              if (Number.isFinite(zo1) && Number.isFinite(zo2) && Number.isFinite(d9)) d9 = Math.abs((z1 - z2) - (zo1 - z1) - (z2 - zo2));
               if (Number.isFinite(d9) && (!Number.isFinite(d9max) || d9 > d9max)) d9max = d9;
             }
             if (Number.isFinite(d9max)) drops.push(d9max);
           }
+          if (process.env.DBG_WALLDROP) console.log(`[walldrop] ${g.map((l) => l.id).join("+")}: drops=[${drops.map((x9) => x9.toFixed(2)).join(",")}]`);
           if (!drops.length) return true; // мерить не обо что (край кадра)
           drops.sort((x9, y9) => x9 - y9);
           return drops[Math.floor(drops.length / 2)] >= STEP_DZ_FT;
@@ -1488,9 +1602,52 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
               l.lengthFt = Math.hypot(bW.x - aW.x, bW.y - aW.y, bW.z - aW.z);
             }
           }
-          // ступень: верхняя сторона EAVE, нижняя FLASHING; погонаж — обе
+          // КРАЙ СЕКЦИИ ПРОТИВ СТЕНЫ (класс 1a смотра RM-6KT8LW): FLASHING
+          // живёт только между ДВУМЯ кровлями. Если по одну из сторон
+          // большинство станций — не крыша (земля/за маской), это край
+          // массы над землёй: верх — EAVE своего уровня, низ — EAVE/RAKE
+          // нижнего уровня (по уклону вдоль линии), красного не рисуем.
+          const sideRoof = ((): boolean => {
+            const a9 = ptById.get(l0.aId)!;
+            const b9 = ptById.get(l0.bId)!;
+            const run9 = Math.hypot(b9.x - a9.x, b9.y - a9.y);
+            if (run9 < 1e-6) return true;
+            const per9 = { x: -(b9.y - a9.y) / run9, y: (b9.x - a9.x) / run9 };
+            let roof1 = 0;
+            let roof2 = 0;
+            let n9 = 0;
+            for (const t9 of [0.25, 0.5, 0.75]) {
+              const mid9 = { x: a9.x + (b9.x - a9.x) * t9, y: a9.y + (b9.y - a9.y) * t9 };
+              // ближайший валидный образец решает (не «хоть где-то крыша»)
+              const isRoof = (s9: number): boolean => {
+                for (const off9 of [2 * m.stepFt, 4 * m.stepFt, 2]) {
+                  const pi9 = m.pxOf(fwd({ x: mid9.x + per9.x * s9 * off9, y: mid9.y + per9.y * s9 * off9 }));
+                  if (pi9 >= 0) return mask.data[pi9] > 0.5;
+                }
+                return false;
+              };
+              n9++;
+              if (isRoof(1)) roof1++;
+              if (isRoof(-1)) roof2++;
+            }
+            if (process.env.DBG_SIDEROOF) console.log(`[sideroof] ${g.map((l) => l.id).join("+")}: roof1=${roof1} roof2=${roof2} n=${n9}`);
+            return roof1 * 2 > n9 && roof2 * 2 > n9;
+          })();
           const top = Math.max(...zs);
-          for (const l of g) l.type = zOfLine(l) >= top - 1e-6 ? "EAVE" : "FLASHING";
+          if (sideRoof) {
+            // ступень: верхняя сторона EAVE, нижняя FLASHING; погонаж — обе
+            for (const l of g) l.type = zOfLine(l) >= top - 1e-6 ? "EAVE" : "FLASHING";
+          } else {
+            for (const l of g) {
+              if (zOfLine(l) >= top - 1e-6) l.type = "EAVE";
+              else {
+                const aL = ptById.get(l.aId)!;
+                const bL = ptById.get(l.bId)!;
+                const runL = Math.hypot(bL.x - aL.x, bL.y - aL.y) || 1;
+                l.type = Math.abs(aL.z - bL.z) / runL >= 1 / 12 ? "RAKE" : "EAVE";
+              }
+            }
+          }
           for (const l of g) bump(l.type, l.lengthFt);
           continue;
         }

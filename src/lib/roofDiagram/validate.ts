@@ -1176,6 +1176,11 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
         planArea: invArea2(plan),
         plane: invFitPlane(pts3),
         fill: (f as { provenance?: string }).provenance === "fill",
+        // R03-бюджет по провенансу: измеренная грань несёт шум конвейера
+        // (вершины на пересечениях пар/кластерных плоскостях: популяция
+        // невязок бимодальна — шум ≤0.3, стены ≥1.8; порог в зазоре, как
+        // переписной пол). Скелетные/фикстурные грани — прежний бюджет.
+        meps: (f as { provenance?: string }).provenance === "measured-dsm" ? 0.3 : INV_EPS_PLANE,
       };
     })
     .filter(Boolean) as Array<{
@@ -1187,6 +1192,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     planArea: number;
     plane: InvPlane | null;
     fill: boolean;
+    meps: number;
   }>;
 
   // KNOWN INPUT DEFECT, not fixed here. When the caller supplies no contour the
@@ -1256,7 +1262,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
   const contested = new Set<string>();
   for (const f of facets) {
     if (!f.plane) continue;
-    for (const p of f.pts3) if (devTo(f.plane, p) > INV_EPS_PLANE) contested.add(vKey3(p));
+    for (const p of f.pts3) if (devTo(f.plane, p) > f.meps) contested.add(vKey3(p));
   }
   const cleanPlane = new Map<string, InvPlane | null>();
   for (const f of facets) {
@@ -1309,7 +1315,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
     for (const p of f2.pts3) {
       if (!contested.has(vKey3(p))) continue;
       const dF = devTo(plF, p);
-      if (dF <= INV_EPS_PLANE) continue;
+      if (dF <= f2.meps) continue;
       let pardon = false;
       for (const g of vertFacets.get(vKey3(p)) ?? []) {
         if (g === f2) continue;
@@ -1319,16 +1325,29 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
         const zG = plG.a * p[0] + plG.b * p[1] + plG.c;
         // неопределённость оценки каждой плоскости — её ФАКТИЧЕСКИЙ
         // остаток (пол — бюджет): пролёт расширяется их суммой
-        const slack = Math.max(plF.maxDev, INV_EPS_PLANE) + Math.max(plG.maxDev, INV_EPS_PLANE);
+        const slack = Math.max(plF.maxDev, f2.meps) + Math.max(plG.maxDev, INV_EPS_PLANE);
         if (p[2] >= Math.min(zF, zG) - slack && p[2] <= Math.max(zF, zG) + slack) { pardon = true; break; }
       }
-      if (!pardon && (vertFacets.get(vKey3(p))?.length ?? 1) <= 1) {
-        // ВЕРШИНА-ОДИНОЧКА (близнец уровня через стену — план-двойник несёт
-        // другой z и совладельцем не является): референс — только своя
-        // чистая плоскость, и её фактический остаток есть её
-        // неопределённость — тот же закон, что слак пары выше. Требовать от
-        // вершины точности выше остатка линейки — судить шум, не геометрию.
-        if (dF <= Math.max(plF.maxDev, INV_EPS_PLANE) + INV_EPS_PLANE) pardon = true;
+      if (!pardon) {
+        // ВЕРШИНА БЕЗ СВИДЕТЕЛЕЙ ПРОЛЁТА: одиночка (план-двойник уровня
+        // совладельцем не является) ИЛИ все совладельцы отстоят на стену
+        // (клин: |zF−zG| ≥ пол переписи − сварные бюджеты — их плоскость
+        // о месте вершины НЕ свидетельствует, вершина живёт на ВЕРХНЕЙ).
+        // Референс — своя чистая плоскость, слак — её фактический остаток
+        // (тот же закон, что слак пары): судить точнее остатка линейки —
+        // судить шум, не геометрию.
+        const others2 = (vertFacets.get(vKey3(p)) ?? []).filter((g2) => g2 !== f2);
+        const noSpanWitness = others2.every((g2) => {
+          const plG2 = cleanPlane.get(g2.id) ?? g2.plane;
+          if (!plG2) return true;
+          const zF2 = plF.a * p[0] + plF.b * p[1] + plF.c;
+          const zG2 = plG2.a * p[0] + plG2.b * p[1] + plG2.c;
+          return Math.abs(zF2 - zG2) >= 1.8 - 4 * INV_EPS_PLANE;
+        });
+        // чистый фит откалиброван БЕЗ подсудимой вершины — судить её
+        // точнее ПОЛНОГО остатка кольца линейка не вправе
+        if (process.env.DBG_R03) console.log(`[R03·nsw] ${f2.id}: dF=${dF.toFixed(3)} plF.maxDev=${plF.maxDev.toFixed(3)} full=${(f2.plane?.maxDev ?? 0).toFixed(3)} nsw=${noSpanWitness}`);
+        if (noSpanWitness && dF <= Math.max(plF.maxDev, f2.plane?.maxDev ?? 0, f2.meps) + INV_EPS_PLANE) pardon = true;
       }
       if (!pardon) {
         if (process.env.DBG_R03) {
@@ -1366,7 +1385,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
       err("R03", f.id + ": не удалось построить плоскость");
       continue;
     }
-    if (f.plane.maxDev > INV_EPS_PLANE) {
+    if (f.plane.maxDev > f.meps) {
       const wa = weldAllowance(f);
       if (!wa.ok) err("R03", f.id + ": грань не плоская, отклонение " + wa.dev.toFixed(2) + " ft");
       else weldExcused += wa.excused;
@@ -1640,7 +1659,34 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
   // ШВЫ (ступени секций, инвариант 19): пара рёбер с одной план-позицией и
   // разным z — стена между уровнями. Это не rake, и складка ВПРАВЕ на нём
   // терминироваться.
-  const gSeams: GEdge2[] = gAllEdges0.filter((e) => gTypeOf(e) === "seam");
+  // ШОВ — ГЕОМЕТРИЯ, не тип (класс 1a смотра RM-6KT8LW): пара рёбер одной
+  // план-позиции с разным z (по концам, максимумом — закон клин-стены) —
+  // стена/край секции, каким бы типом стороны ни назвались: край массы
+  // над землёй носит EAVE/RAKE нижнего уровня, не FLASHING.
+  const gPlanKeyE = (e: GEdge2): string => {
+    const k1 = invKey([e.a[0], e.a[1]]);
+    const k2 = invKey([e.b[0], e.b[1]]);
+    return k1 < k2 ? `${k1}#${k2}` : `${k2}#${k1}`;
+  };
+  const gByPlanE = new Map<string, GEdge2[]>();
+  for (const e of gAllEdges0) {
+    const k = gPlanKeyE(e);
+    const arr = gByPlanE.get(k) ?? [];
+    arr.push(e);
+    gByPlanE.set(k, arr);
+  }
+  const gSeamGeom = (e: GEdge2): boolean => {
+    const key1 = invKey([e.a[0], e.a[1]]);
+    for (const o of gByPlanE.get(gPlanKeyE(e)) ?? []) {
+      if (o === e) continue;
+      const same = invKey([o.a[0], o.a[1]]) === key1;
+      const oa = same ? o.a : o.b;
+      const ob = same ? o.b : o.a;
+      if (Math.max(Math.abs(oa[2] - e.a[2]), Math.abs(ob[2] - e.b[2])) >= 1.8) return true; // G_STEP_DZ
+    }
+    return false;
+  };
+  const gSeams: GEdge2[] = gAllEdges0.filter((e) => gTypeOf(e) === "seam" || gSeamGeom(e));
   const gIsSeam = new Set(gSeams);
   const gDeg = new Map<string, GEdge2[]>();
   for (const e of gAllEdges) {
