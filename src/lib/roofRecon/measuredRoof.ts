@@ -442,7 +442,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // measurement). Without this, ragged crease vertices sit off the true
   // fold and no z makes both faces planar (measured: R03 0.13-0.94 ft
   // against the validator's 0.08).
-  const baseLines = m.lines.map((l) => ({ a: l.a, b: l.b, between: l.between, sigmaPerpFt: l.sigmaPerpFt, gradDiffPerFt: l.gradDiffPerFt, snapCorridorFt: undefined as number | undefined }));
+  const baseLines = m.lines.map((l) => ({ a: l.a, b: l.b, between: l.between, sigmaPerpFt: l.sigmaPerpFt, gradDiffPerFt: l.gradDiffPerFt, snapCorridorFt: undefined as number | undefined, wallPair: false }));
   const runCells = (lines2: typeof baseLines) =>
     buildRegionCells({
       labels: region,
@@ -631,8 +631,8 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   };
   {
     let walls0 = 0;
-    for (const l of baseLines) if (snapLineToIntersection(l) === "wall") walls0++;
-    if (walls0) reasons.push(`${walls0} линий пар с клифом на трассе не снапятся (пересечение для стены — фикция); вершины у клифа держит вето`);
+    for (const l of baseLines) if (snapLineToIntersection(l) === "wall") { l.wallPair = true; walls0++; }
+    if (walls0) reasons.push(`${walls0} линий пар с клифом: линия — фикция пересечения, трасса на неё не проецируется (стеновой край манхэттенизируется)`);
   }
   let rcLines = baseLines;
   let rc = runCells(rcLines);
@@ -731,6 +731,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
               sigmaPerpFt: Math.sqrt(pSS / pts.length),
               gradDiffPerFt: nrm,
               snapCorridorFt: Number.POSITIVE_INFINITY,
+              wallPair: false,
             });
             massEdges++;
           }
@@ -746,6 +747,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         sigmaPerpFt: Math.sqrt(perpSS / pts.length),
         gradDiffPerFt: nrm,
         snapCorridorFt: Number.POSITIVE_INFINITY,
+        wallPair: false,
       };
       if (Math.abs(off) >= 1e-3) {
         const ts: number[] = [];

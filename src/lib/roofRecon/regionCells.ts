@@ -44,6 +44,9 @@ export interface RegionLine {
    * измеренное смещение трассы + окно; трасса обязана дойти до пересечения.
    */
   snapCorridorFt?: number;
+  /** Пара — стена (клиф по прямому замеру): линия — фикция пересечения
+   *  плоскостей; трасса на неё не проецируется, край манхэттенизируется. */
+  wallPair?: boolean;
 }
 
 export interface RegionCellsInput {
@@ -386,6 +389,11 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
     return { pts, pair: vp.pair, li, interCluster: ca >= 0 && cb >= 0 };
   });
+  // NB (RM-A2AQ37, носитель 2): заход «бесхозная цепь наследует li
+  // коллинеарной несущей» снят — серые хвосты НЕ коллинеарны несущим
+  // (поперечные огрызки у узлов), а наследование ловило честные складки
+  // (12621: G1+R14 от одной цепи). Хвосты решает стеновой край (часть 2)
+  // и узловые операции, не подмена пары.
   const emitStage = (stage: "traced" | "straightened" | "nodes" | "terminals"): void => {
     input.onStage?.(stage, simped.map((sp) => ({ pts: sp.pts.map((q) => ({ x: q.x, y: q.y })), pair: sp.pair })));
   };
@@ -454,6 +462,13 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       const viaAbsorbed = Math.abs(perp) > perpAllow;
       if (viaAbsorbed && !input.absorbed?.(p)) { refuse.perp++; continue; }
       if (isEnd) { sp.pts[i].c = true; continue; }
+      // NB (RM-A2AQ37, стоп с описанием): по-вершинное вето стены
+      // (перепад поперёк ≥ переписи → вершина живёт трассой) чинило юг
+      // vzof-synth, но на 12621/419 рвало G1: вето-вершины торчали
+      // изломами в цепях, которые ТИПИЗАЦИЯ признала складкой (vzOf/
+      // dsmWallOk мерят своё). Ядро: смешанные границы требуют
+      // ПО-УЧАСТКОВОГО закона стены, согласованного между спрямлением,
+      // vzOf, типизацией и манхэттеном — одна линейка на всех слоях.
       const target = { x: p.x - perp * l.n.x, y: p.y - perp * l.n.y };
       const prev = sp.pts[i - 1];
       const next = sp.pts[i + 1];
@@ -461,12 +476,163 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       sp.pts[i] = { ...target, c: true };
     }
   }
-  // NB (класс 2, стоп с описанием): проход спрямления БЕСХОЗНЫХ стеновых
-  // цепей (кластер|fill) на продолжение рёбер кольца снят — рвал 12618
-  // (G1: концы цепи не проецируются, излом на стыке), а зигзаг 12629
-  // сложен из кусков < 3 ft, которым нужно СЛИЯНИЕ вдоль одного
-  // контурного направления до спрямления. Кластерные пары покрыты
-  // масс-границами в measuredRoof (12621, 419).
+  // ── СТЕНОВОЙ КРАЙ ПО КОНТУРНЫМ НАПРАВЛЕНИЯМ (отмашка RM-A2AQ37) ──
+  // Стеновая цепь (бесхозная, перепад ≥ переписи) манхэттенизируется:
+  // сегменты классифицируются по осям канона кольца (mod 90°, допуск
+  // 35°), куски < 3 ft поглощаются соседним пробегом («слияние вдоль
+  // ОДНОГО контурного направления»), пробеги строятся прямыми через свои
+  // взвешенные центры, стыки — пересечения соседних прямых (параллельным
+  // — перпендикулярная перемычка). Концы цепи ФИКСИРОВАНЫ (узлы/кольцо),
+  // хорды между узлами нет (урок 12618 — не проекцией на одну прямую).
+  {
+    let cs0 = 0;
+    let sn0 = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const len2 = Math.hypot(b.x - a.x, b.y - a.y);
+      const th4 = Math.atan2(b.y - a.y, b.x - a.x) * 4;
+      cs0 += len2 * Math.cos(th4);
+      sn0 += len2 * Math.sin(th4);
+    }
+    const axis0 = Math.atan2(sn0, cs0) / 4;
+    const dirs0 = [
+      { x: Math.cos(axis0), y: Math.sin(axis0) },
+      { x: -Math.sin(axis0), y: Math.cos(axis0) },
+    ];
+    const dirOf = (dx: number, dy: number): number | null => {
+      const L = Math.hypot(dx, dy) || 1;
+      for (let di = 0; di < 2; di++) {
+        if (Math.abs((dx * dirs0[di].x + dy * dirs0[di].y) / L) >= Math.cos((35 * Math.PI) / 180)) return di;
+      }
+      return null;
+    };
+    let manhattan = 0;
+    for (let pi = 0; pi < simped.length; pi++) {
+      const sp = simped[pi];
+      if (sp.pts.length < 2) continue;
+      if (sp.li !== undefined) continue; // li-цепи держит пер-вершинное вето
+      // точный носитель смотра: стена к секции, потерянной маской —
+      // ровно ОДНА сторона fill; кластер-кластерные клинья живут трассой
+      const caM = input.clusterOf[sp.pair[0]] ?? -1;
+      const cbM = input.clusterOf[sp.pair[1]] ?? -1;
+      if ((caM < 0) === (cbM < 0)) continue;
+      const A = sp.pts[0];
+      const B = sp.pts[sp.pts.length - 1];
+      // ЦЕЛЬНО-стеновая цепь: ≥80% вершин с локальным перепадом ≥ переписи
+      // (смешанная цепь остаётся трассой — её складочные вершины при
+      // манхэттене публиковались VALLEY/HIP с прямыми углами → G1)
+      const spanD = { x: B.x - A.x, y: B.y - A.y };
+      const spanL = Math.hypot(spanD.x, spanD.y) || 1;
+      const sd = { x: spanD.x / spanL, y: spanD.y / spanL };
+      let wallN = 0;
+      for (const q of sp.pts) if ((input.wallDropOf?.({ x: q.x - sd.x, y: q.y - sd.y }, { x: q.x + sd.x, y: q.y + sd.y }) ?? 0) >= 1.8) wallN++;
+      const wd0 = wallN >= 0.8 * sp.pts.length ? 99 : 0;
+      if (process.env.DBG_MANH) console.log(`[manh] poly ${pi} [${sp.pair[0]}|${sp.pair[1]}] pts=${sp.pts.length} wall=${wallN} verdict=${wd0}`);
+      if (wd0 < 1.8) continue;
+      // пробеги по направлениям
+      interface Run { di: number; len: number; cx: number; cy: number }
+      const runs: Run[] = [];
+      const freeLen = 0; void freeLen;
+      for (let k = 0; k + 1 < sp.pts.length; k++) {
+        const a = sp.pts[k];
+        const b = sp.pts[k + 1];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (len < 1e-9) continue;
+        let di = dirOf(b.x - a.x, b.y - a.y);
+        if (di === null) {
+          // диагональный сегмент стеновой цепи — артефакт dp-упрощения
+          // пиксельной лестницы (tol = шаг решётки сливал её в хорду):
+          // раскладывается на Г по осям — вклад в оба направления
+          const lx = Math.abs((b.x - a.x) * dirs0[0].x + (b.y - a.y) * dirs0[0].y);
+          const ly = Math.abs((b.x - a.x) * dirs0[1].x + (b.y - a.y) * dirs0[1].y);
+          di = lx >= ly ? 0 : 1;
+          const other = 1 - di;
+          const lenO = Math.min(lx, ly);
+          const lastO = runs[runs.length - 1];
+          if (lastO && lastO.di === other) lastO.len += lenO;
+          // основной вклад пойдёт ниже обычным путём
+        }
+        const last = runs[runs.length - 1];
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        if (last && last.di === di) {
+          last.cx = (last.cx * last.len + mx * len) / (last.len + len);
+          last.cy = (last.cy * last.len + my * len) / (last.len + len);
+          last.len += len;
+        } else runs.push({ di, len, cx: mx, cy: my });
+      }
+      if (process.env.DBG_MANH) console.log(`[manh]   poly ${pi} [${sp.pair[0]}|${sp.pair[1]}] runs=${runs.length} [${runs.map((r) => `d${r.di}:${r.len.toFixed(1)}`).join(",")}]`);
+      if (!runs.length) continue;
+      // поглощение кусков < 3 ft соседним (длинный побеждает), повторно
+      for (let pass2 = 0; pass2 < 8; pass2++) {
+        let k = -1;
+        for (let i2 = 0; i2 < runs.length; i2++) if (runs[i2].len < 3 && runs.length > 1) { k = i2; break; }
+        if (k < 0) break;
+        const nb = k === 0 ? 1 : k === runs.length - 1 ? k - 1 : (runs[k - 1].len >= runs[k + 1].len ? k - 1 : k + 1);
+        const host = runs[nb];
+        const small = runs[k];
+        host.cx = (host.cx * host.len + small.cx * small.len) / (host.len + small.len);
+        host.cy = (host.cy * host.len + small.cy * small.len) / (host.len + small.len);
+        host.len += small.len;
+        runs.splice(k, 1);
+        // слить соседей одного направления
+        for (let i2 = 0; i2 + 1 < runs.length; i2++) {
+          if (runs[i2].di === runs[i2 + 1].di) {
+            const a2 = runs[i2];
+            const b2 = runs[i2 + 1];
+            a2.cx = (a2.cx * a2.len + b2.cx * b2.len) / (a2.len + b2.len);
+            a2.cy = (a2.cy * a2.len + b2.cy * b2.len) / (a2.len + b2.len);
+            a2.len += b2.len;
+            runs.splice(i2 + 1, 1);
+            i2--;
+          }
+        }
+      }
+      // прямые пробегов: первая через A, последняя через B, середины через центры
+      interface Ln { p: FootprintPoint; d: { x: number; y: number } }
+      const lines2: Ln[] = runs.map((r, i2) => ({
+        p: i2 === 0 ? { x: A.x, y: A.y } : i2 === runs.length - 1 ? { x: B.x, y: B.y } : { x: r.cx, y: r.cy },
+        d: dirs0[r.di],
+      }));
+      // цепь: A → пересечения соседних прямых (параллельным — перемычка) → B
+      const np: Array<FootprintPoint & { c?: boolean }> = [{ x: A.x, y: A.y, c: true }];
+      let ok = true;
+      for (let i2 = 0; i2 + 1 < lines2.length; i2++) {
+        const l1 = lines2[i2];
+        const l2 = lines2[i2 + 1];
+        const den = l1.d.x * l2.d.y - l1.d.y * l2.d.x;
+        if (Math.abs(den) > 1e-6) {
+          const t = ((l2.p.x - l1.p.x) * l2.d.y - (l2.p.y - l1.p.y) * l2.d.x) / den;
+          np.push({ x: l1.p.x + l1.d.x * t, y: l1.p.y + l1.d.y * t, c: true });
+        } else {
+          // параллельные пробеги: перемычка перпендикуляром на границе
+          const mid2 = { x: (l1.p.x + l2.p.x) / 2, y: (l1.p.y + l2.p.y) / 2 };
+          const t1 = (mid2.x - l1.p.x) * l1.d.x + (mid2.y - l1.p.y) * l1.d.y;
+          const t2 = (mid2.x - l2.p.x) * l2.d.x + (mid2.y - l2.p.y) * l2.d.y;
+          np.push({ x: l1.p.x + l1.d.x * t1, y: l1.p.y + l1.d.y * t1, c: true });
+          np.push({ x: l2.p.x + l2.d.x * t2, y: l2.p.y + l2.d.y * t2, c: true });
+        }
+      }
+      if (runs.length === 1) {
+        // один пробег, концы поперёк разъехались — Г-образная доводка к B
+        const l1 = lines2[0];
+        const tB = (B.x - l1.p.x) * l1.d.x + (B.y - l1.p.y) * l1.d.y;
+        const foot = { x: l1.p.x + l1.d.x * tB, y: l1.p.y + l1.d.y * tB };
+        if (Math.hypot(foot.x - B.x, foot.y - B.y) > stepFt) np.push({ ...foot, c: true });
+      }
+      np.push({ x: B.x, y: B.y, c: true });
+      // стражи: новые звенья не пересекают чужого
+      const allIdx = [...Array(Math.max(0, sp.pts.length - 1)).keys()];
+      for (let i2 = 0; ok && i2 + 1 < np.length; i2++) {
+        if (segsCross(np[i2], np[i2 + 1], pi, allIdx)) ok = false;
+      }
+      if (!ok) continue;
+      sp.pts = np;
+      manhattan++;
+    }
+    if (manhattan) report.push(`стеновой край: ${manhattan} цепей манхэттенизировано по осям кольца (куски <3 ft слиты, концы фиксированы)`);
+  }
   emitStage("straightened");
   // ── 5b. NODE CONSTRUCTION — exact, per junction, AFTER straightening ──
   // Order matters: nodes resolve against STRAIGHTENED neighbours, so their
@@ -748,6 +914,36 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
   }
   if (termMoves) report.push(`терминалы: ${termMoves} построено в точках линия∩кольцо`);
+  // ── ХВОСТ НАСЛЕДУЕТ НЕСУЩУЮ (смотр RM-A2AQ37, носитель 2) ──
+  // Конечные звенья цепи несущей, не спроецированные гейтами (перп/E) и
+  // уведённые терминалом/узлом, публиковались «серыми кривыми концами»
+  // (короткие EAVE/OTHER у концов HIP/VALLEY/RIDGE). Закон: интерьерные
+  // вершины последних ≤4 ft цепи (от закреплённого конца до первой
+  // спроецированной вершины) сносятся — хвост становится ОДНИМ прямым
+  // звеном от несущей к терминалу; тип у него — типизация той же пары.
+  {
+    let tailsInherit = 0;
+    for (let pi = 0; pi < simped.length; pi++) {
+      const sp = simped[pi];
+      if (sp.li === undefined || sp.pts.length < 3) continue;
+      for (const end of [0, 1] as const) {
+        const idx = (k: number): number => (end === 0 ? k : sp.pts.length - 1 - k);
+        // от конца внутрь до первой c-вершины
+        let stop = -1;
+        for (let k = 1; k < sp.pts.length - 1; k++) {
+          if (sp.pts[idx(k)].c) { stop = k; break; }
+        }
+        if (stop <= 1) continue; // нечего сносить
+        const span = Math.hypot(sp.pts[idx(0)].x - sp.pts[idx(stop)].x, sp.pts[idx(0)].y - sp.pts[idx(stop)].y);
+        if (span > 4) continue;
+        if (segsCross(sp.pts[idx(0)], sp.pts[idx(stop)], pi, end === 0 ? [...Array(stop).keys()] : [...Array(stop).keys()].map((k) => sp.pts.length - 1 - k - 1))) continue;
+        if (end === 0) sp.pts.splice(1, stop - 1);
+        else sp.pts.splice(sp.pts.length - stop, stop - 1);
+        tailsInherit++;
+      }
+    }
+    if (tailsInherit) report.push(`хвосты несущих: ${tailsInherit} кривых концов слито в одно звено (наследуют линию)`);
+  }
   emitStage("terminals");
   if (termRefused.length) report.push(`терминалы-отказы: ${termRefused.map((d2) => (d2 < 0 ? "нет цели" : d2.toFixed(1))).join(", ")}`);
   if (refuse.reach + refuse.perp + refuse.cross > 0) report.push(`отказы спрямления: reach ${refuse.reach} · perp ${refuse.perp} · crossing ${refuse.cross}`);
