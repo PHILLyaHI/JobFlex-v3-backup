@@ -1551,9 +1551,12 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         // устарел), с итерацией подгонка-пересадка: линейка мерит те же
         // кольца, самосогласованность обязательна
         let rezed = 0;
-        for (let round7 = 0; round7 < 3; round7++) {
+        for (let round7 = 0; round7 < 8; round7++) {
           const idx7 = buildIndexes(candidate);
           const pl7 = new Map<string, Plane>();
+          // владение точками — из САМИХ КОЛЕЦ (учёт через lineIds терял
+          // вершины: сироты держали старый z, R03 ловил хвосты 0.17-0.31)
+          const facesOfPtR = new Map<string, Set<string>>();
           for (const f of candidate.faces) {
             let r7 = ringOf(f.lineIds, idx7);
             if (!r7 || r7.length < 3) {
@@ -1574,10 +1577,16 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
             if (!r7) continue;
             const fit7 = fitPlane(r7);
             if (fit7) pl7.set(f.id, fit7);
+            for (const q7 of r7) {
+              if (!("id" in q7)) continue;
+              const id7 = (q7 as { id: string }).id;
+              (facesOfPtR.get(id7) ?? facesOfPtR.set(id7, new Set()).get(id7)!).add(f.id);
+            }
           }
           let moved7 = 0;
           for (const pt of candidate.points) {
-            const pls = [...(facesOfPt.get(pt.id) ?? [])].map((fid) => pl7.get(fid)).filter((x): x is Plane => !!x);
+            const own7 = facesOfPtR.get(pt.id) ?? facesOfPt.get(pt.id) ?? new Set<string>();
+            const pls = [...own7].map((fid) => pl7.get(fid)).filter((x): x is Plane => !!x);
             if (!pls.length) continue;
             const zs5 = pls.map((pl5) => pl5.a * pt.x + pl5.b * pt.y + pl5.c);
             if (Math.max(...zs5) - Math.min(...zs5) >= STEP_DZ_FT) continue;
@@ -1586,6 +1595,48 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
           }
           rezed = Math.max(rezed, moved7);
           if (!moved7) break;
+        }
+        // план-совпадающие ДВОЙНИКИ точек (разные id, один план): разброс
+        // ниже переписного пола — один уровень, сваривается в среднее
+        // (пересадка выше ходит по id и близнецов не видела — хвосты
+        // клин-стен оставались раздвоенными на 1.5–1.7, G8 ловил)
+        {
+          // точки ПОДТВЕРЖДЁННЫХ стен (FLASHING) сварке не подлежат: у
+          // заявки стены и у сварки один арбитр — прямой DSM; модельный
+          // разброс 1.62 при DSM-перепаде 2.0+ (маргинальная зона) уже
+          // решён в пользу стены, сварка не смеет переезжать вердикт
+          // МОДЕЛЬНЫЙ ПОЛ СТЕНЫ: переписной минус сумма бюджетов краёв
+          // (копии — план-эвалы плоскостей, каждая ±2·бюджет планарности).
+          // Один критерий с линейками: ниже пола — сварка, выше — стена.
+          // DSM-защита точек убрана: зонд ±2 ft на узких полосах перелетал
+          // на нижнюю массу и ложно подтверждал стену.
+          const MODEL_WALL_FLOOR = STEP_DZ_FT - 4 * 0.08;
+          const byPlan7 = new Map<string, Array<(typeof candidate.points)[number]>>();
+          for (const pt of candidate.points) {
+            const k7 = `${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`;
+            (byPlan7.get(k7) ?? byPlan7.set(k7, []).get(k7)!).push(pt);
+          }
+          for (const pts7 of byPlan7.values()) {
+            if (pts7.length < 2) continue;
+            // ЦЕПОЧНАЯ группировка по зазорам (закон vzOf): у трёхуровневого
+            // узла нижняя пара [20.9,22.3] — один уровень (зазор < пола),
+            // верхняя 24.2 — стена; всё-или-ничего оставляло нижнюю пару
+            // раздвоенной (G8 1.38)
+            const sorted7 = [...pts7].sort((q1, q2) => q1.z - q2.z);
+            let run7: typeof sorted7 = [];
+            const flush7 = (): void => {
+              if (run7.length >= 2) {
+                const zm7 = run7.reduce((s7, q7) => s7 + q7.z, 0) / run7.length;
+                for (const q7 of run7) q7.z = zm7;
+              }
+              run7 = [];
+            };
+            for (const q7 of sorted7) {
+              if (run7.length && q7.z - run7[run7.length - 1].z >= MODEL_WALL_FLOOR) flush7();
+              run7.push(q7);
+            }
+            flush7();
+          }
         }
         if (rezed) {
           const pById7 = new Map(candidate.points.map((q) => [q.id, q]));
@@ -1610,6 +1661,45 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         }
       }
       dbgCover("после пересадки z");
+    }
+    // ── ПОСТ-СВАРОЧНАЯ РЕВИЗИЯ ТИПОВ (G5-домен) ──
+    // Сварки финала меняют оправдания: ободок, сваренный с крылом
+    // (подпереписной разброс), больше не «верх ступени» — внутренний
+    // EAVE/RAKE живёт только с близнецом-стеной или крылом ниже на пол,
+    // иначе это нейтральная граница (OTHER). Типы обязаны пере-выводиться
+    // после ПОСЛЕДНЕЙ правки геометрии, не до.
+    {
+      const byPlanT = new Map<string, number[]>();
+      for (const pt of candidate.points) {
+        const kT = `${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`;
+        (byPlanT.get(kT) ?? byPlanT.set(kT, []).get(kT)!).push(pt.z);
+      }
+      const twinDzAt = (pid: string): number => {
+        const pt = ptById.get(pid)!;
+        const zsT = byPlanT.get(`${Math.round(pt.x * 100)}|${Math.round(pt.y * 100)}`) ?? [];
+        return zsT.length < 2 ? 0 : Math.max(...zsT) - Math.min(...zsT);
+      };
+      for (const l of candidate.lines) {
+        if (l.type !== "EAVE" && l.type !== "RAKE") continue;
+        const aT = ptById.get(l.aId)!;
+        const bT = ptById.get(l.bId)!;
+        const mT = { x: (aT.x + bT.x) / 2, y: (aT.y + bT.y) / 2 };
+        if (distRing(aT) <= 1 && distRing(bT) <= 1 && distRing(mT) <= 1) continue; // контур
+        if (Math.max(twinDzAt(l.aId), twinDzAt(l.bId)) >= STEP_DZ_FT) continue; // стена-близнец
+        // крыло ниже на пол? прямой DSM-перепад поперёк (та же станция закона стен)
+        const runT = Math.hypot(bT.x - aT.x, bT.y - aT.y) || 1;
+        const perT = { x: -(bT.y - aT.y) / runT, y: (bT.x - aT.x) / runT };
+        let dropT = 0;
+        for (const s9 of [1, -1]) {
+          const q9 = fwd({ x: mT.x + perT.x * s9 * 2, y: mT.y + perT.y * s9 * 2 });
+          const pi9 = m.pxOf(q9);
+          if (pi9 < 0 || mask.data[pi9] <= 0.5) continue;
+          const z9 = dsm.data[pi9] * FT_PER_M - groundElevFt;
+          dropT = Math.max(dropT, (aT.z + bT.z) / 2 - z9);
+        }
+        if (dropT >= STEP_DZ_FT) continue; // ободок массы: внизу крыло
+        l.type = "OTHER";
+      }
     }
     // ── ФИНАЛЬНЫЙ РЕФИТ ФИГУР: после шпор/слияний кольца дочинились,
     //    а уклоны у части граней остались от щипнутого состояния (A2 на

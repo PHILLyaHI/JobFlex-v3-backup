@@ -255,7 +255,11 @@ export function validateRoof(model) {
       }
       if ((2 * Math.abs(f.planArea)) / Math.max(perR, 1e-9) < model.resolutionFt) continue;
     }
-    const measured = gradMag(cleanPlane.get(f.id) ?? f.plane) * 12;
+    // обе подгонки честны (полная — с сварными вершинами, чистая — без):
+    // заявленный уклон снят с одной из них; мерим ближайшей
+    const mFull = gradMag(f.plane) * 12;
+    const mClean = cleanPlane.get(f.id) ? gradMag(cleanPlane.get(f.id)) * 12 : mFull;
+    const measured = Math.abs(mClean - f.pitch) <= Math.abs(mFull - f.pitch) ? mClean : mFull;
     if (f.pitch != null && Math.abs(measured / 12 - f.pitch / 12) > EPS_PITCH)
       err('R04', f.id + ": заявлен уклон " + f.pitch + "/12, по геометрии " + measured.toFixed(2) + "/12");
   }
@@ -624,8 +628,10 @@ export function validateRoof(model) {
         if ((2 * Math.abs(f.planArea)) / Math.max(perR, 1e-9) < model.resolutionFt) continue;
       }
       const rest = f.pts3.filter((q) => !contested.has(vKey3(q)) && !disputed.has(vKey3(q)));
-      const pl2 = rest.length >= 3 ? fitPlane(rest) : null;
-      const pl = pl2 ?? basePl(f);
+      const pl2 = rest.length >= 4 ? fitPlane(rest) : null;
+      // санитарно: вырожденный rest даёт дикий градиент (50.9° на честном
+      // коньке) — доверяем второй чистке только при вменяемом уклоне
+      const pl = pl2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(f.id, [pl.a, pl.b]);
     }
   }
@@ -700,6 +706,103 @@ export function validateRoof(model) {
       }, 0);
   };
   const gMid = (e) => [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2, 0];
+
+  // ── G8: ЗАМКНУТОСТЬ ПОВЕРХНОСТИ В 3D (жёсткий инвариант, приказ
+  //    владельца после смотра RM-XK6RMB: владелец нашёл зазор глазами —
+  //    линейка обязана ловить раньше) ──
+  // Каждая сторона внутреннего ребра либо ПРИШИТА (плоскость накрывающей
+  // грани проходит через линию: |eval−z| в бюджетах), либо ОПРАВДАНА
+  // стеной/ободком массы (грань той стороны ниже/выше на ≥ переписной
+  // пол). Межзона — разомкнутая поверхность. Тот же конструкт — форма
+  // G5-исключения для ободков МАСС (внизу — грань крыла, не земля).
+  const g8Probe = (model.resolutionFt ?? 1.6) / 2;
+  const g8FaceAt = (x, y) => {
+    for (const f of facets) if (pointInPoly([x, y], f.plan)) return f;
+    return null;
+  };
+  const g8SideCheck = (e) => {
+    const mx = (e.a[0] + e.b[0]) / 2;
+    const my = (e.a[1] + e.b[1]) / 2;
+    const mz = (e.a[2] + e.b[2]) / 2;
+    const run = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) || 1;
+    const per = [-(e.b[1] - e.a[1]) / run, (e.b[0] - e.a[0]) / run];
+    const out = { open: 0, below: 0 };
+    for (const s of [1, -1]) {
+      const px2 = mx + per[0] * s * g8Probe;
+      const py2 = my + per[1] * s * g8Probe;
+      if (!pointInPoly([px2, py2], fp)) continue; // за контуром — ободок наружу
+      // при перекрытии колец сторону судит ЛУЧШАЯ из накрывающих граней
+      // (минимальный |d| — та, что реально встречает линию)
+      let best = null;
+      for (const f of facets) {
+        if (!pointInPoly([px2, py2], f.plan)) continue;
+        const pl = cleanPlane.get(f.id) ?? f.plane;
+        if (!pl) continue;
+        const d2 = pl.a * mx + pl.b * my + pl.c - mz;
+        const slack2 = 2 * EPS_PLANE + Math.max(pl.maxDev - EPS_PLANE, 0);
+        if (!best || Math.abs(d2) < Math.abs(best.d)) best = { d: d2, slack: slack2 };
+      }
+      if (!best) continue; // непокрытие меряет R05
+      if (Math.abs(best.d) <= best.slack) continue; // пришито
+      if (Math.abs(best.d) >= G_STEP_DZ) { if (best.d < 0) out.below++; continue; } // стена/ободок массы
+      out.open++;
+    }
+    return out;
+  };
+  {
+    // Замкнутость — тождество 3D-КООРДИНАТ копий ребра в кольцах граней
+    // (не план-эвалы плоскостей: те меряют планарность — домен R03 и его
+    // сварного допуска). Ребро у ≥2 граней: копии концов совпадают в
+    // бюджете сварки — пришито; расходятся на ≥ переписной пол — стена
+    // (оправдано); межзона — РАЗОМКНУТО. Ребро об одну грань: контур,
+    // близнец-стена (та же план-пара) или ободок массы — иначе разомкнуто.
+    const g8Edges = new Map();
+    for (const f of facets) {
+      for (let i8 = 0; i8 < f.pts3.length; i8++) {
+        const A8 = f.pts3[i8];
+        const B8 = f.pts3[(i8 + 1) % f.pts3.length];
+        const ka8 = key([A8[0], A8[1]]);
+        const kb8 = key([B8[0], B8[1]]);
+        if (ka8 === kb8) continue;
+        const k8 = ka8 < kb8 ? ka8 + '#' + kb8 : kb8 + '#' + ka8;
+        const ordered = ka8 < kb8 ? [A8, B8] : [B8, A8];
+        const arr8 = g8Edges.get(k8) ?? [];
+        arr8.push({ f: f.id, a: ordered[0], b: ordered[1] });
+        g8Edges.set(k8, arr8);
+      }
+    }
+    let g8bad = 0;
+    for (const arr8 of g8Edges.values()) {
+      const a0 = arr8[0].a;
+      const b0 = arr8[0].b;
+      const onRing8 = gRingDist(a0) <= STUB_FT && gRingDist(b0) <= STUB_FT;
+      if (arr8.length >= 2) {
+        let dz8 = 0;
+        for (let i8 = 1; i8 < arr8.length; i8++) {
+          dz8 = Math.max(dz8, Math.abs(arr8[i8].a[2] - a0[2]), Math.abs(arr8[i8].b[2] - b0[2]));
+        }
+        // модельный пол стены: переписной минус сумма бюджетов краёв
+        // (каждая копия — план-эвал своей плоскости ±2·EPS). Тот же пол
+        // держит источник при сварке — один критерий с обеих сторон.
+        if (dz8 > 2 * EPS_PLANE && dz8 < G_STEP_DZ - 4 * EPS_PLANE) {
+          g8bad++;
+          err('G8', `ребро (${a0[0].toFixed(1)},${a0[1].toFixed(1)})→(${b0[0].toFixed(1)},${b0[1].toFixed(1)}): поверхность разомкнута — копии в кольцах расходятся на ${dz8.toFixed(2)} ft (ни сварка, ни стена)`);
+        }
+      } else if (!onRing8) {
+        const m8 = [(a0[0] + b0[0]) / 2, (a0[1] + b0[1]) / 2];
+        if (!pointInPoly([m8[0], m8[1]], fp)) continue; // чужая структура — не об этот контур
+        // одиночное внутреннее ребро: ободок массы (грань крыла ниже на
+        // ≥ пол по ту сторону) — легален; иначе поверхность разомкнута
+        const eTmp = { a: a0, b: b0, t: '?', d: '', facets: [] };
+        if (g8SideCheck(eTmp).below === 0) {
+          g8bad++;
+          err('G8', `ребро (${a0[0].toFixed(1)},${a0[1].toFixed(1)})→(${b0[0].toFixed(1)},${b0[1].toFixed(1)}) об одну грань вне контура и без крыла ниже — поверхность разомкнута`);
+        }
+      }
+    }
+    if (!g8bad) ok('G8', 'поверхность замкнута: копии рёбер тождественны или оправданы стеной');
+  }
+
   // G5 — EAVE и RAKE существуют ТОЛЬКО на внешнем контуре структуры:
   // любой внутренний отрезок этих типов — нарушение (приказ владельца,
   // 2026-08-30, без исключений). «Внутри поля» = середина внутри полигона
@@ -711,9 +814,10 @@ export function validateRoof(model) {
     if (!pointInPoly([m5[0], m5[1]], fp)) continue;
     const worst = Math.max(gRingDist(e.a), gRingDist(e.b), gRingDist(m5));
     if (worst <= STUB_FT) continue;
-    // единственное законное исключение — верх НАСТОЯЩЕЙ ступени (близнец
-    // с Δz от переписного пола): над нижней крышей карниз настоящий
-    if (gTwinDz(e) >= G_STEP_DZ) continue;
+    // законные исключения: близнец-ступень ИЛИ ободок МАССЫ (по ту
+    // сторону — грань крыла ниже на ≥ пол)
+    if (gTwinDz(e) >= G_STEP_DZ - 4 * EPS_PLANE) continue;
+    if (g8SideCheck(e).below > 0) continue;
     err('G5', `${e.d} (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) внутри поля крыши (до контура ${worst.toFixed(1)} ft) — карниз/фронтон живёт только на внешнем контуре`);
   }
   if (!out.some((r) => r.id === 'G5')) ok('G5', "карнизы и фронтоны только на контуре");
@@ -724,7 +828,7 @@ export function validateRoof(model) {
     const onRing = Math.max(gRingDist(e.a), gRingDist(e.b), gRingDist(gMid(e))) <= STUB_FT;
     if (!onRing) continue;
     const dz = gTwinDz(e);
-    if (dz < G_STEP_DZ)
+    if (dz < G_STEP_DZ - 4 * EPS_PLANE)
       err('G6', `FLASHING (${e.a[0].toFixed(1)},${e.a[1].toFixed(1)})→(${e.b[0].toFixed(1)},${e.b[1].toFixed(1)}) на внешнем контуре без ступени (Δz близнеца ${dz.toFixed(2)} ft) — флешинг живёт на стыке с вертикалью`);
   }
   if (!out.some((r) => r.id === 'G6')) ok('G6', "флешинг только на стыках с вертикалью");

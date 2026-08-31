@@ -1127,6 +1127,88 @@ export function reconstructRoof(
   const g = computeGeometry(dsm, partic, groundElevFt, half);
   const minPx = Math.max(8, Math.round(minFacetSqft / (stepFt * stepFt)));
   const seg = segmentPlanes(dsm, partic, g, angleTolDeg, planeTolFt, minPx, half);
+  // ── СЛИЯНИЕ КОПЛАНАРНЫХ СОСЕДЕЙ (эталон владельца по граням, 2026-08-30:
+  //    «A4 не существует — это продолжение A7»; клин 84 sf между коньками
+  //    один скат, подогнанный двумя половинами, union-RMS 0.25) ──
+  // Закон: смежные кластеры, чьё ОБЪЕДИНЕНИЕ ложится на одну плоскость в
+  // пределах planeTol (тот же порог, которым рос каждый), — один скат.
+  // Итеративно, пока есть что сливать. Заодно воссоединяет скат с его
+  // крутой бахромой (cl7∪cl8 RMS 0.22) — продолжение починки §K14.
+  {
+    const zof = (i: number): number => dsm.data[i] * 3.28084 - groundElevFt;
+    for (let guard = 0; guard < 50; guard++) {
+      const pixOf = new Map<number, number[]>();
+      for (let i = 0; i < seg.assign.length; i++) if (seg.assign[i] >= 0) {
+        (pixOf.get(seg.assign[i]) ?? pixOf.set(seg.assign[i], []).get(seg.assign[i])!).push(i);
+      }
+      const adjPairs = new Set<string>();
+      for (let py = 0; py < h - 1; py++) for (let px = 0; px < w - 1; px++) {
+        const i = py * w + px;
+        const a = seg.assign[i];
+        if (a < 0) continue;
+        for (const j of [i + 1, i + w]) {
+          const b = seg.assign[j];
+          if (b >= 0 && b !== a) adjPairs.add(a < b ? a + "|" + b : b + "|" + a);
+        }
+      }
+      let mergedPair: [number, number] | null = null;
+      let bestRms = Infinity;
+      for (const k of adjPairs) {
+        const [a, b] = k.split("|").map(Number);
+        const pa = pixOf.get(a) ?? [];
+        const pb = pixOf.get(b) ?? [];
+        if (!pa.length || !pb.length) continue;
+        let sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0, n = 0;
+        for (const i of [...pa, ...pb]) {
+          const x = ((i % w) + 0.5 - w / 2) * stepFt;
+          const y = (h / 2 - Math.floor(i / w) - 0.5) * stepFt;
+          const z = zof(i);
+          sx += x; sy += y; sz += z; sxx += x * x; sxy += x * y; syy += y * y;
+          sxz += x * z; syz += y * z; n++;
+        }
+        const M = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, n]];
+        const B = [sxz, syz, sz];
+        const det3 = (m2: number[][]) =>
+          m2[0][0] * (m2[1][1] * m2[2][2] - m2[1][2] * m2[2][1]) -
+          m2[0][1] * (m2[1][0] * m2[2][2] - m2[1][2] * m2[2][0]) +
+          m2[0][2] * (m2[1][0] * m2[2][1] - m2[1][1] * m2[2][0]);
+        const D = det3(M);
+        if (Math.abs(D) < 1e-9) continue;
+        const col = (k2: number) => M.map((r2, i2) => r2.map((v2, j2) => (j2 === k2 ? B[i2] : v2)));
+        const pa2 = det3(col(0)) / D;
+        const pb2 = det3(col(1)) / D;
+        const pc2 = det3(col(2)) / D;
+        let rss = 0;
+        for (const i of [...pa, ...pb]) {
+          const x = ((i % w) + 0.5 - w / 2) * stepFt;
+          const y = (h / 2 - Math.floor(i / w) - 0.5) * stepFt;
+          rss += (pa2 * x + pb2 * y + pc2 - zof(i)) ** 2;
+        }
+        const rms = Math.sqrt(rss / n);
+        if (rms <= planeTolFt && rms < bestRms) { bestRms = rms; mergedPair = [a, b]; }
+      }
+      if (!mergedPair) break;
+      const [a, b] = mergedPair;
+      for (let i = 0; i < seg.assign.length; i++) if (seg.assign[i] === b) seg.assign[i] = a;
+      const ca = seg.clusters.find((c2) => c2.id === a);
+      const cb = seg.clusters.find((c2) => c2.id === b);
+      if (ca && cb) {
+        ca.pixels = [...ca.pixels, ...cb.pixels];
+        const pts = ca.pixels.map((i) => ({ x: ((i % w) + 0.5 - w / 2) * stepFt, y: (h / 2 - Math.floor(i / w) - 0.5) * stepFt, z: zof(i) }));
+        const refit = fitPlane(pts);
+        if (refit) ca.plane = refit;
+        ca.areaSqft = ca.pixels.length * (stepFt * stepFt) * Math.hypot(ca.plane.a, ca.plane.b, 1);
+        seg.clusters = seg.clusters.filter((c2) => c2.id !== b);
+      }
+    }
+    // перенумерация: ниже по конвейеру clusters индексируются по assign
+    const remap2 = new Map<number, number>();
+    seg.clusters.forEach((c2, i2) => remap2.set(c2.id, i2));
+    for (let i = 0; i < seg.assign.length; i++) {
+      if (seg.assign[i] >= 0) seg.assign[i] = remap2.get(seg.assign[i]) ?? -1;
+    }
+    seg.clusters.forEach((c2, i2) => { c2.id = i2; });
+  }
   const { assign, dropped } = seg;
   let clusters = seg.clusters;
 
