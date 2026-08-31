@@ -838,6 +838,39 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   const zOfInfo = (ci: CellInfo, p: FootprintPoint): number =>
     ci.plane && ci.prov !== "fill" ? measuredZAt(ci, p) : skelZAt(p) + (fillDz.get(ci) ?? 0);
 
+  // ЛОКАЛЬНАЯ опора: вес плоскости в вершине — её пиксели ВОЗЛЕ вершины
+  // (клетки 3 ft, окрестность ±7.5 ft). Глобальная опора позволяла
+  // плоскости голосовать там, где у неё нет ни одного пикселя
+  // (экстраполяция за опору — ободки, сшитые экс-фантомы): большие грани
+  // варпались до 1.8-2.3 ft. Плоскость без местных свидетельств голоса
+  // не имеет (вес-пол 1 наравне с заполнителем).
+  const CELL9 = 3;
+  const clusterCellPx = new Map<number, Map<string, number>>();
+  {
+    const w9 = dsm.width;
+    const stepFt9 = m.stepFt;
+    const cx9 = w9 / 2;
+    const cy9 = dsm.height / 2;
+    for (let i = 0; i < d.assign.length; i++) {
+      const cl = d.assign[i];
+      if (cl < 0) continue;
+      const x9 = ((i % w9) + 0.5 - cx9) * stepFt9;
+      const y9 = (cy9 - Math.floor(i / w9) - 0.5) * stepFt9;
+      const k9 = `${Math.floor(x9 / CELL9)}|${Math.floor(y9 / CELL9)}`;
+      const m9 = clusterCellPx.get(cl) ?? clusterCellPx.set(cl, new Map()).get(cl)!;
+      m9.set(k9, (m9.get(k9) ?? 0) + 1);
+    }
+  }
+  const localSupport = (cluster: number, xr: number, yr: number): number => {
+    const m9 = clusterCellPx.get(cluster);
+    if (!m9) return 0;
+    const cxq = Math.floor(xr / CELL9);
+    const cyq = Math.floor(yr / CELL9);
+    let n9 = 0;
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) n9 += m9.get(`${cxq + dx}|${cyq + dy}`) ?? 0;
+    return n9;
+  };
+
   // Vertex LEVELS: adjacent cells' z values cluster with a gap threshold —
   // one group is one welded point. A single group of >=2 cells takes the DSM
   // (it resolves crease disagreement; surface noise 0.12 ft); a perimeter
@@ -888,18 +921,59 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       groups.length = 0;
       groups.push(...regrouped);
     }
-    // NB (2026-08-30, механизм 3 — остановлено с описанием): попытка
-    // подчинить расщепление уровней прямому DSM-перепаду смежного ребра
-    // (единый закон стены) чинила фиктивную ступень SE-ободка 12629
-    // (G2→G1) и Euler 419, но ломала 12621: у УГЛА настоящей стены клиф в
-    // DSM выцветает, а groupZ смешивает экстраполирующий план-эвал с
-    // честным (15.1 из 13.1) — нужен groupZ с локальной опорой, не
-    // среднее. Замер и механика — в ROOF-STATE; откат до лучшего
-    // состояния (12621+12618+9903 на measured-dsm).
+    if (groups.length > 1) {
+      const qq = (pp: FootprintPoint): string => `${Math.round(pp.x * 2)}|${Math.round(pp.y * 2)}`;
+      const edgeAt = (ciA: CellInfo, ciB: CellInfo): { a: FootprintPoint; b: FootprintPoint } | null => {
+        const bEdges = new Set(ciB.cell.edges.map((e) => { const k1 = qq(e.a); const k2 = qq(e.b); return k1 < k2 ? `${k1}#${k2}` : `${k2}#${k1}`; }));
+        for (const e of ciA.cell.edges) {
+          const k1 = qq(e.a);
+          const k2 = qq(e.b);
+          const kk = k1 < k2 ? `${k1}#${k2}` : `${k2}#${k1}`;
+          if (!bEdges.has(kk)) continue;
+          if (Math.hypot(e.a.x - p.x, e.a.y - p.y) > 1 && Math.hypot(e.b.x - p.x, e.b.y - p.y) > 1) continue;
+          // вершину судит перепад У ВЕРШИНЫ: у выцветающего клина медиана
+          // станций ПОЛНОГО ребра душила клиф (2.16/1.77/1.38 → 1.77 при
+          // честных 2.5 в вершине, vzof-synth) — ребро обрезается до 3 ft
+          // от вершины (пробник уровня, не длина ребра)
+          const near = Math.hypot(e.a.x - p.x, e.a.y - p.y) <= Math.hypot(e.b.x - p.x, e.b.y - p.y) ? { a: e.a, b: e.b } : { a: e.b, b: e.a };
+          const L3 = Math.hypot(near.b.x - near.a.x, near.b.y - near.a.y);
+          const cl3 = Math.min(1, 3 / Math.max(L3, 1e-6));
+          return { a: near.a, b: { x: near.a.x + (near.b.x - near.a.x) * cl3, y: near.a.y + (near.b.y - near.a.y) * cl3 } };
+        }
+        return null;
+      };
+      for (let gi = 0; gi + 1 < groups.length; ) {
+        let confirmed = false;
+        let sawEdge = false;
+        for (const ea of groups[gi]) {
+          for (const eb of groups[gi + 1]) {
+            const ed = edgeAt(ea.ci, eb.ci);
+            if (!ed) continue;
+            sawEdge = true;
+            if (directWallDrop(ed.a, ed.b) >= STEP_DZ_FT) { confirmed = true; break; }
+          }
+          if (confirmed) break;
+        }
+        if (!confirmed && sawEdge) {
+          if (process.env.DBG_VZ) console.log(`[vz] слияние уровней в (${p.x.toFixed(1)},${p.y.toFixed(1)}): z ${groups[gi].map((e) => e.z.toFixed(1)).join("/")} + ${groups[gi + 1].map((e) => e.z.toFixed(1)).join("/")}`);
+          groups.splice(gi, 2, [...groups[gi], ...groups[gi + 1]]);
+        } else gi++;
+      }
+    }
     const groupZ = (g: Array<{ ci: CellInfo; z: number }>): number => {
-      // Measured planes carry the vertex; fill planes (skeleton + datum
-      // offset) FOLLOW — averaging them in bent measured faces by 0.5-1 ft.
+      // z уровня В ТОЧКЕ — по ЛОКАЛЬНОЙ ОПОРЕ (приказ 2026-08-30, та же
+      // «опора в точке», что у z-солвера): голосуют только плоскости с
+      // местными пикселями, вес — их счёт. Среднее с экстраполирующим
+      // эвалом давало фикцию (12621: 15.1 из честных 13.1 + чужих 16.7).
+      // Без местных свидетелей — прежний закон (measured, затем все).
       const meas = g.filter((e) => e.ci.prov !== "fill");
+      const voters = meas
+        .map((e) => ({ e, w: e.ci.cluster !== null ? localSupport(e.ci.cluster, p.x, p.y) : 0 }))
+        .filter((v) => v.w > 0);
+      if (voters.length) {
+        const wSum = voters.reduce((s2, v) => s2 + v.w, 0);
+        return voters.reduce((s2, v) => s2 + v.e.z * v.w, 0) / wSum;
+      }
       const src = meas.length ? meas : g;
       return src.reduce((s2, e) => s2 + e.z, 0) / src.length;
     };
@@ -1029,38 +1103,6 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // vzOf (переписной пол). Вызывается после планарной работы; второй
   // вызов после пост-типизационных планарных хирургий — та же функция,
   // тот же результат на той же геометрии (детерминизм).
-  // ЛОКАЛЬНАЯ опора: вес плоскости в вершине — её пиксели ВОЗЛЕ вершины
-  // (клетки 3 ft, окрестность ±7.5 ft). Глобальная опора позволяла
-  // плоскости голосовать там, где у неё нет ни одного пикселя
-  // (экстраполяция за опору — ободки, сшитые экс-фантомы): большие грани
-  // варпались до 1.8-2.3 ft. Плоскость без местных свидетельств голоса
-  // не имеет (вес-пол 1 наравне с заполнителем).
-  const CELL9 = 3;
-  const clusterCellPx = new Map<number, Map<string, number>>();
-  {
-    const w9 = dsm.width;
-    const stepFt9 = m.stepFt;
-    const cx9 = w9 / 2;
-    const cy9 = dsm.height / 2;
-    for (let i = 0; i < d.assign.length; i++) {
-      const cl = d.assign[i];
-      if (cl < 0) continue;
-      const x9 = ((i % w9) + 0.5 - cx9) * stepFt9;
-      const y9 = (cy9 - Math.floor(i / w9) - 0.5) * stepFt9;
-      const k9 = `${Math.floor(x9 / CELL9)}|${Math.floor(y9 / CELL9)}`;
-      const m9 = clusterCellPx.get(cl) ?? clusterCellPx.set(cl, new Map()).get(cl)!;
-      m9.set(k9, (m9.get(k9) ?? 0) + 1);
-    }
-  }
-  const localSupport = (cluster: number, xr: number, yr: number): number => {
-    const m9 = clusterCellPx.get(cluster);
-    if (!m9) return 0;
-    const cxq = Math.floor(xr / CELL9);
-    const cyq = Math.floor(yr / CELL9);
-    let n9 = 0;
-    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) n9 += m9.get(`${cxq + dx}|${cyq + dy}`) ?? 0;
-    return n9;
-  };
   const applyZSolver = (frame: "raster" | "instant"): number => {
     const idxZ = buildIndexes(candidate);
     const ownersZ = new Map<string, Set<number>>();
@@ -1107,6 +1149,18 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       },
       stepDzFt: STEP_DZ_FT,
     });
+    if (process.env.DBG_ZPT) {
+      const [qx, qy] = process.env.DBG_ZPT.split(",").map(Number);
+      for (const pt of candidate.points) {
+        if (Math.hypot(pt.x - qx, pt.y - qy) > 0.5) continue;
+        const refs = [...(ownersZ.get(pt.id) ?? [])].map((si) => {
+          const ci = infos[si];
+          const pr = frame === "instant" ? fwd({ x: pt.x, y: pt.y }) : { x: pt.x, y: pt.y };
+          return `src${si}(cl${ci.cluster ?? "-"} ${ci.prov}) eval=${zOfInfo(ci, pr).toFixed(2)} w=${ci.prov === "fill" || ci.cluster === null ? 1 : Math.max(1, localSupport(ci.cluster, pr.x, pr.y))}`;
+        });
+        console.log(`[zpt] ${pt.id} (${pt.x.toFixed(2)},${pt.y.toFixed(2)}) z=${(resZ.z.get(pt.id) ?? NaN).toFixed(2)}: ${refs.join(" · ")}`);
+      }
+    }
     for (const pt of candidate.points) {
       const z = resZ.z.get(pt.id);
       if (z !== undefined) pt.z = z;

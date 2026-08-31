@@ -538,11 +538,18 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
     let np: FootprintPoint | null = null;
     if (cand.size === 1) {
+      // NB (2026-08-30, стоп с описанием): узел одиночной линии У КОЛЬЦА
+      // должен стоять на НЕСУЩАЯ ∩ КОЛЬЦО (узел трассы в 3.9 ft травил
+      // кольцо A7 на 12621 чужим план-эвалом 16.75 — R03). Два захода
+      // (перенос узла; перенос + ринг-сплит терминалом) ломали смежные
+      // цепи (R02; tiling 34.7% — vpolys/simped узла расходятся). Нужна
+      // согласованная развязка ВСЕХ цепей узла с расщеплением кольца —
+      // отдельный механизм, замер в ROOF-STATE.
       // a joint between two runs of ONE boundary is a point ON its line
       const l = lineGeom[[...cand][0]];
       const rel = { x: j.p.x - l.a.x, y: j.p.y - l.a.y };
       const perp = rel.x * l.n.x + rel.y * l.n.y;
-      if (Math.abs(perp) <= probe) {
+      if (!np && Math.abs(perp) <= probe) {
         const pt = { x: j.p.x - perp * l.n.x, y: j.p.y - perp * l.n.y };
         let ok = inRingPt0(pt);
         if (ok) {
@@ -686,8 +693,27 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
           const dist = Math.hypot(v.x - cur.x, v.y - cur.y);
           if (!best || dist < best.dist) best = { pt: { x: v.x, y: v.y }, seg: j, t: 0, dist };
         }
-        if (!best || best.dist > probe) { termRefused.push(best ? best.dist : -1); continue; }
-        cands.push({ pi, end, ...best });
+        // Отказ судится РАЗЛОЖЕНИЕМ, не евклидовым расстоянием: сдвиг
+        // ВДОЛЬ несущей — законное продление линии (она аналитическая),
+        // и мерить его пробником — душить вальму в 0.6 ft от своего угла
+        // (12629: отказ 6.6 при пробнике 6.0 → хвост трассы → излом G1
+        // 36.6°). Пробник — на перпендикуляр; продление — не дальше
+        // собственной длины линии (граница не продлевается больше себя).
+        const okTerm = ((): boolean => {
+          if (!best) return false;
+          const dx3 = best.pt.x - cur.x;
+          const dy3 = best.pt.y - cur.y;
+          const perp3 = Math.abs(dx3 * l.n.x + dy3 * l.n.y);
+          const along3 = Math.abs(dx3 * l.d.x + dy3 * l.d.y);
+          return perp3 <= probe && along3 <= l.L;
+        })();
+        if (!okTerm) {
+          if (process.env.DBG_TERM) console.log(`[term] ОТКАЗ poly ${pi} li=${sp.li} pair=[${sp.pair}] конец (${cur.x.toFixed(1)},${cur.y.toFixed(1)}) цель ${best ? `(${best.pt.x.toFixed(1)},${best.pt.y.toFixed(1)}) dist ${best.dist.toFixed(1)}` : "нет"}`);
+          termRefused.push(best ? best.dist : -1);
+          continue;
+        }
+        if (process.env.DBG_TERM) console.log(`[term] OK poly ${pi} li=${sp.li} pair=[${sp.pair}] конец (${cur.x.toFixed(1)},${cur.y.toFixed(1)}) → (${best!.pt.x.toFixed(1)},${best!.pt.y.toFixed(1)}) dist ${best!.dist.toFixed(1)}`);
+        cands.push({ pi, end, ...best! });
       }
     });
     cands.sort((a, b) => a.dist - b.dist);
@@ -936,10 +962,37 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         if (inc.length !== 1) continue;
         const other = inc[0].u === tip ? inc[0].v : inc[0].u;
         interface TailTarget { d: number; n?: number; ei?: number; t?: number; pt?: FootprintPoint }
-        const cand: TailTarget[] = [...deg.entries()]
+        const cand: TailTarget[] = [];
+        // АНАЛИТИЧЕСКИЙ ТЕРМИНАЛ ПРЕЖДЕ БЛИЗОСТИ: хвост цепи измеренной/
+        // виртуальной линии у контура обязан сесть на НЕСУЩАЯ ∩ КОЛЬЦО —
+        // линия стоит на пересечении плоскостей, и только в этой точке обе
+        // плоскости согласны на кольце (узел трассы в 3.9 ft травил кольцо
+        // A7 на 12621: чужой план-эвал 16.75 в грани cl4). В пределах
+        // пробника от хвоста; дальше — обычные цели.
+        if (inc[0].prov === "measured-line" && inc[0].lineIndex !== undefined) {
+          const lg = lineGeom[inc[0].lineIndex];
+          for (let ei = 0; ei < edges.length; ei++) {
+            const e = edges[ei];
+            if (e.prov !== "contour") continue;
+            const p1 = nodes[e.u];
+            const p2 = nodes[e.v];
+            const ex = p2.x - p1.x;
+            const ey = p2.y - p1.y;
+            const den = lg.d.x * ey - lg.d.y * ex;
+            if (Math.abs(den) < 1e-9) continue;
+            const tt = ((p1.x - lg.a.x) * ey - (p1.y - lg.a.y) * ex) / den;
+            const u2 = ((p1.x - lg.a.x) * lg.d.y - (p1.y - lg.a.y) * lg.d.x) / den;
+            if (u2 < 1e-3 || u2 > 1 - 1e-3) continue;
+            const q = { x: lg.a.x + lg.d.x * tt, y: lg.a.y + lg.d.y * tt };
+            const dd = Math.hypot(q.x - nodes[tip].x, q.y - nodes[tip].y);
+            const L1 = Math.hypot(ex, ey);
+            if (dd <= probe && u2 * L1 > stepFt && (1 - u2) * L1 > stepFt) cand.push({ d: dd - probe, ei, t: u2, pt: q });
+          }
+        }
+        cand.push(...[...deg.entries()]
           .filter(([n]) => n !== tip && n !== other)
           .map(([n]) => ({ n, d: Math.hypot(nodes[n].x - nodes[tip].x, nodes[n].y - nodes[tip].y) }))
-          .filter((c2) => c2.d <= probe);
+          .filter((c2) => c2.d <= probe));
         // T-стык: проекция хвоста внутрь ребра (кольцо в том числе) —
         // «терминал — в ближайшую точку кольца» (механизм 3)
         for (let ei = 0; ei < edges.length; ei++) {
