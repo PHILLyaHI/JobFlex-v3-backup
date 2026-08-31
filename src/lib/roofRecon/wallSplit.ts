@@ -39,6 +39,11 @@ export interface WallSplitInput {
   ftOf: (pi: number) => { x: number; y: number };
   /** Ядро гистерезиса обрыва (перепись 2.0 — как у WallProfile). */
   coreDzFt: number;
+  /** Пол плоскостности секции (та же линейка, что суд клетки —
+   *  DEFAULT_PLANE_TOL_FT): секция, не держащая свою плоскость, не
+   *  регистрируется, раскрой отклоняется (§J: без суда — никаких
+   *  плоскостей). */
+  planeTolFt: number;
   /** Рост полосы соседством (1.8 — тот же гистерезис). */
   growDzFt: number;
   /**
@@ -96,14 +101,31 @@ export function splitClustersByInnerWall(input: WallSplitInput): WallSplitResult
     return { a, b, c: (sz - a * sx - b * sy) / n };
   };
 
+  const rmsOf = (pixels: number[], pl: { a: number; b: number; c: number }): number => {
+    let ss = 0, n = 0;
+    for (const pi of pixels) {
+      const z = zOf(pi);
+      if (z === null) continue;
+      const p = ftOf(pi);
+      const dz = z - (pl.a * p.x + pl.b * p.y + pl.c);
+      ss += dz * dz;
+      n++;
+    }
+    return n >= 3 ? Math.sqrt(ss / n) : Number.POSITIVE_INFINITY;
+  };
+
   for (const [r, pixels] of pixelsOf) {
     if (pixels.length * pxSqft < 2 * input.minFacetSqft) continue; // резать не на что
-    // 1) карта обрыва: вторая разность поперёк пикселя (макс по направлениям)
-    const dMax = new Map<number, number>();
+    // 1) карта обрыва: вторая разность поперёк пикселя (макс по
+    //    направлениям); лучшая станция несёт НАПРАВЛЕНИЕ и УРОВНИ сторон
+    //    (zHi/zLo) — по ним ниже судится когерентность линии (§J: суд
+    //    не выключается, полоса обязана мериться как стена)
+    interface BandSt { d: number; zHi: number; zLo: number }
+    const dMax = new Map<number, BandSt>();
     for (const pi of pixels) {
       const x = pi % w;
       const y = (pi - x) / w;
-      let best = 0;
+      let best: BandSt | null = null;
       for (const [dx, dy] of SCAN_DIRS) {
         const at = (k: number): number | null => {
           const nx = x + dx * k;
@@ -120,15 +142,19 @@ export function splitClustersByInnerWall(input: WallSplitInput): WallSplitResult
           if (z1 === null || z2 === null || zo1 === null || zo2 === null) continue;
           // ступень — разрыв, не градиент (класс 1c): наклон вычитается
           const d0 = Math.abs((z1 - z2) - (zo1 - z1) - (z2 - zo2));
-          if (d0 > best) best = d0;
+          if (!best || d0 > best.d) best = { d: d0, zHi: Math.max(z1, z2), zLo: Math.min(z1, z2) };
         }
       }
-      if (best > 0) dMax.set(pi, best);
+      if (best && best.d > 0) dMax.set(pi, best);
     }
     // 2) полоса: ядро ≥ core, рост соседством ≥ grow (гистерезис профиля)
     const band = new Set<number>();
     const queue: number[] = [];
-    for (const pi of pixels) if ((dMax.get(pi) ?? 0) >= input.coreDzFt) { band.add(pi); queue.push(pi); }
+    for (const pi of pixels) if ((dMax.get(pi)?.d ?? 0) >= input.coreDzFt) { band.add(pi); queue.push(pi); }
+    if (process.env.DBG_WSPLIT && band.size) {
+      const core = [...band].slice(0, 400).filter((_, i) => i % 25 === 0);
+      console.log(`[wsplit]   ядро региона ${r}: ${core.map((pi) => { const p = ftOf(pi); return `(${p.x.toFixed(0)},${p.y.toFixed(0)})d${(dMax.get(pi)?.d ?? 0).toFixed(1)}`; }).join(" ")}`);
+    }
     if (!band.size) continue;
     while (queue.length) {
       const pi = queue.pop()!;
@@ -140,9 +166,36 @@ export function splitClustersByInnerWall(input: WallSplitInput): WallSplitResult
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         const k = ny * w + nx;
         if (region[k] !== r || band.has(k)) continue;
-        if ((dMax.get(k) ?? 0) >= input.growDzFt) { band.add(k); queue.push(k); }
+        if ((dMax.get(k)?.d ?? 0) >= input.growDzFt) { band.add(k); queue.push(k); }
       }
     }
+    // 2b) Когерентность линии уровней — ЗАМЕР, не гейт. NB (2026-08-31):
+    //     форма линейки «доля соседних пар с разрывом уровня ≥ переписи»
+    //     ОТВЕРГНУТА замером — зазора нет (крона 12629: 12%; живые стены
+    //     шестёрки: 8–24%; чистая синтетика: 0%). Полосу судит СУД СЕКЦИЙ
+    //     ниже: обе стороны раскроя обязаны держать свою плоскость той же
+    //     линейкой, что суд клетки, — интегральная форма «монотонности
+    //     уровня вдоль линии» (у кроны секции rms 1.2–1.4 против пола
+    //     0.35 — раскрой отклоняется). Цифра остаётся в отчёте.
+    let ragPairs = 0;
+    let allPairs = 0;
+    for (const pi of band) {
+      const si = dMax.get(pi);
+      if (!si) continue;
+      const x = pi % w;
+      const y = (pi - x) / w;
+      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]] as const) {
+        const k = (y + dy) * w + (x + dx);
+        if (x + dx < 0 || y + dy < 0 || x + dx >= w || y + dy >= h) continue;
+        if (!band.has(k)) continue;
+        const sj = dMax.get(k);
+        if (!sj) continue;
+        allPairs++;
+        if (Math.abs(si.zHi - sj.zHi) >= input.coreDzFt || Math.abs(si.zLo - sj.zLo) >= input.coreDzFt) ragPairs++;
+      }
+    }
+    const ragShare = allPairs ? ragPairs / allPairs : 0;
+    if (process.env.DBG_WSPLIT) console.log(`[wsplit]   когерентность полосы региона ${r}: пар ${allPairs}, рваных ${ragPairs} (${(ragShare * 100).toFixed(0)}%)`);
     // 3) компоненты региона без полосы (4-связность)
     const comp = new Map<number, number>();
     const comps: number[][] = [];
@@ -227,6 +280,29 @@ export function splitClustersByInnerWall(input: WallSplitInput): WallSplitResult
       if (bi === undefined) continue; // недостижимая мелочь — оставить как есть
       secPixels[bi].push(pi);
     }
+    // 6a) СУД СЕКЦИЙ ТОЙ ЖЕ ЛИНЕЙКОЙ, что переподгонка клетки (§J:
+    //     исключение из проверки дороже провала): каждая секция обязана
+    //     держать СВОЮ плоскость (rms ≤ пола) на СВОЕЙ опоре (≥ пола
+    //     грани). Не держит — раскрой региона отклоняется целиком, регион
+    //     остаётся в родителе с честным провенансом. Крона в loose-маске
+    //     (12629: секции rms 1.21/1.42, A3-фантом) валится именно здесь.
+    const judged = secPixels.map((px2) => {
+      const pl = fitPlanePx(px2);
+      if (!pl) return null;
+      const rms = rmsOf(px2, pl);
+      const ownSf = px2.length * pxSqft;
+      return { pl, rms, ownSf };
+    });
+    const bad = judged.findIndex((j) => !j || j.rms > input.planeTolFt || j.ownSf < input.minFacetSqft);
+    if (bad >= 0) {
+      const j = judged[bad];
+      report.push(
+        `расщепление региона ${r} ОТКЛОНЕНО судом секций: секция ${bad} ` +
+          (j ? `rms ${j.rms.toFixed(2)} (пол ${input.planeTolFt}), опора ${Math.round(j.ownSf)}sf` : "без плоскости") +
+          ` — полоса не стена (когерентность: рваных пар ${(ragShare * 100).toFixed(0)}%)`,
+      );
+      continue;
+    }
     const newRegionIds: number[] = [];
     for (let bi = 0; bi < secPixels.length; bi++) {
       const rid = bi === 0 ? r : regionKind.length;
@@ -236,8 +312,7 @@ export function splitClustersByInnerWall(input: WallSplitInput): WallSplitResult
         for (const pi of secPixels[bi]) region[pi] = rid;
       }
       newRegionIds.push(rid);
-      const pl = fitPlanePx(secPixels[bi]);
-      if (pl) clusterOf[rid] = input.registerCluster(pl, secPixels[bi]);
+      clusterOf[rid] = input.registerCluster(judged[bi]!.pl, secPixels[bi]);
     }
     splits++;
     report.push(

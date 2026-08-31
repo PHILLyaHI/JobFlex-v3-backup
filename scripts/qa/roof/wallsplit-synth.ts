@@ -62,6 +62,7 @@ const run = (zAt: (x: number, y: number) => number | null) => {
     ftOf,
     coreDzFt: 2.0,
     growDzFt: 1.8,
+    planeTolFt: 0.6, // DEFAULT_PLANE_TOL_FT — та же линейка, что суд клетки
     registerCluster: (plane, pixels) => {
       clusters.push({ plane, px: pixels.length });
       return clusters.length - 1;
@@ -105,6 +106,19 @@ const run = (zAt: (x: number, y: number) => number | null) => {
   const r = run((x, y) => (y > STEP_FT / 2 ? 12.5 : 12.5 - drop(x)));
   console.log(`СЛУЧАЙ 2 — огрызок 4 ft посреди (клин, не насквозь): расщеплений ${r.res.splits}, регионов ${r.regionKind.length}`);
   check("огрызок не режет (0 расщеплений, 1 регион)", r.res.splits === 0 && r.regionKind.length === 1, `splits=${r.res.splits}, регионов=${r.regionKind.length}`);
+}
+
+// ── Случай 3 (§J, переработка блока 4): крона-полоса — хаотичные
+//    станции поперёк региона НЕ режут: секции раскроя не держат свою
+//    плоскость (суд секций той же линейкой, что переподгонка клетки) ──
+{
+  // детерминированный «лиственный» хаос ±3 ft на полосе |y| < 3,
+  // пересекающей регион насквозь; вне полосы — плоскость 12.5
+  const leaf = (x: number, y: number): number =>
+    3 * Math.sin(x * 12.9898 + y * 78.233) * Math.sin(x * 3.7 - y * 5.1);
+  const r = run((x, y) => (Math.abs(y) < 3 ? 12.5 + leaf(x, y) : 12.5));
+  console.log(`СЛУЧАЙ 3 — крона-полоса (хаос ±3 поперёк): расщеплений ${r.res.splits}, регионов ${r.regionKind.length}`);
+  check("крона не режет (0 расщеплений, 1 регион)", r.res.splits === 0 && r.regionKind.length === 1, `splits=${r.res.splits}, регионов=${r.regionKind.length}`);
 }
 
 console.log(failures ? `\n${failures} FAIL` : "\nALL PASS");

@@ -1373,12 +1373,17 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
   let weldExcused = 0;
   let fillSkipped = 0;
   for (const f of facets) {
-    // ЗАКОН ПРОВЕНАНСА (приказ 2026-08-30, механизм 1): fill-грань не
-    // измерена по DSM — её плоскостная невязка не судится R03 (площадь
-    // честно идёт в «заполнено» провенансом). Судить мешок как измеренную
-    // плоскость — ложь линейки, а не защита геометрии.
+    // §J (2026-08-31): ИСКЛЮЧЕНИЕ ИЗ ПРОВЕРКИ ДОРОЖЕ ПРОВАЛА ПРОВЕРКИ.
+    // Fill-грань СУДИТСЯ R03 с честным исходом: провал — не молчание, а
+    // WARN с пометкой достоверности (фантом A3 из кроны прошёл приёмку
+    // невидимкой именно через прежнее «вне суда»). Уклон fill (R04) —
+    // заявка скелета, его суд остаётся за провенансом.
     if (f.fill) {
-      if (f.plane && f.plane.maxDev > INV_EPS_PLANE) fillSkipped++;
+      if (!f.plane) warn("R03", f.id + ": fill-грань без плоскости — достоверность понижена");
+      else if (f.plane.maxDev > INV_EPS_PLANE) {
+        fillSkipped++;
+        warn("R03", f.id + ": fill-грань не плоская (отклонение " + f.plane.maxDev.toFixed(2) + " ft) — достоверность понижена");
+      }
       continue;
     }
     if (!f.plane) {
@@ -1413,7 +1418,7 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
       err("R04", f.id + ": заявлен уклон " + f.pitch + "/12, по геометрии " + measured.toFixed(2) + "/12");
   }
   if (!out.some((r) => r.id === "R03" || r.id === "R04"))
-    ok("R03/R04", "все грани плоские, уклоны совпадают с геометрией" + (weldExcused ? " (" + weldExcused + " вершин на сварных допусках)" : "") + (fillSkipped ? " (" + fillSkipped + " fill-граней вне суда R03)" : ""));
+    ok("R03/R04", "все грани плоские, уклоны совпадают с геометрией" + (weldExcused ? " (" + weldExcused + " вершин на сварных допусках)" : "") + (fillSkipped ? " (" + fillSkipped + " fill-граней помечены WARN R03 — достоверность понижена)" : ""));
 
   // R05 — facet projections cover the footprint
   const fpArea = invArea2(fp);
@@ -1864,10 +1869,9 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
         spread2 = Math.min(mxx - mnx, mxy - mny);
       }
       const wide2 = spread2 >= (model.resolutionFt ?? 1.6);
-      // ЗАКОН ПРОВЕНАНСА (2026-08-31): fill-грань не измерена — её
-      // «градиент» — скелетная подгонка, не замер; направления она не
-      // свидетельствует (как в R03 v2). Конёк судят измеренные владельцы.
-      if (f.fill) continue;
+      // §J (2026-08-31): провенанс-G4 снова говорит — «fill не
+      // свидетельствует» был третьим выключенным судом §K13 (замолчал
+      // честный крик G4 17.9° о склейке на 12618).
       const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(model.faces[f.i].id, [pl.a, pl.b]);
     }

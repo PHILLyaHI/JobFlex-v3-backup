@@ -276,10 +276,14 @@ export function validateRoof(model) {
   let weldExcused = 0;
   let fillSkipped = 0;
   for (const f of facets) {
-    // ЗАКОН ПРОВЕНАНСА (2026-08-30, механизм 1): fill-грань не измерена по
-    // DSM — её плоскостная невязка не судится R03 (площадь идёт в «заполнено»)
+    // §J (2026-08-31): исключение из проверки дороже провала — fill
+    // судится R03 с честным исходом: провал = WARN + пометка достоверности
     if (f.fill) {
-      if (f.plane && f.plane.maxDev > EPS_PLANE) fillSkipped++;
+      if (!f.plane) warn('R03', f.id + ": fill-грань без плоскости — достоверность понижена");
+      else if (f.plane.maxDev > EPS_PLANE) {
+        fillSkipped++;
+        warn('R03', f.id + ": fill-грань не плоская (отклонение " + f.plane.maxDev.toFixed(2) + " ft) — достоверность понижена");
+      }
       continue;
     }
     if (!f.plane) {
@@ -311,7 +315,7 @@ export function validateRoof(model) {
       err('R04', f.id + ": заявлен уклон " + f.pitch + "/12, по геометрии " + measured.toFixed(2) + "/12");
   }
   if (!out.some((r) => r.id === 'R03' || r.id === 'R04'))
-    ok('R03/R04', 'все грани плоские, уклоны совпадают с геометрией' + (weldExcused ? ' (' + weldExcused + ' вершин на сварных допусках)' : '') + (fillSkipped ? ' (' + fillSkipped + ' fill-граней вне суда R03)' : ''));
+    ok('R03/R04', 'все грани плоские, уклоны совпадают с геометрией' + (weldExcused ? ' (' + weldExcused + ' вершин на сварных допусках)' : '') + (fillSkipped ? ' (' + fillSkipped + ' fill-граней помечены WARN R03 — достоверность понижена)' : ''));
 
   // ─ 3. Покрытие футпринта
   const fpArea = area2(fp);
@@ -712,8 +716,7 @@ export function validateRoof(model) {
         spread2 = Math.min(mxx - mnx, mxy - mny);
       }
       const wide2 = spread2 >= (model.resolutionFt ?? 1.6);
-      // закон провенанса (2026-08-31): fill-грань направления не свидетельствует
-      if (f.fill) continue;
+      // §J (2026-08-31): провенанс-G4 снова говорит (см. validate.ts)
       const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(f.id, [pl.a, pl.b]);
     }

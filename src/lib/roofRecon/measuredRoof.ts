@@ -446,6 +446,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       ftOf: (pi) => m.ftOf(pi),
       coreDzFt: 2.0,
       growDzFt: 1.8,
+      planeTolFt: DEFAULT_PLANE_TOL_FT,
       registerCluster: (plane, pixels) => {
         const id = d.clusterPlanes.length;
         d.clusterPlanes.push(plane);
@@ -454,7 +455,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         return id;
       },
     });
-    if (res.splits) reasons.push(...res.report);
+    if (res.report.length) reasons.push(...res.report); // отказы суда секций — тоже в отчёт (§J)
   }
 
   if (process.env.DBG_REGIONS) {
