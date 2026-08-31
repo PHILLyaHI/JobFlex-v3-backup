@@ -82,9 +82,20 @@ for (const job of JOBS) {
     const k = twinKey(p);
     (zsAt.get(k) ?? zsAt.set(k, []).get(k)!).push(p.z);
   }
-  const isSeamPt = (p: { x: number; y: number }): boolean => {
+  const gapAt = (p: { x: number; y: number }): number => {
     const zs = zsAt.get(twinKey(p)) ?? [];
-    return zs.length >= 2 && Math.max(...zs) - Math.min(...zs) >= 1.8;
+    return zs.length >= 2 ? Math.max(...zs) - Math.min(...zs) : 0;
+  };
+  // шов: гап ≥ переписи ИЛИ конус выцветания — гап заметен (> 0.15) и в
+  // 3 ft есть точка сильного шва (≥ переписи): G2-onSeam легализует конус,
+  // rings-check различает его, не ослабляя проверку настоящих двойников
+  const strongSeamPts: Array<{ x: number; y: number }> = [];
+  for (const q of model.points) if (gapAt(q) >= 1.8) strongSeamPts.push(q);
+  const isSeamPt = (p: { x: number; y: number }): boolean => {
+    const g = gapAt(p);
+    if (g >= 1.8) return true;
+    if (g <= 0.15) return false;
+    return strongSeamPts.some((q) => Math.hypot(q.x - p.x, q.y - p.y) <= 3);
   };
   let off = 0;
   for (const l of model.lines) {

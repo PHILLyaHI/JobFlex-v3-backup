@@ -1864,6 +1864,10 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
         spread2 = Math.min(mxx - mnx, mxy - mny);
       }
       const wide2 = spread2 >= (model.resolutionFt ?? 1.6);
+      // ЗАКОН ПРОВЕНАНСА (2026-08-31): fill-грань не измерена — её
+      // «градиент» — скелетная подгонка, не замер; направления она не
+      // свидетельствует (как в R03 v2). Конёк судят измеренные владельцы.
+      if (f.fill) continue;
       const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(model.faces[f.i].id, [pl.a, pl.b]);
     }
@@ -2011,13 +2015,21 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
       const onRing8 = gRingDist(a0) <= STUB_FT && gRingDist(b0) <= STUB_FT;
       if (arr8.length >= 2) {
         let dz8 = 0;
+        let dzA8 = 0;
+        let dzB8 = 0;
         for (let i8 = 1; i8 < arr8.length; i8++) {
-          dz8 = Math.max(dz8, Math.abs(arr8[i8].a[2] - a0[2]), Math.abs(arr8[i8].b[2] - b0[2]));
+          dzA8 = Math.max(dzA8, Math.abs(arr8[i8].a[2] - a0[2]));
+          dzB8 = Math.max(dzB8, Math.abs(arr8[i8].b[2] - b0[2]));
+          dz8 = Math.max(dz8, dzA8, dzB8);
         }
         // модельный пол стены: переписной минус сумма бюджетов краёв
         // (каждая копия — план-эвал своей плоскости ±2·EPS). Тот же пол
         // держит источник при сварке — один критерий с обеих сторон.
-        if (dz8 > 2 * INV_EPS_PLANE && dz8 < G_STEP_DZ - 4 * INV_EPS_PLANE) {
+        // КЛИН (сшивка в точке выцветания, приказ 2026-08-31 п.3): ребро от
+        // честной стены (конец ≥ пола) к сваренной точке (конец ≤ бюджета)
+        // проходит межзону ПО ФИЗИКЕ — это законный конус стены, не разрыв.
+        const wedge8 = (dzA8 >= G_STEP_DZ - 4 * INV_EPS_PLANE && dzB8 <= 2 * INV_EPS_PLANE) || (dzB8 >= G_STEP_DZ - 4 * INV_EPS_PLANE && dzA8 <= 2 * INV_EPS_PLANE);
+        if (!wedge8 && dz8 > 2 * INV_EPS_PLANE && dz8 < G_STEP_DZ - 4 * INV_EPS_PLANE) {
           g8bad++;
           err("G8", `ребро (${a0[0].toFixed(1)},${a0[1].toFixed(1)})→(${b0[0].toFixed(1)},${b0[1].toFixed(1)}): поверхность разомкнута — копии в кольцах расходятся на ${dz8.toFixed(2)} ft (ни сварка, ни стена)`);
         }
