@@ -712,6 +712,8 @@ export function validateRoof(model) {
         spread2 = Math.min(mxx - mnx, mxy - mny);
       }
       const wide2 = spread2 >= (model.resolutionFt ?? 1.6);
+      // закон провенанса (2026-08-31): fill-грань направления не свидетельствует
+      if (f.fill) continue;
       const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(f.id, [pl.a, pl.b]);
     }

@@ -1864,6 +1864,10 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
         spread2 = Math.min(mxx - mnx, mxy - mny);
       }
       const wide2 = spread2 >= (model.resolutionFt ?? 1.6);
+      // ЗАКОН ПРОВЕНАНСА (2026-08-31): fill-грань не измерена — её
+      // «градиент» — скелетная подгонка, не замер; направления она не
+      // свидетельствует (как в R03 v2). Конёк судят измеренные владельцы.
+      if (f.fill) continue;
       const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(model.faces[f.i].id, [pl.a, pl.b]);
     }

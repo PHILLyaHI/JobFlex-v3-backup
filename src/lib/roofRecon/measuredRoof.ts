@@ -29,6 +29,7 @@ import type { Raster } from "@/lib/solar";
 import { reconstructRoof, DEFAULT_PLANE_TOL_FT } from "@/lib/roofRecon";
 import { measureDsmLayout, PROBE_FT, type ReconLayoutDiagnostics } from "@/lib/roofRecon/measuredLines";
 import { buildRegionCells, type RegionCell } from "@/lib/roofRecon/regionCells";
+import { splitClustersByInnerWall } from "@/lib/roofRecon/wallSplit";
 import { mergeCollinearChains } from "@/lib/roofRecon/straighten";
 import { assembleRoofModel, type AssembleCell } from "@/lib/roofRecon/assembleModel";
 import { COVERAGE_FLOOR } from "@/lib/roofDiagram/confidence";
@@ -425,6 +426,35 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       absorb();
       components();
     }
+  }
+
+  // ── РАСЩЕПЛЕНИЕ КЛАСТЕРА ПО ВНУТРЕННЕЙ СТЕНЕ (отмашка 2026-08-31):
+  //    линия прямого DSM-обрыва насквозь через кластер режет регион на
+  //    интра-секции; каждая секция — полноправный кластер со своей
+  //    плоскостью, стена между ними — штатная граница пары (WallProfile,
+  //    vzOf-близнецы, fade, типы — все читатели штатные). ──
+  {
+    const res = splitClustersByInnerWall({
+      region,
+      regionKind,
+      clusterOf,
+      width: w,
+      height: h,
+      stepFt,
+      minFacetSqft: MIN_FACET_SQFT,
+      zOf: (pi) => (pi < 0 || mask.data[pi] <= 0.5 || penSet.has(pi) ? null : dsm.data[pi] * FT_PER_M - groundElevFt),
+      ftOf: (pi) => m.ftOf(pi),
+      coreDzFt: 2.0,
+      growDzFt: 1.8,
+      registerCluster: (plane, pixels) => {
+        const id = d.clusterPlanes.length;
+        d.clusterPlanes.push(plane);
+        m.clusterIn.push(true);
+        for (const pi of pixels) d.assign[pi] = id;
+        return id;
+      },
+    });
+    if (res.splits) reasons.push(...res.report);
   }
 
   if (process.env.DBG_REGIONS) {
@@ -863,6 +893,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   };
   let demotedSupport = 0;
   let demotedTrespass = 0;
+  let refitted = 0;
   const infos: CellInfo[] = rc.cells.map((cell) => {
     const cl = cell.regionId >= 0 && regionKind[cell.regionId] === "cluster" ? clusterOf[cell.regionId] : -1;
     const pl = cl >= 0 ? clusterPlane.get(cl) : undefined;
@@ -870,6 +901,48 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       const cs = cellCensus(cell, pl, cl!);
       if (cs.rms <= DEFAULT_PLANE_TOL_FT && cs.ownSf >= MIN_FACET_SQFT && cs.foreignMisfitSf < MIN_FACET_SQFT)
         return { cell, rmsFt: cs.rms, cluster: cl, plane: pl, prov: "measured-dsm" };
+      // ── ПЕРЕПОДГОНКА ПО КЛЕТКЕ (отмашка 2026-08-31, «секция —
+      // полноправный кластер со своей плоскостью»): кластерная плоскость
+      // может быть наклонена чужими кусками склейки (12618: cl3 = склон +
+      // плато-крошка → rms клетки > пола → fill → кольцо брало
+      // СКЕЛЕТНЫЕ z с фикцией до +8 ft). Клетка — наименьшая единица
+      // состава: своя LS-плоскость по своим пикселям, та же линейка
+      // (DEFAULT_PLANE_TOL_FT, MIN_FACET_SQFT). Мусор (деревья) её всё
+      // равно провалит — fill остаётся честным отказом.
+      if (cs.rms > DEFAULT_PLANE_TOL_FT) {
+        const own = ((): Plane | null => {
+          let sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0, n = 0;
+          for (let i = 0; i < w * h; i++) {
+            if (region[i] !== cell.regionId) continue;
+            if (mask.data[i] <= 0.5 || penSet.has(i)) continue;
+            const p = m.ftOf(i);
+            const z = dsm.data[i] * FT_PER_M - groundElevFt;
+            sx += p.x; sy += p.y; sz += z;
+            sxx += p.x * p.x; sxy += p.x * p.y; syy += p.y * p.y;
+            sxz += p.x * z; syz += p.y * z;
+            n++;
+          }
+          if (n * pxSqft < MIN_FACET_SQFT) return null;
+          const d11 = sxx - (sx * sx) / n;
+          const d12 = sxy - (sx * sy) / n;
+          const d22 = syy - (sy * sy) / n;
+          const b1 = sxz - (sx * sz) / n;
+          const b2 = syz - (sy * sz) / n;
+          const det = d11 * d22 - d12 * d12;
+          if (Math.abs(det) < 1e-9) return null;
+          const a = (b1 * d22 - b2 * d12) / det;
+          const b = (b2 * d11 - b1 * d12) / det;
+          return { a, b, c: (sz - a * sx - b * sy) / n };
+        })();
+        if (own) {
+          const cs2 = cellCensus(cell, own, cl!);
+          if (cs2.rms <= DEFAULT_PLANE_TOL_FT && cs2.ownSf >= MIN_FACET_SQFT && cs2.foreignMisfitSf < MIN_FACET_SQFT) {
+            refitted++;
+            return { cell, rmsFt: cs2.rms, cluster: cl, plane: own, prov: "measured-dsm" };
+          }
+          if (process.env.DBG_REFIT) console.log(`[refit] регион ${cell.regionId} (cl${cl}): ОТКАЗ rms=${cs2.rms.toFixed(2)} ownSf=${Math.round(cs2.ownSf)} foreign=${Math.round(cs2.foreignMisfitSf)} (кластерный rms=${cs.rms.toFixed(2)})`);
+        } else if (process.env.DBG_REFIT) console.log(`[refit] регион ${cell.regionId} (cl${cl}): плоскость не подгоняется`);
+      }
       if (cs.rms <= DEFAULT_PLANE_TOL_FT) {
         if (cs.ownSf < MIN_FACET_SQFT) demotedSupport++;
         else demotedTrespass++;
@@ -878,6 +951,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     }
     return { cell, rmsFt: Number.POSITIVE_INFINITY, cluster: null, plane: null, prov: "fill" };
   });
+  if (refitted) reasons.push(`переподгонка по клетке: ${refitted} клеток спасено своей плоскостью (кластерная была наклонена склейкой)`);
   if (demotedSupport || demotedTrespass) reasons.push(`закон состава: ${demotedSupport} ячеек без опоры (< ${MIN_FACET_SQFT} sf своих) и ${demotedTrespass} с чужим невписавшимся составом ≥ пола — понижены в fill`);
 
   // ── vertex reconciliation: the polyhedron's own points ──
