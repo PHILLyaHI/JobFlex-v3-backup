@@ -71,6 +71,8 @@ export interface RegionCellsInput {
   /** Прямой DSM-перепад поперёк сегмента (максимум станций): гейт
    *  атомарного переноса конца — конец СТЕНЫ живёт трассой. */
   wallDropOf?: (a: FootprintPoint, b: FootprintPoint) => number;
+  /** Стороны стены на сегменте: перепад и прямозамерные уровни. */
+  wallSidesOf?: (a: FootprintPoint, b: FootprintPoint) => { d: number; zHi: number; zLo: number } | null;
   probeFt?: number;
   minCellSqft?: number;
   /** Лента по этапам: copies of the boundary geometry after each construction
@@ -97,8 +99,29 @@ export interface RegionCell {
   areaSqft: number;
 }
 
+/**
+ * ПРОФИЛЬ СТЕНЫ (приказ 2026-08-31, класс «одна величина — один источник
+ * истины»): строится ОДИН раз на границу пары прямым замером (вторая
+ * разность, закон 1c), станции вдоль трассы, вердикт с гистерезисом
+ * (вход ≥ 2.0, удержание ≥ 1.8 — бимодальный зазор, выцветание не
+ * мигает). ВСЕ слои — проекция, близнецы, типизация, манхэттен,
+ * терминалы — читают только его.
+ */
+export interface WallProfile {
+  stations: Array<{ x: number; y: number; d: number; wall: boolean; zHi?: number; zLo?: number }>;
+  wallFrac: number;
+}
+
 export interface RegionCellsResult {
   cells: RegionCell[];
+  /** Профили стен по парам регионов (ключ a|b, a<b) — источник истины. */
+  wallProfiles: Map<string, WallProfile[]>;
+  /** Вердикт стены в точке для пары регионов (ближайшая станция). */
+  wallAt: (pairA: number, pairB: number, p: FootprintPoint) => boolean | null;
+  /** Вердикт стены в точке по ЛЮБОЙ границе (ближайшая станция <= 1.5 ft). */
+  wallAtPoint: (p: FootprintPoint) => boolean | null;
+  /** Станция профиля пары в точке — вердикт и прямозамерные уровни. */
+  wallStationAt: (pairA: number, pairB: number, p: FootprintPoint) => { wall: boolean; zHi: number; zLo: number } | null;
   euler: number;
   tilingPct: number;
   /** Inter-cluster boundary accounting — the stop-condition numbers. */
@@ -375,6 +398,95 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     return inside;
   };
   interface SimpPoly { pts: Array<FootprintPoint & { c?: boolean }>; pair: [number, number]; li?: number; interCluster: boolean }
+  // ── ПРОФИЛИ СТЕН: один раз на цепь границы, до всех потребителей ──
+  const profiles: Array<WallProfile | null> = vpolys.map((vp) => {
+    if (!input.wallDropOf || vp.pts.length < 2) return null;
+    const stations: WallProfile["stations"] = [];
+    for (let i = 0; i < vp.pts.length; i++) {
+      const a = vp.pts[Math.max(0, i - 2)];
+      const b = vp.pts[Math.min(vp.pts.length - 1, i + 2)];
+      const sides = input.wallSidesOf?.(a, b) ?? null;
+      const d = sides ? sides.d : input.wallDropOf(a, b);
+      stations.push({ x: vp.pts[i].x, y: vp.pts[i].y, d, wall: false, zHi: sides?.zHi, zLo: sides?.zLo });
+    }
+    // гистерезис без направленности: ядро ≥ 2.0, прирастание смежных ≥ 1.8
+    for (const st of stations) st.wall = st.d >= 2.0;
+    for (let pass = 0; pass < stations.length; pass++) {
+      let grew = false;
+      for (let i = 0; i < stations.length; i++) {
+        if (stations[i].wall || stations[i].d < 1.8) continue;
+        if ((i > 0 && stations[i - 1].wall) || (i + 1 < stations.length && stations[i + 1].wall)) {
+          stations[i].wall = true;
+          grew = true;
+        }
+      }
+      if (!grew) break;
+    }
+    const wallN = stations.filter((st) => st.wall).length;
+    return { stations, wallFrac: wallN / stations.length };
+  });
+  const pairProfiles = new Map<string, WallProfile[]>();
+  vpolys.forEach((vp, i) => {
+    const pr = profiles[i];
+    if (!pr) return;
+    const k = vp.pair[0] < vp.pair[1] ? `${vp.pair[0]}|${vp.pair[1]}` : `${vp.pair[1]}|${vp.pair[0]}`;
+    (pairProfiles.get(k) ?? pairProfiles.set(k, []).get(k)!).push(pr);
+  });
+  const wallStationAt = (pa: number, pb: number, p: FootprintPoint): { wall: boolean; zHi: number; zLo: number } | null => {
+    const k = pa < pb ? `${pa}|${pb}` : `${pb}|${pa}`;
+    const prs = pairProfiles.get(k);
+    if (!prs || !prs.length) return null;
+    let best: { d2: number; st: WallProfile["stations"][number] } | null = null;
+    for (const pr of prs) {
+      for (const st of pr.stations) {
+        const d2 = Math.hypot(st.x - p.x, st.y - p.y);
+        if (!best || d2 < best.d2) best = { d2, st };
+      }
+    }
+    if (!best || best.d2 > 1) return null;
+    return { wall: best.st.wall, zHi: best.st.zHi ?? 0, zLo: best.st.zLo ?? 0 };
+  };
+  const wallAtPair = (pa: number, pb: number, p: FootprintPoint): boolean | null => {
+    const k = pa < pb ? `${pa}|${pb}` : `${pb}|${pa}`;
+    const prs = pairProfiles.get(k);
+    if (!prs || !prs.length) return null;
+    let best: { d2: number; wall: boolean } | null = null;
+    for (const pr of prs) {
+      for (const st of pr.stations) {
+        const d2 = Math.hypot(st.x - p.x, st.y - p.y);
+        if (!best || d2 < best.d2) best = { d2, wall: st.wall };
+      }
+    }
+    return best && best.d2 <= 1 ? best.wall : null;
+  };
+  // вердикт по ЛЮБОЙ границе в точке (глобально, ближайшая станция)
+  const wallAtPoint = (p: FootprintPoint): boolean | null => {
+    let best: { d2: number; st: WallProfile["stations"][number] } | null = null;
+    for (const pr of profiles) {
+      if (!pr) continue;
+      for (const st of pr.stations) {
+        const d2 = Math.hypot(st.x - p.x, st.y - p.y);
+        if (!best || d2 < best.d2) best = { d2, st };
+      }
+    }
+    if (!best || best.d2 > 1.5) return null;
+    return best.st.wall && (best.st.zHi ?? 0) - (best.st.zLo ?? 0) >= 1.8;
+  };
+  // вердикт по цепи (индекс vpoly/simped) в точке
+  // СИЛЬНАЯ стена: вердикт станции И прямозамерные уровни ≥ переписи —
+  // точка выцветания для потребителей складка (сшивка в одной точке)
+  const wallAtChain = (pi: number, p: FootprintPoint): boolean | null => {
+    const pr = profiles[pi];
+    if (!pr) return null;
+    let best: { d2: number; st: WallProfile["stations"][number] } | null = null;
+    for (const st of pr.stations) {
+      const d2 = Math.hypot(st.x - p.x, st.y - p.y);
+      if (!best || d2 < best.d2) best = { d2, st };
+    }
+    if (!best || best.d2 > 1) return null;
+    return best.st.wall && (best.st.zHi ?? 0) - (best.st.zLo ?? 0) >= 1.8;
+  };
+
   const simped: SimpPoly[] = vpolys.map((vp) => {
     const ca = clusterOfRegion(vp.pair[0]);
     const cb = clusterOfRegion(vp.pair[1]);
@@ -462,13 +574,11 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       const viaAbsorbed = Math.abs(perp) > perpAllow;
       if (viaAbsorbed && !input.absorbed?.(p)) { refuse.perp++; continue; }
       if (isEnd) { sp.pts[i].c = true; continue; }
-      // NB (RM-A2AQ37, стоп с описанием): по-вершинное вето стены
-      // (перепад поперёк ≥ переписи → вершина живёт трассой) чинило юг
-      // vzof-synth, но на 12621/419 рвало G1: вето-вершины торчали
-      // изломами в цепях, которые ТИПИЗАЦИЯ признала складкой (vzOf/
-      // dsmWallOk мерят своё). Ядро: смешанные границы требуют
-      // ПО-УЧАСТКОВОГО закона стены, согласованного между спрямлением,
-      // vzOf, типизацией и манхэттеном — одна линейка на всех слоях.
+      // ПРОФИЛЬ СТЕНЫ — источник истины (класс «одна величина — один
+      // источник»): wall-вершина живёт трассой/манхэттеном, линия пары
+      // там — фикция пересечения; близнецы и типизация читают ТОТ ЖЕ
+      // профиль, потому изломов «стены, названной складкой» не будет.
+      if (wallAtChain(cd.pi, p) === true) { refuse.perp++; continue; }
       const target = { x: p.x - perp * l.n.x, y: p.y - perp * l.n.y };
       const prev = sp.pts[i - 1];
       const next = sp.pts[i + 1];
@@ -476,14 +586,11 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       sp.pts[i] = { ...target, c: true };
     }
   }
-  // ── СТЕНОВОЙ КРАЙ ПО КОНТУРНЫМ НАПРАВЛЕНИЯМ (отмашка RM-A2AQ37) ──
-  // Стеновая цепь (бесхозная, перепад ≥ переписи) манхэттенизируется:
-  // сегменты классифицируются по осям канона кольца (mod 90°, допуск
-  // 35°), куски < 3 ft поглощаются соседним пробегом («слияние вдоль
-  // ОДНОГО контурного направления»), пробеги строятся прямыми через свои
-  // взвешенные центры, стыки — пересечения соседних прямых (параллельным
-  // — перпендикулярная перемычка). Концы цепи ФИКСИРОВАНЫ (узлы/кольцо),
-  // хорды между узлами нет (урок 12618 — не проекцией на одну прямую).
+  // ── СТЕНОВОЙ КРАЙ ПО КОНТУРНЫМ НАПРАВЛЕНИЯМ (профиль — источник) ──
+  // Wall-подпоследовательности цепи (по профилю) манхэттенизируются:
+  // пробеги по осям кольца, куски < 3 ft поглощаются, диагональные
+  // сегменты (артефакт dp) раскладываются на Г; концы подцепи
+  // фиксированы. Складочные участки цепи не трогаются (их ведёт линия).
   {
     let cs0 = 0;
     let sn0 = 0;
@@ -507,51 +614,24 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
       }
       return null;
     };
-    let manhattan = 0;
-    for (let pi = 0; pi < simped.length; pi++) {
-      const sp = simped[pi];
-      if (sp.pts.length < 2) continue;
-      if (sp.li !== undefined) continue; // li-цепи держит пер-вершинное вето
-      // точный носитель смотра: стена к секции, потерянной маской —
-      // ровно ОДНА сторона fill; кластер-кластерные клинья живут трассой
-      const caM = input.clusterOf[sp.pair[0]] ?? -1;
-      const cbM = input.clusterOf[sp.pair[1]] ?? -1;
-      if ((caM < 0) === (cbM < 0)) continue;
-      const A = sp.pts[0];
-      const B = sp.pts[sp.pts.length - 1];
-      // ЦЕЛЬНО-стеновая цепь: ≥80% вершин с локальным перепадом ≥ переписи
-      // (смешанная цепь остаётся трассой — её складочные вершины при
-      // манхэттене публиковались VALLEY/HIP с прямыми углами → G1)
-      const spanD = { x: B.x - A.x, y: B.y - A.y };
-      const spanL = Math.hypot(spanD.x, spanD.y) || 1;
-      const sd = { x: spanD.x / spanL, y: spanD.y / spanL };
-      let wallN = 0;
-      for (const q of sp.pts) if ((input.wallDropOf?.({ x: q.x - sd.x, y: q.y - sd.y }, { x: q.x + sd.x, y: q.y + sd.y }) ?? 0) >= 1.8) wallN++;
-      const wd0 = wallN >= 0.8 * sp.pts.length ? 99 : 0;
-      if (process.env.DBG_MANH) console.log(`[manh] poly ${pi} [${sp.pair[0]}|${sp.pair[1]}] pts=${sp.pts.length} wall=${wallN} verdict=${wd0}`);
-      if (wd0 < 1.8) continue;
-      // пробеги по направлениям
+    const manhattanize = (pts: Array<FootprintPoint & { c?: boolean }>): Array<FootprintPoint & { c?: boolean }> | null => {
+      const A = pts[0];
+      const B = pts[pts.length - 1];
       interface Run { di: number; len: number; cx: number; cy: number }
       const runs: Run[] = [];
-      const freeLen = 0; void freeLen;
-      for (let k = 0; k + 1 < sp.pts.length; k++) {
-        const a = sp.pts[k];
-        const b = sp.pts[k + 1];
+      for (let k = 0; k + 1 < pts.length; k++) {
+        const a = pts[k];
+        const b = pts[k + 1];
         const len = Math.hypot(b.x - a.x, b.y - a.y);
         if (len < 1e-9) continue;
         let di = dirOf(b.x - a.x, b.y - a.y);
         if (di === null) {
-          // диагональный сегмент стеновой цепи — артефакт dp-упрощения
-          // пиксельной лестницы (tol = шаг решётки сливал её в хорду):
-          // раскладывается на Г по осям — вклад в оба направления
           const lx = Math.abs((b.x - a.x) * dirs0[0].x + (b.y - a.y) * dirs0[0].y);
           const ly = Math.abs((b.x - a.x) * dirs0[1].x + (b.y - a.y) * dirs0[1].y);
           di = lx >= ly ? 0 : 1;
           const other = 1 - di;
-          const lenO = Math.min(lx, ly);
           const lastO = runs[runs.length - 1];
-          if (lastO && lastO.di === other) lastO.len += lenO;
-          // основной вклад пойдёт ниже обычным путём
+          if (lastO && lastO.di === other) lastO.len += Math.min(lx, ly);
         }
         const last = runs[runs.length - 1];
         const mx = (a.x + b.x) / 2;
@@ -562,9 +642,7 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
           last.len += len;
         } else runs.push({ di, len, cx: mx, cy: my });
       }
-      if (process.env.DBG_MANH) console.log(`[manh]   poly ${pi} [${sp.pair[0]}|${sp.pair[1]}] runs=${runs.length} [${runs.map((r) => `d${r.di}:${r.len.toFixed(1)}`).join(",")}]`);
-      if (!runs.length) continue;
-      // поглощение кусков < 3 ft соседним (длинный побеждает), повторно
+      if (!runs.length) return null;
       for (let pass2 = 0; pass2 < 8; pass2++) {
         let k = -1;
         for (let i2 = 0; i2 < runs.length; i2++) if (runs[i2].len < 3 && runs.length > 1) { k = i2; break; }
@@ -576,7 +654,6 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         host.cy = (host.cy * host.len + small.cy * small.len) / (host.len + small.len);
         host.len += small.len;
         runs.splice(k, 1);
-        // слить соседей одного направления
         for (let i2 = 0; i2 + 1 < runs.length; i2++) {
           if (runs[i2].di === runs[i2 + 1].di) {
             const a2 = runs[i2];
@@ -589,15 +666,12 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
           }
         }
       }
-      // прямые пробегов: первая через A, последняя через B, середины через центры
       interface Ln { p: FootprintPoint; d: { x: number; y: number } }
       const lines2: Ln[] = runs.map((r, i2) => ({
         p: i2 === 0 ? { x: A.x, y: A.y } : i2 === runs.length - 1 ? { x: B.x, y: B.y } : { x: r.cx, y: r.cy },
         d: dirs0[r.di],
       }));
-      // цепь: A → пересечения соседних прямых (параллельным — перемычка) → B
       const np: Array<FootprintPoint & { c?: boolean }> = [{ x: A.x, y: A.y, c: true }];
-      let ok = true;
       for (let i2 = 0; i2 + 1 < lines2.length; i2++) {
         const l1 = lines2[i2];
         const l2 = lines2[i2 + 1];
@@ -606,7 +680,6 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
           const t = ((l2.p.x - l1.p.x) * l2.d.y - (l2.p.y - l1.p.y) * l2.d.x) / den;
           np.push({ x: l1.p.x + l1.d.x * t, y: l1.p.y + l1.d.y * t, c: true });
         } else {
-          // параллельные пробеги: перемычка перпендикуляром на границе
           const mid2 = { x: (l1.p.x + l2.p.x) / 2, y: (l1.p.y + l2.p.y) / 2 };
           const t1 = (mid2.x - l1.p.x) * l1.d.x + (mid2.y - l1.p.y) * l1.d.y;
           const t2 = (mid2.x - l2.p.x) * l2.d.x + (mid2.y - l2.p.y) * l2.d.y;
@@ -615,23 +688,54 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         }
       }
       if (runs.length === 1) {
-        // один пробег, концы поперёк разъехались — Г-образная доводка к B
         const l1 = lines2[0];
         const tB = (B.x - l1.p.x) * l1.d.x + (B.y - l1.p.y) * l1.d.y;
         const foot = { x: l1.p.x + l1.d.x * tB, y: l1.p.y + l1.d.y * tB };
         if (Math.hypot(foot.x - B.x, foot.y - B.y) > stepFt) np.push({ ...foot, c: true });
       }
       np.push({ x: B.x, y: B.y, c: true });
-      // стражи: новые звенья не пересекают чужого
-      const allIdx = [...Array(Math.max(0, sp.pts.length - 1)).keys()];
-      for (let i2 = 0; ok && i2 + 1 < np.length; i2++) {
-        if (segsCross(np[i2], np[i2 + 1], pi, allIdx)) ok = false;
+      return np;
+    };
+    let manhattan = 0;
+    for (let pi = 0; pi < simped.length; pi++) {
+      const sp = simped[pi];
+      if (sp.pts.length < 2 || !profiles[pi]) continue;
+      const verd = sp.pts.map((q) => wallAtChain(pi, q) === true);
+      const newPts: Array<FootprintPoint & { c?: boolean }> = [];
+      let changed = false;
+      let k = 0;
+      while (k < sp.pts.length) {
+        if (!verd[k]) { newPts.push(sp.pts[k]); k++; continue; }
+        const k0 = k;
+        while (k + 1 < sp.pts.length && verd[k + 1]) k++;
+        const sub = sp.pts.slice(k0, k + 1);
+        const subSpan = Math.hypot(sub[sub.length - 1].x - sub[0].x, sub[sub.length - 1].y - sub[0].y);
+        let applied = false;
+        if (sub.length >= 2 && subSpan >= 2) {
+          const mh = manhattanize(sub);
+          if (mh) {
+            let okM = true;
+            const allIdx = [...Array(Math.max(0, sp.pts.length - 1)).keys()];
+            for (const q of mh) if (!inRingPt(q)) { okM = false; break; } // угол за кольцом — отказ
+            for (let i2 = 0; okM && i2 + 1 < mh.length; i2++) if (segsCross(mh[i2], mh[i2 + 1], pi, allIdx)) okM = false;
+            if (okM) { newPts.push(...mh); changed = true; applied = true; }
+          }
+        }
+        if (!applied) newPts.push(...sub);
+        k++;
       }
-      if (!ok) continue;
-      sp.pts = np;
-      manhattan++;
+      if (changed) {
+        const ded: typeof newPts = [];
+        for (const q of newPts) {
+          const lastQ = ded[ded.length - 1];
+          if (lastQ && Math.hypot(lastQ.x - q.x, lastQ.y - q.y) < 1e-6) continue;
+          ded.push(q);
+        }
+        sp.pts = ded;
+        manhattan++;
+      }
     }
-    if (manhattan) report.push(`стеновой край: ${manhattan} цепей манхэттенизировано по осям кольца (куски <3 ft слиты, концы фиксированы)`);
+    if (manhattan) report.push(`стеновой край: ${manhattan} цепей манхэттенизировано по wall-участкам профиля`);
   }
   emitStage("straightened");
   // ── 5b. NODE CONSTRUCTION — exact, per junction, AFTER straightening ──
@@ -1243,7 +1347,8 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         // (4·step) — фикция «пересечения плоскостей» (юг vzof-synth уезжал
         // на 2.8 ft к сланту); сдвиг в пределах размытия — уточнение
         // (12621: 1.23 ft чинил кольцо A7)
-        if ((input.wallDropOf?.(nodes[prevN], nodes[n0]) ?? 0) >= 1.8 && bestQ.d > 4 * stepFt) continue;
+        // конец СТЕНЫ живёт трассой — вердикт из ПРОФИЛЯ (не своя станция)
+        if (wallAtPoint(nodes[n0]) === true && bestQ.d > 4 * stepFt) continue;
         if (segCrossB(nodes[prevN], bestQ.pt, new Set([n0, prevN, edges[bestQ.ei].u, edges[bestQ.ei].v]))) { if (dbgA) console.log(`[anode]   X-отказ пересечением`); continue; }
         if (bestQ.moveNode) {
           // перенос узла в точку согласия: все инцидентные цепи следуют;
@@ -1542,5 +1647,5 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   const total = cells0.reduce((s, f) => s + f.area, 0);
   const tilingPct = contourArea > 0 ? (Math.abs(total - contourArea) / contourArea) * 100 : 0;
 
-  return { cells, euler, tilingPct, straightenedFt, raggedFt, artifactFt, canonSnapped, report };
+  return { cells, wallProfiles: pairProfiles, wallAt: wallAtPair, wallAtPoint, wallStationAt, euler, tilingPct, straightenedFt, raggedFt, artifactFt, canonSnapped, report };
 }

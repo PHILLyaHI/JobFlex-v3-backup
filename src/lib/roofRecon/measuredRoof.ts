@@ -455,6 +455,7 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       lines: lines2,
       onStage: input.onStage,
       wallDropOf: (a, b) => directWallDrop(a, b),
+      wallSidesOf: (a, b) => wallSides(a, b),
       absorbed: (p) => {
         // A 5×5 window with fewer assigned pixels than the recon's own
         // minimum plane-fit support (6 — roofRecon needs pts.length >= 6 to
@@ -543,6 +544,35 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   // стороне — vzof-synth мерил перепад восточнее клифа и стены не видел).
   // Для лабельно-смежных пикселей пары: z на 2px вглубь каждой стороны,
   // перепад — максимум (закон клина, как dzEnds «по концам максимумом»).
+  // Стороны стены на станции: тот же примитив, что directWallDrop, но с
+  // УРОВНЯМИ сторон (zHi/zLo прямым замером) — профиль несёт не только
+  // вердикт, но и высоты; близнецы стены читают их, не план-эвалы.
+  const wallSides = (a0: FootprintPoint, b0: FootprintPoint, toRaster?: (p: FootprintPoint) => FootprintPoint): { d: number; zHi: number; zLo: number } | null => {
+    const run0 = Math.hypot(b0.x - a0.x, b0.y - a0.y);
+    if (run0 < 1e-6) return null;
+    const per0 = { x: -(b0.y - a0.y) / run0, y: (b0.x - a0.x) / run0 };
+    let best: { d: number; zHi: number; zLo: number } | null = null;
+    for (const t0 of [0.25, 0.5, 0.75]) {
+      const mid0 = { x: a0.x + (b0.x - a0.x) * t0, y: a0.y + (b0.y - a0.y) * t0 };
+      for (const off0 of [2 * stepFt, 4 * stepFt, 2]) {
+        const zAt = (s0: number): number => {
+          const q0 = { x: mid0.x + per0.x * s0 * off0, y: mid0.y + per0.y * s0 * off0 };
+          const pi0 = m.pxOf(toRaster ? toRaster(q0) : q0);
+          if (pi0 < 0 || mask.data[pi0] <= 0.5 || penSet.has(pi0)) return NaN;
+          return dsm.data[pi0] * FT_PER_M - groundElevFt;
+        };
+        const z1 = zAt(1);
+        const z2 = zAt(-1);
+        if (!Number.isFinite(z1) || !Number.isFinite(z2)) continue;
+        const zo1 = zAt(2);
+        const zo2 = zAt(-2);
+        let d0 = Math.abs(z1 - z2);
+        if (Number.isFinite(zo1) && Number.isFinite(zo2)) d0 = Math.abs((z1 - z2) - (zo1 - z1) - (z2 - zo2));
+        if (!best || d0 > best.d) best = { d: d0, zHi: Math.max(z1, z2), zLo: Math.min(z1, z2) };
+      }
+    }
+    return best;
+  };
   const LOC_SCAN_FT = 4;
   const LOC_STEP_FT = 0.5;
   const LOC_GATE_DEG = 20;
@@ -962,84 +992,33 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
   for (const [k, cis] of vCells) {
     const p = cis[0].cell.ring.find((q) => vKey(q) === k)!;
     const entries = cis.map((ci) => ({ ci, z: zOfInfo(ci, p) })).sort((a, b) => a.z - b.z);
-    const groups: Array<Array<{ ci: CellInfo; z: number }>> = [];
-    for (const e of entries) {
-      const g = groups[groups.length - 1];
-      if (g && e.z - g[g.length - 1].z <= STEP_DZ_FT) g.push(e);
-      else groups.push([e]);
+    // УРОВНИ ВЕРШИНЫ — ОТ ПРОФИЛЯ СТЕНЫ (класс «одна величина — один
+    // источник истины»): клетки сливаются в один уровень, если профиль их
+    // пары в этой точке НЕ стена (складка/нет границы/нет профиля);
+    // разделяются ТОЛЬКО там, где профиль говорит «стена». Прежняя
+    // эвальная цепочка (зазор переписи по план-эвалам) умерла: эвалы
+    // рождали и фиктивных близнецов (SE-ободок), и обратную фикцию
+    // «стены нет» (близкие эвалы на настоящем клифе -> складка с изломами).
+    const parentG = entries.map((_, i) => i);
+    const findG = (i: number): number => (parentG[i] === i ? i : (parentG[i] = findG(parentG[i])));
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        // сплит только там, где станция несёт РАЗВЕДЁННЫЕ уровни (точка
+        // выцветания клина = сшивка): гистерезисный хвост wall-вердикта с
+        // уровнями ниже переписи сваривается — межзонных близнецов (G8)
+        // профиль не публикует
+        const st = rc.wallStationAt(entries[i].ci.cell.regionId, entries[j].ci.cell.regionId, p);
+        const split = st !== null && st.wall && st.zHi - st.zLo >= STEP_DZ_FT;
+        if (!split && findG(i) !== findG(j)) parentG[findG(j)] = findG(i);
+      }
     }
+    const byRoot = new Map<number, Array<{ ci: CellInfo; z: number }>>();
+    for (let i = 0; i < entries.length; i++) {
+      const r = findG(i);
+      (byRoot.get(r) ?? byRoot.set(r, []).get(r)!).push(entries[i]);
+    }
+    const groups: Array<Array<{ ci: CellInfo; z: number }>> = [...byRoot.values()].sort((a, b) => a[0].z - b[0].z);
     const out = new Map<CellInfo, { z: number; tag?: string }>();
-    // Residual disagreement that averaging cannot hide: the validator allows
-    // a face 0.08 ft of planarity, and the LS refit does not split a vertex
-    // mean evenly — so any same-level mismatch beyond that very budget
-    // SPLITS into a micro-seam (each side on its own plane), like a step.
-    // Порог расщепления — ПОСЛЕ сходимости плоскостей: всё, что могло
-    // сойтись, сошлось (чередующийся фит выше), и оставшийся разрыв —
-    // настоящий перепад (дормер, борт), а не шум подгонки. 2×0.08 — бюджет
-    // планарности валидатора на обе стороны. Старый порог 0.08 ДО
-    // сходимости плодил микрошвы и ломал грамматику (62 «rake внутри
-    // крыши»); порог «только ступени 2.0» ломал планарность.
-    // Расщепление вершины — это заявление СТЕНЫ, и заявляется она только
-    // от переписного пола ступени (бимодальный зазор 1.8–2.2). Прежний
-    // порог 0.08 (бюджет планарности) публиковал невязку подгонки как
-    // архитектуру: 25 фантомных пар EAVE/FLASHING на 12629 при Δz
-    // 0.16–1.5 — крошка по периметру, лесенка угла, обрыв ендовы, зазор
-    // конька (пять мест владельца). Ниже пола вершина СВАРИВАЕТСЯ в
-    // измеренное среднее, невязку разносит flatten (его бюджет 2.6 ft
-    // на 419 уже держит).
-    const SPLIT_TOL = STEP_DZ_FT;
-    {
-      const regrouped: typeof groups = [];
-      for (const g of groups) {
-        let cur: (typeof g[number])[] = [];
-        for (const e of g) {
-          if (cur.length && e.z - cur[cur.length - 1].z > SPLIT_TOL) { regrouped.push(cur); cur = []; }
-          cur.push(e);
-        }
-        if (cur.length) regrouped.push(cur);
-      }
-      groups.length = 0;
-      groups.push(...regrouped);
-    }
-    if (groups.length > 1) {
-      const qq = (pp: FootprintPoint): string => `${Math.round(pp.x * 2)}|${Math.round(pp.y * 2)}`;
-      const edgeAt = (ciA: CellInfo, ciB: CellInfo): { a: FootprintPoint; b: FootprintPoint } | null => {
-        const bEdges = new Set(ciB.cell.edges.map((e) => { const k1 = qq(e.a); const k2 = qq(e.b); return k1 < k2 ? `${k1}#${k2}` : `${k2}#${k1}`; }));
-        for (const e of ciA.cell.edges) {
-          const k1 = qq(e.a);
-          const k2 = qq(e.b);
-          const kk = k1 < k2 ? `${k1}#${k2}` : `${k2}#${k1}`;
-          if (!bEdges.has(kk)) continue;
-          if (Math.hypot(e.a.x - p.x, e.a.y - p.y) > 1 && Math.hypot(e.b.x - p.x, e.b.y - p.y) > 1) continue;
-          // вершину судит перепад У ВЕРШИНЫ: у выцветающего клина медиана
-          // станций ПОЛНОГО ребра душила клиф (2.16/1.77/1.38 → 1.77 при
-          // честных 2.5 в вершине, vzof-synth) — ребро обрезается до 3 ft
-          // от вершины (пробник уровня, не длина ребра)
-          const near = Math.hypot(e.a.x - p.x, e.a.y - p.y) <= Math.hypot(e.b.x - p.x, e.b.y - p.y) ? { a: e.a, b: e.b } : { a: e.b, b: e.a };
-          const L3 = Math.hypot(near.b.x - near.a.x, near.b.y - near.a.y);
-          const cl3 = Math.min(1, 3 / Math.max(L3, 1e-6));
-          return { a: near.a, b: { x: near.a.x + (near.b.x - near.a.x) * cl3, y: near.a.y + (near.b.y - near.a.y) * cl3 } };
-        }
-        return null;
-      };
-      for (let gi = 0; gi + 1 < groups.length; ) {
-        let confirmed = false;
-        let sawEdge = false;
-        for (const ea of groups[gi]) {
-          for (const eb of groups[gi + 1]) {
-            const ed = edgeAt(ea.ci, eb.ci);
-            if (!ed) continue;
-            sawEdge = true;
-            if (directWallDrop(ed.a, ed.b) >= STEP_DZ_FT) { confirmed = true; break; }
-          }
-          if (confirmed) break;
-        }
-        if (!confirmed && sawEdge) {
-          if (process.env.DBG_VZ) console.log(`[vz] слияние уровней в (${p.x.toFixed(1)},${p.y.toFixed(1)}): z ${groups[gi].map((e) => e.z.toFixed(1)).join("/")} + ${groups[gi + 1].map((e) => e.z.toFixed(1)).join("/")}`);
-          groups.splice(gi, 2, [...groups[gi], ...groups[gi + 1]]);
-        } else gi++;
-      }
-    }
     const groupZ = (g: Array<{ ci: CellInfo; z: number }>): number => {
       // z уровня В ТОЧКЕ — по ЛОКАЛЬНОЙ ОПОРЕ (приказ 2026-08-30, та же
       // «опора в точке», что у z-солвера): голосуют только плоскости с
@@ -1061,9 +1040,20 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       const z = groupZ(groups[0]);
       for (const e of groups[0]) out.set(e.ci, { z });
     } else {
+      // УРОВНИ БЛИЗНЕЦОВ — ОТ ПРОФИЛЯ: если групповые z (эвальные) сжаты
+      // ниже переписи (обратная фикция у клифа), стороны растягиваются на
+      // прямозамерные уровни станции (zHi/zLo) — G8-межзоны не рождается
+      const zs2 = groups.map((g) => groupZ(g));
+      if (groups.length === 2 && Math.abs(zs2[1] - zs2[0]) < STEP_DZ_FT) {
+        const st = rc.wallStationAt(groups[0][0].ci.cell.regionId, groups[1][0].ci.cell.regionId, p);
+        if (st && st.wall && st.zHi - st.zLo >= STEP_DZ_FT) {
+          const hiIdx = zs2[0] >= zs2[1] ? 0 : 1;
+          zs2[hiIdx] = st.zHi;
+          zs2[1 - hiIdx] = st.zLo;
+        }
+      }
       groups.forEach((g, gi) => {
-        const z = groupZ(g);
-        for (const e of g) out.set(e.ci, { z, tag: `L${gi}` });
+        for (const e of g) out.set(e.ci, { z: zs2[gi], tag: `L${gi}` });
       });
     }
     vzOf.set(k, out);
@@ -1535,43 +1525,22 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         // настоящие стены в тех же данных: 4.0–17.0). Порог — переписной
         // пол, меренный напрямую: медиана |z(+2ft)−z(−2ft)| по трём
         // станциям вдоль линии.
+        // СТЕНУ ГРУППЫ СУДИТ ПРОФИЛЬ (источник истины): большинство
+        // станций линии на wall-участке ближайшей границы. Собственная
+        // линейка типизации (медиана офсетных станций) умерла.
         const dsmWallOk = (): boolean => {
           const a9 = ptById.get(l0.aId)!;
           const b9 = ptById.get(l0.bId)!;
-          const run9 = Math.hypot(b9.x - a9.x, b9.y - a9.y);
-          if (run9 < 1e-6) return true;
-          const per9 = { x: -(b9.y - a9.y) / run9, y: (b9.x - a9.x) / run9 };
-          const drops: number[] = [];
+          let wallY = 0;
+          let n9 = 0;
           for (const t9 of [0.25, 0.5, 0.75]) {
-            const mid9 = { x: a9.x + (b9.x - a9.x) * t9, y: a9.y + (b9.y - a9.y) * t9 };
-            const zSide = (s9: number, off9: number): number => {
-              const q9 = fwd({ x: mid9.x + per9.x * s9 * off9, y: mid9.y + per9.y * s9 * off9 });
-              const pi9 = m.pxOf(q9);
-              if (pi9 < 0 || mask.data[pi9] <= 0.5 || penSet.has(pi9)) return NaN;
-              return dsm.data[pi9] * FT_PER_M - groundElevFt;
-            };
-            // смещение станции — не одно: у ободка над крылом верхний клин
-            // уже пробника (±2 ft перескакивал клин и мерил крыло об крыло —
-            // dsmWallOk=false при честной стене 2.8, 12629 SE-терминус).
-            // Максимум по смещениям, выведенным из шага решётки: 2·step
-            // (сразу за размытием окна), 4·step, 2 ft (прежний пробник).
-            let d9max = NaN;
-            for (const off9 of [2 * m.stepFt, 4 * m.stepFt, 2]) {
-              // вторая разность: ступень — разрыв, не градиент (класс 1c)
-              const z1 = zSide(1, off9);
-              const z2 = zSide(-1, off9);
-              const zo1 = zSide(1, 2 * off9);
-              const zo2 = zSide(-1, 2 * off9);
-              let d9 = Math.abs(z1 - z2);
-              if (Number.isFinite(zo1) && Number.isFinite(zo2) && Number.isFinite(d9)) d9 = Math.abs((z1 - z2) - (zo1 - z1) - (z2 - zo2));
-              if (Number.isFinite(d9) && (!Number.isFinite(d9max) || d9 > d9max)) d9max = d9;
-            }
-            if (Number.isFinite(d9max)) drops.push(d9max);
+            const v = rc.wallAtPoint(fwd({ x: a9.x + (b9.x - a9.x) * t9, y: a9.y + (b9.y - a9.y) * t9 }));
+            if (v === null) continue;
+            n9++;
+            if (v) wallY++;
           }
-          if (process.env.DBG_WALLDROP) console.log(`[walldrop] ${g.map((l) => l.id).join("+")}: drops=[${drops.map((x9) => x9.toFixed(2)).join(",")}]`);
-          if (!drops.length) return true; // мерить не обо что (край кадра)
-          drops.sort((x9, y9) => x9 - y9);
-          return drops[Math.floor(drops.length / 2)] >= STEP_DZ_FT;
+          if (!n9) return true; // мерить не обо что — не мешать (прежний закон)
+          return wallY * 2 > n9;
         };
         if (process.env.DBG_TYPEAT) {
           const [qx, qy] = process.env.DBG_TYPEAT.split(",").map(Number);
@@ -2035,6 +2004,70 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     {
       // ── z-солвер, финальный проход (после планарных хирургий) ──
       {
+        // ── ПЛАН-КОАГУЛЯТОР (класс «один источник», приказ 2026-08-31):
+        // по-сторонние хирургии (лесенки, слияния) разводили план-двойников
+        // сторон границы на 0.1–0.5 ft — vzOf-сварка их больше не видела,
+        // G8 публиковал межзонные двойные линии. Закон «у стены один план»
+        // обобщён на все план-пары: точки одной 0.5-ft клетки внутри
+        // уровня (Δz < переписи) свариваются в одну, между уровнями —
+        // получают ОБЩИЙ план (среднее), z раздельные.
+        {
+          const cellK = (q: { x: number; y: number }): string => `${Math.round(q.x * 2)}|${Math.round(q.y * 2)}`;
+          const byCell = new Map<string, Array<(typeof candidate.points)[number]>>();
+          for (const q of candidate.points) {
+            const k = cellK(q);
+            (byCell.get(k) ?? byCell.set(k, []).get(k)!).push(q);
+          }
+          let welded9 = 0;
+          let coplanned9 = 0;
+          for (const pts9 of byCell.values()) {
+            if (pts9.length < 2) continue;
+            const mx = pts9.reduce((s9, q) => s9 + q.x, 0) / pts9.length;
+            const my = pts9.reduce((s9, q) => s9 + q.y, 0) / pts9.length;
+            // двойник — суб-пиксельная копия: разброс плана больше шага
+            // решётки означает соседей, не двойников (двигать — ломать G1)
+            if (pts9.some((q) => Math.hypot(q.x - mx, q.y - my) > m.stepFt)) continue;
+            // уровни цепочкой по z с разрывом на пол переписи
+            const byZ = pts9.slice().sort((a9, b9) => a9.z - b9.z);
+            const levels9: Array<typeof byZ> = [];
+            for (const q of byZ) {
+              const cur = levels9[levels9.length - 1];
+              if (cur && q.z - cur[cur.length - 1].z < STEP_DZ_FT) cur.push(q);
+              else levels9.push([q]);
+            }
+            for (const lv of levels9) {
+              if (lv.length < 2) { lv[0].x = mx; lv[0].y = my; continue; }
+              const keep = lv[0];
+              keep.x = mx;
+              keep.y = my;
+              for (const q of lv.slice(1)) {
+                for (const l of candidate.lines) {
+                  if (l.aId === q.id) l.aId = keep.id;
+                  if (l.bId === q.id) l.bId = keep.id;
+                }
+                candidate.points = candidate.points.filter((q2) => q2.id !== q.id);
+                welded9++;
+              }
+            }
+            if (levels9.length > 1) coplanned9++;
+          }
+          // вычистка: нулевые линии и дубли пар точек
+          const seen9 = new Map<string, string>();
+          const drop9 = new Set<string>();
+          for (const l of candidate.lines) {
+            if (l.aId === l.bId) { drop9.add(l.id); continue; }
+            const k = l.aId < l.bId ? `${l.aId}#${l.bId}` : `${l.bId}#${l.aId}`;
+            const first = seen9.get(k);
+            if (!first) seen9.set(k, l.id);
+            else {
+              drop9.add(l.id);
+              for (const f of candidate.faces) f.lineIds = f.lineIds.map((id) => (id === l.id ? first : id));
+            }
+          }
+          if (drop9.size) candidate.lines = candidate.lines.filter((l) => !drop9.has(l.id));
+          for (const f of candidate.faces) f.lineIds = f.lineIds.filter((id, idx) => f.lineIds.indexOf(id) === idx || candidate.lines.some((l) => l.id === id));
+          if (welded9 || coplanned9) reasons.push(`план-коагулятор: ${welded9} точек сварено внутри уровней, ${coplanned9} клеток стен получили общий план`);
+        }
         const crossB = applyZSolver("instant");
         if (crossB) reasons.push(`z-солвер: ${crossB} вершин с расхождением ≥ переписи (топология уровней)`);
         // ровность коньков по финальным z: конёк, ставший наклонным, — вальма
