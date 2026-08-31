@@ -717,29 +717,29 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         p: i2 === 0 ? { x: A.x, y: A.y } : i2 === runs.length - 1 ? { x: B.x, y: B.y } : { x: r.cx, y: r.cy },
         d: dirs0[r.di],
       }));
-      const np: Array<FootprintPoint & { c?: boolean }> = [{ x: A.x, y: A.y, c: true }];
+      const np: Array<FootprintPoint & { c?: boolean; m?: boolean }> = [{ x: A.x, y: A.y, c: true, m: true }];
       for (let i2 = 0; i2 + 1 < lines2.length; i2++) {
         const l1 = lines2[i2];
         const l2 = lines2[i2 + 1];
         const den = l1.d.x * l2.d.y - l1.d.y * l2.d.x;
         if (Math.abs(den) > 1e-6) {
           const t = ((l2.p.x - l1.p.x) * l2.d.y - (l2.p.y - l1.p.y) * l2.d.x) / den;
-          np.push({ x: l1.p.x + l1.d.x * t, y: l1.p.y + l1.d.y * t, c: true });
+          np.push({ x: l1.p.x + l1.d.x * t, y: l1.p.y + l1.d.y * t, c: true, m: true });
         } else {
           const mid2 = { x: (l1.p.x + l2.p.x) / 2, y: (l1.p.y + l2.p.y) / 2 };
           const t1 = (mid2.x - l1.p.x) * l1.d.x + (mid2.y - l1.p.y) * l1.d.y;
           const t2 = (mid2.x - l2.p.x) * l2.d.x + (mid2.y - l2.p.y) * l2.d.y;
-          np.push({ x: l1.p.x + l1.d.x * t1, y: l1.p.y + l1.d.y * t1, c: true });
-          np.push({ x: l2.p.x + l2.d.x * t2, y: l2.p.y + l2.d.y * t2, c: true });
+          np.push({ x: l1.p.x + l1.d.x * t1, y: l1.p.y + l1.d.y * t1, c: true, m: true });
+          np.push({ x: l2.p.x + l2.d.x * t2, y: l2.p.y + l2.d.y * t2, c: true, m: true });
         }
       }
       if (runs.length === 1) {
         const l1 = lines2[0];
         const tB = (B.x - l1.p.x) * l1.d.x + (B.y - l1.p.y) * l1.d.y;
         const foot = { x: l1.p.x + l1.d.x * tB, y: l1.p.y + l1.d.y * tB };
-        if (Math.hypot(foot.x - B.x, foot.y - B.y) > stepFt) np.push({ ...foot, c: true });
+        if (Math.hypot(foot.x - B.x, foot.y - B.y) > stepFt) np.push({ ...foot, c: true, m: true });
       }
-      np.push({ x: B.x, y: B.y, c: true });
+      np.push({ x: B.x, y: B.y, c: true, m: true });
       return np;
     };
     let manhattan = 0;
@@ -866,6 +866,17 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         const t = (j.p.x - l.a.x) * l.d.x + (j.p.y - l.a.y) * l.d.y;
         if (t >= -l.E && t <= l.L + l.E) cand.add(sp.li);
       }
+    }
+    // СТЕНА ЖИВЁТ ТРАССОЙ и в узлах (2026-08-31, след A2 12629): узел на
+    // пересечении ДВУХ wallPair-линий — точка встречи двух фикций
+    // направления (вальма [2,6] с ложным клин-вердиктом × стена [3,6]
+    // σ⊥ 3.2 вставала на 3.9 ft южнее угла: кольцо A2 заступало за
+    // стену, клетка падала в fill, уклон 8.0 → 5.6). Одна честная линия
+    // в узле — пересечение живёт (широкий запрет отвергнут замером:
+    // R03 на 12629/12618 — traced mean хуже честного пересечения).
+    if (cand.size >= 2 && [...cand].every((li) => lines[li]?.wallPair)) {
+      const arr0 = [...cand];
+      for (const li of arr0) cand.delete(li);
     }
     if (process.env.DBG_NODE) {
       const [qx, qy] = process.env.DBG_NODE.split(",").map(Number);
@@ -1146,13 +1157,43 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
   // artifactFt stays 0 until the absorbed-territory straightening lands with
   // the in-graph exact construction (see ROOF-STATE, final-block record).
   const artifactFt = 0;
+  if (process.env.DBG_PTS) {
+    const [px9, py9, pr9] = process.env.DBG_PTS.split(",").map(Number);
+    for (let pi9 = 0; pi9 < simped.length; pi9++) {
+      const sp9 = simped[pi9];
+      const hit = sp9.pts.some((q9) => Math.hypot(q9.x - px9, q9.y - py9) <= pr9);
+      if (hit) console.log(`[pts] poly ${pi9} [${sp9.pair}] li=${sp9.li ?? "-"}: ${sp9.pts.map((q9) => `(${q9.x.toFixed(1)},${q9.y.toFixed(1)}${(q9 as { c?: boolean }).c ? "c" : ""}${(q9 as { m?: boolean }).m ? "m" : ""}${(q9 as { f?: boolean }).f ? "f" : ""})`).join(" ")}`);
+    }
+  }
   for (const sp of simped) {
     for (let i = 0; i + 1 < sp.pts.length; i++) {
       const u = nodeAt(sp.pts[i]);
       const v = nodeAt(sp.pts[i + 1]);
       if (u === v) continue;
       const segLen = Math.hypot(sp.pts[i + 1].x - sp.pts[i].x, sp.pts[i + 1].y - sp.pts[i].y);
-      const straight = sp.li !== undefined && (sp.pts[i].c ?? false) && (sp.pts[i + 1].c ?? false);
+      // ЧЕСТНЫЙ ПРОВЕНАНС РЕБРА (2026-08-31, след A2 12629): c-метка
+      // значит «вершина выправлена», но манхэттен-вершина (m) выправлена
+      // К ОСЯМ КОЛЬЦА, не к несущей — её ребро НЕ наследует lineIndex
+      // (иначе «фиктивные срединные узлы» проецировали стену-манхэттен
+      // на вальма-несущую: перп 5.05 ft, узел уезжал на 3.9 ft, кольцо
+      // A2 заступало за стену, клетка в fill законом состава, уклон
+      // 8.0 → 5.6). Судить геометрией (близость к линии) отвергнуто
+      // замером трижды: пороги шаг/2·шаг/σ⊥ роняли то 12621 (честно
+      // съехавшие снапы теряли прову — G1 53.9°), то 12629 (R03).
+      // Провенанс — от ИСТОЧНИКА метки, не от порога.
+      // …на ЧЕСТНОЙ несущей прова живёт без порога (манхэттен и
+      // срединная проекция — рабочая пара: осевание + возврат на линию;
+      // разрыв пары ронял 12621 G1 53.9°); на wallPair-линии (фикция
+      // направления) прову несут только вершины, фактически ЛЕЖАЩИЕ на
+      // ней (квант растра) — стена-манхэттен с перп 5.05 ft отрезана
+      const offWall = (q: FootprintPoint): boolean => {
+        if (sp.li === undefined || !lines[sp.li]?.wallPair) return false;
+        const l9 = lineGeom[sp.li];
+        return Math.abs((q.x - l9.a.x) * l9.n.x + (q.y - l9.a.y) * l9.n.y) > stepFt;
+      };
+      const straight = sp.li !== undefined
+        && (sp.pts[i].c ?? false) && (sp.pts[i + 1].c ?? false)
+        && !offWall(sp.pts[i]) && !offWall(sp.pts[i + 1]);
       if (sp.interCluster) {
         if (straight) straightenedFt += segLen;
         else raggedFt += segLen;

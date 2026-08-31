@@ -695,6 +695,10 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     for (const l of baseLines) if (snapLineToIntersection(l) === "wall") { l.wallPair = true; walls0++; }
     if (walls0) reasons.push(`${walls0} линий пар с клифом: линия — фикция пересечения, трасса на неё не проецируется (стеновой край манхэттенизируется)`);
   }
+  if (process.env.DBG_MLINES) {
+    for (const l of baseLines)
+      console.log(`[mline] [${l.between}] (${l.a.x.toFixed(1)},${l.a.y.toFixed(1)})→(${l.b.x.toFixed(1)},${l.b.y.toFixed(1)}) wallPair=${l.wallPair} σ⊥=${l.sigmaPerpFt?.toFixed(2) ?? "-"}`);
+  }
   let rcLines = baseLines;
   let rc = runCells(rcLines);
   {
@@ -1169,6 +1173,17 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     const k = planEdgeKey(e.a, e.b);
     planEdgeCount.set(k, (planEdgeCount.get(k) ?? 0) + 1);
   }
+  if (process.env.DBG_EDGEAT) {
+    const [ex, ey] = process.env.DBG_EDGEAT.split(",").map(Number);
+    for (const ci of infos) {
+      for (const e of ci.cell.edges) {
+        const mx = (e.a.x + e.b.x) / 2;
+        const my = (e.a.y + e.b.y) / 2;
+        if (Math.min(Math.hypot(e.a.x - ex, e.a.y - ey), Math.hypot(e.b.x - ex, e.b.y - ey), Math.hypot(mx - ex, my - ey)) > 1.5) continue;
+        console.log(`[edgeat] cell r${ci.cell.regionId}(cl${ci.cluster ?? "-"} ${ci.prov}) ${e.prov}${e.pair ? `[${e.pair}]` : ""} (${e.a.x.toFixed(1)},${e.a.y.toFixed(1)})→(${e.b.x.toFixed(1)},${e.b.y.toFixed(1)})`);
+      }
+    }
+  }
   const cells: AssembleCell[] = infos.map((ci) => {
     const grad = ci.plane && ci.prov !== "fill"
       ? { a: ci.plane.a, b: ci.plane.b }
@@ -1404,6 +1419,16 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
     });
     if (process.env.DBG_ZPT) {
       const [qx, qy] = process.env.DBG_ZPT.split(",").map(Number);
+      {
+        const noSrc = candidate.faces.filter((f9) => faceSrc.get(f9.id) === undefined);
+        if (noSrc.length) console.log(`[zpt] граней без faceSrc: ${noSrc.map((f9) => f9.designator ?? f9.id).join(",")}`);
+        const idx9 = buildIndexes(candidate);
+        for (const f9 of candidate.faces) {
+          const r9 = ringOf(f9.lineIds, idx9);
+          if (r9 && r9.some((q9) => Math.hypot(q9.x - qx, q9.y - qy) <= 0.5))
+            console.log(`[zpt] точка в кольце ${f9.designator ?? f9.id} (faceSrc=${faceSrc.get(f9.id) ?? "НЕТ"})`);
+        }
+      }
       for (const pt of candidate.points) {
         if (Math.hypot(pt.x - qx, pt.y - qy) > 0.5) continue;
         const refs = [...(ownersZ.get(pt.id) ?? [])].map((si) => {
