@@ -121,5 +121,17 @@ const run = (zAt: (x: number, y: number) => number | null) => {
   check("крона не режет (0 расщеплений, 1 регион)", r.res.splits === 0 && r.regionKind.length === 1, `splits=${r.res.splits}, регионов=${r.regionKind.length}`);
 }
 
+// ── Случай 4 (отмашка п.2): СКЛАДКА — две плоскости разных градиентов,
+//    высота непрерывна (стены нет): суд плоскостей обеих сторон ──
+{
+  const r = run((x, y) => (x + y < 0 ? 10 + 0.5 * (x + y) : 10 + 0.2 * (x + y)));
+  console.log(`СЛУЧАЙ 4 — складка без стены (|Δ∇|≈3.6/12): расщеплений ${r.res.splits}, регионов ${r.regionKind.length}`);
+  check("складка режет (1 расщепление, 2 региона)", r.res.splits === 1 && r.regionKind.length === 2, `splits=${r.res.splits}, регионов=${r.regionKind.length}`);
+  if (r.res.splits === 1) {
+    const g = r.clusters.slice(1).map((c) => Math.hypot(c.plane.a, c.plane.b) * 12);
+    check("градиенты секций ≈ 8.5 и 3.4 (±1)", g.some((v) => Math.abs(v - 8.5) < 1) && g.some((v) => Math.abs(v - 3.4) < 1), `∇·12 = ${g.map((v) => v.toFixed(1)).join(" / ")}`);
+  }
+}
+
 console.log(failures ? `\n${failures} FAIL` : "\nALL PASS");
 process.exit(failures ? 1 : 0);

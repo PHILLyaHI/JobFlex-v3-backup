@@ -114,6 +114,49 @@ export function splitClustersByInnerWall(input: WallSplitInput): WallSplitResult
     return n >= 3 ? Math.sqrt(ss / n) : Number.POSITIVE_INFINITY;
   };
 
+  // ── ЗАМЕР СКЛАДОЧНОГО ИЗЛОМА (п.2 отмашки): |Δнаклона| по 4px-плечам,
+  //    печать распределения для вывода порога из данных ──
+  const creaseMagOf = (pi: number): number => {
+    const x = pi % w;
+    const y = (pi - x) / w;
+    let best = 0;
+    for (const [dx, dy] of SCAN_DIRS) {
+      const at = (k: number): number | null => {
+        const nx = x + dx * k;
+        const ny = y + dy * k;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) return null;
+        return zOf(ny * w + nx);
+      };
+      // наклон плеча — LS по 5 сэмплам (сырые разности шумят 2–6/12,
+      // складка 5.4/12 тонет; LS давит шум до ~1.2/12)
+      const slopeLS = (sgn: number): number | null => {
+        let sk = 0, sz = 0, skk = 0, skz = 0, n = 0;
+        for (let k = 1; k <= 5; k++) {
+          const z = at(sgn * k);
+          if (z === null) return null;
+          sk += k; sz += z; skk += k * k; skz += k * z;
+        }
+        n = 5;
+        const den = n * skk - sk * sk;
+        const unit = stepFt * Math.hypot(dx, dy);
+        return ((n * skz - sk * sz) / den) * sgn / unit;
+      };
+      const sL = slopeLS(-1);
+      const sR = slopeLS(1);
+      if (sL === null || sR === null) continue;
+      const d0 = Math.abs(sR - sL);
+      if (d0 > best) best = d0;
+    }
+    return best;
+  };
+  if (process.env.DBG_CREASE) {
+    for (const [r, pixels] of pixelsOf) {
+      const mags = pixels.map(creaseMagOf).sort((a, b) => a - b);
+      const q = (f: number) => (mags[Math.floor(f * (mags.length - 1))] * 12).toFixed(1);
+      console.log(`[crease] регион ${r} (cl${clusterOf[r]}, ${Math.round(pixels.length * pxSqft)}sf): |Δs|·12 медиана ${q(0.5)} p75 ${q(0.75)} p90 ${q(0.9)} p97 ${q(0.97)} max ${q(1)}`);
+    }
+  }
+
   for (const [r, pixels] of pixelsOf) {
     if (pixels.length * pxSqft < 2 * input.minFacetSqft) continue; // резать не на что
     // 1) карта обрыва: вторая разность поперёк пикселя (макс по
@@ -320,6 +363,87 @@ export function splitClustersByInnerWall(input: WallSplitInput): WallSplitResult
         secPixels.map((c) => `${Math.round(c.length * pxSqft)}sf`).join(" | ") +
         `), полоса обрыва ${Math.round(band.size * pxSqft)}sf`,
     );
+  }
+  // ── РАСЩЕПЛЕНИЕ ПО СКЛАДКЕ (отмашка 2026-08-31 п.2): излом уклона при
+  //    непрерывной высоте. NB (§J, замер): по-пиксельная линейка излома
+  //    (|Δнаклона| плеч, сырые и LS-сглаженные) ОТВЕРГНУТА — фон гладких
+  //    скатов 2.7–15/12 (медианы) против сигнала 5.4/12 на 12618: пол
+  //    видимости 0.5/12 на пикселях честно не измерим. Измеримая форма —
+  //    суд ПЛОСКОСТЕЙ: перебор прямых-кандидатов (8 направлений × позиции
+  //    шагом ~1 ft); разрез принимается, когда ОБЕ стороны держат свою
+  //    плоскость (тот же пол, что суд клетки) и их градиенты расходятся
+  //    ≥ пола видимости перегиба 0.5/12 (LEVEL_SLOPE закона складок —
+  //    на плоскостях он честен). Режутся только регионы, НЕ держащие
+  //    собственную плоскость (иначе резать незачем — тот же rms-пол). ──
+  {
+    const LEVEL_SLOPE = 0.5 / 12;
+    const pixelsOf2 = new Map<number, number[]>();
+    for (let i = 0; i < w * h; i++) {
+      const r = region[i];
+      if (r < 0 || regionKind[r] !== "cluster") continue;
+      (pixelsOf2.get(r) ?? pixelsOf2.set(r, []).get(r)!).push(i);
+    }
+    for (const [r, pixels] of pixelsOf2) {
+      if (pixels.length * pxSqft < 2 * input.minFacetSqft) continue;
+      const pl0 = fitPlanePx(pixels);
+      if (!pl0) continue;
+      const rms0 = rmsOf(pixels, pl0);
+      if (rms0 <= input.planeTolFt) continue; // планарна — резать незачем
+      // перебор прямых: 8 направлений × позиции по нормали шагом 3·шаг
+      let bestCut: { nx: number; ny: number; c: number; rmsMax: number; plA: { a: number; b: number; c: number }; plB: { a: number; b: number; c: number } } | null = null;
+      for (let di = 0; di < 8; di++) {
+        const th = (di * Math.PI) / 8;
+        const nx = Math.cos(th);
+        const ny = Math.sin(th);
+        let mn = Infinity, mx = -Infinity;
+        for (const pi of pixels) {
+          const p = ftOf(pi);
+          const t = p.x * nx + p.y * ny;
+          if (t < mn) mn = t;
+          if (t > mx) mx = t;
+        }
+        for (let c0 = mn + 1; c0 < mx - 1; c0 += 3 * stepFt) {
+          const A: number[] = [];
+          const B: number[] = [];
+          for (const pi of pixels) {
+            const p = ftOf(pi);
+            (p.x * nx + p.y * ny < c0 ? A : B).push(pi);
+          }
+          // пол секции складки — 2× пол грани: 17sf-огрызок на 12618
+          // проходил полом грани и рождал R13/G2 (крошка — не скат)
+          if (A.length * pxSqft < 2 * input.minFacetSqft || B.length * pxSqft < 2 * input.minFacetSqft) continue;
+          const plA = fitPlanePx(A);
+          const plB = fitPlanePx(B);
+          if (!plA || !plB) continue;
+          if (Math.hypot(plA.a - plB.a, plA.b - plB.b) < LEVEL_SLOPE) continue; // копланарные — не складка
+          const rmsMax = Math.max(rmsOf(A, plA), rmsOf(B, plB));
+          if (rmsMax > input.planeTolFt) continue;
+          if (!bestCut || rmsMax < bestCut.rmsMax) bestCut = { nx, ny, c: c0, rmsMax, plA, plB };
+        }
+      }
+      if (!bestCut) {
+        if (process.env.DBG_CREASE) console.log(`[crease] регион ${r}: rms0=${rms0.toFixed(2)} — прямой складки, дающей две плоскости, нет`);
+        continue;
+      }
+      // раскрой по прямой: стороны → компоненты, мусор — к ближайшей (BFS)
+      const sideOf = new Map<number, number>();
+      for (const pi of pixels) {
+        const p = ftOf(pi);
+        sideOf.set(pi, p.x * bestCut.nx + p.y * bestCut.ny < bestCut.c ? 0 : 1);
+      }
+      const secPx: number[][] = [[], []];
+      for (const pi of pixels) secPx[sideOf.get(pi)!].push(pi);
+      const newRid = regionKind.length;
+      regionKind.push("cluster");
+      clusterOf.push(clusterOf[r]);
+      for (const pi of secPx[1]) region[pi] = newRid;
+      clusterOf[r] = input.registerCluster(bestCut.plA, secPx[0]);
+      clusterOf[newRid] = input.registerCluster(bestCut.plB, secPx[1]);
+      splits++;
+      report.push(
+        `расщепление по складке: регион ${r} (rms ${rms0.toFixed(2)}) → 2 секции (${Math.round(secPx[0].length * pxSqft)}sf | ${Math.round(secPx[1].length * pxSqft)}sf), rms сторон ≤ ${bestCut.rmsMax.toFixed(2)}, |Δ∇| ${(Math.hypot(bestCut.plA.a - bestCut.plB.a, bestCut.plA.b - bestCut.plB.b) * 12).toFixed(1)}/12`,
+      );
+    }
   }
   if (regionKind.length > nRegions0) report.push(`регионов было ${nRegions0}, стало ${regionKind.length}`);
   return { splits, report };
