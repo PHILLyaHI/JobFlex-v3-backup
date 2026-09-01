@@ -26,6 +26,18 @@ import { tryWavefront } from "@/lib/roofRecon/wavefrontGate";
 import { buildMeasuredRoof } from "@/lib/roofRecon/measuredRoof";
 import type { FootprintPoint } from "@/lib/roofRecon/footprint";
 import { loadFixture, type FixtureMeta } from "./fixture";
+import type { ArbiterSegment } from "@/lib/roofRecon/googleArbiter";
+
+// Google-арбитр из кэша — та же форма, что в продакшен-экшене (без него
+// прошитая модель расходилась с приёмочной: §K13-разбор 2026-08-31)
+const googleFromCache = (key: string): ArbiterSegment[] | null => {
+  const f = resolve(".cache/roof-diagram", `bi-${key}.json`);
+  if (!existsSync(f)) return null;
+  try {
+    const raw = JSON.parse(readFileSync(f, "utf8")) as { segments?: ArbiterSegment[] };
+    return raw.segments ?? null;
+  } catch { return null; }
+};
 
 interface Job { key: string; dir: string; fixture?: string; address: string; city: string; state: string; zip: string }
 const JOBS: Job[] = [
@@ -91,6 +103,7 @@ function rasterFrom(file: string, meta: FixtureMeta): Raster {
       dsm, mask, contour,
       transform: reg.applied ? reg.transform : { dxFt: 0, dyFt: 0, thetaDeg: 0 },
       skeleton,
+      google: googleFromCache(job.key),
     });
     const model = res.model ?? skeleton;
     const stitch = {
