@@ -1655,21 +1655,60 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         zs9.sort((a9, b9) => a9 - b9);
         return zs9[Math.floor(zs9.length / 2)];
       };
-      const dz1 = dsmZAt({ x: mid.x + per.x * probeD, y: mid.y + per.y * probeD });
-      const dz2 = dsmZAt({ x: mid.x - per.x * probeD, y: mid.y - per.y * probeD });
-      const dzc = dsmZAt(mid);
-      if (dz1 !== null && dz2 !== null && dzc !== null) {
-        if (dz1 > dzc && dz2 > dzc) return "VALLEY";
-        if (dz1 < dzc && dz2 < dzc) return level ? "RIDGE" : "HIP";
-        // mixed — рефери решил «не складка»: перегиб без V/Λ-формы.
-        // NB (замер 2026-08-31, ТРИ формы фолбэка к плоскостям отвергнуты
-        // качелями): «всякий mixed» — Euler 2 на 12618 + R03 на 419;
-        // «обе пробы в шуме 0.12» — R03 на 12621; «нарушитель в шуме» —
-        // R03 на 419. Слабый перегиб (нарушитель < шума поверхности)
-        // рефери честно НЕ измерим, а плоскостной суд по нему тасует
-        // швы глобально — качели-сигнатура. Ответ null; серые линии
-        // слабых перегибов — честный OTHER (см. ROOF-STATE).
-        return null;
+      // МНОГОСТАНЦИОННЫЙ СУДЬЯ ФОРМЫ (отмашка 2026-08-31, блок 6 п.1):
+      // V/Λ судится не одной пробой в середине, а СТАНЦИЯМИ вдоль линии
+      // (профильный принцип WallProfile — вердикт crease вместо wall):
+      // когерентная форма = все валидные станции одного знака и их ≥ 3.
+      // Прежний одноточечный рефери пропускал «перегибы с формой»
+      // (страница смотра: шесть мест с обеими сторонами в одну сторону
+      // при OTHER-типе). Три формы ФОЛБЭКА mixed→плоскости отвергнуты
+      // качелями (§K29) — здесь не фолбэк, а расширение самого рефери.
+      {
+        const voteAt = (t9: number): "V" | "L" | "mix" | null => {
+          const st = { x: a.x + (b.x - a.x) * t9, y: a.y + (b.y - a.y) * t9 };
+          const s1 = dsmZAt({ x: st.x + per.x * probeD, y: st.y + per.y * probeD });
+          const s2 = dsmZAt({ x: st.x - per.x * probeD, y: st.y - per.y * probeD });
+          const sc = dsmZAt(st);
+          if (s1 === null || s2 === null || sc === null) return null;
+          // ступень — не форма: стороны на разных уровнях (≥ переписи)
+          // давали Λ-фикцию (419: медиана центра на кромке дубля съезжала
+          // на верхний уровень, обе стороны «ниже» — R03 каскадом)
+          if (Math.abs(s1 - s2) >= STEP_DZ_FT) return "mix";
+          if (s1 > sc && s2 > sc) return "V";
+          if (s1 < sc && s2 < sc) return "L";
+          return "mix";
+        };
+        // середина решает как прежний одноточечный рефери (расширение —
+        // строгая форма ломала 419: R03, замер); при mixed в середине
+        // слово берут СТАНЦИИ вдоль линии — когерентная форма без
+        // противо-голосов
+        const midV = voteAt(0.5);
+        if (midV === "V") return "VALLEY";
+        if (midV === "L") return level ? "RIDGE" : "HIP";
+        if (midV === "mix") {
+          let vV = 0;
+          let vL = 0;
+          for (const t9 of [0.2, 0.35, 0.65, 0.8]) {
+            const v9 = voteAt(t9);
+            if (v9 === "V") vV++;
+            else if (v9 === "L") vL++;
+          }
+          const sv = vV >= 3 && vL === 0 ? "V" : vL >= 3 && vV === 0 ? "L" : null;
+          // ДВУСТОРОННИЙ СУД (отмашка: «прошла форму — под судом
+          // плоскостей»): форма станций берёт слово только при согласии
+          // ПЛОСКОСТНОГО суда сторон (клеточные плоскости владельцев).
+          // Без него форма одна типизировала парапет-гребень на 419 —
+          // R03 каскадом (замер).
+          if (sv) {
+            const z1p = own[0].pl.a * (mid.x + per.x * s1 * probeD) + own[0].pl.b * (mid.y + per.y * s1 * probeD) + own[0].pl.c;
+            const z2p = own[1].pl.a * (mid.x + per.x * s2b * probeD) + own[1].pl.b * (mid.y + per.y * s2b * probeD) + own[1].pl.c;
+            const pv = z1p > zc && z2p > zc ? "V" : z1p < zc && z2p < zc ? "L" : null;
+            if (pv === sv) return sv === "V" ? "VALLEY" : level ? "RIDGE" : "HIP";
+          }
+          // формы нет, она рвётся вдоль, или плоскости не согласны —
+          // честный null (§K29)
+          return null;
+        }
       }
       const z1 = own[0].pl.a * (mid.x + per.x * s1 * PROBE_FT) + own[0].pl.b * (mid.y + per.y * s1 * PROBE_FT) + own[0].pl.c;
       const z2 = own[1].pl.a * (mid.x + per.x * s2b * PROBE_FT) + own[1].pl.b * (mid.y + per.y * s2b * PROBE_FT) + own[1].pl.c;
@@ -2423,6 +2462,12 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
             if (!did) break;
           }
           if (mergedS > 0) reasons.push(`по-сегментное спрямление (модель): ${mergedS} изломов crease-цепей слито`);
+          // NB (замер 2026-08-31): ПЕРЕ-СУД слитых серых формой после
+          // спрямления ОТВЕРГНУТ — типизация задним числом (после сборки
+          // швов) каскадит: G1 на 12629/419, A2 8.1→7.1. Слабые формы
+          // на коротких дублях остаются OTHER с провенансом; форма
+          // судит только в типизации (многостанционный рефери + 
+          // двусторонний суд) — до сборки швов.
           dbgTrace("post-segstraight");
         }
 

@@ -1134,7 +1134,18 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
         // wall-вердикт внутри интервала?
         let hasWall = false;
         for (let k = a; k <= b; k++) if (wallAtChain(pi, sp.pts[k]) === true) { hasWall = true; break; }
-        if (hasWall) { for (let k = a + 1; k <= b; k++) newPts.push(sp.pts[k]); continue; }
+        if (hasWall) {
+          // NB (§J, замер 2026-08-31, блок 6 п.2): «крюк у конца
+          // wall-интервала сносится» ОТВЕРГНУТ двумя формами: глубокий
+          // снос (все не-wall вершины ≤ пробника от конца) — R03/R13 на
+          // 12618, серые 6→9; одно-вершинный — G1 на 12629 + G2 на 419,
+          // A2 8.1→7.1. Не-wall вершины у конца wall-интервала — часть
+          // ТРАССЫ стены (гистерезисные хвосты станций), их снос двигает
+          // швы. Возврат — по слову владельца с местом конкретного крюка
+          // (тогда прямой след по месту, не слепой закон).
+          for (let k = a + 1; k <= b; k++) newPts.push(sp.pts[k]);
+          continue;
+        }
         // прямая между законными вершинами; страж — пересечения
         if (segsCross(sp.pts[a], sp.pts[b], pi, [...Array(sp.pts.length - 1).keys()])) {
           for (let k = a + 1; k <= b; k++) newPts.push(sp.pts[k]);
