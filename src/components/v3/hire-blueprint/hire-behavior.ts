@@ -26,8 +26,10 @@ import {
 import {
   contactTalentProfile,
   createTradeJob,
+  deleteTradeJob,
   getMyTradeJobs,
   setTradeJobStatus,
+  updateTradeJob,
   type DiscoverProfileDTO,
 } from "@/actions/tradeServices";
 import type { OwnPost } from "@/app/(mobile)/trade-services/trade-data";
@@ -316,7 +318,7 @@ export function initHireContent(
     if (doors) {
       doors.innerHTML = HUB_DOORS.map(function (d) {
         return '<button class="door" type="button" data-goto="' + d.goto + '">' +
-          '<span class="door-kicker">' + d.kicker + '</span>' +
+          (d.kicker ? '<span class="door-kicker">' + d.kicker + '</span>' : '') +
           '<span class="door-ic"><svg class="ic"><use href="#' + d.icon + '"/></svg></span>' +
           '<span class="door-t" style="display:block">' + d.title + '</span>' +
           '<span class="door-b" style="display:block">' + d.body + '</span>' +
@@ -351,64 +353,134 @@ export function initHireContent(
   // 2026-08-23: "remove the listing thing", "say Post a Job"). Listing
   // management still lives at /trade-services and on the handheld hire sheet.
   const RATE_UNITS = ["per hour", "per day", "per job"];
-  function emptyPost() {
+
+  /** One field set, two homes: the composer on the "Post a job" panel and the
+   *  edit form in the sheet. They write the same eight values and they have to
+   *  go on saying the same thing — a second, hand-copied form is how the two
+   *  drift apart. */
+  type JobForm = {
+    title: string; trade: string; specialties: string; area: string;
+    rateMin: string; rateMax: string; rateUnit: string; details: string;
+  };
+  function emptyPost(): JobForm {
     return { title: "", trade: "", specialties: "", area: "", rateMin: "", rateMax: "", rateUnit: "per hour", details: "" };
   }
   let post = emptyPost();
   let disposePlaces: (() => void) | null = null;
+  let disposeEditPlaces: (() => void) | null = null;
   disposers.push(function () { if (disposePlaces) disposePlaces(); });
+  disposers.push(function () { if (disposeEditPlaces) disposeEditPlaces(); });
 
-  /** "$45–60 / hour" — the TradeJob.budget string this post carries. */
-  function budgetString(): string | null {
-    const a = post.rateMin.trim().replace(/^\$+/, "");
-    const b = post.rateMax.trim().replace(/^\$+/, "");
+  /** "$45" for a figure, the text as typed for anything else — a rate the
+   *  author wrote as "Negotiable" must not come back as "$Negotiable". */
+  function money(v: string) { return /^[0-9]/.test(v) ? "$" + v : v; }
+
+  /** min / max / unit -> the `TradeJob.budget` string this post carries. */
+  function rateToBudget(min: string, max: string, unit: string): string | null {
+    const a = min.trim().replace(/^\$+/, "");
+    const b = max.trim().replace(/^\$+/, "");
     if (!a && !b) return null;
-    const range = a && b ? "$" + a + "\u2013" + b : "$" + (a || b);
-    return range + " / " + post.rateUnit.replace("per ", "");
+    const range = a && b ? money(a) + "–" + b : money(a || b);
+    return unit ? range + " / " + unit.replace("per ", "") : range;
+  }
+
+  /** The inverse, for the edit form. Lenient on purpose: `budget` is a free
+   *  string and the phone composer writes shapes this form never emits
+   *  ("$2,400-3,000", "$3,500+"). A value with no "/ unit" suffix parses to an
+   *  EMPTY unit, and `rateToBudget` re-emits it without one — so opening a post
+   *  in the editor and saving it untouched cannot silently invent a "/ hour"
+   *  that the author never wrote. */
+  function budgetToRate(budget: string | undefined) {
+    let s = (budget || "").trim();
+    let unit = "";
+    const m = s.match(/\s*\/\s*(hour|day|job)\s*$/i);
+    if (m && m.index !== undefined) {
+      unit = "per " + m[1].toLowerCase();
+      s = s.slice(0, m.index);
+    }
+    const parts = s.split(/\s*[–—-]\s*/);
+    const strip = function (v: string) { return (v || "").replace(/^\$+/, "").trim(); };
+    return { rateMin: strip(parts[0]), rateMax: strip(parts[1]), rateUnit: unit };
+  }
+
+  /** The shared markup. Both forms read back through `data-jf`; they never
+   *  share a container, so the key does not have to differ. */
+  function jobFieldsHTML(f: JobForm, areaId: string, unitOptional: boolean) {
+    const tradeOpts = TRADE_TYPES.map(function (x) {
+      return '<option value="' + esc(x) + '"' + (f.trade === x ? " selected" : "") + '>' + esc(x) + "</option>";
+    }).join("");
+    const units = (unitOptional ? [""] : []).concat(RATE_UNITS);
+    return '<label class="sf"><span class="sf-lbl">Title</span>' +
+        '<input class="sf-in" data-jf="title" value="' + esc(f.title) + '" placeholder="e.g. Cedar fence install — 120 ft"></label>' +
+      '<div class="sf-row">' +
+        '<label class="sf"><span class="sf-lbl">Trade</span>' +
+          '<span class="bp-sel"><select class="bp-sel-in" data-jf="trade"' + (f.trade ? "" : ' data-empty="1"') + '>' +
+            '<option value="" disabled' + (f.trade ? "" : " selected") + '>Pick a trade</option>' + tradeOpts +
+          "</select></span></label>" +
+        '<label class="sf"><span class="sf-lbl">Specialties</span>' +
+          '<input class="sf-in" data-jf="specialties" value="' + esc(f.specialties) + '" placeholder="Metal roofs, cedar fences, decks"></label>' +
+      "</div>" +
+      '<label class="sf"><span class="sf-lbl">Service area</span>' +
+        '<input class="sf-in" id="' + areaId + '" data-jf="area" value="' + esc(f.area) + '" placeholder="King County, WA" autocomplete="off"></label>' +
+      '<div class="sf"><span class="sf-lbl">Rate</span><div class="sf-rate">' +
+        '<input class="sf-in" data-jf="rateMin" inputmode="decimal" value="' + esc(f.rateMin) + '" placeholder="45">' +
+        '<span class="sf-rate-dash">–</span>' +
+        '<input class="sf-in" data-jf="rateMax" inputmode="decimal" value="' + esc(f.rateMax) + '" placeholder="60">' +
+        '<span class="bp-sel sf-rate-unit"><select class="bp-sel-in" data-jf="rateUnit">' +
+          units.map(function (u) {
+            return '<option value="' + esc(u) + '"' + (f.rateUnit === u ? " selected" : "") + '>' + (u ? esc(u) : "no unit") + "</option>";
+          }).join("") +
+        "</select></span>" +
+      "</div></div>" +
+      '<label class="sf"><span class="sf-lbl">Details</span>' +
+        '<textarea class="sf-area" data-jf="details" placeholder="Scope, timing, access — enough for a contractor to say yes.">' + esc(f.details) + "</textarea></label>";
+  }
+
+  /** Typed values live in the state object, so a re-render never loses a
+   *  keystroke. Scoped to the form's own container. */
+  function bindJobFields(scope: HTMLElement, f: JobForm) {
+    scope.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-jf]").forEach(function (el) {
+      el.addEventListener("input", function () {
+        const k = el.dataset.jf || "";
+        (f as unknown as Record<string, string>)[k] = el.value;
+        if (k === "trade") el.removeAttribute("data-empty");
+      });
+    });
+  }
+
+  /** The three rules `createTradeJob` / `updateTradeJob` enforce server-side,
+   *  said in the user's words before the round trip is spent. */
+  function jobFormError(f: JobForm): string | null {
+    if (f.title.trim().length < 5) return "Give the post a short title (5+ characters).";
+    if (!f.trade) return "Pick a trade so the right contractors are notified.";
+    if (f.details.trim().length < 20) return "Describe the work (20+ characters).";
+    return null;
+  }
+
+  function jobFormPayload(f: JobForm) {
+    return {
+      title: f.title.trim(),
+      description: f.details.trim(),
+      tradeType: f.trade,
+      specialties: csv(f.specialties),
+      location: f.area.trim() || null,
+      budget: rateToBudget(f.rateMin, f.rateMax, f.rateUnit),
+      timeWindow: null,
+      urgency: null,
+    };
   }
 
   function renderPost() {
     const box = $("#profBox");
     if (!box) return;
-    const tradeOpts = TRADE_TYPES.map(function (x) {
-      return '<option value="' + x + '"' + (post.trade === x ? " selected" : "") + '>' + x + "</option>";
-    }).join("");
     box.innerHTML =
-      '<label class="sf"><span class="sf-lbl">Title</span>' +
-        '<input class="sf-in" data-j="title" value="' + esc(post.title) + '" placeholder="e.g. Cedar fence install \u2014 120 ft"></label>' +
-      '<div class="sf-row">' +
-        '<label class="sf"><span class="sf-lbl">Trade</span>' +
-          '<span class="bp-sel"><select class="bp-sel-in" data-j="trade"' + (post.trade ? "" : ' data-empty="1"') + '>' +
-            '<option value="" disabled' + (post.trade ? "" : " selected") + '>Pick a trade</option>' + tradeOpts +
-          "</select></span></label>" +
-        '<label class="sf"><span class="sf-lbl">Specialties</span>' +
-          '<input class="sf-in" data-j="specialties" value="' + esc(post.specialties) + '" placeholder="Metal roofs, cedar fences, decks"></label>' +
-      "</div>" +
-      '<label class="sf"><span class="sf-lbl">Service area</span>' +
-        '<input class="sf-in" id="postArea" data-j="area" value="' + esc(post.area) + '" placeholder="King County, WA" autocomplete="off"></label>' +
-      '<div class="sf"><span class="sf-lbl">Rate</span><div class="sf-rate">' +
-        '<input class="sf-in" data-j="rateMin" inputmode="decimal" value="' + esc(post.rateMin) + '" placeholder="45">' +
-        '<span class="sf-rate-dash">\u2013</span>' +
-        '<input class="sf-in" data-j="rateMax" inputmode="decimal" value="' + esc(post.rateMax) + '" placeholder="60">' +
-        '<span class="bp-sel sf-rate-unit"><select class="bp-sel-in" data-j="rateUnit">' +
-          RATE_UNITS.map(function (u) { return '<option value="' + u + '"' + (post.rateUnit === u ? " selected" : "") + '>' + u + "</option>"; }).join("") +
-        "</select></span>" +
-      "</div></div>" +
-      '<label class="sf"><span class="sf-lbl">Details</span>' +
-        '<textarea class="sf-area" data-j="details" placeholder="Scope, timing, access \u2014 enough for a contractor to say yes.">' + esc(post.details) + "</textarea></label>" +
+      jobFieldsHTML(post, "postArea", false) +
       '<div class="mf-err is-hidden" id="profErr" role="alert"></div>' +
       '<div class="pok is-hidden" id="postOk" role="status"></div>' +
       '<div class="sf-act"><button class="btn btn-primary btn--sm" type="button" data-act="post-job">' +
         '<svg class="ic"><use href="#i-send"/></svg><span data-save-lbl>Post a job</span></button></div>';
 
-    // Typed values live in `post`, so a re-render never loses a keystroke.
-    box.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-j]").forEach(function (el) {
-      el.addEventListener("input", function () {
-        const k = el.dataset.j || "";
-        (post as unknown as Record<string, string>)[k] = el.value;
-        if (k === "trade") el.removeAttribute("data-empty");
-      });
-    });
+    bindJobFields(box, post);
     // Google Places on the area field — with no browser key it stays a plain
     // text input and free typing still posts.
     if (disposePlaces) { disposePlaces(); disposePlaces = null; }
@@ -428,71 +500,215 @@ export function initHireContent(
     return h < 1 ? "just now" : h < 24 ? h + "h ago" : Math.floor(h / 24) + "d ago";
   }
 
+  // ---- Filters, shared by "Your job posts" and the talent directory ----
+  // Drawn selects (`.bp-sel`), each wrapped in its own `<label>`, so every
+  // control is reachable and announced without a single `tabindex`. State lives
+  // outside the render so a repaint never resets what the user chose.
+  const postFilter: Record<string, string> = { status: "", trade: "" };
+  const talentFilter: Record<string, string> = { trade: "" };
+
+  const POST_STATUSES = [
+    { v: "OPEN", label: "Open" },
+    { v: "FILLED", label: "Filled" },
+    { v: "CANCELLED", label: "Cancelled" },
+  ];
+
+  function optionsHTML(
+    opts: Array<{ v: string; label: string }>,
+    selected: string,
+    allLabel: string,
+  ) {
+    return '<option value=""' + (selected ? "" : " selected") + ">" + esc(allLabel) + "</option>" +
+      opts.map(function (o) {
+        return '<option value="' + esc(o.v) + '"' + (selected === o.v ? " selected" : "") + ">" +
+          esc(o.label) + "</option>";
+      }).join("");
+  }
+
+  function plainOptions(values: string[]) {
+    return values.map(function (v) { return { v: v, label: v }; });
+  }
+
+  function filterSelectHTML(key: string, label: string, inner: string) {
+    return '<label class="jfilter"><span class="jfilter-lbl">' + esc(label) + "</span>" +
+      '<span class="bp-sel"><select class="bp-sel-in" data-filter="' + esc(key) + '">' +
+      inner + "</select></span></label>";
+  }
+
+  function filterBarHTML(controls: string, shown: number, total: number, active: boolean) {
+    return '<div class="jfilters">' +
+      '<span class="jfilters-ic"><svg class="ic"><use href="#i-filter"/></svg></span>' +
+      controls +
+      '<span class="jfilters-n">' + shown + " of " + total + "</span>" +
+      (active
+        ? '<button class="btn btn-ghost btn--sm jfilters-clear" type="button" data-filter-clear="1">Clear</button>'
+        : "") +
+      "</div>";
+  }
+
+  /** Re-render on change, then put the keyboard back where it was: the repaint
+   *  replaced the very control the user was operating, and a select that loses
+   *  focus the moment you choose from it cannot be driven by keyboard at all. */
+  function bindFilters(box: HTMLElement, state: Record<string, string>, rerender: () => void) {
+    box.querySelectorAll<HTMLSelectElement>("select[data-filter]").forEach(function (el) {
+      el.addEventListener("change", function () {
+        const key = el.dataset.filter || "";
+        state[key] = el.value;
+        rerender();
+        box.querySelector<HTMLSelectElement>('select[data-filter="' + key + '"]')?.focus();
+      });
+    });
+    box.querySelectorAll<HTMLButtonElement>("[data-filter-clear]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        Object.keys(state).forEach(function (k) { state[k] = ""; });
+        rerender();
+        box.querySelector<HTMLSelectElement>("select[data-filter]")?.focus();
+      });
+    });
+  }
+
   // ---- "Your job posts" — the caller's broadcasts, with their responses ----
+  function statusChip(status: string) {
+    return status === "OPEN" ? '<span class="pstatus pstatus--accepted">Open</span>'
+      : status === "FILLED" ? '<span class="pstatus pstatus--viewed">Filled</span>'
+      : '<span class="pstatus pstatus--declined">Cancelled</span>';
+  }
+
+  function visiblePosts() {
+    return myPostsData.filter(function (j) {
+      if (postFilter.status && j.status !== postFilter.status) return false;
+      if (postFilter.trade && j.tradeType !== postFilter.trade) return false;
+      return true;
+    });
+  }
+
+  function postRowHTML(j: OwnPost) {
+    // The rate has its own slot rather than being buried in the meta line —
+    // it is the number you scan a list of posts FOR. A post with no rate simply
+    // omits the element; a placeholder dash would be a column of nothing.
+    const meta = [j.tradeType, j.location, agoText(j.hoursAgo)].filter(Boolean).join(" · ");
+    const acts =
+      (j.status === "OPEN"
+        ? '<button class="btn btn-ghost btn--sm" type="button" data-post-edit="' + esc(j.id) + '">' +
+            '<svg class="ic"><use href="#i-pen"/></svg>Edit</button>' +
+          '<button class="btn btn-ghost btn--sm" type="button" data-post-act="FILLED" data-id="' + esc(j.id) + '">Mark filled</button>' +
+          '<button class="btn btn-ghost btn--sm mypost-cancel" type="button" data-post-act="CANCELLED" data-id="' + esc(j.id) + '">Cancel</button>'
+        : "") +
+      '<button class="btn btn-ghost btn--sm mypost-del" type="button" data-post-del="' + esc(j.id) + '">' +
+        '<svg class="ic"><use href="#i-trash"/></svg><span data-save-lbl>Delete</span></button>';
+    return '<li class="mypost-row" data-row="' + esc(j.id) + '">' +
+      '<button class="mypost-main" type="button" data-post-open="' + esc(j.id) + '">' +
+        '<span class="mypost-t">' + esc(j.title) + "</span>" +
+        '<span class="mypost-m">' + esc(meta) + "</span>" +
+        '<span class="mypost-m">' + j.broadcastCount + " notified · " + j.interestedCount + " interested</span>" +
+      "</button>" +
+      (j.budget ? '<span class="mypost-rate">' + esc(j.budget) + "</span>" : "") +
+      '<span class="mypost-side">' + statusChip(j.status) +
+        '<span class="mypost-acts">' + acts + "</span></span>" +
+    "</li>";
+  }
+
   function renderMyPosts() {
     const box = $("#myPostsBox");
     if (!box) return;
+    // The "nothing here yet" state belongs to an empty ACCOUNT, and a filter
+    // must never be able to fake it — see the filtered-empty branch below.
     if (!myPostsData.length) {
       box.innerHTML =
         '<div class="pempty" style="margin:0"><b>No job posts yet</b><br>' +
         "Post a job above and it lands here with its responses.</div>";
       return;
     }
+    const rows = visiblePosts();
+    const trades = Array.from(new Set(myPostsData.map(function (j) { return j.tradeType; }))).sort();
+    const active = !!(postFilter.status || postFilter.trade);
+    const hidden = myPostsData.length - rows.length;
     box.innerHTML =
-      '<ul class="mypost-list">' +
-      myPostsData.map(function (j) {
-        const chip =
-          j.status === "OPEN" ? '<span class="pstatus pstatus--accepted">Open</span>'
-          : j.status === "FILLED" ? '<span class="pstatus pstatus--viewed">Filled</span>'
-          : '<span class="pstatus">Cancelled</span>';
-        const meta = [j.tradeType, j.location, j.budget, agoText(j.hoursAgo)].filter(Boolean).join(" \u00b7 ");
-        const acts = j.status === "OPEN"
-          ? '<button class="btn btn-ghost btn--sm" type="button" data-post-act="FILLED" data-id="' + esc(j.id) + '">Mark filled</button>' +
-            '<button class="btn btn-ghost btn--sm mypost-cancel" type="button" data-post-act="CANCELLED" data-id="' + esc(j.id) + '">Cancel</button>'
-          : "";
-        return '<li class="mypost-row"><span class="mypost-main">' +
-          '<span class="mypost-t">' + esc(j.title) + "</span>" +
-          '<span class="mypost-m">' + esc(meta) + "</span>" +
-          '<span class="mypost-m">' + j.broadcastCount + " notified \u00b7 " + j.interestedCount + " interested</span>" +
-          '</span><span class="mypost-side">' + chip + acts + "</span></li>";
-      }).join("") +
-      "</ul>";
+      filterBarHTML(
+        filterSelectHTML("status", "Status", optionsHTML(POST_STATUSES, postFilter.status, "All statuses")) +
+          filterSelectHTML("trade", "Trade", optionsHTML(plainOptions(trades), postFilter.trade, "All trades")),
+        rows.length,
+        myPostsData.length,
+        active,
+      ) +
+      (rows.length
+        ? '<ul class="mypost-list">' + rows.map(postRowHTML).join("") + "</ul>"
+        : '<div class="pempty pempty--filtered"><b>No posts match these filters</b><br>' +
+            hidden + " post" + (hidden === 1 ? " is" : "s are") + " hidden by the status and trade you picked." +
+            '<div style="margin-top:14px">' +
+              '<button class="btn btn-ghost btn--sm" type="button" data-filter-clear="1">Clear filters</button>' +
+            "</div></div>");
+    bindFilters(box, postFilter, renderMyPosts);
+  }
+
+  /** The list's own failure line. It lives OUTSIDE `#myPostsBox`, so a rollback
+   *  re-render cannot wipe the message that explains the rollback. */
+  function myPostsError(msg: string | null) {
+    const box = $("#myPostsErr");
+    if (!box) return;
+    box.textContent = msg || "";
+    box.classList.toggle("is-hidden", !msg);
   }
 
   // ---- "Discover talent" — other orgs' opted-in profiles ----
+  function visibleTalent() {
+    return talentData.filter(function (p) {
+      if (talentFilter.trade && p.tradeTypes.indexOf(talentFilter.trade) === -1) return false;
+      return true;
+    });
+  }
+
+  function talentRowHTML(p: DiscoverProfileDTO) {
+    const trades = p.tradeTypes.join(" · ");
+    const skills = p.specialties.join(", ");
+    return '<li class="tal-row">' +
+      '<span class="hub-row-ic"><svg class="ic"><use href="#i-hardhat"/></svg></span>' +
+      '<span class="tal-main">' +
+        '<span class="tal-name">' + esc(p.company || p.name) + "</span>" +
+        (p.company && p.name !== p.company ? '<span class="tal-who">' + esc(p.name) + "</span>" : "") +
+        (trades || skills
+          ? '<span class="tal-sub">' + esc(trades) + (trades && skills ? " — " : "") + esc(skills) + "</span>"
+          : "") +
+      "</span>" +
+      (p.serviceArea ? '<span class="tal-area">' + esc(p.serviceArea) + "</span>" : "") +
+      (contacted.has(p.id)
+        ? '<button class="btn btn-ghost btn--sm tal-contact" type="button" disabled>Sent ✓</button>'
+        : '<button class="btn btn-ghost btn--sm tal-contact" type="button" data-contact="' + esc(p.id) + '">' +
+          '<svg class="ic"><use href="#i-send"/></svg>I’m interested</button>') +
+    "</li>";
+  }
+
   function renderTalent() {
     const box = $("#talentBox");
     if (!box) return;
     if (!talentData.length) {
       box.innerHTML =
         '<div class="tal-empty"><div class="pempty" style="margin:0">' +
-          '<b>No companies are open for work yet</b><br>' +
-          'Profiles that switch on “Open for work” appear here.' +
-        '</div></div>';
+          "<b>No companies are open for work yet</b><br>" +
+          "Profiles that switch on “Open for work” appear here." +
+        "</div></div>";
       return;
     }
+    const rows = visibleTalent();
+    const trades = Array.from(
+      new Set(talentData.reduce<string[]>(function (acc, p) { return acc.concat(p.tradeTypes); }, [])),
+    ).sort();
     box.innerHTML =
-      '<ul class="tal-list">' +
-      talentData.map(function (p) {
-        const trades = p.tradeTypes.join(" · ");
-        const skills = p.specialties.join(", ");
-        return '<li class="tal-row">' +
-          '<span class="hub-row-ic"><svg class="ic"><use href="#i-hardhat"/></svg></span>' +
-          '<span class="tal-main">' +
-            '<span class="tal-name">' + esc(p.company || p.name) + '</span>' +
-            (p.company && p.name !== p.company ? '<span class="tal-who">' + esc(p.name) + '</span>' : '') +
-            (trades || skills
-              ? '<span class="tal-sub">' + esc(trades) + (trades && skills ? " — " : "") + esc(skills) + '</span>'
-              : '') +
-          '</span>' +
-          (p.serviceArea ? '<span class="tal-area">' + esc(p.serviceArea) + '</span>' : '') +
-          (contacted.has(p.id)
-            ? '<button class="btn btn-ghost btn--sm tal-contact" type="button" disabled>Sent \u2713</button>'
-            : '<button class="btn btn-ghost btn--sm tal-contact" type="button" data-contact="' + esc(p.id) + '">' +
-              '<svg class="ic"><use href="#i-send"/></svg>I\u2019m interested</button>') +
-        '</li>';
-      }).join('') +
-      '</ul>';
+      filterBarHTML(
+        filterSelectHTML("trade", "Trade", optionsHTML(plainOptions(trades), talentFilter.trade, "All trades")),
+        rows.length,
+        talentData.length,
+        !!talentFilter.trade,
+      ) +
+      (rows.length
+        ? '<ul class="tal-list">' + rows.map(talentRowHTML).join("") + "</ul>"
+        : '<div class="tal-empty"><div class="pempty pempty--filtered" style="margin:0">' +
+            "<b>Nobody listed under that trade</b><br>" +
+            "Clear the filter to see every company that is open for work." +
+            '<div style="margin-top:14px">' +
+              '<button class="btn btn-ghost btn--sm" type="button" data-filter-clear="1">Clear filter</button>' +
+            "</div></div></div>");
+    bindFilters(box, talentFilter, renderTalent);
   }
 
   function renderHire() { renderBoard(); renderHub(); renderPost(); renderMyPosts(); renderTalent(); }
@@ -516,6 +732,9 @@ export function initHireContent(
     hire.sheet = null;
     hire.editing = null;
     hire.armed = null;
+    // The edit form's Places listener is bound to a node inside `#sheetBody`
+    // that the next `openSheet` overwrites — release it with the form.
+    if (disposeEditPlaces) { disposeEditPlaces(); disposeEditPlaces = null; }
   }
   function sheetError(msg: string | null) {
     const box = $("#sheetErr");
@@ -719,6 +938,12 @@ export function initHireContent(
     });
   }
 
+  // ---- job-post detail + edit (the house sheet, not a second modal) ----
+  /** The post the sheet is showing / editing. Kept apart from `hire.editing`,
+   *  which belongs to the applicant sheet. */
+  let postEditingId: string | null = null;
+  let postEdit: JobForm = emptyPost();
+
   on(document, "click", (ev) => {
     const target = ev.target as HTMLElement | null;
     if (!target) return;
@@ -727,10 +952,34 @@ export function initHireContent(
     if (goto) { switchTab(goto.dataset.goto ?? ""); return; }
     const link = target.closest<HTMLElement>("[data-href]");
     if (link) { goRoute(link.dataset.href ?? "/dashboard/hire"); return; }
+    const postEditBtn = target.closest<HTMLElement>("[data-post-edit]");
+    if (postEditBtn) {
+      if (hire.saving) return;
+      openPostEdit(postEditBtn.dataset.postEdit || "");
+      return;
+    }
+    const postDel = target.closest<HTMLElement>("[data-post-del]");
+    if (postDel) {
+      if (hire.saving) return;
+      void removePost(postDel, postDel.dataset.postDel || "", false);
+      return;
+    }
     const postAct = target.closest<HTMLElement>("[data-post-act]");
     if (postAct) {
       if (hire.saving) return;
-      void changePostStatus(postAct.dataset.id || "", postAct.dataset.postAct === "FILLED" ? "FILLED" : "CANCELLED");
+      void changePostStatus(
+        postAct.dataset.id || "",
+        postAct.dataset.postAct === "FILLED" ? "FILLED" : "CANCELLED",
+        !!postAct.dataset.sheetSrc,
+      );
+      return;
+    }
+    // Last of the post handlers: the row's own control wraps the title, so the
+    // action buttons beside it have to be claimed first.
+    const postOpen = target.closest<HTMLElement>("[data-post-open]");
+    if (postOpen) {
+      if (hire.saving) return;
+      openPostDetail(postOpen.dataset.postOpen || "");
       return;
     }
     const contactBtn = target.closest<HTMLButtonElement>("[data-contact]");
@@ -763,6 +1012,10 @@ export function initHireContent(
     if (kind === "convert") { void convertApplicant(act); return; }
     if (kind === "delete-applicant") { void removeApplicant(act); return; }
     if (kind === "create-applicant") { void submitApplicant(act, val); return; }
+    if (kind === "edit-post") { openPostEdit(act.dataset.id || ""); return; }
+    if (kind === "post-detail") { openPostDetail(act.dataset.id || ""); return; }
+    if (kind === "save-post") { void savePostEdit(act); return; }
+    if (kind === "delete-post") { void removePost(act, act.dataset.id || "", true); return; }
   });
 
   /** Split a comma-separated field into the JSON list the profile stores. */
@@ -780,58 +1033,221 @@ export function initHireContent(
       errBox.classList.toggle("is-hidden", !msg);
     };
     $("#postOk")?.classList.add("is-hidden");
-    const title = post.title.trim();
-    const details = post.details.trim();
-    if (title.length < 5) { setErr("Give the post a short title (5+ characters)."); return; }
-    if (!post.trade) { setErr("Pick a trade so the right contractors are notified."); return; }
-    if (details.length < 20) { setErr("Describe the work (20+ characters)."); return; }
+    const invalid = jobFormError(post);
+    if (invalid) { setErr(invalid); return; }
     setErr(null);
-    setSaving(btn, true, "Posting\u2026", "Post a job");
+    setSaving(btn, true, "Posting…", "Post a job");
     try {
-      const res = await createTradeJob({
-        title,
-        description: details,
-        tradeType: post.trade,
-        specialties: csv(post.specialties),
-        location: post.area.trim() || null,
-        budget: budgetString(),
-        timeWindow: null,
-        urgency: null,
-      });
+      const res = await createTradeJob(jobFormPayload(post));
       post = emptyPost();
       hire.saving = false;
       renderPost();
       const ok = $("#postOk");
       if (ok) {
         ok.textContent =
-          "Posted \u2014 broadcast to " + res.broadcastCount +
+          "Posted — broadcast to " + res.broadcastCount +
           " matching contractor" + (res.broadcastCount === 1 ? "" : "s") + ".";
         ok.classList.remove("is-hidden");
       }
       try { myPostsData = await getMyTradeJobs(); } catch { /* list refresh is best-effort */ }
       renderMyPosts();
     } catch (err) {
-      setSaving(btn, false, "Posting\u2026", "Post a job");
+      setSaving(btn, false, "Posting…", "Post a job");
       const b = $("#profErr");
       if (b) { b.textContent = actionError(err); b.classList.remove("is-hidden"); }
     }
   }
 
-  /** Mark filled / cancel — optimistic, rolled back if the server refuses. */
-  async function changePostStatus(id: string, status: "FILLED" | "CANCELLED") {
+  /** Mark filled / cancel — optimistic, rolled back if the server refuses.
+   *  Driven from the row and from the detail sheet; the sheet closes first,
+   *  because the panel it was showing has just stopped being true. */
+  async function changePostStatus(id: string, status: "FILLED" | "CANCELLED", fromSheet?: boolean) {
     const row = myPostsData.find(function (j) { return j.id === id; });
     if (!row) return;
+    if (fromSheet) closeSheet();
     const prev = row.status;
     row.status = status;
     renderMyPosts();
-    const errBox = $("#myPostsErr");
-    if (errBox) errBox.classList.add("is-hidden");
+    myPostsError(null);
     try {
       await setTradeJobStatus(id, status);
     } catch (err) {
       row.status = prev;
       renderMyPosts();
-      if (errBox) { errBox.textContent = actionError(err); errBox.classList.remove("is-hidden"); }
+      myPostsError(actionError(err));
+    }
+  }
+
+  /** The detail panel: everything the row could not carry — the full brief, the
+   *  specialties, the reach, and the two numbers that say whether the broadcast
+   *  worked. */
+  function openPostDetail(id: string) {
+    const j = myPostsData.find(function (x) { return x.id === id; });
+    if (!j) return;
+    postEditingId = id;
+    hire.sheet = "post-detail";
+    hire.editing = null;
+    hire.armed = null;
+    const metaRow = function (label: string, value: string) {
+      return '<div class="sf-meta-row"><span class="kpi-lbl">' + esc(label) + "</span>" +
+        "<span>" + esc(value) + "</span></div>";
+    };
+    openSheet(j.title,
+      '<div class="sf-meta">' +
+        '<div class="sf-meta-row"><span class="kpi-lbl">Status</span><span>' + statusChip(j.status) + "</span></div>" +
+        metaRow("Trade", j.tradeType) +
+        metaRow("Service area", j.location || "Not given") +
+        metaRow("Rate", j.budget || "Not given") +
+        (j.timeWindow ? metaRow("Timing", j.timeWindow) : "") +
+        metaRow("Posted", agoText(j.hoursAgo)) +
+        metaRow("Notified", j.broadcastCount + " contractor" + (j.broadcastCount === 1 ? "" : "s")) +
+        metaRow("Interested", j.interestedCount + " raised a hand") +
+      "</div>" +
+      '<div class="sf"><span class="sf-lbl">The job</span>' +
+        '<p class="sf-read">' + esc(j.description) + "</p></div>" +
+      (j.specialties.length
+        ? '<div class="sf"><span class="sf-lbl">Specialties</span>' +
+            '<ul class="sf-tags">' +
+              j.specialties.map(function (s) { return '<li class="sf-tag">' + esc(s) + "</li>"; }).join("") +
+            "</ul></div>"
+        : "") +
+      '<div class="mf-err is-hidden" id="sheetErr" role="alert"></div>' +
+      (j.status === "OPEN"
+        ? '<div class="sf-act">' +
+            '<button class="btn btn-primary btn--sm" type="button" data-act="edit-post" data-id="' + esc(j.id) + '">' +
+              '<svg class="ic"><use href="#i-pen"/></svg>Edit post</button>' +
+            '<button class="btn btn-ghost btn--sm" type="button" data-post-act="FILLED" data-sheet-src="1" data-id="' + esc(j.id) + '">Mark filled</button>' +
+            '<button class="btn btn-ghost btn--sm mypost-cancel" type="button" data-post-act="CANCELLED" data-sheet-src="1" data-id="' + esc(j.id) + '">Cancel post</button>' +
+          "</div>"
+        : '<div class="sf-act"><span class="sf-note-txt">' +
+            (j.status === "FILLED"
+              ? "Filled — it is no longer broadcasting, and its terms are frozen as the people who answered read them."
+              : "Cancelled — it is no longer broadcasting.") +
+          "</span></div>") +
+      '<div class="sf-act sf-act--quiet">' +
+        '<button class="btn btn-ghost btn--sm mypost-del" type="button" data-act="delete-post" data-id="' + esc(j.id) + '">' +
+          '<svg class="ic"><use href="#i-trash"/></svg><span data-save-lbl>Delete post</span></button>' +
+      "</div>",
+    );
+  }
+
+  /** The editor. Same field set as the composer, seeded from the row — and only
+   *  ever offered on an OPEN post, which is the rule `updateTradeJob` enforces
+   *  server-side too. */
+  function openPostEdit(id: string) {
+    const j = myPostsData.find(function (x) { return x.id === id; });
+    if (!j) return;
+    if (j.status !== "OPEN") {
+      openPostDetail(id);
+      sheetError("Only an open post can be edited.");
+      return;
+    }
+    const rate = budgetToRate(j.budget);
+    postEdit = {
+      title: j.title,
+      trade: j.tradeType,
+      specialties: j.specialties.join(", "),
+      area: j.location || "",
+      rateMin: rate.rateMin,
+      rateMax: rate.rateMax,
+      rateUnit: rate.rateUnit,
+      details: j.description,
+    };
+    postEditingId = id;
+    hire.sheet = "post-edit";
+    hire.editing = null;
+    hire.armed = null;
+    openSheet("Edit job post",
+      '<p class="sf-hint sf-hint--lead">Everyone already notified sees the corrected post. ' +
+        "Changing the trade does not fire a second broadcast — that is a new post.</p>" +
+      jobFieldsHTML(postEdit, "editArea", true) +
+      '<div class="mf-err is-hidden" id="sheetErr" role="alert"></div>' +
+      '<div class="sf-act">' +
+        '<button class="btn btn-primary btn--sm" type="button" data-act="save-post">' +
+          '<svg class="ic"><use href="#i-check"/></svg><span data-save-lbl>Save changes</span></button>' +
+        '<button class="btn btn-ghost btn--sm" type="button" data-act="post-detail" data-id="' + esc(id) + '">Cancel</button>' +
+      "</div>",
+    );
+    const body = $("#sheetBody");
+    if (!body) return;
+    bindJobFields(body, postEdit);
+    if (disposeEditPlaces) { disposeEditPlaces(); disposeEditPlaces = null; }
+    const area = body.querySelector<HTMLInputElement>("#editArea");
+    if (area) {
+      disposeEditPlaces = attachPlacesSuggest(area, {
+        cityOnly: true,
+        onPick: function (place) {
+          postEdit.area = place.typed ? place.address : place.formatted || place.address;
+          if (!place.typed) area.value = postEdit.area;
+        },
+      });
+    }
+    body.querySelector<HTMLInputElement>('[data-jf="title"]')?.focus();
+  }
+
+  /** Not optimistic: an edit is eight fields at once, and a form that closes and
+   *  then silently reverts is worse than one that waits half a second. The row
+   *  is patched from the action's OWN return value, so what the list shows is
+   *  what the database now holds. */
+  async function savePostEdit(btn: HTMLElement) {
+    const id = postEditingId;
+    if (!id) return;
+    const invalid = jobFormError(postEdit);
+    if (invalid) { sheetError(invalid); return; }
+    sheetError(null);
+    setSaving(btn, true, "Saving…", "");
+    try {
+      const updated = await updateTradeJob(id, jobFormPayload(postEdit));
+      const i = myPostsData.findIndex(function (j) { return j.id === id; });
+      if (i >= 0) myPostsData[i] = updated;
+      setSaving(btn, false, "", "Save changes");
+      closeSheet();
+      myPostsError(null);
+      renderMyPosts();
+    } catch (err) {
+      setSaving(btn, false, "", "Save changes");
+      sheetError(actionError(err));
+    }
+  }
+
+  /** Delete: a two-tap arm rather than a confirm dialog — the same contract the
+   *  applicant sheet already uses, and the only destructive control on the page
+   *  that would otherwise fire on a stray click. The row leaves on its own and
+   *  the list closes the gap; a refusal puts it straight back. */
+  async function removePost(btn: HTMLElement, id: string, fromSheet: boolean) {
+    if (!id || !myPostsData.some(function (j) { return j.id === id; })) return;
+    const idle = fromSheet ? "Delete post" : "Delete";
+    const key = "post-del:" + id;
+    const label = btn.querySelector<HTMLElement>("[data-save-lbl]");
+    if (hire.armed !== key) {
+      hire.armed = key;
+      btn.classList.add("is-armed");
+      if (label) label.textContent = "Tap again to delete";
+      later(function () {
+        if (hire.armed !== key) return;
+        hire.armed = null;
+        btn.classList.remove("is-armed");
+        if (label) label.textContent = idle;
+      }, 3000);
+      return;
+    }
+    hire.armed = null;
+    btn.classList.remove("is-armed");
+    if (fromSheet) sheetError(null); else myPostsError(null);
+    setSaving(btn, true, "Deleting…", "");
+    const snapshot = myPostsData.slice();
+    try {
+      await deleteTradeJob(id);
+      myPostsData = myPostsData.filter(function (j) { return j.id !== id; });
+      setSaving(btn, false, "", idle);
+      if (fromSheet) closeSheet();
+      const row = $('#myPostsBox .mypost-row[data-row="' + id + '"]');
+      if (row) leaveRow(row, function () { renderMyPosts(); }, after);
+      else renderMyPosts();
+    } catch (err) {
+      myPostsData = snapshot;
+      setSaving(btn, false, "", idle);
+      if (fromSheet) sheetError(actionError(err)); else myPostsError(actionError(err));
     }
   }
 

@@ -244,6 +244,38 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
   return { skipped: false as const, enabled: isEmailEnabled() };
 }
 
+
+/**
+ * WHO GETS A LEAD. The owner of the shop, and only the owner.
+ *
+ * Both lead mails used to go to `Organization.billingEmail`, which is whatever
+ * address was typed into the billing field — on a workspace where that is a
+ * shared or a stale address, a homeowner's name, phone and job description
+ * reach whoever holds it, which can be a field worker. The owner's own login
+ * is the one address the platform knows belongs to the person responsible for
+ * the shop, so it is the one used; billingEmail is the fallback for a
+ * workspace with no OWNER membership (an invite-only org mid-setup).
+ *
+ * Managers are NOT mailed. They can see and act on every lead in the app —
+ * that is a permissions question, answered by requireSalesOrManager — but the
+ * arrival notice belongs to the owner.
+ */
+async function ownerEmailFor(
+  organizationId: string,
+  billingEmail: string | null,
+): Promise<string | null> {
+  try {
+    const owner = await db.membership.findFirst({
+      where: { organizationId, role: "OWNER" },
+      orderBy: { createdAt: "asc" },
+      select: { user: { select: { email: true } } },
+    });
+    return owner?.user.email ?? billingEmail ?? null;
+  } catch {
+    return billingEmail ?? null;
+  }
+}
+
 export async function notifyLeadCreated(leadId: string) {
   const lead = await db.lead.findUnique({
     where: { id: leadId },
@@ -253,7 +285,7 @@ export async function notifyLeadCreated(leadId: string) {
   });
   if (!lead || !lead.organization) return { skipped: true as const };
 
-  const ownerEmail = lead.organization.billingEmail;
+  const ownerEmail = await ownerEmailFor(lead.organizationId, lead.organization.billingEmail);
   if (ownerEmail) {
     const appUrl = await appBaseUrl();
     const { subject: leadSubject, html: leadHtml } = renderEmail(
@@ -488,7 +520,8 @@ export async function notifyHomeownerRequestReceived(platformLeadId: string) {
   return { skipped: false as const, enabled: isEmailEnabled() };
 }
 
-// Pings the offered org: email to billing email + optional SMS to org phone.
+// Pings the offered shop: email to its OWNER (see ownerEmailFor) + optional SMS
+// to the org phone.
 export async function notifyLeadOfferCreated(offerId: string) {
   const offer = await db.leadOffer.findUnique({
     where: { id: offerId },
@@ -503,7 +536,8 @@ export async function notifyLeadOfferCreated(offerId: string) {
   const appUrl = await appBaseUrl();
   const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "your area";
 
-  if (offer.organization.billingEmail) {
+  const offerOwnerEmail = await ownerEmailFor(offer.organizationId, offer.organization.billingEmail);
+  if (offerOwnerEmail) {
     const { subject: offerSubject, html: offerHtml } = renderEmail(
       buildLeadOffer({
         trade: pl.detectedTrade ?? pl.projectType ?? "project",
@@ -515,7 +549,7 @@ export async function notifyLeadOfferCreated(offerId: string) {
       }),
     );
     await sendEmail({
-      to: offer.organization.billingEmail,
+      to: offerOwnerEmail,
       subject: offerSubject,
       html: offerHtml,
     });
@@ -740,28 +774,46 @@ async function tradeEmailOf(userId: string): Promise<string | null> {
   return u?.email ?? null;
 }
 
-/** A hirer pressed "I'm interested" on a listed open-for-work profile. */
-export async function notifyTalentContacted(
+/** How the interested party is named in both halves below. */
+function tradeWho(from: { fromName: string; fromCompany: string | null }) {
+  return from.fromCompany && from.fromCompany !== from.fromName
+    ? `${from.fromName} (${from.fromCompany})`
+    : from.fromName;
+}
+
+/**
+ * A hirer pressed "I'm interested" on a listed open-for-work profile.
+ *
+ * SPLIT IN TWO ON PURPOSE (2026-08-24). The caller awaits the bell — one
+ * insert, and it is what the button's "Sent" state asserts — and defers the
+ * email to `after()`, because an SMTP handshake is seconds and the person who
+ * pressed the button should not be watching a spinner for it.
+ */
+export async function recordTalentContacted(
   userId: string,
   from: { fromName: string; fromCompany: string | null },
 ) {
-  const who =
-    from.fromCompany && from.fromCompany !== from.fromName
-      ? `${from.fromName} (${from.fromCompany})`
-      : from.fromName;
   const orgId = await tradeFirstOrgId(userId);
-  if (orgId) {
-    await db.activityEvent.create({
-      data: {
-        organizationId: orgId,
-        kind: "TRADE_CONTACT",
-        summary: `${who} is interested in your services`,
-      },
-    });
-  }
+  if (!orgId) return { skipped: true as const };
+  await db.activityEvent.create({
+    data: {
+      organizationId: orgId,
+      kind: "TRADE_CONTACT",
+      summary: `${tradeWho(from)} is interested in your services`,
+    },
+  });
+  return { skipped: false as const };
+}
+
+/** The mail half of the above. Safe to run after the response is sent. */
+export async function emailTalentContacted(
+  userId: string,
+  from: { fromName: string; fromCompany: string | null },
+) {
   if (!isEmailEnabled()) return { skipped: true as const };
   const email = await tradeEmailOf(userId);
   if (!email) return { skipped: true as const };
+  const who = tradeWho(from);
   const appUrl = await appBaseUrl();
   await sendEmail({
     to: email,

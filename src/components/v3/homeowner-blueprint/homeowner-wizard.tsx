@@ -16,7 +16,7 @@
 //     dragleave test reads `relatedTarget` against that exact element.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { submitHomeownerRequest } from "@/actions/homeowner";
+import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
 import {
   CATEGORIES,
   CONTACT_FIELDS,
@@ -30,6 +30,9 @@ import {
 type Upload = { name: string; kind: "pdf" | "photo"; progress: number };
 
 const UID = "w0";
+/** How long the thinking pane will wait for the adaptive questions before
+ *  going on with the static set. */
+const AI_WAIT_MS = 6500;
 
 /* Contact-form validation. The donor shipped these four inputs inert — you
    could send an empty form — so the owner asked for everything not marked
@@ -54,6 +57,11 @@ export function HomeownerWizard() {
   const [showCats, setShowCats] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
+  /* Questions written from THIS description (server, OpenAI). Null until the
+     homeowner asks to refine, and null again whenever the answer could not be
+     written — the static set in homeowner-data.ts is the fallback, never a
+     blank step. */
+  const [aiQs, setAiQs] = useState<Question[] | null>(null);
   const [contact, setContact] = useState<string[]>(() => CONTACT_FIELDS.map(() => ""));
   const [thinking, setThinking] = useState(false);
   const [drag, setDrag] = useState(false);
@@ -92,7 +100,7 @@ export function HomeownerWizard() {
     suggested = hit && desc.length > 8 ? hit : null;
   }
 
-  const qs: Question[] = QUESTIONS[category ?? ""] || QUESTIONS["default"];
+  const qs: Question[] = aiQs ?? QUESTIONS[category ?? ""] ?? QUESTIONS["default"];
   /* Donor gate was `> 12` — a whole phrase before the button woke up, which
      read as broken. One character is enough now (owner's call). */
   const canRefine = desc.trim().length > 0;
@@ -148,17 +156,35 @@ export function HomeownerWizard() {
   let headLabel = step < 4 ? STEP_NAMES[step] : "Done";
   if (step === 1 && category) headLabel += " · " + category;
 
-  /* ---- donor go(n): 850ms thinking pane between steps ---- */
-  const go = useCallback((n: number) => {
+  /* ---- donor go(n): 850ms thinking pane between steps ----
+     `work` is awaited UNDER the same pane: writing the questions from the
+     description is exactly what "Reading your description…" claims to be
+     doing, so the wait is the one the copy already promised. It is capped —
+     a slow model must not strand a homeowner on a spinner. */
+  const go = useCallback((n: number, work?: Promise<unknown>) => {
     setThinking(true);
-    window.setTimeout(
-      () => {
-        setThinking(false);
-        setStep(n);
-      },
-      reducedRef.current ? 0 : 850,
-    );
+    const beat = new Promise<void>((r) => window.setTimeout(r, reducedRef.current ? 0 : 850));
+    const capped = work
+      ? Promise.race([work, new Promise((r) => window.setTimeout(r, AI_WAIT_MS))])
+      : null;
+    void Promise.all([beat, capped]).then(() => {
+      setThinking(false);
+      setStep(n);
+    });
   }, []);
+
+  /* Ask the server for questions about THIS project, then step forward. A
+     failure, a slow answer or no API key all land on the static set. */
+  const refine = useCallback(() => {
+    setAiQs(null);
+    setAnswers([]);
+    const work = suggestHomeownerQuestions({ description: desc, category })
+      .then((res) => {
+        if (res.questions && res.questions.length) setAiQs(res.questions);
+      })
+      .catch(() => {});
+    go(1, work);
+  }, [desc, category, go]);
 
   /* ---- donor addFiles(): cap 6, 22-char name ellipsis ---- */
   const addFiles = useCallback((list: FileList) => {
@@ -278,15 +304,19 @@ export function HomeownerWizard() {
 
   const paneDescribe = (
     <div className="pane">
-      <textarea ref={attachDesc} className="desc" rows={3} aria-label="Describe your project"
-        value={desc} onChange={(e) => setDesc(e.target.value)} />
+      {/* One focus ring around the field AND the category guess — the guess is
+          part of the input, not a control parked under it. */}
+      <div className="desc-wrap">
+        <textarea ref={attachDesc} className="desc" rows={3} aria-label="Describe your project"
+          value={desc} onChange={(e) => setDesc(e.target.value)} />
 
-      {suggested && !category ? (
-        <button className="guess" type="button"
-          onClick={() => setCategory(suggested)}>
-          <i />Looks like: {suggested} — tap to confirm
-        </button>
-      ) : null}
+        {suggested && !category ? (
+          <button className="guess" type="button"
+            onClick={() => setCategory(suggested)}>
+            Looks like: {suggested} — tap to confirm
+          </button>
+        ) : null}
+      </div>
 
       {uploads.length ? (
         <div className="ups">
@@ -331,10 +361,9 @@ export function HomeownerWizard() {
         <button className="go go-refine" type="button" disabled={!canRefine}
           onClick={() => {
             if (!canRefine) return;
-            setAnswers(qs.map(() => ""));
-            go(1);
+            refine();
           }}>
-          <svg className="ic"><use href="#i-bulb" /></svg>Refine instructions
+          Refine instructions<svg className="ic"><use href="#i-arrow-r" /></svg>
         </button>
       </div>
     </div>

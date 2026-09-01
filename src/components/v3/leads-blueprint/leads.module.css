@@ -741,6 +741,17 @@
 }
 .bp :global(.content .ptab-count) { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted-light); }
 .bp :global(.content .ptab.active .ptab-count) { color: var(--blueprint); }
+/* "New lead came in" — the blue flag on the Incoming tab. It says WHERE the
+   waiting work came from, which the count beside it cannot. */
+.bp :global(.content .ptab-new) {
+  margin-left: 8px; padding: 2px 7px;
+  border: 1.5px solid var(--blueprint); border-radius: var(--radius);
+  background: rgba(24, 84, 160, 0.09);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--blueprint);
+  white-space: nowrap;
+}
+.bp :global(.content .ptab-new.is-hidden) { display: none; }
 
 .bp :global(.content .pchips) { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .bp :global(.content .pchip) {

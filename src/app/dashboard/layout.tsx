@@ -37,8 +37,11 @@ import type { Route } from "next";
 import { headers } from "next/headers";
 import { requireOrg } from "@/lib/orgContext";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
+import { getBlockedCustomPages } from "@/lib/customPageAccess";
+import { isCustomBlockedPath } from "@/lib/customPlan";
 import { getBadgeCounts } from "@/lib/badgeCounts";
 import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/responsive-dashboard-shell";
+import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
  *  sidebar shows it to a human, so title-case it. */
@@ -63,12 +66,18 @@ export default async function DashboardBlueprintLayout({
   // MarkNavSeen stamp on each surface calls router.refresh() when a badge was
   // actually showing, which re-renders this layout with fresh counts.
   let badges: Record<string, number> | undefined;
+  // The custom plan's page locks: hrefs this org did not buy, or null on every
+  // other plan. Read beside the identity because both come from the same ctx.
+  let lockedPages: string[] | null = null;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
     name = ctx.user.name || ctx.user.email || "Account";
     user = { name, role: humanRole(ctx.role) };
-    badges = await getBadgeCounts(ctx.organizationId, ctx.user.id, ctx.role);
+    [badges, lockedPages] = await Promise.all([
+      getBadgeCounts(ctx.organizationId, ctx.user.id, ctx.role),
+      getBlockedCustomPages(ctx.organizationId),
+    ]);
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }
@@ -82,9 +91,40 @@ export default async function DashboardBlueprintLayout({
     if (pathname && !isPathAllowed(gate, pathname)) redirect(gate.home as Route);
   }
 
+  // THE CUSTOM PLAN'S PAGE GATE — same arrangement as the role gate above:
+  // plan from the DB, path from the middleware-set header, fail-closed. An org
+  // that bought two add-on pages may open those two and the base workspace;
+  // a URL to any other add-on bounces to Overview, which every custom plan
+  // includes. The nav below is handed the same list so it never draws the
+  // link in the first place — but this redirect, not the nav, is the boundary.
+  if (lockedPages?.length) {
+    const pathname = (await headers()).get("x-pathname") ?? "";
+    if (pathname && isCustomBlockedPath(lockedPages, pathname)) {
+      redirect("/dashboard" as Route);
+    }
+  }
+
+  // The lead pop-up was mounted only in the CLASSIC layout, so on the blueprint
+  // tree — which is where the app actually lives now — a lead routed to a shop
+  // announced itself nowhere.
+  //
+  // OWNER ONLY. A lead carries a homeowner's name, phone and job description,
+  // and it is the owner who answers for the shop: the arrival announces itself
+  // to them and to nobody else. Everyone who can work a lead still SEES it —
+  // managers and sales open the Leads page and act there — but the interruption
+  // belongs to one person (owner's call, 2026-08-27; same rule as the email,
+  // see lib/notify's ownerEmailFor).
+  const canHandleLeads = role === "OWNER";
+
   return (
-    <ResponsiveDashboardShell user={user} identity={{ role, name }} badges={badges}>
+    <ResponsiveDashboardShell
+      user={user}
+      identity={{ role, name }}
+      badges={badges}
+      locked={lockedPages ?? undefined}
+    >
       {children}
+      {canHandleLeads ? <LeadOfferPopup /> : null}
     </ResponsiveDashboardShell>
   );
 }

@@ -1418,6 +1418,9 @@
 }
 .bp :global(.content .trade:hover) { border-color: var(--ink); color: var(--ink); }
 .bp :global(.content .trade.on) { border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.07); font-weight: 700; }
+/* The free-text field under the "Other" chip. Indented under the chip row so it
+   reads as that chip's follow-up question, not as a fourth profile field. */
+.bp :global(.content .co-other) { margin-top: 12px; max-width: 340px; }
 .bp :global(.content .toggle-row) { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-top: 18px; padding-top: 15px; border-top: 1.5px solid var(--hair-soft); }
 .bp :global(.content .tg-t) { font-size: 13.5px; font-weight: 700; }
 .bp :global(.content .tg-h) { margin-top: 4px; max-width: 56ch; font-size: 12px; line-height: 1.5; color: var(--muted); }

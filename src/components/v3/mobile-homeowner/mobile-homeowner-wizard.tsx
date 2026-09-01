@@ -21,12 +21,11 @@
 // the next rebuild even after you type over it. Donor behaviour, kept rather
 // than "fixed".
 //
-// The description text, the answers and the attachments never leave the
-// browser. There is no submit target: `.go-send` advances to the done pane and
-// nothing else, which is the current product behaviour. A real endpoint does
-// exist (`/api/homeowner-request` → `submitHomeownerRequest`, wired to the
-// working form at `(portal)/homeowners`) but wiring it is a data-layer change
-// and needs the owner's sign-off — see the report.
+// The attachments never leave the browser (the uploader is simulated). The
+// PROJECT does: `.go-send` calls `submitHomeownerRequest`, which writes the
+// HomeownerRequest + PlatformLead, starts the routing cascade and sends the
+// homeowner their confirmation. Until 2026-08-27 it advanced to "your project
+// is on its way" and sent nothing at all.
 //
 // ── WHAT IS RE-LAID-OUT FOR HANDHELD ───────────────────────────────────────
 // 1. THE STICKY ACTION BAR. Every step's primary action lives in a
@@ -59,6 +58,7 @@ import {
   STEP_NAMES,
   type Question,
 } from "../homeowner-landing/homeowner-data";
+import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
 import { prefersReducedMotion } from "../homeowner-landing/use-homeowner-behavior";
 import { usePlaceholderCycle } from "../homeowner-landing/wizard/use-placeholder-cycle";
 import { lockScroll } from "@/lib/scrollLock";
@@ -81,6 +81,15 @@ function detectSuggestion(desc: string, category: string | null): string | null 
   return hit && desc.length > 8 ? hit : null;
 }
 
+/** How long the thinking pane waits for the adaptive questions. */
+const AI_WAIT_MS = 6500;
+
+/** Enough to catch a typo, not enough to argue with a real address. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** The description is one free-text body; answers are appended under it. */
+const NEWLINE = "\n";
+
 export function MobileHomeownerWizard({ uid }: { uid: string }) {
   const [step, setStep] = useState(0);
   const [desc, setDesc] = useState("");
@@ -93,6 +102,13 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   const [shown, setShown] = useState<string[]>([]);
 
   const answers = useRef<string[]>([]);
+  /* Questions written from THIS description (server, OpenAI); null keeps the
+     static set from homeowner-data.ts. */
+  const [aiQs, setAiQs] = useState<Question[] | null>(null);
+  /* The submission. This pane used to advance to "on its way" and send
+     nothing — no lead, no confirmation email, nothing in the Lead Center. */
+  const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState("");
   const uploadsRef = useRef<Upload[]>([]);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -116,7 +132,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   }, []);
 
   const suggested = detectSuggestion(desc, category);
-  const questions: Question[] = QUESTIONS[category ?? ""] ?? QUESTIONS["default"];
+  const questions: Question[] = aiQs ?? QUESTIONS[category ?? ""] ?? QUESTIONS["default"];
   const canRefine = desc.trim().length > 12;
   const catLabel = category || suggested || "project";
 
@@ -174,18 +190,26 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   /* ── navigation ────────────────────────────────────────────────────── */
 
   const go = useCallback(
-    (n: number) => {
+    (n: number, work?: Promise<unknown>) => {
       setThinking(true);
       bump();
-      goTimer.current = window.setTimeout(
-        () => {
+      // "Reading your description…" is literally what the awaited work does
+      // when the questions are being written from it. Capped, so a slow model
+      // never strands anyone on the spinner.
+      const beat = new Promise<void>((r) => {
+        goTimer.current = window.setTimeout(() => {
           goTimer.current = null;
-          setThinking(false);
-          setStep(n);
-          bump();
-        },
-        prefersReducedMotion() ? 0 : 850
-      );
+          r();
+        }, prefersReducedMotion() ? 0 : 850);
+      });
+      const capped = work
+        ? Promise.race([work, new Promise((r) => window.setTimeout(r, AI_WAIT_MS))])
+        : null;
+      void Promise.all([beat, capped]).then(() => {
+        setThinking(false);
+        setStep(n);
+        bump();
+      });
     },
     [bump]
   );
@@ -268,18 +292,80 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
 
   const onRefine = () => {
     if (!canRefine) return;
-    answers.current = questions.map(() => "");
-    go(1);
+    setAiQs(null);
+    answers.current = [];
+    setShown([]);
+    const work = suggestHomeownerQuestions({ description: desc, category })
+      .then((res) => {
+        if (res.questions && res.questions.length) setAiQs(res.questions);
+      })
+      .catch(() => {});
+    go(1, work);
   };
 
+  /** Fills one answer WITHOUT rebuilding the pane — `bump()` here replayed the
+   *  entrance animation of every question on the step each time a chip was
+   *  tapped. The fields are uncontrolled, so the value is written straight into
+   *  the input and `shown` lights the chip. */
   const onChip = (i: number, value: string) => {
     answers.current[i] = value;
-    bump();
+    setShown(answers.current.slice());
+    const el = document.getElementById(uid + "q" + i) as HTMLInputElement | null;
+    if (el) el.value = value;
   };
 
   const onBack = (to: number) => {
     setStep(to);
     bump();
+  };
+
+  /** Contact fields are uncontrolled (donor shape) — read by id at send time. */
+  const contactValue = (i: number): string =>
+    (document.getElementById(uid + "c" + i) as HTMLInputElement | null)?.value.trim() ?? "";
+
+  /* CONTACT_FIELDS maps positionally: name, email, phone (optional), zip. The
+     clarify answers ride along in the description, which is the one free-text
+     body `submitHomeownerRequest` takes. */
+  const onSend = async () => {
+    if (sending) return;
+    const [name, email, phone, zip] = [0, 1, 2, 3].map(contactValue);
+    if (!name || !email || !zip) {
+      setSendErr("Name, email and ZIP code are needed to send this to contractors.");
+      return;
+    }
+    if (!EMAIL_RE.test(email)) {
+      setSendErr("That email address does not look right.");
+      return;
+    }
+    setSendErr("");
+    setSending(true);
+    const extra = questions
+      .map((q, i) => {
+        const a = (answers.current[i] ?? "").trim();
+        return a ? q.q + " " + a : "";
+      })
+      .filter(Boolean)
+      .join(NEWLINE);
+    try {
+      await submitHomeownerRequest({
+        name,
+        email,
+        phone: phone || undefined,
+        zip,
+        projectType: category ?? undefined,
+        description: extra ? desc.trim() + NEWLINE + NEWLINE + extra : desc.trim(),
+      });
+      setStep(4);
+      bump();
+    } catch (err) {
+      setSendErr(
+        err instanceof Error && err.message
+          ? err.message
+          : "Couldn't send that. Check your connection and try again.",
+      );
+    } finally {
+      setSending(false);
+    }
   };
 
   const onRestart = () => {
@@ -309,19 +395,22 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
 
   const paneDescribe = (
     <div className="pane" key={paneKey}>
-      <textarea
-        className="desc"
-        rows={3}
-        aria-label="Describe your project"
-        ref={descRef}
-        defaultValue={desc}
-        onChange={onDescInput}
-      />
-      {suggested && !category ? (
-        <button className="guess" type="button" onClick={onGuess}>
-          <i></i>Looks like: {suggested} — tap to confirm
-        </button>
-      ) : null}
+      {/* One focus ring around the field AND the category guess. */}
+      <div className="desc-wrap">
+        <textarea
+          className="desc"
+          rows={3}
+          aria-label="Describe your project"
+          ref={descRef}
+          defaultValue={desc}
+          onChange={onDescInput}
+        />
+        {suggested && !category ? (
+          <button className="guess" type="button" onClick={onGuess}>
+            Looks like: {suggested} — tap to confirm
+          </button>
+        ) : null}
+      </div>
       {uploads.length ? (
         <div className="ups">
           {uploads.map((u, i) => (
@@ -378,10 +467,10 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
       </div>
       <div className="pane-foot">
         <button className="go go-refine" type="button" disabled={!canRefine} onClick={onRefine}>
-          <svg className="ic">
-            <use href="#jfmh-i-bulb" />
-          </svg>
           Continue
+          <svg className="ic">
+            <use href="#jfmh-i-arrow-r" />
+          </svg>
         </button>
       </div>
     </div>
@@ -520,21 +609,27 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
           })}
         </div>
       </div>
+      {sendErr ? (
+        <div className="send-err" role="alert">
+          {sendErr}
+        </div>
+      ) : null}
       <div className="pane-foot">
         <button className="back" type="button" data-to="2" onClick={() => onBack(2)}>
           ‹ Back
         </button>
-        {/* NO-OP BY DESIGN — advances the step and sends nothing. See the file
-            header: wiring /api/homeowner-request is a data-layer decision. */}
         <button
           className="go go-send"
           type="button"
+          disabled={sending}
           onClick={() => {
-            setStep(4);
-            bump();
+            void onSend();
           }}
         >
-          Send to contractors
+          {sending ? "Sending…" : "Send to contractors"}
+          <svg className="ic">
+            <use href="#jfmh-i-arrow-r" />
+          </svg>
         </button>
       </div>
     </div>

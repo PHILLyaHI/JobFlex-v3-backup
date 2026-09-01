@@ -109,6 +109,15 @@ const HELP_PATHS = [
   "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3",
   "M12 17h.01",
 ];
+/** A HEADSET — a support desk, not a question mark (owner's call,
+ *  2026-08-27), and with the boom mic the headphones alone were missing: a
+ *  band with two cups reads as "listen to music", the mic is what makes it
+ *  read as "talk to someone". lucide `headset`, unmodified, so it sits on the
+ *  same 24x24 / stroke-2 grid as every other glyph here. */
+const SUPPORT_PATHS = [
+  "M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5a9 9 0 1 1 18 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3",
+  "M21 16v2a4 4 0 0 1-4 4h-5",
+];
 const X_PATHS = ["M18 6 6 18", "m6 6 12 12"];
 
 /** Always decorative: every control that carries one has its own aria-label.
@@ -189,6 +198,138 @@ export function SupportLauncher({
   );
 }
 
+/**
+ * THE FLOATING LAUNCHER — a plate in the bottom-right corner that widens on
+ * hover to read "Support".
+ *
+ * It replaces the top-bar button (owner's call, 2026-08-27). The corner was
+ * given up in the first place because a globally mounted plate covered page
+ * controls; the answer this time is not to move the button but to give it room:
+ * every shell's content column now carries bottom padding the height of this
+ * plate, so the page can always be scrolled clear of it (see
+ * support-widget.css and the `.content` / `main` rules that reserve the space).
+ *
+ * It does NOT carry `jfsup-dock`: that class is written for a button drawn by
+ * a host top bar and its rules (trebled selectors, 34px box, relative
+ * position) would overrule everything below. The composer's focus-return knows
+ * about both classes instead.
+ */
+/** Clearance between the plate and whatever it is standing on. */
+const FAB_GAP = 14;
+
+/**
+ * How much of the bottom of the viewport is already spoken for — a tab bar, a
+ * sticky action bar, a totals bar — MEASURED, not assumed.
+ *
+ * The plate used to sit at a flat 84px on handheld, which was the height of one
+ * bar on one page. Every taller bar in the fleet (the video estimator's ANALYZE
+ * VIDEO bar, the manual builder's totals bar with its chevron open, anything
+ * that wraps to two rows) then ran straight under it. A number written in the
+ * stylesheet cannot follow a bar that changes height at runtime; this can.
+ *
+ * Three probes across the bottom edge rather than one, because a bar can be
+ * inset or partial. `elementsFromPoint` skips `pointer-events: none` overlays
+ * for free.
+ *
+ * WHAT COUNTS AS A BAR IS GEOMETRY, NOT `position`. The first cut of this only
+ * accepted `fixed`/`sticky` elements and found NOTHING on the handheld
+ * dashboard — that tab bar is a static row of a `100dvh` grid, and the plate
+ * promptly parked itself on top of it. So: anything at the bottom edge that
+ * spans most of the width and is short enough not to be the page itself. The
+ * outermost match wins (smallest `top`), which is the bar rather than the
+ * label inside it.
+ */
+function bottomObstruction(fab: HTMLElement): { px: number; bar: HTMLElement | null } {
+  if (typeof window === "undefined") return { px: 0, bar: null };
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+  let top = vh;
+  let bar: HTMLElement | null = null;
+  for (const f of [0.18, 0.5, 0.82]) {
+    const x = Math.round(vw * f);
+    for (const el of document.elementsFromPoint(x, vh - 2)) {
+      if (!(el instanceof HTMLElement) || el === fab || fab.contains(el)) continue;
+      const r = el.getBoundingClientRect();
+      // Reaches the bottom edge, runs most of the way across, and is a band
+      // rather than a page: 40% of the viewport is already a generous bar.
+      if (r.bottom < vh - 4) continue;
+      if (r.height < 8 || r.height > vh * 0.4) continue;
+      if (r.width < vw * 0.6) continue;
+      if (r.top < top) {
+        top = r.top;
+        bar = el;
+      }
+    }
+  }
+  return { px: Math.max(0, Math.round(vh - top)), bar };
+}
+
+export function SupportFab() {
+  const ref = useRef<HTMLButtonElement>(null);
+
+  // Re-measured on every input that can move a bottom bar: the viewport
+  // resizing (including the mobile URL bar collapsing), the page scrolling a
+  // sticky bar into place, the bar itself changing height, and the tree the bar
+  // lives in being replaced on a route change.
+  useEffect(() => {
+    const fab = ref.current;
+    if (!fab) return;
+
+    let raf = 0;
+    let barObserved: HTMLElement | null = null;
+    const barRO = new ResizeObserver(() => schedule());
+
+    function apply() {
+      raf = 0;
+      const el = ref.current;
+      if (!el) return;
+      const { px, bar } = bottomObstruction(el);
+      el.style.setProperty("--jfsup-fab-bottom", `calc(${px + FAB_GAP}px + env(safe-area-inset-bottom, 0px))`);
+      if (bar !== barObserved) {
+        if (barObserved) barRO.unobserve(barObserved);
+        if (bar) barRO.observe(bar);
+        barObserved = bar;
+      }
+    }
+
+    function schedule() {
+      if (raf) return;
+      raf = requestAnimationFrame(apply);
+    }
+
+    schedule();
+    window.addEventListener("resize", schedule);
+    window.addEventListener("orientationchange", schedule);
+    window.addEventListener("scroll", schedule, { passive: true });
+    // A route change swaps the whole page tree, bar included; childList on the
+    // body is the cheapest signal that has happened, and the work is one rAF.
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("orientationchange", schedule);
+      window.removeEventListener("scroll", schedule);
+      mo.disconnect();
+      barRO.disconnect();
+    };
+  }, []);
+
+  return (
+    <button
+      ref={ref}
+      className="jfsup-fab"
+      type="button"
+      aria-haspopup="dialog"
+      onClick={(e) => openSupportComposer(e.currentTarget)}
+    >
+      <Icon d={SUPPORT_PATHS} className="jfsup-fab-ic" />
+      <span className="jfsup-fab-lbl">Support</span>
+    </button>
+  );
+}
+
 export function SupportWidget({
   signedIn,
 }: {
@@ -245,6 +386,7 @@ export function SupportWidget({
         // from the top.
         const back = [
           openerRef.current,
+          document.querySelector<HTMLElement>(".jfsup-fab"),
           document.querySelector<HTMLElement>(".jfsup-dock"),
         ].find(isRendered);
         back?.focus();
@@ -423,6 +565,10 @@ export function SupportWidget({
 
   return (
     <div className={cls}>
+      {/* The launcher travels WITH the widget now: one mount is one button, so
+          no host can end up with two or none. Hidden while the composer is up —
+          the panel stands in that corner. */}
+      {!open ? <SupportFab /> : null}
       <div className="jfsup-scrim" hidden={!open} onClick={close} aria-hidden="true" />
 
       <div

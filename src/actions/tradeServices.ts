@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { requireUser, requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
@@ -15,8 +16,18 @@ import type {
 } from "@/app/(mobile)/trade-services/trade-data";
 
 const ROUTE = "/trade-services";
+const HIRE_ROUTE = "/dashboard/hire";
 const HIDDEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const BROADCAST_CAP = 500;
+
+/** Withdrawal tombstone — see `deleteTradeJob`. `TradeJob.status` is a plain
+ *  String column (the schema lists its values in a comment, it does not enforce
+ *  them), so a fourth value costs no migration. A tombstoned job is gone from
+ *  every list — the author's and the recipients' — while the conversations and
+ *  messages that hang off it, which recipients authored, survive. */
+const DELETED = "DELETED";
+/** The one filter every job read has to carry: a withdrawn post is not a post. */
+const NOT_DELETED = { status: { not: DELETED } } as const;
 
 // ─── JSON list helpers (SQLite stores arrays as JSON strings) ──────────────
 function parseList(s: string | null | undefined): string[] {
@@ -149,15 +160,29 @@ export async function contactTalentProfile(profileId: string): Promise<{ ok: tru
     where: { id: organizationId },
     select: { name: true },
   });
+  const from = {
+    fromName: user.name ?? org?.name ?? "A contractor",
+    fromCompany: org?.name ?? null,
+  };
+  // The bell first, and awaited: one insert, and it is what the "Sent" state
+  // is asserting.
   try {
-    const { notifyTalentContacted } = await import("@/lib/notify");
-    await notifyTalentContacted(prof.userId, {
-      fromName: user.name ?? org?.name ?? "A contractor",
-      fromCompany: org?.name ?? null,
-    });
+    const { recordTalentContacted } = await import("@/lib/notify");
+    await recordTalentContacted(prof.userId, from);
   } catch (err) {
-    console.warn("[tradeServices] talent-contact notify failed:", err);
+    console.warn("[tradeServices] talent-contact bell failed:", err);
   }
+  // The email is a Gmail SMTP handshake — seconds, and nothing on screen waits
+  // on it. `after()` runs it once the response has been sent, so the button
+  // stops pretending the mail server's latency is the user's problem.
+  after(async () => {
+    try {
+      const { emailTalentContacted } = await import("@/lib/notify");
+      await emailTalentContacted(prof.userId, from);
+    } catch (err) {
+      console.warn("[tradeServices] talent-contact email failed:", err);
+    }
+  });
   return { ok: true };
 }
 
@@ -211,6 +236,9 @@ export async function getTradeInbox(): Promise<TradeInboxDTO> {
   const rows = await db.tradeJobRecipient.findMany({
     where: {
       recipientId: user.id,
+      // A post the author withdrew disappears from the recipient's inbox too —
+      // it is no longer work anyone can take.
+      tradeJob: NOT_DELETED,
       OR: [
         { status: "NEW" },
         { status: "INTERESTED" },
@@ -260,29 +288,47 @@ export async function getTradeInbox(): Promise<TradeInboxDTO> {
 }
 
 // ─── My Posts (author view) ─────────────────────────────────────────────────
-export async function getMyTradeJobs(): Promise<OwnPost[]> {
-  const user = await requireUser();
-  const jobs = await db.tradeJob.findMany({
-    where: { authorId: user.id },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      tradeType: true,
-      specialties: true,
-      location: true,
-      budget: true,
-      timeWindow: true,
-      urgency: true,
-      status: true,
-      createdAt: true,
-      _count: { select: { recipients: true } },
-      recipients: { where: { status: "INTERESTED" }, select: { id: true } },
-    },
-  });
-  return jobs.map((j) => ({
+/** One shape, one mapper: the list read and the single-row read after an edit
+ *  must not be able to drift apart. */
+const ownPostSelect = {
+  id: true,
+  title: true,
+  // The detail panel reads the full brief, and the edit form writes it back —
+  // both need the column the list view never used to ask for.
+  description: true,
+  tradeType: true,
+  specialties: true,
+  location: true,
+  budget: true,
+  timeWindow: true,
+  urgency: true,
+  status: true,
+  createdAt: true,
+  _count: { select: { recipients: true } },
+  recipients: { where: { status: "INTERESTED" }, select: { id: true } },
+} as const;
+
+type OwnPostRow = {
+  id: string;
+  title: string;
+  description: string;
+  tradeType: string;
+  specialties: string;
+  location: string | null;
+  budget: string | null;
+  timeWindow: string | null;
+  urgency: string | null;
+  status: string;
+  createdAt: Date;
+  _count: { recipients: number };
+  recipients: { id: string }[];
+};
+
+function mapOwnPost(j: OwnPostRow): OwnPost {
+  return {
     id: j.id,
     title: j.title,
+    description: j.description,
     tradeType: j.tradeType,
     specialties: parseList(j.specialties),
     location: j.location ?? undefined,
@@ -293,7 +339,17 @@ export async function getMyTradeJobs(): Promise<OwnPost[]> {
     hoursAgo: hoursSince(j.createdAt),
     broadcastCount: j._count.recipients,
     interestedCount: j.recipients.length,
-  }));
+  };
+}
+
+export async function getMyTradeJobs(): Promise<OwnPost[]> {
+  const user = await requireUser();
+  const jobs = await db.tradeJob.findMany({
+    where: { authorId: user.id, ...NOT_DELETED },
+    orderBy: { createdAt: "desc" },
+    select: ownPostSelect,
+  });
+  return jobs.map(mapOwnPost);
 }
 
 // ─── Matching engine (consent-gated, cross-org, 500 cap) ────────────────────
@@ -456,9 +512,10 @@ export async function setTradeJobStatus(
   // Authz: only the author can change a job's status.
   const job = await db.tradeJob.findUnique({
     where: { id: jobId },
-    select: { authorId: true },
+    select: { authorId: true, status: true },
   });
   if (!job || job.authorId !== user.id) throw new Error("Only the poster can do that.");
+  if (job.status === DELETED) throw new Error("This post was deleted.");
   await db.tradeJob.update({ where: { id: jobId }, data: { status } });
   if (status === "FILLED") {
     // Everyone who raised a hand hears the outcome — best-effort, see above.
@@ -470,7 +527,120 @@ export async function setTradeJobStatus(
     }
   }
   revalidatePath(ROUTE);
+  revalidatePath(HIRE_ROUTE);
   return { ok: true };
+}
+
+// ─── Author edit / withdraw ─────────────────────────────────────────────────
+// Owner ask, 2026-08-24: a post used to be write-once — a typo in the rate or
+// the wrong trade meant cancelling and re-broadcasting. Both actions below are
+// author-only, checked against the row on the server; the id from the client is
+// never trusted for anything but the lookup.
+//
+// The gate is `requireUser()` + an author check, matching `setTradeJobStatus`
+// rather than `createTradeJob`'s `requireManager()`. Creating a broadcast is a
+// manager act; correcting or withdrawing YOUR OWN broadcast should not stop
+// working because your role changed after you posted it.
+
+const updateInput = z.object({
+  title: z.string().trim().min(5).max(140),
+  description: z.string().trim().min(20).max(4000),
+  tradeType: z.string().trim().min(1).max(60),
+  specialties: z.array(z.string().trim().min(1).max(60)).max(40).default([]),
+  location: z.string().trim().max(160).optional().nullable(),
+  budget: z.string().trim().max(80).optional().nullable(),
+  timeWindow: z.string().trim().max(120).optional().nullable(),
+  urgency: z.enum(["low", "medium", "high", "urgent"]).optional().nullable(),
+});
+
+/** Edit a post that is still OPEN. A FILLED or CANCELLED post is a record of
+ *  something that already happened, and the people who acted on it read the
+ *  terms they acted on — those stay frozen.
+ *
+ *  The recipient list is deliberately NOT recomputed. Everyone already notified
+ *  keeps the post in their inbox with the corrected text; changing the trade
+ *  does not fire a second broadcast at a fresh audience (that is a new post,
+ *  and re-broadcasting on every keystroke-level edit is how a network becomes
+ *  spam). */
+export async function updateTradeJob(jobId: string, raw: unknown): Promise<OwnPost> {
+  const user = await requireUser();
+  const data = updateInput.parse(raw);
+
+  const existing = await db.tradeJob.findUnique({
+    where: { id: jobId },
+    select: { authorId: true, status: true },
+  });
+  if (!existing || existing.authorId !== user.id) {
+    throw new Error("Only the poster can edit this post.");
+  }
+  if (existing.status === DELETED) throw new Error("This post was deleted.");
+  if (existing.status !== "OPEN") {
+    throw new Error("Only an open post can be edited. Reopen it or post a new one.");
+  }
+
+  const job = await db.tradeJob.update({
+    where: { id: jobId },
+    data: {
+      title: data.title,
+      description: data.description,
+      tradeType: data.tradeType,
+      specialties: JSON.stringify(data.specialties),
+      location: data.location ?? null,
+      budget: data.budget ?? null,
+      timeWindow: data.timeWindow ?? null,
+      urgency: data.urgency ?? null,
+    },
+    select: ownPostSelect,
+  });
+
+  revalidatePath(ROUTE);
+  revalidatePath(HIRE_ROUTE);
+  return mapOwnPost(job);
+}
+
+/** Remove a post from the author's list.
+ *
+ *  Two paths, because the two cases are genuinely different:
+ *
+ *  - Nobody was ever notified (no `TradeJobRecipient` rows, which also means no
+ *    conversation can exist — a thread is only opened from a recipient row).
+ *    Nothing downstream refers to this job, so it is HARD deleted. Leaving a
+ *    tombstone for a post no human ever saw is litter.
+ *
+ *  - Anyone was notified. The row is TOMBSTONED (`status: "DELETED"`) instead.
+ *    A hard delete here would cascade (`onDelete: Cascade` on
+ *    TradeJobRecipient and TradeJobConversation, and from there on
+ *    TradeJobMessage) and destroy messages that OTHER people wrote — third
+ *    parties who never agreed to have their side of a conversation erased
+ *    because the poster tidied up. The tombstone withdraws the post from every
+ *    list, the author's and the recipients', while their threads survive.
+ *
+ *  Either way the caller's own list stops showing it, which is the contract the
+ *  button makes. */
+export async function deleteTradeJob(
+  jobId: string,
+): Promise<{ ok: true; hardDeleted: boolean }> {
+  const user = await requireUser();
+  const job = await db.tradeJob.findUnique({
+    where: { id: jobId },
+    select: { authorId: true, status: true, _count: { select: { recipients: true } } },
+  });
+  if (!job || job.authorId !== user.id) {
+    throw new Error("Only the poster can delete this post.");
+  }
+  // Already withdrawn — treat as done rather than erroring on a double click.
+  if (job.status === DELETED) return { ok: true, hardDeleted: false };
+
+  const hardDeleted = job._count.recipients === 0;
+  if (hardDeleted) {
+    await db.tradeJob.delete({ where: { id: jobId } });
+  } else {
+    await db.tradeJob.update({ where: { id: jobId }, data: { status: DELETED } });
+  }
+
+  revalidatePath(ROUTE);
+  revalidatePath(HIRE_ROUTE);
+  return { ok: true, hardDeleted };
 }
 
 // ─── Conversation (recipient side) ──────────────────────────────────────────
@@ -516,6 +686,9 @@ export async function sendTradeMessage(jobId: string, body: string): Promise<Cha
   if (!convo) throw new Error("No conversation for this job.");
   if (convo.tradeJob.status === "CANCELLED") {
     throw new Error("This job was cancelled.");
+  }
+  if (convo.tradeJob.status === DELETED) {
+    throw new Error("The poster withdrew this job.");
   }
   const msg = await db.tradeJobMessage.create({
     data: { conversationId: convo.id, authorId: user.id, body: trimmed.slice(0, 4000) },

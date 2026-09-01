@@ -124,13 +124,39 @@ async function call(params: Record<string, string>): Promise<Parcel[]> {
   return (data.results ?? []).map(normalize).filter((p): p is Parcel => p !== null);
 }
 
-/** Parcel containing the point. Lon-first inside the WKT, per the API. */
-export async function fetchParcelByPoint(lat: number, lon: number): Promise<Parcel | null> {
-  const results = await call({
+/**
+ * EVERY parcel containing the point, in the order ReportAll returned them.
+ * Lon-first inside the WKT, per the API.
+ *
+ * One point genuinely resolves to several parcels: a lot split by a road or a
+ * creek, a condo stack, a lot overlapped by right-of-way. Taking `results[0]`
+ * threw the rest away — and since the request was already paid for out of an
+ * ALLTIME quota, the discarded parcels were quota the account had spent and
+ * could not spend again. The caller decides which one is the subject lot.
+ */
+export async function fetchParcelsByPoint(lat: number, lon: number): Promise<Parcel[]> {
+  return call({
     spatial_intersect: `POINT(${lon} ${lat})`,
     si_srid: "4326",
   });
-  return results[0] ?? null;
+}
+
+/**
+ * Every parcel intersecting a WKT POLYGON (lon-first, EPSG:4326). One request,
+ * up to `rpp` parcels — used to find the lots that ADJOIN a subject parcel, so
+ * a property recorded as two deeds can be shown as the two lots it is.
+ *
+ * The polygon is a box around the subject, so the answer includes lots across a
+ * kerb; the caller filters by owner and by whether the geometry actually
+ * touches. Quota: every parcel returned is spent, which is why `rpp` is capped
+ * here and why the caller only ever sweeps a given lot once.
+ */
+export async function fetchParcelsByPolygon(wkt: string, rpp = 12): Promise<Parcel[]> {
+  return call({
+    spatial_intersect: wkt,
+    si_srid: "4326",
+    rpp: String(rpp),
+  });
 }
 
 /** Parcel by street address within a region ("King County, WA" — comma + space). */

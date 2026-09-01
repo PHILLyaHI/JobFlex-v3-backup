@@ -31,7 +31,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { canOpen } from "@/components/v3/blueprint-shell/nav-map";
-import { useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import { useNavLocked, useNavRole } from "@/components/v3/blueprint-shell/nav-role";
 import { ENGINES, QUEUED_COUNT, type EngineDiagram } from "./estimators-data";
 
 // Split once at module scope — the roster is a constant, so there is nothing
@@ -172,9 +172,10 @@ export function EstimatorPicker() {
   // dialog is also opened from a client record's own "New proposal" button, and
   // a card that routes somewhere the gate bounces is worse than an absent one.
   const role = useNavRole();
+  const locked = useNavLocked();
   const openEngines = useMemo(
-    () => active.filter((engine) => canOpen(role, engine.href)),
-    [role],
+    () => active.filter((engine) => canOpen(role, engine.href, locked)),
+    [role, locked],
   );
   // Two flags because the source has two classes. `open` drives the `hidden`
   // attribute (`.estp[hidden] { display: none }`); `on` is added a frame later

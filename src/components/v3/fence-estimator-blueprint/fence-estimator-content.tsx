@@ -75,11 +75,15 @@ export function FenceEstimatorContent() {
           </button>
         </label>
         <div className="fs-bar-r">
-          <button className="btn btn-ghost btn--sm" type="button" id="parcelBtn">
+          {/* The property lines load themselves the moment an address resolves —
+              there is nothing left to ask for. This button is the NEXT step:
+              lay fence along the checked sides of the lot. It ADDS to whatever
+              is already traced; nothing drawn by hand is replaced. */}
+          <button className="btn btn-ghost btn--sm" type="button" id="fenceBtn" disabled>
             <svg className="ic">
-              <use href="#i-board" />
+              <use href="#i-pen" />
             </svg>
-            Load property lines
+            Put down the fence
           </button>
           <div className="vsw" id="modeSwitch">
             <button className="vsw-btn active" type="button" data-mode="draw">
@@ -173,21 +177,21 @@ export function FenceEstimatorContent() {
             </div>
           </div>
 
-          {/* STAGE. Both slots carry a placeholder that is only ever SEEN when
-              the real surface cannot mount — the behavior module hides it and
-              appends the live host beside it. The copy therefore describes the
-              failure, not the feature: a placeholder that advertises what the
-              page would do is the thing that makes a fixture look finished. */}
+          {/* STAGE. The map slot opens on a PROMPT, not on a map: the surface
+              used to mount straight away on a default lot in Texas, so the page
+              greeted every visitor with somebody else's house. The behavior
+              module mounts the live surface only once an address resolves, and
+              swaps this copy for the "no browser key" failure when there is no
+              key to mount with. */}
           <div className="stage-canvas" id="stageCanvas">
             <div className="map-slot" id="mapSlot">
               <div className="map-slot-in">
                 <svg className="ic">
                   <use href="#i-pin" />
                 </svg>
-                <div className="ms-t">Map surface unavailable</div>
-                <div className="ms-h">Tracing needs a Google Maps browser key
-                  (NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY). The ledger and the price still work from run
-                  lengths typed by hand.</div>
+                <div className="ms-t">Enter the address</div>
+                <div className="ms-h">Search the property above. The satellite view opens on that
+                  lot and its property lines load with it — until then there is no site to trace.</div>
               </div>
             </div>
             <div className="model-slot is-hidden" id="stage3d">
@@ -210,23 +214,23 @@ export function FenceEstimatorContent() {
             after stopping, click open ground to start a separate fence · right-click a dot to remove</div>
 
           {/* PARCEL SIDES. Filled by the behavior module when /api/parcels
-              returns a lot for the searched address: one checkbox row per
-              boundary side, hover highlights that side on the map, and the
-              button seeds the CHECKED sides into the trace/ledger. Hidden until
-              a parcel exists — an empty panel would advertise a lookup that
-              has not happened. */}
+              returns the property for the searched address: one checkbox row per
+              boundary side, hover highlights that side on the map, and "Put down
+              the fence" (top bar) lays fence along the CHECKED sides. Hidden
+              until a parcel exists — an empty panel would advertise a lookup
+              that has not happened.
+
+              A property recorded as MORE THAN ONE LOT (two deeds bought
+              together) lists every lot's sides here, under its own heading —
+              there is no "which one" to pick, because the fence goes round the
+              land, not round a deed. */}
           <div className="parcel-panel is-hidden" id="parcelPanel">
             <div className="parcel-head">
               <div>
                 <div className="kpi-lbl">Property sides</div>
                 <div className="parcel-meta" id="parcelMeta"></div>
               </div>
-              <button className="btn btn-primary btn--sm" type="button" id="parcelUse">
-                <svg className="ic">
-                  <use href="#i-check" />
-                </svg>
-                <span id="parcelUseLbl">Use 0 ft in estimate</span>
-              </button>
+              <div className="parcel-sum" id="parcelSum">0 ft checked</div>
             </div>
             <ul className="parcel-sides" id="parcelSides"></ul>
           </div>
@@ -256,7 +260,7 @@ export function FenceEstimatorContent() {
             {/* Same empty-state idiom as #openEmpty below. The page opens with
                 NO runs: every foot in the ledger is either traced on the map or
                 typed by the user, so nothing on the ticket is invented. */}
-            <div className="open-empty" id="runsEmpty">No runs yet — trace the fence on the map, or add a run and type its length.</div>
+            <div className="open-empty" id="runsEmpty">Enter the address above and trace the fence on the map, or add a run and type its length.</div>
             <div className="runs-add">
               <button className="btn btn-ghost btn--sm" type="button" data-act="add-run">
                 <svg className="ic">
@@ -271,8 +275,21 @@ export function FenceEstimatorContent() {
           </div>
 
           <div className="card fs-card">
+            {/* The rate card is a starting point, not a quote: a contractor who
+                prices cedar at $34 says so BY EDITING CEDAR — click the figure
+                on the row and type. There is no separate rate box any more; a
+                second place to set a price is a second price to disagree with
+                the one on the row. Materials of your own are added here too. */}
             <div className="ledger-head">Material</div>
             <ul className="mats" id="matList"></ul>
+            <div className="mats-add">
+              <button className="btn btn-ghost btn--sm" type="button" id="matAdd">
+                <svg className="ic">
+                  <use href="#i-plus" />
+                </svg>
+                Add material
+              </button>
+            </div>
             <div className="ledger-head">Height</div>
             <div className="seg" id="heights"></div>
             <div className="ledger-head">Site</div>

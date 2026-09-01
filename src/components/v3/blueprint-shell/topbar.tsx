@@ -14,19 +14,19 @@
 // something you type into was the lie. It opens the thing you type into.
 
 import { canOpen } from "./nav-map";
-import { useNavIdentity } from "./nav-role";
+import { useNavIdentity, useNavLocked } from "./nav-role";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
 import { NotificationBell } from "./notification-bell";
-import { SupportLauncher } from "@/components/v3/support-widget/support-widget";
 
 export function Topbar() {
-  const { role, name } = useNavIdentity();
+  const { role } = useNavIdentity();
   // Every engine the picker offers sits outside a field worker's allow-list, so
   // the app's most prominent CTA would open a dialog whose every card bounces
   // them back to Jobs. Asked of the engine list itself so a new engine cannot
   // leave this behind. The production topbar strips the same controls from
   // limited roles (components/layout/Topbar.tsx, `stripped`).
-  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href));
+  const locked = useNavLocked();
+  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href, locked));
 
   const openPalette = () => {
     document.dispatchEvent(new CustomEvent("jf:command-palette"));
@@ -86,7 +86,6 @@ export function Topbar() {
             `.icon-btn` draws it at the bar's own 40px like the bell beside it;
             the widget's stylesheet adds the 44px hit floor without changing
             the plate, so the bar's rhythm is untouched. */}
-        {name ? <SupportLauncher className="icon-btn" iconClassName="ic" /> : null}
         <NotificationBell />
       </div>
     </header>

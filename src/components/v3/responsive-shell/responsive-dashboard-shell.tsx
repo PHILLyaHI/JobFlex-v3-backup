@@ -23,6 +23,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
+import { BlueprintHandheldFrame } from "./blueprint-handheld-frame";
 import { NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
@@ -223,6 +224,13 @@ const PAGE_OWNED_STATIC = new Set([
   // in the props-less map above. Added 2026-08-22 with the wired estimator;
   // before it, a phone on this URL got the desktop page and no handheld nav.
   "/dashboard/video-estimator",
+  // Both editions need the caller's TradeNetworkProfile plus the two strings
+  // the talent directory prints for a row (their display name and their org
+  // name) — server facts — so the switch lives with the page
+  // (hire-profile-blueprint/hire-profile-viewport-switch.tsx) rather than in
+  // the props-less map above. Added 2026-08-24 with the listing editor; before
+  // it, this path resolved to a ComingSoon stub in the classic tree.
+  "/dashboard/hire/profile",
 ]);
 
 /** Mapped handheld surfaces that do NOT render <MobileNav />.
@@ -273,11 +281,24 @@ const getSnapshot = () => window.matchMedia(HANDHELD).matches;
 // visitor on every route, which is a worse trade.
 const getServerSnapshot = () => false;
 
+/** Blueprint routes with NO handheld build of their own that should still get
+ *  the handheld chrome rather than the desk shell. The page's own markup is
+ *  kept; only the frame around it changes (BlueprintHandheldFrame).
+ *
+ *  /dashboard/manual-blueprint is here because it is where the mobile "New
+ *  Proposal" button now lands, and on a phone it was arriving inside the desk
+ *  sidebar's chrome with no bottom nav — the one page you could not navigate
+ *  out of with a thumb. There is no mobile-manual-builder BLUEPRINT page yet;
+ *  the /mobile-manual-builder-v2 build is the older design. When a real
+ *  handheld build lands, move the route to HANDHELD_SURFACES above. */
+const BLUEPRINT_HANDHELD = new Set(["/dashboard/manual-blueprint"]);
+
 export function ResponsiveDashboardShell({
   children,
   user,
   identity,
   badges,
+  locked,
 }: {
   children: React.ReactNode;
   /** Signed-in identity, read in the server layout and handed to the desktop
@@ -292,6 +313,9 @@ export function ResponsiveDashboardShell({
    *  (getBadgeCounts). Published through the same provider the identity rides,
    *  for the same reason: the two nav shells sit at very different depths. */
   badges?: Record<string, number>;
+  /** Custom-plan blocked hrefs (lib/customPageAccess), same provider, same
+   *  reason: every nav filter at every depth reads one list. */
+  locked?: string[];
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const pathname = usePathname();
@@ -306,7 +330,7 @@ export function ResponsiveDashboardShell({
   if (isHandheld && Handheld) {
     const seenSurface = HANDHELD_SEEN[pathname ?? ""];
     return (
-      <NavRoleProvider identity={identity} badges={badges}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
         {/* Keyed: this shell persists across navigation, and MarkNavSeen only
             stamps once per mount — a new key remounts it for the new surface. */}
         {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
@@ -345,14 +369,21 @@ export function ResponsiveDashboardShell({
   // Page-owned handheld branches render their own chrome (which reaches for
   // MobileNav), so they need the provider just as much as the mapped ones.
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
-    return <NavRoleProvider identity={identity} badges={badges}>{children}</NavRoleProvider>;
+    return <NavRoleProvider identity={identity} badges={badges} locked={locked}>{children}</NavRoleProvider>;
   }
   if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
-    return <NavRoleProvider identity={identity} badges={badges}>{children}</NavRoleProvider>;
+    return <NavRoleProvider identity={identity} badges={badges} locked={locked}>{children}</NavRoleProvider>;
+  }
+  if (isHandheld && BLUEPRINT_HANDHELD.has(pathname ?? "")) {
+    return (
+      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+        <BlueprintHandheldFrame>{children}</BlueprintHandheldFrame>
+      </NavRoleProvider>
+    );
   }
 
   return (
-    <NavRoleProvider identity={identity} badges={badges}>
+    <NavRoleProvider identity={identity} badges={badges} locked={locked}>
       <BlueprintShell user={user}>{children}</BlueprintShell>
     </NavRoleProvider>
   );

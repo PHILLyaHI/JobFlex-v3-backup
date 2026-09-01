@@ -186,6 +186,7 @@ export function Sidebar({
   badges,
   limits,
   plan,
+  lockedHrefs,
 }: {
   role?: string | null;
   /** Unread / pending counts keyed by nav href. Populated by the layout. */
@@ -194,9 +195,22 @@ export function Sidebar({
   limits?: Record<string, { remaining: number; limit: number; cappedBy?: string }>;
   /** Active plan slug ("PROFESSIONAL") for the counter's upsell copy. */
   plan?: string;
+  /** Custom-plan blocked hrefs (lib/customPageAccess) — items whose href sits
+   *  under one of these prefixes are not drawn. Empty/undefined = no lock. */
+  lockedHrefs?: string[];
 }) {
   const pathname = usePathname();
-  const navGroups = navGroupsFor(role);
+  const navGroups = React.useMemo(() => {
+    const base = navGroupsFor(role);
+    if (!lockedHrefs?.length) return base;
+    // Prefix match, so the legacy estimator paths under /dashboard/advanced-ai
+    // fall with their parent when Smart Proposal is not in the bought set.
+    const blocked = (href: string) =>
+      lockedHrefs.some((p) => href === p || href.startsWith(p + "/"));
+    return base
+      .map((g) => ({ ...g, items: g.items.filter((i) => !blocked(i.href)) }))
+      .filter((g) => g.items.length > 0);
+  }, [role, lockedHrefs]);
 
   // Single source of truth for the active item: the nav target that is the
   // LONGEST prefix of the current path wins. Without this, the index route

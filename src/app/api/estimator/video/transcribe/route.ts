@@ -25,6 +25,58 @@ export const maxDuration = 60;
 /** Below Vercel's 4.5MB request cap, with room for the multipart envelope. */
 const MAX_BYTES = 4 * 1024 * 1024;
 
+/** Biases the decoder toward the vocabulary it will hear. It is NOT a
+ *  transcript of anything — Whisper treats it as style, not content. */
+const DECODER_PROMPT =
+  "Contractor walkthrough of a jobsite. Measurements in feet and inches, e.g. 128 feet, 6 foot, 2 by 4, 5/4 deck board, cedar, pressure treated.";
+
+/** Whisper's own decoder treats this as a failed decode; the API hands us the
+ *  ratio but applies no threshold of its own. A looped hallucination
+ *  ("5 by 4, 5 by 4, 5 by 4, …") compresses far better than speech does. */
+const MAX_COMPRESSION_RATIO = 2.4;
+
+/** Lower-case, punctuation-free word list — the shape both the echo guard and
+ *  its n-grams are built from. */
+function words(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function ngrams(list: string[], n: number): Set<string> {
+  const out = new Set<string>();
+  for (let i = 0; i + n <= list.length; i++) out.add(list.slice(i, i + n).join(" "));
+  return out;
+}
+
+/** The prompt's own 5-word runs. Built once. */
+const PROMPT_GRAMS = ngrams(words(DECODER_PROMPT), 5);
+
+/**
+ * ON SILENCE, WHISPER SAYS THE PROMPT BACK.
+ *
+ * Given a clip with music or room tone and no speech, it returns the biasing
+ * prompt almost verbatim — an eight-second ad came back as "Measurements in
+ * feet and inches, e.g. 112 feet, 6 foot, 2 by 4, 5 by 4, 5 by 4, …", which
+ * then reached the reader as something the contractor had said and produced a
+ * clarify question about "the '5 by 4' measurements". `no_speech_prob` did not
+ * catch it: the model was confident, it was simply confidently wrong.
+ *
+ * The test is a shared FIVE-word run with the prompt. An echo reproduces the
+ * prompt's own phrasing; real speech about a jobsite shares its vocabulary
+ * ("feet", "cedar", "pressure treated") but not five consecutive words of it,
+ * which is why this is a 5-gram test and not a word-overlap score — the latter
+ * throws away the genuine "128 feet, 6 foot cedar, pressure treated posts"
+ * along with the fake.
+ */
+function isPromptEcho(text: string): boolean {
+  const grams = ngrams(words(text), 5);
+  for (const g of grams) if (PROMPT_GRAMS.has(g)) return true;
+  return false;
+}
+
 export async function POST(req: Request) {
   let organizationId: string;
   try {
@@ -70,10 +122,7 @@ export async function POST(req: Request) {
       file,
       model: "whisper-1",
       response_format: "verbose_json",
-      // Biases the decoder toward the vocabulary it will hear; it is not a
-      // transcript of anything, and Whisper treats it as style, not content.
-      prompt:
-        "Contractor walkthrough of a jobsite. Measurements in feet and inches, e.g. 128 feet, 6 foot, 2 by 4, 5/4 deck board, cedar, pressure treated.",
+      prompt: DECODER_PROMPT,
     });
     // Whisper HALLUCINATES on non-speech: a 440Hz test tone came back as "For
     // more information visit www.FEMA.gov". It also reports, per segment, how
@@ -81,7 +130,13 @@ export async function POST(req: Request) {
     // not speech, or decoded with very low confidence, is dropped here rather
     // than fed to the reader as something the contractor said.
     const segments = (res.segments ?? [])
-      .filter((s) => s.no_speech_prob < 0.6 && s.avg_logprob > -1.2)
+      .filter(
+        (s) =>
+          s.no_speech_prob < 0.6 &&
+          s.avg_logprob > -1.2 &&
+          s.compression_ratio < MAX_COMPRESSION_RATIO &&
+          !isPromptEcho(s.text),
+      )
       .map((s) => ({
         start: s.start + offset,
         end: s.end + offset,

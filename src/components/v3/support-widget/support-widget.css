@@ -88,6 +88,13 @@
      portrait the home indicator eats the bottom 34px, and a panel edge pinned
      to a flat 22px sits under it. */
   bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  /* A fixed element forms a STACKING CONTEXT even at `z-index: auto`, so the
+     plate's own 60 is trapped inside this root and the root paints in DOM
+     order — under `.content` (z 1 inside `.main`), which is where the launcher
+     went when it moved back to the corner. The root now carries the same 60 it
+     lends its child. Closed it still paints nothing and catches nothing except
+     over the plate itself. */
+  z-index: 60;
   font-family: var(--font, var(--font-sans));
   color: var(--ink);
   line-height: normal;
@@ -698,4 +705,122 @@
   .jfsup .jfsup-pop {
     transform: none;
   }
+}
+
+/* ── THE FLOATING PLATE ───────────────────────────────────────
+   Bottom-right, at every width, and the only launcher there is
+   (owner's call, 2026-08-27 — the top-bar button is gone).
+
+   It is a PILL that is icon-wide at rest and widens on hover to
+   say what it is. Width, not opacity: a label that fades in over
+   the page would sit on top of content, while a plate that grows
+   pushes nothing and covers only what its own reserved strip
+   already keeps clear (see the padding rules below).
+
+   z-index 60 clears the page furniture it used to lose to
+   (FloatingCostsCard 40, sticky bars 30, sheets 40/50) and stays
+   under the composer's own 95. */
+.jfsup-fab.jfsup-fab {
+  position: fixed;
+  z-index: 60;
+  right: 22px;
+  /* THE BAR UNDER IT IS MEASURED, NOT GUESSED. `--jfsup-fab-bottom` is written
+     on this element by the component every time something that can move a
+     bottom bar happens (resize, scroll, the bar resizing, a route change); the
+     fallback here is what stands while that first measurement is taken, and
+     what stands on a page with no bar at all. A flat number in this file
+     cannot follow a sticky action bar that changes height at runtime — which
+     is how the plate ended up under the taller ones. */
+  bottom: var(--jfsup-fab-bottom, calc(22px + env(safe-area-inset-bottom, 0px)));
+  display: inline-flex;
+  align-items: center;
+  /* CENTRED, and it has to be said here: the closed plate is a square with one
+     glyph in it, and the label is still a flex item — collapsed to zero width
+     below, but a flex item all the same. Without this the glyph packs to the
+     flex-start edge and draws ~4px left of centre inside its own frame. This
+     button is mounted OUTSIDE `.jfsup`, so it also misses that root's
+     border-box reset — hence the explicit box-sizing, without which the 2px
+     frame is added to the 48 and the square is 52 wide. */
+  justify-content: center;
+  box-sizing: border-box;
+  gap: 0;
+  height: 48px;
+  width: 48px;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid var(--ink, #101010);
+  /* Square, like every other plate in this system — the pill was the one
+     rounded object on the page (owner's call, 2026-08-27). */
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #fff);
+  color: var(--ink, #101010);
+  box-shadow: 3px 3px 0 var(--shadow, rgba(16, 16, 16, 0.16));
+  cursor: pointer;
+  transition:
+    width 0.18s cubic-bezier(0.22, 0.61, 0.36, 1),
+    gap 0.18s cubic-bezier(0.22, 0.61, 0.36, 1),
+    padding 0.18s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.14s ease,
+    box-shadow 0.14s ease;
+}
+.jfsup-fab.jfsup-fab:hover,
+.jfsup-fab.jfsup-fab:focus-visible {
+  width: 148px;
+  gap: 9px;
+  padding: 0 18px 0 15px;
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--shadow, rgba(16, 16, 16, 0.16));
+}
+.jfsup-fab.jfsup-fab:active {
+  transform: none;
+  box-shadow: 1px 1px 0 var(--shadow, rgba(16, 16, 16, 0.16));
+}
+.jfsup-fab .jfsup-fab-ic {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  /* No auto margins: `justify-content` on the plate does the centring, and an
+     auto margin here only worked while there was free space to eat — there
+     never was, because the label measures ~62px inside a 48px box. */
+  margin: 0;
+}
+.jfsup-fab .jfsup-fab-lbl {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  /* ZERO WIDTH WHILE CLOSED. `opacity: 0` hides the word but keeps its box,
+     and that box is what pushed the glyph off centre. The width opens with the
+     plate on the same curve, so nothing about the hover reads different. */
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-width 0.18s cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 0.14s ease 0.04s;
+}
+.jfsup-fab:hover .jfsup-fab-lbl,
+.jfsup-fab:focus-visible .jfsup-fab-lbl {
+  max-width: 90px;
+  opacity: 1;
+}
+/* The plate carries no tooltip — it IS the tooltip once it opens. */
+.jfsup-fab .jfsup-tip { display: none; }
+
+/* Above a handheld tab bar, never on it. */
+@media (max-width: 768px) {
+  .jfsup-fab.jfsup-fab {
+    right: 14px;
+    /* The handheld fallback clears the tab bar the whole mobile fleet carries;
+       the measured value replaces it a frame later on every page. */
+    bottom: var(--jfsup-fab-bottom, calc(84px + env(safe-area-inset-bottom, 0px)));
+    height: 46px;
+    width: 46px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jfsup-fab.jfsup-fab,
+  .jfsup-fab .jfsup-fab-lbl { transition: none; }
 }

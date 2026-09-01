@@ -994,7 +994,7 @@ export function MobileCrm() {
       if (act === "open") {
         go(`/dashboard/clients/${target.id}`);
       } else if (act === "prop") {
-        go("/dashboard/proposals/new");
+        go("/dashboard/manual-blueprint");
       } else if (act === "mail" && c?.email) {
         // Hands off to the phone's mail app. `assign` rather than the router:
         // mailto: is not an app route. The address is filtered to the addr-spec
@@ -1342,7 +1342,7 @@ export function MobileCrm() {
                     <button
                       className={styles.emptyA}
                       type="button"
-                      onClick={() => go("/dashboard/proposals/new")}
+                      onClick={() => go("/dashboard/manual-blueprint")}
                     >
                       <Icon id="i-fileplus" />New proposal
                     </button>

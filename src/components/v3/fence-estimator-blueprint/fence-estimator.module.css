@@ -1378,7 +1378,14 @@
 /* parcel sides panel — filled when /api/parcels returns the lot */
 .bp :global(.content .parcel-panel) { border-top: 1.5px solid var(--hair-soft); padding: 12px 14px 14px; }
 .bp :global(.content .parcel-head) { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.bp :global(.content .parcel-sum) { font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: var(--blueprint); }
+/* A property recorded as more than one lot heads each lot's sides. */
+.bp :global(.content .ps-lot) { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; margin-top: 4px; padding: 4px 0 2px; border-bottom: 1.5px solid var(--hair-soft); list-style: none; }
+.bp :global(.content .ps-lot-n) { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blueprint); }
+.bp :global(.content .ps-lot-a) { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bp :global(.content .parcel-meta) { margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+/* Multi-lot picker — one line above the sides list, so the question ("which
+   lot?") is answered before the answer ("which sides?") is read. */
 .bp :global(.content .parcel-sides) { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 12px; list-style: none; margin: 0; padding: 0; }
 .bp :global(.content .ps-label) { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
 .bp :global(.content .ps-row:hover .ps-label) { border-color: var(--blueprint); background: var(--accent-soft); }
@@ -1497,11 +1504,30 @@
 .bp :global(.content .mats li.on) { background: rgba(24, 84, 160, 0.07); box-shadow: inset 3px 0 0 var(--blueprint); }
 .bp :global(.content .mat-sw) { width: 30px; height: 30px; flex: 0 0 auto; border: 1.5px solid var(--ink); border-radius: var(--radius); }
 .bp :global(.content .mat-name) { flex: 1; font-size: 13px; font-weight: 700; }
-.bp :global(.content .mat-rate) { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+/* THE RATE IS THE CONTROL: the figure on a material row is a button, and
+   clicking it swaps a number field into the same slot. It has to read as a
+   price first and a control second — hence the dotted underline rather than a
+   box, which only closes into one on hover. */
+.bp :global(.content .mat-rate) { height: 24px; padding: 0 5px; border: 1.5px solid transparent; border-radius: var(--radius); background: none; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--muted); text-decoration: underline dotted var(--muted-faint); text-underline-offset: 3px; cursor: text; }
+.bp :global(.content .mat-rate:hover) { border-color: var(--ink); background: #fff; color: var(--ink); text-decoration: none; }
+.bp :global(.content .mat-rate:focus-visible) { outline: none; border-color: var(--ink); background: #fff; color: var(--ink); }
+.bp :global(.content .mat-rate.is-custom) { color: var(--blueprint); font-style: italic; text-decoration-color: var(--blueprint); }
+.bp :global(.content .mat-rate-in) { width: 66px; height: 26px; padding: 0 6px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; text-align: right; color: var(--ink); }
+.bp :global(.content .mat-rate-in:focus) { outline: none; box-shadow: 2px 2px 0 var(--ink); }
 .bp :global(.content .seg) { display: flex; padding: 12px 14px; gap: 7px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .seg-btn) { flex: 1; height: 34px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-size: 12.5px; font-weight: 700; color: var(--muted); }
 .bp :global(.content .seg-btn:hover) { border-color: var(--ink); color: var(--ink); }
 .bp :global(.content .seg-btn.on) { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+/* Add-material row + the add button under the list. Same rhythm as `.runs-add`,
+   because it is the same idea: the list's own way of growing. */
+.bp :global(.content .mats-add) { padding: 10px 14px; border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .mat-new) { gap: 8px; background: var(--accent-soft); cursor: default; }
+.bp :global(.content .mat-new-name) { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.bp :global(.content .mat-new-name:focus) { outline: none; border-color: var(--ink); }
+.bp :global(.content .mat-new-rate) { display: inline-flex; align-items: center; gap: 2px; }
+.bp :global(.content .mat-cur) { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--muted); }
+.bp :global(.content .mat-new-in) { width: 58px; height: 30px; padding: 0 6px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 12px; font-weight: 700; text-align: right; color: var(--ink); }
+.bp :global(.content .mat-new-in:focus) { outline: none; border-color: var(--ink); }
 .bp :global(.content .site-row) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 13px 14px 15px; }
 .bp :global(.content .tg-t) { font-size: 13px; font-weight: 700; }
 .bp :global(.content .tg-h) { margin-top: 4px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
@@ -1617,7 +1643,10 @@
 .bp :global(.content .mat-rate) { font-size: 11px; }
 .bp :global(.content .seg) { padding: 9px 12px; gap: 6px; }
 .bp :global(.content .seg-btn) { height: 30px; font-size: 12px; }
-.bp :global(.content .site-row) { padding: 10px 12px 12px; gap: 12px; }
+.bp :global(.content .mats-add) { padding: 8px 12px; }
+  .bp :global(.content .mats-add .btn) { height: 30px; font-size: 11.5px; }
+  .bp :global(.content .rate-in) { width: 58px; height: 26px; font-size: 12px; }
+  .bp :global(.content .site-row) { padding: 10px 12px 12px; gap: 12px; }
 .bp :global(.content .site-row .tg-t) { font-size: 12.5px; }
 .bp :global(.content .site-row .tg-h) { font-size: 11px; }
 .bp :global(.content .tgl) { width: 38px; height: 21px; }

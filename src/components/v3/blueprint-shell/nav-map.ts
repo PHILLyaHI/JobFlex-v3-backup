@@ -15,6 +15,7 @@
 // dead rather than routing somewhere that 404s.
 
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
+import { isCustomBlockedPath } from "@/lib/customPlan";
 
 export type NavItem = { label: string; icon: string; href: string };
 export type NavSection = { label: string; items: NavItem[] };
@@ -224,9 +225,19 @@ for (const section of NAV_SECTIONS) {
  * Use it for anything that NAVIGATES but is not a nav item: the topbar's New
  * Estimate engines, the palette's Create rows.
  */
-export function canOpen(role: string | null | undefined, href: string): boolean {
+export function canOpen(
+  role: string | null | undefined,
+  href: string,
+  /** Custom-plan blocked hrefs (useNavLocked). Optional so the review URLs and
+   *  older callers keep their unfiltered nav; the layouts always pass it. */
+  locked?: readonly string[],
+): boolean {
   if (href === "#") return false;
   if (OWNER_ONLY_HREFS.has(href) && role !== "OWNER") return false;
+  // The custom plan's gate cuts ACROSS roles: an owner on the custom plan
+  // still cannot open a page the plan did not buy. Same prefix rule the
+  // layout's redirect uses, so the nav never draws a link the server bounces.
+  if (locked && isCustomBlockedPath(locked, href.split("?")[0])) return false;
   const gate = role ? ROLE_ROUTE_GATES[role] : undefined;
   if (!gate) return true;
   // Strip a query string before matching: the gate reasons about pathnames.
@@ -252,7 +263,10 @@ export function isLimitedRole(role: string | null | undefined): boolean {
  * production sidebar, intersected with their route gate; office roles get the
  * full map minus anything owner-only.
  */
-export function navSectionsFor(role: string | null | undefined): NavSection[] {
+export function navSectionsFor(
+  role: string | null | undefined,
+  locked?: readonly string[],
+): NavSection[] {
   const plan = role ? ROLE_NAV[role] : undefined;
   if (plan) {
     const labels = (role && ROLE_LABELS[role]) || {};
@@ -260,7 +274,7 @@ export function navSectionsFor(role: string | null | undefined): NavSection[] {
       .map((group) => ({
         label: group.label,
         items: group.hrefs
-          .filter((href) => canOpen(role, href))
+          .filter((href) => canOpen(role, href, locked))
           .map((href) => {
             const item = ITEM_BY_HREF[href];
             if (!item) return null;
@@ -271,12 +285,13 @@ export function navSectionsFor(role: string | null | undefined): NavSection[] {
       .filter((group) => group.items.length > 0);
   }
 
-  // Office roles. OWNER sees the map as authored; everyone else loses the
-  // owner-only items, and any section they emptied goes with them.
-  if (role === "OWNER") return NAV_SECTIONS;
+  // Office roles. OWNER sees the map as authored minus what the plan gate
+  // locks; everyone else additionally loses the owner-only items, and any
+  // section they emptied goes with them.
+  if (role === "OWNER" && !locked?.length) return NAV_SECTIONS;
   return NAV_SECTIONS.map((section) => ({
     label: section.label,
-    items: section.items.filter((item) => canOpen(role, item.href)),
+    items: section.items.filter((item) => canOpen(role, item.href, locked)),
   })).filter((section) => section.items.length > 0);
 }
 

@@ -1116,3 +1116,11 @@
   .tgRow { flex-direction: column; gap: 14px; }
   .tgl { margin-top: 0; }
 }
+
+/* ── Room for the floating support plate ──────────────────────
+   The Help launcher is a fixed pill in the bottom-right corner
+   again (support-widget.css, owner's call 2026-08-27). It floats
+   just above this fleet's tab bar, so the scroller reserves the
+   strip it stands in — otherwise the last row of every list ends
+   underneath it with no way to scroll clear. */
+.scroll { padding-bottom: 60px; }

@@ -40,11 +40,11 @@ import {
   isLimitedRole,
   navSectionsFor,
 } from "@/components/v3/blueprint-shell/nav-map";
-import { useNavBadges, useNavIdentity } from "@/components/v3/blueprint-shell/nav-role";
+import { useNavBadges, useNavIdentity, useNavLocked } from "@/components/v3/blueprint-shell/nav-role";
 import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
 import { SignOutButton } from "@/components/v3/blueprint-shell/sign-out";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
-import { SupportLauncher, SupportWidget } from "@/components/v3/support-widget/support-widget";
+import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
 import styles from "./mobile-nav.module.css";
 import "@/components/v3/estimators-blueprint/estimators-global.css";
@@ -94,7 +94,9 @@ export function MobileNav() {
      ROLE FILTER header. Outside the provider (the standalone /mobile-*-v2
      review URLs) the role is null and nothing is filtered, exactly as before. */
   const { role, name: accountName } = useNavIdentity();
-  const sections = navSectionsFor(role);
+  // Custom-plan page locks, from the same provider; empty on every other plan.
+  const locked = useNavLocked();
+  const sections = navSectionsFor(role, locked);
   /* Unread / pending counts by href, from the same provider the identity
      rides. Outside it (the standalone /mobile-*-v2 review URLs) the map is
      empty and no badge is drawn — exactly what those routes showed before. */
@@ -102,12 +104,12 @@ export function MobileNav() {
   /* Every engine in the picker lives outside a field worker's allow-list, so
      for them the handheld New Estimate button could only open a dialog whose
      every card bounces. Asked of the engine list itself, not a copy of it. */
-  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href));
+  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href, locked));
   /* The review URLs render this nav with no session behind it, so the Help
      button would open a composer whose send could only ever fail. Same signal
      the widget itself is given. */
   const signedIn = Boolean(accountName);
-  const canOpenSettings = canOpen(role, "/dashboard/settings");
+  const canOpenSettings = canOpen(role, "/dashboard/settings", locked);
   const canOpenAccount = canOpen(role, "/dashboard/settings/account");
 
   /* The sliding plate is MEASURED, not guessed: it needs the active link's real
@@ -244,9 +246,6 @@ export function MobileNav() {
               wordmark + the right group. A fourth control there pushes
               "CONTRACTOR OS" past its ellipsis. A real handheld search needs
               a surface to open first — nothing in this fleet has one. */}
-          {signedIn && (
-            <SupportLauncher className={styles.tbarBtn} iconClassName={styles.ic} />
-          )}
           {/* The handheld bell had NO onClick at all and rendered `.bellDot`
               unconditionally — a dot that advertised unread notifications on
               every page load whether or not any existed. Same component the

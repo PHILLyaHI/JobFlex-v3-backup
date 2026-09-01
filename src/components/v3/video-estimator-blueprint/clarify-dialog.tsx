@@ -35,7 +35,7 @@ export function ClarifyDialog({
   cx,
   kicker = "Video estimator · Intake",
   heading = "A few quick questions",
-  lede = "The walkthrough left gaps for this kind of job. Answer what you can and the estimate is priced against real numbers instead of assumptions — or price it anyway and tighten it afterwards.",
+  lede,
   anywayLabel = "Price anyway",
 }: {
   questions: ClarifyQuestion[];
@@ -136,7 +136,7 @@ export function ClarifyDialog({
           <div className={cx("clq-h")} id="vclq-title">
             {heading}
           </div>
-          <p className={cx("clq-sub")}>{lede}</p>
+          {lede ? <p className={cx("clq-sub")}>{lede}</p> : null}
         </div>
 
         <div className={cx("clq-body")}>

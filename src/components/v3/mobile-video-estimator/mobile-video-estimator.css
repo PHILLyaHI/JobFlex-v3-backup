@@ -127,7 +127,11 @@
 
   /* ---- FLUID SCALE — one composition, 320px → 768px, no breakpoint ---- */
   --pad-x: clamp(12px, 3.8vw, 22px);
-  --gap: clamp(14px, 4vw, 20px);
+  /* The stack gap between CARDS, and it has to clear their frames: every card
+     on this page carries a 2px ink border and a hard offset shadow, so 14px of
+     air between two of them read as ~10px and the drop zone looked welded to
+     the job ticket under it. (owner's call, 2026-08-29) */
+  --gap: clamp(20px, 5.6vw, 28px);
   --card-pad: clamp(16px, 4.6vw, 24px);
   /* Desktop is a flat 46px. "VIDEO ESTIMATOR" at 900 / -0.03em sets on ONE
      line down to 320px at 26px and needs no more than 40px at 768. */
@@ -1022,14 +1026,23 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
+/* `flex: 0 0 auto` meant a five-figure total simply ran out of the card — on a
+   390px screen a wrong estimate could print past the right edge with no way to
+   read the end of it. The figure now takes the space it has, shrinks to fit,
+   and breaks rather than overflowing. */
 .jf-mobile-video-estimator .mve-total b {
-  flex: 0 0 auto;
-  font-size: 30px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-size: clamp(17px, 6.5vw, 30px);
   font-weight: 900;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
   color: var(--blueprint);
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
+.jf-mobile-video-estimator .mve-total span { flex: 0 0 auto; }
 
 /* ── THE EDITABLE LEDGER ──────────────────────────────────────────────────
    Materials and Labor are two sections now, each with its own heading bar and
@@ -1256,8 +1269,8 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
 }
 .jf-mobile-video-estimator .mve-req-row {
   display: grid;
-  gap: 10px;
-  padding: 14px 0;
+  gap: 14px;
+  padding: 16px 0;
   border-bottom: 1px dashed var(--dash);
   min-width: 0;
 }
@@ -1268,15 +1281,15 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
 .jf-mobile-video-estimator .mve-req-top {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 .jf-mobile-video-estimator .mve-thumb {
   flex: 0 0 auto;
   display: block;
   position: relative;
-  width: 58px;
-  height: 58px;
+  width: 64px;
+  height: 64px;
   border: var(--border-thin);
   border-radius: var(--radius);
   overflow: hidden;
@@ -1316,27 +1329,29 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
    and a truncated product name is the one thing a buyer cannot act on. */
 .jf-mobile-video-estimator .mve-req-n {
   display: block;
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 800;
-  line-height: 1.3;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
   overflow-wrap: anywhere;
 }
 .jf-mobile-video-estimator .mve-req-m {
-  margin-top: 5px;
+  margin-top: 6px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.4;
   letter-spacing: 0.03em;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 .jf-mobile-video-estimator .mve-store {
-  padding: 1px 8px;
+  padding: 3px 8px;
   border: 1.5px solid rgba(10, 10, 10, 0.45);
   border-radius: var(--radius);
   font-size: 10px;
@@ -1350,11 +1365,14 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 6px 12px;
+  gap: 4px 12px;
+  padding-top: 2px;
 }
 .jf-mobile-video-estimator .mve-req-foot b {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 .jf-mobile-video-estimator .mve-req-foot > span {
@@ -1374,15 +1392,15 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
   justify-content: center;
   gap: 9px;
   width: 100%;
-  min-height: var(--tap);
-  padding: 0 12px;
+  min-height: 48px;
+  padding: 0 14px;
   border: var(--border);
   border-radius: var(--radius);
   background: var(--sheet);
   color: var(--ink);
-  font-size: clamp(11px, 3.2vw, 12px);
+  font-size: clamp(11.5px, 3.2vw, 12.5px);
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   text-align: center;
   overflow-wrap: anywhere;

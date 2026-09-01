@@ -959,3 +959,11 @@
   .cmastSubL { font-size: 10px; letter-spacing: 0.06em; }
   .cav { width: 34px; height: 34px; font-size: 12px; }
 }
+
+/* ── Room for the floating support plate ──────────────────────
+   The Help launcher is a fixed pill in the bottom-right corner
+   again (support-widget.css, owner's call 2026-08-27). It floats
+   just above this fleet's tab bar, so the scroller reserves the
+   strip it stands in — otherwise the last row of every list ends
+   underneath it with no way to scroll clear. */
+.scroll { padding-bottom: 60px; }

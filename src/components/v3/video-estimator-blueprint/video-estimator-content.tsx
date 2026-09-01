@@ -115,7 +115,10 @@ export function VideoEstimatorContent({
   const conf = ve.analysis ? ve.analysis.confidence : null;
   const audioNote =
     ve.audioState === "none"
-      ? " · no audio"
+      // "No audio" was a lie half the time: the state is also what a track with
+      // no SPEECH in it comes back as — music, road noise, a hallucination the
+      // route dropped. What the reading actually went without is the words.
+      ? " · no speech heard"
       : ve.audioState === "failed"
         ? " · audio not transcribed"
         : ve.audioState === "partial"
@@ -146,8 +149,6 @@ export function VideoEstimatorContent({
     rows: typeof ve.matLines,
     sectionTotal: number,
   ) => {
-    const gateHere = ve.pending !== null && ve.pending.scope === group;
-    const anyGate = ve.pending !== null;
     return (
       <section className={cx("vr-sec")} key={group}>
         <div className={cx("vr-sec-bar")}>
@@ -233,64 +234,6 @@ export function VideoEstimatorContent({
           Add {heading.toLowerCase()} line
         </button>
 
-        {/* This section's own change box. Hidden while ANY gate is open, so two
-            sections can never have pending diffs at once. */}
-        <div className={cx("vr-refine")} hidden={anyGate}>
-          <input
-            className={cx("vr-refine-in")}
-            type="text"
-            placeholder={`Change the ${heading.toLowerCase()}…`}
-            value={ve.refineText}
-            onChange={(e) => ve.setRefineText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && ve.canRefine) void ve.applyRefine(group);
-            }}
-            disabled={ve.refineBusy}
-          />
-          <button
-            className={cx("btn", "btn-ghost")}
-            type="button"
-            disabled={!ve.canRefine}
-            onClick={() => void ve.applyRefine(group)}
-          >
-            {ve.refineBusy ? "Applying…" : "Apply"}
-          </button>
-        </div>
-
-        <div className={cx("vr-review")} hidden={!gateHere}>
-          <div className={cx("vr-review-h")}>Review &mdash; nothing applies until you confirm</div>
-          <div className={cx("vr-diff")}>
-            {ve.pending?.rows.map((r, i) => (
-              <div
-                className={cx(r.kind === "Added" ? "add" : r.kind === "Removed" ? "del" : "chg")}
-                key={i}
-              >
-                {r.kind === "Added" ? "+" : r.kind === "Removed" ? "−" : "~"} {r.name} &middot;{" "}
-                {r.detail}
-              </div>
-            ))}
-            {ve.pending ? (
-              <div className={cx("tot")}>
-                Total {money(ve.pending.totalBefore)} &rarr; {money(ve.pending.totalAfter)}
-              </div>
-            ) : null}
-          </div>
-          {ve.pending && ve.pending.warnings.length > 0 ? (
-            <ul className={cx("vr-warn")}>
-              {ve.pending.warnings.map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
-          ) : null}
-          <div className={cx("vr-review-a")}>
-            <button className={cx("btn", "btn-primary")} type="button" onClick={ve.confirmRefine}>
-              Confirm
-            </button>
-            <button className={cx("btn", "btn-ghost")} type="button" onClick={ve.discardRefine}>
-              Discard
-            </button>
-          </div>
-        </div>
       </section>
     );
   };
@@ -499,7 +442,21 @@ export function VideoEstimatorContent({
         </div>
       </div>
 
-      {/* ─── РЕЗУЛЬТАТ ─── */}
+      {/* ─── РЕЗУЛЬТАТ ───
+          THREE CARDS, ONE JOB EACH (owner's call, 2026-08-28):
+            1. SCOPE     — everything the walkthrough said: the paragraph, then
+                           measurements, site notes and assumptions side by side
+                           in ONE row.
+            2. TOTALS    — the ledger and the figure, on their own full width.
+                           They used to share a row with the read-out column,
+                           which is what squeezed the total into a corner.
+            3. MATERIALS — the shoppable list, its own card.
+          The FRAMES STRIP is gone from the view. Frame extraction still runs
+          and still feeds the model (ve.framesRead is untouched) — it was a
+          picture of the machine's working, not of the job.
+          The per-section "change the materials…" box and its review gate are
+          gone with it: refining by sentence is still on the hook, but it is not
+          on this sheet. */}
       <div className={cx("step-result")} ref={resultRef} hidden={ve.step !== "result"}>
         <section className={cx("card", "card--flush")}>
           <div className={cx("vr-mast")}>
@@ -518,97 +475,89 @@ export function VideoEstimatorContent({
             ) : null}
           </div>
 
-          <div className={cx("vr-grid")}>
-            <div className={cx("vr-left")}>
-              {ve.scope ? (
-                <>
-                  <div className={cx("vr-sec-h")}>Scope</div>
-                  <p className={cx("vr-scope")}>{ve.scope}</p>
-                </>
-              ) : null}
+          <div className={cx("vr-body")}>
+            {ve.scope ? <p className={cx("vr-scope")}>{ve.scope}</p> : null}
 
-              <div className={cx("vr-sec-h", ve.scope && "vr-sec-h--gap")}>Frames we read</div>
-              <div className={cx("vr-frames")}>
-                {ve.framesRead.map((f) => (
-                  <div className={cx("vr-frame")} key={f.frame.t}>
-                    <div className={cx("vr-frame-img")}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={f.frame.dataUrl} alt={f.label} />
-                      <span className={cx("vr-frame-tc")}>{fmtClock(f.frame.t)}</span>
-                    </div>
-                    <div className={cx("vr-frame-l")}>{f.label}</div>
+            {/* One row: what was measured, what was noticed, what was assumed. */}
+            <div className={cx("vr-facts")}>
+              <div className={cx("vr-fact")}>
+                <div className={cx("vr-sec-h")}>Measured from video</div>
+                {ve.analysis && ve.analysis.measurements.length > 0 ? (
+                  <div className={cx("vr-meas")}>
+                    {ve.analysis.measurements.map((m, i) => (
+                      <div className={cx("vr-m")} key={`${m.label}-${i}`}>
+                        <span>{m.label}</span>
+                        <b>
+                          {m.value}
+                          {m.unit ? ` ${m.unit}` : ""}
+                        </b>
+                        <i className={cx("vr-m-tag")} data-c={m.confidence}>
+                          {m.source} &middot; {m.confidence}
+                        </i>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                ) : (
+                  <div className={cx("vr-none")}>
+                    Nothing measurable was said or visible — priced on the scope and assumptions.
+                  </div>
+                )}
               </div>
 
-              <div className={cx("vr-sec-h", "vr-sec-h--gap")}>Measured from video</div>
-              {ve.analysis && ve.analysis.measurements.length > 0 ? (
-                <div className={cx("vr-meas")}>
-                  {ve.analysis.measurements.map((m, i) => (
-                    <div className={cx("vr-m")} key={`${m.label}-${i}`}>
-                      <span>{m.label}</span>
-                      <b>
-                        {m.value}
-                        {m.unit ? ` ${m.unit}` : ""}
-                      </b>
-                      <i className={cx("vr-m-tag")} data-c={m.confidence}>
-                        {m.source} &middot; {m.confidence}
-                      </i>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className={cx("vr-none")}>
-                  Nothing measurable was said or visible — the estimate is priced on the scope
-                  and assumptions.
-                </div>
-              )}
-
-              {ve.analysis && ve.analysis.observations.length > 0 ? (
-                <>
-                  <div className={cx("vr-sec-h", "vr-sec-h--gap")}>Site notes</div>
+              <div className={cx("vr-fact")}>
+                <div className={cx("vr-sec-h")}>Site notes</div>
+                {ve.analysis && ve.analysis.observations.length > 0 ? (
                   <ul className={cx("vr-notes")}>
                     {ve.analysis.observations.map((o, i) => (
                       <li key={i}>{o}</li>
                     ))}
                   </ul>
-                </>
-              ) : null}
+                ) : (
+                  <div className={cx("vr-none")}>Nothing noted on site.</div>
+                )}
+              </div>
 
-              {ve.assumptions.length > 0 ? (
-                <>
-                  <div className={cx("vr-sec-h", "vr-sec-h--gap")}>Assumptions</div>
+              <div className={cx("vr-fact")}>
+                <div className={cx("vr-sec-h")}>Assumptions</div>
+                {ve.assumptions.length > 0 ? (
                   <ul className={cx("vr-notes", "vr-notes--assume")}>
                     {ve.assumptions.map((a, i) => (
                       <li key={i}>{a}</li>
                     ))}
                   </ul>
-                </>
-              ) : null}
-            </div>
-
-            <div className={cx("vr-right")}>
-              {ledger("Materials", "materials", ve.matLines, ve.totals.materials)}
-              {ledger("Labor", "labor", ve.labLines, ve.totals.labor)}
-
-              {ve.totals.discountCash > 0 ? (
-                <div className={cx("vr-line")}>
-                  <b>Discount</b>
-                  <span>&minus;{money(ve.totals.discountCash)}</span>
-                </div>
-              ) : null}
-              <div className={cx("vr-total")}>
-                <span>Total</span>
-                <b>{money(ve.totals.total)}</b>
+                ) : (
+                  <div className={cx("vr-none")}>None taken.</div>
+                )}
               </div>
             </div>
           </div>
+        </section>
 
-          {/* MATERIALS REQUEST — the shoppable list, DERIVED from the ledger
-              rather than mirrored from it, exactly as the Smart Proposal's is.
-              Editing a quantity above moves its buy quantity here; deleting a
-              line removes its row. Nothing to keep in sync, because there is no
-              second copy. */}
+        {/* ── TOTALS ── */}
+        <section className={cx("card", "card--flush", "vr-card")}>
+          <div className={cx("vr-body")}>
+            {ledger("Materials", "materials", ve.matLines, ve.totals.materials)}
+            {ledger("Labor", "labor", ve.labLines, ve.totals.labor)}
+
+            {ve.totals.discountCash > 0 ? (
+              <div className={cx("vr-line")}>
+                <b>Discount</b>
+                <span>&minus;{money(ve.totals.discountCash)}</span>
+              </div>
+            ) : null}
+            <div className={cx("vr-total")}>
+              <span>Total</span>
+              <b>{money(ve.totals.total)}</b>
+            </div>
+          </div>
+        </section>
+
+        {/* ── MATERIALS REQUEST — the shoppable list, DERIVED from the ledger
+            rather than mirrored from it, exactly as the Smart Proposal's is.
+            Editing a quantity above moves its buy quantity here; deleting a
+            line removes its row. Nothing to keep in sync, because there is no
+            second copy. ── */}
+        <section className={cx("card", "card--flush", "vr-card")}>
           <div className={cx("vr-req")}>
             <div className={cx("vr-req-head")}>
               <div className={cx("vr-sec-h")}>Materials request</div>
@@ -720,6 +669,7 @@ export function VideoEstimatorContent({
           </div>
         </section>
       </div>
+
 
       {ve.clarify ? <ClarifyDialog questions={ve.clarify} onSettle={ve.settleClarify} cx={cx} /> : null}
     </>

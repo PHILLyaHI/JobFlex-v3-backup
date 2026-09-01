@@ -80,20 +80,20 @@ export const HK_COLUMNS: HireColumn[] = [
 export const SOURCES: string[] = ["Indeed", "Referral", "Walk-in", "LinkedIn", "Job fair", "Other"];
 
 export const HUB_DOORS: HubDoor[] = [
-  { icon: 'i-search', kicker: 'For hirers', title: 'Discover talent',
-    body: 'See which companies in the trade network are open for work — their trades, specialties and service area.',
+  { icon: 'i-search', kicker: '', title: 'Find a contractor',
+    body: 'Companies near you that are open for work.',
     cta: 'Open the directory', goto: 'talent' },
   // Was "Publish your profile" — the panel behind it became the Post-a-job
   // composer (owner, 2026-08-23). Listing management moved to a hub row below
   // (/trade-services carries the same opt-in form the panel used to).
-  { icon: 'i-send', kicker: 'Hire out work', title: 'Post a job',
-    body: 'Broadcast work you can\'t take to matching contractors in the trade network \u2014 trade, area and rate.',
+  { icon: 'i-send', kicker: '', title: 'Post a job',
+    body: 'Send work you can\'t take to contractors who can.',
     cta: 'Post a job', goto: 'profile' },
 ];
 
 export const HUB_LINKS: HubLink[] = [
-  { icon: 'i-users', label: 'Applicant pipeline', sub: 'Track candidates through your hiring funnel', goto: 'pipeline' },
-  { icon: 'i-jobs',  label: 'Job posts',          sub: 'The work you broadcast to the trade network', href: '/trade-services' },
-  { icon: 'i-send',  label: 'Applications',       sub: 'Interest on your posts, and jobs you raised a hand for', href: '/trade-services' },
-  { icon: 'i-userplus', label: 'Manage your profile', sub: 'List your trades as open for work in the talent directory', href: '/trade-services' },
+  // Applicant pipeline / Job posts / Applications were dropped (owner,
+  // 2026-08-24): all three re-entered panels the hub already puts a full card
+  // on, so the row was a second door to the same room.
+  { icon: 'i-userplus', label: 'Manage your profile', sub: 'Your trades, rate and service area', href: '/dashboard/hire/profile' },
 ];

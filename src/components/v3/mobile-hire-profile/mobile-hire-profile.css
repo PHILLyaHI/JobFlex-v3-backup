@@ -1,0 +1,984 @@
+/* ============================================================================
+   MANAGE YOUR PROFILE · HANDHELD   —   /dashboard/hire/profile at ≤768px
+   ============================================================================
+
+   The listing editor rebuilt for a phone: the listed / not-listed state band
+   with its drawn switch, the live directory-row mirror, the drawn trade picker,
+   the specialty tag field, the Places service area, and the ONE primary in a
+   thumb-zone action bar that carries the busy, failure and confirmed states
+   with it. Fluid 320 → 768px, no layout breakpoint anywhere in this file.
+
+   It is the HANDHELD EDITION of /dashboard/hire/profile: the desktop module
+   (../hire-profile-blueprint/hire-profile.module.css) is untouched, and a
+   viewport switch mounts this build at ≤768px.
+
+   The design language is the fleet's, value for value: paper #f2f0eb, ink
+   #0a0a0a, blueprint #1854a0, WHITE sheets, 2px ink frames, 2px radii, hard 3px
+   offset shadows with NO blur, 1.5px ink rules, Inter 800–900 caps for headings
+   and JetBrains Mono for the drawing-annotation layer. What is re-decided is
+   the COMPOSITION — the desktop's form-beside-mirror becomes one vertical
+   document with the mirror pulled up under the state band, because on a phone
+   the preview is what makes "listed" concrete and it must be seen before a
+   21-item picker is scrolled into.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate, and load-bearing) ───────
+   Two constructs here cannot survive class hashing:
+     · the scoped universal reset `.jf-mobile-hire-profile *` — `*` is not a
+       class, so the modules pipeline leaves it UNSCOPED and it flattens the
+       layout of every page in the app. Tailwind preflight and globals.css then
+       rush into the vacuum (`html{line-height:1.5}`, `font-feature-settings:
+       'cv11','ss01','ss03'`, `text-rendering:optimizeLegibility`, the body
+       drafting grid, `img{max-width:100%}`, `svg{display:block}`) and borders,
+       backgrounds, padding and fonts all fall back. This has been shipped
+       twice and reverted twice; it is not a stylistic preference.
+     · `[hidden] { display: none !important }` — an attribute selector, and
+       carried here for the same reason every sibling carries it: several rules
+       below set `display: flex`, which would otherwise beat Tailwind
+       preflight's plain `[hidden] { display: none }` on source order.
+   Same call, and the same reasoning, as the siblings
+   src/components/v3/mobile-video-estimator/mobile-video-estimator.css and
+   src/components/v3/mobile-job-detail/mobile-job-detail.css — read either
+   header for the argument in full.
+
+   Every selector below therefore carries the single literal root class
+   `.jf-mobile-hire-profile`, uniformly, so relative specificity among these
+   rules is exactly what it would be unprefixed and nothing leaks out. The only
+   exceptions are the two host neutralizers, which have to reach <body>; both
+   are `:has()`-gated so they undo themselves the moment the tree unmounts.
+   globals.css is NOT edited — its `* { scrollbar-width: thin }` is left alone.
+
+   The Places suggestion list is NOT styled here. `attachPlacesSuggest` appends
+   it to <body>, outside this tree, so it takes the published body-level
+   `.bp-sug` from dashboard-blueprint/blueprint-global.css — which loads on this
+   route anyway, because the responsive shell imports BlueprintShell statically.
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   `.jf-mobile-hire-profile` and the element prefix `mhp-` are new literals,
+   checked against every `.jf-*` root and every class prefix already in the
+   repo. The fleet's literal globals `rv` / `rv-in` / `pressed` are NOT used —
+   this page writes `mhp-rv` / `mhp-rv-in` / `mhp-pressed`, so no second file
+   can style them. Both @keyframes are namespaced `jf-mhp-*`: keyframe names are
+   document-global and `press2` alone is declared 29 times in this app.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark`. No `md:` / `lg:` variants and no layout media
+   query at all — the page is fluid on clamp() and intrinsic grids. The only
+   media queries are `prefers-reduced-motion` and the `hover: hover` guard that
+   keeps a sticky mobile-Safari :hover from leaving a button visibly pressed.
+   ========================================================================= */
+
+/* ── TOKENS ────────────────────────────────────────────────────────────────
+   Page-scoped, never promoted to :root. Values are the fleet's, verbatim —
+   the same block every sibling handheld page declares, so a theme change is
+   still one edit at the token layer and never a literal in a rule below. */
+.jf-mobile-hire-profile {
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --sheet: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --sky: #4a9eff;
+
+  --muted: #555555;
+  --muted-light: #888888;
+  --muted-faint: #b0aea8;
+
+  /* Status colours. STATUSES ONLY — never decoration. */
+  --success: #3a7d44;
+  --warning-dark: #8a650a;
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+  --rule: rgba(10, 10, 10, 0.55);
+  --shadow: rgba(10, 10, 10, 0.06);
+  --on-ink-meta: rgba(242, 240, 235, 0.65);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* ---- FLUID SCALE — one composition, 320px → 768px, no breakpoint ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(14px, 4vw, 20px);
+  --card-pad: clamp(15px, 4.4vw, 22px);
+  /* Desktop is a flat 46px. "YOUR LISTING" at 900 / -0.03em sets on ONE line
+     down to 320px at 30px and needs no more than 42px at 768. */
+  --fs-h1: clamp(30px, 9vw, 42px);
+
+  /* The shared MobileNav's token contract. See mobile-nav.module.css. */
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* Touch floor. CLAUDE.md and DESIGN.md both put it at 44px; every control on
+     this page is sized from this token so an audit has one number to check. */
+  --tap: 44px;
+
+  /* The shell owns the viewport: the route renders inside the app's root
+     wrapper, so it pins itself rather than fighting the outer flow.
+     Row 1 is the shared nav, row 2 the scroller, row 3 the thumb-zone bar. */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr) auto;
+  /* minmax(0, 1fr) on the single column, not the implicit `auto`: an auto track
+     grows to its widest item's max-content, and the shared topbar's max-content
+     is ~361px at a 320px viewport — which would widen the scroller under it and
+     clip ~41px off every card behind this element's own `overflow: hidden`. */
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: auto;
+
+  /* ── HOST NEUTRALIZERS, part 1 (the two that live on the root) ──────────
+     Tailwind preflight sets `html { line-height: 1.5 }` and globals.css sets
+     `text-rendering: optimizeLegibility`; both inherit, and without these two
+     lines every box that declares no line-height of its own grows 2–5px, which
+     is enough to break the 320px budgets below.
+     font-feature-settings is deliberately RESTATED rather than neutralised to
+     `normal`: globals puts 'cv11','ss01','ss03' on html+body and every sibling
+     handheld page re-declares exactly that, so `normal` here would make this
+     the one page whose Inter draws different digits. */
+  line-height: normal;
+  text-rendering: auto;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+/* Scoped universal reset — the construct a CSS Module cannot express.
+   WRAPPED IN :where(). Written bare it scores (0,1,0), the same as every class
+   rule in mobile-nav.module.css, and this sheet is imported after that module —
+   so `padding: 0` would win every tie and cancel the shared topbar's own
+   padding, leaving the nav flush to both screen edges on this page alone. At
+   (0,0,0) the reset still beats the UA defaults it exists for and loses to
+   every author rule. Do not un-wrap. */
+:where(.jf-mobile-hire-profile),
+:where(.jf-mobile-hire-profile *) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* :where() holds the control reset at element-level specificity (0,0,1).
+   Un-wrapped — the root class as a plain ancestor of a type selector — it
+   scores (0,2,1) and silently beats EVERY rule below that styles a button by
+   class (0,2,0): every background and every border on this page would be
+   cancelled at render time, and it would parse, lint and typecheck clean while
+   doing it. That trap has cost this fleet a day. Do not un-wrap these. */
+:where(.jf-mobile-hire-profile) button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+:where(.jf-mobile-hire-profile) a { text-decoration: none; color: inherit; }
+:where(.jf-mobile-hire-profile) input,
+:where(.jf-mobile-hire-profile) select { font-family: inherit; color: inherit; }
+:where(.jf-mobile-hire-profile) h1,
+:where(.jf-mobile-hire-profile) h2 { font-size: inherit; font-weight: inherit; }
+:where(.jf-mobile-hire-profile) ul { list-style: none; }
+
+/* An attribute selector, and the second construct a module cannot carry: rules
+   below set `display: flex`, which would beat preflight's plain `[hidden]` on
+   source order. */
+.jf-mobile-hire-profile [hidden] { display: none !important; }
+
+.jf-mobile-hire-profile ::selection { background: var(--blueprint); color: #fff; }
+.jf-mobile-hire-profile :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+/* The reset above sets `color: inherit` on inputs; placeholders must not
+   inherit the field's ink or they read as filled values. */
+.jf-mobile-hire-profile input::placeholder {
+  color: var(--muted-faint);
+  font-weight: 500;
+  opacity: 1;
+}
+
+/* Icons come from the shared MobileNav sprite. `display: block` is declared
+   rather than inherited: preflight sets `svg { display: block }` and the bare
+   browser sets `inline`, so stating it makes the icon box identical either way.
+   No global `svg` override is written — MobileNav's product mark is an <img>
+   whose crop window is tuned against preflight. */
+.jf-mobile-hire-profile .mhp-ic {
+  display: block;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+  shape-rendering: geometricPrecision;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALIZERS, part 2 — the only rules here that do not start with the
+   root class. globals.css paints a 40px drafting grid on <body> with FIXED
+   attachment; this page paints its own graph paper inside its own scroller,
+   parallaxed, and the body copy would sit a second, non-parallaxing grid
+   behind it. The `body::before` grain was retired app-wide on 2026-08-18, but
+   the neutralizer is carried anyway — it costs nothing and it means a returning
+   grain's multiply blend cannot tint this page's white sheets.
+   Both are `:has()`-gated, so they restore themselves on unmount — which
+   matters because the App Router keeps this stylesheet in the document after a
+   client-side navigation away.
+   ══════════════════════════════════════════════════════════════════════════ */
+body:has(.jf-mobile-hire-profile) { background-image: none; }
+body:has(.jf-mobile-hire-profile)::before { content: none; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCROLLER — owns the graph-paper parallax (scrollTop × 0.06, the fleet's own
+   number, driven from JS through --gy).
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-hire-profile .mhp-scroll {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  /* No rail down the edge of the sheet — the graph paper has to read as one
+     continuous drawing. Both engines are told the same thing. */
+  scrollbar-width: none;
+}
+.jf-mobile-hire-profile .mhp-scroll::-webkit-scrollbar { width: 0; height: 0; }
+.jf-mobile-hire-profile .mhp-scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.jf-mobile-hire-profile .mhp-content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) 28px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  /* Every child is width-constrained by the flex column; this is the belt to
+     that braces: nothing in this tree may widen the page. */
+  min-width: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE REVEAL — the fleet's Balanced entrance. Namespaced, so no second
+   stylesheet can reach these two classes.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-hire-profile .mhp-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.jf-mobile-hire-profile .mhp-rv-in { opacity: 1; transform: none; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PAGE HEAD — kicker + H1 + the way back.
+   The desktop head is a `space-between` row with the Back button on the right;
+   at 320px that row cannot hold both, so it becomes a stack.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-hire-profile .mhp-head { padding-top: 2px; }
+.jf-mobile-hire-profile .mhp-kick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.jf-mobile-hire-profile .mhp-kick::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.jf-mobile-hire-profile .mhp-title {
+  font-size: var(--fs-h1);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  line-height: 0.95;
+  /* A page title must wrap, never clip — a truncated H1 reads as a bug. */
+  overflow-wrap: break-word;
+}
+.jf-mobile-hire-profile .mhp-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  margin-top: 6px;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-hire-profile .mhp-back .mhp-ic { width: 14px; height: 14px; transform: rotate(180deg); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE STATE BAND — the only binary on the page, and therefore the first thing
+   on it. Off, the sheet carries a drafting hatch: drawn, but not issued. On,
+   it earns the page's one saturated edge.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-hire-profile .mhp-band {
+  padding: var(--card-pad);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 3px 3px 0 var(--shadow);
+  background-image: repeating-linear-gradient(45deg, rgba(10, 10, 10, 0.03) 0 1px, transparent 1px 9px);
+}
+.jf-mobile-hire-profile .mhp-band.is-on {
+  background-image: none;
+  box-shadow: inset 5px 0 0 var(--blueprint), 3px 3px 0 var(--shadow);
+}
+.jf-mobile-hire-profile .mhp-band-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.jf-mobile-hire-profile .mhp-stamp {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.jf-mobile-hire-profile .mhp-stamp.is-listed {
+  background: var(--blueprint);
+  border-color: var(--blueprint);
+  color: #fff;
+}
+.jf-mobile-hire-profile .mhp-stamp.is-off {
+  background: var(--paper);
+  border-color: var(--muted-faint);
+  color: var(--muted);
+}
+.jf-mobile-hire-profile .mhp-band-t {
+  font-size: clamp(16px, 4.6vw, 19px);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+.jf-mobile-hire-profile .mhp-band-m {
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.jf-mobile-hire-profile .mhp-pending {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--warning-dark);
+}
+
+/* ── The switch. Hand-rolled (no Radix), a full 44px target, drawn in ink. ── */
+.jf-mobile-hire-profile .mhp-sw {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 0 13px 0 11px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-sw.is-on { background: var(--ink); color: var(--paper); }
+.jf-mobile-hire-profile .mhp-sw:disabled { opacity: 0.55; cursor: default; }
+.jf-mobile-hire-profile .mhp-sw-track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--paper);
+  transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-sw.is-on .mhp-sw-track { background: var(--sky); border-color: var(--paper); }
+.jf-mobile-hire-profile .mhp-sw-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: var(--ink);
+  border-radius: 1px;
+  transition: transform 0.18s var(--ease-out), background 0.16s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-sw.is-on .mhp-sw-knob { transform: translateX(18px); background: var(--paper); }
+.jf-mobile-hire-profile .mhp-sw-lbl { line-height: 1; }
+
+/* ── The honest copy. Two facts, no marketing. One column on a phone. ── */
+.jf-mobile-hire-profile .mhp-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 15px;
+  border-top: 1.5px solid var(--hair-soft);
+}
+.jf-mobile-hire-profile .mhp-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.jf-mobile-hire-profile .mhp-fact .mhp-ic { width: 15px; height: 15px; margin-top: 2px; color: var(--blueprint); }
+.jf-mobile-hire-profile .mhp-fact b { color: var(--ink); font-weight: 800; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE MIRROR — the contractor's own directory row.
+   Desktop puts it in a sticky second column; here it is the second block of
+   the document, because it is what turns the abstraction above it into a
+   thing you can look at. Geometry follows the desktop module's `.hp-tal-*`,
+   which follows the directory's own `.tal-*` — with ONE re-cut: the service
+   area drops UNDER the sub-line instead of sitting right-aligned beside it,
+   because at 320px a right-hand mono column steals the name's whole measure.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-hire-profile .mhp-mirror {
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.jf-mobile-hire-profile .mhp-mirror-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px var(--card-pad);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.jf-mobile-hire-profile .mhp-mirror-no {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--on-ink-meta);
+}
+.jf-mobile-hire-profile .mhp-mirror-body {
+  padding: 14px;
+  background: var(--paper);
+  background-image:
+    linear-gradient(rgba(10, 10, 10, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10, 10, 10, 0.035) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.jf-mobile-hire-profile .mhp-tal-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  transition: opacity 0.16s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-tal-row.is-off { opacity: 0.42; }
+.jf-mobile-hire-profile .mhp-tal-ic {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.jf-mobile-hire-profile .mhp-tal-ic .mhp-ic { width: 16px; height: 16px; }
+.jf-mobile-hire-profile .mhp-tal-main { min-width: 0; flex: 1; }
+.jf-mobile-hire-profile .mhp-tal-name {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-hire-profile .mhp-tal-who {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.jf-mobile-hire-profile .mhp-tal-sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-hire-profile .mhp-tal-sub.is-empty { color: var(--muted-faint); font-style: italic; }
+.jf-mobile-hire-profile .mhp-tal-area {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+/* The hirer's button, drawn but INERT — this is a picture of the row, not the
+   row. A real <button> here would invite a tap that does nothing. At 320px it
+   keeps only its icon; the label it carries on desktop has no room and the
+   sub-line needs the measure more. */
+.jf-mobile-hire-profile .mhp-tal-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+}
+.jf-mobile-hire-profile .mhp-off-plate {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1.5px dashed var(--ink);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.jf-mobile-hire-profile .mhp-off-plate b {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CARDS — one field group each. Desktop stacks all three inside one card;
+   on a phone each is its own sheet, so the reveal has real steps and a long
+   picker cannot push the next label off the fold inside a shared frame.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-hire-profile .mhp-card {
+  padding: var(--card-pad);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.jf-mobile-hire-profile .mhp-lbl-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.jf-mobile-hire-profile .mhp-lbl {
+  display: block;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.jf-mobile-hire-profile .mhp-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--muted-light);
+  font-variant-numeric: tabular-nums;
+}
+.jf-mobile-hire-profile .mhp-hint {
+  display: block;
+  margin-top: 9px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-light);
+}
+.jf-mobile-hire-profile .mhp-hint.is-warn { color: var(--warning-dark); font-weight: 600; }
+.jf-mobile-hire-profile .mhp-field { display: block; }
+.jf-mobile-hire-profile .mhp-card .mhp-field { margin-top: 18px; }
+
+/* ── TRADES: a real picker, drawn. Every canonical trade is its own 44px
+      target; nothing is typed, so nothing can miss the matcher's closed
+      vocabulary (lib/tradeTypes.ts). ── */
+.jf-mobile-hire-profile .mhp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.jf-mobile-hire-profile .mhp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 13px 0 10px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-chip.is-on {
+  border-color: var(--blueprint);
+  background: var(--blueprint);
+  color: #fff;
+  font-weight: 800;
+}
+.jf-mobile-hire-profile .mhp-chip:disabled { opacity: 0.55; cursor: default; }
+/* The checkbox is DRAWN — a 17px square whose tick only exists when on. */
+.jf-mobile-hire-profile .mhp-chip-box {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--hair);
+  border-radius: 1px;
+  background: var(--sheet);
+  transition: border-color 0.12s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-chip-box .mhp-ic { width: 12px; height: 12px; opacity: 0; color: var(--blueprint); }
+.jf-mobile-hire-profile .mhp-chip.is-on .mhp-chip-box { border-color: #fff; }
+.jf-mobile-hire-profile .mhp-chip.is-on .mhp-chip-box .mhp-ic { opacity: 1; }
+
+/* ── "Leads with": the select is DRAWN, never left native.
+      The desktop uses the published `.bp-sel` / `.bp-sel-in` pair from
+      dashboard-blueprint/blueprint-global.css, but those rules are scoped
+      `.jf-blueprint …` and this tree is not inside the blueprint shell — so the
+      SAME treatment is restated here against this root: `appearance: none` on
+      the control, and the chevron drawn by the wrapper, because a <select>
+      cannot carry a pseudo-element. Two strokes meeting at a point, at the ink
+      line weight used everywhere else, not a background-image glyph. ── */
+.jf-mobile-hire-profile .mhp-sel { position: relative; display: block; }
+.jf-mobile-hire-profile .mhp-sel-in {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 34px 0 12px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  font-family: var(--font-mono);
+  /* 16px: anything smaller makes iOS Safari zoom the viewport on focus. */
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  transition: border-color 0.12s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-sel-in:disabled { color: var(--muted); cursor: not-allowed; }
+.jf-mobile-hire-profile .mhp-sel::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+/* The option list itself is drawn by the OS; only its text is ours to set. */
+.jf-mobile-hire-profile .mhp-sel-in option {
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* ── SPECIALTIES: a tag field. The chips ARE the value. ── */
+.jf-mobile-hire-profile .mhp-tagbox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  padding: 7px 8px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  transition: border-color 0.12s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-tagbox:focus-within { border-color: var(--ink); }
+.jf-mobile-hire-profile .mhp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  padding: 0 0 0 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+/* The × is the chip's only control, so it carries the tap floor in BOTH
+   dimensions — 44 × 44 inside a 44px chip. That makes the remove target as big
+   as the chip is tall, which is the point: a mis-tap here deletes a specialty. */
+.jf-mobile-hire-profile .mhp-tag-x {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  flex: 0 0 auto;
+  border-radius: 1px;
+  color: var(--muted);
+}
+.jf-mobile-hire-profile .mhp-tag-x .mhp-ic { width: 13px; height: 13px; }
+.jf-mobile-hire-profile .mhp-tag-in {
+  flex: 1 1 140px;
+  min-width: 120px;
+  min-height: var(--tap);
+  border: none;
+  background: transparent;
+  padding: 0 4px;
+  /* 16px: anything smaller makes iOS Safari zoom the viewport on focus. */
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.jf-mobile-hire-profile .mhp-tag-in:focus { outline: none; }
+
+/* ── SERVICE AREA — the Places field. The suggestion list is `.bp-sug`, styled
+      body-level in blueprint-global.css; see this file's header. ── */
+.jf-mobile-hire-profile .mhp-in {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  /* 16px: anything smaller makes iOS Safari zoom the viewport on focus. */
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  transition: border-color 0.12s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-in:focus { outline: none; border-color: var(--ink); }
+.jf-mobile-hire-profile .mhp-discard { margin-top: 18px; width: 100%; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BUTTONS — the owner's explicit preference, kept COLOURED.
+     primary = blueprint #1854a0 fill, white text, 2px ink border;
+     ghost   = #ffffff fill, ink text, 2px ink border;
+     lift    = translate(-1px,-1px) + 3px 3px 0 ink, NO blur.
+   `:active` carries the lift as well as `:hover`, because hover is sticky on
+   mobile Safari — the state survives the tap and stays until you touch
+   something else. The pointer lift is kept behind `hover: hover`.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-hire-profile .mhp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: var(--tap);
+  padding: 0 clamp(12px, 3.6vw, 16px);
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: clamp(11px, 3.2vw, 12px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: inherit;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s var(--ease);
+}
+.jf-mobile-hire-profile .mhp-btn-block { width: 100%; }
+.jf-mobile-hire-profile .mhp-btn-primary { background: var(--blueprint); color: #fff; }
+.jf-mobile-hire-profile .mhp-btn-ghost { background: var(--sheet); color: var(--ink); }
+.jf-mobile-hire-profile .mhp-btn:active {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-hire-profile .mhp-btn-primary:active { background: var(--blueprint-dark); }
+.jf-mobile-hire-profile .mhp-btn-ghost:active { background: var(--paper-deep); }
+/* Disabled keeps its colour — the owner's rule — and reads as unavailable
+   through opacity, not by being repainted grey. */
+.jf-mobile-hire-profile .mhp-btn:disabled { opacity: 0.45; cursor: default; }
+.jf-mobile-hire-profile .mhp-btn:disabled:active { transform: none; box-shadow: none; }
+/* Some engines still match :active on a disabled control, which would repaint
+   it as though the press had registered. The fill is pinned back. */
+.jf-mobile-hire-profile .mhp-btn-primary:disabled:active { background: var(--blueprint); }
+.jf-mobile-hire-profile .mhp-btn-ghost:disabled:active { background: var(--sheet); }
+.jf-mobile-hire-profile .mhp-btn .mhp-ic { transition: transform 0.18s var(--ease-out); }
+
+@media (hover: hover) {
+  .jf-mobile-hire-profile .mhp-btn:hover:not(:disabled) {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  .jf-mobile-hire-profile .mhp-btn-primary:hover:not(:disabled) { background: var(--blueprint-dark); }
+  .jf-mobile-hire-profile .mhp-btn-ghost:hover:not(:disabled) { background: var(--paper-deep); }
+  .jf-mobile-hire-profile .mhp-btn:hover:not(:disabled) .mhp-ic { transform: scale(1.12); }
+  .jf-mobile-hire-profile .mhp-chip:hover:not(:disabled):not(.is-on) {
+    border-color: var(--ink);
+    background: var(--paper-deep);
+  }
+  .jf-mobile-hire-profile .mhp-chip.is-on:hover:not(:disabled) { background: var(--blueprint-dark); }
+  .jf-mobile-hire-profile .mhp-sw:hover:not(:disabled):not(.is-on) { background: var(--paper-deep); }
+  .jf-mobile-hire-profile .mhp-tag-x:hover { background: var(--ink); color: var(--paper); }
+  .jf-mobile-hire-profile .mhp-in:hover { border-color: var(--ink); }
+  .jf-mobile-hire-profile .mhp-sel-in:hover { border-color: var(--ink); }
+}
+
+/* The press stamp, delegated from the root. */
+.jf-mobile-hire-profile .mhp-pressed { animation: jf-mhp-press 0.18s ease-out; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE ACTION BAR — thumb zone
+   Desktop puts Save inside the card that owns the fields. On a phone that card
+   is one of five and scrolls away, so the step's ONE primary lives here, always
+   under the thumb — and the failure line and the confirmation ride WITH it,
+   because the press and its outcome have to be adjacent.
+
+   It is a grid ROW of the shell, not `position: sticky` inside the scroller: a
+   row is deterministic at every viewport, cannot be outrun by an overscroll,
+   and reserves its own space so the last card is never covered.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-hire-profile .mhp-bar {
+  z-index: 25;
+  padding: 12px var(--pad-x) calc(12px + var(--safe-b));
+  background: var(--paper);
+  border-top: var(--border);
+  /* Hard offset, no blur — cast upward, because the bar's edge faces up. */
+  box-shadow: 0 -3px 0 var(--shadow);
+}
+.jf-mobile-hire-profile .mhp-bar-in {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* THE FAILURE LINE — a real write can fail, so the bar has to be able to say
+   so. The left rule is heavier so it reads as an alert bar in peripheral
+   vision. */
+.jf-mobile-hire-profile .mhp-err {
+  padding: 10px 12px;
+  border: 1.5px solid var(--danger);
+  border-left-width: 5px;
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.jf-mobile-hire-profile .mhp-ok {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--success);
+}
+.jf-mobile-hire-profile .mhp-ok .mhp-ic { width: 14px; height: 14px; }
+/* The busy dot: the save is on the wire and the button says so in its own
+   voice rather than borrowing a spinner from a component library. */
+.jf-mobile-hire-profile .mhp-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: #fff;
+  animation: jf-mhp-blink 1s steps(1) infinite;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   KEYFRAMES — namespaced. Keyframe names are DOCUMENT-global: `press2` alone
+   is declared 29 times in this app, so a bare name here would be a collision
+   waiting for the next page that ships.
+   ══════════════════════════════════════════════════════════════════════════ */
+@keyframes jf-mhp-press {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+@keyframes jf-mhp-blink {
+  50% { opacity: 0.25; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   REDUCED MOTION — the blanket. The reveal is also skipped in JS, so a visitor
+   who asks for stillness never has the entrance applied at all; this covers
+   the transitions and the two animations the markup can still reach.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-hire-profile *,
+  .jf-mobile-hire-profile *::before,
+  .jf-mobile-hire-profile *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .jf-mobile-hire-profile .mhp-rv { opacity: 1; transform: none; }
+}

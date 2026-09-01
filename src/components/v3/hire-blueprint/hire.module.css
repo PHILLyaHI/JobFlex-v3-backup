@@ -1549,7 +1549,7 @@
 .bp :global(.content .door-cta) {
   margin-top: auto; align-self: flex-start;
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 0 14px; height: 36px;
+  padding: 0 18px; height: 44px;
   border: 1.5px solid var(--ink); border-radius: var(--radius); background: #ffffff;
   font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--ink);
@@ -1623,3 +1623,194 @@
    `.pager-btn`, so on `.back-link` it rendered as a downward caret — which
    reads as a disclosure, not a return. */
 .bp :global(.content .back-link .ic.rot-l) { transform: rotate(90deg); }
+
+
+/* ═══ HIRE & WORK — owner review, 2026-08-24 ═══════════════════════════════
+
+   Four changes, all of them spacing or affordance rather than new surface.
+   Appended rather than edited in place so the donor's own block above stays
+   readable as the donor's. */
+
+/* 1 — The door CTA's arrow. A labelled button that also carries a directional
+   glyph is saying the same thing twice, and the glyph is the half that cannot
+   be read by a screen reader. */
+.bp :global(.content .door-cta .ic) { display: none; }
+
+/* 2 — Doors breathe. The cards were tight enough that the CTA sat almost on
+   the description's last line. */
+.bp :global(.content .door) { padding: 26px 26px 26px; gap: 4px; }
+.bp :global(.content .door-body) { margin-bottom: 22px; max-width: 34ch; }
+
+/* 3 — Post-a-job field rhythm. Every field was 13px from the next, so the
+   label of one row sat closer to the input above it than to its own input —
+   the exact "too close to each other" the owner read on Title / Trade /
+   Specialties and again on Rate. 22px between fields against 5px from label to
+   input makes each field read as one object. */
+.bp :global(.content .sf) { margin-bottom: 22px; }
+.bp :global(.content .sf-row) { gap: 18px; margin-bottom: 22px; }
+.bp :global(.content .sf-row .sf) { margin-bottom: 0; }
+.bp :global(.content .sf-in), .bp :global(.content .sf-area) { padding: 11px 12px; }
+.bp :global(.content .sf-act) { margin-top: 6px; }
+
+/* 4 — The two selects are drawn, not native. `.bp-sel` supplies the frame and
+   the chevron; the native control keeps its own menu (which is the one part of
+   a select that cannot be restyled without rebuilding it as a listbox, and a
+   rebuilt listbox is a worse control on a phone). Matching the text inputs
+   exactly is what makes the row read as one form rather than three widgets. */
+.bp :global(.content .sf .bp-sel) { display: block; width: 100%; }
+.bp :global(.content .sf .bp-sel-in) {
+  width: 100%; padding: 11px 34px 11px 12px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: #fff; font-family: var(--font-mono); font-size: 13px;
+  letter-spacing: 0.02em; color: var(--ink);
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+}
+.bp :global(.content .sf .bp-sel-in[data-empty="1"]) { color: var(--muted-faint); }
+.bp :global(.content .sf .bp-sel-in:hover) { border-color: var(--muted); }
+.bp :global(.content .sf .bp-sel-in:focus) { outline: none; border-color: var(--blueprint); }
+.bp :global(.content .sf-rate .bp-sel-in) { padding: 11px 34px 11px 12px; }
+
+/* The rate row: two numbers, a dash, and the unit. The unit is given a fixed
+   track so the two number fields stay equal — a unit that grows with its own
+   label would make "per hour" and "per job" lay the row out differently. */
+.bp :global(.content .sf-rate) {
+  display: grid; grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr) 150px;
+  align-items: center; gap: 10px;
+}
+.bp :global(.content .sf-rate-unit) { grid-column: 4; }
+@media (max-width: 720px) {
+  .bp :global(.content .sf-rate) {
+    grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr);
+    row-gap: 12px;
+  }
+  .bp :global(.content .sf-rate-unit) { grid-column: 1 / -1; }
+}
+
+/* 5 — Talent rows. "I'm interested" was a 30-ish px control on a row you are
+   meant to act from, and the row itself gave no sign it was interactive. */
+.bp :global(.content .tal-contact) {
+  flex-shrink: 0; height: 44px; padding: 0 18px;
+}
+.bp :global(.content .tal-row) { transition: background 0.12s; }
+.bp :global(.content .tal-row:hover) { background: var(--paper-deep); }
+
+
+/* ═══ JOB POSTS — edit, delete, detail, filters (owner, 2026-08-24) ═════════
+
+   "Your job posts" was a read-only ledger: a row you could not open, could not
+   correct and could not remove, with the rate buried in a mono meta line. The
+   blocks below add the four affordances and nothing else — every value is the
+   page's own scale (1.5px hairlines, 2px radius, the hard 3px shadow, mono at
+   10.5–11px, the one blue). */
+
+/* ── Filter bar ────────────────────────────────────────────────────────────
+   Drawn selects, not native ones: `.bp-sel` supplies the frame and the caret
+   (blueprint-global.css) and this matches the field metrics the composer's
+   selects already use, so the two read as one system. Each control is a real
+   <label> + <select>, which is what makes the bar keyboard-reachable without a
+   single tabindex. */
+.bp :global(.content .jfilters) {
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px;
+  padding: 0 0 14px; margin-bottom: 4px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+.bp :global(.content .hub-talent .jfilters) { padding: 14px 16px; margin-bottom: 0; }
+.bp :global(.content .jfilters-ic) {
+  display: inline-flex; align-items: center; height: 40px; color: var(--muted);
+}
+.bp :global(.content .jfilter) { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.bp :global(.content .jfilter-lbl) {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+}
+.bp :global(.content .jfilter .bp-sel) { display: block; min-width: 168px; }
+.bp :global(.content .jfilter .bp-sel-in) {
+  width: 100%; height: 40px; padding: 0 34px 0 12px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: #fff; font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: 0.02em; color: var(--ink);
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+}
+.bp :global(.content .jfilter .bp-sel-in:hover) { border-color: var(--muted); }
+.bp :global(.content .jfilter .bp-sel-in:focus-visible) {
+  outline: 2px solid var(--blueprint); outline-offset: 1px; border-color: var(--blueprint);
+}
+/* The count is the honest answer to "did my filter do anything". */
+.bp :global(.content .jfilters-n) {
+  margin-left: auto; align-self: center;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+.bp :global(.content .jfilters-clear) { align-self: center; height: 32px; padding: 0 12px; }
+
+/* A filtered-empty list says so, and offers the way back. It must never be
+   mistaken for the "you have not posted anything" state. */
+.bp :global(.content .pempty--filtered) { margin: 18px 0 4px; }
+
+/* ── The row is a control now ──────────────────────────────────────────────
+   The title block is a <button>, so it is focusable, announced, and reachable
+   by keyboard — a click handler on a bare <span> is none of those things. */
+.bp :global(.content .mypost-row) { align-items: center; gap: 12px; padding: 14px 0; }
+.bp :global(.content .mypost-main) {
+  display: block; flex: 1; min-width: 0; text-align: left;
+  padding: 8px 10px; margin: -8px -10px;
+  border-radius: var(--radius);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.bp :global(.content .mypost-main:hover) {
+  background: var(--paper-deep);
+  transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink);
+}
+.bp :global(.content .mypost-main:active) { transform: none; box-shadow: none; }
+.bp :global(.content .mypost-main:focus-visible) {
+  outline: 2px solid var(--blueprint); outline-offset: 1px; background: var(--paper-deep);
+}
+
+/* The rate: the figure you scan a list of posts FOR, so it gets its own slot
+   in the row rather than a place in the middle of a mono meta line. Absent
+   entirely when the post carries none — a placeholder dash would be a column
+   of nothing. */
+.bp :global(.content .mypost-rate) {
+  flex: 0 0 auto; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 700;
+  letter-spacing: 0.02em; color: var(--ink);
+}
+.bp :global(.content .mypost-acts) {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end;
+}
+
+/* Destructive: a soft fill and a danger border, never a solid red plate. The
+   armed state is the same treatment turned up — it is still not a red button. */
+.bp :global(.content .mypost-del) { border-color: var(--danger); color: var(--danger); background: #fff; }
+.bp :global(.content .mypost-del:hover) { background: var(--danger-soft); box-shadow: 2px 2px 0 var(--danger); }
+.bp :global(.content .mypost-del.is-armed) {
+  background: var(--danger-soft); border-width: 2px; box-shadow: 2px 2px 0 var(--danger);
+}
+
+/* ── Detail sheet ──────────────────────────────────────────────────────────
+   The house sheet (`.sheet` / hire_sheetIn) with the applicant panel's own
+   meta block; only the read-only body and the tag list are new. */
+.bp :global(.content .sf-read) {
+  font-size: 13px; line-height: 1.6; color: var(--ink-soft); white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.bp :global(.content .sf-tags) { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.bp :global(.content .sf-tag) {
+  padding: 4px 9px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+/* The destructive action sits below the hairline that closes the safe ones. */
+.bp :global(.content .sf-act--quiet) { border: none; padding-top: 0; margin-top: 9px; }
+.bp :global(.content .sf-act--quiet .btn) { flex: 0 0 auto; }
+.bp :global(.content .sf-hint--lead) { margin: -2px 0 18px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+
+@media (max-width: 720px) {
+  .bp :global(.content .jfilter .bp-sel) { min-width: 0; }
+  .bp :global(.content .jfilter) { flex: 1 1 150px; }
+  .bp :global(.content .jfilters-n) { margin-left: 0; }
+  .bp :global(.content .mypost-row) { flex-wrap: wrap; }
+  .bp :global(.content .mypost-main) { flex: 1 1 100%; }
+  .bp :global(.content .mypost-side) { flex: 1 1 100%; justify-content: flex-start; }
+  .bp :global(.content .mypost-rate) { order: -1; }
+}

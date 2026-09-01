@@ -258,6 +258,9 @@ export const SEED_JOBS: TradeJob[] = [
 export interface OwnPost {
   id: string;
   title: string;
+  /** The full brief. The list row shows a title; the detail panel and the edit
+   *  form both need the body the author actually wrote. */
+  description: string;
   tradeType: string;
   specialties: string[];
   location?: string;
@@ -274,6 +277,8 @@ export const SEED_OWN_POSTS: OwnPost[] = [
   {
     id: "op_01",
     title: "Excavator operator for a half-day dig",
+    description:
+      "Mini-ex work on a tight residential lot: trench for a footing and rough-grade the pad afterwards. Machine is on site, spoil stays on site. Half a day, maybe a touch more if the ground is wet.",
     tradeType: "Concrete",
     specialties: ["Excavation", "Grading"],
     location: "Bend, OR · on-site",
@@ -288,6 +293,8 @@ export const SEED_OWN_POSTS: OwnPost[] = [
   {
     id: "op_02",
     title: "Finish carpenter for built-in shelving",
+    description:
+      "Two flanking bookcases either side of a fireplace, painted MDF with a face frame and adjustable shelves. Site-built, scribed to a wall that is not straight. I want someone who does their own scribing rather than caulking a gap.",
     tradeType: "Carpentry",
     specialties: ["Built-ins", "Trim"],
     location: "Redmond, OR · 18 mi",

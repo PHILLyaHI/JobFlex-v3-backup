@@ -86,6 +86,9 @@ export function LeadsContent({ leads, offers }: { leads: Lead[]; offers: Offer[]
         </button>
         <button className="ptab" type="button" data-tab="incoming">
           Incoming<span className="ptab-count" data-count="incoming">0</span>
+          {/* Filled by the behavior module: anything in this queue arrived from
+              the Lead Center, which is the one thing a bare count cannot say. */}
+          <span className="ptab-new is-hidden">New lead came in</span>
         </button>
         <button className="ptab ptab--action" type="button" data-tab="import" id="goImport">
           <svg className="ic"><use href="#i-file" /></svg>

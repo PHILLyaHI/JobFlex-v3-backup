@@ -6,6 +6,7 @@
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { parseTradeTypes } from "@/lib/tradeTypes";
+import { getRoutingMode } from "@/lib/leadCenter/routingMode";
 import {
   AdminLeadCenterContent,
   type PlatformLeadDTO,
@@ -24,9 +25,6 @@ function startOfDay(d: Date): Date {
   x.setHours(0, 0, 0, 0);
   return x;
 }
-function dayKey(d: Date): string {
-  return startOfDay(d).toISOString().slice(0, 10);
-}
 function median(values: number[]): number | null {
   if (!values.length) return null;
   const s = [...values].sort((a, b) => a - b);
@@ -40,10 +38,9 @@ export default async function AdminLeadCenterPage() {
   const now = new Date();
   const today = startOfDay(now);
   const since30 = new Date(now.getTime() - 30 * DAY_MS);
-  const since60 = new Date(now.getTime() - 60 * DAY_MS);
   const seriesStart = startOfDay(new Date(now.getTime() - (SERIES_DAYS - 1) * DAY_MS));
 
-  const [platformLeads, orgs, recent, resolvedOffers, routedPrior, openOffers] = await Promise.all([
+  const [platformLeads, orgs, recent, resolvedOffers, openOffers] = await Promise.all([
     db.platformLead.findMany({
       orderBy: { createdAt: "desc" },
       take: 200,
@@ -56,7 +53,19 @@ export default async function AdminLeadCenterPage() {
     }),
     db.organization.findMany({
       orderBy: { name: "asc" },
-      select: { id: true, name: true, tradeTypesJson: true, lat: true, lng: true, leadOffersEnabled: true },
+      select: {
+        id: true,
+        name: true,
+        tradeTypesJson: true,
+        otherTrade: true,
+        lat: true,
+        lng: true,
+        address: true,
+        phone: true,
+        billingEmail: true,
+        leadOffersEnabled: true,
+        createdAt: true,
+      },
     }),
     // The stats window — wider than the ledger's 200-row cap on a busy platform.
     db.platformLead.findMany({
@@ -76,7 +85,6 @@ export default async function AdminLeadCenterPage() {
       where: { createdAt: { gte: since30 }, status: { in: ["ACCEPTED", "DECLINED", "EXPIRED"] } },
       select: { status: true, attempt: true, createdAt: true, respondedAt: true },
     }),
-    db.platformLead.count({ where: { matchedAt: { gte: since60, lt: since30 } } }),
     db.leadOffer.findMany({
       where: { status: "OFFERED", expiresAt: { gt: now } },
       select: { expiresAt: true },
@@ -94,6 +102,22 @@ export default async function AdminLeadCenterPage() {
       select: { id: true, name: true },
     });
     for (const o of extra) orgName.set(o.id, o.name);
+  }
+
+  // Did the shop the lead was routed to actually take it? A routed lead lands
+  // in that shop's Incoming tab as a Lead row with status ROUTED, and stays
+  // ROUTED until someone there accepts it. "Routed" and "accepted" are two
+  // different answers to "where is this homeowner", so the sheet says which.
+  const matchedLeadIds = platformLeads
+    .map((p) => p.matchedLeadId)
+    .filter((v): v is string => typeof v === "string" && v.length > 0);
+  const shopLeadStatus = new Map<string, string>();
+  if (matchedLeadIds.length) {
+    const rows = await db.lead.findMany({
+      where: { id: { in: matchedLeadIds } },
+      select: { id: true, status: true },
+    });
+    for (const r of rows) shopLeadStatus.set(r.id, r.status);
   }
 
   const leads: PlatformLeadDTO[] = platformLeads.map((p) => {
@@ -118,12 +142,18 @@ export default async function AdminLeadCenterPage() {
       detectedTrade: p.detectedTrade,
       aiConfidence: p.aiConfidence,
       geocoded: p.lat != null && p.lng != null,
+      lat: p.lat,
+      lng: p.lng,
       status: p.status,
       attemptCount: p.attemptCount,
       queueReason: p.queueReason,
       matchedOrgName: p.matchedOrgId ? (orgName.get(p.matchedOrgId) ?? null) : null,
+      // Whichever contractor the row is about — the one that has it, else the
+      // one currently holding the offer. The row's "Went to" cell opens them.
+      wentToOrgId: p.matchedOrgId ?? active?.organizationId ?? null,
       matchedAt: p.matchedAt ? p.matchedAt.toISOString() : null,
       manuallyAssigned: p.assignedByAdminId != null,
+      shopLeadStatus: p.matchedLeadId ? (shopLeadStatus.get(p.matchedLeadId) ?? null) : null,
       createdAt: p.createdAt.toISOString(),
       ranking,
       offers: p.offers.map((o) => ({
@@ -147,12 +177,38 @@ export default async function AdminLeadCenterPage() {
     };
   });
 
+  // How each shop has behaved: offers seen, offers taken, leads currently held.
+  // One grouped pass each — a row per shop per stat would not scale, and this
+  // roster is read on every visit.
+  const [offerCounts, acceptCounts, matchedCounts] = await Promise.all([
+    db.leadOffer.groupBy({ by: ["organizationId"], _count: { _all: true } }),
+    db.leadOffer.groupBy({ by: ["organizationId"], where: { status: "ACCEPTED" }, _count: { _all: true } }),
+    db.platformLead.groupBy({
+      by: ["matchedOrgId"],
+      where: { matchedOrgId: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+  const offersBy = new Map(offerCounts.map((r) => [r.organizationId, r._count._all]));
+  const acceptsBy = new Map(acceptCounts.map((r) => [r.organizationId, r._count._all]));
+  const matchedBy = new Map(matchedCounts.map((r) => [r.matchedOrgId as string, r._count._all]));
+
   const orgPicks: OrgPickDTO[] = orgs.map((o) => ({
     id: o.id,
     name: o.name,
     trades: parseTradeTypes(o.tradeTypesJson),
+    otherTrade: o.otherTrade,
     geocoded: o.lat != null && o.lng != null,
+    lat: o.lat,
+    lng: o.lng,
+    address: o.address,
+    phone: o.phone,
+    email: o.billingEmail,
     offersEnabled: o.leadOffersEnabled,
+    offersReceived: offersBy.get(o.id) ?? 0,
+    offersAccepted: acceptsBy.get(o.id) ?? 0,
+    leadsMatched: matchedBy.get(o.id) ?? 0,
+    joinedAt: o.createdAt.toISOString(),
   }));
 
   // ── stats ───────────────────────────────────────────────────────────────
@@ -167,104 +223,39 @@ export default async function AdminLeadCenterPage() {
     }
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   };
-  const todayByTrade = countBy(todayRows)
-    .slice(0, 4)
-    .map(([trade, n]) => ({ trade, n }));
   const dist = countBy(last30).slice(0, 6);
   const distMax = dist[0]?.[1] ?? 1;
   const tradeDist = dist.map(([trade, n]) => ({ trade, n, pct: Math.round((n / distMax) * 100) }));
 
   const accepted = resolvedOffers.filter((o) => o.status === "ACCEPTED");
   const acceptRatePct = resolvedOffers.length ? (accepted.length / resolvedOffers.length) * 100 : null;
-  const firstOfferPct = accepted.length
-    ? (accepted.filter((o) => o.attempt === 1).length / accepted.length) * 100
-    : null;
   const medianAcceptMin = median(
     accepted
       .filter((o) => o.respondedAt)
       .map((o) => (o.respondedAt!.getTime() - o.createdAt.getTime()) / 60_000),
   );
-  const routed30 = recent.filter((p) => p.matchedAt && p.matchedAt >= since30).length;
   const routedTotal = await db.platformLead.count({ where: { status: "MATCHED" } });
-  const routedDeltaPct =
-    routedPrior > 0 ? ((routed30 - routedPrior) / routedPrior) * 100 : routed30 > 0 ? null : null;
-
-  const series: StatsDTO["series"] = [];
-  for (let i = 0; i < SERIES_DAYS; i++) {
-    const d = new Date(seriesStart.getTime() + i * DAY_MS);
-    const key = dayKey(d);
-    series.push({
-      day: d.toISOString(),
-      leads: recent.filter((p) => dayKey(p.createdAt) === key).length,
-      matched: recent.filter((p) => p.matchedAt && dayKey(p.matchedAt) === key).length,
-    });
-  }
-
-  // ── site plan projection ────────────────────────────────────────────────
-  const pinned = last30.filter((p) => p.lat != null && p.lng != null) as (typeof last30[number] & {
-    lat: number;
-    lng: number;
-  })[];
-  let mapPoints: StatsDTO["mapPoints"] = [];
-  let mapCities: StatsDTO["mapCities"] = [];
-  if (pinned.length) {
-    const lats = pinned.map((p) => p.lat);
-    const lngs = pinned.map((p) => p.lng);
-    let minLat = Math.min(...lats);
-    let maxLat = Math.max(...lats);
-    let minLng = Math.min(...lngs);
-    let maxLng = Math.max(...lngs);
-    // A single point (or a tight cluster) still needs a frame to sit in.
-    if (maxLat - minLat < 0.02) {
-      minLat -= 0.01;
-      maxLat += 0.01;
-    }
-    if (maxLng - minLng < 0.02) {
-      minLng -= 0.01;
-      maxLng += 0.01;
-    }
-    const PAD = 14; // percent of frame kept clear on every side
-    const px = (lng: number) => PAD + ((lng - minLng) / (maxLng - minLng)) * (100 - 2 * PAD);
-    const py = (lat: number) => PAD + ((maxLat - lat) / (maxLat - minLat)) * (100 - 2 * PAD);
-    mapPoints = pinned.map((p) => ({
-      id: p.id,
-      x: Number(px(p.lng).toFixed(2)),
-      y: Number(py(p.lat).toFixed(2)),
-      status: p.status,
-    }));
-    const cityAgg = new Map<string, { n: number; x: number; y: number }>();
-    for (const p of pinned) {
-      if (!p.city) continue;
-      const cur = cityAgg.get(p.city) ?? { n: 0, x: 0, y: 0 };
-      cur.n += 1;
-      cur.x += px(p.lng);
-      cur.y += py(p.lat);
-      cityAgg.set(p.city, cur);
-    }
-    mapCities = [...cityAgg.entries()]
-      .sort((a, b) => b[1].n - a[1].n)
-      .slice(0, 3)
-      .map(([name, c]) => ({ name, x: Number((c.x / c.n).toFixed(2)), y: Number((c.y / c.n).toFixed(2)) }));
-  }
 
   const stats: StatsDTO = {
     todayCreated: todayRows.length,
     todayMatched: recent.filter((p) => p.matchedAt && p.matchedAt >= today).length,
-    todayByTrade,
     tradeDist,
     acceptRatePct,
-    firstOfferPct,
     medianAcceptMin,
     routedTotal,
-    routedDeltaPct,
-    series,
     openOffers: openOffers.length,
     expiringSoon: openOffers.filter((o) => o.expiresAt.getTime() - now.getTime() < 12 * 60 * 60 * 1000).length,
     queue: platformLeads.filter((p) => p.status === "MANUAL_QUEUE").length,
-    mapPoints,
-    mapCities,
-    ungeocoded: last30.length - pinned.length,
   };
 
-  return <AdminLeadCenterContent leads={leads} orgs={orgPicks} stats={stats} />;
+  const routingMode = await getRoutingMode();
+
+  return (
+    <AdminLeadCenterContent
+      leads={leads}
+      orgs={orgPicks}
+      stats={stats}
+      routingMode={routingMode}
+    />
+  );
 }

@@ -126,11 +126,6 @@ export function MobileClarifySheet({
           <div className="mve-sheet-h" id="mve-clq-title">
             A few quick questions
           </div>
-          <p className="mve-sheet-sub">
-            The walkthrough left gaps for this kind of job. Answer what you can and the estimate is
-            priced against real numbers instead of assumptions — or price it anyway and tighten it
-            afterwards.
-          </p>
         </div>
 
         <div className="mve-sheet-body">

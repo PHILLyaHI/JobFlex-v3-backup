@@ -192,6 +192,20 @@ export function CompanyContent({ org, activity, members, canEdit }: CompanyConte
             <div className="co-trades">
               <div className="kpi-lbl">Trades you take</div>
               <div className="trades" id="trades"></div>
+              {/* Picking "Other" has to ask WHICH other — a chip that names
+                  nothing cannot be matched against and reads as a dead end.
+                  Hidden until the chip is on; the behavior module owns that. */}
+              <label className="cf co-other is-hidden" id="otherTradeWrap">
+                <span className="cf-lbl">Name the trade</span>
+                <input
+                  className="cf-in"
+                  id="otherTradeIn"
+                  data-l="otherTrade"
+                  maxLength={80}
+                  placeholder="e.g. Solar install, Masonry"
+                  defaultValue={org.otherTrade}
+                />
+              </label>
             </div>
             <div className="toggle-row">
               <div>

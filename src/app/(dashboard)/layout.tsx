@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
+import { getBlockedCustomPages } from "@/lib/customPageAccess";
+import { isCustomBlockedPath } from "@/lib/customPlan";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { CommandK } from "@/components/layout/CommandK";
@@ -75,10 +77,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const isWorker = activeRole === "INSTALLER";
   const routeGate = activeRole ? ROLE_ROUTE_GATES[activeRole] : undefined;
   const isLimited = Boolean(routeGate);
-  // Lead-offer pop-up is only for people who can act on a lead (matches the
-  // requireSalesOrManager gate on accept/decline): sales + manager roles, never
-  // installers or estimators.
-  const canHandleLeads = Boolean(activeOrgId) && !isWorker && activeRole !== "ESTIMATOR";
+  // Lead pop-up: the OWNER's, and only theirs. Managers and sales can still see
+  // and action every lead on the Leads page — this is the interruption, not the
+  // permission (owner's call, 2026-08-27; the email follows the same rule, see
+  // lib/notify's ownerEmailFor).
+  const canHandleLeads = Boolean(activeOrgId) && activeRole === "OWNER";
 
   // Server-side limited-role route-gate (defense-in-depth behind the middleware).
   // Role comes from the DB above, and the path from the middleware-set header,
@@ -87,6 +90,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (routeGate) {
     const pathname = (await headers()).get("x-pathname") ?? "";
     if (pathname && !isPathAllowed(routeGate, pathname)) redirect(routeGate.home as Route);
+  }
+
+  // THE CUSTOM PLAN'S PAGE GATE — the classic tree's copy of the check the
+  // blueprint layout carries, because this group is a separate branch of app/
+  // and inherits nothing from it. Same shape as the role gate above: plan from
+  // the DB, path from the middleware-set header, fail-closed, bounce to
+  // Overview. The classic sidebar's legacy estimator paths
+  // (/dashboard/advanced-ai/roof, /fence/studio) fall under the
+  // /dashboard/advanced-ai prefix, so they are covered by the same list.
+  const lockedPages = activeOrgId ? await getBlockedCustomPages(activeOrgId) : null;
+  if (lockedPages?.length) {
+    const pathname = (await headers()).get("x-pathname") ?? "";
+    if (pathname && isCustomBlockedPath(lockedPages, pathname)) {
+      redirect("/dashboard" as Route);
+    }
   }
 
   // Workers see a read-only slice — no create surfaces, so no quota counters.
@@ -105,8 +123,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           badges={badgeCounts}
           limits={navLimits}
           plan={subscription?.plan}
+          lockedHrefs={lockedPages ?? undefined}
         />
-        <main className="flex-1 min-w-0 min-h-dvh">
+        <main className="flex-1 min-w-0 min-h-dvh pb-24">
           <Topbar
             user={{ name: session.user.name, email: session.user.email ?? "" }}
             memberships={membershipItems}
@@ -140,7 +159,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             already belongs to the create button and the tab bar. */}
         <SupportWidget signedIn />
         <div className="md:hidden">
-          <MobileTabBar role={activeRole} badges={badgeCounts} />
+          <MobileTabBar role={activeRole} badges={badgeCounts} lockedHrefs={lockedPages ?? undefined} />
         </div>
       </div>
     </SessionProvider>

@@ -15,40 +15,19 @@
 // Session-gated: the quota is a real shared resource and this route spends it.
 
 import { NextResponse } from "next/server";
+import { lookupParcelByPoint, lookupSiblingParcels } from "@/lib/parcelLookup";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   addressKeyOf,
-  fetchNearest,
   fetchParcelByAddress,
-  fetchParcelByPoint,
   isReportAllEnabled,
   ReportAllError,
   type Parcel,
 } from "@/lib/reportall";
-import { parseWkt, type RingPoint } from "@/lib/parcels";
+import { parseWkt } from "@/lib/parcels";
 
 export const runtime = "nodejs";
-
-const MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-/** Cache candidate box around the point, degrees (~500 m) — candidates are
- *  then tested point-in-ring, so the box only bounds the SQL scan. */
-const CACHE_BOX_DEG = 0.005;
-
-function missKey(lat: number, lon: number): string {
-  return `${lat.toFixed(5)},${lon.toFixed(5)}`;
-}
-
-function pointInRing(lat: number, lon: number, ring: RingPoint[]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [yi, xi] = ring[i];
-    const [yj, xj] = ring[j];
-    const hit = yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
-    if (hit) inside = !inside;
-  }
-  return inside;
-}
 
 interface CachedParcelRow {
   robustId: string;
@@ -131,51 +110,47 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: "lat/lon must be numbers" }, { status: 400 });
       }
 
-      // a. Cache: any stored parcel whose OUTER RING contains the point.
-      const candidates = await db.parcelCache.findMany({
-        where: {
-          lat: { gte: lat - CACHE_BOX_DEG, lte: lat + CACHE_BOX_DEG },
-          lon: { gte: lon - CACHE_BOX_DEG, lte: lon + CACHE_BOX_DEG },
-        },
-        take: 50,
-      });
-      for (const row of candidates) {
-        if (parseWkt(row.wkt).some((ring) => pointInRing(lat, lon, ring))) {
-          return NextResponse.json(payload(row, true));
-        }
+      // The cache-first policy lives in @/lib/parcelLookup and is SHARED with
+      // actions/fenceBoundary.ts. It used to live here, reachable only over
+      // HTTP; two callers with two policies would have been two ways to spend
+      // the same ALLTIME quota twice.
+      const found = await lookupParcelByPoint(lat, lon, { withNearest: true });
+      if (found.ok) {
+        const p = found.parcel;
+        // The rest of the PROPERTY. A point sits in one lot; a house bought as
+        // two adjoining deeds is two, and the fence goes round both. Cache-first
+        // and swept at most once per lot (see lookupSiblingParcels), so this is
+        // free on every repeat visit to the address.
+        const siblings = await lookupSiblingParcels(
+          { ...p, rings: p.all[0]?.rings ?? p.rings },
+          p.all.map((c) => c.robustId),
+        ).catch(() => []);
+        const all = [...p.all, ...siblings];
+        return NextResponse.json({
+          found: true as const,
+          cached: p.cached,
+          parcel: {
+            robustId: p.robustId,
+            parcelId: p.parcelId,
+            owner: p.owner,
+            address: p.address,
+            city: p.city,
+            zip: p.zip,
+            acreage: p.acreage,
+            lat: p.lat,
+            lon: p.lon,
+          },
+          // Flat rings stay for callers that want one boundary; `parcels` keeps
+          // them grouped per lot, which is what an address covering more than
+          // one parcel needs in order to draw the whole property.
+          rings: all.flatMap((c) => c.rings),
+          parcels: all,
+        });
       }
-
-      // b. Fresh negative cache → no external request.
-      const key = missKey(lat, lon);
-      const miss = await db.parcelMiss.findUnique({ where: { key } });
-      if (miss && Date.now() - miss.checkedAt.getTime() < MISS_TTL_MS) {
-        return NextResponse.json({ found: false, cached: true }, { status: 404 });
+      if (found.reason === "error") {
+        return NextResponse.json({ error: found.error }, { status: 502 });
       }
-
-      // c. ReportAll.
-      const parcel = await fetchParcelByPoint(lat, lon);
-      if (parcel) {
-        await saveParcel(parcel);
-        if (miss) await db.parcelMiss.delete({ where: { key } }).catch(() => {});
-        return NextResponse.json(payload(parcel, false));
-      }
-
-      await db.parcelMiss.upsert({
-        where: { key },
-        update: { checkedAt: new Date() },
-        create: { key },
-      });
-      const nearest = await fetchNearest(lat, lon).catch(() => null);
-      if (nearest) await saveParcel(nearest);
-      return NextResponse.json(
-        {
-          found: false,
-          nearest: nearest
-            ? { address: nearest.address, city: nearest.city, lat: nearest.lat, lon: nearest.lon }
-            : null,
-        },
-        { status: 404 },
-      );
+      return NextResponse.json({ found: false, nearest: found.nearest ?? null }, { status: 404 });
     }
 
     // ── address + region ──

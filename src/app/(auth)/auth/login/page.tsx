@@ -218,11 +218,15 @@ function LoginInner() {
 
         <aside className={cx("auth-side")}>
           <div className={cx("side-wash")}></div>
-          <figure className={cx("side-card")}>
-            <div className={cx("kpi-lbl")}>Today</div>
-            <blockquote className={cx("side-q")}>{"“Rohan Patel accepted the roof proposal — deposit collected at 10:42 am.”"}</blockquote>
-            <figcaption className={cx("side-n")}>The editorial dashboard, in a real contractor&apos;s hands.</figcaption>
-          </figure>
+          {/* THE ART PANEL. This column used to carry a testimonial card
+              quoting a customer who does not exist — the one thing a sign-in
+              page should not do. It carries a picture now: generated for this
+              panel in the product's own drawing language (cream ground, ink
+              outlines, hard offset shadows, one blue, no lettering).
+              public/auth/side-blueprint.png is the drawn alternative, kept beside
+              it; swapping is this one src. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className={cx("side-art")} src="/auth/side-site-2.png" alt="" aria-hidden="true" />
         </aside>
       </main>
     </div>

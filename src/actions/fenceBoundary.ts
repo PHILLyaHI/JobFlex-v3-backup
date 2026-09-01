@@ -1,8 +1,24 @@
 "use server";
-// Property parcel boundary for the fence studio. Replaces the SAM 2 / aerial-trace
-// approach with exact surveyed parcel polygons from Regrid (regrid.com/api): far
-// more reliable than visual segmentation for thin/tree-covered fence lines.
-// Stateless — requireEstimatorOrManager for auth only, no DB writes.
+// Property parcel boundary for the fence studio.
+//
+// PARCEL SOURCE: ReportAll USA (2026-08-24). It replaces Regrid, which replaced
+// the SAM 2 aerial-trace — surveyed polygons beat visual segmentation for thin
+// or tree-covered fence lines, and that reasoning is unchanged; only the vendor
+// moved. Two reasons for the swap:
+//   · Regrid issues 30-DAY JWTs, so "Load property lines" broke roughly monthly
+//     until somebody minted a new token. ReportAll uses a static client key.
+//   · ReportAll is already wired, cached and paid for here (/api/parcels,
+//     ParcelCache, ParcelMiss), so this stops the app carrying two parcel
+//     vendors that answer the same question.
+//
+// The lookup goes through @/lib/parcelLookup, NOT the ReportAll client directly:
+// the quota is ALLTIME, and that module owns the one cache policy every caller
+// shares. No longer stateless as a result — a cache miss writes the parcel back.
+//
+// Regrid is still imported for BUILDING FOOTPRINTS only (see mergeBuildings):
+// ReportAll returns parcel geometry, not structures. With no Regrid key the
+// footprints come from OpenStreetMap alone, which is a degradation in footprint
+// quality but never blocks the parcel ring.
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 // Parcel parsing lives in @/lib/parcel so the roof reconstruction and the
 // out-of-request eval script can share it (a "use server" file may only export
@@ -11,11 +27,11 @@ import {
   isRegridEnabled,
   outerRing,
   pointInRing,
-  extractRing,
   fetchRegridPoint,
   type LatLngPoint,
   type RegridResponse,
 } from "@/lib/parcel";
+import { lookupParcelByPoint } from "@/lib/parcelLookup";
 // The street centrelines this action now returns are consumed by the parcel
 // geometry lib, which owns the type.
 import type { RoadLine } from "@/lib/parcels";
@@ -201,49 +217,58 @@ export async function fetchPropertyBoundary(
   | { ok: false; error: string; buildings: BuildingRing[]; roads: RoadLine[] }
 > {
   await requireEstimatorOrManager();
-  // OSM lookup runs concurrently with Regrid — it's independent and fail-soft.
+  // Three independent lookups, and they stay independent: OSM context, the
+  // parcel, and Regrid footprints. A failure in any one must not take the other
+  // two down — the front-side decision in particular is derived from `roads`
+  // and has to survive a parcel outage.
   const osmPromise = fetchOsmContext(lat, lng);
-  if (!isRegridEnabled()) {
-    const osm = await osmPromise;
+  // Footprints only, and only if a Regrid key happens to still be valid. Its
+  // rejection is swallowed: OSM covers this, and an expired Regrid token is no
+  // longer a reason to tell anyone anything.
+  const regridPromise = isRegridEnabled()
+    ? fetchRegridPoint(lat, lng).catch(() => ({ data: null, status: 0 }))
+    : Promise.resolve({ data: null as RegridResponse | null, status: 0 });
+
+  const parcel = await lookupParcelByPoint(lat, lng);
+  const [osm, regrid] = await Promise.all([
+    osmPromise.catch(() => ({ buildings: [], roads: [] })),
+    regridPromise,
+  ]);
+  const buildings = mergeBuildings(
+    regrid.data ? regridBuildings(regrid.data) : [],
+    osm.buildings,
+    lat,
+    lng,
+  );
+
+  if (!parcel.ok) {
+    const error =
+      parcel.reason === "disabled"
+        ? "Set REPORTALL_CLIENT_KEY in .env.local to load property lines (get a key at reportallusa.com)."
+        : parcel.reason === "not-found"
+          ? "No parcel found here — this county may not be covered. Drop the pin inside the lot, or draw the fence manually."
+          : (parcel.error ?? "Failed to load property lines.");
+    return { ok: false, error, buildings, roads: osm.roads };
+  }
+
+  // The FIRST outer ring. A MULTIPOLYGON parcel is usually one lot recorded in
+  // parts; the studio traces a single boundary, and the ring containing the
+  // dropped pin is the one the user meant.
+  const rings = parcel.parcel.rings;
+  // parseWkt emits [lat, lng] tuples; the studio speaks { lat, lng }.
+  const toLatLng = (r: (typeof rings)[number]): LatLngPoint[] =>
+    r.map(([pLat, pLng]) => ({ lat: pLat, lng: pLng }));
+  const hit = rings.find((r) => pointInRing(lat, lng, toLatLng(r)));
+  const ring: LatLngPoint[] = toLatLng(hit ?? rings[0] ?? []);
+
+  if (ring.length < 3) {
     return {
       ok: false,
-      error: "Set REGRID_API_KEY in .env.local to load property lines (get a key at regrid.com/api).",
-      buildings: osm.buildings,
+      error:
+        "The parcel came back without a usable boundary. Drop the pin inside the lot, or draw the fence manually.",
+      buildings,
       roads: osm.roads,
     };
   }
-  try {
-    const { data, status } = await fetchRegridPoint(lat, lng);
-    if (!data) {
-      // Regrid tokens are 30-day JWTs, so 401/403 here usually means expired
-      // rather than wrong — say so, otherwise this reads as a coverage problem.
-      const error =
-        status === 401 || status === 403
-          ? "Regrid rejected the key (401/403) — the token is likely expired. Regrid issues 30-day tokens; mint a new one and update REGRID_API_KEY."
-          : `Regrid request failed (${status || "no key"}).`;
-      const osm = await osmPromise;
-      return { ok: false, error, buildings: osm.buildings, roads: osm.roads };
-    }
-    const ring = extractRing(data, lat, lng);
-    const osm = await osmPromise;
-    const buildings = mergeBuildings(regridBuildings(data), osm.buildings, lat, lng);
-    if (ring.length < 3) {
-      return {
-        ok: false,
-        error:
-          "No parcel found here — your Regrid plan may not cover this area. Drop the pin inside the lot, or draw the fence manually.",
-        buildings,
-        roads: osm.roads,
-      };
-    }
-    return { ok: true, ring, buildings, roads: osm.roads };
-  } catch (err) {
-    const osm = await osmPromise.catch(() => ({ buildings: [], roads: [] }));
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to load property lines.",
-      buildings: osm.buildings,
-      roads: osm.roads,
-    };
-  }
+  return { ok: true, ring, buildings, roads: osm.roads };
 }

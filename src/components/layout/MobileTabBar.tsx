@@ -129,24 +129,37 @@ function fabFor(active: TabKey, role?: string | null): FabConfig | null {
 export function MobileTabBar({
   role,
   badges,
+  lockedHrefs,
 }: {
   role?: string | null;
   /** Unread / pending counts keyed by nav href. Populated by the layout. */
   badges?: Record<string, number>;
+  /** Custom-plan blocked hrefs (lib/customPageAccess) — tabs and More rows
+   *  under one of these prefixes are not drawn. Empty/undefined = no lock. */
+  lockedHrefs?: string[];
 }) {
   const pathname = usePathname();
   const isWorker = role === "INSTALLER";
   const isSales = role === "SALES";
   const isEstimator = role === "ESTIMATOR";
   const active = getActiveKey(pathname ?? "");
-  const tabs = isWorker ? WORKER_TABS : isSales ? SALES_TABS : isEstimator ? ESTIMATOR_TABS : TABS;
-  const moreNav: MoreNavItem[] = isWorker
-    ? WORKER_MORE_NAV
-    : isSales
-      ? SALES_MORE_NAV
-      : isEstimator
-        ? ESTIMATOR_MORE_NAV
-        : MORE_NAV;
+  const lockedOut = React.useCallback(
+    (href: string) =>
+      Boolean(lockedHrefs?.some((p) => href === p || href.startsWith(p + "/"))),
+    [lockedHrefs],
+  );
+  const tabs = (
+    isWorker ? WORKER_TABS : isSales ? SALES_TABS : isEstimator ? ESTIMATOR_TABS : TABS
+  ).filter((t) => t.href.startsWith("#") || !lockedOut(t.href));
+  const moreNav: MoreNavItem[] = (
+    isWorker
+      ? WORKER_MORE_NAV
+      : isSales
+        ? SALES_MORE_NAV
+        : isEstimator
+          ? ESTIMATOR_MORE_NAV
+          : MORE_NAV
+  ).filter((item) => !lockedOut(item.href));
   const fab = isWorker ? null : fabFor(active, role);
   const [moreOpen, setMoreOpen] = React.useState(false);
   /** The "More" tab itself — the one control that is still on screen after the

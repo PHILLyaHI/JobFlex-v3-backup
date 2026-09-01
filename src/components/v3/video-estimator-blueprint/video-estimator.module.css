@@ -189,14 +189,20 @@
 
 :global(.jf-blueprint .content) .vt-loaded { position: absolute; inset: 0; display: flex; flex-direction: column;
   justify-content: space-between; padding: 20px; }
-:global(.jf-blueprint .content) .vt-fileline { display: flex; align-items: center; gap: 12px; color: var(--paper);
+/* `align-items: flex-end` puts Remove in the BOTTOM-right corner of the card
+   rather than floating at the vertical middle of it: a long file name wraps to
+   two lines and the control used to hang halfway up the block. */
+:global(.jf-blueprint .content) .vt-fileline { display: flex; align-items: flex-end; gap: 12px; color: var(--paper);
   padding: 10px 14px; background: rgba(10,10,10,.55); border: 1.5px solid rgba(242,240,235,.28);
   border-radius: var(--radius); }
 :global(.jf-blueprint .content) .vt-fileline .ic { width: 18px; height: 18px; color: var(--sky); flex-shrink: 0; }
 :global(.jf-blueprint .content) .vt-fileline b { font-size: 13.5px; font-weight: 800; min-width: 0; overflow-wrap: anywhere; }
+/* The name column may grow; everything else keeps its intrinsic width. */
+:global(.jf-blueprint .content) .vt-fileline b { flex: 1 1 auto; }
 :global(.jf-blueprint .content) .vt-fileline span { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   letter-spacing: .06em; color: rgba(242,240,235,.65); }
-:global(.jf-blueprint .content) .vt-remove { margin-left: auto; appearance: none; cursor: pointer; background: transparent;
+:global(.jf-blueprint .content) .vt-remove { margin-left: auto; align-self: flex-end; flex-shrink: 0;
+  appearance: none; cursor: pointer; background: transparent;
   border: none; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
   letter-spacing: .12em; text-transform: uppercase; color: rgba(242,240,235,.6); }
 :global(.jf-blueprint .content) .vt-remove:hover { color: var(--paper); }
@@ -262,20 +268,23 @@
   font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
   white-space: nowrap; }
 
-:global(.jf-blueprint .content) .vr-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0; }
-:global(.jf-blueprint .content) .vr-left { padding: 24px 28px; border-right: 1.5px solid rgba(10,10,10,.14); min-width: 0; }
-:global(.jf-blueprint .content) .vr-right { padding: 24px 28px; min-width: 0; }
+/* THREE CARDS, not two columns (2026-08-28). The result used to be one card
+   split down the middle — read-out on the left, ledger on the right — which is
+   why the total sat in a narrow column and the frame strip took the space the
+   measurements needed. Each card is now full width and answers one question. */
+:global(.jf-blueprint .content) .vr-card { margin-top: 22px; }
+:global(.jf-blueprint .content) .vr-body { padding: 24px 28px; min-width: 0; }
+/* Measured / notes / assumptions, side by side. `auto-fit` rather than three
+   fixed columns: at 1280 the sidebar leaves ~900px and three 300px columns is
+   the floor before the labels wrap. */
+:global(.jf-blueprint .content) .vr-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 22px 28px; margin-top: 20px;
+}
+:global(.jf-blueprint .content) .vr-fact { min-width: 0; }
 :global(.jf-blueprint .content) .vr-sec-h { font-size: 11px; font-weight: 800; letter-spacing: .16em;
   text-transform: uppercase; margin-bottom: 14px; }
 :global(.jf-blueprint .content) .vr-sec-h--gap { margin-top: 26px; }
-:global(.jf-blueprint .content) .vr-frames { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-:global(.jf-blueprint .content) .vr-frame { border: var(--border-thin); border-radius: var(--radius); overflow: hidden; }
-:global(.jf-blueprint .content) .vr-frame-img { position: relative; aspect-ratio: 16 / 10;
-  background-image: repeating-linear-gradient(45deg, rgba(24,84,160,.10) 0 1px, transparent 1px 7px); }
-:global(.jf-blueprint .content) .vr-frame-tc { position: absolute; left: 6px; bottom: 6px; padding: 2px 7px;
-  background: var(--ink); color: var(--paper); font-family: var(--font-mono);
-  font-size: 10px; font-weight: 600; letter-spacing: .08em; }
-:global(.jf-blueprint .content) .vr-frame-l { padding: 8px 10px; font-size: 11.5px; font-weight: 700; }
 :global(.jf-blueprint .content) .vr-meas { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 :global(.jf-blueprint .content) .vr-m { border: var(--border-thin); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
 :global(.jf-blueprint .content) .vr-m span { display: block; font-family: var(--font-mono); font-size: 10px;
@@ -290,21 +299,20 @@
   font-variant-numeric: tabular-nums; }
 :global(.jf-blueprint .content) .vr-line.is-new b { color: var(--success); }
 :global(.jf-blueprint .content) .vr-total { display: flex; align-items: baseline; justify-content: space-between;
-  padding: 16px 0 6px; border-top: 1.5px solid var(--ink); margin-top: 12px; }
-:global(.jf-blueprint .content) .vr-total span { font-size: 11px; font-weight: 800; letter-spacing: .2em;
+  gap: 12px; padding: 16px 0 6px; border-top: 1.5px solid var(--ink); margin-top: 12px; }
+:global(.jf-blueprint .content) .vr-total span { flex: 0 0 auto; font-size: 11px; font-weight: 800; letter-spacing: .2em;
   text-transform: uppercase; }
-:global(.jf-blueprint .content) .vr-total b { font-size: 30px; font-weight: 900; letter-spacing: -.005em;
-  color: var(--blueprint); font-variant-numeric: tabular-nums; }
-:global(.jf-blueprint .content) .vr-refine { display: flex; align-items: flex-end; gap: 12px; margin-top: 20px; }
-:global(.jf-blueprint .content) .vr-refine-in { font-size: 13.5px; min-width: 0; }
-:global(.jf-blueprint .content) .vr-review { border: 1.5px dashed var(--blueprint); border-radius: var(--radius);
-  padding: 16px 18px; margin-top: 20px; }
-:global(.jf-blueprint .content) .vr-review-h { font-size: 12.5px; font-weight: 800; margin-bottom: 10px; }
-:global(.jf-blueprint .content) .vr-diff { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600;
-  line-height: 1.8; margin-bottom: 14px; overflow-wrap: anywhere; }
-:global(.jf-blueprint .content) .vr-diff .add { color: var(--success); }
-:global(.jf-blueprint .content) .vr-diff .tot { color: var(--blueprint); }
-:global(.jf-blueprint .content) .vr-review-a { display: flex; gap: 10px; }
+/* A wrong estimate can still be a big number, and a big number must not push
+   its own card open: the figure shrinks with the space it has (down to 18px),
+   is allowed to break, and is right-aligned so the last digits are the ones
+   against the card edge. */
+:global(.jf-blueprint .content) .vr-total b { flex: 1 1 auto; min-width: 0; text-align: right;
+  font-size: clamp(18px, 4.2vw, 30px); font-weight: 900; letter-spacing: -.01em;
+  color: var(--blueprint); font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere; word-break: break-word; }
+/* Section subtotals and line amounts are the same hazard, one order smaller. */
+:global(.jf-blueprint .content) .vr-sec-total,
+:global(.jf-blueprint .content) .vr-row-t { min-width: 0; overflow-wrap: anywhere; text-align: right; }
 :global(.jf-blueprint .content) .vr-bar { display: flex; align-items: center; gap: 14px; padding: 16px 28px;
   border-top: var(--border-thin); background: var(--paper-deep, rgba(10,10,10,.03)); }
 :global(.jf-blueprint .content) .vr-bar-r { display: flex; gap: 10px; margin-left: auto; }
@@ -312,8 +320,8 @@
 @media (max-width: 1080px) {
   :global(.jf-blueprint .content) .vt { grid-template-columns: 1fr; min-height: 0; }
   :global(.jf-blueprint .content) .vt-screen { min-height: 340px; }
-  :global(.jf-blueprint .content) .vr-grid { grid-template-columns: 1fr; }
-  :global(.jf-blueprint .content) .vr-left { border-right: none; border-bottom: 1.5px solid rgba(10,10,10,.14); }
+  :global(.jf-blueprint .content) .vr-body { padding: 18px 16px; }
+  :global(.jf-blueprint .content) .vr-facts { gap: 18px; margin-top: 16px; }
 }
 
 @media (max-width: 1000px) {
@@ -387,9 +395,6 @@
    site notes, assumptions. */
 :global(.jf-blueprint .content) .vr-scope { font-size: 13.5px; line-height: 1.55; color: var(--ink-soft);
   overflow-wrap: anywhere; }
-:global(.jf-blueprint .content) .vr-frame-img img { position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; display: block; }
-:global(.jf-blueprint .content) .vr-frame-img { overflow: hidden; }
 :global(.jf-blueprint .content) .vr-m b { overflow-wrap: anywhere; }
 :global(.jf-blueprint .content) .vr-m-tag { display: block; margin-top: 6px; font-style: normal;
   font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .12em;
@@ -417,19 +422,6 @@
 :global(.jf-blueprint .content) .vr-line.is-upd b { color: var(--blueprint); }
 
 /* The review gate's three row kinds and the refine's caveats. */
-:global(.jf-blueprint .content) .vr-diff > div { overflow-wrap: anywhere; }
-:global(.jf-blueprint .content) .vr-diff .del { color: var(--danger); }
-:global(.jf-blueprint .content) .vr-diff .chg { color: var(--ink-soft); }
-:global(.jf-blueprint .content) .vr-warn { display: grid; gap: 4px; margin: -6px 0 14px; padding-left: 0;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .04em;
-  color: var(--warning-dark); }
-:global(.jf-blueprint .content) .vr-warn li { overflow-wrap: anywhere; }
-:global(.jf-blueprint .content) .vr-refine-in { flex: 1; height: 40px; padding: 0 12px;
-  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #ffffff;
-  font-family: var(--font); font-weight: 600; color: var(--ink); }
-:global(.jf-blueprint .content) .vr-refine-in:focus { outline: none; border-color: var(--blueprint); }
-:global(.jf-blueprint .content) .vr-refine-in::placeholder { color: var(--muted-faint); font-weight: 500; }
-:global(.jf-blueprint .content) .vr-refine-in[disabled] { opacity: .6; }
 
 /* ============================================================
    THE READING'S QUESTIONS — the Smart Proposal's intake dialog, value
@@ -602,8 +594,6 @@
 :global(.jf-blueprint .content) .vr-add .ic { width: 13px; height: 13px; }
 /* Each section's change box sits tighter to its own rows than the page-foot one
    did — it belongs to the section above it, not to the card. */
-:global(.jf-blueprint .content) .vr-sec .vr-refine { margin-top: 14px; }
-:global(.jf-blueprint .content) .vr-sec .vr-review { margin-top: 14px; }
 
 /* ============================================================
    MATERIALS REQUEST — the shoppable list, full width under the two

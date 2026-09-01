@@ -154,8 +154,6 @@
   border: var(--border); border-radius: var(--radius); background: var(--success-soft);
   box-shadow: 3px 3px 0 var(--shadow);
   font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; }
-.bp :global(.pill i) { width: 6px; height: 6px; border-radius: 50%; background: var(--success);
-  animation: blink 1.9s infinite; }
 .bp :global(.h1) { margin-top: 22px; font-size: clamp(31px, 5.6vw, 78px); font-weight: 900;
   letter-spacing: -0.05em; line-height: 0.98; text-transform: uppercase; text-wrap: balance; }
 .bp :global(.h1 .inv) { display: inline-block; padding: 0 13px 3px; border-radius: var(--radius);
@@ -215,12 +213,15 @@
   background: transparent; outline: none; padding: 18px 20px 6px;
   font-size: 16px; line-height: 1.6; color: var(--ink); }
 .bp :global(.desc::placeholder) { color: var(--muted-faint); }
-.bp :global(.guess) { display: inline-flex; align-items: center; gap: 9px; margin: 0 20px 4px;
+/* One focus ring for the field and its category chip (see the wizard). */
+.bp :global(.desc-wrap) { display: block; padding-bottom: 2px; }
+.bp :global(.desc-wrap:focus-within) { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+.bp :global(.desc:focus-visible) { outline: none; }
+.bp :global(.guess) { display: inline-flex; align-items: center; gap: 9px; margin: 10px 20px 6px;
   padding: 6px 12px; border: 1.5px solid var(--blueprint); border-radius: var(--radius);
   background: rgba(24,84,160,.06); color: var(--blueprint);
   font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
   animation: slidein .3s var(--ease-out); }
-.bp :global(.guess i) { width: 6px; height: 6px; background: var(--success); }
 .bp :global(.ups) { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 20px 2px; }
 .bp :global(.up) { position: relative; display: inline-flex; align-items: center; gap: 7px; overflow: hidden;
   padding: 6px 10px; border: 1.5px solid var(--hair); border-radius: var(--radius);
@@ -679,7 +680,11 @@
   .bp :global(.win-step) { font-size: 10px; letter-spacing: 0.14em; }
   .bp :global(.tick) { width: 12px; }
   .bp :global(.tick.now) { width: 22px; }
-  .bp :global(.guess) { margin-left: 16px; margin-right: 16px; }
+  /* One focus ring for the field and its category chip (see the wizard). */
+.bp :global(.desc-wrap) { display: block; padding-bottom: 2px; }
+.bp :global(.desc-wrap:focus-within) { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+.bp :global(.desc:focus-visible) { outline: none; }
+.bp :global(.guess) { margin-left: 16px; margin-right: 16px; }
   .bp :global(.ups) { padding-left: 16px; padding-right: 16px; }
   .bp :global(.desc) { min-height: 148px; padding: 15px 16px 4px; }
   .bp :global(.tools) { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 16px; }

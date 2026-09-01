@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/Button";
 import { useUiStore } from "@/stores/useUiStore";
 import { OrgSwitcher, type OrgMembershipItem } from "@/components/layout/OrgSwitcher";
 import { recentNotifications, type NotificationItem } from "@/actions/notifications";
-import { SupportLauncher } from "@/components/v3/support-widget/support-widget";
 import { relative } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -121,10 +120,6 @@ export function Topbar({ user, memberships = [], isWorker = false, limited = fal
             It is sized by the base 44px touch classes here and relaxes to the
             bar's desk size at lg, like the bell and the avatar beside it; the
             widget's own stylesheet keeps a 44px hit floor under it either way. */}
-        <SupportLauncher
-          className="shrink-0 h-11 w-11 lg:h-9 lg:w-9 inline-flex items-center justify-center rounded-[var(--r-md)] hover:bg-black/[0.04] text-[color:var(--ink-soft)] focus-ring"
-          iconClassName="h-4 w-4"
-        />
         <AccountMenu user={user} />
       </div>
     </header>

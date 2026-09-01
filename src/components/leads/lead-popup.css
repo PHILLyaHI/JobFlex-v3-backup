@@ -1,0 +1,180 @@
+/* ============================================================
+   LEAD POP-UP — the arrival notice for a platform lead.
+   Mounted app-wide by the dashboard layouts (owners only).
+
+   WHY IT HAS A STYLESHEET OF ITS OWN
+   The card was written in the sage utility system: a coloured
+   gradient header, a pill for the trade, 12px slate body text and
+   a rounded ring — none of which is the house language any more.
+   It also could not borrow the blueprint page styles, because
+   those live in CSS modules that only the desk shell imports and
+   this card is mounted in four different shells. So the same
+   arrangement the support widget uses: one plain stylesheet, one
+   class prefix, tokens read from whichever shell it lands in.
+
+   THE LANGUAGE, in one line each:
+   · 2px ink frame, hard offset shadow, 2px radius — no blur, no
+     gradient, no colour field behind text.
+   · The mono layer carries the label ("New lead"), the ink layer
+     carries the fact (the name), the blue carries the one number
+     that matters (the trade).
+   · Two actions, one primary. Nothing else on the card is a
+     control except the close.
+   ============================================================ */
+
+.jflp {
+  position: fixed;
+  z-index: 70; /* over the support plate (60), under its composer (95) */
+  right: 22px;
+  /* ABOVE the support plate, not on it: both stand in this corner (the plate is
+     48px tall at 22px), and a notice that lands on top of the only control it
+     offers is worse than no notice. */
+  bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+  width: min(360px, calc(100vw - 32px));
+  font-family: var(--font, var(--font-sans));
+  color: var(--ink, #101010);
+}
+
+.jflp-card.jflp-card {
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb);
+  box-shadow: 5px 5px 0 var(--ink, #101010);
+  overflow: hidden;
+}
+
+/* HEAD — a mono kicker and the close, on the paper. The old header
+   was a saturated block with white text on it, which is the one
+   thing this system never does. */
+.jflp-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 12px 9px 14px;
+  border-bottom: 1.5px solid var(--hair-soft, rgba(16, 16, 16, 0.12));
+}
+.jflp-kick {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--blueprint, #1854a0);
+}
+.jflp-clock {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted, #6b6b6b);
+  white-space: nowrap;
+}
+.jflp-x.jflp-x {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--muted, #6b6b6b);
+  cursor: pointer;
+}
+.jflp-x.jflp-x:hover { color: var(--ink, #101010); }
+.jflp-x.jflp-x svg { width: 13px; height: 13px; }
+
+/* BODY */
+.jflp-body { padding: 12px 14px 14px; }
+.jflp-name {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.jflp-meta {
+  margin-top: 5px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted, #6b6b6b);
+}
+.jflp-meta b {
+  color: #1854a0;
+  font-weight: 700;
+}
+.jflp-desc {
+  margin-top: 9px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft, #2a2a2a);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ACTIONS — one primary, one quiet, and a link out. */
+.jflp-act {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.jflp-btn.jflp-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink, #101010);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s ease;
+}
+.jflp-btn.jflp-btn svg { width: 14px; height: 14px; }
+.jflp-btn.jflp-btn:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink, #101010); }
+.jflp-btn.jflp-btn:active:not(:disabled) { transform: none; box-shadow: none; }
+.jflp-btn.jflp-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.jflp-btn.jflp-primary.jflp-primary {
+  flex: 1;
+  background: #1854a0;
+  border-color: var(--ink, #101010);
+  color: #fff;
+}
+.jflp-btn.jflp-ghost.jflp-ghost { border-color: var(--hair, rgba(16, 16, 16, 0.22)); color: var(--muted, #6b6b6b); }
+.jflp-btn.jflp-ghost.jflp-ghost:hover { border-color: var(--ink, #101010); color: var(--ink, #101010); }
+.jflp-more {
+  margin-top: 10px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-light, #8a8a8a);
+}
+
+/* Handheld: full width above the tab bar, clear of the support plate. */
+@media (max-width: 768px) {
+  .jflp {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    /* Tab bar (≈84px) + the plate above it (46px) + a gap. */
+    bottom: calc(142px + env(safe-area-inset-bottom, 0px));
+  }
+}

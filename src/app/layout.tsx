@@ -4,6 +4,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastHost } from "@/components/ui/Toast";
 import { AttributionCapture } from "@/components/attribution-capture";
+import { PostHogCapture } from "@/components/providers/posthog-capture";
 
 /* Variable fonts — blueprint system needs Inter up to 900 (H1 caps, KPI
    numerals) and JetBrains Mono 500–600 for the drafting-annotation layer. */
@@ -43,6 +44,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             ?promo/?ref capture must live here to cover them all. Renders null. */}
         <Suspense fallback={null}>
           <AttributionCapture />
+        </Suspense>
+        {/* Sends the $pageview events that /admin/traffic reads back. Renders
+            null and no-ops entirely when NEXT_PUBLIC_POSTHOG_KEY is unset. */}
+        <Suspense fallback={null}>
+          <PostHogCapture />
         </Suspense>
         <ToastHost />
       </body>

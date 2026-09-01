@@ -63,6 +63,10 @@ const leadProfileInput = z.object({
   address: z.string().trim().max(240).nullable().optional(),
   phone: z.string().trim().max(40).nullable().optional(),
   tradeTypes: z.array(z.enum(TRADE_TYPES)).max(TRADE_TYPES.length).optional(),
+  // Free text under the "Other" chip. It has its own column because
+  // tradeTypesJson is validated against the closed TRADE_TYPES vocabulary and
+  // drops anything else on read (same rule the register form follows).
+  otherTrade: z.string().trim().max(80).nullable().optional(),
   leadOffersEnabled: z.boolean().optional(),
 });
 
@@ -90,6 +94,11 @@ export async function updateLeadProfile(raw: unknown) {
       ...(data.address !== undefined && { address: data.address }),
       ...(data.phone !== undefined && { phone: data.phone }),
       ...(data.tradeTypes !== undefined && { tradeTypesJson: JSON.stringify(data.tradeTypes) }),
+      // Dropping "Other" drops the text with it — a named trade nobody can see
+      // is a value that quietly keeps matching against a chip that is off.
+      ...(data.tradeTypes !== undefined &&
+        !data.tradeTypes.includes("Other") && { otherTrade: null }),
+      ...(data.otherTrade !== undefined && { otherTrade: data.otherTrade || null }),
       ...(data.leadOffersEnabled !== undefined && { leadOffersEnabled: data.leadOffersEnabled }),
       ...(geoData ?? {}),
     },

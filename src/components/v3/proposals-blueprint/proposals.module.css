@@ -415,7 +415,10 @@
 .bp :global(.content) {
   position: relative;
   z-index: 1;
-  padding: 40px 96px 80px;
+  /* The bottom is 80px of layout + 76px of clearance for the floating support
+     plate (support-widget.css). Without the second number the last card on
+     every page ends under the plate and cannot be scrolled out from under it. */
+  padding: 40px 96px 156px;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -986,7 +989,7 @@
   .bp :global(.sb-overlay.on) { opacity: 1; pointer-events: auto; }
   .bp :global(.nav-burger) { display: inline-flex; }
   /* Compact mobile density */
-  .bp :global(.content) { padding: 18px 14px 44px; }
+  .bp :global(.content) { padding: 18px 14px 132px; }
   .bp :global(.topbar) { padding: 0 12px; gap: 10px; }
   .bp :global(.search) { max-width: none; flex: 1; }
   .bp :global(.page-head) { flex-wrap: wrap; gap: 14px; }

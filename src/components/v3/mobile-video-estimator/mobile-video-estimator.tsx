@@ -83,7 +83,6 @@ import {
   fmtClock,
 } from "@/components/v3/video-estimator-blueprint/video-ingest";
 import {
-  confidenceTone,
   money,
   useVideoEstimator,
 } from "@/components/v3/video-estimator-blueprint/use-video-estimator";
@@ -269,10 +268,12 @@ export function MobileVideoEstimator({
     if (el.classList?.contains("mve-pressed")) el.classList.remove("mve-pressed");
   }, []);
 
-  const conf = ve.analysis ? ve.analysis.confidence : null;
   const audioNote =
     ve.audioState === "none"
-      ? " · no audio"
+      // "No audio" was a lie half the time: the state is also what a track with
+      // no SPEECH in it comes back as — music, road noise, a hallucination the
+      // route dropped. What the reading actually went without is the words.
+      ? " · no speech heard"
       : ve.audioState === "failed"
         ? " · audio not transcribed"
         : ve.audioState === "partial"
@@ -310,8 +311,6 @@ export function MobileVideoEstimator({
     rows: typeof ve.matLines,
     sectionTotal: number,
   ) => {
-    const gateHere = ve.pending !== null && ve.pending.scope === group;
-    const anyGate = ve.pending !== null;
     const low = heading.toLowerCase();
     return (
       <div className="mve-sec" key={group}>
@@ -390,76 +389,6 @@ export function MobileVideoEstimator({
           Add {low} line
         </button>
 
-        {/* This section's own change box. Hidden while ANY gate is open, so two
-            sections can never carry pending diffs at once. */}
-        <div className="mve-refine" hidden={anyGate}>
-          <input
-            className="mve-refine-in"
-            type="text"
-            placeholder={`Change the ${low}…`}
-            value={ve.refineText}
-            onChange={(e) => ve.setRefineText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && ve.canRefine) void ve.applyRefine(group);
-            }}
-            disabled={ve.refineBusy}
-          />
-          <button
-            className="mve-btn mve-btn-ghost mve-btn-block"
-            type="button"
-            disabled={!ve.canRefine}
-            onClick={() => void ve.applyRefine(group)}
-          >
-            {ve.refineBusy ? "Applying…" : "Apply"}
-          </button>
-        </div>
-
-        {/* THE REVIEW GATE — nothing is applied until Confirm, and it belongs
-            to the section that asked. */}
-        <div className="mve-review" hidden={!gateHere}>
-          <div className="mve-review-h">Review &mdash; nothing applies until you confirm</div>
-          <div className="mve-diff">
-            {ve.pending?.rows.map((r, i) => (
-              <div
-                className={
-                  r.kind === "Added" ? "mve-add" : r.kind === "Removed" ? "mve-del" : "mve-chg"
-                }
-                key={i}
-              >
-                {r.kind === "Added" ? "+" : r.kind === "Removed" ? "−" : "~"} {r.name} &middot;{" "}
-                {r.detail}
-              </div>
-            ))}
-            {ve.pending ? (
-              <div className="mve-tot">
-                Total {money(ve.pending.totalBefore)} &rarr; {money(ve.pending.totalAfter)}
-              </div>
-            ) : null}
-          </div>
-          {ve.pending && ve.pending.warnings.length > 0 ? (
-            <ul className="mve-warn">
-              {ve.pending.warnings.map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
-          ) : null}
-          <div className="mve-review-a">
-            <button
-              className="mve-btn mve-btn-primary mve-btn-block"
-              type="button"
-              onClick={ve.confirmRefine}
-            >
-              Confirm
-            </button>
-            <button
-              className="mve-btn mve-btn-ghost mve-btn-block"
-              type="button"
-              onClick={ve.discardRefine}
-            >
-              Discard
-            </button>
-          </div>
-        </div>
       </div>
     );
   };
@@ -631,23 +560,24 @@ export function MobileVideoEstimator({
           {/* ============ RESULT ============ */}
           <div className="mve-result" ref={resultRef} hidden={ve.step !== "result"}>
             <section className="mve-card">
+              {/* No "Video estimate · ready" kicker and no confidence badge
+                  (owner's call, 2026-08-28): the sheet being on screen IS the
+                  ready state, and a percentage on a machine's own work reads as
+                  a score for the estimate rather than what it is. */}
               <div className="mve-mast">
                 <div className="mve-mast-min">
-                  <div className="mve-mast-k">Video estimate &middot; ready</div>
                   <h2 className="mve-mast-t">{ve.title}</h2>
                   <div className="mve-mast-s">
                     {ve.locationUsed || ve.addr.trim() || "Location not stated"} &middot; from{" "}
                     {ve.probe ? fmtClock(ve.probe.duration) : "—"} walkthrough{audioNote}
                   </div>
                 </div>
-                {conf !== null ? (
-                  <span className={`mve-conf mve-conf--${confidenceTone(conf)}`}>
-                    Confidence {conf}%
-                  </span>
-                ) : null}
               </div>
 
-              {/* The desktop's left column: the reading. */}
+              {/* SCOPE — what the walkthrough said. The FRAME STRIP is gone
+                  from the view (extraction still runs and still feeds the
+                  model): it was a picture of the machine's working, and on a
+                  phone it pushed the actual reading a screen and a half down. */}
               <div className="mve-sec">
                 {ve.scope ? (
                   <>
@@ -656,23 +586,7 @@ export function MobileVideoEstimator({
                   </>
                 ) : null}
 
-                <div className={`mve-sec-h${ve.scope ? " mve-sec-h--gap" : ""}`}>
-                  Frames we read
-                </div>
-                <div className="mve-frames">
-                  {ve.framesRead.map((f) => (
-                    <div className="mve-frame" key={f.frame.t}>
-                      <div className="mve-frame-img">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={f.frame.dataUrl} alt={f.label} />
-                        <span className="mve-frame-tc">{fmtClock(f.frame.t)}</span>
-                      </div>
-                      <div className="mve-frame-l">{f.label}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mve-sec-h mve-sec-h--gap">Measured from video</div>
+                <div className={`mve-sec-h${ve.scope ? " mve-sec-h--gap" : ""}`}>Measured from video</div>
                 {ve.analysis && ve.analysis.measurements.length > 0 ? (
                   <div className="mve-meas">
                     {ve.analysis.measurements.map((m, i) => (
@@ -695,33 +609,35 @@ export function MobileVideoEstimator({
                   </div>
                 )}
 
+                <div className="mve-sec-h mve-sec-h--gap">Site notes</div>
                 {ve.analysis && ve.analysis.observations.length > 0 ? (
-                  <>
-                    <div className="mve-sec-h mve-sec-h--gap">Site notes</div>
-                    <ul className="mve-notes">
-                      {ve.analysis.observations.map((o, i) => (
-                        <li key={i}>{o}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
+                  <ul className="mve-notes">
+                    {ve.analysis.observations.map((o, i) => (
+                      <li key={i}>{o}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="mve-none">Nothing noted on site.</div>
+                )}
 
+                <div className="mve-sec-h mve-sec-h--gap">Assumptions</div>
                 {ve.assumptions.length > 0 ? (
-                  <>
-                    <div className="mve-sec-h mve-sec-h--gap">Assumptions</div>
-                    <ul className="mve-notes mve-notes--assume">
-                      {ve.assumptions.map((a, i) => (
-                        <li key={i}>{a}</li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
+                  <ul className="mve-notes mve-notes--assume">
+                    {ve.assumptions.map((a, i) => (
+                      <li key={i}>{a}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="mve-none">None taken.</div>
+                )}
               </div>
 
-              {/* The desktop's right column: the ledger, now SPLIT — Materials
-                  and Labor are two sections, each with its own total, its own
-                  editable rows, its own Add, its own change box and its own
-                  review gate. */}
+            </section>
+
+            {/* ── TOTALS, its own card. Materials and Labor are two sections
+                inside it, each with its own subtotal and editable rows; the
+                grand total closes the card. ── */}
+            <section className="mve-card">
               {ledger("Materials", "materials", ve.matLines, ve.totals.materials)}
               {ledger("Labor", "labor", ve.labLines, ve.totals.labor)}
 
@@ -738,7 +654,10 @@ export function MobileVideoEstimator({
                 </div>
               </div>
 
-              {/* MATERIALS REQUEST — the Smart Proposal's shoppable list, on
+            </section>
+
+            {/* MATERIALS REQUEST — its own card too.
+                The Smart Proposal's shoppable list, on
                   this page too. DERIVED from the ledger rather than mirrored
                   from it: editing a quantity above moves its buy quantity here
                   and deleting a line removes its row, so there is no second
@@ -749,6 +668,7 @@ export function MobileVideoEstimator({
                   the name and its meta, the two figures on their own baseline
                   under them, and the buy link as a full-width ≥44px control
                   rather than a 34px icon square. */}
+            <section className="mve-card">
               <div className="mve-sec mve-req">
                 <div className="mve-req-head">
                   <div className="mve-sec-h">Materials request</div>

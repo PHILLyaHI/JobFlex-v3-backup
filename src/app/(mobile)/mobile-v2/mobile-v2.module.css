@@ -191,11 +191,13 @@
    92px step, which quietly clipped ~1px off each side of the mark. */
 .tbarMarkBox {
   position: relative;
-  /* Top-anchored, not centred: --mark-top IS where the ink's top edge sits,
-     measured from the bar's top. The -0.5px is the hair of clearance the box
-     carries so antialiasing is not clipped. */
-  align-self: flex-start;
-  margin-top: calc(var(--mark-top) - 0.5px);
+  /* CENTRED, not top-anchored — same correction as the shared bar's own box in
+     mobile-shell/mobile-nav.module.css, and it has to be made in both places
+     because this surface draws its own copy of the topbar. --mark-top pinned
+     the ink's top edge at a flat 9px, which put ~50.3px of ink 8.5px down a
+     62px bar: ~2.7px BELOW the axis the wordmark beside it is centred on, and
+     that is the offset visible in the bar. */
+  align-self: center;
   width: calc(var(--mark-size) * 0.3462 + 1px);
   height: calc(var(--mark-size) * 0.4253 + 1px);
   overflow: hidden;
@@ -1984,3 +1986,11 @@
     width: 58px;
   }
 }
+
+/* ── Room for the floating support plate ──────────────────────
+   The Help launcher is a fixed pill in the bottom-right corner
+   again (support-widget.css, owner's call 2026-08-27). It floats
+   just above this fleet's tab bar, so the scroller reserves the
+   strip it stands in — otherwise the last row of every list ends
+   underneath it with no way to scroll clear. */
+.scroll { padding-bottom: 60px; }

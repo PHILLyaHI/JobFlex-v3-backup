@@ -245,9 +245,23 @@ export function initCompanyContent(
         address: orNull(val('[data-l="addr"]')),
         phone: orNull(val('[data-l="phone"]')),
         tradeTypes: co.trades,
+        // Only meaningful while the "Other" chip is on; the server nulls it
+        // otherwise, so the two can never disagree.
+        otherTrade: co.trades.indexOf("Other") === -1 ? null : orNull(val('[data-l="otherTrade"]')),
         leadOffersEnabled: co.leadsOn,
       }),
     );
+  }
+
+  /** Show / hide the "name the trade" field with the Other chip. Focused when
+   *  the chip turns it on: picking Other IS the question, so the caret belongs
+   *  in the answer. */
+  function syncOtherTrade(focus?: boolean) {
+    const wrap = $("#otherTradeWrap");
+    if (!wrap) return;
+    const on = co.trades.indexOf("Other") !== -1;
+    wrap.classList.toggle("is-hidden", !on);
+    if (on && focus) ($("#otherTradeIn") as HTMLInputElement | null)?.focus();
   }
 
   function saveLanding() {
@@ -353,6 +367,7 @@ export function initCompanyContent(
         );
       }).join("");
     }
+    syncOtherTrade();
     renderLeadState();
   }
   /** The matching badge only — patched on its own when a chip or the toggle
@@ -541,7 +556,8 @@ export function initCompanyContent(
       // the focus ring off the control they just used.
       tr.classList.toggle("on", i === -1);
       renderLeadState();
-      autosave("saveLead", () => updateLeadProfile({ tradeTypes: co.trades }), 0);
+      syncOtherTrade(trade === "Other" && i === -1);
+      saveLead();
       return;
     }
     if (t.closest("#leadToggle")) {

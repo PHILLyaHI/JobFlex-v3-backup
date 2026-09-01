@@ -45,7 +45,10 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-v2.module.css";
-import { useNavIdentity, useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import { useNavIdentity, useNavLocked, useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import { canOpen } from "@/components/v3/blueprint-shell/nav-map";
+import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
+import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
 import {
   LEAD_STAGES,
   navSectionsFor,
@@ -67,7 +70,6 @@ import {
   type DashboardData,
 } from "@/components/v3/dashboard-blueprint/blueprint-data";
 import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
-import { SupportLauncher } from "@/components/v3/support-widget/support-widget";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -89,7 +91,10 @@ const R = {
   jobs: "/dashboard/jobs",
   leads: "/dashboard/leads",
   company: "/dashboard/company",
-  newProposal: "/dashboard/proposals/new",
+  // The blueprint builder, not the classic editor: /dashboard/proposals/new is
+  // the old design, and the handheld route map sends this one through the
+  // mobile manual builder (responsive-dashboard-shell).
+  newProposal: "/dashboard/manual-blueprint",
   preferences: "/dashboard/settings/preferences",
   account: "/dashboard/settings/account",
   login: "/auth/login",
@@ -779,12 +784,19 @@ function DashboardView({ data }: { data: DashboardData }) {
   // the provider the blueprint layout mounts — `data.viewer.role` beside it is
   // already humanised for display and cannot be matched against "INSTALLER".
   const navRole = useNavRole();
-  const navSections = navSectionsFor(navRole);
+  // Custom-plan page locks, same provider; empty on every other plan.
+  const navLocked = useNavLocked();
+  const navSections = navSectionsFor(navRole, navLocked);
   /* The composer this page's Help button opens is mounted by the responsive
      shell, which only wraps the authenticated route. On the standalone
      /mobile-v2 review URL there is no provider and no session, so the button
      would dispatch at nothing — it is not drawn there. */
   const signedIn = Boolean(useNavIdentity().name);
+  // Every engine the picker offers sits outside a field worker's allow-list, so
+  // the button is only drawn for roles that can open one (same test the other
+  // bars use).
+  const estimatorRole = useNavIdentity().role;
+  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(estimatorRole, href, navLocked));
   const heroRevenue = data.kpiRaw.revenue;
   const pipeline = compactMoney(data.kpiRaw.pipeline);
 
@@ -831,14 +843,20 @@ function DashboardView({ data }: { data: DashboardData }) {
             no handler. Same component both places now. `.bellDot` already
             exists in this module; it was written for the bell that was never
             built here. */}
-        {/* Help — the launcher for the support composer the responsive shell
-            mounts alongside this page. It sits in the bar rather than floating
-            in the corner because this screen's error toast is pinned bottom-
-            right above the tab bar and has no timeout: a corner button covered
-            its only dismiss control. `.tbarBell` is just `margin-left: auto`,
-            so it moves to whichever control opens the right-hand cluster. */}
-        {signedIn && (
-          <SupportLauncher className={`${styles.tbarBtn} ${styles.tbarBell}`} iconClassName={styles.ic} />
+        {/* Help moved OUT of this bar on 2026-08-27 (owner's call): the
+            support launcher is the floating plate in the bottom-right corner
+            again, mounted by the widget itself. New Estimate takes the slot it
+            left — the same control the other handheld bar carries, opening the
+            same picker dialog. */}
+        {canEstimate && (
+          <button
+            className={styles.tbarBtn}
+            type="button"
+            aria-label="New estimate"
+            onClick={() => document.dispatchEvent(new CustomEvent("jf:estimator-picker"))}
+          >
+            <Icon id="i-plus" />
+          </button>
         )}
         <NotificationBell
           buttonClassName={signedIn ? styles.tbarBtn : `${styles.tbarBtn} ${styles.tbarBell}`}
@@ -846,6 +864,11 @@ function DashboardView({ data }: { data: DashboardData }) {
           iconClassName={styles.ic}
         />
       </header>
+
+      {/* The dialog the bar's New Estimate button opens. Every other handheld
+          surface gets it from <MobileNav />; this page draws its own bar, so it
+          mounts its own copy. */}
+      <EstimatorPicker />
 
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>

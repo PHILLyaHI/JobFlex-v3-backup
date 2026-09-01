@@ -2,12 +2,31 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Zap, Check, X, MapPin, Timer, ArrowUpRight } from "lucide-react";
+import { Check, X } from "lucide-react";
 import Link from "next/link";
 import { toast } from "@/components/ui/Toast";
-import { pendingLeadOffers, acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
+import "./lead-popup.css";
+import {
+  pendingLeadOffers,
+  pendingRoutedLeads,
+  acceptLeadOffer,
+  declineLeadOffer,
+  declineRoutedLead,
+} from "@/actions/leadOffers";
+import { claimLead } from "@/actions/leads";
 
+/**
+ * A platform lead can reach a contractor two ways, and both have to announce
+ * themselves here:
+ *
+ *   "offer"  — the cascade picked this shop and is waiting 24h for an answer.
+ *              Accepting materialises the lead; passing sends it onward.
+ *   "routed" — an admin routed it by hand. The Lead row already exists in the
+ *              Incoming tab with status ROUTED; accepting claims it into the
+ *              pipeline, passing marks it lost. Nothing is on a clock.
+ */
 interface Offer {
+  kind: "offer" | "routed";
   id: string;
   name: string;
   projectType: string | null;
@@ -17,7 +36,8 @@ interface Offer {
   zip: string | null;
   description: string | null;
   attempt: number;
-  expiresAt: string;
+  /** Offers only — a routed lead has no deadline. */
+  expiresAt: string | null;
 }
 
 const POLL_MS = 45_000;
@@ -38,7 +58,27 @@ export function LeadOfferPopup() {
 
   const load = React.useCallback(async () => {
     try {
-      const list = await pendingLeadOffers();
+      // Both feeds, one queue. Live offers come first — they expire.
+      const [live, routed] = await Promise.all([
+        pendingLeadOffers().catch(() => []),
+        pendingRoutedLeads().catch(() => []),
+      ]);
+      const list: Offer[] = [
+        ...live.map((o) => ({ ...o, kind: "offer" as const })),
+        ...routed.map((l) => ({
+          kind: "routed" as const,
+          id: l.id,
+          name: l.name,
+          projectType: l.projectType,
+          detectedTrade: l.detectedTrade,
+          city: l.city,
+          state: l.state,
+          zip: l.zip,
+          description: l.description,
+          attempt: 0,
+          expiresAt: null,
+        })),
+      ];
       setOffers(list.filter((o) => !dismissed.current.has(o.id)));
     } catch {
       // Role not allowed / signed out mid-poll — stay silent.
@@ -68,7 +108,10 @@ export function LeadOfferPopup() {
     if (resolving) return;
     setResolving("accept");
     try {
-      await acceptLeadOffer(offer.id);
+      // A routed lead is already a Lead row: accepting it is a claim, not an
+      // offer response.
+      if (offer.kind === "routed") await claimLead(offer.id);
+      else await acceptLeadOffer(offer.id);
       toast.success("Lead accepted", `${offer.name} is now in your pipeline.`);
       setOffers((os) => os.filter((o) => o.id !== offer.id));
       router.refresh();
@@ -84,8 +127,19 @@ export function LeadOfferPopup() {
     if (resolving) return;
     setResolving("decline");
     try {
-      await declineLeadOffer(offer.id);
-      toast.info("Lead passed", "It's on its way to the next shop.");
+      if (offer.kind === "routed") {
+        // Passing un-matches the lead and sends it to the next-best shop —
+        // marking the row LOST on its own left the Lead Center reading
+        // "accepted" for a shop that had just refused it.
+        const res = await declineRoutedLead(offer.id);
+        toast.info(
+          "Lead passed",
+          res.rerouted ? "It is on its way to the next shop." : "It is back with the platform team.",
+        );
+      } else {
+        await declineLeadOffer(offer.id);
+        toast.info("Lead passed", "It's on its way to the next shop.");
+      }
       setOffers((os) => os.filter((o) => o.id !== offer.id));
       router.refresh();
     } catch (err: unknown) {
@@ -97,106 +151,81 @@ export function LeadOfferPopup() {
   }
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom)+80px)] md:inset-x-auto md:right-6 md:bottom-6 md:justify-end md:px-0 md:pb-0">
-      <AnimatePresence mode="wait">
-        {current && (
-          <motion.div
-            key={current.id}
-            initial={{ opacity: 0, y: 28, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.98, transition: { duration: 0.18 } }}
-            transition={{ type: "spring", stiffness: 320, damping: 26 }}
-            className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-[var(--r-lg)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)] ring-1 ring-black/5"
-          >
-            {/* Bold, color-blocked header — the celebratory "you were picked" beat */}
-            <div className="relative flex items-center gap-2.5 bg-[color:var(--accent)] px-5 py-3 text-white">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/20">
-                <Zap className="h-4 w-4" />
+    <AnimatePresence mode="wait">
+      {current && (
+        <motion.div
+          key={current.id}
+          className="jflp"
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 12, transition: { duration: 0.14 } }}
+          transition={{ duration: 0.2, ease: [0.22, 0.61, 0.36, 1] }}
+          role="status"
+        >
+          <div className="jflp-card">
+            <div className="jflp-head">
+              {/* The label says what arrived; the name below says who. The old
+                  card put both in a coloured banner and the homeowner's name
+                  came third, under a pill. */}
+              <span className="jflp-kick">
+                {current.kind === "routed" ? "New lead · sent to you" : "New lead · reserved for you"}
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-semibold leading-tight tracking-[0.01em]">
-                  Elite lead routed to you
-                </div>
-                <div className="text-[11px] leading-tight text-white/85">
-                  You ranked as a top pro for this job
-                </div>
-              </div>
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10.5px] font-medium tabular">
-                <Timer className="h-3 w-3" />
-                <Countdown expiresAt={current.expiresAt} />
-              </span>
+              {current.expiresAt ? (
+                <span className="jflp-clock">
+                  <Countdown expiresAt={current.expiresAt} /> left
+                </span>
+              ) : null}
               <button
                 type="button"
+                className="jflp-x"
                 aria-label="Dismiss"
                 onClick={() => dismiss(current.id)}
-                className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-white/80 transition-colors hover:bg-white/15 hover:text-white"
               >
-                <X className="h-3.5 w-3.5" />
+                <X />
               </button>
             </div>
 
-            <div className="p-5">
-              <div className="flex items-center gap-2">
-                <span className="font-display text-[16px] leading-tight tracking-[-0.01em]">
-                  {current.projectType ?? current.detectedTrade ?? "New project"}
-                </span>
-                {current.detectedTrade && (
-                  <span className="rounded-full bg-[color:var(--accent-soft)] px-2 py-0.5 text-[10.5px] font-medium leading-none text-[color:var(--accent-ink)]">
-                    {current.detectedTrade}
-                  </span>
-                )}
+            <div className="jflp-body">
+              <div className="jflp-name">{current.name}</div>
+              <div className="jflp-meta">
+                <b>{current.detectedTrade ?? current.projectType ?? "Project"}</b>
+                {locationOf(current) ? ` · ${locationOf(current)}` : ""}
               </div>
-              {locationOf(current) && (
-                <div className="mt-1 inline-flex items-center gap-1 text-[11.5px] text-[color:var(--ink-muted)]">
-                  <MapPin className="h-3 w-3" />
-                  {locationOf(current)}
-                </div>
-              )}
-              {current.description && (
-                <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-[color:var(--ink-soft)]">
-                  {current.description}
-                </p>
-              )}
+              {current.description ? <p className="jflp-desc">{current.description}</p> : null}
 
-              <div className="mt-4 flex items-center gap-2">
+              <div className="jflp-act">
                 <button
                   type="button"
+                  className="jflp-btn jflp-primary"
                   disabled={resolving !== null}
                   onClick={() => accept(current)}
-                  className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-[var(--r-sm)] bg-[color:var(--accent)] px-3 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
-                  <Check className="h-3.5 w-3.5" />
-                  {resolving === "accept" ? "Accepting…" : "Accept lead"}
+                  <Check />
+                  {resolving === "accept" ? "Accepting…" : "Accept"}
                 </button>
                 <button
                   type="button"
+                  className="jflp-btn jflp-ghost"
                   disabled={resolving !== null}
                   onClick={() => decline(current)}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--r-sm)] px-3 text-[12.5px] font-medium text-[color:var(--ink-muted)] transition-colors hover:bg-black/[0.04] disabled:opacity-60"
                 >
-                  <X className="h-3.5 w-3.5" />
-                  Pass
+                  {resolving === "decline" ? "Passing…" : "Pass"}
                 </button>
-                <Link
-                  href={"/dashboard/leads" as never}
-                  onClick={() => dismiss(current.id)}
-                  className="ml-auto inline-flex items-center gap-0.5 text-[11px] text-[color:var(--ink-muted)] transition-colors hover:text-[color:var(--ink)]"
-                >
-                  View
-                  <ArrowUpRight className="h-3 w-3" />
+                <Link href={"/dashboard/leads" as never} className="jflp-btn jflp-ghost" onClick={() => dismiss(current.id)}>
+                  Open
                 </Link>
               </div>
 
-              {offers.length > 1 && (
-                <div className="mt-3 text-[10.5px] text-[color:var(--ink-faint)]">
-                  +{offers.length - 1} more lead{offers.length - 1 > 1 ? "s" : ""} waiting
+              {offers.length > 1 ? (
+                <div className="jflp-more">
+                  +{offers.length - 1} more waiting
                 </div>
-              )}
+              ) : null}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

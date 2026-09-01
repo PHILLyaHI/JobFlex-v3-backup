@@ -23,7 +23,7 @@
 // matching stacking-context escape hatch.
 
 import { claimLead, deleteLead, importLeads, updateLeadStatus } from "@/actions/leads";
-import { acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
+import { acceptLeadOffer, declineLeadOffer, declineRoutedLead } from "@/actions/leadOffers";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
@@ -274,9 +274,13 @@ export function initLeadsContent(
   // ================= RENDER =================
   function renderCounts() {
     const all = $('.ptab-count[data-count="all"]');
-    if (all) all.textContent = String(leadsData.length);
+    if (all) all.textContent = String(ownLeads().length);
+    const waiting = incoming().length + offersData.length;
     const inc = $('.ptab-count[data-count="incoming"]');
-    if (inc) inc.textContent = String(incoming().length + offersData.length);
+    if (inc) inc.textContent = String(waiting);
+    // Anything in this queue came from the Lead Center, so the tab says so in
+    // the system's blue rather than leaving a bare number to be read as noise.
+    $(".ptab-new")?.classList.toggle("is-hidden", waiting === 0);
   }
   function renderFilters() {
     const sources: string[] = [];
@@ -372,9 +376,18 @@ export function initLeadsContent(
    * this" under the search and the other two filters already in play — a count
    * taken from the whole dataset would lie the moment anything else is on.
    */
+  /** Everything except the platform's untriaged hand-offs — those belong to
+   *  the Incoming tab until the shop accepts or passes on them. Listing them
+   *  in "All leads" too showed a lead nobody had agreed to take as though it
+   *  were already the shop's. */
+  function ownLeads() {
+    return leadsData.filter(function (l) {
+      return !isPlatformIncoming(l);
+    });
+  }
   function filteredExceptStatus() {
     const q = lstate.query.trim().toLowerCase();
-    return leadsData.filter(function (l) {
+    return ownLeads().filter(function (l) {
       if (lstate.source && l.source !== lstate.source) return false;
       if (lstate.spec && l.spec !== lstate.spec) return false;
       if (!q) return true;
@@ -838,11 +851,26 @@ export function initLeadsContent(
     const lead = leadsData.find((l) => l.id === id);
     if (!lead || lstate.busy.has(id)) return;
     const from = lead.status;
+    // Read BEFORE the optimistic status change: `setStatus` writes "LOST" onto
+    // the same object, and the platform test is a test on status.
+    const wasPlatform = isPlatformIncoming(lead);
     lstate.busy.add(id);
     setStatus(id, kind === "accept" ? "CLAIMED" : "LOST");
     try {
       if (kind === "accept") await claimLead(id);
+      // A lead the platform routed here is not ours to simply lose: passing
+      // hands it back so it can go to the next-best shop. A lead the shop
+      // typed in itself is just lost.
+      else if (wasPlatform) await declineRoutedLead(id);
       else await updateLeadStatus(id, "LOST");
+      if (wasPlatform) {
+        // It belongs to another shop now, so it leaves this list rather than
+        // sitting in "All leads" as a lost row nobody here ever took.
+        const i = leadsData.findIndex((x) => x.id === id);
+        if (i !== -1) leadsData.splice(i, 1);
+        renderCounts();
+        renderTable();
+      }
       lstate.busy.delete(id);
     } catch (err) {
       lstate.busy.delete(id);

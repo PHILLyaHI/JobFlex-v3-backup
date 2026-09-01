@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { detectTrade } from "@/lib/ai/detectTrade";
 import { geocodeAddress } from "@/lib/maps";
 import { startCascade } from "@/lib/leadCenter/cascade";
+import { getRoutingMode, MANUAL_MODE_REASON } from "@/lib/leadCenter/routingMode";
+import { rateLimit } from "@/lib/rateLimit";
+import { suggestIntakeQuestions, type IntakeQuestion } from "@/lib/ai/homeownerQuestions";
 
 const homeownerSchema = z.object({
   name: z.string().min(1),
@@ -107,8 +110,17 @@ export async function submitHomeownerRequest(raw: unknown) {
     },
   });
 
+  // AUTO routes it now; MANUAL parks it in the Lead Center queue for an admin
+  // to place. The mode is a platform switch (lib/leadCenter/routingMode).
   try {
-    await startCascade(platformLead.id);
+    if ((await getRoutingMode()) === "MANUAL") {
+      await db.platformLead.update({
+        where: { id: platformLead.id },
+        data: { status: "MANUAL_QUEUE", queueReason: MANUAL_MODE_REASON },
+      });
+    } else {
+      await startCascade(platformLead.id);
+    }
   } catch (err) {
     console.warn("[homeowner] cascade failed — cron will re-drive:", err);
   }
@@ -131,4 +143,45 @@ export async function submitHomeownerRequest(raw: unknown) {
   }
 
   return { ok: true, platformLeadId: platformLead.id };
+}
+
+// ── Adaptive clarify questions ─────────────────────────────────────────────
+// The wizard's step-2 questions, written from what the homeowner actually
+// typed. Public, like the submission itself, so it carries its own brake: the
+// call costs an OpenAI request and nothing else, and a caller who exceeds the
+// window simply gets the wizard's static questions instead of an error.
+
+const questionsInput = z.object({
+  description: z.string().trim().min(1).max(2000),
+  category: z.string().trim().max(60).nullable().optional(),
+});
+
+/** Per-instance brake, same shape support tickets use. Generous: a homeowner
+ *  editing their description and re-refining is normal behaviour. */
+const QUESTIONS_PER_WINDOW = 12;
+const QUESTIONS_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * 3-5 follow-up questions for this description, or null when the wizard should
+ * keep its own static set (AI off, refused, rate-limited, thin brief).
+ * Never throws — a failure here must not stop a homeowner sending the request.
+ */
+export async function suggestHomeownerQuestions(
+  raw: unknown,
+): Promise<{ questions: IntakeQuestion[] | null }> {
+  let data: z.infer<typeof questionsInput>;
+  try {
+    data = questionsInput.parse(raw);
+  } catch {
+    return { questions: null };
+  }
+  // No session to key on — this runs before a homeowner has told us anything
+  // about themselves. One shared window per instance is the honest brake.
+  const gate = rateLimit("homeowner-questions", QUESTIONS_PER_WINDOW, QUESTIONS_WINDOW_MS);
+  if (!gate.ok) return { questions: null };
+  try {
+    return { questions: await suggestIntakeQuestions(data.description, data.category ?? null) };
+  } catch {
+    return { questions: null };
+  }
 }

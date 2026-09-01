@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { advanceCascade } from "@/lib/leadCenter/cascade";
+import { buildRanking } from "@/lib/leadCenter/matching";
+import { getRoutingMode } from "@/lib/leadCenter/routingMode";
 
 // Contractor responses to Lead Center offers. Guard parity with claimLead
 // (sales + managers). Every terminal transition is a CONDITIONAL updateMany on
@@ -181,4 +183,182 @@ export async function declineLeadOffer(offerId: string): Promise<{ ok: true }> {
 
   revalidatePath("/dashboard/leads");
   return { ok: true };
+}
+
+// ── Manually routed leads ──────────────────────────────────────────────────
+// A lead an admin routed by hand never becomes a LeadOffer: it is written
+// straight into the org's Incoming tab as a Lead with status ROUTED. The
+// pop-up polls this alongside the live offers so BOTH ways a platform lead can
+// arrive announce themselves — before this, a hand-routed lead sat in a tab
+// nobody had a reason to open.
+export async function pendingRoutedLeads(): Promise<
+  {
+    id: string;
+    name: string;
+    projectType: string | null;
+    detectedTrade: string | null;
+    city: string | null;
+    state: string | null;
+    zip: string | null;
+    description: string | null;
+    createdAt: string;
+  }[]
+> {
+  const ctx = await requireSalesOrManager();
+  const rows = await db.lead.findMany({
+    where: { organizationId: ctx.organizationId, source: "LEAD_CENTER", status: "ROUTED" },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+    select: {
+      id: true,
+      name: true,
+      projectType: true,
+      aiCategory: true,
+      city: true,
+      state: true,
+      zip: true,
+      description: true,
+      createdAt: true,
+    },
+  });
+  return rows.map((l) => ({
+    id: l.id,
+    name: l.name,
+    projectType: l.projectType,
+    detectedTrade: l.aiCategory,
+    city: l.city,
+    state: l.state,
+    zip: l.zip,
+    description: l.description,
+    createdAt: l.createdAt.toISOString(),
+  }));
+}
+
+/**
+ * Pass on a lead an admin routed by hand.
+ *
+ * Marking the org's Lead row LOST is not enough: the PlatformLead still reads
+ * MATCHED to that shop, so the Lead Center showed a declined lead as accepted
+ * and the homeowner's request quietly stopped moving. A decline has to undo the
+ * match AND send the lead onward:
+ *
+ *   1. the shop's Lead row goes LOST (out of their Incoming tab),
+ *   2. the pass is recorded as a DECLINED LeadOffer so no path ever offers the
+ *      same shop this lead again (the cascade skips orgs it has already asked),
+ *   3. the PlatformLead is un-matched and re-driven — the cascade offers it to
+ *      the next-best shop, or, when the platform is routing by hand, it is
+ *      routed straight to the next-best shop.
+ */
+export async function declineRoutedLead(leadId: string): Promise<{ ok: true; rerouted: boolean }> {
+  const ctx = await requireSalesOrManager();
+  const lead = await db.lead.findUnique({ where: { id: leadId } });
+  if (!lead || lead.organizationId !== ctx.organizationId) throw new Error("Lead not found");
+
+  const pl = await db.platformLead.findFirst({ where: { matchedLeadId: leadId } });
+
+  await db.$transaction(async (tx) => {
+    // The row goes, it is not parked as LOST: this shop never accepted the
+    // lead, it is on its way to another one, and a "lost" row in their book
+    // for work they were only ever offered is a record of nothing. Who passed
+    // is recorded on the platform side, as the DECLINED offer below.
+    await tx.activityEvent.deleteMany({ where: { leadId } });
+    await tx.lead.deleteMany({ where: { id: leadId, organizationId: ctx.organizationId } });
+    if (!pl) return;
+    // The shop had it and passed: that is an attempt, and it is what stops the
+    // lead coming straight back to them.
+    await tx.leadOffer.create({
+      data: {
+        platformLeadId: pl.id,
+        organizationId: ctx.organizationId,
+        attempt: pl.attemptCount + 1,
+        score: 0,
+        status: "DECLINED",
+        respondedAt: new Date(),
+        respondedById: ctx.user.id,
+        expiresAt: new Date(),
+      },
+    });
+    await tx.platformLead.update({
+      where: { id: pl.id },
+      data: {
+        status: "MATCHING",
+        matchedOrgId: null,
+        matchedLeadId: null,
+        matchedAt: null,
+        queueReason: null,
+        attemptCount: { increment: 1 },
+      },
+    });
+  });
+
+  let rerouted = false;
+  if (pl) {
+    try {
+      // A hand-routed lead may never have been ranked, and the cascade walks a
+      // snapshot — so make sure there is one before asking it to walk.
+      const fresh = await db.platformLead.findUnique({ where: { id: pl.id } });
+      if (fresh && (!fresh.rankingJson || fresh.rankingJson === "[]")) {
+        const ranking = await buildRanking(fresh);
+        await db.platformLead.update({
+          where: { id: pl.id },
+          data: { rankingJson: JSON.stringify(ranking) },
+        });
+      }
+      if ((await getRoutingMode()) === "MANUAL") {
+        rerouted = await routeToNextBest(pl.id);
+      } else {
+        await advanceCascade(pl.id);
+        const after = await db.platformLead.findUnique({
+          where: { id: pl.id },
+          select: { status: true },
+        });
+        rerouted = after?.status === "OFFERED";
+      }
+    } catch (err) {
+      console.warn("[lead-offers] re-route after decline failed:", err);
+    }
+  }
+
+  try {
+    await db.activityEvent.create({
+      data: {
+        organizationId: ctx.organizationId,
+        actorId: ctx.user.id,
+        kind: "DECLINED",
+        summary: `Passed on platform lead: ${lead.name}`,
+      },
+    });
+  } catch {
+    /* non-fatal */
+  }
+
+  revalidatePath("/dashboard/leads");
+  revalidatePath("/admin/lead-center");
+  return { ok: true, rerouted };
+}
+
+/**
+ * Manual mode's version of "next": rank again, skip every shop that has
+ * already seen this lead, and hand it to the best one left. False when nobody
+ * is left — the lead drops into the admin queue rather than nowhere.
+ */
+async function routeToNextBest(platformLeadId: string): Promise<boolean> {
+  const pl = await db.platformLead.findUnique({
+    where: { id: platformLeadId },
+    include: { offers: { select: { organizationId: true } } },
+  });
+  if (!pl) return false;
+  const seen = new Set(pl.offers.map((o) => o.organizationId));
+  const ranking = await buildRanking(pl);
+  const next = ranking.find((c) => !seen.has(c.orgId));
+  if (!next) {
+    await db.platformLead.update({
+      where: { id: platformLeadId },
+      data: { status: "MANUAL_QUEUE", queueReason: "EXHAUSTED" },
+    });
+    return false;
+  }
+  const { routePlatformLeadToOrg } = await import("@/lib/leadCenter/route");
+  await routePlatformLeadToOrg(platformLeadId, next.orgId, null);
+  return true;
 }
