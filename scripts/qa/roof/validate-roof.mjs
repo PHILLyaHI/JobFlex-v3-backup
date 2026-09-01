@@ -717,6 +717,18 @@ export function validateRoof(model) {
       }
       const wide2 = spread2 >= (model.resolutionFt ?? 1.6);
       // §J (2026-08-31): провенанс-G4 снова говорит (см. validate.ts)
+      // «кольцо читает плоскость» (2026-08-31): измеренная грань несёт свой
+      // градиент (orientation+pitch — клеточная плоскость), см. validate.ts
+      {
+        const rawF = (model.facets ?? [])[f.i] ?? {};
+        const provF = rawF.measured === true ? 'measured-dsm' : rawF.provenance;
+        if (provF === 'measured-dsm' && Number.isFinite(rawF.orientation) && Number.isFinite(f.pitch) && f.pitch / 12 >= LEVEL_G) {
+          const thO = ((rawF.orientation % 360) * Math.PI) / 180;
+          const gm = f.pitch / 12;
+          gGrad.set(f.id, [-Math.sin(thO) * gm, -Math.cos(thO) * gm]);
+          continue;
+        }
+      }
       const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(f.id, [pl.a, pl.b]);
     }

@@ -1872,6 +1872,20 @@ export function validateRoofInvariants(model: RoofModel, opts: InvariantOptions 
       // §J (2026-08-31): провенанс-G4 снова говорит — «fill не
       // свидетельствует» был третьим выключенным судом §K13 (замолчал
       // честный крик G4 17.9° о склейке на 12618).
+      // «КОЛЬЦО ЧИТАЕТ ПЛОСКОСТЬ» (отмашка 2026-08-31): измеренная грань
+      // несёт СВОЙ градиент — orientation+pitch от клеточной плоскости по
+      // пикселям DSM (независимый от графа источник); ре-фит кольца у
+      // рваной кромки крутился чужими z (12621 MF8: G4 58.5° от вершин
+      // кромки z 14–15.5 при честной плоскости (−0.5, 0)).
+      {
+        const mf = model.faces[f.i] as { provenance?: string; orientation?: number };
+        if (mf.provenance === "measured-dsm" && Number.isFinite(mf.orientation) && Number.isFinite(f.pitch) && f.pitch / 12 >= LEVEL_G) {
+          const thO = (((mf.orientation as number) % 360) * Math.PI) / 180;
+          const gm = f.pitch / 12;
+          gGrad.set(model.faces[f.i].id, [-Math.sin(thO) * gm, -Math.cos(thO) * gm]);
+          continue;
+        }
+      }
       const pl = pl2 && wide2 && Math.hypot(pl2.a, pl2.b) * 12 < 24 ? pl2 : basePl(f);
       if (pl) gGrad.set(model.faces[f.i].id, [pl.a, pl.b]);
     }

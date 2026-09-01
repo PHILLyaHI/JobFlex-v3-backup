@@ -1147,6 +1147,45 @@ export function buildRegionCells(input: RegionCellsInput): RegionCellsResult {
     }
     if (straightSegs) report.push(`по-сегментное спрямление: ${straightSegs} цепей — crease-сегменты прямыми между законными вершинами`);
   }
+  // ── ТЕРМИНАЛ У РВАНОЙ КРОМКИ (отмашка 2026-08-31, состав колец):
+  //    хвост wallPair-цепи, чей конец лежит НА кольце контура, идёт
+  //    ПРЯМОЙ от последней не-манхэттен вершины до конца: манхэттен-
+  //    лесенка у кромки (глубина ≤ пробника от кольца) — фиктивный
+  //    терминал по рваной маске, а не обмер (12621: лесенка 4.3 ft у
+  //    кромки жила стыком RIDGE/HIP с изломом 53.9° — G1). Кольцо
+  //    обмерено, маска рваная — терминал живёт кольцом. ──
+  {
+    let edgeTails = 0;
+    for (let pi = 0; pi < simped.length; pi++) {
+      const sp = simped[pi];
+      // wallPair-гейт снят замером: лесенка 12621 жила на цепи ЧЕСТНОЙ
+      // линии [0,4] (манхэттен ходит по wall-run'ам профиля, не по
+      // wallPair) — фиктивный терминал у кромки не зависит от линии
+      if (sp.li === undefined || sp.pts.length < 3) continue;
+      for (const end of [0, 1] as const) {
+        const idx = (k: number): number => (end === 0 ? k : sp.pts.length - 1 - k);
+        const endPt = sp.pts[idx(0)];
+        if (projectToRing(endPt).dist > 0.15) continue; // конец не на кольце
+        // от конца внутрь: подряд идущие m-вершины в пределах пробника от кольца
+        let k = 1;
+        while (k < sp.pts.length - 1) {
+          const q = sp.pts[idx(k)] as FootprintPoint & { m?: boolean };
+          if (!q.m || projectToRing(q).dist > probe) break;
+          k++;
+        }
+        if (k <= 1) continue;
+        // прямая end ↔ первая не-m вершина; страж — пересечения
+        const keepIdx = idx(k);
+        const skipIdx = end === 0 ? [...Array(k).keys()] : [...Array(k).keys()].map((j) => sp.pts.length - 2 - j);
+        if (segsCross(endPt, sp.pts[keepIdx], pi, skipIdx)) continue;
+        sp.pts = end === 0
+          ? [endPt, ...sp.pts.slice(k)]
+          : [...sp.pts.slice(0, sp.pts.length - k), endPt];
+        edgeTails++;
+      }
+    }
+    if (edgeTails) report.push(`терминал у рваной кромки: ${edgeTails} манхэттен-лесенок у кольца заменено прямым звеном`);
+  }
   emitStage("terminals");
   if (termRefused.length) report.push(`терминалы-отказы: ${termRefused.map((d2) => (d2 < 0 ? "нет цели" : d2.toFixed(1))).join(", ")}`);
   if (refuse.reach + refuse.perp + refuse.cross > 0) report.push(`отказы спрямления: reach ${refuse.reach} · perp ${refuse.perp} · crossing ${refuse.cross}`);
