@@ -1552,7 +1552,24 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
         r = cloud.length >= 3 ? cloud : null;
       }
       if (!r || r.length < 3) continue;
-      const pl = fitPlane(r);
+      // «КОЛЬЦО ЧИТАЕТ ПЛОСКОСТЬ» и в типизации (отмашка 2026-08-31):
+      // measured-грань несёт КЛЕТОЧНУЮ плоскость (по пикселям DSM), не
+      // LS-фит кольца — кольцевой фит с чужими z делал стороны перегиба
+      // «копланарными» (|∇diff| < пола) и честные гребни падали в OTHER
+      // (серые 12629: ЮЗ 2.5 ft, (−7.4,12.7) 0.8+1.0 ft — прямой замер
+      // показал HIP-морфологию с |Δ∇| ≈ 8/12).
+      const srcT = faceSrc.get(f.id);
+      const rawPl = srcT !== undefined && infos[srcT].prov === "measured-dsm" ? infos[srcT].plane : null;
+      // клеточная плоскость живёт в растровом кадре — перевод в instant
+      // (z(x) = pl_r(fwd(x)): поворот градиента + сдвиг константы)
+      const cellPl = rawPl
+        ? {
+            a: rawPl.a * Math.cos(th) + rawPl.b * Math.sin(th),
+            b: -rawPl.a * Math.sin(th) + rawPl.b * Math.cos(th),
+            c: rawPl.a * T.dxFt + rawPl.b * T.dyFt + rawPl.c,
+          }
+        : null;
+      const pl = cellPl ?? fitPlane(r);
       if (pl) facePlane.set(f.id, pl);
       faceCentroid.set(f.id, {
         x: r.reduce((s2, q) => s2 + q.x, 0) / r.length,
@@ -1644,6 +1661,14 @@ export function buildMeasuredRoof(input: MeasuredRoofInput): MeasuredRoofResult 
       if (dz1 !== null && dz2 !== null && dzc !== null) {
         if (dz1 > dzc && dz2 > dzc) return "VALLEY";
         if (dz1 < dzc && dz2 < dzc) return level ? "RIDGE" : "HIP";
+        // mixed — рефери решил «не складка»: перегиб без V/Λ-формы.
+        // NB (замер 2026-08-31, ТРИ формы фолбэка к плоскостям отвергнуты
+        // качелями): «всякий mixed» — Euler 2 на 12618 + R03 на 419;
+        // «обе пробы в шуме 0.12» — R03 на 12621; «нарушитель в шуме» —
+        // R03 на 419. Слабый перегиб (нарушитель < шума поверхности)
+        // рефери честно НЕ измерим, а плоскостной суд по нему тасует
+        // швы глобально — качели-сигнатура. Ответ null; серые линии
+        // слабых перегибов — честный OTHER (см. ROOF-STATE).
         return null;
       }
       const z1 = own[0].pl.a * (mid.x + per.x * s1 * PROBE_FT) + own[0].pl.b * (mid.y + per.y * s1 * PROBE_FT) + own[0].pl.c;
