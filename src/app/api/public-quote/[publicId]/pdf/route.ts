@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { renderToStream } from "@react-pdf/renderer";
 import { db } from "@/lib/db";
 import { ProposalPdfDocument, type ProposalPdfData } from "@/lib/pdf/ProposalPdf";
+import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,9 @@ export async function GET(
   ctx: { params: Promise<{ publicId: string }> },
 ) {
   const { publicId } = await ctx.params;
+  // Unauthenticated PDF render per hit — cap it per client.
+  const gate = await rateLimitShared(`quote-pdf:${ipFromRequest(_req)}`, 20, HOUR);
+  if (!gate.ok) return NextResponse.json({ error: "Too many requests — try again later." }, { status: 429 });
   const proposal = await db.proposal.findUnique({
     where: { publicId },
     include: {

@@ -2,23 +2,6 @@ export function isMapsEnabled() {
   return Boolean(process.env.GOOGLE_MAPS_API_KEY);
 }
 
-export function staticMapUrl(
-  lat: number,
-  lng: number,
-  opts?: { zoom?: number; size?: string; mapType?: "satellite" | "hybrid" | "roadmap" },
-): string | null {
-  if (!isMapsEnabled()) return null;
-  const p = new URLSearchParams({
-    center: `${lat},${lng}`,
-    zoom: String(opts?.zoom ?? 20),
-    size: opts?.size ?? "640x360",
-    maptype: opts?.mapType ?? "satellite",
-    scale: "2",
-    key: process.env.GOOGLE_MAPS_API_KEY!,
-  });
-  return `https://maps.googleapis.com/maps/api/staticmap?${p.toString()}`;
-}
-
 // Structured geocode for Lead Center matching — joins whatever address parts
 // exist and pins them. Best-effort by design: null on disabled / no result /
 // network error, and callers fall back to zip or neutral distance scoring.

@@ -140,9 +140,10 @@ export function HireProfileContent({
                 : "Nobody can find you yet"}
             </h2>
             <p className={cx("hp-band-m")}>
-              {listed
-                ? "Any company outside your own can see the row on the right and reach out."
-                : "Your details are saved, but no directory shows them and no job reaches you."}
+              <b>Matching trade jobs reach you.</b> When another company posts work in a
+              trade you list, the post is broadcast. They see your name, company, trades
+              and service area &mdash; never your email &mdash; and their interest arrives
+              as a notification.
             </p>
           </div>
         </div>
@@ -169,28 +170,6 @@ export function HireProfileContent({
           ) : null}
         </div>
 
-        {/* Honest copy: exactly the two things the record does, no more. */}
-        <ul className={cx("hp-facts")}>
-          <li className={cx("hp-fact")}>
-            <svg className={cx("ic")}>
-              <use href="#i-send" />
-            </svg>
-            <span>
-              <b>Matching trade jobs reach you.</b> When another company posts work in a
-              trade you list, the post is broadcast to you.
-            </span>
-          </li>
-          <li className={cx("hp-fact")}>
-            <svg className={cx("ic")}>
-              <use href="#i-msg" />
-            </svg>
-            <span>
-              <b>Other companies can contact you.</b> They see your name, company, trades
-              and service area — never your email — and their interest arrives as a
-              notification.
-            </span>
-          </li>
-        </ul>
       </section>
 
       {/* ═══ THE FORM + THE MIRROR ═══ */}

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import { appBaseUrl } from "@/lib/appUrl";
 import { requireOwner } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readAttributionCookie, validateAttribution } from "@/lib/attribution";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
+import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 
 // Real SaaS subscription checkout. A captured influencer promo (the org's
 // permanent signup stamp, falling back to the 30-day capture cookie) is
@@ -47,11 +49,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "This plan has no yearly option." }, { status: 400 });
   }
 
-  const price = await db.planPrice.findFirst({
-    where: { planSlug: plan.slug, interval, active: true },
-  });
-  if (!price) {
-    return NextResponse.json({ error: "That plan isn't available for checkout yet." }, { status: 404 });
+  // Mode-aware: the admin's live/sandbox switch (lib/stripeMode) decides which
+  // account this session lands on. Resolved BEFORE the mirror lookup, because
+  // only the live path needs a mirror at all.
+  const { stripe, mode } = await getStripeClient();
+
+  /* The PlanPrice mirror is the LIVE account's price of record; the sandbox
+     has no such ids, so test mode prices inline from the catalog row instead —
+     which also means a plan that was never synced can still be TRIALLED in the
+     sandbox, and only its live checkout says "not available yet". */
+  let livePriceId: string | null = null;
+  if (mode === "live") {
+    const price = await db.planPrice.findFirst({
+      where: { planSlug: plan.slug, interval, active: true },
+    });
+    if (!price) {
+      return NextResponse.json({ error: "That plan isn't available for checkout yet." }, { status: 404 });
+    }
+    livePriceId = price.stripePriceId;
   }
 
   const [sub, org] = await Promise.all([
@@ -90,21 +105,47 @@ export async function POST(req: Request) {
     autoApplyPromotionCode = null;
   }
 
-  const origin = req.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const stripe = getStripe();
+
+  // Redirect targets come from the platform-set host, never the caller's
+  // Origin header — a forged Origin minted a real, contractor-branded checkout
+  // whose post-payment landing page was an attacker domain.
+  const origin = await appBaseUrl();
+  // A stored promo_… id belongs to the LIVE account; on the sandbox it would
+  // 400 the session. Test runs fall back to typing a code on Stripe's page.
+  if (mode === "test") autoApplyPromotionCode = null;
+  const cents = interval === "YEAR" ? (plan.yearlyPriceCents ?? 0) : plan.priceCents;
+  // Sandbox path: a REUSED test-account price (lib/stripePriceCache), never
+  // inline price_data — inline mints a fresh Product per checkout and would
+  // litter the dashboard.
+  const lineItem = livePriceId
+    ? { price: livePriceId, quantity: 1 }
+    : {
+        price: await ensureRecurringPrice({
+          stripe,
+          mode,
+          kind: plan.slug,
+          name: `JobFlex ${plan.name}`,
+          interval,
+          cents,
+        }),
+        quantity: 1,
+      };
   const baseParams = {
     mode: "subscription" as const,
-    line_items: [{ price: price.stripePriceId, quantity: 1 }],
-    ...(sub?.externalCustomerId
+    line_items: [lineItem],
+    ...(sub?.externalCustomerId && mode === "live"
       ? { customer: sub.externalCustomerId }
       : { customer_email: user.email ?? undefined }),
     subscription_data: {
       metadata: { organizationId },
       ...(plan.trialDays ? { trial_period_days: plan.trialDays } : {}),
     },
-    metadata: { organizationId },
-    success_url: `${origin}/dashboard/settings/account?upgraded=1`,
-    cancel_url: `${origin}/dashboard/settings/account`,
+    // planSlug/interval ride the session so the upgrade page can verify the
+    // return and write the plan change itself — the live webhook cannot see
+    // sandbox events, and even live, the page landing first beats waiting.
+    metadata: { organizationId, planSlug: plan.slug, interval },
+    success_url: `${origin}/dashboard/upgrade?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/dashboard/upgrade?checkout=cancelled`,
   };
 
   // Stripe forbids combining `discounts` with `allow_promotion_codes`, so it's

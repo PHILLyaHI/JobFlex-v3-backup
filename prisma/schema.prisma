@@ -19,102 +19,149 @@ datasource db {
 // ─────────────────────────────────────────────
 
 model Organization {
-  id              String   @id @default(cuid())
-  name            String
-  slug            String   @unique
-  logoUrl         String?
-  primaryColor    String?
-  billingEmail    String?
-  phone           String?
-  address         String?
-  website         String?
-  timezone        String   @default("America/New_York")
-  defaultTaxRate  Float    @default(0)
+  id                    String    @id @default(cuid())
+  name                  String
+  slug                  String    @unique
+  logoUrl               String?
+  primaryColor          String?
+  billingEmail          String?
+  phone                 String?
+  address               String?
+  website               String?
+  timezone              String    @default("America/New_York")
+  defaultTaxRate        Float     @default(0)
   // Org-wide default profit markup (hidden from the client). Seeded into a new
   // proposal's per-proposal materialMarkupPct/laborMarkupPct at creation; the
   // contractor can override per proposal. @default(0) = existing orgs keep 0%
   // (current behaviour — no price change), so no backfill is needed.
-  materialMarkupPct Float  @default(0)
-  laborMarkupPct    Float  @default(0)
-  aiPromptCustom  String?
-  publicProfileEnabled Boolean @default(false)
-  landingHeroTitle    String?
-  landingHeroSubtitle String?
-  heroImageUrl        String?
-  servicesJson        String?
+  materialMarkupPct     Float     @default(0)
+  laborMarkupPct        Float     @default(0)
+  aiPromptCustom        String?
+  publicProfileEnabled  Boolean   @default(false)
+  landingHeroTitle      String?
+  landingHeroSubtitle   String?
+  heroImageUrl          String?
+  servicesJson          String?
   // Settings persistence — one JSON-as-String blob per settings page (hydrated whole on load).
-  paymentSettingsJson  String? // settings/payment  {stripe,square,paypal,ach,currency,depositPct,netTerms,lateFeePct,autoRemind,lateFees}
-  leadsSettingsJson    String? // settings/leads     {strategy,zips[],travelRadius,maxPerDay,maxPerRep,aiCategorize,instantSms,businessHours}
-  gmailSettingsJson    String? // settings/gmail     {sendFromUser,trackOpens,autoSync,displayName,replyTo,signature}
-  gmailTokensJson      String? // OAuth secrets      {accessToken,refreshToken,expiryDate,email} — set by the Gmail connect callback
-  metaSettingsJson     String? // settings/meta      {connected,autoCreate,autoText,defaultPage,formCategory}
-  proposalSettingsJson String? // settings/proposals {validityDays,markups{...},schedule[],terms,requireSig,autoFollowUp}
+  paymentSettingsJson   String? // settings/payment  {stripe,square,paypal,ach,currency,depositPct,netTerms,lateFeePct,autoRemind,lateFees}
+  leadsSettingsJson     String? // settings/leads     {strategy,zips[],travelRadius,maxPerDay,maxPerRep,aiCategorize,instantSms,businessHours}
+  gmailSettingsJson     String? // settings/gmail     {sendFromUser,trackOpens,autoSync,displayName,replyTo,signature}
+  gmailTokensJson       String? // OAuth secrets      {accessToken,refreshToken,expiryDate,email} — set by the Gmail connect callback
+  metaSettingsJson      String? // settings/meta      {connected,autoCreate,autoText,defaultPage,formCategory}
+  proposalSettingsJson  String? // settings/proposals {validityDays,markups{...},schedule[],terms,requireSig,autoFollowUp}
   // Lead Center matching profile — canonical TRADE_TYPES multi-select (JSON string[],
   // closed vocabulary from src/lib/tradeTypes.ts; distinct from the free-text Specialty
   // model which steers AI estimator prompts). lat/lng geocoded from `address` at
   // register/profile-save; orgs without coords are ineligible for platform lead offers.
-  tradeTypesJson    String?  @default("[]")
+  tradeTypesJson        String?   @default("[]")
   // Free text typed under the register form's "Other" trade chip. Deliberately
   // NOT folded into tradeTypesJson: that column is validated against the closed
   // TRADE_TYPES vocabulary (src/lib/tradeTypes.ts) and anything unrecognised is
   // dropped on read, so a custom trade needs a column of its own to survive.
-  otherTrade        String?
-  lat               Float?
-  lng               Float?
-  geocodedAt        DateTime?
-  leadOffersEnabled Boolean  @default(true)
+  otherTrade            String?
+  lat                   Float?
+  lng                   Float?
+  geocodedAt            DateTime?
+  leadOffersEnabled     Boolean   @default(true)
   // Pre-signup attribution stamp (first-write-wins: set once at account creation,
   // never overwritten). The money record stays Stripe-truth (Attribution model);
   // this is captured intent used for the signup pill + checkout auto-apply.
   signupPromoCode       String?
   signupPromoCodeId     String?
   attributionCapturedAt DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  memberships     Membership[]
-  invites         Invite[]
-  clients         Client[]
-  leads           Lead[]
-  proposals       Proposal[]
-  templates       ProposalTemplate[]
-  jobs            Job[]
-  jobEvents       JobEvent[]
-  workerProfiles  WorkerProfile[]
-  payments        Payment[]
-  invoices        Invoice[]
-  activities      ActivityEvent[]
-  conversations   Conversation[]
-  announcements   Announcement[]
-  emailTemplates  EmailTemplate[]
-  followUpRules   FollowUpRule[]
-  followUps       FollowUp[]
-  aiDrafts        AiDraft[]
-  aiPromptPacks   AiPromptPack[]
-  aiEstimates     AiEstimate[]
-  tags            Tag[]
-  subscription    Subscription?
-  supportTickets  SupportTicket[]
-  specialties     Specialty[]
-  homeownerReqs   HomeownerRequest[]
-  leadOffers      LeadOffer[]
-  changeOrders    ChangeOrder[]
-  reviewRequests  ReviewRequest[]
-  referralCodes   ReferralCode[]
-  tradePosts      TradePost[]
-  phoneCalls      AiPhoneCall[]
-  appointments    Appointment[]
-  blockedTimes    BlockedTime[]
-  unavailabilityRules UnavailabilityRule[]
-  projects        Project[]
-  applicants      Applicant[]
+  memberships          Membership[]
+  invites              Invite[]
+  clients              Client[]
+  leads                Lead[]
+  proposals            Proposal[]
+  templates            ProposalTemplate[]
+  jobs                 Job[]
+  jobEvents            JobEvent[]
+  workerProfiles       WorkerProfile[]
+  payments             Payment[]
+  invoices             Invoice[]
+  activities           ActivityEvent[]
+  conversations        Conversation[]
+  announcements        Announcement[]
+  emailTemplates       EmailTemplate[]
+  followUpRules        FollowUpRule[]
+  followUps            FollowUp[]
+  aiDrafts             AiDraft[]
+  aiPromptPacks        AiPromptPack[]
+  aiEstimates          AiEstimate[]
+  tags                 Tag[]
+  subscription         Subscription?
+  supportTickets       SupportTicket[]
+  specialties          Specialty[]
+  homeownerReqs        HomeownerRequest[]
+  leadOffers           LeadOffer[]
+  changeOrders         ChangeOrder[]
+  reviewRequests       ReviewRequest[]
+  referralCodes        ReferralCode[]
+  tradePosts           TradePost[]
+  phoneCalls           AiPhoneCall[]
+  appointments         Appointment[]
+  blockedTimes         BlockedTime[]
+  unavailabilityRules  UnavailabilityRule[]
+  projects             Project[]
+  applicants           Applicant[]
   influencerPayouts    InfluencerPayout[]
   influencerStatements InfluencerStatement[]
   eagleViewReports     EagleViewReport[]
-  signupPromo          PromoCode? @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
+  overheads            MonthlyOverhead[]
+  signupPromo          PromoCode?            @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
   @@index([signupPromoCodeId])
+}
+
+// One month's recurring business cost sheet — the costs that exist whether or
+// not a single job runs. Keyed by calendar month (year + month 1-12) rather
+// than a DateTime so the record IS the month, with no timezone to get wrong.
+//
+// Eight fixed categories, plus three that scale: workers / sales / marketing
+// are entered either as flat dollars or as a percent of that month's revenue,
+// chosen by the matching *Pct flag. The dollars-vs-percent split is what lets
+// the Overhead tab report a fixed total and a variable total separately.
+model MonthlyOverhead {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+
+  // FIXED — flat dollars, unmoved by revenue.
+  rent      Float @default(0)
+  office    Float @default(0)
+  insurance Float @default(0)
+  vehicles  Float @default(0)
+  software  Float @default(0)
+  warehouse Float @default(0)
+  utilities Float @default(0)
+  other     Float @default(0)
+
+  // SCALING — amount is dollars when the flag is false, a percent of the
+  // month's revenue when it is true.
+  workers      Float   @default(0)
+  workersPct   Boolean @default(false)
+  sales        Float   @default(0)
+  salesPct     Boolean @default(false)
+  marketing    Float   @default(0)
+  marketingPct Boolean @default(false)
+
+  // The contractor's own fixed lines beyond the eight above — a yard lease, a
+  // bookkeeper, a storage unit. JSON-as-String: [{ "id", "label", "amount" }].
+  // Fixed only: a custom line never scales with revenue.
+  customJson String @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, year, month])
+  @@index([organizationId])
 }
 
 // Cached EagleView roof-measurement reports. A report is a billable order, so we
@@ -152,46 +199,52 @@ model EagleViewReport {
 }
 
 model User {
-  id              String        @id @default(cuid())
-  email           String        @unique
-  name            String?
-  image           String?
-  hashedPassword  String?
-  emailVerified   DateTime?
-  locale          String?
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  name                  String?
+  image                 String?
+  hashedPassword        String?
+  emailVerified         DateTime?
+  locale                String?
+  // Contact + preferences owned by the PERSON, not the org: the settings
+  // Profile card's phone, and the notification matrix (channel toggles per
+  // event, quiet hours, digest time) as one JSON-as-String blob, hydrated whole
+  // like the org's *SettingsJson columns.
+  phone                 String?
+  notificationPrefsJson String?
   // Platform-admin authority for the (admin) console. Distinct from the
   // org-level Membership.role — only flagged users may reach platform-wide
   // money/influencer pages. Tightens the old "any OWNER/ADMIN of any org" gate.
-  isPlatformAdmin Boolean       @default(false)
+  isPlatformAdmin       Boolean   @default(false)
   // Credential epoch for stateless-JWT session revocation. Stamped into the JWT
   // at sign-in and re-checked on every guarded request (requireUser); bumped on
   // password reset so all previously-issued tokens are invalidated at once —
   // the "log out everywhere" that a bare JWT strategy otherwise can't do.
-  credentialVersion Int         @default(0)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  activeOrgId     String?
+  credentialVersion     Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  activeOrgId           String?
 
-  accounts        Account[]
-  influencer      Influencer?
-  supportTickets  SupportTicket[]
-  sessions        Session[]
-  memberships     Membership[]
-  workerProfile   WorkerProfile?
-  assignedLeads   Lead[]            @relation("LeadAssignee")
-  claimedLeads    Lead[]            @relation("LeadClaimer")
-  proposals       Proposal[]        @relation("ProposalOwner")
-  activities      ActivityEvent[]
-  messages        Message[]
+  accounts                 Account[]
+  influencer               Influencer?
+  supportTickets           SupportTicket[]
+  sessions                 Session[]
+  memberships              Membership[]
+  workerProfile            WorkerProfile?
+  assignedLeads            Lead[]                    @relation("LeadAssignee")
+  claimedLeads             Lead[]                    @relation("LeadClaimer")
+  proposals                Proposal[]                @relation("ProposalOwner")
+  activities               ActivityEvent[]
+  messages                 Message[]
   conversationParticipants ConversationParticipant[]
-  sentInvites     Invite[]          @relation("InviteSender")
-  referralCodes   ReferralCode[]
-  tradePosts      TradePost[]
-  tradeReplies    TradeReply[]
-  blockedTimes    BlockedTime[]
-  unavailabilityRules UnavailabilityRule[]
-  appointmentsCreated Appointment[]     @relation("AppointmentCreator")
-  jobEventsCreated    JobEvent[]        @relation("JobEventCreator")
+  sentInvites              Invite[]                  @relation("InviteSender")
+  referralCodes            ReferralCode[]
+  tradePosts               TradePost[]
+  tradeReplies             TradeReply[]
+  blockedTimes             BlockedTime[]
+  unavailabilityRules      UnavailabilityRule[]
+  appointmentsCreated      Appointment[]             @relation("AppointmentCreator")
+  jobEventsCreated         JobEvent[]                @relation("JobEventCreator")
 
   // Trade & Services (contractor-to-contractor job network)
   tradeNetworkProfile  TradeNetworkProfile?
@@ -203,7 +256,7 @@ model User {
 }
 
 model Account {
-  id                String   @id @default(cuid())
+  id                String  @id @default(cuid())
   userId            String
   provider          String
   providerAccountId String
@@ -238,11 +291,11 @@ model VerificationToken {
 }
 
 model Membership {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   userId         String
   organizationId String
-  role           String       @default("USER")
-  createdAt      DateTime     @default(now())
+  role           String   @default("USER")
+  createdAt      DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -252,15 +305,15 @@ model Membership {
 }
 
 model Invite {
-  id             String       @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   email          String
-  role           String       @default("USER")
-  token          String       @unique
+  role           String    @default("USER")
+  token          String    @unique
   invitedById    String?
   expiresAt      DateTime
   acceptedAt     DateTime?
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invitedBy    User?        @relation("InviteSender", fields: [invitedById], references: [id])
@@ -273,7 +326,7 @@ model Invite {
 // ─────────────────────────────────────────────
 
 model Client {
-  id             String       @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   name           String
   email          String?
@@ -285,27 +338,27 @@ model Client {
   notes          String?
   customFields   String?
   deletedAt      DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  proposals    Proposal[]
-  jobs         Job[]
-  activities   ActivityEvent[]
-  tags         ClientTag[]
-  payments     Payment[]
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposals      Proposal[]
+  jobs           Job[]
+  activities     ActivityEvent[]
+  tags           ClientTag[]
+  payments       Payment[]
   reviewRequests ReviewRequest[]
-  appointments Appointment[]
+  appointments   Appointment[]
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
 }
 
 model Tag {
-  id             String       @id @default(cuid())
+  id             String @id @default(cuid())
   organizationId String
   label          String
-  color          String       @default("#4F46E5")
+  color          String @default("#4F46E5")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   clients      ClientTag[]
@@ -324,32 +377,32 @@ model ClientTag {
 }
 
 model Lead {
-  id                 String      @id @default(cuid())
-  organizationId     String
-  name               String
-  email              String?
-  phone              String?
-  address            String?
-  city               String?
-  state              String?
-  zip                String?
-  projectType        String?
-  description        String?
-  photos             String?     @default("[]")
-  source             String?
-  status             String      @default("NEW")
-  aiCategory         String?
-  aiConfidence       Float?
-  assignedToId       String?
-  claimedById        String?
-  claimedAt          DateTime?
-  contactedAt        DateTime?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  email          String?
+  phone          String?
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  projectType    String?
+  description    String?
+  photos         String?   @default("[]")
+  source         String?
+  status         String    @default("NEW")
+  aiCategory     String?
+  aiConfidence   Float?
+  assignedToId   String?
+  claimedById    String?
+  claimedAt      DateTime?
+  contactedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assignedTo   User?        @relation("LeadAssignee", fields: [assignedToId], references: [id])
-  claimedBy    User?        @relation("LeadClaimer", fields: [claimedById], references: [id])
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedTo   User?           @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  claimedBy    User?           @relation("LeadClaimer", fields: [claimedById], references: [id])
   activities   ActivityEvent[]
   phoneCalls   AiPhoneCall[]
   appointments Appointment[]
@@ -359,7 +412,7 @@ model Lead {
 }
 
 model HomeownerRequest {
-  id              String   @id @default(cuid())
+  id              String        @id @default(cuid())
   organizationId  String?
   name            String
   email           String
@@ -368,8 +421,8 @@ model HomeownerRequest {
   zip             String?
   projectType     String?
   description     String?
-  photos          String?  @default("[]")
-  createdAt       DateTime @default(now())
+  photos          String?       @default("[]")
+  createdAt       DateTime      @default(now())
   convertedLeadId String?
   organization    Organization? @relation(fields: [organizationId], references: [id])
 
@@ -446,60 +499,60 @@ model LeadOffer {
 // ─────────────────────────────────────────────
 
 model Proposal {
-  id              String         @id @default(cuid())
-  publicId        String         @unique
-  organizationId  String
-  ownerId         String?
-  clientId        String?
-  title           String
-  description     String?
-  scopeOfWork     String?
-  notes           String?
+  id             String  @id @default(cuid())
+  publicId       String  @unique
+  organizationId String
+  ownerId        String?
+  clientId       String?
+  title          String
+  description    String?
+  scopeOfWork    String?
+  notes          String?
   // Job address — optional one-liner, seeded from the client / AI-estimator
   // location; its state drives the tax-rate estimate in the builder.
-  address         String?
-  status          String         @default("DRAFT")
-  subtotal        Float          @default(0)
-  discountTotal   Float          @default(0)
-  taxRate         Float          @default(0)
-  taxTotal        Float          @default(0)
-  total           Float          @default(0)
-  currency        String         @default("USD")
+  address        String?
+  status         String  @default("DRAFT")
+  subtotal       Float   @default(0)
+  discountTotal  Float   @default(0)
+  taxRate        Float   @default(0)
+  taxTotal       Float   @default(0)
+  total          Float   @default(0)
+  currency       String  @default("USD")
 
   // Estimating engine — markup ladder applied to base material/labor costs
-  materialMarkupPct Float        @default(0)
-  laborMarkupPct    Float        @default(0)
-  overheadPct       Float        @default(0)
-  profitPct         Float        @default(0)
-  validUntil      DateTime?
-  sentAt          DateTime?
-  viewedAt        DateTime?
-  viewCount       Int            @default(0)
-  acceptedAt      DateTime?
-  acceptedIp      String?
-  declinedAt      DateTime?
-  paidAt          DateTime?
-  pdfUrl          String?
-  aiDraftId       String?
-  beforePhotos    String?        @default("[]")
-  afterPhotos     String?        @default("[]")
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  materialMarkupPct Float     @default(0)
+  laborMarkupPct    Float     @default(0)
+  overheadPct       Float     @default(0)
+  profitPct         Float     @default(0)
+  validUntil        DateTime?
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  viewCount         Int       @default(0)
+  acceptedAt        DateTime?
+  acceptedIp        String?
+  declinedAt        DateTime?
+  paidAt            DateTime?
+  pdfUrl            String?
+  aiDraftId         String?
+  beforePhotos      String?   @default("[]")
+  afterPhotos       String?   @default("[]")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  owner          User?          @relation("ProposalOwner", fields: [ownerId], references: [id])
-  client         Client?        @relation(fields: [clientId], references: [id])
-  lineItems      LineItem[]
-  discounts      Discount[]
-  installments   Installment[]
-  invoices       Invoice[]
-  payments       Payment[]
-  activities     ActivityEvent[]
-  jobs           Job[]
-  changeOrders   ChangeOrder[]
-  aiDraft        AiDraft?       @relation(fields: [aiDraftId], references: [id])
-  snapshots      PricingSnapshot[]
-  appointments   Appointment[]
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User?             @relation("ProposalOwner", fields: [ownerId], references: [id])
+  client       Client?           @relation(fields: [clientId], references: [id])
+  lineItems    LineItem[]
+  discounts    Discount[]
+  installments Installment[]
+  invoices     Invoice[]
+  payments     Payment[]
+  activities   ActivityEvent[]
+  jobs         Job[]
+  changeOrders ChangeOrder[]
+  aiDraft      AiDraft?          @relation(fields: [aiDraftId], references: [id])
+  snapshots    PricingSnapshot[]
+  appointments Appointment[]
 
   @@index([organizationId, status])
   @@index([publicId])
@@ -516,7 +569,7 @@ model PricingSnapshot {
   taxTotal       Float
   total          Float
   currency       String   @default("USD")
-  lineItemsJson  String   // JSON-encoded snapshot of line items
+  lineItemsJson  String // JSON-encoded snapshot of line items
   createdAt      DateTime @default(now())
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
@@ -525,25 +578,25 @@ model PricingSnapshot {
 }
 
 model LineItem {
-  id              String   @id @default(cuid())
+  id              String  @id @default(cuid())
   proposalId      String
   name            String
   description     String?
-  measurementType String   @default("UNIT")
-  quantity        Float    @default(1)
-  unitPrice       Float    @default(0)
-  materialCost    Float    @default(0)
-  laborCost       Float    @default(0)
-  total           Float    @default(0)
-  position        Int      @default(0)
+  measurementType String  @default("UNIT")
+  quantity        Float   @default(1)
+  unitPrice       Float   @default(0)
+  materialCost    Float   @default(0)
+  laborCost       Float   @default(0)
+  total           Float   @default(0)
+  position        Int     @default(0)
 
   // Live-pricing product metadata from the AI estimator's SerpAPI matches, so
   // the Materials Request view can render a shoppable line. Null for hand-typed
   // or labor lines.
-  store           String?
-  productUrl      String?
-  imageUrl        String?
-  dimensions      String?
+  store      String?
+  productUrl String?
+  imageUrl   String?
+  dimensions String?
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
@@ -551,23 +604,23 @@ model LineItem {
 }
 
 model Discount {
-  id         String @id @default(cuid())
+  id         String  @id @default(cuid())
   proposalId String
   label      String
-  amount     Float  @default(0)
+  amount     Float   @default(0)
   isPercent  Boolean @default(false)
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 }
 
 model Installment {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   proposalId String
   label      String
   amount     Float
-  isPercent  Boolean  @default(false)
+  isPercent  Boolean   @default(false)
   dueDate    DateTime?
-  position   Int      @default(0)
+  position   Int       @default(0)
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 }
@@ -585,18 +638,18 @@ model ProposalTemplate {
 }
 
 model Invoice {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   proposalId     String?
   clientId       String?
   number         String
   amount         Float
-  status         String   @default("PENDING")
-  provider       String   @default("MANUAL")
+  status         String    @default("PENDING")
+  provider       String    @default("MANUAL")
   externalId     String?
   dueDate        DateTime?
   paidAt         DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   proposal     Proposal?    @relation(fields: [proposalId], references: [id])
@@ -606,19 +659,19 @@ model Invoice {
 }
 
 model Payment {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   proposalId     String?
   invoiceId      String?
   clientId       String?
   amount         Float
-  currency       String   @default("USD")
-  provider       String   @default("STRIPE")
-  status         String   @default("PENDING")
+  currency       String    @default("USD")
+  provider       String    @default("STRIPE")
+  status         String    @default("PENDING")
   externalId     String?
   method         String?
   paidAt         DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   proposal     Proposal?    @relation(fields: [proposalId], references: [id])
@@ -640,23 +693,23 @@ model Job {
   projectId      String?
   title          String
   status         String    @default("SCHEDULED")
-  scopeOfWork    String?   // seeded from the linked proposal's scope; shown above notes on the job
+  scopeOfWork    String? // seeded from the linked proposal's scope; shown above notes on the job
   notes          String?
   startsAt       DateTime?
   endsAt         DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client       Client?        @relation(fields: [clientId], references: [id])
-  proposal     Proposal?      @relation(fields: [proposalId], references: [id])
-  project      Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  events       JobEvent[]
-  assignments  JobAssignment[]
-  photos       JobPhoto[]
-  expenses     JobExpense[]
-  messages     JobMessage[]
-  conversation Conversation?
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client         Client?         @relation(fields: [clientId], references: [id])
+  proposal       Proposal?       @relation(fields: [proposalId], references: [id])
+  project        Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  events         JobEvent[]
+  assignments    JobAssignment[]
+  photos         JobPhoto[]
+  expenses       JobExpense[]
+  messages       JobMessage[]
+  conversation   Conversation?
   changeOrders   ChangeOrder[]
   reviewRequests ReviewRequest[]
 
@@ -684,30 +737,30 @@ model JobEvent {
 }
 
 model WorkerProfile {
-  id             String   @id @default(cuid())
-  userId         String   @unique
+  id             String    @id @default(cuid())
+  userId         String    @unique
   organizationId String
   displayName    String
   phone          String?
-  specialties    String?  @default("[]")
+  specialties    String?   @default("[]")
   hourlyRate     Float?
-  token          String   @unique @default(cuid())
+  token          String    @unique @default(cuid())
   // Invite lifecycle: PENDING (sent, awaiting response) → ACCEPTED / DECLINED.
   // Defaults to ACCEPTED so legacy profiles (created before this feature) stay
   // active; createWorkerInvite sets PENDING explicitly for new/re-invites.
   // DECLINED is excluded from the "workers" plan-limit count (frees the seat).
-  inviteStatus   String   @default("ACCEPTED")
+  inviteStatus   String    @default("ACCEPTED")
   respondedAt    DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
   // Rolling "last time this worker was genuinely active in their portal" (see
   // touchWorkerActivity). Nullable: existing rows stay null until the one-time
   // backfill runs. The inactivity cron NEVER revokes a null row — only a real
   // date older than 6 months — so null is always safe.
   lastSeenAt     DateTime?
 
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assignments  JobAssignment[]
+  user                   User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization           Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignments            JobAssignment[]
   appointmentAssignments AppointmentAssignment[]
 
   @@index([organizationId])
@@ -715,17 +768,19 @@ model WorkerProfile {
 }
 
 model JobAssignment {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   jobId      String
   workerId   String
-  status     String   @default("PENDING")
-  assignedAt DateTime @default(now())
+  status     String    @default("PENDING")
+  assignedAt DateTime  @default(now())
   pingedAt   DateTime?
 
   job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
   worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, workerId])
+  // Worker-side lists and badge counts read by workerId, newest first.
+  @@index([workerId, assignedAt])
 }
 
 model JobPhoto {
@@ -734,7 +789,7 @@ model JobPhoto {
   url       String
   kind      String   @default("BEFORE")
   caption   String?
-  analysis  String?   // JSON-encoded vision output
+  analysis  String? // JSON-encoded vision output
   createdAt DateTime @default(now())
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -747,7 +802,7 @@ model JobExpense {
   amount     Float
   note       String?
   receiptUrl String?
-  ocrJson    String?   // JSON-encoded OCR output
+  ocrJson    String? // JSON-encoded OCR output
   createdAt  DateTime @default(now())
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -780,6 +835,9 @@ model Conversation {
   job          Job?                      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   messages     Message[]
   participants ConversationParticipant[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, kind])
 }
 
 model ConversationParticipant {
@@ -826,6 +884,12 @@ model Message {
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   author       User?        @relation(fields: [authorId], references: [id])
+
+  // Hot paths: the 5-second inbox poll (conversationId + createdAt > since),
+  // unread groupBy, and the messagesSent plan meter (createdAt range).
+  @@index([conversationId, createdAt])
+  @@index([authorId])
+  @@index([createdAt])
 }
 
 model Announcement {
@@ -860,12 +924,12 @@ model EmailTemplate {
 // ─────────────────────────────────────────────
 
 model FollowUpRule {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   name           String
   triggerStatus  String
   delayMinutes   Int
-  enabled        Boolean  @default(true)
+  enabled        Boolean @default(true)
   template       String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -878,7 +942,7 @@ model FollowUp {
   runAt          DateTime
   completedAt    DateTime?
   note           String?
-  templateId     String?   // EmailTemplate chosen by the rule that scheduled this
+  templateId     String? // EmailTemplate chosen by the rule that scheduled this
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -928,6 +992,9 @@ model AiEstimate {
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // estimatorUses plan meter counts rows per org per period.
+  @@index([organizationId, createdAt])
 }
 
 // ─────────────────────────────────────────────
@@ -960,64 +1027,64 @@ model ActivityEvent {
 // ─────────────────────────────────────────────
 
 model Subscription {
-  id                  String    @id @default(cuid())
-  organizationId      String    @unique
-  plan                String    @default("FREE")
-  status              String    @default("FREE")
-  provider            String    @default("STRIPE")
-  externalCustomerId  String?
-  externalSubId       String?
-  currentPeriodEnd    DateTime?
-  trialEndsAt         DateTime?
+  id                     String    @id @default(cuid())
+  organizationId         String    @unique
+  plan                   String    @default("FREE")
+  status                 String    @default("FREE")
+  provider               String    @default("STRIPE")
+  externalCustomerId     String?
+  externalSubId          String?
+  currentPeriodEnd       DateTime?
+  trialEndsAt            DateTime?
   // Stripe-truth mirror fields, synced from subscription/invoice webhooks.
   stripePriceId          String?
-  appliedPromotionCodeId String?   // promo_... read off the subscription discount
-  appliedCouponId        String?   // coupon_... fallback
-  attributionId          String?   // → Attribution (influencer promo link)
+  appliedPromotionCodeId String? // promo_... read off the subscription discount
+  appliedCouponId        String? // coupon_... fallback
+  attributionId          String? // → Attribution (influencer promo link)
   canceledAt             DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model PricingPlan {
-  id          String @id @default(cuid())
-  slug        String @unique
-  name        String
-  description String?
-  priceCents      Int           // monthly price
-  yearlyPriceCents Int?         // optional annual price (enables yearly checkout + savings display)
-  interval        String  @default("month")
-  trialDays       Int     @default(0)
-  order           Int     @default(0)
-  features        String
-  limitsJson      String?  // numeric per-plan limits (see src/lib/planLimits.ts); null/absent key = unlimited
-  active          Boolean @default(true)  // hidden from user surfaces + rejected at checkout when false
-  highlight       Boolean @default(false) // "Most popular" badge on plan surfaces
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
+  id               String   @id @default(cuid())
+  slug             String   @unique
+  name             String
+  description      String?
+  priceCents       Int // monthly price
+  yearlyPriceCents Int? // optional annual price (enables yearly checkout + savings display)
+  interval         String   @default("month")
+  trialDays        Int      @default(0)
+  order            Int      @default(0)
+  features         String
+  limitsJson       String? // numeric per-plan limits (see src/lib/planLimits.ts); null/absent key = unlimited
+  active           Boolean  @default(true) // hidden from user surfaces + rejected at checkout when false
+  highlight        Boolean  @default(false) // "Most popular" badge on plan surfaces
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
 }
 
 model SupportTicket {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
-  userId         String?  // submitter, when raised from the in-app support form
+  userId         String? // submitter, when raised from the in-app support form
   subject        String
   body           String
-  category       String   @default("general") // billing | technical | account | feature | general — for admin triage
-  priority       String   @default("normal")  // low | normal | high — submitter-declared urgency
-  status         String   @default("OPEN")
+  category       String    @default("general") // billing | technical | account | feature | general — for admin triage
+  priority       String    @default("normal") // low | normal | high — submitter-declared urgency
+  status         String    @default("OPEN")
   adminReadAt    DateTime? // platform-admin "seen" marker; null = new/unread in the admin notification feed
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
 model Specialty {
-  id             String @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   name           String
   promptPreamble String?
@@ -1040,7 +1107,7 @@ model ChangeOrder {
   proposalId     String?
   title          String
   description    String?
-  amount         Float     // signed: positive adds, negative reduces
+  amount         Float // signed: positive adds, negative reduces
   status         String    @default("DRAFT") // DRAFT | SENT | APPROVED | DECLINED
   publicToken    String    @unique @default(cuid())
   sentAt         DateTime?
@@ -1069,7 +1136,7 @@ model ReviewRequest {
   rating         Int?
   comment        String?
   sentAt         DateTime?
-  completedAt   DateTime?
+  completedAt    DateTime?
   createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1090,8 +1157,8 @@ model ReferralCode {
   note           String?
   createdAt      DateTime @default(now())
 
-  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversions  ReferralConversion[]
 
   @@index([organizationId])
@@ -1099,14 +1166,14 @@ model ReferralCode {
 }
 
 model ReferralConversion {
-  id          String    @id @default(cuid())
-  codeId      String
-  signupEmail String
-  signupOrgId String?
-  status      String    @default("PENDING") // PENDING | CONVERTED | PAID
-  note        String?
-  createdAt   DateTime  @default(now())
-  convertedAt DateTime?
+  id                String    @id @default(cuid())
+  codeId            String
+  signupEmail       String
+  signupOrgId       String?
+  status            String    @default("PENDING") // PENDING | CONVERTED | PAID
+  note              String?
+  createdAt         DateTime  @default(now())
+  convertedAt       DateTime?
   // Reward credit tracking — PAID means a 50%-of-one-month Stripe customer-balance
   // credit landed on the referrer org (rewardStripeTxnId). CONVERTED with no
   // rewardAppliedAt = credit pending (referrer has no Stripe customer yet).
@@ -1126,7 +1193,7 @@ model TradePost {
   authorId       String
   title          String
   body           String
-  category       String?  // equipment | subcontractor | job-share | question
+  category       String? // equipment | subcontractor | job-share | question
   status         String   @default("OPEN") // OPEN | CLOSED
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -1274,7 +1341,7 @@ model AiPhoneCall {
 // ─────────────────────────────────────────────
 
 model Appointment {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
   // Linked entity — at most one of lead/client/proposal (enforced in the action).
   leadId         String?
@@ -1284,18 +1351,18 @@ model Appointment {
   // Nullable: appointments predating this column have no known creator.
   createdById    String?
   title          String
-  status         String    @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELED | NO_SHOW
+  status         String   @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELED | NO_SHOW
   startsAt       DateTime
   endsAt         DateTime
   notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead         Lead?        @relation(fields: [leadId], references: [id])
-  client       Client?      @relation(fields: [clientId], references: [id])
-  proposal     Proposal?    @relation(fields: [proposalId], references: [id])
-  createdBy    User?        @relation("AppointmentCreator", fields: [createdById], references: [id])
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead?                   @relation(fields: [leadId], references: [id])
+  client       Client?                 @relation(fields: [clientId], references: [id])
+  proposal     Proposal?               @relation(fields: [proposalId], references: [id])
+  createdBy    User?                   @relation("AppointmentCreator", fields: [createdById], references: [id])
   assignments  AppointmentAssignment[]
 
   @@index([organizationId, startsAt])
@@ -1319,7 +1386,7 @@ model AppointmentAssignment {
 model BlockedTime {
   id             String   @id @default(cuid())
   organizationId String
-  ownerId        String?  // user it belongs to (vacation, etc); null = whole-org block
+  ownerId        String? // user it belongs to (vacation, etc); null = whole-org block
   reason         String   @default("Blocked")
   startsAt       DateTime
   endsAt         DateTime
@@ -1339,15 +1406,15 @@ model UnavailabilityRule {
   id             String   @id @default(cuid())
   organizationId String
   ownerId        String
-  dayOfWeek      Int      // 0 = Sunday … 6 = Saturday
-  startMinute    Int      // minutes from local midnight, 0–1440
+  dayOfWeek      Int // 0 = Sunday … 6 = Saturday
+  startMinute    Int // minutes from local midnight, 0–1440
   endMinute      Int
   reason         String   @default("Unavailable")
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  owner        User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User                      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   exceptions   UnavailabilityException[]
 
   @@index([organizationId, ownerId])
@@ -1462,14 +1529,14 @@ model Influencer {
   userId           String?  @unique
   email            String   @unique
   displayName      String
-  hashedPassword   String?  // set when the influencer logs in via the separate surface
+  hashedPassword   String? // set when the influencer logs in via the separate surface
   status           String   @default("PENDING") // InfluencerStatus
-  connectAccountId String?  @unique              // Stripe Connect acct_...
-  connectStatus    String   @default("NONE")     // ConnectStatus (mirror of account state)
-  payoutsEnabled   Boolean  @default(false)      // mirror of account.payouts_enabled
+  connectAccountId String?  @unique // Stripe Connect acct_...
+  connectStatus    String   @default("NONE") // ConnectStatus (mirror of account state)
+  payoutsEnabled   Boolean  @default(false) // mirror of account.payouts_enabled
   defaultCurrency  String   @default("usd")
-  minPayoutCents   Int      @default(2500)        // payout request threshold
-  holdDays         Int      @default(30)          // escrow window before commission clears
+  minPayoutCents   Int      @default(2500) // payout request threshold
+  holdDays         Int      @default(30) // escrow window before commission clears
   notes            String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -1490,23 +1557,23 @@ model Influencer {
 model PromoCode {
   id                    String   @id @default(cuid())
   influencerId          String
-  stripeCouponId        String                          // coupon_...
-  stripePromotionCodeId String   @unique                 // promo_...
-  code                  String   @unique                 // redeemable string, e.g. JAMIE20
+  stripeCouponId        String // coupon_...
+  stripePromotionCodeId String   @unique // promo_...
+  code                  String   @unique // redeemable string, e.g. JAMIE20
   active                Boolean  @default(true)
-  commissionType        String                           // CommissionType: PERCENT | FLAT
-  commissionRateBps     Int?                             // basis points when PERCENT (2000 = 20%)
-  commissionFlatCents   Int?                             // flat cents when FLAT
-  commissionBasis       String   @default("NET")         // CommissionBasis
-  durationType          String   @default("REPEATING")   // PromoDurationType
-  durationMonths        Int?                             // required when REPEATING
-  customerPercentOff    Int?                             // display mirror of the Stripe coupon percent_off
-  clicks                Int      @default(0)             // promo-link landing visits (lightweight, no PII)
+  commissionType        String // CommissionType: PERCENT | FLAT
+  commissionRateBps     Int? // basis points when PERCENT (2000 = 20%)
+  commissionFlatCents   Int? // flat cents when FLAT
+  commissionBasis       String   @default("NET") // CommissionBasis
+  durationType          String   @default("REPEATING") // PromoDurationType
+  durationMonths        Int? // required when REPEATING
+  customerPercentOff    Int? // display mirror of the Stripe coupon percent_off
+  clicks                Int      @default(0) // promo-link landing visits (lightweight, no PII)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  influencer   Influencer    @relation(fields: [influencerId], references: [id], onDelete: Cascade)
-  attributions Attribution[]
+  influencer          Influencer     @relation(fields: [influencerId], references: [id], onDelete: Cascade)
+  attributions        Attribution[]
   signupOrganizations Organization[] @relation("OrgSignupPromo")
 
   @@index([influencerId])
@@ -1520,12 +1587,12 @@ model Attribution {
   id                   String    @id @default(cuid())
   influencerId         String
   promoCodeId          String
-  organizationId       String?                          // resolved via the Subscription mirror
-  stripeCustomerId     String                            // cus_...
-  stripeSubscriptionId String    @unique                 // sub_... — one attribution per subscription
-  status               String    @default("ACTIVE")      // AttributionStatus
+  organizationId       String? // resolved via the Subscription mirror
+  stripeCustomerId     String // cus_...
+  stripeSubscriptionId String    @unique // sub_... — one attribution per subscription
+  status               String    @default("ACTIVE") // AttributionStatus
   firstPaidInvoiceAt   DateTime?
-  qualifyingMonths     Int       @default(0)             // accrual counter for ONCE/REPEATING caps
+  qualifyingMonths     Int       @default(0) // accrual counter for ONCE/REPEATING caps
   endedAt              DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
@@ -1544,17 +1611,17 @@ model Attribution {
 model CommissionLedger {
   id               String    @id @default(cuid())
   influencerId     String
-  attributionId    String?                              // null for PAID / ADJUSTMENT (span many attributions)
-  entryType        String                               // LedgerEntryType
-  amountCents      Int                                   // signed: ACCRUED +, REVERSED/PAID -
+  attributionId    String? // null for PAID / ADJUSTMENT (span many attributions)
+  entryType        String // LedgerEntryType
+  amountCents      Int // signed: ACCRUED +, REVERSED/PAID -
   currency         String    @default("usd")
-  stripeInvoiceId  String?                               // in_...
-  stripeChargeId   String?                               // ch_... (refund clawback source)
-  stripeEventId    String?                               // evt_...
-  clearsAt         DateTime?                             // ACCRUED clears after holdDays
-  state            String    @default("PENDING")         // LedgerEntryState
+  stripeInvoiceId  String? // in_...
+  stripeChargeId   String? // ch_... (refund clawback source)
+  stripeEventId    String? // evt_...
+  clearsAt         DateTime? // ACCRUED clears after holdDays
+  state            String    @default("PENDING") // LedgerEntryState
   payoutTransferId String?
-  idempotencyKey   String    @unique                     // accrue:<invoiceId> / reverse:<chargeId>:<refundId> / pay:<transferId>:<entryId>
+  idempotencyKey   String    @unique // accrue:<invoiceId> / reverse:<chargeId>:<refundId> / pay:<transferId>:<entryId>
   memo             String?
   createdAt        DateTime  @default(now())
 
@@ -1574,8 +1641,8 @@ model PayoutRequest {
   influencerId   String
   amountCents    Int
   currency       String    @default("usd")
-  status         String    @default("PENDING")          // PayoutRequestStatus
-  requestedBy    String?                                 // admin userId or null (auto)
+  status         String    @default("PENDING") // PayoutRequestStatus
+  requestedBy    String? // admin userId or null (auto)
   approvedBy     String?
   approvedAt     DateTime?
   rejectedReason String?
@@ -1596,11 +1663,11 @@ model PayoutTransfer {
   payoutRequestId        String?
   amountCents            Int
   currency               String    @default("usd")
-  status                 String    @default("PENDING")   // PayoutTransferStatus
-  stripeTransferId       String?   @unique                // tr_...
-  stripeConnectAccountId String                           // acct_... destination
+  status                 String    @default("PENDING") // PayoutTransferStatus
+  stripeTransferId       String?   @unique // tr_...
+  stripeConnectAccountId String // acct_... destination
   failureReason          String?
-  idempotencyKey         String    @unique                // passed to stripe.transfers.create
+  idempotencyKey         String    @unique // passed to stripe.transfers.create
   createdAt              DateTime  @default(now())
   paidAt                 DateTime?
 
@@ -1615,9 +1682,9 @@ model PayoutTransfer {
 model WebhookEvent {
   id          String    @id @default(cuid())
   provider    String    @default("STRIPE")
-  eventId     String    @unique                          // evt_...
+  eventId     String    @unique // evt_...
   type        String
-  status      String    @default("RECEIVED")             // WebhookEventStatus
+  status      String    @default("RECEIVED") // WebhookEventStatus
   payloadHash String?
   error       String?
   receivedAt  DateTime  @default(now())
@@ -1631,10 +1698,10 @@ model WebhookEvent {
 // entitlements.ts remains the feature-gate source of truth.
 model PlanPrice {
   id              String   @id @default(cuid())
-  planSlug        String                                  // matches PLAN_TIERS (lowercased)
-  interval        String                                  // BillingInterval: MONTH | YEAR
-  stripeProductId String                                  // prod_...
-  stripePriceId   String   @unique                         // price_... (active price)
+  planSlug        String // matches PLAN_TIERS (lowercased)
+  interval        String // BillingInterval: MONTH | YEAR
+  stripeProductId String // prod_...
+  stripePriceId   String   @unique // price_... (active price)
   unitAmountCents Int
   currency        String   @default("usd")
   active          Boolean  @default(true)
@@ -1677,10 +1744,10 @@ model ProductPriceCache {
 // ReportAll's stable robust_id. `wkt` is the raw MULTIPOLYGON in EPSG:4326 —
 // parsed on read by src/lib/parcels.ts, stored verbatim so nothing is lost.
 model ParcelCache {
-  robustId String  @id
-  parcelId String?
-  owner    String?
-  address  String?
+  robustId   String   @id
+  parcelId   String?
+  owner      String?
+  address    String?
   // Upper-cased, whitespace-collapsed `address` — the key the address lookup
   // matches on. Equality, never `contains`/`mode: insensitive`: SQLite LIKE is
   // case-insensitive while Postgres LIKE is not, and `mode: "insensitive"` does

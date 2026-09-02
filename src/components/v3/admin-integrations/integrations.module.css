@@ -56,6 +56,33 @@
   margin-right: 10px;
 }
 
+/* ── Payments mode switch ───────────────────────────────────── */
+:global(.jf-blueprint .content) .modeRow {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 0 4px;
+}
+:global(.jf-blueprint .content) .modeBtn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 16px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); color: var(--muted); cursor: pointer;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+}
+:global(.jf-blueprint .content) .modeBtn i {
+  font-style: normal; font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.06em; color: var(--muted-light, #8a8a8a);
+}
+:global(.jf-blueprint .content) .modeBtn.modeOn { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .modeBtn.modeOn i { color: var(--sky, #7fb4ff); }
+:global(.jf-blueprint .content) .modeBtn:disabled { opacity: 0.45; cursor: default; }
+:global(.jf-blueprint .content) .modeNote {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-blueprint .content) .modeErr {
+  margin-top: 8px; font-size: 12.5px; color: var(--danger, #a33);
+}
+
 /* ── Mobile layer — LAST in the cascade ─────────────────────── */
 @media (max-width: 860px) {
   :global(.jf-blueprint .content) .legend em {

@@ -1,9 +1,36 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
+// Content-Security-Policy, REPORT-ONLY for the first release. Enumerated from
+// the third parties the code actually loads: Stripe.js + Checkout, PayPal and
+// Square JS SDKs, Google Maps JS/static/geocode, PostHog, Vercel Blob images,
+// Google avatars. 'unsafe-inline' for script is required by the blueprint
+// pages' inline behaviour scripts until a per-request nonce lands; the header
+// is Report-Only so a missed host shows up in the console instead of breaking
+// checkout on launch day. Promote to Content-Security-Policy once a week of
+// reports is clean.
+const CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://maps.googleapis.com https://us-assets.i.posthog.com https://us.i.posthog.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' blob: https://*.public.blob.vercel-storage.com",
+  "connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://us.i.posthog.com https://us-assets.i.posthog.com https://maps.googleapis.com https://www.paypal.com https://www.sandbox.paypal.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://*.public.blob.vercel-storage.com https://vercel.live wss://ws-us3.pusher.com",
+  "frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.google.com https://vercel.live",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self' https://checkout.stripe.com",
+  "frame-ancestors 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
+  // Do not advertise the framework in every response.
+  poweredByHeader: false,
   // Deployment skew protection. A phone that loaded the app from one build and
   // is still open when the next one ships will, on its next navigation, ask the
   // CDN for a chunk filename only the old build ever emitted — a 404 that
@@ -61,9 +88,8 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "8mb",
     },
   },
-  // Baseline HTTP security headers applied to every route. Content-Security-Policy
-  // is intentionally NOT set here — it needs per-service tuning (Google Maps,
-  // Stripe, Vercel Blob, etc.) and will be added in a separate change.
+  // Baseline HTTP security headers applied to every route. The CSP ships in
+  // Report-Only mode first (see CSP_REPORT_ONLY above).
   async headers() {
     return [
       {
@@ -73,6 +99,8 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
+          { key: "Content-Security-Policy-Report-Only", value: CSP_REPORT_ONLY },
+          { key: "X-DNS-Prefetch-Control", value: "on" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

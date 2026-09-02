@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getOpenAI, isOpenAIEnabled, OPENAI_MODEL } from "@/lib/sdk/openai";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 const aiDraftSchema = z.object({
   title: z.string(),
@@ -58,6 +59,7 @@ export async function generateAiProposal(prompt: string): Promise<
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
   const { organizationId } = await requireEstimatorOrManager();
+  await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
 
   // Plan gate
   try {
@@ -119,39 +121,5 @@ export async function generateAiProposal(prompt: string): Promise<
     return { ok: true, draft: parsed };
   } catch (err: any) {
     return { ok: false, error: err?.message ?? "AI generation failed" };
-  }
-}
-
-export async function categorizeLead(text: string): Promise<{
-  category: string;
-  confidence: number;
-  disabled: boolean;
-}> {
-  if (!isOpenAIEnabled()) return { category: "General", confidence: 0.4, disabled: true };
-
-  try {
-    const client = getOpenAI();
-    const completion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content:
-            'Categorize the following contractor lead into one of: Roofing, Fencing, Decking, Flooring, Kitchen, Bath, Siding, Windows, Painting, Landscaping, General. Return JSON: {"category":"...","confidence":0-1}.',
-        },
-        { role: "user", content: text.slice(0, 2000) },
-      ],
-      response_format: { type: "json_object" },
-    });
-    const text_ = completion.choices[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(text_);
-    return {
-      category: parsed.category ?? "General",
-      confidence: Math.max(0, Math.min(1, Number(parsed.confidence ?? 0.5))),
-      disabled: false,
-    };
-  } catch {
-    return { category: "General", confidence: 0.3, disabled: false };
   }
 }

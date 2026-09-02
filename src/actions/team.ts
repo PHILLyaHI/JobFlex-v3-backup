@@ -4,9 +4,11 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { requireManager, requireUser, isOwnerRole, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { enforcePlanLimit, isManagerEquivalentRole } from "@/lib/limitsEngine";
 import { appBaseUrl } from "@/lib/appUrl";
 import { Role } from "@/lib/prismaEnums";
 import { hashToken } from "@/lib/tokens";
+import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 
 // Emails an invite magic link. The RAW token goes in the URL; only its hash is
 // stored (see createInvite / resendInvite), so a DB leak yields no usable links.
@@ -63,6 +65,12 @@ export async function createInvite(raw: unknown) {
   // Only an owner can mint another owner.
   if (data.role === "OWNER" && !isOwnerRole(actorRole)) {
     throw new UnauthorizedError("Only the owner can invite another owner");
+  }
+  // Manager seats are plan-metered (some plans sell none, others 1+). The
+  // pending invite reserves the seat — see the "managers" counter. ADMIN /
+  // ACCOUNTANT / USER are manager-equivalent and pay the same seat.
+  if (isManagerEquivalentRole(data.role)) {
+    await enforcePlanLimit(organizationId, "managers");
   }
 
   const email = data.email.toLowerCase().trim();
@@ -131,6 +139,7 @@ export async function revokeInvite(id: string) {
 }
 
 export async function acceptInvite(token: string) {
+  await enforceRateLimit(`invite-accept:${await clientIp()}`, 20, HOUR, "attempts");
   const invite = await db.invite.findUnique({ where: { token: hashToken(token) } });
   if (!invite) throw new Error("This invite doesn't exist or was revoked.");
   if (invite.acceptedAt) throw new Error("This invite was already accepted.");
@@ -205,6 +214,11 @@ export async function updateMembershipRole(membershipId: string, role: string) {
   if ((m.role === Role.OWNER || role === "OWNER") && !isOwnerRole(actorRole)) {
     throw new UnauthorizedError("Only the owner can change owner roles");
   }
+  // Promoting INTO a manager-equivalent seat consumes one — same meter the
+  // invite pays.
+  if (isManagerEquivalentRole(role) && !isManagerEquivalentRole(m.role)) {
+    await enforcePlanLimit(organizationId, "managers");
+  }
   await db.membership.update({ where: { id: membershipId }, data: { role } });
   revalidatePath("/dashboard/settings/team");
 }
@@ -224,6 +238,13 @@ export async function removeMember(membershipId: string) {
     if (owners <= 1) throw new Error("Can't remove the last owner.");
   }
   await db.membership.delete({ where: { id: membershipId } });
+  // A removed member must not keep this org as their active workspace — the
+  // classic layout reads announcements/plan by activeOrgId straight off the
+  // session, so a stale pointer leaked org-scoped chrome after removal.
+  await db.user.updateMany({
+    where: { id: m.userId, activeOrgId: organizationId },
+    data: { activeOrgId: null },
+  });
   revalidatePath("/dashboard/settings/team");
 }
 

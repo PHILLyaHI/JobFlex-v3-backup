@@ -662,6 +662,13 @@
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
 }
+/* …and OFF when the claim is false. data-cut is written by a scroll/resize
+   observer in register-content: "0" = the list fits, or is scrolled to its
+   end — fading the final row there printed the last benefit as if disabled. */
+.bp :global(.pw-feats[data-cut="0"]) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
 /* Scrollbar: drawn, not native. `scrollbar-width` is deliberately NOT set —
    declaring it in Chrome switches the element to the standard scrollbar and
    silently drops every ::-webkit- rule below, and the thumb needs `border:
@@ -844,3 +851,201 @@
 .bp :global(.pwp-total) { font-size: 26px; font-weight: 900; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .bp :global(.pwp-total i) { font-style: normal; font-size: 13px; font-weight: 800; color: var(--muted); }
 .bp :global(.pwp-done.pwp-done) { width: auto; padding: 0 26px; height: 44px; }
+
+/* ============================================================
+   RHYTHM PASS — 2026-09-02
+   The donor spaced the whole column on one ~20px interval: brand,
+   stepper, heading, fields, primary, divider, alternate sign-in and
+   foot all sat the same distance apart, so nothing grouped and
+   nothing led (owner's read: "no room to breathe"). This block
+   replaces that flat cadence with three tiers, and only touches
+   spacing, type size and the brand's anchor:
+     · tight   6–8px   inside a field (label / input / note)
+     · medium  16–20px between fields
+     · loose   28–48px between blocks: heading→form, form→primary,
+               primary→alternate sign-in, →foot
+   The brand leaves the centred block and becomes chrome: pinned to
+   the top-left of the column, the form centred in what remains.
+   Values are vh-clamped like the donor's so the column still fits
+   a 100dvh screen; below 760px tall the page is allowed to scroll.
+   ============================================================ */
+.bp :global(.auth-form) {
+  position: relative;
+  justify-content: safe center;
+  padding: clamp(76px, 11vh, 110px) 64px clamp(28px, 5vh, 48px);
+  max-width: 660px;
+}
+.bp :global(.auth-form .brand) {
+  position: absolute; top: clamp(22px, 4vh, 40px); left: 64px; margin: 0;
+}
+.bp :global(.brand) { gap: 10px; }
+.bp :global(.brand-mark) { width: 32px; height: 32px; font-size: 15px; }
+.bp :global(.brand-name) { font-size: 18px; }
+.bp :global(.auth-body) { width: 100%; }
+
+.bp :global(.stepper) { gap: 12px; margin-bottom: clamp(16px, 2.8vh, 26px); }
+
+.bp :global(.auth-kicker) { margin-bottom: clamp(8px, 1.4vh, 12px); }
+.bp :global(.auth-h1) { font-size: clamp(34px, 4.8vh, 46px); letter-spacing: -0.03em; line-height: 1.02; text-wrap: balance; }
+.bp :global(.auth-lede) { margin-top: clamp(10px, 1.6vh, 16px); font-size: clamp(14px, 1.7vh, 15.5px); line-height: 1.5; max-width: 44ch; }
+
+.bp :global(form) { margin-top: clamp(24px, 3.8vh, 34px); }
+.bp :global(.fld) { margin-bottom: clamp(14px, 2vh, 18px); }
+.bp :global(.fld-lbl) { font-size: 10px; letter-spacing: 0.14em; margin-bottom: 7px; }
+.bp :global(.fld-in) { height: clamp(44px, 5.4vh, 50px); font-size: 15px; padding: 0 14px; }
+.bp :global(.pw-wrap .fld-in) { padding-right: 48px; }
+.bp :global(.fld-note) { margin-top: 7px; font-size: 10.5px; }
+.bp :global(.grid2) { gap: 16px; }
+.bp :global(.chips) { gap: 8px; margin-top: 10px; }
+.bp :global(.chip) { height: clamp(34px, 4vh, 38px); padding: 0 13px; font-size: 13px; }
+
+/* The commitment stands off from the fields it closes. */
+.bp :global(form > .btn) { margin-top: clamp(14px, 2.4vh, 22px); }
+.bp :global(.btn) { height: clamp(46px, 5.8vh, 52px); font-size: 13.5px; }
+.bp :global(.btn-pair) { margin-top: clamp(20px, 3.4vh, 30px); }
+.bp :global(.row) { margin: -6px 0 clamp(18px, 3vh, 26px); }
+.bp :global(.err) { margin-top: 14px; }
+
+/* The alternate route and the foot are the quiet tier: further away,
+   the same size, never louder than the primary. */
+.bp :global(.divider) { margin: clamp(18px, 3vh, 26px) 0; }
+.bp :global(.foot) { margin-top: clamp(24px, 3.8vh, 34px); font-size: 13.5px; }
+
+.bp :global(.done-mark) { width: 52px; height: 52px; margin-bottom: clamp(16px, 2.8vh, 24px); }
+.bp :global(.done-mark .ic) { width: 24px; height: 24px; }
+
+/* Focus and selection belong to the palette, not the browser. */
+.bp :global(.fld-in:focus-visible) { box-shadow: 4px 4px 0 var(--ink); }
+.bp :global(.btn:focus-visible), .bp :global(.chip:focus-visible), .bp :global(.pw-toggle:focus-visible), .bp :global(.link-ink:focus-visible), .bp :global(.link-quiet:focus-visible) {
+  outline: 2px solid var(--blueprint); outline-offset: 2px;
+}
+.bp ::selection { background: var(--blueprint); color: #fff; }
+.bp :global(.fld-in) { caret-color: var(--blueprint); }
+
+@media (max-height: 760px), (max-width: 1000px) {
+  .bp :global(.auth) { height: auto; min-height: 100dvh; overflow: visible; }
+  .bp :global(.auth-form) { max-height: none; overflow: visible; }
+}
+@media (max-width: 1000px) {
+  .bp :global(.auth-form) { padding-left: 32px; padding-right: 32px; max-width: 560px; }
+  .bp :global(.auth-form .brand) { left: 32px; }
+}
+
+/* ============================================================
+   REGISTER-ONLY — 2026-09-02
+   1. The promise card on the art panel (step 2).
+   2. The plan sheet, and the one motion that brings it in.
+   3. The done panel's finalizing state.
+   ============================================================ */
+
+/* ── 1. THE PROMISE ─────────────────────────────────────────
+   One paper card on the ink field, top right, so it sits beside
+   the form it argues for. It was a text block pinned above the
+   old quote card; the quote card became a full-bleed photo and
+   the block collapsed to nothing behind it. Enters 120ms after
+   the step does — the form first, then the reason. */
+.bp :global(.side-perk) {
+  position: absolute; top: clamp(28px, 5vh, 56px); right: clamp(28px, 3.4vw, 56px);
+  left: auto; bottom: auto; z-index: 3;
+  width: min(372px, calc(100% - 56px));
+  display: block; padding: 0; pointer-events: none;
+  opacity: 0; transform: translateY(-14px); visibility: hidden;
+  transition: opacity 0.32s var(--ease-out), transform 0.46s var(--ease-out), visibility 0s linear 0.46s;
+}
+.bp :global(.side-perk.is-on) {
+  opacity: 1; transform: none; visibility: visible;
+  transition: opacity 0.32s var(--ease-out) 0.12s, transform 0.46s var(--ease-out) 0.12s, visibility 0s linear 0s;
+}
+.bp :global(.pk) {
+  pointer-events: auto; width: auto; max-width: none; text-align: left;
+  padding: 22px 24px 24px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 6px 6px 0 var(--blueprint);
+}
+.bp :global(.pk-eyebrow) { padding: 5px 10px; font-size: 9.5px; }
+.bp :global(.pk-h) {
+  margin: 14px 0 0; font-size: clamp(22px, 2.8vh, 27px); line-height: 1.1; letter-spacing: -0.025em;
+}
+.bp :global(.pk-p) { margin: 10px 0 0; max-width: none; font-size: 13.5px; line-height: 1.5; }
+/* On paper, not on ink: the dark-panel colours declared earlier no longer apply. */
+.bp :global(.side-perk .pk-h) { color: var(--ink); }
+.bp :global(.side-perk .pk-p) { color: var(--muted); }
+
+/* ── 2. THE PLAN SHEET ──────────────────────────────────────
+   Two layers. `.auth` (steps 1, 2, 4 and the art panel) and
+   `.plan-sheet` (step 3) are the same width and move on the same
+   curve for the same 620ms, so entering the plan reads as one
+   strip sliding left: the screen leaves and the plan follows it
+   in. `transform: none` (not translateX(0)) in the resting state,
+   so the sheet is not a containing block for the fixed page
+   picker inside it. */
+.bp { position: relative; overflow-x: hidden; }
+.bp :global(.auth) {
+  transition: transform 0.62s var(--ease-out), visibility 0s linear 0s;
+  will-change: transform;
+}
+.bp :global(.auth.is-gone) {
+  transform: translateX(-100%); visibility: hidden;
+  transition: transform 0.62s var(--ease-out), visibility 0s linear 0.62s;
+}
+.bp :global(.plan-sheet) {
+  position: fixed; inset: 0; z-index: 6;
+  overflow-y: auto; overscroll-behavior: contain;
+  background: var(--paper);
+  transform: translateX(100%); visibility: hidden;
+  transition: transform 0.62s var(--ease-out), visibility 0s linear 0.62s;
+  will-change: transform;
+}
+.bp :global(.plan-sheet.is-in) {
+  transform: none; visibility: visible;
+  transition: transform 0.62s var(--ease-out), visibility 0s linear 0s;
+}
+.bp :global(.plan-sheet-in) {
+  display: flex; flex-direction: column; min-height: 100%;
+  max-width: 1280px; margin: 0 auto;
+  padding: clamp(22px, 3.6vh, 36px) 48px clamp(18px, 3vh, 30px);
+}
+.bp :global(.plan-sheet .brand) { position: static; margin: 0 0 clamp(16px, 2.8vh, 26px); }
+.bp :global(.plan-sheet .stepper) { margin-bottom: clamp(12px, 2.2vh, 20px); }
+.bp :global(.plan-sheet) :global(#stepPlan) { padding-bottom: 26px; }
+@media (max-width: 1100px) {
+  .bp :global(.plan-sheet-in) { padding-left: 28px; padding-right: 28px; }
+}
+
+/* ── 3. FINALIZING ──────────────────────────────────────────
+   Between Stripe's receipt and "Your shop is live" the done
+   panel holds for the second the account takes to build. The
+   mark breathes instead of a spinner: same object, not yet set. */
+@keyframes jfAuthBreathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(24, 84, 160, 0.28); }
+  50% { box-shadow: 0 0 0 8px rgba(24, 84, 160, 0); }
+}
+.bp :global(.done-mark.is-busy) {
+  background: var(--paper); color: var(--blueprint); border-color: var(--blueprint);
+  animation: jfAuthBreathe 1.2s ease-in-out infinite;
+}
+.bp :global(.done-mark.is-busy .ic) { opacity: 0.55; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.auth), .bp :global(.plan-sheet), .bp :global(.side-perk) { transition: none; }
+  .bp :global(.done-mark.is-busy) { animation: none; }
+}
+
+/* ── REGISTER COLUMN IS TOP-ANCHORED ────────────────────────
+   The stepper and the heading must not move between steps: a
+   centred block put them 120px lower on step 2 than on step 1
+   (fewer rows), which read as a layout shift, not a step change.
+   The single-state auth pages stay centred. */
+.bp :global(.auth-form) { justify-content: flex-start; padding-top: clamp(84px, 12.4vh, 116px); }
+.bp :global(.fld) { margin-bottom: clamp(12px, 1.8vh, 16px); }
+.bp :global(.divider) { margin: clamp(16px, 2.6vh, 22px) 0; }
+.bp :global(.foot) { margin-top: clamp(20px, 3.2vh, 28px); }
+
+/* The sheet is a screen, not a page: at full width the card row takes the
+   height that is left and each card scrolls its own list (as before). Below
+   1400px the grid is two-up and the sheet scrolls instead. */
+.bp :global(.plan-sheet-in) { height: 100%; }
+@media (max-width: 1400px), (max-height: 760px) {
+  .bp :global(.plan-sheet-in) { height: auto; min-height: 100%; }
+}

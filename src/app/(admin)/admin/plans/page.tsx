@@ -8,6 +8,7 @@ import type { Metadata } from "next";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isStripeEnabled } from "@/lib/sdk/stripe";
+import { getStripeMode, stripeKeyFor } from "@/lib/stripeMode";
 import { parsePlanLimits } from "@/lib/planLimits";
 import { parseFeatures } from "@/lib/planCatalogServer";
 import { describeCommission } from "@/lib/commission";
@@ -71,6 +72,13 @@ export default async function AdminPlansPage() {
   }));
 
   return (
-    <AdminPlansContent plans={hydrated} synced={synced} stripeEnabled={isStripeEnabled()} promos={promos} />
+    <AdminPlansContent
+      plans={hydrated}
+      synced={synced}
+      stripeEnabled={isStripeEnabled()}
+      promos={promos}
+      stripeMode={await getStripeMode()}
+      stripeModes={{ live: Boolean(stripeKeyFor("live")), test: Boolean(stripeKeyFor("test")) }}
+    />
   );
 }

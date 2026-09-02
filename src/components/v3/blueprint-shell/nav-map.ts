@@ -17,7 +17,16 @@
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { isCustomBlockedPath } from "@/lib/customPlan";
 
-export type NavItem = { label: string; icon: string; href: string };
+export type NavItem = {
+  label: string;
+  icon: string;
+  href: string;
+  /** Custom-plan lock: the org's plan does not include this page. The item is
+   *  still DRAWN (dimmed, with a padlock) and still navigates — the layout
+   *  renders the upgrade offer at that URL — so the locked state is an ad for
+   *  the page, not a hole where it used to be (owner's call, 2026-08-31). */
+  locked?: boolean;
+};
 export type NavSection = { label: string; items: NavItem[] };
 
 export const NAV_SECTIONS: NavSection[] = [
@@ -267,6 +276,15 @@ export function navSectionsFor(
   role: string | null | undefined,
   locked?: readonly string[],
 ): NavSection[] {
+  // Role rules DROP an item (a worker has no business seeing Financials); the
+  // custom-plan lock only MARKS it — the page exists, the plan just does not
+  // include it yet, and a dimmed padlocked row that opens the upgrade offer
+  // sells the add-on where a missing row sells nothing.
+  const mark = (item: NavItem): NavItem =>
+    locked && isCustomBlockedPath(locked, item.href.split("?")[0])
+      ? { ...item, locked: true }
+      : item;
+
   const plan = role ? ROLE_NAV[role] : undefined;
   if (plan) {
     const labels = (role && ROLE_LABELS[role]) || {};
@@ -274,24 +292,23 @@ export function navSectionsFor(
       .map((group) => ({
         label: group.label,
         items: group.hrefs
-          .filter((href) => canOpen(role, href, locked))
+          .filter((href) => canOpen(role, href))
           .map((href) => {
             const item = ITEM_BY_HREF[href];
             if (!item) return null;
-            return labels[href] ? { ...item, label: labels[href] } : item;
+            return mark(labels[href] ? { ...item, label: labels[href] } : item);
           })
           .filter((item): item is NavItem => item !== null),
       }))
       .filter((group) => group.items.length > 0);
   }
 
-  // Office roles. OWNER sees the map as authored minus what the plan gate
-  // locks; everyone else additionally loses the owner-only items, and any
-  // section they emptied goes with them.
+  // Office roles. OWNER sees the map as authored; everyone else loses the
+  // owner-only items, and any section they emptied goes with them.
   if (role === "OWNER" && !locked?.length) return NAV_SECTIONS;
   return NAV_SECTIONS.map((section) => ({
     label: section.label,
-    items: section.items.filter((item) => canOpen(role, item.href, locked)),
+    items: section.items.filter((item) => canOpen(role, item.href)).map(mark),
   })).filter((section) => section.items.length > 0);
 }
 

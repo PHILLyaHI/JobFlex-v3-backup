@@ -26,6 +26,7 @@ import {
   type Parcel,
 } from "@/lib/reportall";
 import { parseWkt } from "@/lib/parcels";
+import { rateLimitShared, HOUR } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -84,6 +85,9 @@ async function saveParcel(p: Parcel): Promise<void> {
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // ReportAll's quota is ALLTIME — one account must not be able to drain it.
+  const gate = await rateLimitShared(`parcels:${session.user.id}`, 30, HOUR);
+  if (!gate.ok) return NextResponse.json({ error: "Too many requests — try again later." }, { status: 429 });
   if (!isReportAllEnabled()) {
     return NextResponse.json({ error: "REPORTALL_CLIENT_KEY is not configured" }, { status: 503 });
   }

@@ -81,3 +81,38 @@ export function titleCaseSlug(slug: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
 }
+
+/**
+ * Feature inheritance for display. Catalog features may carry the roll-up line
+ * "Everything in <plan>" — a plan with it inherits every feature of the plans
+ * BEFORE it in catalog order (the same rule the signup step applies; a naive
+ * per-plan lookup read Professional as WORSE than Starter). Returns the
+ * de-duplicated display rows (original casing, first seen wins, roll-up lines
+ * excluded) and, per slug, the lowercase set of what that plan includes.
+ */
+export function expandPlanFeatures(plans: { slug: string; features: string[] }[]): {
+  rows: string[];
+  included: Map<string, Set<string>>;
+} {
+  const rows: string[] = [];
+  const seen = new Set<string>();
+  const included = new Map<string, Set<string>>();
+  let inherited = new Set<string>();
+  for (const p of plans) {
+    const own = p.features.map((f) => f.trim());
+    const rollsUp = own.some((f) => f.toLowerCase().startsWith("everything in"));
+    const set = new Set<string>(rollsUp ? inherited : []);
+    for (const f of own) {
+      const low = f.toLowerCase();
+      if (!low || low.startsWith("everything in")) continue;
+      set.add(low);
+      if (!seen.has(low)) {
+        seen.add(low);
+        rows.push(f);
+      }
+    }
+    included.set(p.slug, set);
+    inherited = set;
+  }
+  return { rows, included };
+}

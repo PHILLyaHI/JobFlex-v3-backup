@@ -1,4 +1,5 @@
 "use client";
+import { safeNextPath } from "@/lib/safeNext";
 
 // MOBILE AUTH · SIGN IN — the component.
 // Rendered by src/app/(mobile)/mobile-v1/auth/login/page.tsx → /mobile-v1/auth/login.
@@ -110,8 +111,9 @@ export function MobileLoginContent() {
   const search = useSearchParams();
   // Only honor same-site relative paths so `?next=` can't be used as an open
   // redirect (reject absolute URLs and protocol-relative `//evil.com`).
-  const rawNext = search.get("next");
-  const nextPath = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
+  // A prefix check alone is not enough (`/\evil.com` resolves off-site) —
+  // see lib/safeNext for the origin comparison.
+  const nextPath = safeNextPath(search.get("next"));
   const [loading, setLoading] = React.useState(false);
   // Prefill demo credentials only in local development — never in production.
   const isDev = process.env.NODE_ENV === "development";

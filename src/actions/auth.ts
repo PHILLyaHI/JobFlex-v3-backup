@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { slugify, uniqueOrgSlug } from "@/lib/orgSlug";
 import { TRADE_TYPES } from "@/lib/tradeTypes";
+import { enforceRateLimit, clientIp, rateLimitShared, HOUR, MINUTE } from "@/lib/rateLimit";
 
 // Public, unauthenticated auth actions: self-serve registration and the
 // forgot/reset-password flow. These run BEFORE the caller has a session, so they
@@ -29,7 +30,13 @@ function sha256(s: string): string {
 const registerSchema = z.object({
   name: z.string().trim().min(1, "Enter your name").max(120),
   businessName: z.string().trim().min(1, "Enter your business name").max(120),
-  email: z.string().trim().toLowerCase().email("Enter a valid email"),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("Enter a valid email")
+    // Reserved for the platform-admin principal row (src/actions/adminAuth.ts).
+    .refine((e) => !e.endsWith("@platform.jobflex.local"), "Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters").max(200),
   // Lead Center matching profile — optional at signup (the dashboard banner
   // nags incomplete orgs); validated against the canonical trade taxonomy.
@@ -55,6 +62,7 @@ const registerSchema = z.object({
  */
 export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
   const data = registerSchema.parse(raw);
+  await enforceRateLimit(`register:${await clientIp()}`, 5, HOUR, "sign-ups");
 
   // Registration legitimately can't hide that an email is taken (you can't make a
   // duplicate), so steer them to sign in rather than fail opaquely.
@@ -179,6 +187,8 @@ export async function checkEmailAvailable(
   raw: unknown,
 ): Promise<{ available: boolean; message?: string }> {
   const parsed = registerSchema.shape.email.safeParse(raw);
+  const gate = await rateLimitShared(`email-check:${await clientIp()}`, 30, MINUTE);
+  if (!gate.ok) return { available: false, message: "Too many checks — try again in a minute." };
   if (!parsed.success) {
     return { available: false, message: "Enter a valid email address." };
   }
@@ -213,6 +223,14 @@ export async function requestPasswordReset(raw: unknown): Promise<{ ok: true }> 
   const parsed = forgotSchema.safeParse(raw);
   if (!parsed.success) return { ok: true }; // bad input → same generic success
   const email = parsed.data.email;
+  // Per-email cooldown + per-IP cap. Both answer the same generic success as
+  // a miss would, so the limiter is not itself an enumeration oracle.
+  const ip = await clientIp();
+  const [byIp, byEmail] = await Promise.all([
+    rateLimitShared(`reset:ip:${ip}`, 10, HOUR),
+    rateLimitShared(`reset:email:${email}`, 3, HOUR),
+  ]);
+  if (!byIp.ok || !byEmail.ok) return { ok: true };
 
   const user = await db.user.findUnique({ where: { email }, select: { id: true, name: true } });
   if (user) {
@@ -263,6 +281,7 @@ const INVALID_LINK = "This reset link is invalid or has expired. Request a new o
  */
 export async function resetPassword(raw: unknown): Promise<{ ok: true }> {
   const data = resetSchema.parse(raw);
+  await enforceRateLimit(`reset-submit:${await clientIp()}`, 10, HOUR, "attempts");
   const tokenHash = sha256(data.token);
   // Hash the new password BEFORE the transaction so the bcrypt cost (slow, CPU)
   // never holds the DB transaction open.

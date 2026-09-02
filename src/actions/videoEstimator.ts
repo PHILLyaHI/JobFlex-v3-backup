@@ -1,4 +1,5 @@
 "use server";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 // VIDEO ESTIMATOR — the walkthrough READER.
 //
@@ -74,6 +75,7 @@ export async function analyzeWalkthrough(
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await enforceRateLimit(`ai-video:${organizationId}`, 20, HOUR, "video analyses");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     const plan = await getOrgPlanById(organizationId);

@@ -378,3 +378,82 @@ html:has(.jf-auth-forgot), body:has(.jf-auth-forgot) { height: 100%; }
 .jf-auth-forgot .btn-pair .btn > .ic:first-child {
   position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
 }
+
+/* ============================================================
+   RHYTHM PASS — 2026-09-02
+   The donor spaced the whole column on one ~20px interval: brand,
+   stepper, heading, fields, primary, divider, alternate sign-in and
+   foot all sat the same distance apart, so nothing grouped and
+   nothing led (owner's read: "no room to breathe"). This block
+   replaces that flat cadence with three tiers, and only touches
+   spacing, type size and the brand's anchor:
+     · tight   6–8px   inside a field (label / input / note)
+     · medium  16–20px between fields
+     · loose   28–48px between blocks: heading→form, form→primary,
+               primary→alternate sign-in, →foot
+   The brand leaves the centred block and becomes chrome: pinned to
+   the top-left of the column, the form centred in what remains.
+   Values are vh-clamped like the donor's so the column still fits
+   a 100dvh screen; below 760px tall the page is allowed to scroll.
+   ============================================================ */
+.jf-auth-forgot .auth-form {
+  position: relative;
+  justify-content: safe center;
+  padding: clamp(76px, 11vh, 110px) 64px clamp(28px, 5vh, 48px);
+  max-width: 660px;
+}
+.jf-auth-forgot .auth-form .brand {
+  position: absolute; top: clamp(22px, 4vh, 40px); left: 64px; margin: 0;
+}
+.jf-auth-forgot .brand { gap: 10px; }
+.jf-auth-forgot .brand-mark { width: 32px; height: 32px; font-size: 15px; }
+.jf-auth-forgot .brand-name { font-size: 18px; }
+.jf-auth-forgot .auth-body { width: 100%; }
+
+.jf-auth-forgot .stepper { gap: 12px; margin-bottom: clamp(16px, 2.8vh, 26px); }
+
+.jf-auth-forgot .auth-kicker { margin-bottom: clamp(8px, 1.4vh, 12px); }
+.jf-auth-forgot .auth-h1 { font-size: clamp(34px, 4.8vh, 46px); letter-spacing: -0.03em; line-height: 1.02; text-wrap: balance; }
+.jf-auth-forgot .auth-lede { margin-top: clamp(10px, 1.6vh, 16px); font-size: clamp(14px, 1.7vh, 15.5px); line-height: 1.5; max-width: 44ch; }
+
+.jf-auth-forgot form { margin-top: clamp(24px, 3.8vh, 34px); }
+.jf-auth-forgot .fld { margin-bottom: clamp(14px, 2vh, 18px); }
+.jf-auth-forgot .fld-lbl { font-size: 10px; letter-spacing: 0.14em; margin-bottom: 7px; }
+.jf-auth-forgot .fld-in { height: clamp(44px, 5.4vh, 50px); font-size: 15px; padding: 0 14px; }
+.jf-auth-forgot .pw-wrap .fld-in { padding-right: 48px; }
+.jf-auth-forgot .fld-note { margin-top: 7px; font-size: 10.5px; }
+.jf-auth-forgot .grid2 { gap: 16px; }
+.jf-auth-forgot .chips { gap: 8px; margin-top: 10px; }
+.jf-auth-forgot .chip { height: clamp(34px, 4vh, 38px); padding: 0 13px; font-size: 13px; }
+
+/* The commitment stands off from the fields it closes. */
+.jf-auth-forgot form > .btn { margin-top: clamp(14px, 2.4vh, 22px); }
+.jf-auth-forgot .btn { height: clamp(46px, 5.8vh, 52px); font-size: 13.5px; }
+.jf-auth-forgot .btn-pair { margin-top: clamp(20px, 3.4vh, 30px); }
+.jf-auth-forgot .row { margin: -6px 0 clamp(18px, 3vh, 26px); }
+.jf-auth-forgot .err { margin-top: 14px; }
+
+/* The alternate route and the foot are the quiet tier: further away,
+   the same size, never louder than the primary. */
+.jf-auth-forgot .divider { margin: clamp(18px, 3vh, 26px) 0; }
+.jf-auth-forgot .foot { margin-top: clamp(24px, 3.8vh, 34px); font-size: 13.5px; }
+
+.jf-auth-forgot .done-mark { width: 52px; height: 52px; margin-bottom: clamp(16px, 2.8vh, 24px); }
+.jf-auth-forgot .done-mark .ic { width: 24px; height: 24px; }
+
+/* Focus and selection belong to the palette, not the browser. */
+.jf-auth-forgot .fld-in:focus-visible { box-shadow: 4px 4px 0 var(--ink); }
+.jf-auth-forgot .btn:focus-visible, .jf-auth-forgot .chip:focus-visible, .jf-auth-forgot .pw-toggle:focus-visible, .jf-auth-forgot .link-ink:focus-visible, .jf-auth-forgot .link-quiet:focus-visible {
+  outline: 2px solid var(--blueprint); outline-offset: 2px;
+}
+.jf-auth-forgot ::selection { background: var(--blueprint); color: #fff; }
+.jf-auth-forgot .fld-in { caret-color: var(--blueprint); }
+
+@media (max-height: 760px), (max-width: 1000px) {
+  .jf-auth-forgot .auth { height: auto; min-height: 100dvh; overflow: visible; }
+  .jf-auth-forgot .auth-form { max-height: none; overflow: visible; }
+}
+@media (max-width: 1000px) {
+  .jf-auth-forgot .auth-form { padding-left: 32px; padding-right: 32px; max-width: 560px; }
+  .jf-auth-forgot .auth-form .brand { left: 32px; }
+}

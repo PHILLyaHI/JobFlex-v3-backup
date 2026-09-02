@@ -88,6 +88,11 @@ import { ClientField, ProjectField, type NewClientInput } from "./bp-pickers";
 // money columns carrying their own running totals in the header. It lives
 // outside this folder because it is shared with the line-item lab.
 import { LinesV2 } from "../lines-v2/lines-v2";
+// The handheld build of the same card. Not lazy: it is ~6KB beside a page that
+// already ships the desk table, and a `dynamic()` here would blank the tallest
+// card in the column for a frame on every phone load.
+import { LinesMobile } from "../lines-mobile/lines-mobile";
+import type { LineItemsProps } from "../lines-lab/lines-contract";
 import { PaymentBlock } from "./bp-money";
 import { MarkupBlock } from "./bp-markup";
 import { PrintOptions, FilesBlock } from "./bp-blocks";
@@ -107,6 +112,7 @@ import {
 import { setClientEmail } from "@/actions/clients";
 import type { ManualBuilderData } from "./manual-blueprint-load";
 import { useReveal } from "./use-reveal";
+import { useHandheld } from "./use-handheld";
 
 /**
  * The masthead chip. ONE state rather than a status enum plus a message,
@@ -218,6 +224,19 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   // The fleet entrance cascade. Marker-driven, not children-driven — see
   // ./use-reveal.ts for why this page cannot use the donor's walk.
   useReveal();
+
+  // Two of the eleven cards get a handheld build rather than a squeezed copy of
+  // the desk one — the priced table (03) and the paper controls (11). See
+  // ./use-handheld.ts.
+  const handheld = useHandheld();
+
+  /* Card 03's two builds behind one name. Both implement the lab's
+     `LineItemsProps` contract — that contract exists precisely so a variant is
+     a one-line swap — plus the builder's `hideTax`, so the annotation is the
+     shared shape rather than either component's own. */
+  const Lines: (props: LineItemsProps & { hideTax?: boolean }) => React.ReactNode = handheld
+    ? LinesMobile
+    : LinesV2;
 
   const totals = useMemo(() => computeTotals(draft), [draft]);
 
@@ -454,21 +473,73 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
           <div className="kicker">Proposal builder</div>
           <h1 className="page-title">Manual proposal</h1>
         </div>
-        <div className={styles.meta}>
-          <span className={styles.metaMono}>
-            {identity.ref} · {identity.date}
-          </span>
-          <span className={styles.metaOrg}>{identity.orgName}</span>
-          <span className={styles.state} role="status">
+        {/* ── THE MASTHEAD'S ANNOTATIONS, IN TWO BUILDS ────────────────
+            On the desk they are a right-aligned column hanging off the
+            title: reference, org, save state, three sizes and three
+            colours, read as a margin note beside a 46px heading.
+
+            At 390 that column has nowhere to hang. Stacked left under the
+            title it became three unlabelled lines of near-identical
+            weight — "DRAFT · 2026-09-01", then a company name, then a
+            sentence about saving — and nothing said which of the three was
+            a fact about the document and which was a fact about THIS
+            MOMENT. The one that changes while you work was the quietest.
+
+            The handheld build separates those two questions. The save
+            state is promoted to a plate that carries its own tone (idle /
+            working / saved / blocked), because it is a status and a status
+            should look like one. Everything the document simply IS — its
+            reference, its date, whose it is — collapses onto ONE mono
+            annotation line under it, which is what the mono layer is for
+            on this page. Two rows, in rank order, instead of three that
+            rank equally. */}
+        {handheld ? (
+          <div className={styles.metaMob}>
             <span
               className={cx(
-                styles.stateDot,
-                (note.tone === "live" || note.tone === "err") && styles.stateDotLive,
+                styles.mstat,
+                note.tone === "live" && styles.mstatLive,
+                note.tone === "ok" && styles.mstatOk,
+                note.tone === "err" && styles.mstatErr,
               )}
-            />
-            {note.text}
-          </span>
-        </div>
+              role="status"
+            >
+              <span className={styles.mstatDot} aria-hidden="true" />
+              {note.text}
+            </span>
+            <span className={styles.mline}>
+              {identity.ref}
+              <span className={styles.mlineSep} aria-hidden="true">
+                ·
+              </span>
+              {identity.date}
+              {identity.orgName ? (
+                <>
+                  <span className={styles.mlineSep} aria-hidden="true">
+                    ·
+                  </span>
+                  {identity.orgName}
+                </>
+              ) : null}
+            </span>
+          </div>
+        ) : (
+          <div className={styles.meta}>
+            <span className={styles.metaMono}>
+              {identity.ref} · {identity.date}
+            </span>
+            <span className={styles.metaOrg}>{identity.orgName}</span>
+            <span className={styles.state} role="status">
+              <span
+                className={cx(
+                  styles.stateDot,
+                  (note.tone === "live" || note.tone === "err") && styles.stateDotLive,
+                )}
+              />
+              {note.text}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className={styles.stack}>
@@ -565,8 +636,13 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         {/* `wide` — the priced table is ~860px on its own grid, which is wider
             than a phone and is not a layout to squeeze. At handheld width it
             scrolls inside this card rather than panning the whole column. */}
-        <Card num="03" title="Line items" id="q-03" wide>
-          <LinesV2
+        {/* `wide` is the DESK card's escape hatch — the seven-column priced
+            table is ~860px and scrolls inside the card rather than taking the
+            whole column sideways. The handheld build has no table and no
+            overflow, so it must not get a scroll container: `wide` also clips,
+            and the row's unit <select> hangs its popup outside the body. */}
+        <Card num="03" title="Line items" id="q-03" wide={!handheld}>
+          <Lines
             lines={draft.lines}
             openIds={openLines}
             onToggle={(id) =>
@@ -775,9 +851,18 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
 
       {/* THE ONE PERSISTENT DEVICE ---------------------------------- */}
       <div className={styles.bar} data-rv="">
-        <div>
+        <div className={styles.barTotal}>
           <div className={styles.barLabel}>Grand total</div>
-          <div className={styles.barMoney}>{money(totals.total)}</div>
+          {/* The figure steps down a size past 13 characters
+              ("$1,234,567.89"), the last that fits beside the two actions on
+              a 390px bar, and may break past that — a capped line is still
+              a 22-character total, and a 24px figure that could not break
+              ran 240px past the screen. */}
+          <div
+            className={cx(styles.barMoney, money(totals.total).length > 13 && styles.barMoneyLong)}
+          >
+            {money(totals.total)}
+          </div>
         </div>
         {/* The two actions that move the proposal forward, and nothing else —
             which is what a persistent bar should carry. Both are DISABLED

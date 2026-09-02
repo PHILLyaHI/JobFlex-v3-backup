@@ -16,6 +16,7 @@
 
 import { scanReceipt, saveReceiptExpense } from "@/actions/receiptOcr";
 import { deleteJobExpense } from "@/actions/expenses";
+import { safeHref } from "@/lib/safeHref";
 import { deleteChangeOrder, sendChangeOrder } from "@/actions/changeOrders";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
@@ -25,8 +26,11 @@ import {
   type Expense,
   type Invoice,
   type MonthPoint,
+  type OverheadMonth,
+  type OverheadSheet,
   type Rollup,
 } from "./financials-data";
+import { initOverheadPanel } from "./overhead-behavior";
 
 /** `job` holds a real Job ID once a receipt is staged — it is submitted as-is. */
 type Staged = { vendor: string; total: number; category: string; job: string };
@@ -50,6 +54,11 @@ export type FinancialsOptions = {
   expenses?: Expense[];
   orders?: ChangeOrder[];
   invoices?: Invoice[];
+  /** Twelve months of job money, oldest first, and every saved overhead sheet.
+   *  Both belong to the Overhead tab (overhead-behavior.ts); they pass through
+   *  here only because one init call owns the whole page. */
+  overheadMonths?: OverheadMonth[];
+  overheadSheets?: Record<string, OverheadSheet>;
 };
 
 const EMPTY_ROLLUP: Rollup = {
@@ -141,6 +150,13 @@ export function initFinancialsContent(
     });
   });
 
+  // What the Overhead tab last computed for the month it is showing. Seeded
+  // from the newest month's saved sheet so the Overview card is right on first
+  // paint, then kept live by `onTotals` as the sheet is edited.
+  let overheadLeft = 0;
+  let overheadCovered = true;
+  let overheadEmpty = true;
+
   const fin: { tab: string; staged: Staged | null } = { tab: "overview", staged: null };
   const jobs: FinancialsJob[] = options.jobs ?? [];
   /** Blocks a double submit while the expense is on the wire. */
@@ -157,6 +173,11 @@ export function initFinancialsContent(
 
   function money(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
+  }
+  /** money() on a negative prints "$-5,100"; the minus belongs in front of the
+   *  dollar sign, not after it. Only the overhead card can go negative. */
+  function signedMoney(n: number) {
+    return (n < 0 ? "-" : "") + money(Math.abs(n));
   }
   function shortMoney(n: number) {
     return n >= 1000 ? "$" + Math.round(n / 1000) + "k" : "$" + n;
@@ -586,6 +607,19 @@ export function initFinancialsContent(
         d: { txt: rollup.marginPct.toFixed(1) + "%", up: rollup.marginPct >= 0 },
       },
       { k: "pipeline", l: "Pipeline value", v: money(rollup.pipelineValue), h: "Open proposals" },
+      // The whole point of the Overhead tab, restated where the money is read:
+      // a month of profitable jobs can still be a losing month once rent, the
+      // truck and the software are paid. Live — the Overhead tab patches this
+      // card as the sheet is typed, without a reload.
+      {
+        k: "overhead",
+        l: "After overhead",
+        v: signedMoney(overheadLeft),
+        h: overheadEmpty ? "No overhead entered yet" : "This month's bills paid",
+        // No verdict on an unfilled sheet — "COVERED" against zero bills is a
+        // lie the Overhead tab itself refuses to tell.
+        d: overheadEmpty ? undefined : { txt: overheadCovered ? "COVERED" : "SHORT", up: overheadCovered },
+      },
     ];
     const grid = $("#statGrid");
     if (!grid) return;
@@ -628,6 +662,23 @@ export function initFinancialsContent(
       const el = root.querySelector<HTMLElement>('[data-stat="' + key + '"] .stat-val');
       if (el && el.textContent !== text) el.textContent = text;
     };
+    set("overhead", signedMoney(overheadLeft));
+    const ohCard = root.querySelector<HTMLElement>('[data-stat="overhead"]');
+    if (ohCard) {
+      const hint = ohCard.querySelector<HTMLElement>(".stat-hint");
+      if (hint) hint.textContent = overheadEmpty ? "No overhead entered yet" : "This month's bills paid";
+      let ohDelta = ohCard.querySelector<HTMLElement>(".stat-delta");
+      if (overheadEmpty) {
+        ohDelta?.remove();
+      } else {
+        if (!ohDelta) {
+          ohDelta = document.createElement("div");
+          ohCard.insertBefore(ohDelta, hint);
+        }
+        ohDelta.className = "stat-delta " + (overheadCovered ? "tone-ok" : "tone-bad");
+        ohDelta.textContent = (overheadCovered ? "▲ " : "▼ ") + (overheadCovered ? "COVERED" : "SHORT");
+      }
+    }
     set("expenses", money(rollup.expenses30d));
     set("profit", money(rollup.profit30d));
     const delta = root.querySelector<HTMLElement>('[data-stat="profit"] .stat-delta');
@@ -718,9 +769,9 @@ export function initFinancialsContent(
       // The receipt button used to flash a tick and put itself back (the donor's
       // `data-flash-icon`). It is the stored image now — blob URL when a token
       // is configured, the data URL otherwise — opened in a new tab.
-      (e.receiptUrl
+      (safeHref(e.receiptUrl)
         ? '<a class="icon-sq" href="' +
-          esc(e.receiptUrl) +
+          esc(safeHref(e.receiptUrl) ?? "") +
           '" target="_blank" rel="noreferrer" aria-label="Open receipt"><svg class="ic"><use href="#i-ext"/></svg></a>'
         : "") +
       '<button class="icon-sq danger" type="button" data-act="del-exp" aria-label="Delete expense"><svg class="ic"><use href="#i-trash"/></svg></button>' +
@@ -850,6 +901,25 @@ export function initFinancialsContent(
     const empty = $("#invEmpty");
     if (empty) empty.classList.toggle("is-hidden", invoicesData.length !== 0);
   }
+
+  // The Overhead tab boots BEFORE the first render batch: its opening
+  // computation is what seeds `overheadLeft`, so the Overview strip's "After
+  // overhead" card is correct on first paint rather than a frame later. After
+  // that, `onTotals` keeps it live while the sheet is typed.
+  disposers.push(
+    initOverheadPanel(root, {
+      months: options.overheadMonths ?? [],
+      sheets: options.overheadSheets ?? {},
+      onTotals: (t) => {
+        overheadLeft = t.left;
+        overheadCovered = t.covered;
+        overheadEmpty = t.empty;
+        // Nothing to patch until the strip exists; renderStats reads the same
+        // two variables when it builds the cards.
+        if (root.querySelector('[data-stat="overhead"]')) patchStats();
+      },
+    }),
+  );
 
   function renderFin() {
     renderChart();

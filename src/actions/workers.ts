@@ -3,11 +3,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { requireManager, requireOrg } from "@/lib/orgContext";
+import { isOwnerRole, requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { enforcePlanLimit, isManagerEquivalentRole } from "@/lib/limitsEngine";
 import { appBaseUrl } from "@/lib/appUrl";
 import { AssignmentStatus, Role, roleLabel } from "@/lib/prismaEnums";
-import { signIn } from "@/lib/auth";
+import { auth, signIn } from "@/lib/auth";
+import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 
 const inviteInput = z.object({
   name: z.string().min(1),
@@ -23,6 +25,12 @@ const inviteInput = z.object({
 export async function createWorkerInvite(raw: unknown) {
   const { organizationId, user: inviter } = await requireManager();
   const data = inviteInput.parse(raw);
+
+  // Manager seats are plan-metered (owner's call, 2026-08-31): the crew flow
+  // writes the membership at invite time, so the seat is charged here.
+  if (isManagerEquivalentRole(data.role)) {
+    await enforcePlanLimit(organizationId, "managers");
+  }
 
   // Gate on the absolute "workers" seat limit. Only count it against the plan
   // when this invite would add a NEW seat (re-inviting an existing worker in
@@ -213,9 +221,10 @@ const acceptInput = z.object({
 
 export async function acceptWorkerInvite(raw: unknown) {
   const { token, password } = acceptInput.parse(raw);
+  await enforceRateLimit(`invite-accept:${await clientIp()}`, 20, HOUR, "attempts");
   const profile = await db.workerProfile.findUnique({
     where: { token },
-    include: { user: { select: { id: true, email: true } } },
+    include: { user: { select: { id: true, email: true, hashedPassword: true } } },
   });
   // Require a still-open invite. One constant message for missing/declined/
   // already-accepted so a random token can't be probed for its state, and so a
@@ -224,15 +233,40 @@ export async function acceptWorkerInvite(raw: unknown) {
     throw new Error("This invite link is no longer valid.");
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
-  await db.user.update({
-    where: { id: profile.userId },
-    data: {
-      hashedPassword,
-      // Make their company the active org so the session resolves correctly.
-      activeOrgId: profile.organizationId,
-    },
-  });
+  // ACCOUNT-TAKEOVER GUARD. The invite token proves the inviter typed this
+  // email — it does NOT prove the acceptor owns the account behind it. If the
+  // user already has a password (an owner/manager of another company, or any
+  // self-registered user), a manager elsewhere could invite that address, read
+  // the token off their own roster, and "accept" with a new password: full
+  // takeover of the victim's login and every org they belong to. So a
+  // password-bearing account is only joined by its own signed-in session; the
+  // token alone never rewrites a password.
+  const hasPassword = Boolean(profile.user?.hashedPassword);
+  if (hasPassword) {
+    const session = await auth();
+    if (!session?.user?.id || session.user.id !== profile.userId) {
+      throw new Error(
+        `This email already has a JobFlex account. Sign in as ${profile.user?.email ?? "that account"} first, then open the invite link again.`,
+      );
+    }
+    await db.user.update({
+      where: { id: profile.userId },
+      data: { activeOrgId: profile.organizationId },
+    });
+  } else {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await db.user.update({
+      where: { id: profile.userId },
+      data: {
+        hashedPassword,
+        // Make their company the active org so the session resolves correctly.
+        activeOrgId: profile.organizationId,
+        // New credential epoch: any token issued before this password existed
+        // is invalidated (same rule as the password-reset flow).
+        credentialVersion: { increment: 1 },
+      },
+    });
+  }
   await db.workerProfile.update({
     where: { id: profile.id },
     data: { inviteStatus: "ACCEPTED", respondedAt: new Date() },
@@ -257,7 +291,7 @@ export async function acceptWorkerInvite(raw: unknown) {
   // NextAuth redirects; on failure it throws (the client shows the error and the
   // already-created account can still log in normally).
   const email = profile.user?.email;
-  if (email) {
+  if (email && !hasPassword) {
     await signIn("credentials", { email, password, redirectTo: "/dashboard/jobs" });
   }
   return { email: email ?? null };
@@ -298,7 +332,7 @@ const updateWorkerInput = z.object({
 // Edit an existing worker's profile (name, phone, specialties, rate). Email is
 // the worker's login identity and is intentionally not editable here.
 export async function updateWorker(raw: unknown) {
-  const { organizationId } = await requireManager();
+  const { organizationId, role: actorRole } = await requireManager();
   const data = updateWorkerInput.parse(raw);
   const w = await db.workerProfile.findUnique({ where: { id: data.id } });
   if (!w || w.organizationId !== organizationId) throw new Error("Not found");
@@ -318,10 +352,18 @@ export async function updateWorker(raw: unknown) {
       where: { userId_organizationId: { userId: w.userId, organizationId } },
     });
     // data.role is always a worker role (never OWNER), so changing an owner here
-    // is always a demotion — guard the last one.
+    // is always a demotion — only an owner may do that (mirrors team.ts), and
+    // never to the last one.
     if (current?.role === Role.OWNER) {
+      if (!isOwnerRole(actorRole)) {
+        throw new Error("Only the owner can change an owner's role.");
+      }
       const owners = await db.membership.count({ where: { organizationId, role: Role.OWNER } });
       if (owners <= 1) throw new Error("Can't change the last owner's role.");
+    }
+    // Promoting into a manager seat consumes one from the plan's meter.
+    if (isManagerEquivalentRole(data.role) && !isManagerEquivalentRole(current?.role)) {
+      await enforcePlanLimit(organizationId, "managers");
     }
     await db.membership.updateMany({
       where: { userId: w.userId, organizationId },
@@ -353,15 +395,17 @@ export async function revokeWorker(workerId: string) {
 // hold a worker profile is never locked out of their own org. The shared User
 // record is left intact — they may belong to other organizations.
 export async function removeWorker(workerId: string) {
-  const { organizationId } = await requireManager();
+  const { organizationId, role: actorRole } = await requireManager();
   const w = await db.workerProfile.findUnique({ where: { id: workerId } });
   if (!w || w.organizationId !== organizationId) throw new Error("Not found");
 
-  // Don't strip the last owner's seat.
+  // Owner seats are owner-only to remove (mirrors team.ts removeMember), and
+  // the last one is never removable.
   const membership = await db.membership.findUnique({
     where: { userId_organizationId: { userId: w.userId, organizationId } },
   });
   if (membership?.role === Role.OWNER) {
+    if (!isOwnerRole(actorRole)) throw new Error("Only the owner can remove an owner.");
     const owners = await db.membership.count({ where: { organizationId, role: Role.OWNER } });
     if (owners <= 1) throw new Error("Can't remove the last owner.");
   }
@@ -369,6 +413,11 @@ export async function removeWorker(workerId: string) {
   await db.workerProfile.delete({ where: { id: workerId } });
   // Drop the org seat regardless of role (the roster now holds any role).
   await db.membership.deleteMany({ where: { userId: w.userId, organizationId } });
+  // A removed member must not keep pointing at this org from their JWT/DB.
+  await db.user.updateMany({
+    where: { id: w.userId, activeOrgId: organizationId },
+    data: { activeOrgId: null },
+  });
 
   revalidatePath("/dashboard/workers");
 }

@@ -5,6 +5,7 @@ import { requireManager, requireJobEventCreator, requireOrg, isWorkerRole } from
 import { db } from "@/lib/db";
 import { JobStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
 
 const jobInput = z.object({
   title: z.string().min(1),
@@ -53,6 +54,12 @@ export async function createJob(raw: unknown) {
     }
     effectiveWorkerIds = [self.id];
   }
+
+  // The linked client/proposal must be this org's — see lib/assertLinksInOrg.
+  await assertLinksInOrg(organizationId, {
+    clientId: data.clientId,
+    proposalId: data.proposalId,
+  });
 
   const job = await db.job.create({
     data: {

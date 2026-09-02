@@ -11,6 +11,7 @@ import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 const STUB: GeneratedEstimate = {
   title: "Cedar privacy fence estimate · AI disabled",
@@ -48,6 +49,7 @@ export async function estimateFence(input: {
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
   const { organizationId } = await requireEstimatorOrManager();
+await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
   // Union failure (not a throw): thrown messages are redacted in prod, and
   // this action's callers already branch on { ok }.
   const quota = await checkPlanLimit(organizationId, "estimatorUses");

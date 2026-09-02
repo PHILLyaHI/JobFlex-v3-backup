@@ -264,9 +264,10 @@ export function MobileHireProfile({
                 : "Nobody can find you yet"}
             </h2>
             <p className="mhp-band-m">
-              {listed
-                ? "Any company outside your own can see the row below and reach out."
-                : "Your details are saved, but no directory shows them and no job reaches you."}
+              <b>Matching trade jobs reach you.</b> When another company posts work in a
+              trade you list, the post is broadcast. They see your name, company, trades
+              and service area &mdash; never your email &mdash; and their interest arrives
+              as a notification.
             </p>
             {hp.optInPending ? (
               <p className="mhp-pending">
@@ -274,23 +275,6 @@ export function MobileHireProfile({
               </p>
             ) : null}
 
-            {/* Honest copy: exactly the two things the record does, no more. */}
-            <ul className="mhp-facts">
-              <li className="mhp-fact">
-                <Icon id="i-send" />
-                <span>
-                  <b>Matching trade jobs reach you.</b> When another company posts work in a
-                  trade you list, the post is broadcast to you.
-                </span>
-              </li>
-              <li className="mhp-fact">
-                <Icon id="i-msg" />
-                <span>
-                  <b>Other companies can contact you.</b> They see your name, company, trades
-                  and service area — never your email.
-                </span>
-              </li>
-            </ul>
           </section>
 
           {/* ============ THE MIRROR — your own directory row ============ */}

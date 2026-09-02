@@ -230,6 +230,15 @@
   transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
 }
 .bp :global(.sb-link .ic) { width: 17px; height: 17px; opacity: 0.72; }
+/* Custom-plan locked page: dimmed but present, with a padlock where the badge
+   would sit. The link still works — it opens the upgrade offer. */
+.bp :global(.sb-link.sb-lockd) { opacity: 0.48; }
+.bp :global(.sb-link.sb-lockd:hover) { opacity: 0.85; }
+.bp :global(.sb-lock-ic) {
+  width: 13px; height: 13px; margin-left: auto; flex-shrink: 0;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; opacity: 0.8;
+}
 .bp :global(.sb-link:hover:not(.active)) { background: var(--paper-deep); }
 .bp :global(.sb-link:hover) { color: var(--ink); }
 .bp :global(.sb-link.active) {

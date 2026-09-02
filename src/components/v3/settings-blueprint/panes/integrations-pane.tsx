@@ -23,62 +23,104 @@
 //   F13 — `sc-b--rows` on the three row-list bodies (Behavior, Recent webhook
 //         deliveries, Templates); the donor's ad-hoc inline
 //         `padding-top:4px;padding-bottom:4px` is gone.
-//   F15 — Meta > Connection: org text and the Test event / Disconnect pair share
+//   F15 — Meta > Connection: org text and the connect/disconnect button share
 //         one row; `.prow-act--pair` keeps the buttons label-sized, pinned to
 //         the RIGHT edge by the base `.prow-act`.
 //   F18 — the "Email is not configured" `.note` lost its standalone
 //         `<section class="sc">`; it now renders above the `.sub` bar while the
-//         Email-templates subtab is active.
+//         Email-templates subtab is active — and only when the transport really
+//         is unconfigured.
 //   F7  — inherited: `.btn-sm` centres its own label (CSS-side).
+//
+// REAL DATA:
+//   Gmail  — connected iff Organization.gmailTokensJson exists; the rest of the
+//            card reads gmailSettingsJson. Connect hands off to the live OAuth
+//            route, Disconnect calls disconnectGmail, Save calls
+//            updateGmailSettings. Permissions lists the scopes the OAuth route
+//            actually requests, and only once a connection exists.
+//   Meta   — metaSettingsJson (there is no Meta OAuth; "connected" is the org's
+//            own forwarding flag, the same one the classic settings page owns).
+//   Email  — the org's EmailTemplate rows.
+//
+// HONEST EMPTY STATES: no model records webhook deliveries and no
+// /api/webhooks/meta route exists, so that card is always empty; the donor's
+// invented callback URL is replaced by the app's real origin and its invented
+// "Verify token" field is gone; the donor's "Test event" button had nothing
+// behind it and is gone too.
 
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { CardHead, SubTabKey } from "../settings-data";
 import {
+  disconnectGmail,
+  updateGmailSettings,
+  updateMetaSettings,
+} from "@/actions/settings";
+import type { Badge, CardHead, PaneProps, SubTabKey } from "../settings-data";
+import {
+  CONNECTED_BADGE,
   DEFAULT_SUBTAB,
-  EMAIL_TEMPLATES,
+  DISCONNECT_ACTION,
   EMAIL_TEMPLATES_CARD,
+  EMAIL_TEMPLATES_EMPTY,
   EMAIL_TEMPLATES_NOTE,
+  EMAIL_TEMPLATE_EDIT_LABEL,
   EMAIL_TEMPLATE_NEW_ACTION,
   GMAIL_BEHAVIOR_CARD,
   GMAIL_BEHAVIOR_TOGGLES,
   GMAIL_CONNECTION_CARD,
   GMAIL_CONNECT_ACTION,
   GMAIL_FROM_CARD,
-  GMAIL_FROM_FIELDS,
+  GMAIL_FROM_LABELS,
   GMAIL_PERMISSIONS_CARD,
-  GMAIL_SCOPES,
+  GMAIL_SCOPES_EMPTY,
   INTEGRATION_SUBTABS,
-  META_CALLBACK_URL,
+  META_CALLBACK_LABEL,
   META_CATEGORY_SELECT,
-  META_CONNECTION,
+  META_CONNECTED_DESC,
   META_CONNECTION_CARD,
+  META_CONNECTION_ICON,
+  META_CONNECT_ACTION,
+  META_DISCONNECTED_DESC,
+  META_DISCONNECT_ACTION,
   META_LEAD_CARD,
   META_LEAD_TOGGLES,
-  META_PAGE_SELECT,
-  META_VERIFY_TOKEN,
+  META_PAGE_LABEL,
+  NOT_CONNECTED_BADGE,
   SCOPE_CHECK,
   SIGNATURE_SELECT,
   WEBHOOKS_CARD,
-  WEBHOOK_DELIVERIES,
+  WEBHOOKS_EMPTY,
+  metaCategoryKeyFor,
+  metaCategoryOptionFor,
+  signatureKeyFor,
+  signatureOptionFor,
 } from "../settings-data";
-import { CopyBox, Field, Sel, Toggle } from "../ui";
+import { CopyBox, Field, SaveBar, Sel, Toggle } from "../ui";
 
 /* ─────────────────────────── local helpers ─────────────────────────── */
 
 /** Donor `.sc-h`: title + sub in one `<div>`, then the badge or a trailing action. */
-function CardHeader({ card, action }: { card: CardHead; action?: ReactNode }) {
+function CardHeader({
+  card,
+  badge,
+  action,
+}: {
+  card: CardHead;
+  badge?: Badge;
+  action?: ReactNode;
+}) {
+  const shown = badge ?? card.badge;
   return (
     <div className="sc-h">
       <div>
         <div className="sc-t">{card.title}</div>
         <div className="sc-s">{card.sub}</div>
       </div>
-      {card.badge ? (
-        <span className={`badge2 ${card.badge.tone}`}>
+      {shown ? (
+        <span className={`badge2 ${shown.tone}`}>
           <i />
-          {card.badge.label}
+          {shown.label}
         </span>
       ) : null}
       {action}
@@ -109,31 +151,68 @@ function ToggleRowItem({
   );
 }
 
-/** Flip one index of a boolean row-state array. */
-function flipAt(state: readonly boolean[], index: number, next: boolean): boolean[] {
-  return state.map((v, i) => (i === index ? next : v));
-}
-
 /* ──────────────────────────────── pane ─────────────────────────────── */
 
-export function IntegrationsPane() {
+export function IntegrationsPane({ data }: PaneProps) {
+  const { gmail, meta, templates, webhooks, emailConfigured } = data.integrations;
+
   const [sub, setSub] = useState<SubTabKey>(DEFAULT_SUBTAB);
 
-  const [signature, setSignature] = useState<string>(SIGNATURE_SELECT.defaultValue);
-  const [gmailBehavior, setGmailBehavior] = useState<boolean[]>(() =>
-    GMAIL_BEHAVIOR_TOGGLES.map((t) => t.on),
-  );
+  const [displayName, setDisplayName] = useState(gmail.displayName);
+  const [replyTo, setReplyTo] = useState(gmail.replyTo);
+  const [signature, setSignature] = useState<string>(signatureOptionFor(gmail.signature));
+  const [sendFromUser, setSendFromUser] = useState(gmail.sendFromUser);
+  const [trackOpens, setTrackOpens] = useState(gmail.trackOpens);
+  const [autoSync, setAutoSync] = useState(gmail.autoSync);
 
-  const [metaPage, setMetaPage] = useState<string>(META_PAGE_SELECT.defaultValue);
-  const [metaCategory, setMetaCategory] = useState<string>(META_CATEGORY_SELECT.defaultValue);
-  const [metaLead, setMetaLead] = useState<boolean[]>(() => META_LEAD_TOGGLES.map((t) => t.on));
+  const gmailToggle: Record<string, [boolean, (next: boolean) => void]> = {
+    sendFromUser: [sendFromUser, setSendFromUser],
+    trackOpens: [trackOpens, setTrackOpens],
+    autoSync: [autoSync, setAutoSync],
+  };
+
+  const saveGmail = () =>
+    updateGmailSettings({
+      // `connected` is owned by the OAuth callback — the action re-reads the
+      // stored value and ignores whatever is passed here.
+      connected: gmail.connected,
+      sendFromUser,
+      trackOpens,
+      autoSync,
+      displayName,
+      replyTo,
+      signature: signatureKeyFor(signature),
+    });
+
+  const [metaConnected, setMetaConnected] = useState(meta.connected);
+  const [metaPage, setMetaPage] = useState<string>(meta.defaultPage);
+  const [metaCategory, setMetaCategory] = useState<string>(
+    metaCategoryOptionFor(meta.formCategory),
+  );
+  const [autoCreate, setAutoCreate] = useState(meta.autoCreate);
+  const [autoText, setAutoText] = useState(meta.autoText);
+
+  const metaToggle: Record<string, [boolean, (next: boolean) => void]> = {
+    autoCreate: [autoCreate, setAutoCreate],
+    autoText: [autoText, setAutoText],
+  };
+
+  const saveMeta = (connected: boolean) =>
+    updateMetaSettings({
+      connected,
+      autoCreate,
+      autoText,
+      defaultPage: metaPage,
+      formCategory: metaCategoryKeyFor(metaCategory),
+    });
 
   return (
     <>
       {/* F18 (moved again) — the "Email is not configured" note now leads the
           Email-templates subtab: it renders ABOVE the subtab bar, between the
-          pane title and the tabs, not inside the Templates card. */}
-      {sub === "email" ? (
+          pane title and the tabs, not inside the Templates card. It only shows
+          when no transport is actually configured. */}
+      {sub === "email" && !emailConfigured ? (
         <div className="note" style={{ marginBottom: "14px" }}>
           <svg className="ic">
             <use href={`#${EMAIL_TEMPLATES_NOTE.icon}`} />
@@ -170,24 +249,53 @@ export function IntegrationsPane() {
       <div className={sub === "gmail" ? "subpane on" : "subpane"}>
         {/* ── Connection ── */}
         <section className="sc">
-          <CardHeader card={GMAIL_CONNECTION_CARD} />
+          <CardHeader
+            card={GMAIL_CONNECTION_CARD}
+            badge={gmail.connected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
+          />
           <div className="sc-b">
-            {/* Real OAuth hand-off — same server route the classic settings page
-                uses; Google redirects back through /api/integrations/gmail/callback. */}
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={() => {
-                window.location.href = "/api/integrations/gmail/connect";
-              }}
-            >
-              {GMAIL_CONNECT_ACTION.icon ? (
-                <svg className="ic ic--brand">
-                  <use href={`#${GMAIL_CONNECT_ACTION.icon}`} />
-                </svg>
-              ) : null}
-              {GMAIL_CONNECT_ACTION.label}
-            </button>
+            {gmail.connected ? (
+              /* Donor `style="padding-top:0"` — this row opens the card body. */
+              <div className="prow" style={{ paddingTop: 0 }}>
+                <span className="prow-ic">
+                  <svg className="ic ic--brand">
+                    <use href="#i-google" />
+                  </svg>
+                </span>
+                <span className="prow-b">
+                  <span className="prow-n">
+                    {gmail.connectedEmail || gmail.replyToPlaceholder}
+                  </span>
+                  <span className="prow-d">{GMAIL_CONNECTION_CARD.sub}</span>
+                </span>
+                <span className="prow-act">
+                  <button
+                    className={`btn btn-ghost btn-sm ${DISCONNECT_ACTION.state}`}
+                    type="button"
+                    onClick={() => void disconnectGmail()}
+                  >
+                    {DISCONNECT_ACTION.icon ? (
+                      <svg className="ic">
+                        <use href={`#${DISCONNECT_ACTION.icon}`} />
+                      </svg>
+                    ) : null}
+                    {DISCONNECT_ACTION.label}
+                  </button>
+                </span>
+              </div>
+            ) : (
+              /* Real OAuth hand-off — same server route the classic settings
+                 page uses; Google redirects back through
+                 /api/integrations/gmail/callback. */
+              <a className="btn btn-primary" href={gmail.connectHref}>
+                {GMAIL_CONNECT_ACTION.icon ? (
+                  <svg className="ic ic--brand">
+                    <use href={`#${GMAIL_CONNECT_ACTION.icon}`} />
+                  </svg>
+                ) : null}
+                {GMAIL_CONNECT_ACTION.label}
+              </a>
+            )}
           </div>
         </section>
 
@@ -196,15 +304,18 @@ export function IntegrationsPane() {
           <CardHeader card={GMAIL_FROM_CARD} />
           <div className="sc-b">
             <div className="fgrid">
-              {GMAIL_FROM_FIELDS.map((f) => (
-                <Field
-                  key={f.label}
-                  label={f.label}
-                  value={f.value}
-                  placeholder={f.placeholder}
-                  disabled={f.disabled}
-                />
-              ))}
+              <Field
+                label={GMAIL_FROM_LABELS.displayName}
+                value={displayName}
+                placeholder={gmail.displayNamePlaceholder}
+                onChange={setDisplayName}
+              />
+              <Field
+                label={GMAIL_FROM_LABELS.replyTo}
+                value={replyTo}
+                placeholder={gmail.replyToPlaceholder}
+                onChange={setReplyTo}
+              />
             </div>
             <div style={{ marginTop: "14px" }}>
               {/* F10 — donor `<select class="fin">` */}
@@ -222,30 +333,41 @@ export function IntegrationsPane() {
         <section className="sc">
           <CardHeader card={GMAIL_BEHAVIOR_CARD} />
           <div className="sc-b sc-b--rows">
-            {GMAIL_BEHAVIOR_TOGGLES.map((t, i) => (
-              <ToggleRowItem
-                key={t.name}
-                name={t.name}
-                desc={t.desc}
-                on={gmailBehavior[i] ?? t.on}
-                onChange={(next) => setGmailBehavior((s) => flipAt(s, i, next))}
-              />
-            ))}
+            {GMAIL_BEHAVIOR_TOGGLES.map((t) => {
+              const [on, set] = gmailToggle[t.key];
+              return (
+                <ToggleRowItem
+                  key={t.key}
+                  name={t.name}
+                  desc={t.desc}
+                  on={on}
+                  onChange={set}
+                />
+              );
+            })}
           </div>
+          {/* The Gmail subtab's one Save bar: gmailSettingsJson is a single
+              column, so this writes the From address and the behavior flags
+              together. */}
+          <SaveBar onSave={saveGmail} />
         </section>
 
         {/* ── Permissions ── */}
         <section className="sc">
           <CardHeader card={GMAIL_PERMISSIONS_CARD} />
           <div className="sc-b">
-            <div className="scopes">
-              {GMAIL_SCOPES.map((scope) => (
-                <div className="scope" key={scope}>
-                  <i>{SCOPE_CHECK}</i>
-                  <code>{scope}</code>
-                </div>
-              ))}
-            </div>
+            {gmail.scopes.length === 0 ? (
+              <div className="prow-d">{GMAIL_SCOPES_EMPTY}</div>
+            ) : (
+              <div className="scopes">
+                {gmail.scopes.map((scope) => (
+                  <div className="scope" key={scope}>
+                    <i>{SCOPE_CHECK}</i>
+                    <code>{scope}</code>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       </div>
@@ -254,44 +376,46 @@ export function IntegrationsPane() {
       <div className={sub === "meta" ? "subpane on" : "subpane"}>
         {/* ── Connection (F15) ── */}
         <section className="sc">
-          <CardHeader card={META_CONNECTION_CARD} />
+          <CardHeader
+            card={META_CONNECTION_CARD}
+            badge={metaConnected ? CONNECTED_BADGE : NOT_CONNECTED_BADGE}
+          />
           <div className="sc-b">
             {/* Donor `style="padding-top:0"` — this row opens the card body, so
                 its own 14px would stack on the body's 18px. */}
             <div className="prow" style={{ paddingTop: 0 }}>
               <span className="prow-ic">
                 <svg className="ic">
-                  <use href={`#${META_CONNECTION.icon}`} />
+                  <use href={`#${META_CONNECTION_ICON}`} />
                 </svg>
               </span>
               <span className="prow-b">
-                <span className="prow-n">{META_CONNECTION.name}</span>
-                <span className="prow-d">{META_CONNECTION.desc}</span>
+                <span className="prow-n">{meta.orgName}</span>
+                <span className="prow-d">
+                  {metaConnected ? META_CONNECTED_DESC : META_DISCONNECTED_DESC}
+                </span>
               </span>
               <span className="prow-act prow-act--pair">
-                {META_CONNECTION.actions.map((a) => (
-                  <button
-                    key={a.label}
-                    className={a.state ? `btn btn-ghost btn-sm ${a.state}` : "btn btn-ghost btn-sm"}
-                    type="button"
-                  >
-                    {a.icon ? (
-                      <svg className="ic">
-                        <use href={`#${a.icon}`} />
-                      </svg>
-                    ) : null}
-                    {a.label}
-                  </button>
-                ))}
+                <button
+                  className={`btn btn-ghost btn-sm ${
+                    metaConnected ? META_DISCONNECT_ACTION.state ?? "" : "is-on"
+                  }`}
+                  type="button"
+                  onClick={() => {
+                    const next = !metaConnected;
+                    setMetaConnected(next);
+                    void saveMeta(next);
+                  }}
+                >
+                  {metaConnected
+                    ? META_DISCONNECT_ACTION.label
+                    : META_CONNECT_ACTION.label}
+                </button>
               </span>
             </div>
             <div className="fld" style={{ margin: "14px 0 12px" }}>
-              <span>{META_CALLBACK_URL.label}</span>
-              <CopyBox value={META_CALLBACK_URL.value} />
-            </div>
-            <div className="fld">
-              <span>{META_VERIFY_TOKEN.label}</span>
-              <CopyBox value={META_VERIFY_TOKEN.value} />
+              <span>{META_CALLBACK_LABEL}</span>
+              <CopyBox value={meta.callbackUrl} />
             </div>
           </div>
         </section>
@@ -303,9 +427,9 @@ export function IntegrationsPane() {
             <div className="fgrid">
               {/* F10 — both were donor `<select class="fin">` */}
               <Sel
-                label={META_PAGE_SELECT.label}
+                label={META_PAGE_LABEL}
                 value={metaPage}
-                options={META_PAGE_SELECT.options}
+                options={meta.pageOptions}
                 onChange={setMetaPage}
               />
               <Sel
@@ -316,30 +440,38 @@ export function IntegrationsPane() {
               />
             </div>
             <div style={{ marginTop: "6px" }}>
-              {META_LEAD_TOGGLES.map((t, i) => (
-                <ToggleRowItem
-                  key={t.name}
-                  name={t.name}
-                  desc={t.desc}
-                  on={metaLead[i] ?? t.on}
-                  onChange={(next) => setMetaLead((s) => flipAt(s, i, next))}
-                />
-              ))}
+              {META_LEAD_TOGGLES.map((t) => {
+                const [on, set] = metaToggle[t.key];
+                return (
+                  <ToggleRowItem
+                    key={t.key}
+                    name={t.name}
+                    desc={t.desc}
+                    on={on}
+                    onChange={set}
+                  />
+                );
+              })}
             </div>
           </div>
+          <SaveBar onSave={() => saveMeta(metaConnected)} />
         </section>
 
         {/* ── Recent webhook deliveries (F13) ── */}
         <section className="sc">
           <CardHeader card={WEBHOOKS_CARD} />
           <div className="sc-b sc-b--rows">
-            {WEBHOOK_DELIVERIES.map((d) => (
-              <div className="dlv" key={`${d.status}-${d.time}-${d.detail}`}>
-                <b className={d.error ? "err" : undefined}>{d.status}</b>
-                <span>{d.detail}</span>
-                <u>{d.time}</u>
-              </div>
-            ))}
+            {webhooks.length === 0 ? (
+              <div className="prow-d">{WEBHOOKS_EMPTY}</div>
+            ) : (
+              webhooks.map((d) => (
+                <div className="dlv" key={`${d.status}-${d.time}-${d.detail}`}>
+                  <b className={d.error ? "err" : undefined}>{d.status}</b>
+                  <span>{d.detail}</span>
+                  <u>{d.time}</u>
+                </div>
+              ))
+            )}
           </div>
         </section>
       </div>
@@ -366,18 +498,26 @@ export function IntegrationsPane() {
             }
           />
           <div className="sc-b sc-b--rows">
-            {EMAIL_TEMPLATES.map((t) => (
-              <div className="dlv" key={t.kind}>
-                <b>{t.kind}</b>
-                <span>{t.subject}</span>
-                <u>{t.trigger}</u>
-                <button className="icon-sm" type="button" aria-label={t.editLabel}>
-                  <svg className="ic">
-                    <use href="#i-pen" />
-                  </svg>
-                </button>
-              </div>
-            ))}
+            {templates.length === 0 ? (
+              <div className="prow-d">{EMAIL_TEMPLATES_EMPTY}</div>
+            ) : (
+              templates.map((t) => (
+                <div className="dlv" key={t.id}>
+                  <b>{t.kind}</b>
+                  <span>{t.subject}</span>
+                  <u>{t.trigger}</u>
+                  <button
+                    className="icon-sm"
+                    type="button"
+                    aria-label={EMAIL_TEMPLATE_EDIT_LABEL}
+                  >
+                    <svg className="ic">
+                      <use href="#i-pen" />
+                    </svg>
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </section>
       </div>

@@ -37,18 +37,35 @@
 // the shell's `useBlueprintContent` layout-effect contract so the first paint
 // is already primed.
 //
-// NO DATA LAYER, and on a billing surface that is a decision rather than an
-// omission: no server action, no API route, no Prisma, no Stripe. Every figure
-// is a fixture. Since the 2026-08-12 promotion this IS /dashboard/subscription;
-// the data-wired predecessor is deleted (git history has it) and wiring live
-// data into this skin is a separate, not-yet-assigned task.
+// LIVE DATA since 2026-08-31: the page hands this component the SAME loader
+// result the handheld half has run on all along (loadSubscriptionData — plan
+// catalog, current plan, limits-engine usage, Stripe invoices, referral), so
+// the two halves finally agree on every number. The fixtures in
+// ./subscription-data.ts are no longer imported here; they remain only as the
+// donor record. The plan CTAs lead to /dashboard/upgrade, the real checkout.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initSubscriptionContent } from "./subscription-behavior";
 import { SubscriptionSprite } from "./subscription-sprite";
-import { FEATURES, INVOICES, PLANS, USAGE } from "./subscription-data";
+// Type-only: erased at compile, so the loader's server imports never reach
+// this client bundle.
+import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
+import { expandPlanFeatures } from "@/lib/planCatalog";
 import styles from "./subscription.module.css";
+
+const UPGRADE = "/dashboard/upgrade" as Route;
+
+/** Epoch seconds → the fixture's date voice ("Jul 1, 2026"). */
+function fmtDate(sec: number): string {
+  return new Date(sec * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 /**
  * Class list by the SOURCE's literal names, so the JSX below reads as the
@@ -74,7 +91,7 @@ function cx(...names: Array<string | false | null | undefined>): string {
  *  one thing. */
 const RV = "rv";
 
-export function SubscriptionContent() {
+export function SubscriptionContent(props: SubscriptionViewProps) {
   const [copyLabel, setCopyLabel] = useState("Copy");
   const copyTimer = useRef(0);
 
@@ -82,8 +99,42 @@ export function SubscriptionContent() {
 
   useEffect(() => () => window.clearTimeout(copyTimer.current), []);
 
+  /* The catalog, in the fixture's column shape: paid plans in display order
+     plus the "Build your plan" custom column the mockup ends on. The custom
+     column is CURRENT when the org's Subscription.plan says so. */
+  const plansStrip = useMemo(() => {
+    const paid = props.plans.filter((p) => !p.isFree);
+    return [
+      ...paid.map((p) => ({
+        slug: p.slug,
+        name: p.name,
+        mo: Math.round(p.priceCents / 100) as number | null,
+        cur: p.slug === props.currentSlug,
+        features: p.features,
+      })),
+      {
+        slug: "custom",
+        name: "Build your plan",
+        mo: null as number | null,
+        cur: props.currentSlug === "custom",
+        features: [] as string[],
+      },
+    ];
+  }, [props.plans, props.currentSlug]);
+
+  /* The comparison rows, "Everything in <plan>" expanded — the same rule the
+     signup step and /dashboard/upgrade apply (lib/planCatalog). */
+  const { rows: featureRows, included } = useMemo(
+    () => expandPlanFeatures(props.plans.filter((p) => !p.isFree)),
+    [props.plans],
+  );
+
+  const statusLabel = props.status
+    ? props.status.charAt(0).toUpperCase() + props.status.slice(1)
+    : "—";
+
   const copyCode = useCallback(() => {
-    const code = "JF-IVAN-7D2K";
+    const code = props.referral.code;
     const done = () => {
       setCopyLabel("Copied");
       window.clearTimeout(copyTimer.current);
@@ -94,7 +145,7 @@ export function SubscriptionContent() {
     } else {
       done();
     }
-  }, []);
+  }, [props.referral.code]);
 
   /** The price cell shared by the tier spectrum and the comparison table.
    *
@@ -122,23 +173,30 @@ export function SubscriptionContent() {
           <h1 className={cx("page-title")}>Subscription</h1>
         </div>
         <div className={cx("page-actions")}>
-          <a className={cx("btn", "btn-primary")} href="#plans">
+          <Link className={cx("btn", "btn-primary")} href={UPGRADE}>
             <svg className={cx("ic")}>
               <use href="#i-arrow" />
             </svg>
             Upgrade plan
-          </a>
+          </Link>
         </div>
       </div>
 
       {/* CURRENT PLAN HERO */}
       <section className={cx("sub-hero", RV)}>
         <div className={cx("sub-hero-l")}>
-          <div className={cx("sub-hero-meta")}>Your plan · Acct № 2847</div>
-          <div className={cx("sub-hero-name")}>Professional</div>
+          <div className={cx("sub-hero-meta")}>Your plan</div>
+          <div className={cx("sub-hero-name")}>{props.planName}</div>
           <div className={cx("sub-hero-row")}>
             <span className={cx("sub-hero-price")}>
-              $79<i>/ mo</i>
+              {props.priceCents === null ? (
+                "—"
+              ) : (
+                <>
+                  {"$" + Math.round(props.priceCents / 100)}
+                  <i>/ mo</i>
+                </>
+              )}
             </span>
             <span className={cx("sub-hero-sep")}></span>
             <span className={cx("sub-hero-note")}>Billed monthly — cancel any time</span>
@@ -146,20 +204,20 @@ export function SubscriptionContent() {
         </div>
         <div className={cx("sub-hero-r")}>
           <div className={cx("sub-stamp-zone")}>
-            <span className={cx("sub-stamp")}>Active</span>
+            <span className={cx("sub-stamp")}>{statusLabel}</span>
           </div>
           <div className={cx("sub-hero-facts")}>
             <div>
-              <span>Member since</span>
-              <b>Mar 2026</b>
+              <span>Status</span>
+              <b>{statusLabel}</b>
             </div>
             <div>
-              <span>Seats</span>
-              <b>1 of 3</b>
+              <span>Trial ends</span>
+              <b>{props.trialEndsAt ?? "—"}</b>
             </div>
             <div>
               <span>Next bill</span>
-              <b>Aug 1, 2026</b>
+              <b>{props.nextBill ?? "—"}</b>
             </div>
           </div>
         </div>
@@ -168,7 +226,7 @@ export function SubscriptionContent() {
       {/* TIER SPECTRUM */}
       <section className={cx("card", "card--flush", RV)} id="plans">
         <div className={cx("spec")} id="specGrid">
-          {PLANS.map((p) => (
+          {plansStrip.map((p) => (
             <div key={p.slug} className={cx("spec-cell", p.cur && "is-cur")}>
               <div className={cx("spec-name")}>{p.name}</div>
               <div className={cx("spec-price")}>{price(p.mo)}</div>
@@ -176,9 +234,12 @@ export function SubscriptionContent() {
                 {p.cur ? (
                   <span className={cx("spec-cur")}>Current plan</span>
                 ) : (
-                  <button className={cx("btn", p.hot ? "btn-primary" : "btn-ghost")} type="button">
-                    {p.cta}
-                  </button>
+                  <Link
+                    className={cx("btn", p.slug === "custom" ? "btn-ghost" : "btn-primary")}
+                    href={UPGRADE}
+                  >
+                    {p.slug === "custom" ? "Get started" : "Upgrade"}
+                  </Link>
                 )}
               </div>
             </div>
@@ -196,8 +257,11 @@ export function SubscriptionContent() {
             </a>
           </div>
           <div className={cx("us-list")} id="usList">
-            {USAGE.map((u) => {
-              const pct = Math.min(100, (u.used / u.limit) * 100);
+            {props.usage.length === 0 ? (
+              <div className={cx("us-note")}>No metered limits on this plan.</div>
+            ) : null}
+            {props.usage.map((u) => {
+              const pct = u.limit > 0 ? Math.min(100, (u.used / u.limit) * 100) : 0;
               const cls = pct >= 90 ? "hot" : pct >= 60 ? "warn" : "";
               return (
                 <div key={u.label} className={cx("us-row")}>
@@ -232,14 +296,25 @@ export function SubscriptionContent() {
             <span className={cx("ta-r")}>Amount</span>
           </div>
           <div className={cx("inv-list")} id="invList">
-            {INVOICES.map((v) => (
-              <div key={v.no} className={cx("inv-row")}>
-                <span className={cx("inv-no")}>{v.no}</span>
-                <span className={cx("inv-date")}>{v.date}</span>
-                <span>
-                  <span className={cx("st-badge")}>{v.status}</span>
+            {!props.invoices.available || props.invoices.invoices.length === 0 ? (
+              <div className={cx("us-note")}>No invoices yet.</div>
+            ) : null}
+            {props.invoices.invoices.map((v) => (
+              <div key={v.id} className={cx("inv-row")}>
+                <span className={cx("inv-no")}>
+                  {v.hostedInvoiceUrl ? (
+                    <a href={v.hostedInvoiceUrl} target="_blank" rel="noreferrer">
+                      {v.number ?? v.id.slice(0, 12)}
+                    </a>
+                  ) : (
+                    (v.number ?? v.id.slice(0, 12))
+                  )}
                 </span>
-                <span className={cx("inv-amt")}>{v.amt}</span>
+                <span className={cx("inv-date")}>{fmtDate(v.created)}</span>
+                <span>
+                  <span className={cx("st-badge")}>{v.status ?? "—"}</span>
+                </span>
+                <span className={cx("inv-amt")}>{"$" + (v.amountPaidCents / 100).toFixed(2)}</span>
               </div>
             ))}
           </div>
@@ -258,7 +333,7 @@ export function SubscriptionContent() {
           <div className={cx("ref-l")}>
             <div className={cx("ref-code-row")}>
               <span className={cx("ref-code")} id="refCode">
-                JF-IVAN-7D2K
+                {props.referral.code}
               </span>
               <button
                 className={cx("btn", "btn-ghost")}
@@ -272,25 +347,23 @@ export function SubscriptionContent() {
                 <span id="refCopyLbl">{copyLabel}</span>
               </button>
             </div>
-            <div className={cx("ref-reward")}>
-              Give a month, get a month — when they subscribe to any paid plan.
-            </div>
+            <div className={cx("ref-reward")}>{props.referral.rewardSummary}</div>
             <div className={cx("ref-url")}>
-              jobflex.com/r/<b>IVAN-7D2K</b>
+              {props.referral.shareUrl.replace(/^https?:[/][/]/, "")}
             </div>
           </div>
           <div className={cx("kpi-grid", "kpi-grid--3")}>
             <div className={cx("kpi")}>
               <div className={cx("kpi-lbl")}>Code uses</div>
-              <div className={cx("kpi-val")}>12</div>
+              <div className={cx("kpi-val")}>{props.referral.uses}</div>
             </div>
             <div className={cx("kpi")}>
               <div className={cx("kpi-lbl")}>Converted</div>
-              <div className={cx("kpi-val")}>4</div>
+              <div className={cx("kpi-val")}>{props.referral.converted}</div>
             </div>
             <div className={cx("kpi")}>
               <div className={cx("kpi-lbl")}>Pending</div>
-              <div className={cx("kpi-val")}>2</div>
+              <div className={cx("kpi-val")}>{props.referral.pending}</div>
             </div>
           </div>
         </div>
@@ -303,7 +376,7 @@ export function SubscriptionContent() {
             <thead>
               <tr>
                 <th></th>
-                {PLANS.map((p) => (
+                {plansStrip.map((p) => (
                   <th key={p.slug} className={p.cur ? cx("col-cur") : ""}>
                     <div className={cx("mx-plan")}>{p.name}</div>
                     <div className={cx("mx-price")}>{price(p.mo)}</div>
@@ -313,14 +386,14 @@ export function SubscriptionContent() {
               </tr>
             </thead>
             <tbody>
-              {FEATURES.map((f) => (
-                <tr key={f[0]}>
-                  <th className={cx("mx-feature")}>{f[0]}</th>
-                  {PLANS.map((p, i) => (
+              {featureRows.map((f) => (
+                <tr key={f}>
+                  <th className={cx("mx-feature")}>{f}</th>
+                  {plansStrip.map((p) => (
                     <td key={p.slug} className={p.cur ? cx("col-cur") : ""}>
                       {p.slug === "custom" ? (
                         <span className={cx("mx-opt")}></span>
-                      ) : i >= f[1] ? (
+                      ) : included.get(p.slug)?.has(f.toLowerCase()) ? (
                         <span className={cx("mx-yes")}>✓</span>
                       ) : (
                         <span className={cx("mx-no")}>—</span>

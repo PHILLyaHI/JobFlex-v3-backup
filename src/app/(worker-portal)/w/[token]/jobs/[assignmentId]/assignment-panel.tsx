@@ -3,6 +3,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
+import { safeHref } from "@/lib/safeHref";
 import { PhotoUploadDrawer, type PhotoDraft } from "@/components/jobs/PhotoUploadDrawer";
 import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { toast } from "@/components/ui/Toast";
@@ -141,15 +142,15 @@ export function WorkerJobPanel({ jobId, token, jobStatus, photos, receipts }: Wo
           <ul className="mt-3 divide-y divide-[color:var(--ink-line)]">
             {receipts.map((r) => (
               <li key={r.id} className="flex items-center gap-3 py-2.5 first:pt-0">
-                {r.receiptUrl ? (
+                {safeHref(r.receiptUrl) ? (
                   <a
-                    href={r.receiptUrl}
+                    href={safeHref(r.receiptUrl) ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="h-11 w-11 shrink-0 overflow-hidden rounded-[var(--r-sm)] hairline"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={r.receiptUrl} alt={r.category} className="h-full w-full object-cover" />
+                    <img src={safeHref(r.receiptUrl) ?? undefined} alt={r.category} className="h-full w-full object-cover" />
                   </a>
                 ) : (
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--r-sm)] bg-[color:var(--accent-soft)] text-[color:var(--accent-ink)]">

@@ -5,6 +5,7 @@ import { isLimitedRole, requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 
 const expenseInput = z.object({
   category: z.string().min(1),
@@ -137,18 +138,20 @@ export async function uploadJobPhoto(
 ) {
   await requireJobPhotoAccess(jobId);
 
+  // Inline image only — anything else would be stored verbatim as the photo
+  // URL and rendered by every viewer of the job.
+  const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+  if (!match || !IMAGE_DATA_URL.test(dataUrl)) throw new Error("Photo must be an image");
+
   let url = dataUrl;
   if (isBlobEnabled()) {
-    try {
-      const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
-      if (match) {
-        const buf = Buffer.from(match[2], "base64");
-        const res = await uploadBlob(`jobs/${jobId}/${Date.now()}-${filename}`, buf);
-        url = res.url;
-      }
-    } catch {
-      // fall through to data URL
-    }
+    const buf = Buffer.from(match[2], "base64");
+    const res = await uploadBlob(
+      `jobs/${jobId}/${Date.now()}-${safeFilename(filename, "photo")}`,
+      buf,
+      { contentType: match[1].toLowerCase() },
+    );
+    url = res.url;
   }
 
   const photo = await db.jobPhoto.create({

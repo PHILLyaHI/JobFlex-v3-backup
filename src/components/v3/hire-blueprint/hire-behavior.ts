@@ -470,6 +470,33 @@ export function initHireContent(
     };
   }
 
+  /** The draft, drawn as the row it will become. Same slots as `postRowHTML`
+   *  — title, `trade · area · when`, the counts, the rate — so the answer to
+   *  "how will this look" is the list's own geometry, not an impression of it.
+   *  An untouched form draws nothing: a preview of nothing is noise. */
+  function renderDraftPreview() {
+    const box = $("#postPreview");
+    if (!box) return;
+    const f = post;
+    const touched = !!(f.title.trim() || f.trade || f.specialties.trim() || f.area.trim() ||
+      f.rateMin.trim() || f.rateMax.trim() || f.details.trim());
+    if (!touched) { box.innerHTML = ""; return; }
+    const title = f.title.trim();
+    const meta = [f.trade, f.area.trim(), "just now"].filter(Boolean).join(" · ");
+    const budget = rateToBudget(f.rateMin, f.rateMax, f.rateUnit);
+    box.innerHTML =
+      '<span class="mypost-draft-hint">Preview — how your post will appear</span>' +
+      '<div class="mypost-row mypost-draft" aria-live="polite">' +
+        '<span class="mypost-main">' +
+          '<span class="mypost-t' + (title ? "" : " is-empty") + '">' + (title ? esc(title) : "Untitled post") + "</span>" +
+          '<span class="mypost-m">' + esc(meta) + "</span>" +
+          '<span class="mypost-m">0 notified · 0 interested</span>' +
+        "</span>" +
+        (budget ? '<span class="mypost-rate">' + esc(budget) + "</span>" : "") +
+        '<span class="mypost-side"><span class="mypost-draft-tag">Draft — not posted</span></span>' +
+      "</div>";
+  }
+
   function renderPost() {
     const box = $("#profBox");
     if (!box) return;
@@ -481,6 +508,11 @@ export function initHireContent(
         '<svg class="ic"><use href="#i-send"/></svg><span data-save-lbl>Post a job</span></button></div>';
 
     bindJobFields(box, post);
+    // Every keystroke redraws the draft row under "Your job posts".
+    box.querySelectorAll("[data-jf]").forEach(function (el) {
+      el.addEventListener("input", renderDraftPreview);
+    });
+    renderDraftPreview();
     // Google Places on the area field — with no browser key it stays a plain
     // text input and free typing still posts.
     if (disposePlaces) { disposePlaces(); disposePlaces = null; }
@@ -491,6 +523,7 @@ export function initHireContent(
         onPick: function (place) {
           post.area = place.typed ? place.address : place.formatted || place.address;
           if (!place.typed) area.value = post.area;
+          renderDraftPreview();
         },
       });
     }

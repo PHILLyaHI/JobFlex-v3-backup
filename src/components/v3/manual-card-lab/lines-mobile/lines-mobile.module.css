@@ -1,0 +1,464 @@
+/* LINE ITEMS — HANDHELD.
+ *
+ * SPECIFICITY, FIRST. This block renders inside `.jf-blueprint`, whose port
+ * carries element-level resets scoped to the page root:
+ * `.bp button { border: none; background: none }` and `.bp * { margin: 0;
+ * padding: 0 }`. Those score (0,1,1) and (0,1,0), so a bare single-class rule
+ * from this module would be silently cancelled — the buttons would lose their
+ * frames and nothing here would have padding. EVERY rule below is therefore
+ * written as `.block .x` (0,2,0). Do not un-nest them.
+ *
+ * TOKENS come from the page root: --ink / --paper / --muted* / --hair /
+ * --blueprint / --radius / --font-mono, plus the builder's own --mb-well and
+ * --mb-line so a field here is the same species as a field in card 01.
+ * Fallbacks are carried so the block still reads if it is ever mounted outside
+ * the builder.
+ *
+ * SIZING is the handheld contract: every control clears 44px, the three-cell
+ * row is the widest a row of controls goes at 390px, and nothing scrolls
+ * sideways.
+ */
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── ONE LINE ────────────────────────────────────────────────
+   A RULED BAND, wall to wall — not a framed box floating inside
+   the card. The first cut drew each line as its own 1.5px hair
+   frame with 14px of card padding on either side; six of those
+   read as six pale chips adrift in a white card, and the owner
+   asked for the opposite (2026-09-01): more contrast, and the
+   lines connected to the card's own walls.
+
+   So each line bleeds across the card's side padding to its inner
+   wall (`calc(-1 * var(--mb-pad))` — the same token the card reads,
+   so the bleed lands exactly on the wall at any width), is ruled
+   off from its neighbour by a 2px ink line at the card's own frame
+   weight, and sits on the recessed well tone so the band is a
+   band and the white fields inside it are the things to touch.
+   The card's walls ARE the line's left and right edges; it draws
+   none of its own. */
+.block .line {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 calc(-1 * var(--mb-pad, 14px));
+  padding: 12px var(--mb-pad, 14px) 14px;
+  background: var(--mb-well, #f7f5f1);
+  border-top: 2px solid var(--ink, #0a0a0a);
+}
+/* An unnamed line is priced but excluded from every total and never printed.
+   It stays fully editable; its own total is what shows it is not counted
+   yet (see .lineTotalOff). The class is kept on the element for that hook. */
+.block .lineOff {
+  background: var(--mb-well, #f7f5f1);
+}
+
+.block .lineHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.block .idx {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted-light, #888);
+}
+/* The row's answer. It wears no field rule — the absence of the box is the
+   signal that this figure is read, not typed. */
+.block .lineTotal {
+  margin-left: auto;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink, #0a0a0a);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  /* EVERY PRINTED FIGURE IN THIS BLOCK MAY BREAK. The inputs are capped
+     (see NumIn), but a capped price times a capped quantity is still a
+     22-character total, and a mono figure that cannot break runs through
+     the card wall. Breaking a dollar amount is ugly; leaving the card is
+     worse. */
+  overflow-wrap: anywhere;
+}
+.block .lineTotalOff {
+  color: var(--muted-faint, #b0aea8);
+}
+.block .kill {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  margin: -6px -6px -6px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  line-height: 1;
+  color: var(--muted-light, #888);
+  background: none;
+  border: none;
+  border-radius: var(--radius, 2px);
+  cursor: pointer;
+}
+.block .kill:hover,
+.block .kill:active {
+  color: var(--danger, #a83232);
+  background: var(--danger-soft, rgba(168, 50, 50, 0.08));
+}
+
+/* ── FIELDS ──────────────────────────────────────────────────
+   The shared control treatment: 1.5px in the hair tone at rest,
+   full ink on hover and focus, so a text field, a number and a
+   select read as one species. 44px, not the desk's 36px. */
+.block .in {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  padding: 0 10px;
+  font-family: var(--font, inherit);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink, #0a0a0a);
+  /* White on the well band — the inverse of the desk field (well on white)
+     for the same reason: the field has to be the lighter of the two so it
+     reads as the thing to touch. */
+  background: var(--mb-card, #fff);
+  border: 1.5px solid var(--hair, rgba(10, 10, 10, 0.12));
+  border-radius: var(--radius, 2px);
+  transition: border-color 0.12s;
+}
+.block .in:hover,
+.block .in:focus {
+  outline: none;
+  border-color: var(--ink, #0a0a0a);
+}
+.block .in::placeholder {
+  color: var(--muted-light, #888);
+}
+.block .in:disabled {
+  color: var(--muted-light, #888);
+  opacity: 1;
+}
+.block .name {
+  font-weight: 600;
+}
+/* The caret is DRAWN — two strokes meeting at a point, at the same 1.5px the
+   frames use — rather than left to the platform glyph, which is the one piece
+   of OS chrome this system cannot re-skin. Same device as the shell's
+   `.bp-sel`; the wrapper exists only to hang it on. */
+.block .selWrap {
+  position: relative;
+  display: block;
+}
+.block .sel {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  cursor: pointer;
+}
+.block .selWrap::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--muted-light, #888);
+  border-bottom: 1.5px solid var(--muted-light, #888);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+.block .selWrap:hover::after,
+.block .selWrap:focus-within::after {
+  border-color: var(--ink, #0a0a0a);
+}
+
+/* ── QTY · UNIT · $/UNIT ─────────────────────────────────────
+   Three across is the widest this goes at 390px. The unit column
+   is given the extra width: it is the only one of the three
+   holding words rather than digits. */
+.block .trio {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1.2fr;
+  gap: 8px;
+}
+.block .cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.block .cellLbl {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── THE SPLIT, BEHIND ITS OWN DISCLOSURE ────────────────────
+   Closed, it is a readout: the two halves of this row's money.
+   Open, it is the two fields that ARE those halves. */
+.block .disc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--hair, rgba(10, 10, 10, 0.12));
+  border-radius: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.block .discName {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light, #888);
+}
+.block .discVal {
+  margin-left: auto;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #555);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.block .discName {
+  flex: 0 0 auto;
+}
+.block .discSep {
+  color: var(--muted-faint, #b0aea8);
+}
+/* A drawn caret — two borders of a square, rotated. Same device the drawer's
+   rows use, so the page has one chevron and not three. */
+.block .chev {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-bottom: 2px;
+  border-right: 1.5px solid var(--muted-light, #888);
+  border-bottom: 1.5px solid var(--muted-light, #888);
+  transform: rotate(45deg);
+  transition: transform 0.16s;
+}
+.block .chevOn {
+  margin-bottom: -2px;
+  transform: rotate(225deg);
+}
+/* THE FOLD. A grid whose one row goes 0fr → 1fr is the only height
+   transition CSS can run without being told the height, and it is
+   what makes the disclosure SLIDE rather than snap: the two fields
+   used to mount on open under a chevron still mid-turn, and the
+   row read as lagging behind the tap. Always in the tree; `inert`
+   on the wrapper (set by the component) keeps the folded fields
+   out of the tab order.
+
+   The -10px margin cancels the line's flex gap while the fold is
+   shut, so a closed row ends on its disclosure and not 10px under
+   it; `.split` puts that same 10px back INSIDE the fold, where it
+   opens with the fields. */
+.block .splitWrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: -10px;
+  transition: grid-template-rows 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.block .splitOpen {
+  grid-template-rows: 1fr;
+}
+.block .splitInner {
+  min-height: 0;
+  overflow: hidden;
+}
+.block .split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-top: 10px;
+  /* Room for the 1.5px focus/hover frame the fields draw: the inner box
+     clips, and a frame flush against its edge lost its bottom stroke. */
+  padding-bottom: 2px;
+}
+
+/* ── ADD ─────────────────────────────────────────────────────
+   The next ruled line, literally: it bleeds to the same walls the
+   lines do and is closed top and bottom by the same 2px ink rule,
+   so the ledger ends on a drawn row rather than a dashed chip. Ink
+   type on white against the well bands above it — the one row in
+   the stack that is an action reads as the one that is lit. */
+.block .add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  margin: 0 calc(-1 * var(--mb-pad, 14px));
+  min-height: 48px;
+  padding: 0 var(--mb-pad, 14px);
+  font-family: var(--font, inherit);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink, #0a0a0a);
+  background: var(--mb-card, #fff);
+  border: none;
+  border-top: 2px solid var(--ink, #0a0a0a);
+  border-bottom: 2px solid var(--ink, #0a0a0a);
+  border-radius: 0;
+  cursor: pointer;
+}
+.block .add:hover,
+.block .add:active {
+  color: var(--blueprint, #1854a0);
+  background: var(--chart-fill, rgba(24, 84, 160, 0.07));
+}
+.block .addMark {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ── FOOT ────────────────────────────────────────────────────
+   The desk build closes three money columns in the columns they
+   sum. There are no columns here, so the two quiet halves share
+   one row and the answer takes the next on its own. */
+.block .foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+}
+.block .footSplit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+.block .footPart {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.block .footPartName {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light, #888);
+}
+.block .footPartAmt {
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #555);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.block .footTotal {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.block .footTotalName {
+  flex: 0 0 auto;
+}
+.block .footTotalName {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink, #0a0a0a);
+}
+.block .footTotalAmt {
+  margin-left: auto;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--ink, #0a0a0a);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+/* Past 13 characters (the component decides) the figure steps down a
+   size before it is allowed to break: a nine-figure subtotal at 17px
+   still fits beside its label on a 390px card. */
+.block .footTotalLong {
+  font-size: 17px;
+}
+.block .footNote {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-light, #888);
+}
+
+/* ── TAX ─────────────────────────────────────────────────────
+   Hidden in the builder (the rate lives in card 04, in the chain
+   between the subtotal and the grand total); drawn only when a
+   caller asks for the full contract. */
+.block .tax {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--mb-rule, rgba(10, 10, 10, 0.08));
+}
+.block .taxLabel {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-light, #888);
+}
+.block .taxWrap {
+  position: relative;
+  width: 96px;
+}
+.block .taxWrap .in {
+  padding-right: 26px;
+}
+.block .taxSuffix {
+  position: absolute;
+  top: 0;
+  right: 10px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted-light, #888);
+  pointer-events: none;
+}
+.block .taxHint {
+  font-size: 11px;
+  color: var(--muted-light, #888);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .block .chev,
+  .block .in,
+  .block .splitWrap {
+    transition: none;
+  }
+}

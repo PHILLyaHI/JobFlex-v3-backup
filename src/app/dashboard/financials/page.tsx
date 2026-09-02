@@ -22,6 +22,7 @@ import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
+import { getOverheadSheets, toOverheadMonths } from "@/lib/overhead";
 import { FinancialsContent } from "@/components/v3/financials-blueprint/financials-content";
 import type {
   ChangeOrder,
@@ -56,9 +57,13 @@ export default async function FinancialsPage() {
     throw err;
   }
 
-  const [rollupRaw, monthlyRaw, expenseRows, orderRows, invoiceRows, jobs] = await Promise.all([
+  const [rollupRaw, monthlyRaw, overheadSheets, expenseRows, orderRows, invoiceRows, jobs] =
+    await Promise.all([
     getFinancialsRollup(organizationId),
     getMonthlyRollup(organizationId, 12),
+    // Every sheet the org has saved. A dozen small rows — cheaper to hand over
+    // whole than to round-trip each time the Overhead tab steps a month.
+    getOverheadSheets(organizationId),
     db.jobExpense.findMany({
       where: { job: { organizationId } },
       orderBy: { createdAt: "desc" },
@@ -109,6 +114,11 @@ export default async function FinancialsPage() {
 
   const rollup: Rollup = { ...rollupRaw };
 
+  // The Overhead tab walks the SAME twelve months the chart draws, but needs
+  // the raw figures the chart's MonthPoint drops: the month key it saves
+  // against, and the net the work actually cleared.
+  const overheadMonths = toOverheadMonths(monthlyRaw);
+
   const expenses: Expense[] = expenseRows.map((e) => ({
     id: e.id,
     jobId: e.jobId,
@@ -151,6 +161,8 @@ export default async function FinancialsPage() {
       expenses={expenses}
       orders={orders}
       invoices={invoices}
+      overheadMonths={overheadMonths}
+      overheadSheets={overheadSheets}
     />
   );
 }

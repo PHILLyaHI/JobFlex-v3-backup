@@ -1814,3 +1814,57 @@
   .bp :global(.content .mypost-side) { flex: 1 1 100%; justify-content: flex-start; }
   .bp :global(.content .mypost-rate) { order: -1; }
 }
+
+
+/* ═══ POST A JOB — owner review, 2026-09-02 ════════════════════════════════
+   Rhythm and one new surface: the live draft row. */
+
+/* The title needs air before the composer, and the composer needs air before
+   "Your job posts" — the two cards were touching. */
+.bp :global(.content .ppanel[data-panel="profile"] .page-head) { margin-bottom: 28px; }
+.bp :global(.content .hub-prof) { margin-bottom: 24px; }
+
+/* Field rhythm: more between fields, a touch more from label to input. */
+/* `.sf` is a <label> — inline by default, so its vertical margins were
+   silently dropped and Title sat 6px above the Trade label. Block, so the
+   rhythm below actually lands. */
+.bp :global(.content .hub-prof .sf) { display: block; max-width: none; margin-bottom: 28px; }
+.bp :global(.content .hub-prof .sf-row) { margin-bottom: 28px; }
+.bp :global(.content .hub-prof .sf-row .sf) { margin-bottom: 0; }
+.bp :global(.content .hub-prof .sf-lbl) { margin-bottom: 8px; }
+
+/* The rule above Post runs the full card, like the fields it closes. */
+.bp :global(.content .hub-prof .sf-act) { max-width: none; margin-top: 4px; padding-top: 18px; }
+
+/* The native menu is the one part of a select we do not redraw, but its
+   options CAN take the control's own face: mono, ink, white plate. */
+.bp :global(.content .sf .bp-sel-in option) {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+  color: var(--ink); background: #fff; padding: 8px 10px;
+}
+.bp :global(.content .sf .bp-sel-in option:checked) { background: var(--blueprint); color: #fff; }
+
+/* The draft row: the composer's current state drawn in the list's own
+   geometry, dashed because it is not issued yet. */
+.bp :global(.content .mypost-draft) {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 0 16px; padding: 14px 16px;
+  border: 1.5px dashed var(--ink); border-radius: var(--radius);
+  background: var(--paper);
+  background-image: repeating-linear-gradient(45deg, rgba(10,10,10,.03) 0 1px, transparent 1px 9px);
+}
+.bp :global(.content .mypost-draft .mypost-main) { cursor: default; }
+.bp :global(.content .mypost-draft .mypost-main:hover) { transform: none; box-shadow: none; background: transparent; }
+.bp :global(.content .mypost-draft .mypost-t.is-empty) { color: var(--muted-faint); font-style: italic; font-weight: 600; }
+.bp :global(.content .mypost-draft-tag) {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 9px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); background: #fff;
+  white-space: nowrap;
+}
+.bp :global(.content .mypost-draft-hint) {
+  display: block; margin: -6px 0 16px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-light);
+}

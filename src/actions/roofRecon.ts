@@ -21,6 +21,7 @@ import {
 } from "@/lib/solar";
 import { reconstructRoof, latLngRingToFrame } from "@/lib/roofRecon";
 import type { RoofModel } from "@/lib/eagleview";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 const M2_TO_SQFT = 10.7639;
 
@@ -48,7 +49,8 @@ export async function reconRoofPreview(input: {
   lat?: number;
   lng?: number;
 }): Promise<{ ok: true; preview: ReconPreview } | { ok: false; error: string }> {
-  await requireEstimatorOrManager();
+  const { organizationId: rlOrg } = await requireEstimatorOrManager();
+  await enforceRateLimit(`roof-recon:${rlOrg}`, 30, HOUR, "roof scans");
   if (!isSolarEnabled()) {
     return { ok: false, error: "Set GOOGLE_MAPS_API_KEY to enable the free roof preview." };
   }

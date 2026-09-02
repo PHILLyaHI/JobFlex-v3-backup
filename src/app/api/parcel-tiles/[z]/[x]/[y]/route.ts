@@ -9,6 +9,7 @@
 
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { rateLimitShared, MINUTE } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,8 @@ export async function GET(
 ) {
   const session = await auth();
   if (!session?.user?.id) return new NextResponse(null, { status: 401 });
+  const gate = await rateLimitShared(`tiles:${session.user.id}`, 600, 10 * MINUTE);
+  if (!gate.ok) return new NextResponse(null, { status: 429 });
   const key = process.env.REPORTALL_CLIENT_KEY;
   if (!key) return new NextResponse(null, { status: 503 });
 

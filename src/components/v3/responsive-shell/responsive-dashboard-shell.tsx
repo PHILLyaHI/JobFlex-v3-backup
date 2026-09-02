@@ -25,6 +25,7 @@ import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
 import { BlueprintHandheldFrame } from "./blueprint-handheld-frame";
 import { NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
+import { CustomGateSwap } from "@/components/v3/upgrade-gate/custom-gate-swap";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
@@ -335,7 +336,9 @@ export function ResponsiveDashboardShell({
             stamps once per mount — a new key remounts it for the new surface. */}
         {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
         <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
-          <Handheld />
+          <CustomGateSwap>
+            <Handheld />
+          </CustomGateSwap>
         </ChunkRecoveryBoundary>
         {/* The support composer. Every other handheld surface gets it from
             <MobileNav />; /dashboard is the one mapped surface that kept its
@@ -369,22 +372,34 @@ export function ResponsiveDashboardShell({
   // Page-owned handheld branches render their own chrome (which reaches for
   // MobileNav), so they need the provider just as much as the mapped ones.
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
-    return <NavRoleProvider identity={identity} badges={badges} locked={locked}>{children}</NavRoleProvider>;
+    return (
+      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+        <CustomGateSwap>{children}</CustomGateSwap>
+      </NavRoleProvider>
+    );
   }
   if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
-    return <NavRoleProvider identity={identity} badges={badges} locked={locked}>{children}</NavRoleProvider>;
+    return (
+      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+        <CustomGateSwap>{children}</CustomGateSwap>
+      </NavRoleProvider>
+    );
   }
   if (isHandheld && BLUEPRINT_HANDHELD.has(pathname ?? "")) {
     return (
       <NavRoleProvider identity={identity} badges={badges} locked={locked}>
-        <BlueprintHandheldFrame>{children}</BlueprintHandheldFrame>
+        <BlueprintHandheldFrame>
+          <CustomGateSwap>{children}</CustomGateSwap>
+        </BlueprintHandheldFrame>
       </NavRoleProvider>
     );
   }
 
   return (
     <NavRoleProvider identity={identity} badges={badges} locked={locked}>
-      <BlueprintShell user={user}>{children}</BlueprintShell>
+      <BlueprintShell user={user}>
+        <CustomGateSwap>{children}</CustomGateSwap>
+      </BlueprintShell>
     </NavRoleProvider>
   );
 }

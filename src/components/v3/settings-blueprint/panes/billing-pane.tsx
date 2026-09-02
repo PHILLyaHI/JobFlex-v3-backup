@@ -18,29 +18,45 @@
 //        this pane simply uses `btn-sm` inside `.prow-act` so the two action
 //        buttons share the one 152px width.
 // F10 / F12 do not apply: this pane has no `<select>` and no `.tg` toggle.
+//
+// REAL DATA:
+//   Your plan       — Subscription + the PricingPlan catalog (getOrgPlanContext);
+//                     seats come from the plan's own teamSeats limit.
+//   Plans           — the whole catalog. /admin/plans is the single source of
+//                     truth, so nothing here is hardcoded.
+//   Billing contact — Organization.billingEmail, saved through updateBusiness.
+//   Payment history — real Stripe subscription invoices.
+//
+// HONEST EMPTY STATES: nothing in this codebase reads the customer's stored
+// cards off Stripe, so Payment methods shows "No card on file" and both of its
+// buttons lead to the real checkout instead of inventing a Visa row. Payment
+// history is empty whenever Stripe is off or the org has no Stripe customer.
+// "Cancel" has no action behind it anywhere in the app and stays inert.
 
-import { useState } from "react";
-
+import { updateBusiness } from "@/actions/accountSettings";
 import {
   ADD_PAYMENT_METHOD_ACTION,
   BILLING_CONTACT_CARD,
-  BILLING_CONTACT_FIELDS,
+  BILLING_CONTACT_LABELS,
   BILLING_DETAILS_ACTION,
-  PAYMENT_HISTORY,
   PAYMENT_HISTORY_CARD,
   PAYMENT_HISTORY_COLUMNS,
+  PAYMENT_HISTORY_EMPTY,
   PAYMENT_HISTORY_TABLE_MIN_WIDTH,
-  PAYMENT_METHODS,
   PAYMENT_METHODS_CARD,
-  PLAN_CARD,
-  PLAN_SUMMARY,
-  PLANS,
+  PAYMENT_METHOD_EMPTY,
   PLANS_CARD,
   PLANS_COLUMNS,
+  PLANS_EMPTY,
   PLANS_TABLE_MIN_WIDTH,
+  PLAN_CARD,
+  PLAN_META_PREFIX,
+  PLAN_PRIMARY_ACTION,
+  PLAN_SECONDARY_ACTION,
 } from "../settings-data";
-import type { ActionSpec, Badge, CardHead, IconName } from "../settings-data";
+import type { ActionSpec, Badge, CardHead, IconName, PaneProps } from "../settings-data";
 import { Field, SaveBar } from "../ui";
+import { useState } from "react";
 
 /* ─────────────────────────── local helpers ─────────────────────────── */
 
@@ -61,14 +77,15 @@ function Badge2({ badge }: { badge: Badge }) {
   );
 }
 
-function CardHeader({ head }: { head: CardHead }) {
+function CardHeader({ head, badge }: { head: CardHead; badge?: Badge | null }) {
+  const shown = badge ?? head.badge;
   return (
     <div className="sc-h">
       <div>
         <div className="sc-t">{head.title}</div>
         <div className="sc-s">{head.sub}</div>
       </div>
-      {head.badge ? <Badge2 badge={head.badge} /> : null}
+      {shown ? <Badge2 badge={shown} /> : null}
     </div>
   );
 }
@@ -78,51 +95,47 @@ function Btn({
   action,
   variant,
   small = false,
-  onClick,
+  href,
 }: {
   action: ActionSpec;
   variant: "btn-primary" | "btn-ghost";
   small?: boolean;
-  onClick?: () => void;
+  href?: string;
 }) {
   const cls = `btn ${variant}${small ? " btn-sm" : ""}${
     action.state ? ` ${action.state}` : ""
   }`;
-  return (
-    <button className={cls} type="button" onClick={onClick}>
+  const body = (
+    <>
       {action.icon ? <Icon name={action.icon} /> : null}
       {action.label}
+    </>
+  );
+  if (href) {
+    return (
+      <a className={cls} href={href}>
+        {body}
+      </a>
+    );
+  }
+  return (
+    <button className={cls} type="button">
+      {body}
     </button>
   );
 }
 
-/* Donor payment-method row actions, read out of the fixture rather than
-   re-typed: the row that ships with the `Default` badge carries the `Edit`
-   action, the other carries the `Make default` action. Every row now renders
-   `Edit` (owner request), so the Edit buttons stack in one column; a
-   non-default row adds `Make default` to the left of its Edit. Clicking
-   `Make default` moves the badge and that extra button to the other row. */
-const DEFAULT_METHOD = PAYMENT_METHODS.find((m) => m.badge !== undefined);
-const OTHER_METHOD = PAYMENT_METHODS.find((m) => m.badge === undefined);
-const DEFAULT_BADGE = DEFAULT_METHOD?.badge;
-const DEFAULT_ACTION = DEFAULT_METHOD?.action;
-const MAKE_DEFAULT_ACTION = OTHER_METHOD?.action;
-
 /* ──────────────────────────── Billing pane ─────────────────────────── */
 
-export function BillingPane() {
-  const [defaultMethod, setDefaultMethod] = useState<string>(
-    DEFAULT_METHOD?.name ?? "",
-  );
-  const [removed, setRemoved] = useState<readonly string[]>([]);
-
-  const methods = PAYMENT_METHODS.filter((m) => !removed.includes(m.name));
+export function BillingPane({ data }: PaneProps) {
+  const b = data.billing;
+  const [billingEmail, setBillingEmail] = useState(b.billingEmail);
 
   return (
     <>
       {/* ── Your plan ─────────────────────────────────────────────── */}
       <section className="sc">
-        <CardHeader head={PLAN_CARD} />
+        <CardHeader head={PLAN_CARD} badge={b.planBadge} />
         <div className="sc-b">
           <div
             style={{
@@ -134,15 +147,16 @@ export function BillingPane() {
             }}
           >
             <div>
-              <div className="plan-big">{PLAN_SUMMARY.name}</div>
+              <div className="plan-big">{b.planName}</div>
               <div className="plan-meta">
-                {PLAN_SUMMARY.nextBill}
-                <span>{PLAN_SUMMARY.seats}</span>
+                {b.nextBill ? `${PLAN_META_PREFIX.nextBill}${b.nextBill}` : null}
+                <span>{`${PLAN_META_PREFIX.seats}${b.seats}`}</span>
               </div>
             </div>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <Btn action={PLAN_SUMMARY.primaryAction} variant="btn-primary" />
-              <Btn action={PLAN_SUMMARY.secondaryAction} variant="btn-ghost" />
+              <Btn action={PLAN_PRIMARY_ACTION} variant="btn-primary" href={b.upgradeHref} />
+              {/* No cancel action exists in the app — the button stays inert. */}
+              <Btn action={PLAN_SECONDARY_ACTION} variant="btn-ghost" />
             </div>
           </div>
         </div>
@@ -153,48 +167,23 @@ export function BillingPane() {
         <CardHeader head={PAYMENT_METHODS_CARD} />
         {/* F13 — `.prow` list body, so the 18px card padding drops to 4px. */}
         <div className="sc-b sc-b--rows">
-          {methods.map((m) => {
-            const isDefault = m.name === defaultMethod;
-            return (
-              <div className="prow" key={m.name}>
-                <span className="prow-ic">
-                  <Icon name={m.icon} />
-                </span>
-                <span className="prow-b">
-                  <span className="prow-n">{m.name}</span>
-                  <span className="prow-d">{m.desc}</span>
-                </span>
-                {isDefault && DEFAULT_BADGE ? (
-                  <Badge2 badge={DEFAULT_BADGE} />
-                ) : null}
-                <span className="prow-act">
-                  {!isDefault && MAKE_DEFAULT_ACTION ? (
-                    <Btn
-                      action={MAKE_DEFAULT_ACTION}
-                      variant="btn-ghost"
-                      small
-                      onClick={() => setDefaultMethod(m.name)}
-                    />
-                  ) : null}
-                  {DEFAULT_ACTION ? (
-                    <Btn action={DEFAULT_ACTION} variant="btn-ghost" small />
-                  ) : null}
-                  <button
-                    className="icon-sm"
-                    type="button"
-                    aria-label={m.removeLabel}
-                    onClick={() => setRemoved((prev) => [...prev, m.name])}
-                  >
-                    <Icon name="i-trash" />
-                  </button>
-                </span>
-              </div>
-            );
-          })}
+          <div className="prow">
+            <span className="prow-ic">
+              <Icon name={PAYMENT_METHOD_EMPTY.icon} />
+            </span>
+            <span className="prow-b">
+              <span className="prow-n">{PAYMENT_METHOD_EMPTY.name}</span>
+              <span className="prow-d">{PAYMENT_METHOD_EMPTY.desc}</span>
+            </span>
+          </div>
         </div>
         <div className="sactions">
-          <Btn action={ADD_PAYMENT_METHOD_ACTION} variant="btn-primary" />
-          <Btn action={BILLING_DETAILS_ACTION} variant="btn-ghost" />
+          <Btn
+            action={ADD_PAYMENT_METHOD_ACTION}
+            variant="btn-primary"
+            href={b.upgradeHref}
+          />
+          <Btn action={BILLING_DETAILS_ACTION} variant="btn-ghost" href={b.upgradeHref} />
         </div>
       </section>
 
@@ -202,28 +191,32 @@ export function BillingPane() {
       <section className="sc">
         <CardHeader head={PLANS_CARD} />
         <div className="sc-b">
-          <div className="nwrap">
-            <table className="stab" style={{ minWidth: PLANS_TABLE_MIN_WIDTH }}>
-              <thead>
-                <tr>
-                  {PLANS_COLUMNS.map((c) => (
-                    <th key={c}>{c}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {PLANS.map((p) => (
-                  <tr key={p.plan} className={p.current ? "cur" : undefined}>
-                    <td className="cur">{p.plan}</td>
-                    <td>{p.seats}</td>
-                    <td>{p.proposals}</td>
-                    <td>{p.estimators}</td>
-                    <td>{p.price}</td>
+          {b.plans.length === 0 ? (
+            <div className="prow-d">{PLANS_EMPTY}</div>
+          ) : (
+            <div className="nwrap">
+              <table className="stab" style={{ minWidth: PLANS_TABLE_MIN_WIDTH }}>
+                <thead>
+                  <tr>
+                    {PLANS_COLUMNS.map((c) => (
+                      <th key={c}>{c}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {b.plans.map((p) => (
+                    <tr key={p.plan} className={p.current ? "cur" : undefined}>
+                      <td className="cur">{p.plan}</td>
+                      <td>{p.seats}</td>
+                      <td>{p.proposals}</td>
+                      <td>{p.estimators}</td>
+                      <td>{p.price}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
 
@@ -232,53 +225,62 @@ export function BillingPane() {
         <CardHeader head={BILLING_CONTACT_CARD} />
         <div className="sc-b">
           <div className="fgrid">
-            {BILLING_CONTACT_FIELDS.map((f) => (
-              <Field
-                key={f.label}
-                label={f.label}
-                value={f.value}
-                placeholder={f.placeholder}
-                disabled={f.disabled}
-              />
-            ))}
+            <Field
+              label={BILLING_CONTACT_LABELS.billingEmail}
+              value={billingEmail}
+              onChange={setBillingEmail}
+            />
           </div>
         </div>
-        <SaveBar />
+        <SaveBar onSave={() => updateBusiness({ billingEmail })} />
       </section>
 
       {/* ── Payment history (F14: `.stab`, not `.ptab`) ───────────── */}
       <section className="sc">
         <CardHeader head={PAYMENT_HISTORY_CARD} />
         <div className="sc-b">
-          <div className="nwrap">
-            <table
-              className="stab"
-              style={{ minWidth: PAYMENT_HISTORY_TABLE_MIN_WIDTH }}
-            >
-              <thead>
-                <tr>
-                  {PAYMENT_HISTORY_COLUMNS.map((c) => (
-                    <th key={c}>{c}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {PAYMENT_HISTORY.map((r) => (
-                  <tr key={r.date}>
-                    <td>{r.date}</td>
-                    <td>{r.description}</td>
-                    <td>{r.amount}</td>
-                    <td>
-                      <a className="dl" href="#">
-                        <Icon name={r.invoiceIcon} />
-                        {r.invoiceLabel}
-                      </a>
-                    </td>
+          {b.history.length === 0 ? (
+            <div className="prow-d">{PAYMENT_HISTORY_EMPTY}</div>
+          ) : (
+            <div className="nwrap">
+              <table
+                className="stab"
+                style={{ minWidth: PAYMENT_HISTORY_TABLE_MIN_WIDTH }}
+              >
+                <thead>
+                  <tr>
+                    {PAYMENT_HISTORY_COLUMNS.map((c) => (
+                      <th key={c}>{c}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {b.history.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.date}</td>
+                      <td>{r.description}</td>
+                      <td>{r.amount}</td>
+                      <td>
+                        {r.invoiceHref ? (
+                          <a
+                            className="dl"
+                            href={r.invoiceHref}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <Icon name={r.invoiceIcon} />
+                            {r.invoiceLabel}
+                          </a>
+                        ) : (
+                          <span className="dl">{r.invoiceLabel}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
     </>

@@ -4,6 +4,7 @@ import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { slugify, uniqueOrgSlug } from "@/lib/orgSlug";
+import { clientIp, rateLimitShared, MINUTE } from "@/lib/rateLimit";
 
 declare module "next-auth" {
   interface Session {
@@ -42,6 +43,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = String(raw?.email ?? "").toLowerCase().trim();
         const password = String(raw?.password ?? "");
         if (!email || !password) return null;
+        // Cross-instance brake on credential stuffing / bcrypt CPU burn. The
+        // same "wrong credentials" answer, so a refused attempt looks like a miss.
+        const ip = await clientIp();
+        const [byIp, byEmail] = await Promise.all([
+          rateLimitShared(`login:ip:${ip}`, 30, MINUTE),
+          rateLimitShared(`login:email:${email}`, 8, 15 * MINUTE),
+        ]);
+        if (!byIp.ok || !byEmail.ok) return null;
         const user = await db.user.findUnique({
           where: { email },
           select: { id: true, email: true, name: true, image: true, hashedPassword: true, activeOrgId: true },
@@ -57,6 +66,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         };
       },
     }),
+    // The signup hand-off. A User created by completePendingSignup (after a
+    // paid Stripe checkout) is signed in with a single-use ticket instead of
+    // being sent to the login wall — see lib/signinTicket.ts. No password
+    // crosses the wire and no rate-limit bypass exists: a ticket is spent on
+    // first presentation and lives five minutes.
+    Credentials({
+      id: "signup-ticket",
+      name: "Signup ticket",
+      credentials: { ticket: { label: "Ticket", type: "text" } },
+      async authorize(raw) {
+        const ticket = String(raw?.ticket ?? "");
+        if (!ticket) return null;
+        const ip = await clientIp();
+        const byIp = await rateLimitShared(`signup-ticket:ip:${ip}`, 20, MINUTE);
+        if (!byIp.ok) return null;
+        const { consumeSigninTicket } = await import("@/lib/signinTicket");
+        const userId = await consumeSigninTicket(ticket);
+        if (!userId) return null;
+        const user = await db.user.findUnique({
+          where: { id: userId },
+          select: { id: true, email: true, name: true, image: true },
+        });
+        if (!user) return null;
+        return { id: user.id, email: user.email, name: user.name, image: user.image };
+      },
+    }),
     // Separate influencer login surface, same NextAuth instance. Authenticates
     // against the Influencer table (not User), so it carries no org/membership.
     Credentials({
@@ -70,6 +105,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = String(raw?.email ?? "").toLowerCase().trim();
         const password = String(raw?.password ?? "");
         if (!email || !password) return null;
+        // Cross-instance brake on credential stuffing / bcrypt CPU burn. The
+        // same "wrong credentials" answer, so a refused attempt looks like a miss.
+        const ip = await clientIp();
+        const [byIp, byEmail] = await Promise.all([
+          rateLimitShared(`login:ip:${ip}`, 30, MINUTE),
+          rateLimitShared(`login:email:${email}`, 8, 15 * MINUTE),
+        ]);
+        if (!byIp.ok || !byEmail.ok) return null;
         const inf = await db.influencer.findUnique({
           where: { email },
           select: { id: true, email: true, displayName: true, hashedPassword: true, status: true },
@@ -192,15 +235,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               },
             },
           });
-          if (dbUser) {
-            const m =
-              dbUser.memberships.find((x) => x.organizationId === dbUser.activeOrgId) ??
-              dbUser.memberships[0];
-            token.cv = dbUser.credentialVersion ?? 0;
-            token.activeOrgId = dbUser.activeOrgId ?? m?.organizationId ?? null;
-            token.role = m?.role ?? null;
-            token.orgName = m?.organization?.name ?? null;
-          }
+          // Revocation is decided HERE, not healed here. The credential epoch
+          // (`cv`) is stamped once at sign-in and must never be rewritten from
+          // the DB on refresh — doing so made every stolen token valid again
+          // within a minute of a password reset (requireUser compared the DB
+          // value against a copy of itself). A drift, or a deleted user, ends
+          // the session: returning null clears the cookie on route-handler
+          // paths and yields no session in RSC/server actions.
+          if (!dbUser) return null;
+          const stampedCv = typeof token.cv === "number" ? token.cv : 0;
+          if ((dbUser.credentialVersion ?? 0) !== stampedCv) return null;
+          const m =
+            dbUser.memberships.find((x) => x.organizationId === dbUser.activeOrgId) ??
+            dbUser.memberships[0];
+          token.activeOrgId = dbUser.activeOrgId ?? m?.organizationId ?? null;
+          token.role = m?.role ?? null;
+          token.orgName = m?.organization?.name ?? null;
           token.orgCheckedAt = Date.now();
         }
       }

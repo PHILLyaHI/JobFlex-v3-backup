@@ -4,9 +4,9 @@
  * Settings blueprint — PAYMENTS pane.
  *
  * Faithful port of donor `jobflex-settings-blueprint (6).html` lines 2035-2041,
- * with the owner fix list applied on top. Everything the pane renders (strings,
- * option lists, seed states) comes from `settings-data.ts`, which transcribes
- * the donor verbatim.
+ * with the owner fix list applied on top. Every label, card title and option
+ * list still comes from `settings-data.ts`; the VALUES come from the org's
+ * `paymentSettingsJson` (src/lib/settings.ts → `PaymentSettings`).
  *
  * Owner fixes applied in this file:
  *   F3  ACH bank transfer gains the same Connect button as Square / PayPal.
@@ -22,32 +22,45 @@
  *   F13 `.sc-b--rows` on every card body whose direct children are row lists
  *       (Processors, Automations), replacing the donor's ad-hoc inline padding.
  *
- * The pane wrapper (`.pane` / `.pane-h`) belongs to settings-content.tsx, and
- * the CSS module is applied by it too — every class name here is a plain global
- * string, matching the module's `.bp :global(.content SEL)` scoping.
+ * ONE WRITE, ONE SAVE BAR. `updatePaymentSettings` stores the whole payment
+ * blob in a single column, so the pane's only `.sactions` — on the Compliance
+ * card, exactly where the donor put it — saves processors, defaults and
+ * automations together.
+ *
+ * NOT REAL, and honest about it: no payout-account model exists, so that card
+ * shows an empty state and its schedule dropdown, Add-payout modal and the
+ * Compliance card's "Send test charge" button stay inert affordances.
  */
 
 import { useState } from "react";
 
+import { updatePaymentSettings } from "@/actions/settings";
 import { Field, Modal, SaveBar, Sel, Toggle } from "../ui";
 import {
   ADD_PAYOUT_ACTION,
   ADD_PAYOUT_MODAL,
   COMPLIANCE_CARD,
   COMPLIANCE_NOTE,
+  CONNECT_ACTION,
   CURRENCY_SELECT,
+  DISCONNECT_ACTION,
   NET_TERMS_SELECT,
   PAYMENT_AUTOMATIONS,
   PAYMENT_AUTOMATIONS_CARD,
   PAYMENT_DEFAULTS_CARD,
-  PAYMENT_DEFAULT_FIELDS,
-  PAYOUT_ACCOUNT,
+  PAYMENT_DEFAULT_LABELS,
   PAYOUT_CARD,
+  PAYOUT_EMPTY,
   PAYOUT_SCHEDULE_SELECT,
   PROCESSORS,
   PROCESSORS_CARD,
   SEND_TEST_CHARGE_ACTION,
+  currencyCodeFor,
+  currencyOptionFor,
   type IconName,
+  type PaneProps,
+  type PaymentAutomationKey,
+  type ProcessorKey,
 } from "../settings-data";
 
 /** `<svg class="ic"><use href="#i-…"/></svg>` — the page's only icon shape. */
@@ -59,25 +72,35 @@ function Ic({ name }: { name: IconName }) {
   );
 }
 
-const [DEPOSIT_FIELD, LATE_FEE_FIELD] = PAYMENT_DEFAULT_FIELDS;
+export function PaymentsPane({ data }: PaneProps) {
+  const p = data.payments;
 
-export function PaymentsPane() {
+  const [processors, setProcessors] = useState<Record<ProcessorKey, boolean>>(p.processors);
   const [payoutSchedule, setPayoutSchedule] = useState<string>(
     PAYOUT_SCHEDULE_SELECT.defaultValue,
   );
-  const [currency, setCurrency] = useState<string>(CURRENCY_SELECT.defaultValue);
-  const [netTerms, setNetTerms] = useState<string>(NET_TERMS_SELECT.defaultValue);
-  const [automations, setAutomations] = useState<readonly boolean[]>(() =>
-    PAYMENT_AUTOMATIONS.map((row) => row.on),
-  );
+  const [currency, setCurrency] = useState<string>(currencyOptionFor(p.currency));
+  const [netTerms, setNetTerms] = useState<string>(p.netTerms);
+  const [depositPct, setDepositPct] = useState<string>(p.depositPct);
+  const [lateFeePct, setLateFeePct] = useState<string>(p.lateFeePct);
+  const [automations, setAutomations] =
+    useState<Record<PaymentAutomationKey, boolean>>(p.automations);
   const [accountType, setAccountType] = useState<string>(
     ADD_PAYOUT_MODAL.select.defaultValue,
   );
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
 
-  const setAutomation = (index: number, next: boolean) => {
-    setAutomations((prev) => prev.map((on, i) => (i === index ? next : on)));
-  };
+  const save = () =>
+    updatePaymentSettings({
+      ...processors,
+      ...automations,
+      currency: currencyCodeFor(currency),
+      // The donor's Deposit % box is free text; a blank or non-numeric entry
+      // stores 0 rather than failing the whole save.
+      depositPct: Number.parseFloat(depositPct) || 0,
+      netTerms,
+      lateFeePct,
+    });
 
   return (
     <>
@@ -97,35 +120,41 @@ export function PaymentsPane() {
         </div>
         {/* F13 — row list, so the body drops to 4px top/bottom. */}
         <div className="sc-b sc-b--rows">
-          {PROCESSORS.map((processor) => (
-            <div className="prow" key={processor.name}>
-              <span className="prow-ic">
-                <Ic name={processor.icon} />
-              </span>
-              <span className="prow-b">
-                <span className="prow-n">{processor.name}</span>
-                <span className="prow-d">{processor.desc}</span>
-                {processor.conn ? (
-                  <span className="prow-conn">{processor.conn}</span>
-                ) : null}
-              </span>
-              {/* F4 — no `.tg` here, and no empty `<span>` standing in for one.
-                  F3 — ACH carries a Connect button like Square and PayPal. */}
-              <span className="prow-act">
-                <button
-                  className={
-                    processor.action.state
-                      ? `btn btn-ghost btn-sm ${processor.action.state}`
-                      : "btn btn-ghost btn-sm"
-                  }
-                  type="button"
-                >
-                  {processor.action.icon ? <Ic name={processor.action.icon} /> : null}
-                  {processor.action.label}
-                </button>
-              </span>
-            </div>
-          ))}
+          {PROCESSORS.map((processor) => {
+            const on = processors[processor.key];
+            const action = on ? DISCONNECT_ACTION : CONNECT_ACTION;
+            return (
+              <div className="prow" key={processor.key}>
+                <span className="prow-ic">
+                  <Ic name={processor.icon} />
+                </span>
+                <span className="prow-b">
+                  <span className="prow-n">{processor.name}</span>
+                  <span className="prow-d">{processor.desc}</span>
+                  {processor.conn ? (
+                    <span className="prow-conn">{processor.conn}</span>
+                  ) : null}
+                </span>
+                {/* F4 — no `.tg` here, and no empty `<span>` standing in for one.
+                    F3 — ACH carries a Connect button like Square and PayPal.
+                    The button IS the control: it flips the org's stored flag,
+                    which the pane's Save bar writes. */}
+                <span className="prow-act">
+                  <button
+                    className={`btn btn-ghost btn-sm ${action.state}`}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setProcessors((prev) => ({ ...prev, [processor.key]: !on }))
+                    }
+                  >
+                    {action.icon ? <Ic name={action.icon} /> : null}
+                    {action.label}
+                  </button>
+                </span>
+              </div>
+            );
+          })}
         </div>
         {/* F5 — the donor's "Add a processor" `.sactions` block is removed. */}
       </section>
@@ -140,25 +169,15 @@ export function PaymentsPane() {
           </div>
         </div>
         <div className="sc-b">
+          {/* No payout-account model exists yet, so this is the empty state —
+              never the donor's invented "checking •••• 3391" row. */}
           <div className="prow">
             <span className="prow-ic">
-              <Ic name={PAYOUT_ACCOUNT.icon} />
+              <Ic name={PAYOUT_EMPTY.icon} />
             </span>
             <span className="prow-b">
-              <span className="prow-n">{PAYOUT_ACCOUNT.name}</span>
-              <span className="prow-d">{PAYOUT_ACCOUNT.desc}</span>
-            </span>
-            <span className="prow-act">
-              <span className={`badge2 ${PAYOUT_ACCOUNT.badge.tone}`}>
-                <i />
-                {PAYOUT_ACCOUNT.badge.label}
-              </span>
-              <button className="btn btn-ghost btn-sm" type="button">
-                {PAYOUT_ACCOUNT.action.icon ? (
-                  <Ic name={PAYOUT_ACCOUNT.action.icon} />
-                ) : null}
-                {PAYOUT_ACCOUNT.action.label}
-              </button>
+              <span className="prow-n">{PAYOUT_EMPTY.name}</span>
+              <span className="prow-d">{PAYOUT_EMPTY.desc}</span>
             </span>
           </div>
           {/* Donor `<div style="margin-top:14px">` — the gap between the account
@@ -202,14 +221,22 @@ export function PaymentsPane() {
               options={CURRENCY_SELECT.options}
               onChange={setCurrency}
             />
-            <Field label={DEPOSIT_FIELD.label} value={DEPOSIT_FIELD.value} />
+            <Field
+              label={PAYMENT_DEFAULT_LABELS.depositPct}
+              value={depositPct}
+              onChange={setDepositPct}
+            />
             <Sel
               label={NET_TERMS_SELECT.label}
               value={netTerms}
               options={NET_TERMS_SELECT.options}
               onChange={setNetTerms}
             />
-            <Field label={LATE_FEE_FIELD.label} value={LATE_FEE_FIELD.value} />
+            <Field
+              label={PAYMENT_DEFAULT_LABELS.lateFeePct}
+              value={lateFeePct}
+              onChange={setLateFeePct}
+            />
           </div>
         </div>
       </section>
@@ -224,16 +251,18 @@ export function PaymentsPane() {
         </div>
         {/* F13 — row list. */}
         <div className="sc-b sc-b--rows">
-          {PAYMENT_AUTOMATIONS.map((row, index) => (
-            <div className="trow" key={row.name}>
+          {PAYMENT_AUTOMATIONS.map((row) => (
+            <div className="trow" key={row.key}>
               <span className="trow-b">
                 <span className="trow-n">{row.name}</span>
                 <span className="trow-d">{row.desc}</span>
               </span>
               {/* F12 — no icons inside the switch. */}
               <Toggle
-                checked={automations[index]}
-                onChange={(next) => setAutomation(index, next)}
+                checked={automations[row.key]}
+                onChange={(next) =>
+                  setAutomations((prev) => ({ ...prev, [row.key]: next }))
+                }
                 ariaLabel={row.name}
               />
             </div>
@@ -257,7 +286,10 @@ export function PaymentsPane() {
             <code>{COMPLIANCE_NOTE}</code>
           </div>
         </div>
+        {/* The pane's one Save bar: `paymentSettingsJson` is a single column, so
+            this writes processors + defaults + automations in one call. */}
         <SaveBar
+          onSave={save}
           extra={
             <button className="btn btn-ghost" type="button">
               {SEND_TEST_CHARGE_ACTION.icon ? (

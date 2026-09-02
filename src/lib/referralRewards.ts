@@ -81,6 +81,11 @@ export async function applyReferralReward(
   if (!conversion) return { applied: false, reason: "not-found" };
   if (conversion.status === "PENDING") return { applied: false, reason: "not-converted" };
   if (conversion.rewardAppliedAt) return { applied: false, reason: "already-applied" };
+  // A credit is only ever earned by a referred ORGANIZATION that paid an
+  // invoice (processReferralEffectsForInvoice stamps signupOrgId → CONVERTED).
+  // Rows with no signupOrgId come from the public homeowner intake and can be
+  // fabricated by anyone against any code — they must never turn into money.
+  if (!conversion.signupOrgId) return { applied: false, reason: "no-signup-org" };
 
   const referrerOrgId = conversion.code.organizationId;
   const referrerSub = await db.subscription.findUnique({

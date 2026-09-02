@@ -13,18 +13,18 @@
 // lengths equal — timingSafeEqual throws on mismatched lengths, which would
 // itself be a length oracle.)
 //
-// RATE LIMIT. An in-memory map of failed attempts, keyed by client IP and by
-// submitted username, 10 failures per 15-minute window each. It is
-// PER-INSTANCE: on a multi-instance host each instance keeps its own count, so
-// treat it as a brake on casual guessing, not a hard cap. The digest compare
-// plus a long secret is the real defence.
+// RATE LIMIT. Attempts are counted in the shared (database-backed) limiter,
+// keyed by client IP and by submitted username, 10 per 15-minute window each —
+// the same count on every instance. The digest compare plus a long secret is
+// still the real defence.
 //
 // ON SUCCESS the admin is upserted as a real User row (several admin actions
 // write the issuer's id into foreign keys), the signed `jf_admin` cookie is set
 // (see @/lib/adminAuth for the format), and the caller is redirected to /admin.
 
 import { createHash, timingSafeEqual } from "crypto";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
+import { clientIp, rateLimitShared } from "@/lib/rateLimit";
 import { redirect } from "next/navigation";
 import type { Route } from "next";
 import { db } from "@/lib/db";
@@ -33,35 +33,7 @@ import { ADMIN_COOKIE, ADMIN_SESSION_MS, signAdminToken } from "@/lib/adminAuth"
 export type AdminLoginResult = { ok: false; error: string };
 
 const WINDOW_MS = 15 * 60 * 1000;
-const MAX_FAILURES = 10;
-
-type Bucket = { count: number; resetAt: number };
-const failures = new Map<string, Bucket>();
-
-function bucketFor(key: string, now: number): Bucket {
-  const b = failures.get(key);
-  if (b && b.resetAt > now) return b;
-  const fresh = { count: 0, resetAt: now + WINDOW_MS };
-  failures.set(key, fresh);
-  return fresh;
-}
-
-function prune(now: number) {
-  // Opportunistic sweep so the map cannot grow without bound under a scan.
-  if (failures.size < 500) return;
-  for (const [k, b] of failures) if (b.resetAt <= now) failures.delete(k);
-}
-
-async function clientIp(): Promise<string> {
-  try {
-    const h = await headers();
-    const fwd = h.get("x-forwarded-for");
-    if (fwd) return fwd.split(",")[0].trim() || "unknown";
-    return h.get("x-real-ip") ?? "local";
-  } catch {
-    return "local";
-  }
-}
+const MAX_ATTEMPTS = 10;
 
 function digest(s: string): Buffer {
   return createHash("sha256").update(s, "utf8").digest();
@@ -82,12 +54,15 @@ export async function adminLogin(
   const p = String(password ?? "");
   if (!u || !p) return { ok: false, error: "Enter your username and password." };
 
-  const now = Date.now();
-  prune(now);
+  // Cross-instance brake (DB-backed, see lib/rateLimit): attempts per client
+  // IP and per submitted username, so neither a single scanner nor a spread
+  // of instances can grind the credential pair.
   const ip = await clientIp();
-  const ipBucket = bucketFor(`ip:${ip}`, now);
-  const userBucket = bucketFor(`user:${u.toLowerCase()}`, now);
-  if (ipBucket.count >= MAX_FAILURES || userBucket.count >= MAX_FAILURES) {
+  const [byIp, byUser] = await Promise.all([
+    rateLimitShared(`admin-login:ip:${ip}`, MAX_ATTEMPTS, WINDOW_MS),
+    rateLimitShared(`admin-login:user:${u.toLowerCase()}`, MAX_ATTEMPTS, WINDOW_MS),
+  ]);
+  if (!byIp.ok || !byUser.ok) {
     return { ok: false, error: "Too many attempts. Try again in a few minutes." };
   }
 
@@ -102,23 +77,30 @@ export async function adminLogin(
   const passOk = sameSecret(p, envPass);
   const ok = configured && userOk && passOk;
 
-  if (!ok) {
-    ipBucket.count += 1;
-    userBucket.count += 1;
-    return { ok: false, error: GENERIC_ERROR };
-  }
+  if (!ok) return { ok: false, error: GENERIC_ERROR };
 
-  // Success: clear the brake for this pair and mint the principal.
-  failures.delete(`ip:${ip}`);
-  failures.delete(`user:${u.toLowerCase()}`);
-
+  // The principal row is passwordless by construction. Never ELEVATE an
+  // existing row here: if someone self-registered this address before the
+  // first admin login, the old upsert flipped THEIR password-bearing account
+  // to platform admin. A row that carries a password (or was created by any
+  // other path) fails closed and is logged for the operator.
   const email = `${envUser.toLowerCase()}@platform.jobflex.local`;
-  const admin = await db.user.upsert({
+  const existingRow = await db.user.findUnique({
     where: { email },
-    update: { isPlatformAdmin: true, name: "Platform admin" },
-    create: { email, name: "Platform admin", isPlatformAdmin: true },
-    select: { id: true },
+    select: { id: true, hashedPassword: true, isPlatformAdmin: true },
   });
+  if (existingRow && (existingRow.hashedPassword || !existingRow.isPlatformAdmin)) {
+    console.error(
+      `[adminAuth] refusing to elevate pre-existing user row for ${email} — delete or inspect it.`,
+    );
+    return { ok: false, error: "Admin sign in is not available. Contact the operator." };
+  }
+  const admin =
+    existingRow ??
+    (await db.user.create({
+      data: { email, name: "Platform admin", isPlatformAdmin: true },
+      select: { id: true },
+    }));
 
   const expires = Date.now() + ADMIN_SESSION_MS;
   const token = signAdminToken(admin.id, expires);

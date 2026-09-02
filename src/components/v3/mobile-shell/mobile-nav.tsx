@@ -39,6 +39,8 @@ import {
   canOpen,
   isLimitedRole,
   navSectionsFor,
+  type NavItem,
+  type NavSection,
 } from "@/components/v3/blueprint-shell/nav-map";
 import { useNavBadges, useNavIdentity, useNavLocked } from "@/components/v3/blueprint-shell/nav-role";
 import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
@@ -77,6 +79,33 @@ function monogram(name: string): string {
     : (p[0][0] + p[p.length - 1][0]).toUpperCase();
 }
 
+/**
+ * Surfaces that exist ONLY as handheld builds, spliced into the shared map for
+ * the drawer alone. The desktop sidebar has nowhere to send them — on a desk
+ * Overhead is the second tab of /dashboard/financials, not a page — so they
+ * are not added to NAV_SECTIONS.
+ *
+ * Each rides directly under its parent item and inherits the parent's role
+ * gate: if the filter dropped Financials, Overhead goes with it.
+ */
+const HANDHELD_SURFACES: ReadonlyArray<{ after: string; item: NavItem }> = [
+  {
+    after: "/dashboard/financials",
+    item: { label: "Overhead", icon: "i-building", href: "/mobile-overhead-v1" },
+  },
+];
+
+function withHandheldSurfaces(sections: NavSection[]): NavSection[] {
+  return sections.map((sec) => {
+    const items: NavItem[] = [];
+    for (const it of sec.items) {
+      items.push(it);
+      for (const h of HANDHELD_SURFACES) if (h.after === it.href) items.push(h.item);
+    }
+    return items.length === sec.items.length ? sec : { ...sec, items };
+  });
+}
+
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const navScrollRef = useRef<HTMLElement>(null);
@@ -85,7 +114,11 @@ export function MobileNav() {
   /* Derived from the URL, never held in state. A label string only moved the
      highlight, which is why the drawer could once change the plate without
      changing the page. */
-  const active = activeHref(usePathname() ?? "");
+  const pathname = usePathname() ?? "";
+  // Handheld-only surfaces (HANDHELD_SURFACES) are not in the shared map, so
+  // the shared resolver returns null for them; the raw path is then the
+  // item's own href.
+  const active = activeHref(pathname) ?? pathname;
 
   /* Who is looking, from the provider the blueprint layout mounts. The drawer
      drew the full 22-item map for everybody until 2026-08-17, so an installer
@@ -96,7 +129,7 @@ export function MobileNav() {
   const { role, name: accountName } = useNavIdentity();
   // Custom-plan page locks, from the same provider; empty on every other plan.
   const locked = useNavLocked();
-  const sections = navSectionsFor(role, locked);
+  const sections = withHandheldSurfaces(navSectionsFor(role, locked));
   /* Unread / pending counts by href, from the same provider the identity
      rides. Outside it (the standalone /mobile-*-v2 review URLs) the map is
      empty and no badge is drawn — exactly what those routes showed before. */
@@ -312,19 +345,27 @@ export function MobileNav() {
                 ) : (
                   <Link
                     key={item.label}
-                    className={cls}
+                    className={cls + (item.locked ? ` ${styles.sbLockd}` : "")}
                     href={item.href as Route}
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setOpen(false)}
                   >
                     <Icon id={item.icon} />
                     {item.label}
-                    {/* Unread count — the desktop sidebar's sb-badge, in this
-                        shell's hash space. Zero draws nothing. */}
-                    {count > 0 && (
-                      <span className={styles.sbBadge} aria-label={`${count} new`}>
-                        {count > 99 ? "99+" : count}
-                      </span>
+                    {/* Custom-plan lock beats the badge: a page the plan does
+                        not include has no unread anything worth advertising.
+                        Still a live link — the route shows the upgrade offer. */}
+                    {item.locked ? (
+                      <svg className={styles.sbLockIc} viewBox="0 0 24 24" aria-label="Not in your plan">
+                        <rect x="5" y="11" width="14" height="10" rx="1.5" />
+                        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                      </svg>
+                    ) : (
+                      count > 0 && (
+                        <span className={styles.sbBadge} aria-label={`${count} new`}>
+                          {count > 99 ? "99+" : count}
+                        </span>
+                      )
                     )}
                   </Link>
                 );

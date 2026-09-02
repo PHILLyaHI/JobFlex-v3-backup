@@ -48,47 +48,6 @@ export async function getOrCreateMyReferralCode() {
   throw new Error("Couldn't generate a unique code");
 }
 
-export async function recordReferralConversion(code: string, signupEmail: string) {
-  const ref = await db.referralCode.findUnique({ where: { code } });
-  if (!ref) return { skipped: true as const };
-  await db.referralConversion.create({
-    data: {
-      codeId: ref.id,
-      signupEmail,
-      status: "PENDING",
-    },
-  });
-  // Bell + referrals badge for the REFERRER's org — a signup on your link is
-  // news you shouldn't have to visit the referrals page to learn. Best-effort:
-  // the conversion stands even if the event write fails.
-  if (ref.organizationId) {
-    await db.activityEvent
-      .create({
-        data: {
-          organizationId: ref.organizationId,
-          kind: "CREATED",
-          summary: `Someone signed up with your referral link (${signupEmail})`,
-        },
-      })
-      .catch(() => {});
-  }
-  return { skipped: false as const, codeId: ref.id };
-}
-
-export async function markConversionConverted(conversionId: string) {
-  const { organizationId } = await requireManager();
-  const conv = await db.referralConversion.findUnique({
-    where: { id: conversionId },
-    include: { code: true },
-  });
-  if (!conv || conv.code.organizationId !== organizationId) throw new Error("Not found");
-  await db.referralConversion.update({
-    where: { id: conversionId },
-    data: { status: "CONVERTED", convertedAt: new Date() },
-  });
-  revalidatePath("/dashboard/referrals");
-}
-
 // ── platform admin: /admin/referrals queue ────────────────────────────────────
 
 /** Retry the automated 50%-of-a-month Stripe credit for a CONVERTED conversion. */

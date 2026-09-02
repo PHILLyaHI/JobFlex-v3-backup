@@ -1,10 +1,12 @@
 "use server";
+import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 export interface OcrResult {
   vendor?: string;
@@ -35,6 +37,7 @@ export async function scanReceipt(input: {
   | { ok: false; error: string }
 > {
   const { organizationId } = await requireManager();
+await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "receipt scans");
   const job = await db.job.findUnique({ where: { id: input.jobId } });
   if (!job || job.organizationId !== organizationId) return { ok: false, error: "Not found" };
 
@@ -65,24 +68,23 @@ export async function saveReceiptExpense(input: {
   ocrJson: OcrResult | null;
 }) {
   const { organizationId } = await requireManager();
+await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "receipt scans");
   const job = await db.job.findUnique({ where: { id: input.jobId } });
   if (!job || job.organizationId !== organizationId) throw new Error("Not found");
 
+  // Inline image only — the stored URL is rendered as a link + thumbnail in
+  // the financials ledger for every manager.
+  const match = input.dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+  if (!match || !IMAGE_DATA_URL.test(input.dataUrl)) throw new Error("Receipt must be an image");
   let receiptUrl = input.dataUrl;
   if (isBlobEnabled()) {
-    try {
-      const match = input.dataUrl.match(/^data:(.+?);base64,(.+)$/);
-      if (match) {
-        const buf = Buffer.from(match[2], "base64");
-        const res = await uploadBlob(
-          `receipts/${input.jobId}/${Date.now()}-${input.filename}`,
-          buf,
-        );
-        receiptUrl = res.url;
-      }
-    } catch {
-      // fallback to data URL
-    }
+    const buf = Buffer.from(match[2], "base64");
+    const res = await uploadBlob(
+      `receipts/${input.jobId}/${Date.now()}-${safeFilename(input.filename, "receipt")}`,
+      buf,
+      { contentType: match[1].toLowerCase() },
+    );
+    receiptUrl = res.url;
   }
 
   // The id and the resolved receipt URL come back so a caller that keeps its

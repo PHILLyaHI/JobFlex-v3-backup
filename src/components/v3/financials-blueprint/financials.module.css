@@ -1610,3 +1610,251 @@
   text-transform: uppercase;
   color: var(--danger);
 }
+
+/* ── OVERHEAD TAB ─────────────────────────────────────────────────────
+   New surface, not a donor port, so it is written in the donor's own
+   vocabulary rather than a new one: hard 2px rules, no resting shadow,
+   mono for anything numeric or labelled, tabular figures everywhere a
+   column of money has to line up.
+
+   Hierarchy, top down: card title (15px / 900 / caps, the donor's
+   .card-title) → the verdict (18px / 900, toned) → figures (17px / 800)
+   → row labels (11.5px mono caps, ink-soft) → annotations (mono, muted).
+   The verdict is the loudest TONE on the page but never outranks the
+   title of the card it sits in.
+
+   Composition: one sheet, two columns. Fixed is the long column (eight
+   lines plus custom ones). The short scaling column carries the totals
+   and the write beneath it, so the page ends where the money does.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Cards: the sheet paints its own heads (paper wash + rule) so the three
+   sheets read as titled documents, not white boxes with a label. */
+.bp :global(.content .oh-card) { padding: 0; }
+.bp :global(.content .oh-head) {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 18px 13px;
+  background: var(--paper);
+  border-bottom: var(--border-thin);
+}
+.bp :global(.content .oh-head .card-title) { color: var(--ink); }
+.bp :global(.content .oh-head .card-sub) {
+  margin-top: 3px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Month cursor — sits in the head opposite the title. */
+.bp :global(.content .oh-month) { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.bp :global(.content .oh-month-lbl) {
+  min-width: 86px; text-align: center;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.bp :global(.content .oh-month .icon-sq) { margin: 0; width: 34px; height: 34px; border-color: var(--ink); color: var(--ink); }
+.bp :global(.content .oh-month .icon-sq:disabled) { opacity: 0.25; cursor: default; }
+.bp :global(.content .oh-month .icon-sq:disabled:hover) { border-color: var(--ink); color: var(--ink); }
+.bp :global(.content .oh-month .ic.rot-l) { transform: rotate(90deg); }
+.bp :global(.content .oh-month .ic.rot-r) { transform: rotate(-90deg); }
+
+/* Coverage card */
+.bp :global(.content .oh-cover) { margin-bottom: 16px; }
+.bp :global(.content .oh-bar) {
+  position: relative; height: 34px; margin: 18px 18px 0;
+  border: var(--border-thin); border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(135deg, var(--grid-light) 0 6px, transparent 6px 12px),
+    var(--paper);
+  overflow: hidden;
+}
+.bp :global(.content .oh-bar-fill) {
+  position: absolute; inset: 0 auto 0 0; width: 0;
+  background: var(--warning);
+  border-right: 1.5px solid var(--ink);
+  transition: width 0.42s var(--ease), background-color 0.2s var(--ease);
+}
+/* Covered is the good state, and the only green on the panel. */
+.bp :global(.content .oh-bar-fill.is-ok) { background: var(--success); border-right-color: var(--success-dark); }
+/* Quarter marks over the fill — the scale a gauge is read against. */
+.bp :global(.content .oh-tick) {
+  position: absolute; top: 0; bottom: 0; width: 0;
+  border-left: 1px dashed var(--hair-soft); opacity: 0.55; pointer-events: none;
+}
+.bp :global(.content .oh-scale) {
+  display: flex; justify-content: space-between;
+  margin: 5px 18px 0;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.06em; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bp :global(.content .oh-verdict) {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 12px 18px 0;
+}
+.bp :global(.content .oh-verdict b) {
+  font-size: 18px; font-weight: 900; letter-spacing: -0.01em; color: var(--warning-dark);
+}
+.bp :global(.content .oh-verdict.is-ok b) { color: var(--success-dark); }
+.bp :global(.content .oh-verdict.is-empty b) { color: var(--ink-soft); }
+.bp :global(.content .oh-verdict span) {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; color: var(--ink-soft);
+}
+
+/* Three figures under the bar: what came in, what it costs, what is left. */
+.bp :global(.content .oh-figs) {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  border-top: var(--border-thin); margin-top: 14px;
+}
+.bp :global(.content .oh-fig) { padding: 12px 18px 14px; border-left: 1px solid var(--chart-major); }
+.bp :global(.content .oh-fig:first-child) { border-left: none; }
+.bp :global(.content .oh-fig-l) {
+  display: block;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft);
+}
+.bp :global(.content .oh-fig b) {
+  display: block; margin-top: 7px;
+  font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.bp :global(.content .oh-fig b.tone-ok) { color: var(--success-dark); }
+.bp :global(.content .oh-fig b.tone-bad) { color: var(--danger); }
+
+/* The sheet — two columns, the right one a stack. */
+.bp :global(.content .oh-sheet) {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 16px; align-items: start;
+}
+.bp :global(.content .oh-col) { display: grid; gap: 16px; }
+.bp :global(.content .oh-sum) {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--ink); flex-shrink: 0;
+}
+.bp :global(.content .oh-grid) { padding: 4px 18px 14px; }
+
+/* Rows: icon · label · figure (· unit switch). Identical geometry in both
+   sheets, so Fixed and Scaling read as one document. */
+.bp :global(.content .oh-row) {
+  display: grid; grid-template-columns: 18px 1fr 132px; align-items: center;
+  gap: 12px; min-height: 48px; padding: 6px 0; border-bottom: 1px solid var(--chart-major);
+}
+.bp :global(.content .oh-grid .oh-row:last-child) { border-bottom: none; }
+.bp :global(.content #ohFixed .oh-row:last-child) { border-bottom: 1px solid var(--chart-major); }
+/* A scaling line carries the $/% switch, so it gets a fourth column. */
+.bp :global(.content .oh-row:has(.oh-tog)) { grid-template-columns: 18px 1fr 132px 66px; }
+/* A custom line carries a remove button instead. */
+.bp :global(.content .oh-row--custom) { grid-template-columns: 18px 1fr 132px 30px; }
+.bp :global(.content .oh-ic) { width: 15px; height: 15px; color: var(--ink-soft); stroke-width: 1.9; }
+.bp :global(.content .oh-lbl) {
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-soft);
+}
+
+.bp :global(.content .oh-in) { position: relative; display: block; }
+/* The unit is part of the figure, not decoration: it has to survive glare. */
+.bp :global(.content .oh-unit) {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  color: var(--ink-soft); font-style: normal; pointer-events: none;
+}
+.bp :global(.content .oh-input) {
+  width: 100%; padding-left: 24px; height: 34px;
+  border-color: var(--ink);
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums; text-align: right; color: var(--ink);
+}
+.bp :global(.content .oh-input)::placeholder { color: var(--muted); }
+/* Spinners steal width from a figure that is already right-aligned. */
+.bp :global(.content .oh-input)::-webkit-outer-spin-button,
+.bp :global(.content .oh-input)::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.bp :global(.content .oh-input) { -moz-appearance: textfield; appearance: textfield; }
+.bp :global(.content .oh-row.is-pct .oh-input) { color: var(--blueprint); }
+.bp :global(.content .oh-row.is-pct .oh-unit) { color: var(--blueprint); }
+
+/* Custom line name — an input drawn as a label until it is focused. */
+.bp :global(.content .oh-name) {
+  min-width: 0; height: 34px; padding: 0 8px;
+  border: 1.5px solid transparent; border-radius: var(--radius); background: transparent;
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink);
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.bp :global(.content .oh-name)::placeholder { color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 600; }
+.bp :global(.content .oh-name:hover) { border-color: var(--hair-soft); }
+.bp :global(.content .oh-name:focus) { outline: none; border-color: var(--blueprint); background: #fff; box-shadow: 2px 2px 0 rgba(24, 84, 160, 0.25); }
+.bp :global(.content .oh-x) {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius); color: var(--muted); background: #fff;
+}
+.bp :global(.content .oh-x:hover) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.bp :global(.content .oh-x .ic) { width: 12px; height: 12px; }
+
+/* "Add a line" — a ghost row, not a primary button; the sheet's own idiom. */
+.bp :global(.content .oh-add) {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 10px; height: 34px; padding: 0 12px;
+  border: 1.5px dashed var(--hair-soft); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-soft);
+  transition: border-color 0.12s, color 0.12s, background-color 0.12s;
+}
+.bp :global(.content .oh-add:hover) { border-style: solid; border-color: var(--blueprint); color: var(--blueprint); background: rgba(24, 84, 160, 0.05); }
+.bp :global(.content .oh-add:disabled) { opacity: 0.35; cursor: default; }
+.bp :global(.content .oh-add .ic) { width: 13px; height: 13px; }
+
+/* $ / % — a two-state switch, not two buttons. Same height as the field. */
+.bp :global(.content .oh-tog) {
+  display: inline-grid; grid-template-columns: 1fr 1fr;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); overflow: hidden; height: 34px;
+}
+.bp :global(.content .oh-tog-b) {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+  color: var(--ink-soft); background: #fff;
+  transition: background-color 0.14s var(--ease), color 0.14s var(--ease);
+}
+.bp :global(.content .oh-tog-b + .oh-tog-b) { border-left: 1.5px solid var(--ink); }
+.bp :global(.content .oh-tog-b:hover) { color: var(--ink); background: var(--paper); }
+.bp :global(.content .oh-tog-b.on) { background: var(--blueprint); color: #fff; }
+
+/* Totals card — the sheet's foot, in the column the eye ends on. */
+.bp :global(.content .oh-total-rows) { padding: 8px 18px 0; }
+.bp :global(.content .oh-total-row) {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--chart-major);
+}
+.bp :global(.content .oh-total-row b) {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.bp :global(.content .oh-total-row--total) { border-bottom: none; border-top: var(--border-thin); margin-top: 2px; padding: 14px 0 4px; }
+.bp :global(.content .oh-total-row--total .card-title) { font-size: 12px; letter-spacing: 0.14em; }
+.bp :global(.content .oh-total-row--total b.oh-total-val) {
+  font-family: var(--font); font-size: 27px; font-weight: 900;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.bp :global(.content .oh-total-act) {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 18px 16px;
+}
+.bp :global(.content .oh-save) { flex: 0 0 auto; }
+.bp :global(.content .oh-save.is-busy) { opacity: 0.6; pointer-events: none; }
+.bp :global(.content .oh-note) {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-soft);
+}
+.bp :global(.content .oh-note.is-warn) { color: var(--warning-dark); }
+.bp :global(.content .oh-note.is-bad) { color: var(--danger); }
+.bp :global(.content .oh-note.is-ok) { color: var(--success-dark); }
+
+@media (max-width: 1000px) {
+  .bp :global(.content .oh-sheet) { grid-template-columns: 1fr; }
+  .bp :global(.content .oh-figs) { grid-template-columns: 1fr; }
+  .bp :global(.content .oh-fig) { border-left: none; border-top: 1px solid var(--chart-major); }
+  .bp :global(.content .oh-fig:first-child) { border-top: none; }
+  .bp :global(.content .oh-head) { flex-wrap: wrap; }
+  .bp :global(.content .oh-total-act) { flex-wrap: wrap; }
+  .bp :global(.content .oh-save) { flex: 1 1 100%; justify-content: center; }
+}

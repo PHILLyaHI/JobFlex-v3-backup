@@ -63,7 +63,8 @@ export type LimitKey =
   | "leads"
   | "aiPhoneCalls"
   | "reviewRequests"
-  | "teamSeats";
+  | "teamSeats"
+  | "managers";
 
 export interface LimitDef {
   key: LimitKey;
@@ -93,6 +94,11 @@ export const LIMIT_DEFS: readonly LimitDef[] = [
   { key: "aiPhoneCalls", label: "AI phone calls", scope: "monthly", hint: "AI receptionist calls per cycle" },
   { key: "reviewRequests", label: "Review requests", scope: "monthly", hint: "Review asks per cycle (incl. auto)" },
   { key: "teamSeats", label: "Office team seats", scope: "absolute", hint: "Non-worker members + pending invites" },
+  // Manager seats specifically (owner's call, 2026-08-31): some plans sell NO
+  // managers, others one or more. Counted as MANAGER-role members plus pending
+  // MANAGER invites; absent from a plan's limitsJson = unlimited, so nothing
+  // changes for a plan until /admin/plans sets a number.
+  { key: "managers", label: "Manager seats", scope: "absolute", hint: "MANAGER members + pending manager invites" },
 ] as const;
 
 export const LIMIT_KEYS = LIMIT_DEFS.map((d) => d.key) as LimitKey[];

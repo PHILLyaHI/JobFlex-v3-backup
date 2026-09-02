@@ -16,6 +16,9 @@
 // a secret's contents, not even its length.
 
 import Link from "next/link";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { setStripeModeAction } from "@/actions/admin";
 import type { Route } from "next";
 import type { IntegrationGroup, IntegrationStatus, LiveProbe } from "@/lib/sdk/integrations";
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
@@ -85,12 +88,84 @@ function GroupCard({
   );
 }
 
+/** The live/sandbox payments switch. Its truth is a SyncState row read by the
+ *  checkout routes per request (lib/stripeMode) — flipping it changes where
+ *  the NEXT checkout session is created, no restart involved. Exported: the
+ *  plans page mounts the same control, because "where do these plans charge"
+ *  is a question asked while editing plans as much as while wiring keys. */
+export function StripeModeSwitch({
+  mode,
+  modes,
+}: {
+  mode: "live" | "test";
+  modes: { live: boolean; test: boolean };
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  const pick = (next: "live" | "test") => {
+    if (next === mode || pending) return;
+    setErr(null);
+    start(async () => {
+      try {
+        await setStripeModeAction(next);
+        router.refresh();
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "Could not switch.");
+      }
+    });
+  };
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div className="card-titles">
+          <div className="card-title">Payments mode</div>
+          <div className="card-sub">
+            Which Stripe account checkout charges — the live account or the test sandbox.
+            Test mode prices from the catalog directly and takes Stripe&apos;s test cards
+            (4242&nbsp;4242&nbsp;4242&nbsp;4242).
+          </div>
+        </div>
+      </div>
+      <hr className="card-rule" />
+      <div className={i.modeRow}>
+        {(["live", "test"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            className={i.modeBtn + (mode === m ? " " + i.modeOn : "")}
+            aria-pressed={mode === m}
+            disabled={pending || !modes[m]}
+            title={modes[m] ? undefined : "No key configured for this mode"}
+            onClick={() => pick(m)}
+          >
+            {m === "live" ? "Live" : "Sandbox"}
+            <i>{m === "live" ? "sk_live" : "sk_test"}</i>
+          </button>
+        ))}
+        <span className={i.modeNote}>
+          {pending ? "Switching…" : mode === "test" ? "Payments go to the SANDBOX." : "Payments are REAL."}
+        </span>
+      </div>
+      {err ? (
+        <div className={i.modeErr} role="alert">
+          {err}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AdminIntegrationsContent({
   items,
   live,
+  stripeMode,
+  stripeModes,
 }: {
   items: IntegrationStatus[];
   live: LiveMap;
+  stripeMode: "live" | "test";
+  stripeModes: { live: boolean; test: boolean };
 }) {
   useAdminMotion();
 
@@ -123,6 +198,8 @@ export function AdminIntegrationsContent({
         <span className={`chip ${s.chipInk}`}>Configured</span>
         <em>key present</em>
       </div>
+
+      <StripeModeSwitch mode={stripeMode} modes={stripeModes} />
 
       <div className="grid-11">
         <GroupCard title={cards[0].title} items={cards[0].items} live={live} />
