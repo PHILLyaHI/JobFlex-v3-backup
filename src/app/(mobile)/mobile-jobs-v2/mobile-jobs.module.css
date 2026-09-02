@@ -1012,3 +1012,75 @@
   .fseg { grid-template-columns: 1fr; }
   .jpip { width: 24px; height: 24px; }
 }
+
+/* ============================================================
+   JOB OFFERS (2026-08-21) — the crew member's answer surface.
+   The button rides the page head next to New job; the list is the
+   family's bottom sheet. Status tones only, never decoration.
+   ============================================================ */
+.offersBtn { position: relative; }
+/* Count bubble: an ink stamp riding the button's corner. It says "new since
+   you last opened this", not "open offers" — opening clears it. */
+.offersN {
+  position: absolute; top: -8px; right: -8px;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--paper);
+  border-radius: var(--radius);
+  background: var(--ink); color: var(--paper);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  line-height: 1;
+}
+
+/* One offer: identity, mono meta, scope first-breath, then the two answers. */
+.offerRow {
+  margin: 0 var(--pad-x);
+  padding: 13px 0 15px;
+  border-bottom: 1.5px solid var(--hair-soft, rgba(10, 10, 10, 0.1));
+}
+.offerRow:last-of-type { border-bottom: none; }
+.offerT { font-size: 15px; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; }
+.offerMeta {
+  margin-top: 3px;
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+  color: var(--muted);
+}
+.offerScope {
+  margin-top: 7px;
+  font-size: 13px; line-height: 1.5; color: var(--ink-soft, var(--ink));
+  overflow-wrap: anywhere;
+}
+.offerActs { display: flex; gap: 8px; margin-top: 12px; }
+/* Accept / Decline: the status-badge grammar as 44px+ buttons — 1.5px
+   base-tone frame, soft fill, caps. Same tones the row's plate flips to. */
+.offerBtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  flex: 1 1 0; min-height: 46px; padding: 0 10px;
+  border-radius: var(--radius);
+  font-size: 11.5px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.offerBtn .ic { width: 16px; height: 16px; }
+.offerBtn:disabled { opacity: 0.55; }
+.offerOk { border: 1.5px solid var(--success); background: var(--success-soft); color: var(--success); }
+.offerNo { border: 1.5px solid var(--danger); background: var(--danger-soft); color: var(--danger); }
+
+/* — the offer states on the board itself — */
+/* A crew member's unanswered offer outranks the job status on their row. */
+.stOffer { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.stDeclinedMine { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+/* The office's small print next to the badge: assigned crew hasn't answered. */
+.awaitHint {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted-light, var(--muted));
+  white-space: nowrap;
+}
+
+/* ── Room for the floating support plate ──────────────────────
+   The Help launcher is a fixed pill in the bottom-right corner
+   again (support-widget.css, owner's call 2026-08-27). It floats
+   just above this fleet's tab bar, so the scroller reserves the
+   strip it stands in — otherwise the last row of every list ends
+   underneath it with no way to scroll clear. */
+.scroll { padding-bottom: 60px; }

@@ -31,6 +31,7 @@ import {
   type JobProposalOption,
   type JobsBoard,
   type JobStatus,
+  type MyAssignmentStatus,
 } from "./jobs-data";
 
 /**
@@ -120,6 +121,15 @@ export async function loadJobsBoard(): Promise<JobsBoard> {
       [j.client?.address, j.client?.city, j.client?.state].filter(Boolean).join(", ") ||
       siteOf(j.title),
     proposal: j.proposal?.title ?? null,
+    // The offer state (2026-08-21). Same include, no extra query — the
+    // assignment rows already carry `status`. A crew member's row headlines
+    // THEIR answer; an office row hints while anyone assigned hasn't answered.
+    myAssignment: isWorker
+      ? ((j.assignments.find((a) => a.workerId === workerId)?.status as
+          | MyAssignmentStatus
+          | undefined) ?? null)
+      : null,
+    pendingCrew: isWorker ? 0 : j.assignments.filter((a) => a.status === "PENDING").length,
   }));
 
   const clients: JobClientOption[] = clientRows.map((c) => ({ id: c.id, name: c.name }));
@@ -130,5 +140,5 @@ export async function loadJobsBoard(): Promise<JobsBoard> {
     clientId: p.clientId ?? null,
   }));
 
-  return { jobs: rows, clients, crew, proposals, canManage };
+  return { jobs: rows, clients, crew, proposals, canManage, isWorker };
 }

@@ -20,7 +20,7 @@ import { usePathname } from "next/navigation";
 // so the mobile hamburger drawers could share them instead of carrying a
 // second, href-less copy. Re-exported here for existing importers.
 import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor } from "./nav-map";
-import { useNavRole } from "./nav-role";
+import { useNavBadges, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
 
 export { NAV_SECTIONS };
@@ -52,12 +52,17 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
   // The RAW role, for the rules. `user.role` above is the humanised copy the
   // account block prints, so it can't be matched against "INSTALLER".
   const navRole = useNavRole();
-  const sections = navSectionsFor(navRole);
+  // Custom-plan page locks ride the same provider; empty on every other plan.
+  const navLocked = useNavLocked();
+  const sections = navSectionsFor(navRole, navLocked);
+  // Unread / pending counts by href, from the layout via the nav provider.
+  // Empty outside it, so nothing is drawn — a stale zero beats a wrong number.
+  const badges = useNavBadges();
   // The footer's two links leave the nav's own surfaces, so they get the same
   // test everything else does. A limited role that cannot open /dashboard/
   // settings would otherwise be handed a gear that bounces it back to Jobs.
-  const canOpenSettings = canOpen(navRole, "/dashboard/settings");
-  const canOpenAccount = canOpen(navRole, "/dashboard/settings/account");
+  const canOpenSettings = canOpen(navRole, "/dashboard/settings", navLocked);
+  const canOpenAccount = canOpen(navRole, "/dashboard/settings/account", navLocked);
 
   return (
     <aside className="sb">
@@ -103,6 +108,14 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
                     <use href={`#${item.icon}`} />
                   </svg>
                   {item.label}
+                  {/* Unread count — the messages ledger's conv-badge voice:
+                      a small blueprint plate with mono numerals, right-aligned
+                      in the row. Zero draws nothing. */}
+                  {(badges[item.href] ?? 0) > 0 && (
+                    <span className="sb-badge" aria-label={`${badges[item.href]} new`}>
+                      {badges[item.href] > 99 ? "99+" : badges[item.href]}
+                    </span>
+                  )}
                 </Link>
               ),
             )}

@@ -37,6 +37,12 @@ export function Sprite() {
         <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="1" /><path d="M2 10h20" /></symbol>
         <symbol id="i-roof" viewBox="0 0 24 24"><path d="m2 11 10-8 10 8" /><path d="M5 9v12h14V9" /></symbol>
         <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 21V8l2-3 2 3v13" /><path d="M10 21V8l2-3 2 3v13" /><path d="M16 21V8l2-3 2 3v13" /><path d="M2 12h20" /><path d="M2 17h20" /></symbol>
+        {/* Added 2026-08-22 for the Video estimator port — the one symbol its
+            donor (jobflex-videoestimator-blueprint.html) carries that this
+            sprite did not. Verbatim from that file; the sidebar's own "Video
+            estimator" item draws it too, which is why it lives here and not in
+            a page-local sprite. */}
+        <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="13" height="12" rx="1.5" /><path d="M15 10.5 21 7v10l-6-3.5" /></symbol>
         <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.13.96.36 1.9.7 2.8a2 2 0 0 1-.45 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.45c.9.34 1.84.57 2.8.7A2 2 0 0 1 22 16.9z" /></symbol>
         {/* Same optical correction as i-cal / i-jobs above, same reason: one
             large thin outline filling the box (18×14 of a 24), whose long

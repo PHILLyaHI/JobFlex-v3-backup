@@ -1,22 +1,10 @@
-// Mobile hire (mobile-hire-v2) — demo fixture.
+// Mobile hire (mobile-hire-v2) — shared shapes + pure helpers.
 //
-// Carried over VERBATIM from the desktop hire donor fixture
-// (src/components/v3/hire-blueprint/hire-data.ts) so the handheld composition is
-// judged against the same candidates, doors, tallies and links as the desktop
-// sheet. Every id, name, email, phone, role, source and relative timestamp is
-// the donor's exact value; only the mobile-only helpers at the bottom are new.
-//
-// Seattle-area contractor texture: seven candidates across four pipeline
-// stages, two of them with NO phone on file (Owen Fletcher, Bruno Salas) — that
-// pair is what makes the row sheet's disabled "Call" state reachable, and the
-// single REJECTED record (Bruno Salas) is what makes the disabled "Reject" state
-// reachable. One HIRED record (Hana Whitmore) is what makes "Convert to worker"
-// reachable.
-//
-// This is a design surface: the data layer is out of scope, so nothing here
-// touches Prisma or a server action. The array is mutated at runtime by the row
-// sheet (stage moves / delete) and the candidate form, so the component clones
-// this seed per mount and nothing leaks between mounts.
+// The demo fixture is gone: the page is fed the org's real pipeline by
+// getHireSeed (src/actions/applicants.ts) and the marketplace blocks by the
+// trade-network actions (src/actions/tradeServices.ts) — the same substrate
+// the desktop /dashboard/hire reads. Only the shapes and the mobile-only
+// helpers live here.
 
 export type HireColumnKey = "APPLIED" | "INTERVIEWING" | "HIRED" | "REJECTED";
 
@@ -40,6 +28,7 @@ export type Applicant = {
   source: string | null;
   age: string;
   notes: string;
+  resumeUrl?: string | null;
 };
 
 export type HubDoor = {
@@ -48,20 +37,28 @@ export type HubDoor = {
   title: string;
   body: string;
   cta: string;
-};
-
-export type HubTally = {
-  label: string;
-  value: string;
-  hint: string;
+  /** Which bottom sheet the door opens. */
+  sheet: "talent" | "profile";
 };
 
 export type HubLink = {
   icon: string;
   label: string;
   sub: string;
+  /** Switch to the pipeline tab… */
   goto?: string;
-  soon?: boolean;
+  /** …or leave for another route. */
+  href?: string;
+};
+
+/** The "Your activity" numbers, computed server-side in page.tsx — the same
+ *  definition the desktop hub uses (see hire-blueprint/hire-data.ts). */
+export type HireTallies = {
+  hired: number;
+  openPosts: number;
+  totalPosts: number;
+  interestReceived: number;
+  interestSent: number;
 };
 
 // Applicant: fullName, email, phone, role, status, source, notes, createdAt.
@@ -74,43 +71,23 @@ export const HK_COLUMNS: HireColumn[] = [
 
 export const SOURCES: string[] = ["Indeed", "Referral", "Walk-in", "LinkedIn", "Job fair", "Other"];
 
-export const AP_SEQ_START = 20;
-
-export const APPLICANTS_SEED: Applicant[] = [
-  { id: 'a1', name: 'Casey Stone',    email: 'casey.stone@mail.com',  phone: '(425) 555-0210', role: 'Roofer',            status: 'APPLIED',      source: 'Indeed',   age: '2h ago', notes: '6 years on asphalt and metal. Has own truck and basic hand tools.' },
-  { id: 'a2', name: 'Priya Raman',    email: 'p.raman@mail.com',      phone: '(425) 555-0211', role: 'Estimator',         status: 'APPLIED',      source: 'LinkedIn', age: '1d ago', notes: 'Came from a fencing shop; comfortable with takeoffs and client calls.' },
-  { id: 'a3', name: 'Owen Fletcher',  email: 'owen.f@mail.com',       phone: null,             role: 'Laborer',           status: 'APPLIED',      source: 'Walk-in',  age: '3d ago', notes: 'No experience, eager. Available immediately.' },
-  { id: 'a4', name: 'Marisol Vega',   email: 'm.vega@mail.com',       phone: '(425) 555-0212', role: 'Foreman',           status: 'INTERVIEWING', source: 'Referral', age: '5d ago', notes: 'Referred by Marcus. Ran three-man crews for eight years.' },
-  { id: 'a5', name: 'Derek Olsen',    email: 'derek.olsen@mail.com',  phone: '(425) 555-0213', role: 'Gutter installer',  status: 'INTERVIEWING', source: 'Indeed',   age: '1w ago', notes: 'Phone screen done — wants $34/hr, ok with early starts.' },
-  { id: 'a6', name: 'Hana Whitmore',  email: 'hana.w@mail.com',       phone: '(425) 555-0214', role: 'Siding installer',  status: 'HIRED',        source: 'Job fair', age: '2w ago', notes: 'Starts Monday. Paperwork signed, portal invite pending.' },
-  { id: 'a7', name: 'Bruno Salas',    email: 'bruno.salas@mail.com',  phone: null,             role: 'Deck carpenter',    status: 'REJECTED',     source: 'Other',    age: '3w ago', notes: 'Wanted subcontract work only; not a fit for crew slots right now.' },
-];
-
 export const HUB_DOORS: HubDoor[] = [
   { icon: 'i-search', kicker: 'For hirers', title: 'Discover talent',
-    body: 'Browse worker profiles, view portfolios, and find the right contractor for your next project.',
-    cta: 'Browse the marketplace' },
+    body: 'See which companies in the trade network are open for work — their trades, specialties and service area.',
+    cta: 'Open the directory', sheet: 'talent' },
   { icon: 'i-userplus', kicker: 'For workers', title: 'Publish your profile',
-    body: 'Showcase your skills and past work, then get discovered by companies looking to hire.',
-    cta: 'Manage your profile' },
-];
-
-export const HUB_TALLY: HubTally[] = [
-  { label: 'Active contracts', value: '0', hint: 'None in progress' },
-  { label: 'Job posts', value: '0', hint: 'None live' },
-  { label: 'Applications', value: '0', hint: 'None sent' },
+    body: 'List your trades and service area as open for work, so matching trade jobs land in your inbox.',
+    cta: 'Manage your profile', sheet: 'profile' },
 ];
 
 export const HUB_LINKS: HubLink[] = [
-  { icon: 'i-users',   label: 'Applicant pipeline', sub: 'Track candidates through your hiring funnel', goto: 'pipeline' },
-  { icon: 'i-jobs',    label: 'Job posts',          sub: 'Manage your job listings', soon: true },
-  { icon: 'i-file',    label: 'Contracts',          sub: 'View active agreements', soon: true },
-  { icon: 'i-send',    label: 'Applications',       sub: "Track what you've applied to", soon: true },
+  { icon: 'i-users', label: 'Applicant pipeline', sub: 'Track candidates through your hiring funnel', goto: 'pipeline' },
+  { icon: 'i-jobs',  label: 'Job posts',          sub: 'The work you broadcast to the trade network', href: '/trade-services' },
+  { icon: 'i-send',  label: 'Applications',       sub: 'Interest on your posts, and jobs you raised a hand for', href: '/trade-services' },
 ];
 
 /* ============================================================
-   MOBILE-ONLY ADDITIONS — nothing above this line differs from
-   the desktop fixture.
+   MOBILE-ONLY HELPERS
    ============================================================ */
 
 /**

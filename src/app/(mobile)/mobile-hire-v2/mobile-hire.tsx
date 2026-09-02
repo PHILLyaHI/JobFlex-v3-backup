@@ -45,22 +45,42 @@
 //    card's "View all" stub is dropped: it was a no-op whose destination is
 //    already a row in "Go deeper".
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// The data is REAL: the page component reads the org's pipeline, the caller's
+// open-for-work profile, the trade-network tallies and the talent directory,
+// and every board action here calls the same applicant server actions the
+// desktop board calls — optimistically, with a rollback and a visible error
+// when the server refuses. The marketplace doors open two working sheets:
+// the talent directory (read) and the profile editor (setTradeNetworkOptIn).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { Route } from "next";
 import styles from "./mobile-hire.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import {
+  appendApplicantNote,
+  convertApplicantToWorker,
+  createApplicant,
+  deleteApplicant,
+  getHireSeed,
+  updateApplicantStatus,
+} from "@/actions/applicants";
+import {
+  discoverTradeProfiles,
+  getMyTradeJobs,
+  getTradeInbox,
+  getTradeNetworkProfile,
+  setTradeNetworkOptIn,
+  type DiscoverProfileDTO,
+} from "@/actions/tradeServices";
+import type { TradeNetworkProfileDTO } from "@/app/(mobile)/trade-services/trade-data";
+import {
   ALL,
-  APPLICANTS_SEED,
-  AP_SEQ_START,
   HK_COLUMNS,
   HUB_DOORS,
   HUB_LINKS,
-  HUB_TALLY,
   PAGE_SIZE,
   SOURCES,
   matchesQuery,
@@ -70,6 +90,7 @@ import {
   stageLabel,
   type Applicant,
   type HireColumnKey,
+  type HireTallies,
   type StageKey,
 } from "./hire-data";
 
@@ -175,14 +196,72 @@ type MenuRow = {
   danger?: boolean;
 };
 
-export function MobileHire() {
+/** Server actions reject with an Error whose message is written for the user
+ *  ("Manager access required", "Not found"). Surface that text; fall back to a
+ *  generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** `appendApplicantNote` writes "YYYY-MM-DD HH:MM — text" blocks separated by
+ *  a blank line — the format the desktop sheet parses back out too. */
+function noteEntries(raw: string) {
+  if (!raw.trim()) return [] as Array<{ stamp: string; text: string }>;
+  return raw.split(/\n\n+/).map((block) => {
+    const m = block.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}) — ([\s\S]+)/);
+    return m ? { stamp: m[1], text: m[2] } : { stamp: "", text: block };
+  });
+}
+
+const EMPTY_PROFILE: TradeNetworkProfileDTO = {
+  optIn: false,
+  tradeTypes: [],
+  specialties: [],
+  serviceArea: null,
+};
+const EMPTY_TALLIES: HireTallies = {
+  hired: 0,
+  openPosts: 0,
+  totalPosts: 0,
+  interestReceived: 0,
+  interestSent: 0,
+};
+
+/**
+ * Two mounts, one component:
+ * - the /mobile-hire-v2 page seeds every prop server-side (no flash);
+ * - the responsive shell's ≤768px switch on /dashboard/hire mounts it BARE,
+ *   so with no props the component reads the same actions itself on mount.
+ */
+export function MobileHire({
+  applicants,
+  profile: initialProfile,
+  tallies: initialTallies,
+  talent: initialTalent,
+}: {
+  applicants?: Applicant[];
+  profile?: TradeNetworkProfileDTO;
+  tallies?: HireTallies;
+  talent?: DiscoverProfileDTO[];
+}) {
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
-  /* Cloned per mount: the row sheet and the form mutate this list, and the
-     donor's seed must not carry those mutations into the next mount. */
-  const [data, setData] = useState<Applicant[]>(() => APPLICANTS_SEED.map((a) => ({ ...a })));
-  const apSeq = useRef(AP_SEQ_START);
+  /* Cloned per mount: the row sheet and the form mutate this list before the
+     server confirms, and a rollback needs the props copy untouched. */
+  const [data, setData] = useState<Applicant[]>(() => (applicants ?? []).map((a) => ({ ...a })));
+  /* False only on the bare mount, until the self-fetch lands — it gates the
+     "No applicants yet" empty state so a loading board never claims to be one. */
+  const [ready, setReady] = useState(Boolean(applicants));
+  const [tallies, setTallies] = useState<HireTallies>(initialTallies ?? EMPTY_TALLIES);
+  const [talent, setTalent] = useState<DiscoverProfileDTO[]>(initialTalent ?? []);
+
+  const selfFetch = !applicants;
 
   const [tab, setTab] = useState<TabKey>("pipeline");
   const [stage, setStage] = useState<StageKey>(ALL);
@@ -191,9 +270,12 @@ export function MobileHire() {
   const [sheetId, setSheetId] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [landedId, setLandedId] = useState<string | null>(null);
-  /** The donor flashes a marketplace door for 700ms instead of navigating —
-      nothing behind those doors is live yet. */
-  const [tapped, setTapped] = useState<string | null>(null);
+  /** A rolled-back write is never silent — the action's own message lands
+      here, above the list it failed to change. */
+  const [err, setErr] = useState<string | null>(null);
+  /** Two-tap arming for the sheet rows that cannot be taken back: delete, and
+      convert-to-worker (it emails a portal invite). */
+  const [armed, setArmed] = useState<string | null>(null);
 
   /* ---- candidate form: serves BOTH the donor's add form and its detail
           panel, so one sheet covers both ---- */
@@ -209,9 +291,67 @@ export function MobileHire() {
   });
   const [stageDraft, setStageDraft] = useState<HireColumnKey>("APPLIED");
   const [nameErr, setNameErr] = useState(false);
+  const [emailErr, setEmailErr] = useState(false);
+  const [formErr, setFormErr] = useState<string | null>(null);
+  const [formSaving, setFormSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
+  /* ---- marketplace: the two door sheets ---- */
+  const [talentOpen, setTalentOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profile, setProfile] = useState<TradeNetworkProfileDTO>(initialProfile ?? EMPTY_PROFILE);
+  const [prof, setProf] = useState(() => {
+    const p = initialProfile ?? EMPTY_PROFILE;
+    return {
+      optIn: p.optIn,
+      trades: p.tradeTypes.join(", "),
+      specialties: p.specialties.join(", "),
+      area: p.serviceArea ?? "",
+    };
+  });
+  const [profErr, setProfErr] = useState<string | null>(null);
+  const [profSaving, setProfSaving] = useState(false);
+
   const filterRef = useRef<HTMLDivElement>(null);
+
+  /* ---------- bare mount: read the same seed the page reads --------------
+     Only the responsive shell's switch takes this path; the standalone route
+     arrives fully seeded and skips it. */
+  useEffect(() => {
+    if (!selfFetch) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [seed, prof, jobs, inbox, tal] = await Promise.all([
+          getHireSeed(),
+          getTradeNetworkProfile(),
+          getMyTradeJobs(),
+          getTradeInbox(),
+          discoverTradeProfiles(),
+        ]);
+        if (cancelled) return;
+        setData(seed.map((a) => ({ ...a })));
+        setProfile(prof);
+        setTalent(tal);
+        setTallies({
+          hired: seed.filter((a) => a.status === "HIRED").length,
+          openPosts: jobs.filter((j) => j.status === "OPEN").length,
+          totalPosts: jobs.length,
+          interestReceived: jobs.reduce((n, j) => n + j.interestedCount, 0),
+          interestSent: inbox.engaged.length,
+        });
+        setReady(true);
+      } catch (e) {
+        if (cancelled) return;
+        setErr(actionError(e));
+        setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot seed
+  }, []);
 
   /* ---------- viewport height ------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
@@ -333,11 +473,13 @@ export function MobileHire() {
       if (e.key !== "Escape") return;
       if (filterOpen) setFilterOpen(false);
       else if (formOpen) setFormOpen(false);
-      else if (sheetId) setSheetId(null);
+      else if (profileOpen) setProfileOpen(false);
+      else if (talentOpen) setTalentOpen(false);
+      else if (sheetId) { setArmed(null); setSheetId(null); }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [filterOpen, formOpen, sheetId]);
+  }, [filterOpen, formOpen, profileOpen, talentOpen, sheetId]);
 
   /* ---------- Filter dropdown: close on outside tap -------------------- */
   useEffect(() => {
@@ -369,13 +511,6 @@ export function MobileHire() {
     return () => clearTimeout(t);
   }, [landedId]);
 
-  /* ---------- The donor's 700ms door flash ------------------------------ */
-  useEffect(() => {
-    if (!tapped) return;
-    const t = window.setTimeout(() => setTapped(null), 700);
-    return () => clearTimeout(t);
-  }, [tapped]);
-
   /* ---------- derived ------------------------------------------------- */
   const visible = useMemo(
     () => data.filter((a) => matchesStage(a, stage) && matchesQuery(a, query)),
@@ -390,13 +525,38 @@ export function MobileHire() {
   );
   const hiredCount = useMemo(() => data.filter((a) => a.status === "HIRED").length, [data]);
 
-  /* The marketplace tab's badge is the fixture's own activity total — three
-     zeros today, which is exactly the story its tally tells. */
-  const marketTotal = useMemo(
-    () => HUB_TALLY.reduce((sum, t) => sum + (parseInt(t.value, 10) || 0), 0),
-    [],
-  );
+  /* The marketplace tab's badge is the org's real trade-network activity:
+     open posts plus interest in both directions. */
+  const marketTotal = tallies.openPosts + tallies.interestReceived + tallies.interestSent;
   const tabCount: Record<TabKey, number> = { pipeline: data.length, market: marketTotal };
+
+  /* "Your activity" — every number is real, and there is no contracts tile
+     because there is no contracts model: the third slot counts hires. The
+     Hired figure tracks the live board, not the mount-time snapshot. */
+  const tallyRows = useMemo(
+    () => [
+      {
+        label: "Hired",
+        value: hiredCount,
+        hint: hiredCount ? "From your pipeline" : "No hires yet",
+      },
+      {
+        label: "Job posts",
+        value: tallies.openPosts,
+        hint: tallies.totalPosts
+          ? tallies.openPosts
+            ? `Open now · ${tallies.totalPosts} posted`
+            : `None open · ${tallies.totalPosts} posted`
+          : "None posted",
+      },
+      {
+        label: "Interest",
+        value: tallies.interestReceived + tallies.interestSent,
+        hint: `${tallies.interestReceived} received · ${tallies.interestSent} sent`,
+      },
+    ],
+    [hiredCount, tallies],
+  );
 
   const options = useMemo<{ k: StageKey; l: string }[]>(
     () => [
@@ -410,6 +570,7 @@ export function MobileHire() {
   const safePage = Math.min(page, pages);
   const slice = visible.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const sheetApplicant = sheetId === null ? null : (data.find((a) => a.id === sheetId) ?? null);
+  const editApplicant = editId === null ? null : (data.find((a) => a.id === editId) ?? null);
   const tabIndex = TABS.findIndex((t) => t.key === tab);
 
   const resetFilters = () => {
@@ -419,10 +580,12 @@ export function MobileHire() {
   };
 
   /* ---------- row sheet ------------------------------------------------ */
+  const convertArm = sheetApplicant?.status === "HIRED";
   const menuRows = useMemo<MenuRow[]>(() => {
     const a = sheetApplicant;
     if (!a) return [];
     const adv = ADVANCE[a.status];
+    const advArmed = a.status === "HIRED" && armed === "advance";
     return [
       { act: "open", icon: "i-user", tone: styles.hmiBp, title: "Open candidate",
         sub: "Role, contact and notes" },
@@ -430,56 +593,110 @@ export function MobileHire() {
         sub: a.phone ?? "No phone on file", disabled: !a.phone },
       { act: "mail", icon: "i-mail", tone: styles.hmiOk, title: "Send email",
         sub: a.email ?? "No email on file", disabled: !a.email },
-      { act: "advance", icon: adv.icon, tone: adv.tone, title: adv.title, sub: adv.sub },
+      { act: "advance", icon: adv.icon, tone: adv.tone,
+        title: advArmed ? "Tap again to convert" : adv.title,
+        sub: advArmed ? "Sends them a worker portal invite" : adv.sub },
       { act: "reject", icon: "i-x", title: "Reject candidate",
         sub: a.status === "REJECTED" ? "Already rejected" : "Moves into Rejected",
         disabled: a.status === "REJECTED" },
-      { act: "del", icon: "i-trash", tone: styles.hmiDanger, title: "Delete applicant",
+      { act: "del", icon: "i-trash", tone: styles.hmiDanger,
+        title: armed === "del" ? "Tap again to delete" : "Delete applicant",
         sub: "Removes the record permanently", danger: true },
     ];
-  }, [sheetApplicant]);
+  }, [sheetApplicant, armed]);
 
   const openEdit = (a: Applicant) => {
     setEditId(a.id);
+    // Identity fields ride along read-only; `notes` is the NEW entry — the
+    // data layer appends stamped notes, it never rewrites the column.
     setForm({
       name: a.name,
       role: a.role,
       email: a.email ?? "",
       phone: a.phone ?? "",
       source: a.source ?? "Other",
-      notes: a.notes,
+      notes: "",
     });
     setStageDraft(a.status);
     setNameErr(false);
+    setEmailErr(false);
+    setFormErr(null);
     setFormOpen(true);
+  };
+
+  /** A stage move, optimistic: the row lands in its new stage immediately and
+   *  rolls back — with the server's own message — if the write is refused. */
+  const moveStatus = async (a: Applicant, next: HireColumnKey) => {
+    const prev = a.status;
+    setErr(null);
+    setData((cur) => cur.map((x) => (x.id === a.id ? { ...x, status: next } : x)));
+    setLandedId(a.id);
+    try {
+      await updateApplicantStatus(a.id, next);
+    } catch (e) {
+      setData((cur) => cur.map((x) => (x.id === a.id ? { ...x, status: prev } : x)));
+      setErr(actionError(e));
+    }
   };
 
   const runMenu = (act: string) => {
     const a = sheetApplicant;
+    if (!a) {
+      setSheetId(null);
+      return;
+    }
+    // The irreversible rows arm on the first tap and fire on the second —
+    // the sheet stays open in between so the relabel is visible.
+    if (act === "del" && armed !== "del") {
+      setArmed("del");
+      return;
+    }
+    if (act === "advance" && convertArm && armed !== "advance") {
+      setArmed("advance");
+      return;
+    }
+    setArmed(null);
     setSheetId(null);
-    if (!a) return;
     if (act === "open") {
       openEdit(a);
       return;
     }
     if (act === "del") {
-      setData((prev) => prev.filter((x) => x.id !== a.id));
+      const snapshot = data;
+      setErr(null);
+      setData((cur) => cur.filter((x) => x.id !== a.id));
+      void deleteApplicant(a.id).catch((e) => {
+        setData(snapshot);
+        setErr(actionError(e));
+      });
       return;
     }
     if (act === "advance") {
-      const next = ADVANCE[a.status].next;
-      setData((prev) => prev.map((x) => (x.id === a.id ? { ...x, status: next } : x)));
-      setLandedId(a.id);
+      if (a.status === "HIRED") {
+        // Convert to worker: already HIRED, so the visible change is the
+        // flash; the write creates the invite.
+        setErr(null);
+        setLandedId(a.id);
+        void convertApplicantToWorker(a.id).catch((e) => setErr(actionError(e)));
+        return;
+      }
+      void moveStatus(a, ADVANCE[a.status].next);
       return;
     }
     if (act === "reject") {
-      setData((prev) => prev.map((x) => (x.id === a.id ? { ...x, status: "REJECTED" } : x)));
-      setLandedId(a.id);
+      void moveStatus(a, "REJECTED");
       return;
     }
-    // "call" / "mail" are the contact actions: nothing to mutate, and the row
-    // already carries the number the sheet just showed.
-    setLandedId(a.id);
+    // The contact rows leave the app: tel:/mailto: hand off to the dialer or
+    // the mail client with the value the sheet just showed.
+    if (act === "call" && a.phone) {
+      window.location.assign(`tel:${a.phone.replace(/[^\d+]/g, "")}`);
+      return;
+    }
+    if (act === "mail" && a.email) {
+      window.location.assign(`mailto:${encodeURIComponent(a.email)}`);
+      return;
+    }
   };
 
   /* ---------- candidate form ------------------------------------------- */
@@ -488,61 +705,154 @@ export function MobileHire() {
     setForm({ name: "", role: "", email: "", phone: "", source: SOURCES[0], notes: "" });
     setStageDraft("APPLIED");
     setNameErr(false);
+    setEmailErr(false);
+    setFormErr(null);
     setFormOpen(true);
     // Focus after the slide settles — focusing mid-transform makes the keyboard
     // fight the animation.
     window.setTimeout(() => nameRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
   };
 
-  const submitForm = (e: React.FormEvent) => {
+  const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formSaving) return;
+
+    if (editId) {
+      // Edit = the two writes the data layer supports: a stage move and a new
+      // stamped note. Identity fields are read-only in this sheet.
+      const a = data.find((x) => x.id === editId);
+      if (!a) {
+        setFormOpen(false);
+        return;
+      }
+      const statusChanged = a.status !== stageDraft;
+      const text = form.notes.trim();
+      if (!statusChanged && !text) {
+        setFormOpen(false);
+        return;
+      }
+      setFormErr(null);
+      setFormSaving(true);
+      try {
+        if (statusChanged) await updateApplicantStatus(editId, stageDraft);
+        if (text) await appendApplicantNote(editId, text);
+        const stamped = `${new Date().toISOString().slice(0, 16).replace("T", " ")} — ${text}`;
+        setData((prev) =>
+          prev.map((x) =>
+            x.id === editId
+              ? {
+                  ...x,
+                  status: stageDraft,
+                  notes: text ? (x.notes ? `${x.notes}\n\n${stamped}` : stamped) : x.notes,
+                }
+              : x,
+          ),
+        );
+        setLandedId(editId);
+        setFormSaving(false);
+        setFormOpen(false);
+      } catch (e2) {
+        setFormSaving(false);
+        setFormErr(actionError(e2));
+      }
+      return;
+    }
+
+    // Add: the server's contract — a name, a role, and a real email address
+    // (the applicant's only identity on the record).
     const name = form.name.trim();
     if (!name) {
       setNameErr(true);
       nameRef.current?.focus();
       return;
     }
-    const email = form.email.trim() || null;
+    const email = form.email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailErr(true);
+      return;
+    }
     const phone = form.phone.trim() || null;
     const source = form.source || "Other";
     const notes = form.notes.trim();
+    const role = form.role.trim() || "Crew";
 
-    if (editId) {
-      setData((prev) =>
-        prev.map((x) =>
-          x.id === editId
-            ? { ...x, name, role: form.role.trim() || "Crew", email, phone, source, status: stageDraft, notes }
-            : x,
-        ),
-      );
-      setLandedId(editId);
-    } else {
-      apSeq.current += 1;
+    setFormErr(null);
+    setFormSaving(true);
+    try {
+      const created = await createApplicant({
+        fullName: name,
+        email,
+        phone,
+        role,
+        source,
+        notes: notes || null,
+      });
       const rec: Applicant = {
-        id: `a${apSeq.current}`,
+        id: created.id,
         name,
-        role: form.role.trim() || "Crew",
+        role,
         email,
         phone,
         source,
         status: "APPLIED",
-        age: "now",
+        age: "just now",
         notes,
       };
       setData((prev) => [rec, ...prev]);
       resetFilters();
       setTab("pipeline");
       setLandedId(rec.id);
+      setFormSaving(false);
+      setFormOpen(false);
+    } catch (e2) {
+      setFormSaving(false);
+      setFormErr(actionError(e2));
     }
-    setFormOpen(false);
   };
 
-  const anyOverlay = Boolean(sheetApplicant) || formOpen;
+  /* ---------- profile sheet (Publish your profile) ---------------------- */
+  const openProfile = () => {
+    setProf({
+      optIn: profile.optIn,
+      trades: profile.tradeTypes.join(", "),
+      specialties: profile.specialties.join(", "),
+      area: profile.serviceArea ?? "",
+    });
+    setProfErr(null);
+    setProfileOpen(true);
+  };
+
+  const csv = (raw: string) =>
+    raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 40);
+
+  const saveProfile = async () => {
+    if (profSaving) return;
+    setProfErr(null);
+    setProfSaving(true);
+    try {
+      const saved = await setTradeNetworkOptIn({
+        optIn: prof.optIn,
+        tradeTypes: csv(prof.trades),
+        specialties: csv(prof.specialties),
+        serviceArea: prof.area.trim() || null,
+      });
+      setProfile(saved);
+      setProfSaving(false);
+      setProfileOpen(false);
+    } catch (e) {
+      setProfSaving(false);
+      setProfErr(actionError(e));
+    }
+  };
+
+  const anyOverlay = Boolean(sheetApplicant) || formOpen || talentOpen || profileOpen;
 
   // Swipe-down dismissal, one gesture per sheet, on the same setters the
   // Escape ladder uses.
   const actionsDrag = useSheetDrag(Boolean(sheetApplicant), () => setSheetId(null));
   const formDrag = useSheetDrag(formOpen, () => setFormOpen(false));
+  const talentDrag = useSheetDrag(talentOpen, () => setTalentOpen(false));
+  const profileDrag = useSheetDrag(profileOpen, () => setProfileOpen(false));
 
   return (
     <div className={styles.app} onClick={onRootClick}>
@@ -651,8 +961,24 @@ export function MobileHire() {
             </div>
           )}
 
+          {/* A refused write rolls the row back — and says why, right here. */}
+          {tab === "pipeline" && err ? (
+            <div className={styles.merr} role="alert">
+              <span className={styles.merrTxt}>{err}</span>
+              <button
+                className={styles.merrX}
+                type="button"
+                aria-label="Dismiss error"
+                onClick={() => setErr(null)}
+              >
+                <Icon id="i-x" />
+              </button>
+            </div>
+          ) : null}
+
           {tab === "pipeline" && (
             visible.length === 0 ? (
+              !ready ? null : (
               <div className={styles.hempty}>
                 {data.length === 0 ? (
                   <>
@@ -676,6 +1002,7 @@ export function MobileHire() {
                   </>
                 )}
               </div>
+              )
             ) : (
               <div className={styles.hbook}>
                 {slice.map((a, i) => (
@@ -687,7 +1014,8 @@ export function MobileHire() {
                     <span className={styles.hav}>{monogram(a.name)}</span>
                     <div className={styles.hname}>{a.name}</div>
                     <button className={styles.hrowOpen} type="button"
-                      aria-label={`Actions for ${a.name}`} onClick={() => setSheetId(a.id)}>
+                      aria-label={`Actions for ${a.name}`}
+                      onClick={() => { setArmed(null); setSheetId(a.id); }}>
                       <Icon id="i-dots" />
                     </button>
                     <div className={styles.hwhere}>
@@ -731,10 +1059,13 @@ export function MobileHire() {
           {tab === "market" && (
             <div className={styles.hnote}>
               <span className={styles.hflag}>
-                <span className={styles.hflagDot} />Preview
+                <span className={styles.hflagDot} />
+                {profile.optIn ? "Listed" : "Not listed"}
               </span>
               <span className={styles.hnoteTxt}>
-                Marketplace is not live yet — both doors below are a walkthrough.
+                {profile.optIn
+                  ? "Your company is open for work — matching trade jobs land in your inbox."
+                  : "Your company is not listed. Publish your profile to receive trade jobs."}
               </span>
             </div>
           )}
@@ -743,8 +1074,9 @@ export function MobileHire() {
             <div className={styles.hcard}>
               {HUB_DOORS.map((d) => (
                 <button key={d.title}
-                  className={`${styles.hdoor} ${tapped === d.title ? styles.tapped : ""}`}
-                  type="button" onClick={() => setTapped(d.title)}>
+                  className={styles.hdoor}
+                  type="button"
+                  onClick={() => (d.sheet === "talent" ? setTalentOpen(true) : openProfile())}>
                   <span className={styles.hdoorKicker}>{d.kicker}</span>
                   <span className={styles.hdoorIc}><Icon id={d.icon} /></span>
                   <span className={styles.hdoorT}>{d.title}</span>
@@ -762,10 +1094,7 @@ export function MobileHire() {
               <div className={styles.hcardHead}>
                 <div className={styles.hcardTitle}>Your activity</div>
               </div>
-              {/* The desktop renderer drops the fixture's hint strings even
-                  though its stylesheet has a class for them. Three bare zeros
-                  need the sentence more on a phone than anywhere. */}
-              {HUB_TALLY.map((t) => (
+              {tallyRows.map((t) => (
                 <div className={styles.htallyRow} key={t.label}>
                   <div className={styles.htallyTxt}>
                     <div className={styles.htallyL}>{t.label}</div>
@@ -784,19 +1113,17 @@ export function MobileHire() {
               </div>
               {HUB_LINKS.map((l) => (
                 <button key={l.label}
-                  className={`${styles.hlink} ${tapped === l.label ? styles.tapped : ""}`}
+                  className={styles.hlink}
                   type="button"
-                  onClick={() => (l.goto ? setTab("pipeline") : setTapped(l.label))}>
+                  onClick={() =>
+                    l.goto ? setTab("pipeline") : l.href ? router.push(l.href as Route) : undefined
+                  }>
                   <span className={styles.hlinkIc}><Icon id={l.icon} /></span>
                   <span className={styles.hlinkTxt}>
                     <span className={styles.hlinkT}>{l.label}</span>
                     <span className={styles.hlinkS}>{l.sub}</span>
                   </span>
-                  {l.soon ? (
-                    <span className={styles.hsoon}>Soon</span>
-                  ) : (
-                    <Icon id="i-arrow" className={`${styles.ic} ${styles.hlinkGo}`} />
-                  )}
+                  <Icon id="i-arrow" className={`${styles.ic} ${styles.hlinkGo}`} />
                 </button>
               ))}
             </div>
@@ -807,7 +1134,13 @@ export function MobileHire() {
       {/* ============ SHEET SCRIM (shared by both sheets) ============ */}
       <div
         className={`${styles.scrim} ${anyOverlay ? styles.on : ""}`}
-        onClick={() => { setSheetId(null); setFormOpen(false); }}
+        onClick={() => {
+          setArmed(null);
+          setSheetId(null);
+          setFormOpen(false);
+          setTalentOpen(false);
+          setProfileOpen(false);
+        }}
         aria-hidden="true"
       />
 
@@ -836,7 +1169,8 @@ export function MobileHire() {
             </button>
           ))}
         </div>
-        <button className={styles.sheetCancel} type="button" onClick={() => setSheetId(null)}>Cancel</button>
+        <button className={styles.sheetCancel} type="button"
+          onClick={() => { setArmed(null); setSheetId(null); }}>Cancel</button>
       </div>
 
       {/* ============ CANDIDATE SHEET — the donor's add form AND its
@@ -857,60 +1191,112 @@ export function MobileHire() {
           </div>
         </div>
         <form className={`${styles.sheetBody} ${styles.formBody}`} id="mhForm" noValidate onSubmit={submitForm}>
-          <div className={`${styles.fld} ${nameErr ? styles.invalid : ""}`}>
-            <label className={styles.fldLbl} htmlFor="mhName">
-              Full name<span className={styles.req}>*</span>
-            </label>
-            <input ref={nameRef} className={styles.pinput} id="mhName" name="name" type="text"
-              placeholder="Casey Stone" autoComplete="off" value={form.name}
-              aria-invalid={nameErr} aria-describedby={nameErr ? "mhNameErr" : undefined}
-              onChange={(e) => {
-                setForm((f) => ({ ...f, name: e.target.value }));
-                if (e.target.value.trim()) setNameErr(false);
-              }} />
-            {nameErr ? <span className={styles.fldErr} id="mhNameErr">Enter a candidate name</span> : null}
-          </div>
-
-          <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mhRole">Role</label>
-            <input className={styles.pinput} id="mhRole" name="role" type="text"
-              placeholder="Roofer, Estimator, Foreman…" autoComplete="off" value={form.role}
-              onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} />
-          </div>
-
-          <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mhEmail">Email</label>
-            <input className={styles.pinput} id="mhEmail" name="email" type="email"
-              placeholder="casey@example.com" autoComplete="off" value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
-          </div>
-
-          <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mhPhone">Phone</label>
-            <input className={styles.pinput} id="mhPhone" name="phone" type="tel"
-              placeholder="(425) 555-0199" autoComplete="off" value={form.phone}
-              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
-            <span className={styles.fldHint}>
-              A candidate with no number cannot be called from the actions sheet.
-            </span>
-          </div>
-
-          {/* Drawn pickers, never a native select: the native control cannot
-              carry the 2px frame, and it renders differently on every platform.
-              ONE class set for both pickers — parallel style sets for identical
-              blocks are how typography drifts. */}
-          <div className={styles.fld}>
-            <span className={styles.fldLbl}>Source</span>
-            <div className={styles.pick} role="group" aria-label="Source">
-              {SOURCES.map((s) => (
-                <button key={s} className={`${styles.pickBtn} ${form.source === s ? styles.on : ""}`}
-                  type="button" aria-pressed={form.source === s}
-                  onClick={() => setForm((f) => ({ ...f, source: s }))}>
-                  {s}
-                </button>
-              ))}
+          {editApplicant ? (
+            /* The record's identity, read-only: the data layer supports a
+               stage move and an appended note — nothing else — so the sheet
+               does not offer edits it could not save. */
+            <div className={styles.metaBox}>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLbl}>Role</span>
+                <span>{editApplicant.role}</span>
+              </div>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLbl}>Email</span>
+                <span>{editApplicant.email ?? "—"}</span>
+              </div>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLbl}>Phone</span>
+                <span>{editApplicant.phone ?? "—"}</span>
+              </div>
+              <div className={styles.metaRow}>
+                <span className={styles.metaLbl}>Source</span>
+                <span>{editApplicant.source ?? "Other"}</span>
+              </div>
+              {editApplicant.resumeUrl ? (
+                <div className={styles.metaRow}>
+                  <span className={styles.metaLbl}>Resume</span>
+                  <span>
+                    {/^https?:\/\//i.test(editApplicant.resumeUrl) ? (
+                      <a className={styles.metaLink} href={editApplicant.resumeUrl}
+                        target="_blank" rel="noopener noreferrer">
+                        Open resume
+                      </a>
+                    ) : (
+                      editApplicant.resumeUrl
+                    )}
+                  </span>
+                </div>
+              ) : null}
             </div>
-          </div>
+          ) : (
+            <>
+              <div className={`${styles.fld} ${nameErr ? styles.invalid : ""}`}>
+                <label className={styles.fldLbl} htmlFor="mhName">
+                  Full name<span className={styles.req}>*</span>
+                </label>
+                <input ref={nameRef} className={styles.pinput} id="mhName" name="name" type="text"
+                  placeholder="Casey Stone" autoComplete="off" value={form.name}
+                  aria-invalid={nameErr} aria-describedby={nameErr ? "mhNameErr" : undefined}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, name: e.target.value }));
+                    if (e.target.value.trim()) setNameErr(false);
+                  }} />
+                {nameErr ? <span className={styles.fldErr} id="mhNameErr">Enter a candidate name</span> : null}
+              </div>
+
+              <div className={styles.fld}>
+                <label className={styles.fldLbl} htmlFor="mhRole">Role</label>
+                <input className={styles.pinput} id="mhRole" name="role" type="text"
+                  placeholder="Roofer, Estimator, Foreman…" autoComplete="off" value={form.role}
+                  onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} />
+              </div>
+
+              <div className={`${styles.fld} ${emailErr ? styles.invalid : ""}`}>
+                <label className={styles.fldLbl} htmlFor="mhEmail">
+                  Email<span className={styles.req}>*</span>
+                </label>
+                <input className={styles.pinput} id="mhEmail" name="email" type="email"
+                  placeholder="casey@example.com" autoComplete="off" value={form.email}
+                  aria-invalid={emailErr} aria-describedby={emailErr ? "mhEmailErr" : undefined}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, email: e.target.value }));
+                    if (e.target.value.trim()) setEmailErr(false);
+                  }} />
+                {emailErr ? (
+                  <span className={styles.fldErr} id="mhEmailErr">A valid email is required</span>
+                ) : (
+                  <span className={styles.fldHint}>The applicant’s only identity on the record.</span>
+                )}
+              </div>
+
+              <div className={styles.fld}>
+                <label className={styles.fldLbl} htmlFor="mhPhone">Phone</label>
+                <input className={styles.pinput} id="mhPhone" name="phone" type="tel"
+                  placeholder="(425) 555-0199" autoComplete="off" value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+                <span className={styles.fldHint}>
+                  A candidate with no number cannot be called from the actions sheet.
+                </span>
+              </div>
+
+              {/* Drawn pickers, never a native select: the native control cannot
+                  carry the 2px frame, and it renders differently on every platform.
+                  ONE class set for both pickers — parallel style sets for identical
+                  blocks are how typography drifts. */}
+              <div className={styles.fld}>
+                <span className={styles.fldLbl}>Source</span>
+                <div className={styles.pick} role="group" aria-label="Source">
+                  {SOURCES.map((s) => (
+                    <button key={s} className={`${styles.pickBtn} ${form.source === s ? styles.on : ""}`}
+                      type="button" aria-pressed={form.source === s}
+                      onClick={() => setForm((f) => ({ ...f, source: s }))}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* The donor's .pipe status picker — detail panel only. A new
               applicant always starts in Applied, exactly as the donor does. */}
@@ -929,13 +1315,35 @@ export function MobileHire() {
             </div>
           ) : null}
 
+          {/* The note column is APPEND-ONLY on the server: the history reads
+              back as a dated ledger, and the textarea is a NEW entry. */}
+          {editApplicant && editApplicant.notes.trim() ? (
+            <div className={styles.fld}>
+              <span className={styles.fldLbl}>Notes</span>
+              <ul className={styles.noteLog}>
+                {noteEntries(editApplicant.notes).map((n, i) => (
+                  <li className={styles.noteItem} key={i}>
+                    {n.stamp ? <span className={styles.noteStamp}>{n.stamp}</span> : null}
+                    <span className={styles.noteTxt}>{n.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mhNotes">Notes</label>
+            <label className={styles.fldLbl} htmlFor="mhNotes">
+              {editId ? "Add a note" : "Notes"}
+            </label>
             <textarea className={styles.parea} id="mhNotes" name="notes" rows={3}
-              placeholder="Years of experience, specialties, schedule constraints…"
+              placeholder={editId
+                ? "Interview observations, follow-ups, decisions."
+                : "Years of experience, specialties, schedule constraints…"}
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
           </div>
+
+          {formErr ? <div className={styles.formErrLine} role="alert">{formErr}</div> : null}
         </form>
         {/* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it
             is reachable without scrolling the form to its end. */}
@@ -943,8 +1351,118 @@ export function MobileHire() {
           <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setFormOpen(false)}>
             Cancel
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mhForm">
-            <Icon id="i-check" />{editId ? "Save candidate" : "Add applicant"}
+          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mhForm" disabled={formSaving}>
+            <Icon id="i-check" />
+            {formSaving ? (editId ? "Saving…" : "Adding…") : editId ? "Save candidate" : "Add applicant"}
+          </button>
+        </div>
+      </div>
+
+      {/* ============ TALENT SHEET — other orgs' opted-in profiles ============ */}
+      <div className={`${styles.sheet} ${talentOpen ? styles.on : ""}`} role="dialog" aria-modal="true"
+        aria-label="Talent directory" aria-hidden={!talentOpen} {...talentDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...talentDrag.handleProps} />
+        <div className={styles.sheetHead} {...talentDrag.handleProps}>
+          <div className={styles.sheetKicker}>
+            Marketplace · {talent.length} {talent.length === 1 ? "company" : "companies"} listed
+          </div>
+          <div className={styles.sheetTitle}>Talent directory</div>
+        </div>
+        <div className={styles.sheetBody}>
+          {talent.length === 0 ? (
+            <div className={styles.talEmpty}>
+              <div className={styles.hemptyT}>No companies are open for work yet</div>
+              <div className={styles.hemptyS}>
+                Profiles that switch on “Open for work” appear here.
+              </div>
+            </div>
+          ) : (
+            talent.map((p) => (
+              <div className={styles.talRow} key={p.id}>
+                <span className={styles.hlinkIc}><Icon id="i-hardhat" /></span>
+                <span className={styles.talMain}>
+                  <span className={styles.talName}>{p.company ?? p.name}</span>
+                  {p.company && p.name !== p.company ? (
+                    <span className={styles.talWho}>{p.name}</span>
+                  ) : null}
+                  {p.tradeTypes.length || p.specialties.length ? (
+                    <span className={styles.talSub}>
+                      {p.tradeTypes.join(" · ")}
+                      {p.tradeTypes.length && p.specialties.length ? " — " : ""}
+                      {p.specialties.join(", ")}
+                    </span>
+                  ) : null}
+                  {p.serviceArea ? <span className={styles.talArea}>{p.serviceArea}</span> : null}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+        <button className={styles.sheetCancel} type="button" onClick={() => setTalentOpen(false)}>Close</button>
+      </div>
+
+      {/* ============ PROFILE SHEET — the caller's TradeNetworkProfile ============ */}
+      <div className={`${styles.sheet} ${profileOpen ? styles.on : ""}`} role="dialog" aria-modal="true"
+        aria-labelledby="mhProfTitle" aria-hidden={!profileOpen} {...profileDrag.sheetProps}>
+        <div className={styles.sheetGrab} {...profileDrag.handleProps} />
+        <div className={styles.sheetHead} {...profileDrag.handleProps}>
+          <div className={styles.sheetKicker}>
+            Marketplace · {profile.optIn ? "listed" : "not listed"}
+          </div>
+          <div className={styles.sheetTitle} id="mhProfTitle">Your public profile</div>
+        </div>
+        <div className={`${styles.sheetBody} ${styles.formBody}`}>
+          <div className={styles.fld}>
+            <span className={styles.fldLbl}>Listing</span>
+            <div className={styles.pick} role="group" aria-label="Listing">
+              <button className={`${styles.pickBtn} ${prof.optIn ? styles.on : ""}`} type="button"
+                aria-pressed={prof.optIn}
+                onClick={() => setProf((p) => ({ ...p, optIn: true }))}>
+                Open for work
+              </button>
+              <button className={`${styles.pickBtn} ${prof.optIn ? "" : styles.on}`} type="button"
+                aria-pressed={!prof.optIn}
+                onClick={() => setProf((p) => ({ ...p, optIn: false }))}>
+                Not listed
+              </button>
+            </div>
+            <span className={styles.fldHint}>
+              Listed profiles appear in other companies’ talent directories and receive matching trade jobs.
+            </span>
+          </div>
+
+          <div className={styles.fld}>
+            <label className={styles.fldLbl} htmlFor="mhProfTrades">Trades</label>
+            <input className={styles.pinput} id="mhProfTrades" type="text" autoComplete="off"
+              placeholder="Roofing, Fencing, General contracting" value={prof.trades}
+              onChange={(e) => setProf((p) => ({ ...p, trades: e.target.value }))} />
+            <span className={styles.fldHint}>Comma-separated.</span>
+          </div>
+
+          <div className={styles.fld}>
+            <label className={styles.fldLbl} htmlFor="mhProfSpecs">Specialties</label>
+            <input className={styles.pinput} id="mhProfSpecs" type="text" autoComplete="off"
+              placeholder="Metal roofs, cedar fences, decks" value={prof.specialties}
+              onChange={(e) => setProf((p) => ({ ...p, specialties: e.target.value }))} />
+            <span className={styles.fldHint}>Comma-separated.</span>
+          </div>
+
+          <div className={styles.fld}>
+            <label className={styles.fldLbl} htmlFor="mhProfArea">Service area</label>
+            <input className={styles.pinput} id="mhProfArea" type="text" autoComplete="off"
+              placeholder="King County, WA" value={prof.area}
+              onChange={(e) => setProf((p) => ({ ...p, area: e.target.value }))} />
+          </div>
+
+          {profErr ? <div className={styles.formErrLine} role="alert">{profErr}</div> : null}
+        </div>
+        <div className={styles.formFoot}>
+          <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setProfileOpen(false)}>
+            Cancel
+          </button>
+          <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" disabled={profSaving}
+            onClick={() => void saveProfile()}>
+            <Icon id="i-check" />{profSaving ? "Saving…" : "Save profile"}
           </button>
         </div>
       </div>

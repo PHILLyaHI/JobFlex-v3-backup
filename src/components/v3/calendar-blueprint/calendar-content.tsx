@@ -24,6 +24,7 @@ import { useCallback, useRef } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
+import { JobOffers } from "@/components/v3/jobs-blueprint/job-offers";
 import { initCalendarContent } from "./calendar-behavior";
 import type { CalendarSeed } from "./calendar-data";
 import "./calendar-global.css";
@@ -112,12 +113,22 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
               <button className="vsw-btn" type="button" data-view="team">Team</button>
             )}
           </div>
-          <button className="cal-nav has-badge" type="button" id="inboxBtn" aria-label="Crew inbox">
-            <svg className="ic">
-              <use href="#i-bell" />
-            </svg>
-            <span className="cal-badge" id="inboxN">0</span>
-          </button>
+          {/* Two audiences, one slot (2026-08-22): the office gets the crew
+              confirmation ledger; a limited role gets THEIR side of the same
+              conversation — the offers island, so an assignment made while
+              they look at the calendar is answerable right here (it polls and
+              auto-opens on arrival). The ledger button is manager-only now:
+              a limited seed carries no inbox, so it was an empty sheet. */}
+          {canManage ? (
+            <button className="cal-nav has-badge" type="button" id="inboxBtn" aria-label="Crew inbox">
+              <svg className="ic">
+                <use href="#i-bell" />
+              </svg>
+              <span className="cal-badge" id="inboxN">0</span>
+            </button>
+          ) : (
+            <JobOffers />
+          )}
           <button className="btn btn-primary" type="button" id="newEventBtn">
             <svg className="ic">
               <use href="#i-plus" />

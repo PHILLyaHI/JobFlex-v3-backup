@@ -17,6 +17,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { WorkersContent } from "@/components/v3/workers-blueprint/workers-content";
 import type { InviteStatus, WorkerEntry } from "@/components/v3/workers-blueprint/workers-data";
 
@@ -88,5 +89,13 @@ export default async function WorkersPage() {
     jobs: w.assignments.map((a) => ({ id: a.job.id, title: a.job.title })),
   }));
 
-  return <WorkersContent entries={entries} />;
+  return (
+    <>
+      {/* Clears the workers nav badge (crew invites answered) on open.
+          Desktop edition only — the handheld build is stamped by the
+          responsive shell (HANDHELD_SEEN). */}
+      <MarkNavSeen surface="workers" />
+      <WorkersContent entries={entries} />
+    </>
+  );
 }

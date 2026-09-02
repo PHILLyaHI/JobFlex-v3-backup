@@ -208,6 +208,20 @@ body:has(.jf-proposal-portal)::before { content: none; }
 .jf-proposal-portal .pv-btn:active { transform: translate(0,0); box-shadow: 1px 1px 0 var(--ink); }
 .jf-proposal-portal .pv-btn--primary { background: var(--blueprint); color: var(--paper); }
 .jf-proposal-portal .pv-btn--ghost { background: var(--paper); color: var(--ink); }
+/* Declining is the destructive answer and now says so. */
+.jf-proposal-portal .pv-btn--danger { background: var(--paper); color: var(--danger);
+  border-color: var(--danger); }
+.jf-proposal-portal .pv-btn--danger:hover { box-shadow: 3px 3px 0 var(--danger); }
+.jf-proposal-portal .pv-btn--danger:active { box-shadow: 1px 1px 0 var(--danger); }
+/* Each way to pay gets its own line: a wrapped row of ghost buttons gave a card
+   payment the same visual weight as walking away. `flex-basis: 100%` breaks the
+   row inside the donor's own wrapping flex container, so no new layout system. */
+.jf-proposal-portal .pv-btn--pay { flex-basis: 100%; justify-content: center; }
+@media (min-width: 720px) {
+  /* On a wide portal the stack would be three full-bleed slabs; cap them so
+     they read as a list of options beside Accept rather than three more CTAs. */
+  .jf-proposal-portal .pv-btn--pay { flex-basis: auto; min-width: 260px; }
+}
 .jf-proposal-portal .pv-decline { margin-top: 14px; border: 1.5px dashed rgba(10,10,10,.45);
   border-radius: var(--radius); padding: 16px 18px; max-width: 520px; }
 .jf-proposal-portal .pv-decline-l { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
@@ -227,6 +241,70 @@ body:has(.jf-proposal-portal)::before { content: none; }
   font-size: 13px; font-weight: 800; letter-spacing: .06em; }
 .jf-proposal-portal .pv-state--declined { border-color: rgba(10,10,10,.5); background: rgba(10,10,10,.05);
   color: var(--muted); }
+
+/* Pay options, revealed once the proposal is accepted. */
+.jf-proposal-portal .pv-paynow { margin-top: 18px; }
+.jf-proposal-portal .pv-paynow-l { font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+/* ── THE ACCEPT FLOURISH ─────────────────────────────────────────────────
+   Saying yes to a five-figure job is the best moment this page has, and it
+   used to land as a static green sentence. The plate pops once and throws
+   eight sparks; `data-cheer` is set only on the click that settles the deal,
+   never on a reload of an already-accepted proposal. */
+.jf-proposal-portal .pv-state[data-cheer] { position: relative; animation: pvPop 520ms var(--ease-out) both; }
+@keyframes pvPop {
+  0%   { transform: scale(.94); opacity: 0; }
+  55%  { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.jf-proposal-portal .pv-cheer { position: absolute; inset: 0; pointer-events: none; }
+.jf-proposal-portal .pv-cheer i {
+  position: absolute; top: 50%; left: 50%;
+  width: 7px; height: 7px; border-radius: 2px;
+  background: var(--success);
+  /* Eight sparks on one keyframe, fanned by index and alternating colour so the
+     burst does not read as a rotating wheel. */
+  transform: rotate(calc(var(--i) * 45deg)) translateY(0);
+  animation: pvSpark 900ms var(--ease-out) forwards;
+  animation-delay: calc(var(--i) * 22ms);
+  opacity: 0;
+}
+.jf-proposal-portal .pv-cheer i:nth-child(odd) { background: var(--blueprint); }
+@keyframes pvSpark {
+  0%   { opacity: 1; transform: rotate(calc(var(--i) * 45deg)) translateY(0) scale(.6); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: rotate(calc(var(--i) * 45deg)) translateY(-72px) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-proposal-portal .pv-state[data-cheer] { animation: none; }
+  .jf-proposal-portal .pv-cheer { display: none; }
+}
+
+/* ── TERMS & CONDITIONS (disclosure) ─────────────────────────────────────
+   Collapsed by default: the terms are long, they sit between the client and
+   the Accept button, and nobody reads a wall of legal copy on the way to a
+   decision — but it has to be one click away, and it has to be in the printed
+   page, so this is a real <details>, not a JS toggle. */
+.jf-proposal-portal .pv-terms { border: var(--border); border-radius: var(--radius);
+  background: #ffffff; overflow: hidden; }
+.jf-proposal-portal .pv-terms > summary { cursor: pointer; list-style: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px; font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink); }
+.jf-proposal-portal .pv-terms > summary::-webkit-details-marker { display: none; }
+.jf-proposal-portal .pv-terms > summary::after { content: "+"; font-size: 16px; font-weight: 700;
+  color: var(--muted); transition: transform .18s var(--ease-out); }
+.jf-proposal-portal .pv-terms[open] > summary::after { content: "2"; }
+.jf-proposal-portal .pv-terms > summary:hover { background: var(--paper); }
+.jf-proposal-portal .pv-terms-body { padding: 0 18px 16px; font-size: 13.5px; line-height: 1.62;
+  font-weight: 500; color: var(--ink-soft); white-space: pre-wrap; }
+@media print {
+  /* A collapsed <details> prints collapsed — the signed copy must carry the
+     terms whether or not the reader opened them on screen. */
+  .jf-proposal-portal .pv-terms > summary::after { content: ""; }
+  .jf-proposal-portal .pv-terms-body { display: block !important; }
+}
 
 /* Секции */
 /* (RU: "Sections") */
@@ -250,7 +328,10 @@ body:has(.jf-proposal-portal)::before { content: none; }
   font-variant-numeric: tabular-nums; }
 .jf-proposal-portal .pv-li-v { flex-shrink: 0; font-family: var(--font-mono); font-size: 13.5px;
   font-weight: 600; font-variant-numeric: tabular-nums; padding-top: 2px; }
-.jf-proposal-portal .pv-tot { border-top: 1.5px solid var(--ink); background: var(--paper);
+/* WHITE, not the page's beige. The totals block is the answer the whole
+   document builds to; sitting it on --paper made it recede into the sheet it
+   was printed on instead of standing on top of it. */
+.jf-proposal-portal .pv-tot { border-top: 1.5px solid var(--ink); background: #ffffff;
   padding: 14px 20px 16px; }
 .jf-proposal-portal .pv-tot-r { display: flex; justify-content: space-between; padding: 4px 0;
   font-size: 13px; color: var(--muted); }

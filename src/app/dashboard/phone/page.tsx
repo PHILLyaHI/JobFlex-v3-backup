@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { relative } from "@/lib/format";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { PhoneContent } from "@/components/v3/phone-blueprint/phone-content";
 import type { Call, CallScriptLine } from "@/components/v3/phone-blueprint/phone-data";
 
@@ -105,11 +106,17 @@ export default async function PhonePage() {
   const webhookUrl = `${process.env.TWILIO_APP_URL ?? appUrl}/api/twilio/voice`;
 
   return (
-    <PhoneContent
-      entries={entries}
-      stats={{ today: todayCount, week: weekCount, leads: leadsCreated }}
-      webhookUrl={webhookUrl}
-      twilioConfigured={isTwilioEnabled()}
-    />
+    <>
+      {/* Clears the phone nav badge (missed inbound calls) on open. Desktop
+          edition only — the handheld build is stamped by the responsive shell
+          (HANDHELD_SEEN). */}
+      <MarkNavSeen surface="phone" />
+      <PhoneContent
+        entries={entries}
+        stats={{ today: todayCount, week: weekCount, leads: leadsCreated }}
+        webhookUrl={webhookUrl}
+        twilioConfigured={isTwilioEnabled()}
+      />
+    </>
   );
 }

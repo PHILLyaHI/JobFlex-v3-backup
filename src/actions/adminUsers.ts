@@ -1,8 +1,17 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import type Stripe from "stripe";
 import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { SubscriptionStatus } from "@/lib/prismaEnums";
+import { getSubscribersData, type SubscriberRow } from "@/actions/subscribers";
+import {
+  LIVE_RECORD_STATUSES,
+  STRIPE_MAX_PAGES,
+  STRIPE_PAGE_SIZE,
+} from "@/components/v3/admin-subscribers/billing-metrics";
 
 export interface AdminUserRow {
   id: string;
@@ -11,64 +20,200 @@ export interface AdminUserRow {
   isPlatformAdmin: boolean;
   orgId: string | null;
   orgName: string | null;
-  /** The org's current plan (Subscription.plan), or "NONE" when none. */
+  /** Distinct Membership.role values the user holds (every org). */
+  roles: string[];
+  /** The plan on screen: Stripe's when a live subscription answers, else the record's. */
   plan: string;
   planStatus: string;
-  /** How many members share this org (plan is org-wide, not per-user). */
+  /** Which of the two the two fields above came from. */
+  planSource: "stripe" | "record" | "none";
+  /** The stored Subscription row — what the edit sheet writes. "NONE" = no row. */
+  recordPlan: string;
+  recordStatus: string;
+  /** Subscription.provider ("STRIPE" | "MANUAL"), or null when no row. */
+  provider: string | null;
+  /**
+   * What Stripe holds for this org, whether or not it is what the row shows.
+   * A live hand grant outranks a Stripe subscription and the operator still has
+   * to see the one it outranks — that subscription is what the sync keeps
+   * reporting as a conflict, and settling it is theirs to do.
+   */
+  stripePlan: string | null;
+  stripeStatus: string | null;
+  stripeSubId: string | null;
+  externalSubId: string | null;
+  currentPeriodEnd: Date | null;
+  trialEndsAt: Date | null;
+  canceledAt: Date | null;
+  /** How many members share this org (a plan is org-wide, not per-user). */
   orgMemberCount: number;
   createdAt: Date;
 }
 
-/** Pick the user's primary org: OWNER membership → active org → first membership. */
-function primaryOrg(u: {
-  activeOrgId: string | null;
-  memberships: { role: string; organizationId: string; organization: { id: string; name: string } }[];
-}) {
+/**
+ * Counted over the ORGANIZATIONS the table actually shows, not over
+ * Subscription rows: one plan serves a whole org, and a user is listed once,
+ * so counting rows put numbers on screen that no row could explain.
+ */
+export interface SubscriptionSummary {
+  /** Distinct organizations behind the rows on this page. */
+  orgs: number;
+  active: number;
+  trialing: number;
+  pastDue: number;
+  /** CANCELED + EXPIRED. */
+  lapsed: number;
+  free: number;
+  /** [plan, count] — most common first. */
+  byPlan: Array<[string, number]>;
+  /**
+   * Subscriptions the platform knows about that no row here shows. The four
+   * fields under it are that number taken apart, because the fixes differ:
+   * offNamedUnknown is a data problem, offNoLink is a checkout that stamped no
+   * metadata, and the other two are organizations, not links.
+   */
+  offList: number;
+  /** Stripe named an id this database has no record of. */
+  offNamedUnknown: number;
+  /** Stripe named nobody at all. */
+  offNoLink: number;
+  /** Linked to an organization no account on this page belongs to. */
+  offOtherOrg: number;
+  /** A second subscription on an organization that already shows one. */
+  offSecond: number;
+}
+
+export interface AdminUsersData {
+  rows: AdminUserRow[];
+  summary: SubscriptionSummary;
+  source: {
+    stripeEnabled: boolean;
+    stripeLive: boolean;
+    stripeError: string | null;
+    truncated: boolean;
+  };
+}
+
+type MembershipShape = {
+  role: string;
+  organizationId: string;
+  organization: { id: string; name: string };
+};
+
+/**
+ * The user's primary org: OWNER membership → active org → first membership.
+ * Deterministic only because every query below orders memberships; without
+ * that, "first" changes between reads and so does the plan on the row.
+ */
+function primaryOrg(u: { activeOrgId: string | null; memberships: MembershipShape[] }) {
   const owner = u.memberships.find((m) => m.role === "OWNER");
   const active = u.memberships.find((m) => m.organizationId === u.activeOrgId);
   return (owner ?? active ?? u.memberships[0])?.organization ?? null;
 }
 
-export async function listAdminUsers(): Promise<AdminUserRow[]> {
+/**
+ * One org, one row on screen. Live beats lapsed; among equals the platform's
+ * own record wins, because that row is the one the entitlements engine reads —
+ * showing Stripe's answer while the product grants something else is exactly
+ * the disagreement this page exists to surface. Newest breaks the last tie.
+ * The multipliers are spaced well clear of a millisecond timestamp (~1.8e12)
+ * so a recent date can never out-rank a status.
+ */
+function rowPrecedence(r: Pick<SubscriberRow, "status" | "source" | "createdAt">): number {
+  const rank =
+    r.status === "ACTIVE" ? 4 : r.status === "TRIALING" ? 3 : r.status === "PAST_DUE" ? 2 : 1;
+  return rank * 1e15 + (r.source === "record" ? 1e13 : 0) + r.createdAt.getTime();
+}
+
+/**
+ * Accounts, their organizations, and the subscription each one is on.
+ *
+ * The plan on a row is the same merged truth /admin/subscribers shows — live
+ * Stripe when Stripe answers, the platform's own Subscription rows otherwise.
+ * Reading the local rows alone is what made this page report zero while eight
+ * subscriptions existed: without STRIPE_WEBHOOK_SECRET the webhook route
+ * returns 200 and Stripe never retries, so nothing ever writes them.
+ */
+export async function getAdminUsersData(): Promise<AdminUsersData> {
   await requirePlatformAdmin();
 
-  const users = await db.user.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      isPlatformAdmin: true,
-      createdAt: true,
-      activeOrgId: true,
-      memberships: {
-        select: {
-          role: true,
-          organizationId: true,
-          organization: { select: { id: true, name: true } },
+  const [users, memberCounts, billing] = await Promise.all([
+    db.user.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        isPlatformAdmin: true,
+        createdAt: true,
+        activeOrgId: true,
+        memberships: {
+          orderBy: [{ createdAt: "asc" }, { organizationId: "asc" }],
+          select: {
+            role: true,
+            organizationId: true,
+            organization: { select: { id: true, name: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    db.membership.groupBy({ by: ["organizationId"], _count: true }),
+    getSubscribersData(),
+  ]);
 
   const orgIds = Array.from(
     new Set(users.map((u) => primaryOrg(u)?.id).filter(Boolean) as string[]),
   );
-  const [subs, memberCounts] = await Promise.all([
-    orgIds.length
-      ? db.subscription.findMany({
-          where: { organizationId: { in: orgIds } },
-          select: { organizationId: true, plan: true, status: true },
-        })
-      : Promise.resolve([]),
-    db.membership.groupBy({ by: ["organizationId"], _count: true }),
-  ]);
-  const subByOrg = new Map(subs.map((s) => [s.organizationId, s]));
+  const records = orgIds.length
+    ? await db.subscription.findMany({
+        where: { organizationId: { in: orgIds } },
+        select: {
+          organizationId: true,
+          plan: true,
+          status: true,
+          provider: true,
+          externalSubId: true,
+          currentPeriodEnd: true,
+          trialEndsAt: true,
+          canceledAt: true,
+        },
+      })
+    : [];
+
+  const recordByOrg = new Map(records.map((s) => [s.organizationId, s]));
   const countByOrg = new Map(memberCounts.map((m) => [m.organizationId, m._count]));
 
-  return users.map((u) => {
+  // One subscription per org on screen; the rest are counted as off-list.
+  // `stripeByOrg` keeps the best STRIPE-sourced one alongside, so a row whose
+  // hand grant outranks a real subscription can still name what it outranks.
+  const liveByOrg = new Map<string, SubscriberRow>();
+  const stripeByOrg = new Map<string, SubscriberRow>();
+  for (const r of billing.rows) {
+    if (!r.organizationId) continue;
+    const held = liveByOrg.get(r.organizationId);
+    if (!held || rowPrecedence(r) > rowPrecedence(held)) liveByOrg.set(r.organizationId, r);
+    if (r.source !== "stripe") continue;
+    const heldStripe = stripeByOrg.get(r.organizationId);
+    if (!heldStripe || rowPrecedence(r) > rowPrecedence(heldStripe)) {
+      stripeByOrg.set(r.organizationId, r);
+    }
+  }
+
+  const rows: AdminUserRow[] = users.map((u) => {
     const org = primaryOrg(u);
-    const sub = org ? subByOrg.get(org.id) : null;
+    const record = org ? recordByOrg.get(org.id) : undefined;
+    const live = org ? liveByOrg.get(org.id) : undefined;
+    const fromStripe = org ? stripeByOrg.get(org.id) : undefined;
+    // Which source the value on the row came from — the billing row's own,
+    // not the page's: an admin grant is a record row even on the live path.
+    const planSource: AdminUserRow["planSource"] = live
+      ? live.source === "stripe"
+        ? "stripe"
+        : "record"
+      : record
+        ? "record"
+        : "none";
+
     return {
       id: u.id,
       email: u.email,
@@ -76,13 +221,118 @@ export async function listAdminUsers(): Promise<AdminUserRow[]> {
       isPlatformAdmin: u.isPlatformAdmin,
       orgId: org?.id ?? null,
       orgName: org?.name ?? null,
-      plan: sub?.plan ?? "NONE",
-      planStatus: sub?.status ?? "NONE",
+      roles: Array.from(new Set(u.memberships.map((m) => m.role))),
+      plan: live?.plan ?? record?.plan ?? "NONE",
+      planStatus: live?.status ?? record?.status ?? "NONE",
+      planSource,
+      recordPlan: record?.plan ?? "NONE",
+      recordStatus: record?.status ?? "NONE",
+      provider: record?.provider ?? null,
+      stripePlan: fromStripe?.plan ?? null,
+      stripeStatus: fromStripe?.status ?? null,
+      stripeSubId: fromStripe?.externalSubId ?? null,
+      externalSubId: record?.externalSubId ?? live?.externalSubId ?? null,
+      currentPeriodEnd: record?.currentPeriodEnd ?? null,
+      trialEndsAt: record?.trialEndsAt ?? null,
+      canceledAt: record?.canceledAt ?? null,
       orgMemberCount: org ? (countByOrg.get(org.id) ?? 1) : 0,
       createdAt: u.createdAt,
     };
   });
+
+  // ── the strip, over exactly what the table shows ────────────────────
+  const shown = new Map<string, { status: string; plan: string }>();
+  for (const r of rows) {
+    if (r.orgId) shown.set(r.orgId, { status: r.planStatus, plan: r.plan });
+  }
+
+  const byPlan = new Map<string, number>();
+  const summary: SubscriptionSummary = {
+    orgs: shown.size,
+    active: 0,
+    trialing: 0,
+    pastDue: 0,
+    lapsed: 0,
+    free: 0,
+    byPlan: [],
+    offList: 0,
+    offNamedUnknown: 0,
+    offNoLink: 0,
+    offOtherOrg: 0,
+    offSecond: 0,
+  };
+  for (const { status, plan } of shown.values()) {
+    // A plan nothing named is counted as an org, but not under a name.
+    if (plan && plan !== "NONE") byPlan.set(plan, (byPlan.get(plan) ?? 0) + 1);
+    switch (status) {
+      case "ACTIVE":
+        summary.active += 1;
+        break;
+      case "TRIALING":
+        summary.trialing += 1;
+        break;
+      case "PAST_DUE":
+        summary.pastDue += 1;
+        break;
+      case "CANCELED":
+      case "EXPIRED":
+        summary.lapsed += 1;
+        break;
+      case "FREE":
+        summary.free += 1;
+        break;
+      // No default: an unrecognised status is not claimed as any of these.
+    }
+  }
+  summary.byPlan = Array.from(byPlan.entries()).sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  );
+
+  // Off-list, taken apart. "Zero active" is honest on a database Stripe names
+  // nobody in — but only if the page can say WHICH kind of nobody.
+  for (const r of billing.rows) {
+    if (!r.organizationId) {
+      summary.offList += 1;
+      if (r.matchedBy === "stale-id") summary.offNamedUnknown += 1;
+      else summary.offNoLink += 1;
+    } else if (!shown.has(r.organizationId)) {
+      summary.offList += 1;
+      summary.offOtherOrg += 1;
+    } else if (liveByOrg.get(r.organizationId) !== r) {
+      summary.offList += 1;
+      summary.offSecond += 1;
+    }
+  }
+
+  return {
+    rows,
+    summary,
+    source: {
+      stripeEnabled: billing.stripeEnabled,
+      stripeLive: billing.stripeLive,
+      stripeError: billing.stripeError,
+      truncated: billing.truncated,
+    },
+  };
 }
+
+/**
+ * What a write stamped MANUAL stops claiming — the hand-grant rule, whose one
+ * statement lives in billing-metrics.ts. The row becomes the operator's own
+ * record and mirrors no Stripe subscription, so it names none and carries none
+ * of that subscription's price.
+ *
+ * Keeping the id was the whole defect: a canceled `sub_…` left on a comp let
+ * the subscribers read model drop the grant as "already returned by Stripe",
+ * let the sync overwrite it as an ordinary write, and let the webhook's
+ * markSubscriptionCanceled() (updateMany by externalSubId) downgrade it to
+ * CANCELED — which drops the org to FREE limits through the lapsed-sub rule.
+ *
+ * externalCustomerId deliberately STAYS. That is an org ↔ customer fact rather
+ * than a subscription one, and it is how the next sync finds its way back to
+ * this organization once the grant ends.
+ */
+const DETACH_FROM_STRIPE = { externalSubId: null, stripePriceId: null } as const;
 
 const updateInput = z.object({
   userId: z.string().min(1),
@@ -136,7 +386,12 @@ export async function updateAdminUser(raw: unknown) {
       select: {
         activeOrgId: true,
         memberships: {
-          select: { role: true, organizationId: true, organization: { select: { id: true, name: true } } },
+          orderBy: [{ createdAt: "asc" }, { organizationId: "asc" }],
+          select: {
+            role: true,
+            organizationId: true,
+            organization: { select: { id: true, name: true } },
+          },
         },
       },
     });
@@ -151,14 +406,614 @@ export async function updateAdminUser(raw: unknown) {
     const tier = plan.slug.toUpperCase();
 
     // Manual admin override (does NOT create a Stripe subscription). provider
-    // MANUAL flags it; currentPeriodEnd null → monthly limits use the calendar
-    // month (not a stale Stripe billing day).
+    // MANUAL flags it: the billing read model keeps a comp out of MRR, and
+    // currentPeriodEnd null → monthly limits use the calendar month.
+    // The three lifecycle dates go with the Stripe link: this grant is live and
+    // is not a trial, so a churned subscription's cancel date has no business
+    // sitting beside an ACTIVE plan the operator just handed out.
+    const grant = {
+      plan: tier,
+      status: "ACTIVE",
+      provider: "MANUAL",
+      currentPeriodEnd: null,
+      trialEndsAt: null,
+      canceledAt: null,
+      ...DETACH_FROM_STRIPE,
+    };
     await db.subscription.upsert({
       where: { organizationId: org.id },
-      update: { plan: tier, status: "ACTIVE", provider: "MANUAL", currentPeriodEnd: null },
-      create: { organizationId: org.id, plan: tier, status: "ACTIVE", provider: "MANUAL", currentPeriodEnd: null },
+      update: grant,
+      create: { organizationId: org.id, ...grant },
     });
   }
 
+  revalidateAdminBilling();
+}
+
+// ── Platform-admin flag ───────────────────────────────
+
+const adminFlagInput = z.object({ userId: z.string().min(1), on: z.boolean() });
+
+/**
+ * Grant or revoke the platform-admin flag. Revoking your OWN flag is refused —
+ * the console would lock you out the moment the action returned, and the last
+ * admin could strand the platform with no one able to get back in.
+ */
+export async function setPlatformAdmin(userId: string, on: boolean) {
+  const me = await requirePlatformAdmin();
+  const data = adminFlagInput.parse({ userId, on });
+  if (!data.on && data.userId === me.id) {
+    throw new Error("You can't remove your own platform-admin flag.");
+  }
+  const target = await db.user.findUnique({ where: { id: data.userId }, select: { id: true } });
+  if (!target) throw new Error("User not found.");
+  await db.user.update({ where: { id: data.userId }, data: { isPlatformAdmin: data.on } });
   revalidatePath("/admin/users");
+}
+
+// ── Subscription record (manual) ──────────────────────
+
+const SUB_STATUSES = Object.values(SubscriptionStatus) as [string, ...string[]];
+
+/** ISO string → Date, or null. An unparseable string is a validation error. */
+const nullableDate = z.union([z.null(), z.coerce.date()]);
+
+const subscriptionInput = z.object({
+  organizationId: z.string().min(1),
+  /** PricingPlan.slug (any casing) — stored uppercase, see updateAdminUser. */
+  plan: z.string().min(1),
+  status: z.enum(SUB_STATUSES),
+  currentPeriodEnd: nullableDate,
+  trialEndsAt: nullableDate,
+  canceledAt: nullableDate,
+});
+
+export type AdminSubscriptionInput = z.input<typeof subscriptionInput>;
+
+/**
+ * Write the org's Subscription record by hand. Every hand edit stamps
+ * provider = "MANUAL", and MANUAL means the row mirrors nothing: it stops
+ * claiming Stripe truth, drops out of MRR (it is a comp, not an invoice), and
+ * lets go of the Stripe subscription it used to name (DETACH_FROM_STRIPE).
+ * While it is live, "Sync from Stripe" reports it rather than overwriting it.
+ */
+export async function updateAdminSubscription(raw: unknown) {
+  await requirePlatformAdmin();
+  const data = subscriptionInput.parse(raw);
+
+  const org = await db.organization.findUnique({
+    where: { id: data.organizationId },
+    select: { id: true },
+  });
+  if (!org) throw new Error("Organization not found.");
+
+  // Case-insensitive slug match — SQLite has no `mode: insensitive`, and there
+  // are few plans (same approach as the limits engine).
+  const plans = await db.pricingPlan.findMany({ select: { slug: true } });
+  const plan = plans.find((p) => p.slug.toLowerCase() === data.plan.toLowerCase());
+  if (!plan) throw new Error("Unknown pricing plan.");
+  const tier = plan.slug.toUpperCase();
+
+  const fields = {
+    plan: tier,
+    status: data.status,
+    provider: "MANUAL",
+    currentPeriodEnd: data.currentPeriodEnd,
+    trialEndsAt: data.trialEndsAt,
+    canceledAt: data.canceledAt,
+    ...DETACH_FROM_STRIPE,
+  };
+  await db.subscription.upsert({
+    where: { organizationId: org.id },
+    update: fields,
+    create: { organizationId: org.id, ...fields },
+  });
+
+  revalidateAdminBilling();
+}
+
+// ── Delete account ────────────────────────────────────
+
+/**
+ * Hard-delete a user. Refused for yourself, and for the last OWNER of any org
+ * they own — deleting that account would leave the org with nobody who can
+ * manage billing, members, or the org itself. Memberships, sessions and
+ * accounts cascade; optional author links (proposals, leads, events) null out.
+ */
+export async function deleteAdminUser(userId: string) {
+  const me = await requirePlatformAdmin();
+  const id = z.string().min(1).parse(userId);
+  if (id === me.id) throw new Error("You can't delete your own account from here.");
+
+  const user = await db.user.findUnique({
+    where: { id },
+    select: {
+      email: true,
+      memberships: {
+        select: { role: true, organizationId: true, organization: { select: { name: true } } },
+      },
+    },
+  });
+  if (!user) throw new Error("User not found.");
+
+  for (const m of user.memberships) {
+    if (m.role !== "OWNER") continue;
+    const otherOwners = await db.membership.count({
+      where: { organizationId: m.organizationId, role: "OWNER", NOT: { userId: id } },
+    });
+    if (otherOwners === 0) {
+      throw new Error(
+        `${user.email} is the last owner of ${m.organization.name}. Promote another member to owner first.`,
+      );
+    }
+  }
+
+  try {
+    await db.user.delete({ where: { id } });
+  } catch (err) {
+    // A required relation without a cascade (e.g. trade-network posts the user
+    // authored) blocks the delete at the FK — say so instead of a raw P2003.
+    if (err && typeof err === "object" && (err as { code?: string }).code === "P2003") {
+      throw new Error(
+        "This account still owns records that can't be orphaned (trade posts, messages). Remove those first.",
+      );
+    }
+    throw err;
+  }
+
+  revalidateAdminBilling();
+}
+
+// ── Stripe → the platform's subscription record ───────
+
+/**
+ * What the sync did, as a partition of the Stripe set:
+ *   scanned = written + unchanged + superseded + keptManual + conflicts
+ *           + unnamed + unmatched
+ * Every subscription read lands in exactly one bucket, so no row can go
+ * missing between two reported numbers — and `truncated` says whether
+ * `scanned` was the whole account or only the first pageful, because a clean
+ * partition of a silently cut set reads exactly like a clean partition.
+ */
+export interface StripeSyncResult {
+  /** Stripe subscriptions read. */
+  scanned: number;
+  /** The read hit the page ceiling: subscriptions past it were never seen. */
+  truncated: boolean;
+  /** Rows written — a field actually differed. */
+  written: number;
+  /** Already matched the record; nothing written, no timestamp moved. */
+  unchanged: number;
+  /** Lost the per-org contest to a more current subscription. */
+  superseded: number;
+  /** A live admin grant a lapsed Stripe row would have downgraded. Left alone. */
+  keptManual: number;
+  /**
+   * Refused for a human to settle: the org's record points at a different
+   * still-live subscription, a live admin grant would have been replaced, or
+   * two organizations claim the same Stripe id so the target is a coin flip.
+   */
+  conflicts: number;
+  /** No org record exists yet and Stripe names no plan — nothing safe to create. */
+  unnamed: number;
+  /** Resolves to no JobFlex organization. */
+  unmatched: number;
+}
+
+/**
+ * Statuses that mean a record is still live and must not be silently replaced.
+ * One definition, shared with the read model and the sheet — see
+ * LIVE_RECORD_STATUSES in components/v3/admin-subscribers/billing-metrics.ts.
+ */
+const LIVE_RECORD = LIVE_RECORD_STATUSES;
+
+/**
+ * Import the live Stripe subscriptions into the platform's own Subscription
+ * table, so /admin/users keeps a record of what Stripe knows.
+ *
+ * A subscription is written only when it links to an organization through an
+ * id Stripe itself carries — the same links src/actions/subscribers.ts uses,
+ * in order of directness:
+ *   1. metadata.organizationId (stamped by the checkout route), on the
+ *      subscription or on its customer;
+ *   2. the platform's own record, keyed by externalSubId, else externalCustomerId;
+ *   3. metadata.userId → that user's OWNER membership, else their oldest.
+ * Never by name or email. Order matters: the membership guess is the only step
+ * that can pick the WRONG org, and Subscription.organizationId is @unique, so a
+ * wrong guess overwrites whatever that org's row held.
+ */
+export async function syncSubscriptionsFromStripe(): Promise<StripeSyncResult> {
+  await requirePlatformAdmin();
+  if (!isStripeEnabled()) throw new Error("Stripe is not configured on this deployment.");
+
+  const stripe = getStripe();
+  const subs: Stripe.Subscription[] = [];
+  let startingAfter: string | undefined;
+  // The same ceiling the subscribers read model pages to, from the same
+  // constant — and, unlike before, one this function admits to hitting.
+  let truncated = false;
+  for (let page = 0; page < STRIPE_MAX_PAGES; page++) {
+    const res = await stripe.subscriptions.list({
+      status: "all",
+      limit: STRIPE_PAGE_SIZE,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+      expand: ["data.customer"],
+    });
+    subs.push(...res.data);
+    if (!res.has_more || res.data.length === 0) break;
+    startingAfter = res.data[res.data.length - 1].id;
+    if (page === STRIPE_MAX_PAGES - 1) truncated = true;
+  }
+  const empty: StripeSyncResult = {
+    scanned: 0,
+    truncated,
+    written: 0,
+    unchanged: 0,
+    superseded: 0,
+    keptManual: 0,
+    conflicts: 0,
+    unnamed: 0,
+    unmatched: 0,
+  };
+  if (subs.length === 0) return empty;
+
+  // ── the link tables, fetched once ───────────────────
+  const metaOrgIds = new Set<string>();
+  const metaUserIds = new Set<string>();
+  const subIds: string[] = [];
+  const custIds = new Set<string>();
+  const priceIds = new Set<string>();
+  for (const sub of subs) {
+    const orgId = stripeMeta(sub, "organizationId");
+    if (orgId) metaOrgIds.add(orgId);
+    const uid = stripeMeta(sub, "userId");
+    if (uid) metaUserIds.add(uid);
+    subIds.push(sub.id);
+    custIds.add(stripeCustomerId(sub));
+    const priceId = sub.items.data[0]?.price?.id;
+    if (priceId) priceIds.add(priceId);
+  }
+
+  const [orgs, users, mirrors, planPrices, catalog] = await Promise.all([
+    metaOrgIds.size
+      ? db.organization.findMany({ where: { id: { in: [...metaOrgIds] } }, select: { id: true } })
+      : Promise.resolve([]),
+    metaUserIds.size
+      ? db.user.findMany({
+          where: { id: { in: [...metaUserIds] } },
+          select: {
+            id: true,
+            activeOrgId: true,
+            memberships: {
+              orderBy: [{ createdAt: "asc" }, { organizationId: "asc" }],
+              select: {
+                role: true,
+                organizationId: true,
+                organization: { select: { id: true, name: true } },
+              },
+            },
+          },
+        })
+      : Promise.resolve([]),
+    db.subscription.findMany({
+      where: {
+        OR: [{ externalSubId: { in: subIds } }, { externalCustomerId: { in: [...custIds] } }],
+      },
+      select: { organizationId: true, externalSubId: true, externalCustomerId: true },
+    }),
+    priceIds.size
+      ? db.planPrice.findMany({
+          where: { stripePriceId: { in: [...priceIds] } },
+          select: { stripePriceId: true, planSlug: true },
+        })
+      : Promise.resolve([]),
+    db.pricingPlan.findMany({ select: { slug: true } }),
+  ]);
+
+  const knownOrg = new Set(orgs.map((o) => o.id));
+  const userById = new Map(users.map((u) => [u.id, u]));
+  // Neither externalSubId nor externalCustomerId is @unique in the schema,
+  // while organizationId IS — so two rows holding the same `sub_…` / `cus_…`
+  // mean two organizations claim the same Stripe object. A plain Map keeps
+  // whichever row Prisma returned last and hands the subscription to a coin
+  // flip; these maps hand it to nobody and flag the collision instead.
+  const orgBySubId = orgIndex(mirrors, (m) => m.externalSubId);
+  const orgByCustId = orgIndex(mirrors, (m) => m.externalCustomerId);
+  const slugByPrice = new Map(planPrices.map((p) => [p.stripePriceId, p.planSlug.toUpperCase()]));
+  const catalogSlugs = new Set(catalog.map((p) => p.slug.toUpperCase()));
+
+  // ── resolve, then keep the most current subscription per org ──
+  const best = new Map<string, Stripe.Subscription>();
+  const result: StripeSyncResult = { ...empty, scanned: subs.length };
+  for (const sub of subs) {
+    const link = resolveOrgForStripeSub(sub, knownOrg, userById, orgBySubId, orgByCustId);
+    if (link.ambiguous) {
+      // Two organizations hold the same Stripe id. Writing to either is a
+      // 50/50 chance of putting a paid plan on the wrong company.
+      result.conflicts += 1;
+      continue;
+    }
+    const organizationId = link.organizationId;
+    if (!organizationId) {
+      result.unmatched += 1;
+      continue;
+    }
+    const held = best.get(organizationId);
+    if (!held) {
+      best.set(organizationId, sub);
+      continue;
+    }
+    // Both belong to this org; only one can be the record. The loser is
+    // reported rather than dropped between two numbers.
+    result.superseded += 1;
+    if (subPrecedence(sub) > subPrecedence(held)) best.set(organizationId, sub);
+  }
+
+  // The authoritative current state of every row we may touch.
+  const existingRows = best.size
+    ? await db.subscription.findMany({
+        where: { organizationId: { in: [...best.keys()] } },
+        select: {
+          organizationId: true,
+          plan: true,
+          status: true,
+          provider: true,
+          externalCustomerId: true,
+          externalSubId: true,
+          stripePriceId: true,
+          currentPeriodEnd: true,
+          trialEndsAt: true,
+          canceledAt: true,
+        },
+      })
+    : [];
+  const existingByOrg = new Map(existingRows.map((r) => [r.organizationId, r]));
+
+  // ── write (sequential: one SQLite writer) ───────────
+  for (const [organizationId, sub] of best) {
+    const existing = existingByOrg.get(organizationId);
+    const status = mapStripeSubStatus(sub.status);
+
+    // A LIVE hand grant is never overwritten — the hand-grant rule, whatever id
+    // the row happens to carry. A lapsed Stripe row would downgrade the grant
+    // (and a CANCELED write drops the org to FREE limits through the lapsed-sub
+    // rule); a live one would silently replace a hand-granted tier with a
+    // purchased one and stamp provider STRIPE, which also moves it out of the
+    // comp tally and into MRR. Neither is the sync's call.
+    //
+    // Matching on `externalSubId !== sub.id` used to let one case through: a
+    // grant written over a Stripe-managed row kept that row's id, so the sync
+    // read it as "the same subscription" and overwrote the operator's ENTERPRISE
+    // comp with whatever `sub_…` said, counted as an ordinary write with no
+    // conflict flagged. Writes now clear the id (DETACH_FROM_STRIPE), and the id
+    // is no longer part of the question either way.
+    //
+    // The way back is the operator's, not the sync's: end the grant (Canceled /
+    // Expired) and the next sync writes Stripe's truth over the dead row.
+    if (existing?.provider === "MANUAL" && LIVE_RECORD.has(existing.status)) {
+      if (LIVE_RECORD.has(status)) result.conflicts += 1;
+      else result.keptManual += 1;
+      continue;
+    }
+
+    // Subscription.organizationId is @unique: writing here REPLACES whatever
+    // this org's row pointed at. Only a dead record may be replaced by a live
+    // subscription (a genuine re-subscribe); anything else is for a human.
+    if (existing?.externalSubId && existing.externalSubId !== sub.id) {
+      const replacingDeadRecord = !LIVE_RECORD.has(existing.status) && LIVE_RECORD.has(status);
+      if (!replacingDeadRecord) {
+        result.conflicts += 1;
+        continue;
+      }
+    }
+
+    const priceId = sub.items.data[0]?.price?.id ?? null;
+    const namedPlan = planForStripeSub(sub, priceId, slugByPrice, catalogSlugs);
+    if (!existing && !namedPlan) {
+      // plan "" prices at nothing behind an ACTIVE badge. Refuse, and say so.
+      result.unnamed += 1;
+      continue;
+    }
+
+    const next = {
+      // A plan Stripe cannot name leaves the stored one as it stands.
+      plan: namedPlan ?? existing?.plan ?? "",
+      status,
+      provider: "STRIPE",
+      externalCustomerId: stripeCustomerId(sub),
+      externalSubId: sub.id,
+      stripePriceId: priceId,
+      currentPeriodEnd: stripeDate(sub.current_period_end),
+      trialEndsAt: stripeDate(sub.trial_end),
+      canceledAt: stripeDate(sub.canceled_at),
+    };
+
+    // @updatedAt fires on every write, so an unconditional upsert would leave
+    // every row reading "just now" after a sync that changed nothing.
+    if (existing && sameRecord(existing, next)) {
+      result.unchanged += 1;
+      continue;
+    }
+
+    await db.subscription.upsert({
+      where: { organizationId },
+      update: next,
+      create: { organizationId, ...next },
+    });
+    result.written += 1;
+  }
+
+  revalidateAdminBilling();
+  return result;
+}
+
+/** Every admin surface that renders a subscription figure. */
+function revalidateAdminBilling() {
+  revalidatePath("/admin");
+  revalidatePath("/admin/users");
+  revalidatePath("/admin/subscribers");
+}
+
+type RecordFields = {
+  plan: string;
+  status: string;
+  provider: string;
+  externalCustomerId: string | null;
+  externalSubId: string | null;
+  stripePriceId: string | null;
+  currentPeriodEnd: Date | null;
+  trialEndsAt: Date | null;
+  canceledAt: Date | null;
+};
+
+function sameInstant(a: Date | null, b: Date | null): boolean {
+  return (a?.getTime() ?? null) === (b?.getTime() ?? null);
+}
+
+function sameRecord(a: RecordFields, b: RecordFields): boolean {
+  return (
+    a.plan === b.plan &&
+    a.status === b.status &&
+    a.provider === b.provider &&
+    a.externalCustomerId === b.externalCustomerId &&
+    a.externalSubId === b.externalSubId &&
+    a.stripePriceId === b.stripePriceId &&
+    sameInstant(a.currentPeriodEnd, b.currentPeriodEnd) &&
+    sameInstant(a.trialEndsAt, b.trialEndsAt) &&
+    sameInstant(a.canceledAt, b.canceledAt)
+  );
+}
+
+type StripeLinkedUser = {
+  activeOrgId: string | null;
+  memberships: MembershipShape[];
+};
+
+/** A metadata key off the subscription, falling back to its expanded customer. */
+function stripeMeta(sub: Stripe.Subscription, key: string): string | null {
+  const own = sub.metadata?.[key];
+  if (own) return own;
+  const c = sub.customer;
+  if (!c || typeof c === "string" || ("deleted" in c && c.deleted)) return null;
+  return (c as Stripe.Customer).metadata?.[key] ?? null;
+}
+
+function stripeCustomerId(sub: Stripe.Subscription): string {
+  return typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+}
+
+function stripeDate(seconds: number | null | undefined): Date | null {
+  return seconds ? new Date(seconds * 1000) : null;
+}
+
+/**
+ * Index the platform's record rows by a Stripe id, keeping the ids only ONE
+ * organization claims. `shared` holds the rest: they resolve to no org and are
+ * refused rather than written to whichever row came back last.
+ */
+function orgIndex<T extends { organizationId: string }>(
+  rows: readonly T[],
+  key: (r: T) => string | null,
+): { byId: Map<string, string>; shared: Set<string> } {
+  const byId = new Map<string, string>();
+  const shared = new Set<string>();
+  for (const r of rows) {
+    const k = key(r);
+    if (!k) continue;
+    const held = byId.get(k);
+    if (held === undefined) byId.set(k, r.organizationId);
+    else if (held !== r.organizationId) shared.add(k);
+  }
+  for (const k of shared) byId.delete(k);
+  return { byId, shared };
+}
+
+type OrgIndex = ReturnType<typeof orgIndex>;
+
+/**
+ * Which organization this subscription belongs to, or why nothing may be
+ * written. `ambiguous` is NOT "unmatched": the deployment holds two rows for
+ * the same Stripe id, so a write would land on one of two organizations at
+ * random — the caller counts it as a conflict for a human to settle.
+ */
+function resolveOrgForStripeSub(
+  sub: Stripe.Subscription,
+  knownOrg: Set<string>,
+  userById: Map<string, StripeLinkedUser>,
+  orgBySubId: OrgIndex,
+  orgByCustId: OrgIndex,
+): { organizationId: string | null; ambiguous: boolean } {
+  const metaOrg = stripeMeta(sub, "organizationId");
+  if (metaOrg && knownOrg.has(metaOrg)) return { organizationId: metaOrg, ambiguous: false };
+
+  // The platform's own record beats a membership guess: it was written from a
+  // Stripe id, while a membership only says which org someone happens to be in.
+  if (orgBySubId.shared.has(sub.id)) return { organizationId: null, ambiguous: true };
+  const bySub = orgBySubId.byId.get(sub.id);
+  if (bySub) return { organizationId: bySub, ambiguous: false };
+
+  const custId = stripeCustomerId(sub);
+  if (orgByCustId.shared.has(custId)) return { organizationId: null, ambiguous: true };
+  const byCust = orgByCustId.byId.get(custId);
+  if (byCust) return { organizationId: byCust, ambiguous: false };
+
+  const uid = stripeMeta(sub, "userId");
+  const user = uid ? userById.get(uid) : undefined;
+  return { organizationId: (user ? primaryOrg(user)?.id : undefined) ?? null, ambiguous: false };
+}
+
+/** Live beats lapsed; among equals the newest wins. One org, one record row. */
+function subPrecedence(sub: Stripe.Subscription): number {
+  const rank =
+    sub.status === "active" ? 4 : sub.status === "trialing" ? 3 : sub.status === "past_due" ? 2 : 1;
+  return rank * 1e12 + sub.created;
+}
+
+/** The status ladder the webhook writes (lib/stripeSync), so both agree. */
+function mapStripeSubStatus(s: Stripe.Subscription.Status): string {
+  switch (s) {
+    case "active":
+      return SubscriptionStatus.ACTIVE;
+    case "trialing":
+      return SubscriptionStatus.TRIALING;
+    case "past_due":
+    case "unpaid":
+      return SubscriptionStatus.PAST_DUE;
+    case "canceled":
+    case "incomplete_expired":
+      return SubscriptionStatus.CANCELED;
+    default:
+      return SubscriptionStatus.PAST_DUE; // incomplete / paused — not yet active
+  }
+}
+
+/**
+ * The purchased plan, read off Stripe: the PlanPrice ledger first (the price the
+ * checkout actually charged), then a tier stamped on the subscription or its
+ * price and confirmed against the catalog. Null when Stripe names none — the
+ * caller then writes no plan rather than a guess.
+ */
+function planForStripeSub(
+  sub: Stripe.Subscription,
+  priceId: string | null,
+  slugByPrice: Map<string, string>,
+  catalogSlugs: Set<string>,
+): string | null {
+  if (priceId) {
+    const fromLedger = slugByPrice.get(priceId);
+    if (fromLedger) return fromLedger;
+  }
+  const price = sub.items.data[0]?.price;
+  const candidates = [
+    sub.metadata?.planTier,
+    sub.metadata?.planName,
+    price?.metadata?.planSlug,
+    price?.metadata?.planName,
+    price?.nickname,
+  ];
+  for (const c of candidates) {
+    const upper = c?.trim().toUpperCase();
+    if (upper && catalogSlugs.has(upper)) return upper;
+  }
+  return null;
 }

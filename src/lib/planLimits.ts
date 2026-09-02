@@ -56,6 +56,7 @@ export type LimitKey =
   | "projects"
   | "jobs"
   | "workers"
+  | "clients"
   | "estimatorUses"
   | "conversationsStarted"
   | "messagesSent"
@@ -84,6 +85,7 @@ export const LIMIT_DEFS: readonly LimitDef[] = [
   { key: "projects", label: "Total projects", scope: "monthly", hint: "New projects per billing cycle" },
   { key: "jobs", label: "Total jobs", scope: "monthly", hint: "New jobs per billing cycle" },
   { key: "workers", label: "Total workers", scope: "absolute", hint: "Worker seats in the org (lifetime)" },
+  { key: "clients", label: "Clients", scope: "absolute", hint: "Client records in the org (lifetime)" },
   { key: "estimatorUses", label: "Estimator uses", scope: "monthly", hint: "AI estimator runs per cycle" },
   { key: "conversationsStarted", label: "Conversations started", scope: "monthly", hint: "New message threads per cycle" },
   { key: "messagesSent", label: "Messages sent", scope: "monthly", hint: "Messages sent per cycle" },
@@ -111,6 +113,7 @@ export const DEFAULT_FREE_LIMITS: PlanLimits = {
   projects: 2,
   jobs: 3,
   workers: 1,
+  clients: 10,
   estimatorUses: 3,
   conversationsStarted: 5,
   messagesSent: 50,

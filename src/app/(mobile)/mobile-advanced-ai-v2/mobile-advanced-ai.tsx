@@ -1144,7 +1144,10 @@ export function MobileSmartProposal() {
       });
       // router.push, never location.assign — a hard nav replays the blueprint
       // entrance and the user sees the page build itself twice.
-      router.push(`/dashboard/proposals/${res.id}`);
+      // The BLUEPRINT manual builder, not the legacy /dashboard/proposals/<id>
+      // editor — same reasoning as the desktop console; ?proposal=<id> reopens
+      // the estimate that was just persisted.
+      router.push(`/dashboard/manual-blueprint?proposal=${res.id}`);
     } catch (err) {
       setSaveBusy(false);
       setBanner(
@@ -1523,17 +1526,17 @@ export function MobileSmartProposal() {
                       <div className={styles.fld}>
                         <label className={styles.fldLbl} htmlFor="maLoc">Address or city</label>
                         {/* Real Google Places suggestions, through the same module the
-                            desktop blueprint pages use. cityOnly: this field prices a
-                            REGION, so a street number is noise — "Bothell, WA" is the
-                            whole answer. Picking one fills the state below, which is
-                            what the hint promises. */}
+                            desktop blueprint pages use. NOT cityOnly: the label offers
+                            "address or city", and a locality-restricted query answers a
+                            typed street address with whatever town fuzzy-matches the
+                            string. Unrestricted suggestions resolve the address itself
+                            and still carry the components that fill the state below. */}
                         <AddressField
                           id="maLoc"
                           placeholder="Bothell"
-                          cityOnly
                           value={locText}
                           onPick={(p) => {
-                            setLocText(p.typed ? p.address : p.city || p.address);
+                            setLocText(p.typed ? p.address : p.formatted || p.address);
                             // Only a real pick carries parts. A half-typed street must
                             // not blank a state the user already chose.
                             if (!p.typed && p.state) setLocState(p.state);

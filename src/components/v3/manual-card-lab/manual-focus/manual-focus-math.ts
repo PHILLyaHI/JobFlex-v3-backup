@@ -120,7 +120,15 @@ export function applyUnitPrice(line: Line, next: number): Pick<Line, "materialCo
   const target = Math.max(0, safe(next));
   const current = safe(line.materialCost) + safe(line.laborCost);
   if (current <= 0) {
-    return { materialCost: round2(target / 2), laborCost: round2(target / 2) };
+    // FIRST price on a costless line: the UNIT decides where the money lands.
+    // A flat 50/50 split meant 30 shingles at $25 booked $375 of labor nobody
+    // had quoted — the unit already says whether the row measures a thing you
+    // buy or time you work, so it is the only honest seed. Once a ratio exists
+    // this branch is dead and the mix below is preserved, so a contractor who
+    // deliberately splits a row keeps their split.
+    const share = defaultMaterialShare(line.unit);
+    const material = round2(target * share);
+    return { materialCost: material, laborCost: round2(target - material) };
   }
   const share = safe(line.materialCost) / current;
   const material = round2(target * share);
@@ -432,6 +440,22 @@ export function isFixedUnit(u: Unit): boolean {
 /** Time, so a new line's cost seeds entirely into labor. */
 export function isTimeUnit(u: Unit): boolean {
   return u === "HOUR";
+}
+
+/**
+ * Where the first typed price on a costless line belongs, as a 0–1 material
+ * share.
+ *
+ * Every measured unit — sqft, linear ft, yards, each — counts a THING, so its
+ * price is material and labor stays at zero until someone types one. HOUR
+ * counts time, which is labor by definition. FIXED is the only genuinely
+ * ambiguous one: a lump sum is normally a whole job, so it keeps the even
+ * split rather than guessing.
+ */
+export function defaultMaterialShare(u: Unit): number {
+  if (isTimeUnit(u)) return 0;
+  if (isFixedUnit(u)) return 0.5;
+  return 1;
 }
 
 /**

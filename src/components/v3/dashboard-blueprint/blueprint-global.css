@@ -302,12 +302,52 @@ body:has(.jf-blueprint) {
 .jf-blueprint .bp-sel:focus-within::after { border-color: var(--ink); }
 /* Nothing picked yet is a placeholder, not a value. */
 .jf-blueprint .bp-sel .bp-sel-in[data-empty="1"] { color: var(--ink-faint); font-weight: 600; }
+/* Refused, not merely quiet: an `appearance: none` select loses the OS's own
+   disabled rendering, so the state has to be drawn here or it is invisible. */
+.jf-blueprint .bp-sel .bp-sel-in:disabled { color: var(--ink-muted); cursor: not-allowed; }
 /* The option list itself is drawn by the OS; only its text is ours to set. */
 .jf-blueprint .bp-sel .bp-sel-in option {
   font-family: var(--font-sans), sans-serif;
   font-size: 13px;
   font-weight: 500;
   color: var(--ink);
+}
+
+/* ── THE CONSOLE MODIFIER: `<span class="bp-sel bp-sel--admin">` ─────
+   /admin used to carry THREE byte-identical copies of an `appearance: none`
+   + data-URI-chevron select — one in campaigns.module.css, one in each of the
+   two admin-shared modules — and they had already drifted apart: one had
+   grown `:disabled`, another `[data-empty]`, and none of them was the caret
+   the rest of the app draws. That is exactly the parallel-style-set drift
+   decisions.md warns about, so the console now rides on the published control
+   and adds only what is genuinely its own: the mono-caps voice of an operator
+   bar, a paper ground, and the 38px axis its text fields and search sit on
+   (44px on a handheld, like every other control there).
+
+   A wrapper modifier, not a second `.bp-sel-in` rule set, because that is the
+   shape crm / company / fence already use for their own metrics — the caret,
+   the focus ring, the placeholder and the option list all stay published. */
+/* A <select> is sized by its WIDEST OPTION unless told otherwise, and a plan
+   name or a promo code is user text. Both halves need the release: the wrapper
+   so the bar can shrink it, the control so it does not hold the wrapper open. */
+.jf-blueprint .bp-sel--admin { min-width: 0; }
+.jf-blueprint .bp-sel--admin .bp-sel-in {
+  min-width: 0;
+  height: 38px;
+  padding: 0 34px 0 11px;
+  border-color: var(--ink);
+  background: var(--paper);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.jf-blueprint .bp-sel--admin .bp-sel-in:hover:not(:disabled) { background: var(--paper-deep); }
+/* The value is shouted; the list it opens is not. */
+.jf-blueprint .bp-sel--admin .bp-sel-in option { text-transform: none; letter-spacing: 0; }
+
+@media (max-width: 860px) {
+  .jf-blueprint .bp-sel--admin .bp-sel-in { height: 44px; font-size: 12px; }
 }
 
 /* ── Command palette (blueprint-shell/command-palette.tsx) ───────────

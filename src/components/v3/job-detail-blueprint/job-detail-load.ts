@@ -343,6 +343,7 @@ export async function loadJobDetail(
     roster,
     booking: bookingWindow(job.startsAt, job.endsAt),
     canWrite: isOwnerOrManager(role),
+    canPhotos: isOwnerOrManager(role),
     viewer: "manager",
     assignment: null,
   };
@@ -458,6 +459,10 @@ async function loadWorkerScoped(
     // anything — but the shape is the shape.
     booking: bookingWindow(job.startsAt, job.endsAt),
     canWrite: false,
+    // A worker only reaches this loader through their own assignment, and the
+    // crew documents the work: photos are theirs to add (upload re-checks the
+    // assignment server-side).
+    canPhotos: true,
     viewer: "worker",
     assignment: OWN_ASSIGNMENT_STATE[own] ?? "wait",
   };

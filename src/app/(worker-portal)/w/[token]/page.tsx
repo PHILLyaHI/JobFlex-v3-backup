@@ -68,9 +68,12 @@ export default async function WorkerDashboard({
   // ACCEPTED with a real password → the magic link becomes the dashboard link.
   // Legacy passwordless workers keep this token portal so they're never locked out.
   if (worker.user?.hashedPassword) {
+    // ?offers=1: the jobs page's offers popup opens itself on arrival, so the
+    // email's "Confirm or decline" click lands on the actual controls instead
+    // of a bare jobs list (the dead-click bug, 2026-08-21).
     const session = await auth();
-    if (session?.user?.id === worker.userId) redirect("/dashboard/jobs");
-    redirect(`/auth/login?next=/dashboard/jobs`);
+    if (session?.user?.id === worker.userId) redirect("/dashboard/jobs?offers=1");
+    redirect(`/auth/login?next=${encodeURIComponent("/dashboard/jobs?offers=1")}`);
   }
 
   const now = new Date();

@@ -447,6 +447,9 @@ body:has(.jf-mobile-auth-register)::before { content: none; }
   box-shadow: 4px 4px 0 var(--ink);
 }
 .jf-mobile-auth-register .mr-in::placeholder { color: var(--muted-faint); }
+/* The free-text trade behind the "Other" chip. Full width under the chip
+   groups — it is the continuation of that answer, not a new field. */
+.jf-mobile-auth-register .mr-in--other { margin-top: 12px; }
 .jf-mobile-auth-register .mr-note {
   display: block;
   margin-top: 7px;

@@ -153,6 +153,89 @@ export async function getReadReceipts() {
   });
 }
 
+// Live inbox poll (2026-08-21). One round trip returns everything the open
+// messages page needs to stay honest without a reload: read receipts for
+// every visible thread, plus every message newer than `afterTs` — including
+// messages in threads the client has never seen (someone just started a chat
+// with you), which arrive with enough metadata to append a rail row. Messages
+// behind the caller's clearedAt watermark are never resurfaced. The client
+// passes the newest message timestamp it knows; strictly-newer rows come
+// back, and the client dedupes by id (its own optimistic sends echo here).
+export async function pollMessages(afterTs: number) {
+  const { organizationId, user } = await requireOrg();
+  const since = new Date(Number.isFinite(afterTs) ? afterTs : Date.now());
+  const convs = await db.conversation.findMany({
+    // Same visibility rule as the messages page — keep in sync.
+    where: {
+      organizationId,
+      OR: [
+        { participants: { some: { userId: user.id } } },
+        {
+          AND: [
+            { participants: { none: {} } },
+            { messages: { some: { authorId: user.id } } },
+          ],
+        },
+      ],
+    },
+    include: {
+      participants: { include: { user: { select: { id: true, name: true, email: true } } } },
+      messages: {
+        where: { createdAt: { gt: since } },
+        orderBy: { createdAt: "asc" },
+        include: { author: { select: { id: true, name: true, email: true } } },
+      },
+      job: { select: { title: true } },
+    },
+  });
+
+  const receipts: { id: string; readAt: number | null }[] = [];
+  const updates: {
+    id: string;
+    kind: "DIRECT" | "GROUP";
+    title: string;
+    job: string | null;
+    msgs: { id: string; who: string; me: boolean; ts: number; body: string }[];
+  }[] = [];
+
+  for (const c of convs) {
+    const others = c.participants.filter((p) => p.userId !== user.id);
+    receipts.push({
+      id: c.id,
+      readAt:
+        others.length > 0 && others.every((p) => p.lastReadAt)
+          ? Math.min(...others.map((p) => (p.lastReadAt as Date).getTime()))
+          : null,
+    });
+    const mine = c.participants.find((p) => p.userId === user.id);
+    const cleared = mine?.clearedAt?.getTime() ?? 0;
+    const fresh = c.messages.filter((m) => m.createdAt.getTime() > cleared);
+    if (fresh.length === 0) continue;
+    // Per-viewer thread name — same formula as the page's displayName.
+    const title =
+      c.kind === "DIRECT" && others.length > 0
+        ? (others[0].user?.name ?? others[0].user?.email ?? "Conversation")
+        : (c.title ??
+          (others.length > 0
+            ? others.map((p) => p.user?.name ?? p.user?.email ?? "Member").join(", ")
+            : "Conversation"));
+    updates.push({
+      id: c.id,
+      kind: c.kind === "DIRECT" ? "DIRECT" : "GROUP",
+      title,
+      job: c.job?.title ?? null,
+      msgs: fresh.map((m) => ({
+        id: m.id,
+        who: m.author?.name ?? m.author?.email ?? "Anonymous",
+        me: m.authorId === user.id,
+        ts: m.createdAt.getTime(),
+        body: m.body,
+      })),
+    });
+  }
+  return { receipts, updates };
+}
+
 // Stamps this thread as read for the caller — drives the unread-messages
 // badge in the sidebar/tab bar. No revalidatePath: the badge recomputes on
 // the layout's next render, same as every other self-clearing surface.
@@ -164,7 +247,13 @@ export async function markConversationRead(conversationId: string) {
   });
 }
 
-// Clear a single thread — wipes its messages but keeps the thread + members.
+// Clear a single thread — FOR THE CALLER ONLY. It used to deleteMany the
+// Message rows, which silently emptied the thread for every participant; now
+// it stamps the caller's `clearedAt` watermark and every read path filters
+// messages behind it. The other side keeps their transcript. lastReadAt is
+// stamped too, so the unread badge can't count messages the caller just chose
+// not to see. Legacy threads (no participant rows — membership unknowable)
+// keep the old hard wipe: there is no participant row to carry a watermark.
 export async function clearConversation(conversationId: string) {
   const { organizationId, user } = await requireOrg();
   const conv = await db.conversation.findUnique({
@@ -176,13 +265,22 @@ export async function clearConversation(conversationId: string) {
   });
   if (!conv || conv.organizationId !== organizationId) throw new Error("Not found");
   if (!canAccess(conv, user.id)) throw new Error("Not allowed");
-  await db.message.deleteMany({ where: { conversationId: conv.id } });
+  if (conv.participants.length === 0) {
+    await db.message.deleteMany({ where: { conversationId: conv.id } });
+  } else {
+    const now = new Date();
+    await db.conversationParticipant.updateMany({
+      where: { conversationId: conv.id, userId: user.id },
+      data: { clearedAt: now, lastReadAt: now },
+    });
+  }
   revalidatePath("/dashboard/messages");
   return { ok: true };
 }
 
-// Clear every thread the caller can see: their participating threads, plus legacy
-// no-participant threads they authored in. Wipes messages, keeps the threads.
+// Clear every thread the caller can see — for the CALLER only (see
+// clearConversation). Participating threads get the clearedAt watermark;
+// legacy no-participant threads they authored in keep the hard wipe.
 // Mirrors the visibility rule on the messages page — keep the two in sync.
 export async function clearAllConversations() {
   const { organizationId, user } = await requireOrg();
@@ -199,10 +297,135 @@ export async function clearAllConversations() {
         },
       ],
     },
-    select: { id: true },
+    select: { id: true, participants: { select: { userId: true }, take: 1 } },
   });
   if (convs.length === 0) return { ok: true, cleared: 0 };
-  await db.message.deleteMany({ where: { conversationId: { in: convs.map((c) => c.id) } } });
+  const now = new Date();
+  const participating = convs.filter((c) => c.participants.length > 0).map((c) => c.id);
+  const legacy = convs.filter((c) => c.participants.length === 0).map((c) => c.id);
+  if (participating.length > 0) {
+    await db.conversationParticipant.updateMany({
+      where: { conversationId: { in: participating }, userId: user.id },
+      data: { clearedAt: now, lastReadAt: now },
+    });
+  }
+  if (legacy.length > 0) {
+    await db.message.deleteMany({ where: { conversationId: { in: legacy } } });
+  }
   revalidatePath("/dashboard/messages");
   return { ok: true, cleared: convs.length };
+}
+
+// The messages page's whole server read as ONE callable action (2026-08-21),
+// for the handheld surface: ResponsiveDashboardShell mounts MobileMessages
+// props-less on /dashboard/messages, so it cannot receive the desktop page's
+// server-component read as props and asks this action for the same book
+// instead — the pattern getCalendarSeed set for the calendar. The logic below
+// is src/app/dashboard/messages/page.tsx VERBATIM: same participant-scoped
+// visibility (keep in sync with the rule above), same per-viewer display
+// names, same clearedAt message filter, same readAt receipt formula, same
+// unread helper. Types are the blueprint's own (type-only — erased at build,
+// so the "use server" export rule is untouched). Dependencies the rest of
+// this file doesn't use are imported inside the function, keeping this a
+// pure append.
+type SeedConv = import("@/components/v3/messages-blueprint/messages-data").Conv;
+type SeedMember = import("@/components/v3/messages-blueprint/messages-data").Member;
+type SeedShape = import("@/components/v3/messages-blueprint/messages-data").MessagesSeed;
+
+export async function getMessagesSeed(): Promise<SeedShape> {
+  const [{ getUnreadByConversation }, { roleLabel }] = await Promise.all([
+    import("@/lib/badgeCounts"),
+    import("@/lib/prismaEnums"),
+  ]);
+  const { organizationId, user } = await requireOrg();
+  const userId = user.id;
+  const meName = user.name ?? user.email ?? "You";
+
+  const conversationWhere = {
+    organizationId,
+    OR: [
+      { participants: { some: { userId } } },
+      {
+        AND: [{ participants: { none: {} } }, { messages: { some: { authorId: userId } } }],
+      },
+    ],
+  };
+
+  const [conversations, members, unread] = await Promise.all([
+    db.conversation.findMany({
+      where: conversationWhere,
+      orderBy: { createdAt: "desc" },
+      include: {
+        messages: {
+          orderBy: { createdAt: "asc" },
+          include: { author: { select: { id: true, name: true, email: true } } },
+        },
+        participants: {
+          include: { user: { select: { id: true, name: true, email: true } } },
+        },
+        job: { select: { title: true } },
+      },
+    }),
+    db.membership.findMany({
+      where: { organizationId, NOT: { userId } },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    getUnreadByConversation(organizationId, userId),
+  ]);
+
+  function displayName(c: (typeof conversations)[number]): string {
+    const others = c.participants.filter((p) => p.userId !== userId);
+    if (c.kind === "DIRECT" && others.length > 0) {
+      const o = others[0].user;
+      return o?.name ?? o?.email ?? "Conversation";
+    }
+    if (c.title) return c.title;
+    if (others.length > 0) {
+      return others.map((p) => p.user?.name ?? p.user?.email ?? "Member").join(", ");
+    }
+    return "Conversation";
+  }
+
+  const rows: SeedConv[] = conversations
+    .map((c) => {
+      // Per-viewer clear watermark — see clearConversation above.
+      const clearedAt =
+        c.participants.find((p) => p.userId === userId)?.clearedAt?.getTime() ?? 0;
+      const msgs = c.messages
+        .filter((m) => m.createdAt.getTime() > clearedAt)
+        .map((m) => ({
+          id: m.id,
+          who: m.author?.name ?? m.author?.email ?? "Anonymous",
+          me: m.authorId === userId,
+          ts: m.createdAt.getTime(),
+          body: m.body,
+        }));
+      // Same receipt formula as getReadReceipts above — keep in sync.
+      const others = c.participants.filter((p) => p.userId !== userId);
+      const readAt =
+        others.length > 0 && others.every((p) => p.lastReadAt)
+          ? Math.min(...others.map((p) => (p.lastReadAt as Date).getTime()))
+          : null;
+      return {
+        id: c.id,
+        kind: (c.kind === "DIRECT" ? "DIRECT" : "GROUP") as SeedConv["kind"],
+        title: displayName(c),
+        job: c.job?.title ?? null,
+        unread: unread.get(c.id) ?? 0,
+        ts: msgs.length ? msgs[msgs.length - 1].ts : c.createdAt.getTime(),
+        readAt,
+        msgs,
+      };
+    })
+    .sort((a, b) => b.ts - a.ts);
+
+  const team: SeedMember[] = members.map((m) => ({
+    id: m.userId,
+    name: m.user?.name ?? m.user?.email ?? "Member",
+    role: roleLabel(m.role),
+  }));
+
+  // No ?c= deep link on the handheld surface: the newest thread, or nothing.
+  return { conversations: rows, team, meName, activeId: rows[0]?.id ?? null };
 }

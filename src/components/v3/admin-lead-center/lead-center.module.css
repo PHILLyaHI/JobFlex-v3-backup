@@ -1,0 +1,359 @@
+/* ============================================================
+   ADMIN LEAD CENTER — BLUEPRINT
+   /admin/lead-center
+   Page-specific vocabulary only; shared furniture (tables, chips, sheets,
+   filters) lives in admin-influencers/admin-ui.module.css. Scoped (0,3,0)
+   so every rule outranks the shell's 2-class resets.
+
+   2026-08-27: the arc gauge, the 34-day sparkline, the 26-segment trade bars,
+   the blue intake plate and the six-column ledger went with the rebuild in
+   lead-center-content.tsx. What is left is one type scale, one number style,
+   and three blocks — status, leads, coverage.
+   ============================================================ */
+
+:global(.jf-blueprint .content) .root { display: flex; flex-direction: column; gap: 22px; }
+
+:global(.jf-blueprint .content) .mono {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+
+/* ── Status: four numbers ─────────────────────────────────────────────────
+   One row, one ink frame, no chart. Each cell is a label and a figure, and the
+   figure is the only large type in the block. */
+:global(.jf-blueprint .content) .kpis {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  overflow: hidden;
+}
+:global(.jf-blueprint .content) .kpi { padding: 14px 16px; border-right: 1.5px solid var(--ink); min-width: 0; }
+:global(.jf-blueprint .content) .kpi:last-child { border-right: none; }
+:global(.jf-blueprint .content) .kpiLbl {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 10px;
+}
+:global(.jf-blueprint .content) .kpiVal {
+  font-size: 30px; font-weight: 900; line-height: 1;
+  letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
+}
+:global(.jf-blueprint .content) .kpiLive { color: var(--warning); }
+:global(.jf-blueprint .content) .kpiWarn { color: var(--danger, #b3261e); }
+
+:global(.jf-blueprint .content) .statusFoot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap;
+  margin-top: 14px;
+}
+:global(.jf-blueprint .content) .facts {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-blueprint .content) .trades { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .trade { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+:global(.jf-blueprint .content) .trade :global(.ic) { width: 14px; height: 14px; color: var(--muted); flex-shrink: 0; }
+:global(.jf-blueprint .content) .tradeName { font-size: 12px; font-weight: 700; white-space: nowrap; }
+:global(.jf-blueprint .content) .tradeBar { width: 52px; height: 6px; background: var(--hair); border-radius: var(--radius); overflow: hidden; }
+:global(.jf-blueprint .content) .tradeBar span { display: block; height: 100%; background: var(--blueprint); }
+:global(.jf-blueprint .content) .tradeN {
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--muted);
+}
+
+/* ── Leads ledger ─────────────────────────────────────────────────────────
+   Four columns: which lead, who it is, where it went, what state it is in. */
+:global(.jf-blueprint .content) .cols {
+  grid-template-columns: 150px minmax(0, 1.3fr) minmax(0, 1.3fr) 150px;
+}
+:global(.jf-blueprint .content) .lid { display: flex; align-items: center; gap: 11px; min-width: 0; }
+:global(.jf-blueprint .content) .lidIc {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  color: var(--ink); flex-shrink: 0; background: var(--paper);
+}
+:global(.jf-blueprint .content) .lidIc :global(.ic) { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .lidNo { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; }
+/* The name is what a reader aims at, so it carries the underline a link has. */
+:global(.jf-blueprint .content) .nameLink { text-decoration: underline; text-decoration-color: var(--hair); text-underline-offset: 3px; }
+:global(.jf-blueprint .content) .trClick:hover .nameLink { text-decoration-color: var(--blueprint); }
+/* A name inside a row that is itself clickable: a button that keeps the row's
+   own type, so the only thing that marks it is the underline it shares with
+   the homeowner's name. */
+:global(.jf-blueprint .content) .cellBtn {
+  appearance: none; background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  max-width: 100%; display: block;
+}
+:global(.jf-blueprint .content) .statusCell { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+:global(.jf-blueprint .content) .countdown {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--warning); white-space: nowrap;
+}
+:global(.jf-blueprint .content) .trClick { cursor: pointer; }
+:global(.jf-blueprint .content) .trClick:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .trOn { background: var(--paper-deep); box-shadow: inset 3px 0 0 var(--blueprint); }
+
+:global(.jf-blueprint .content) .live {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1.5px solid var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+:global(.jf-blueprint .content) .liveDot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: lcPulse 1.6s ease-in-out infinite; flex-shrink: 0; }
+@keyframes lcPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* ── Coverage row: shops beside the plan ── */
+:global(.jf-blueprint .content) .two {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 22px; align-items: start;
+}
+:global(.jf-blueprint .content) .two > :global(.card) { min-width: 0; }
+
+:global(.jf-blueprint .content) .shops { display: flex; flex-direction: column; }
+:global(.jf-blueprint .content) .shop:last-child { border-bottom: none; }
+:global(.jf-blueprint .content) .shopName { font-size: 13.5px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .shopOff { color: var(--muted); font-weight: 600; }
+:global(.jf-blueprint .content) .shopTrades { display: flex; gap: 4px; flex-shrink: 0; }
+:global(.jf-blueprint .content) .shopTrade {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  border: 1px solid var(--hair); border-radius: var(--radius);
+  padding: 2px 6px; color: var(--muted); white-space: nowrap;
+}
+:global(.jf-blueprint .content) .notReady { margin-top: 12px; padding-top: 12px; border-top: 1.5px solid var(--hair-soft); }
+
+/* One disclosure control, used by the shop list and by the sheet. */
+:global(.jf-blueprint .content) .disclose,
+:global(.jf-blueprint .content .pmdl) .disclose {
+  display: inline-flex; align-items: center; gap: 7px;
+  appearance: none; background: none; border: none; padding: 4px 0; margin: 0;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); cursor: pointer;
+}
+:global(.jf-blueprint .content) .disclose:hover,
+:global(.jf-blueprint .content .pmdl) .disclose:hover { color: var(--ink); }
+:global(.jf-blueprint .content) .disclose :global(.ic),
+:global(.jf-blueprint .content .pmdl) .disclose :global(.ic) { width: 13px; height: 13px; }
+/* The sprite carries one chevron; open is the same glyph, turned. */
+:global(.jf-blueprint .content) .discloseOn :global(.ic),
+:global(.jf-blueprint .content .pmdl) .discloseOn :global(.ic) { transform: rotate(180deg); }
+
+/* ── Ledger card: the table runs edge to edge ─────────────────────────────
+   A `.card` pads 24px all round, which left the ledger floating inside a frame
+   with a gutter of white either side — two boxes, one of them invisible. The
+   head keeps its padding; the rows take theirs themselves, so their separators
+   meet the card's own border and the table reads as part of the card. */
+:global(.jf-blueprint .content) .ledgerCard { padding-left: 0; padding-right: 0; padding-bottom: 0; }
+:global(.jf-blueprint .content) .ledgerCard > :global(.card-head) { padding: 0 24px; }
+:global(.jf-blueprint .content) .ledgerCard .cols { padding-left: 24px; padding-right: 24px; }
+:global(.jf-blueprint .content) .ledgerCard .cols:last-child { padding-bottom: 14px; }
+:global(.jf-blueprint .content) .ledgerCard :global(.empty) { margin: 0 24px 24px; }
+
+/* ── Routing mode switch (page head) ── */
+:global(.jf-blueprint .content) .modeSw {
+  display: inline-flex; border: 1.5px solid var(--ink); border-radius: var(--radius); overflow: hidden;
+}
+:global(.jf-blueprint .content) .modeBtn {
+  display: inline-flex; align-items: center; gap: 7px;
+  appearance: none; border: none; background: var(--paper); cursor: pointer;
+  padding: 0 14px; height: 38px;
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+  border-right: 1.5px solid var(--ink);
+}
+:global(.jf-blueprint .content) .modeBtn:last-child { border-right: none; }
+:global(.jf-blueprint .content) .modeBtn :global(.ic) { width: 14px; height: 14px; }
+:global(.jf-blueprint .content) .modeBtn:hover:not(:disabled) { background: var(--paper-deep); color: var(--ink); }
+:global(.jf-blueprint .content) .modeBtn:disabled { opacity: 0.6; cursor: wait; }
+:global(.jf-blueprint .content) .modeOn { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .modeOn:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
+
+/* ── Map card ── */
+:global(.jf-blueprint .content) .mapCard { padding: 0; overflow: hidden; }
+:global(.jf-blueprint .content) .mapHead { padding: 18px 20px 14px; margin: 0; }
+:global(.jf-blueprint .content) .mapHost { display: block; width: 100%; height: 420px; background: var(--paper-deep); }
+/* Armed state — the bar between a click and a real assignment. */
+:global(.jf-blueprint .content) .placing {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 20px;
+  border-top: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink);
+  background: var(--warning-soft);
+}
+:global(.jf-blueprint .content) .placingDot {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--warning); flex-shrink: 0;
+  animation: lcPulse 1.6s ease-in-out infinite;
+}
+:global(.jf-blueprint .content) .placingTxt { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .placingBtn {
+  appearance: none; border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: var(--paper); cursor: pointer; padding: 5px 10px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink);
+}
+:global(.jf-blueprint .content) .placingBtn:hover { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .legend {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding: 10px 20px;
+  border-top: 2px solid var(--ink);
+  background: var(--paper);
+}
+:global(.jf-blueprint .content) .leg { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .legSq { width: 11px; height: 11px; border: 2px solid #fff; box-shadow: 0 0 0 1.5px var(--ink); flex-shrink: 0; }
+:global(.jf-blueprint .content) .legLead { background: #b3261e; }
+:global(.jf-blueprint .content) .legShop { background: var(--blueprint); }
+:global(.jf-blueprint .content) .legRight { margin-left: auto; }
+
+/* ── The algorithm, drawn ─────────────────────────────────────────────────
+   Three steps, each a heading and a picture: who is eligible, how they score,
+   what happens when nobody takes it. The words are labels, not prose. */
+:global(.jf-blueprint .content) .algoStep { display: flex; align-items: center; gap: 10px; margin: 18px 0 10px; }
+:global(.jf-blueprint .content) .algoStep:first-of-type { margin-top: 0; }
+:global(.jf-blueprint .content) .algoNo {
+  width: 22px; height: 22px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+}
+:global(.jf-blueprint .content) .algoLbl { font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .gates { display: flex; gap: 8px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .gate {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 10px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: var(--paper-deep);
+  font-size: 12px; font-weight: 700;
+}
+:global(.jf-blueprint .content) .gate :global(.ic) { width: 13px; height: 13px; color: var(--blueprint); }
+:global(.jf-blueprint .content) .factors { display: flex; flex-direction: column; gap: 8px; }
+:global(.jf-blueprint .content) .factor { display: grid; grid-template-columns: 76px minmax(0, 1fr) 40px 130px; align-items: center; gap: 10px; }
+:global(.jf-blueprint .content) .factorName { font-size: 12.5px; font-weight: 700; }
+:global(.jf-blueprint .content) .factorBar { height: 12px; background: var(--hair); border: 1.5px solid var(--ink); border-radius: var(--radius); overflow: hidden; }
+:global(.jf-blueprint .content) .factorBar span { display: block; height: 100%; background: var(--blueprint); }
+:global(.jf-blueprint .content) .factorPct { font-family: var(--font-mono); font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .factorNote { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-light); }
+:global(.jf-blueprint .content) .cascade { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .casStep {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 8px 12px; min-width: 84px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper);
+}
+:global(.jf-blueprint .content) .casNo { font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+:global(.jf-blueprint .content) .casTime { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .casArrow :global(.ic) { width: 16px; height: 16px; color: var(--muted); }
+:global(.jf-blueprint .content) .casEnd { background: var(--warning-soft); border-color: var(--warning); }
+:global(.jf-blueprint .content) .casEnd .casNo { color: var(--warning); }
+:global(.jf-blueprint .content) .casEnd .casTime { color: var(--warning); }
+
+/* A contractor row opens that contractor's record, so the row is the control. */
+:global(.jf-blueprint .content) .shop {
+  appearance: none; background: none; border: none; width: 100%; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--hair-soft); min-width: 0; text-align: left;
+}
+:global(.jf-blueprint .content) .shop:hover .shopName { text-decoration-color: var(--blueprint); }
+
+/* ── Detail sheet ─────────────────────────────────────────────────────────
+   Reads top to bottom as: where it stands → who they are → what they asked
+   for → the trail → what you can do. */
+:global(.jf-blueprint .content .pmdl) .dLede {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 14px; margin-bottom: 4px;
+  border-bottom: 1.5px solid var(--hair-soft);
+  font-size: 14px; font-weight: 600; color: var(--ink-soft); line-height: 1.45;
+}
+:global(.jf-blueprint .content .pmdl) .dSec {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted); margin: 18px 0 9px;
+}
+:global(.jf-blueprint .content .pmdl) .fields {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5px; background: var(--hair-soft);
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  overflow: hidden;
+}
+:global(.jf-blueprint .content .pmdl) .field { background: var(--paper); padding: 10px 12px; min-width: 0; }
+:global(.jf-blueprint .content .pmdl) .fieldLbl {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted-light);
+  margin-bottom: 5px;
+}
+:global(.jf-blueprint .content .pmdl) .fieldVal { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content .pmdl) .link { color: var(--blueprint); text-decoration: underline; text-underline-offset: 2px; }
+:global(.jf-blueprint .content .pmdl) .dim { color: var(--muted-light); font-weight: 500; }
+:global(.jf-blueprint .content .pmdl) .dDesc {
+  font-size: 13px; font-weight: 500; line-height: 1.5; color: var(--ink-soft);
+  border: 1.5px dashed var(--muted-faint); border-radius: var(--radius);
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content .pmdl) .mono {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light);
+}
+:global(.jf-blueprint .content .pmdl) .rank { border-top: 1.5px solid var(--ink); margin-top: 6px; }
+:global(.jf-blueprint .content .pmdl) .rankRow {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) 64px 64px 64px 70px;
+  gap: 8px; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--hair-soft);
+  font-size: 12.5px; font-weight: 600;
+}
+:global(.jf-blueprint .content .pmdl) .rankHead { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content .pmdl) .rankNo { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted-light); }
+:global(.jf-blueprint .content .pmdl) .rankOrg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content .pmdl) .rankN { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+:global(.jf-blueprint .content .pmdl) .rankTot { color: var(--blueprint); font-weight: 700; }
+:global(.jf-blueprint .content .pmdl) .tl { border-top: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content .pmdl) .tlRow {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 0; border-bottom: 1px solid var(--hair-soft);
+  font-size: 12.5px; font-weight: 600;
+}
+:global(.jf-blueprint .content .pmdl) .tlRow > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content .pmdl) .assign { display: flex; flex-direction: column; gap: 6px; }
+:global(.jf-blueprint .content .pmdl) .assignBtn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
+  padding: 9px 12px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, transform 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+:global(.jf-blueprint .content .pmdl) .assignBtn:hover:not(:disabled) { border-color: var(--ink); background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+:global(.jf-blueprint .content .pmdl) .assignBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+:global(.jf-blueprint .content .pmdl) .assignBtn span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content .pmdl) .assignBtn i { font-style: normal; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light); flex-shrink: 0; }
+
+/* effective-width: the coverage row stacks before the phone layer */
+:global(.jf-blueprint.eff-1280 .content) .two { grid-template-columns: minmax(0, 1fr); }
+
+/* ============================================================
+   MOBILE LAYER — stays last
+   ============================================================ */
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .two { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  :global(.jf-blueprint .content) .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.jf-blueprint .content) .kpi:nth-child(2) { border-right: none; }
+  :global(.jf-blueprint .content) .kpi:nth-child(-n + 2) { border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content) .kpiVal { font-size: 26px; }
+  :global(.jf-blueprint .content) .mapHost { height: 300px; }
+  :global(.jf-blueprint .content) .factor { grid-template-columns: 70px minmax(0, 1fr) 36px; }
+  :global(.jf-blueprint .content) .factorNote { display: none; }
+  :global(.jf-blueprint .content) .ledgerCard > :global(.card-head) { padding: 0 16px; }
+  :global(.jf-blueprint .content) .ledgerCard .cols { padding-left: 16px; padding-right: 16px; }
+  :global(.jf-blueprint .content) .legend { padding: 10px 16px; gap: 14px; }
+  :global(.jf-blueprint .content) .legRight { margin-left: 0; }
+  :global(.jf-blueprint .content) .trOn { box-shadow: inset 0 0 0 2px var(--blueprint); }
+  :global(.jf-blueprint .content .pmdl) .fields { grid-template-columns: minmax(0, 1fr); }
+  :global(.jf-blueprint .content .pmdl) .rankRow { grid-template-columns: 22px minmax(0, 1fr) 70px; }
+  :global(.jf-blueprint .content .pmdl) .rankHide { display: none; }
+}

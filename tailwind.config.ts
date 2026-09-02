@@ -34,6 +34,27 @@ const config: Config = {
           emerald: "#3A7D44",
           rose: "#A83232",
         },
+        // Landing-D palette (ported from the standalone marketing app, which
+        // ran Tailwind v4 `@theme`). Namespaced `lp-` on purpose: the donor's
+        // bare `ink` / `paper` / `base` names collide with the blueprint
+        // tokens above, and `text-base` is a font size here.
+        lp: {
+          base: "#15171a",
+          ink: "#112220",
+          navy: "#0f172a",
+          band: "#e6ebf2",
+          lime: "#d1ff19",
+          gold: "#ffdd3c",
+          hotpink: "#fa2c8e",
+          grape: "#7c3aed",
+          toggle: "#30cf43",
+          paper: "#f6f8fa",
+          blurple: "#635bff",
+          // our blueprint blue, available to the landing as an accent
+          blue: "#1854A0",
+          blueDark: "#0E3D7A",
+          sky: "#4A9EFF",
+        },
       },
       borderRadius: {
         xs: "2px",
@@ -48,6 +69,11 @@ const config: Config = {
         card: "3px 3px 0 rgba(10,10,10,0.06)",
         pop: "4px 4px 0 rgba(10,10,10,0.08)",
         glow: "0 0 0 6px rgba(24,84,160,0.08)",
+        // Landing-D soft elevations (the blueprint `card` above is a hard
+        // offset shadow, so the marketing page carries its own).
+        "lp-mock": "0 2px 6px rgb(15 23 42 / 0.04), 0 30px 60px -12px rgb(15 23 42 / 0.16)",
+        "lp-tile": "0 1px 3px rgb(15 23 42 / 0.1), 0 12px 24px -8px rgb(15 23 42 / 0.18)",
+        "lp-card": "0 1px 2px rgb(15 23 42 / 0.05), 0 16px 40px -12px rgb(15 23 42 / 0.25)",
       },
       keyframes: {
         "fade-up": {

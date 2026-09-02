@@ -3,6 +3,9 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { startCascade } from "@/lib/leadCenter/cascade";
+import { routePlatformLeadToOrg } from "@/lib/leadCenter/route";
+import { buildRanking } from "@/lib/leadCenter/matching";
+import { getRoutingMode, setRoutingMode, type RoutingMode } from "@/lib/leadCenter/routingMode";
 
 // Platform-admin Lead Center controls. Manual assignment is the escape hatch
 // for MANUAL_QUEUE leads (and can override a pending offer: cancelling it
@@ -14,80 +17,9 @@ export async function manualAssignPlatformLead(
   organizationId: string,
 ): Promise<{ ok: true; leadId: string }> {
   const admin = await requirePlatformAdmin();
-
-  const org = await db.organization.findUnique({
-    where: { id: organizationId },
-    select: { id: true, name: true },
-  });
-  if (!org) throw new Error("Organization not found");
-
-  const now = new Date();
-  const leadId = await db.$transaction(async (tx) => {
-    // Re-read inside the transaction so we lose cleanly to a concurrent accept.
-    const pl = await tx.platformLead.findUnique({ where: { id: platformLeadId } });
-    if (!pl) throw new Error("Lead not found");
-    if (pl.status === "MATCHED") throw new Error("This lead was already matched.");
-
-    await tx.leadOffer.updateMany({
-      where: { platformLeadId, status: "OFFERED" },
-      data: { status: "CANCELLED" },
-    });
-
-    // ROUTED (not CLAIMED): a manual assignment still lands in the org's
-    // Incoming tab for them to accept into their pipeline.
-    const lead = await tx.lead.create({
-      data: {
-        organizationId,
-        name: pl.name,
-        email: pl.email,
-        phone: pl.phone,
-        address: pl.address,
-        city: pl.city,
-        state: pl.state,
-        zip: pl.zip,
-        projectType: pl.projectType,
-        description: pl.description,
-        photos: pl.photos ?? "[]",
-        source: "LEAD_CENTER",
-        status: "ROUTED",
-        aiCategory: pl.detectedTrade,
-        aiConfidence: pl.aiConfidence,
-      },
-    });
-
-    await tx.platformLead.update({
-      where: { id: platformLeadId },
-      data: {
-        status: "MATCHED",
-        matchedOrgId: organizationId,
-        matchedLeadId: lead.id,
-        matchedAt: now,
-        assignedByAdminId: admin.id,
-      },
-    });
-    return lead.id;
-  });
-
-  try {
-    await db.activityEvent.create({
-      data: {
-        organizationId,
-        leadId,
-        kind: "CREATED",
-        summary: `Lead assigned to you from the lead center`,
-      },
-    });
-  } catch {
-    /* non-fatal */
-  }
-  try {
-    const { notifyLeadCreated, notifyHomeownerMatched } = await import("@/lib/notify");
-    await notifyLeadCreated(leadId);
-    await notifyHomeownerMatched(platformLeadId);
-  } catch (err) {
-    console.warn("[admin-lead-center] assign notify failed:", err);
-  }
-
+  // The write itself lives in lib/leadCenter/route so the re-route that follows
+  // a contractor passing on a lead does exactly the same thing.
+  const { leadId } = await routePlatformLeadToOrg(platformLeadId, organizationId, admin.id);
   revalidatePath("/admin/lead-center");
   return { ok: true, leadId };
 }
@@ -113,4 +45,65 @@ export async function requeuePlatformLead(platformLeadId: string): Promise<{ ok:
 
   revalidatePath("/admin/lead-center");
   return { ok: true };
+}
+
+// ── Routing mode ───────────────────────────────────────────────────────────
+// AUTO (the cascade offers each new request to the best shop) or MANUAL (every
+// request waits in the queue for an admin). See lib/leadCenter/routingMode.
+
+export async function readLeadRoutingMode(): Promise<RoutingMode> {
+  await requirePlatformAdmin();
+  return getRoutingMode();
+}
+
+export async function setLeadRoutingMode(mode: RoutingMode): Promise<{ ok: true }> {
+  await requirePlatformAdmin();
+  if (mode !== "AUTO" && mode !== "MANUAL") throw new Error("Unknown routing mode");
+  await setRoutingMode(mode);
+  revalidatePath("/admin/lead-center");
+  return { ok: true };
+}
+
+/**
+ * Route every waiting lead to its best-scoring shop, in one pass.
+ *
+ * The manual-mode counterpart of the cascade: same ranking, same write as
+ * `manualAssignPlatformLead`, but the admin approves the whole batch instead of
+ * clicking through it. Leads with no eligible shop are left where they are and
+ * counted — routing one of those would mean inventing a match.
+ */
+export async function routeAllWaitingLeads(): Promise<{
+  ok: true;
+  routed: number;
+  skipped: number;
+}> {
+  await requirePlatformAdmin();
+
+  const waiting = await db.platformLead.findMany({
+    where: { status: { in: ["MANUAL_QUEUE", "MATCHING"] } },
+    orderBy: { createdAt: "asc" },
+    take: 100,
+  });
+
+  let routed = 0;
+  let skipped = 0;
+  for (const pl of waiting) {
+    const ranking = await buildRanking(pl).catch(() => []);
+    const top = ranking[0];
+    if (!top) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await manualAssignPlatformLead(pl.id, top.orgId);
+      routed += 1;
+    } catch {
+      // Someone accepted it mid-pass, or the shop vanished — either way it is
+      // not this batch's lead any more.
+      skipped += 1;
+    }
+  }
+
+  revalidatePath("/admin/lead-center");
+  return { ok: true, routed, skipped };
 }

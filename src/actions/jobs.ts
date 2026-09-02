@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireManager, requireJobEventCreator, isWorkerRole } from "@/lib/orgContext";
+import { requireManager, requireJobEventCreator, requireOrg, isWorkerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { JobStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
@@ -190,6 +190,18 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
 
   // Auto-create review request when the job transitions to COMPLETED
   if (raw.status === "COMPLETED" && existing.status !== "COMPLETED") {
+    // The proposal follows its job across the finish line: an ACCEPTED
+    // proposal whose work is done now reads COMPLETED everywhere (proposals
+    // list, calendar link picker) instead of sitting on "Accepted" forever.
+    // Only ACCEPTED is promoted — PAID is further along (money landed) and a
+    // draft/declined proposal was never this job's mandate.
+    if (existing.proposalId) {
+      await db.proposal.updateMany({
+        where: { id: existing.proposalId, organizationId, status: "ACCEPTED" },
+        data: { status: "COMPLETED" },
+      });
+      revalidatePath("/dashboard/proposals");
+    }
     try {
       const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
       await createReviewRequestInternal(id);
@@ -212,6 +224,61 @@ export async function updateJob(id: string, raw: Partial<z.infer<typeof jobInput
   revalidatePath(`/dashboard/jobs/${id}`);
   revalidatePath("/dashboard/calendar");
   revalidatePath("/dashboard/reviews");
+}
+
+// Crew-side job progress (2026-08-21, owner request): a worker moves the work
+// forward — start it, finish it — from the job page they already stand on.
+// Mirrors the token portal's /api/worker/job/[jobId]/status rules on the
+// SESSION instead of the magic link: forward-only (no reschedule, no cancel),
+// and only on a job they hold a live assignment for. Managers may call it too
+// (it is just a narrower updateJob), so the shared UI needs one action.
+export async function setJobProgress(id: string, status: "IN_PROGRESS" | "COMPLETED") {
+  if (status !== "IN_PROGRESS" && status !== "COMPLETED") throw new Error("Invalid status");
+  const { organizationId, user, role } = await requireOrg();
+  const existing = await db.job.findUnique({ where: { id } });
+  if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
+  if (isWorkerRole(role)) {
+    const assigned = await db.jobAssignment.findFirst({
+      where: { jobId: id, worker: { userId: user.id }, status: { not: "DECLINED" } },
+      select: { id: true },
+    });
+    if (!assigned) throw new Error("You can only update jobs assigned to you");
+  }
+  await db.job.update({ where: { id }, data: { status } });
+
+  if (status === "COMPLETED" && existing.status !== "COMPLETED") {
+    // Same finish-line side effects as updateJob: the ACCEPTED proposal reads
+    // COMPLETED, the review request goes out, the office bell hears about it.
+    if (existing.proposalId) {
+      await db.proposal.updateMany({
+        where: { id: existing.proposalId, organizationId, status: "ACCEPTED" },
+        data: { status: "COMPLETED" },
+      });
+      revalidatePath("/dashboard/proposals");
+    }
+    try {
+      const { createReviewRequestInternal } = await import("@/lib/reviewRequestInternal");
+      await createReviewRequestInternal(id);
+    } catch (err) {
+      console.warn("[setJobProgress] review request failed:", err);
+    }
+  }
+  await db.activityEvent.create({
+    data: {
+      organizationId,
+      actorId: user.id,
+      kind: status === "COMPLETED" ? "COMPLETED" : "UPDATED",
+      summary:
+        status === "COMPLETED"
+          ? `Completed "${existing.title}"`
+          : `Started work on "${existing.title}"`,
+    },
+  });
+  revalidatePath("/dashboard/jobs");
+  revalidatePath(`/dashboard/jobs/${id}`);
+  revalidatePath("/dashboard/calendar");
+  if (status === "COMPLETED") revalidatePath("/dashboard/reviews");
+  return { ok: true };
 }
 
 export async function createJobFromProposal(proposalId: string) {
@@ -346,6 +413,19 @@ export async function createJobEvent(raw: unknown) {
       jobId = job.id;
     }
   }
+
+  // IDEMPOTENCY GUARD (2026-08-21). A double-fired submit (double-tap on the
+  // handheld sheet, a retried network call) minted two byte-identical rows
+  // milliseconds apart, and the job detail's Schedule tab then showed one
+  // booking twice. An event with the same title and exact same span (and the
+  // same job link) IS the same booking — return the existing row instead of
+  // minting a twin. Deliberately exact-match: two different crews genuinely
+  // working the same job at the same hour still differ by title.
+  const dup = await db.jobEvent.findFirst({
+    where: { organizationId, jobId, title: data.title, startsAt, endsAt },
+    select: { id: true },
+  });
+  if (dup) return { id: dup.id, jobId };
 
   const ev = await db.jobEvent.create({
     data: {

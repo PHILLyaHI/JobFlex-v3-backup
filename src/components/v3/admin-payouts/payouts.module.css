@@ -1,0 +1,31 @@
+/* ============================================================
+   ADMIN PAYOUTS — BLUEPRINT
+   /admin/payouts
+   Page-specific vocabulary only; shared furniture lives in
+   admin-influencers/admin-ui.module.css. Scoped (0,3,0).
+   ============================================================ */
+
+:global(.jf-blueprint .content) .root { display: flex; flex-direction: column; gap: 22px; }
+
+/* Requests: partner · amount · requested · status · actions */
+:global(.jf-blueprint .content) .reqCols { grid-template-columns: minmax(0, 2fr) 110px 110px minmax(0, 1.2fr) 236px; }
+/* Transfers: partner · when · reference · amount · status */
+:global(.jf-blueprint .content) .trCols { grid-template-columns: minmax(0, 1.4fr) 110px minmax(0, 2fr) 110px 110px; }
+
+:global(.jf-blueprint .content) .reason { margin-top: 5px; }
+:global(.jf-blueprint .content) .amtOk { color: var(--success); }
+:global(.jf-blueprint .content) .count { border-bottom: none; color: var(--muted-light); font-family: var(--font-mono); font-weight: 600; letter-spacing: 0.08em; }
+:global(.jf-blueprint .content) .count:hover { color: var(--muted-light); }
+
+:global(.jf-blueprint .content) .bannerX {
+  margin-left: auto; appearance: none; border: none; background: none; cursor: pointer;
+  color: inherit; display: inline-flex; padding: 4px;
+}
+:global(.jf-blueprint .content) .bannerX :global(.ic) { width: 15px; height: 15px; }
+
+:global(.jf-blueprint .content .pmdl) .rejectWho { font-size: 13.5px; line-height: 1.5; margin-bottom: 14px; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content .pmdl) .rejectWho b { font-weight: 900; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .bannerX { padding: 12px; }
+}

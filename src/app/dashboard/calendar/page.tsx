@@ -17,6 +17,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { CalendarContent } from "@/components/v3/calendar-blueprint/calendar-content";
 import type { CalendarSeed } from "@/components/v3/calendar-blueprint/calendar-data";
 import { buildCalendarSeed } from "./calendar-query";
@@ -38,5 +39,14 @@ export default async function CalendarPage() {
     throw err;
   }
 
-  return <CalendarContent seed={seed} />;
+  return (
+    <>
+      {/* Clears the calendar nav badge ("you were put on the calendar") the
+          moment the sheet is opened. Desktop edition only — at ≤768px the
+          responsive shell swaps this page for the handheld build and stamps
+          from there instead (see responsive-dashboard-shell's HANDHELD_SEEN). */}
+      <MarkNavSeen surface="calendar" />
+      <CalendarContent seed={seed} />
+    </>
+  );
 }

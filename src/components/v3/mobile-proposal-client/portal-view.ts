@@ -73,7 +73,15 @@ export type PortalView = {
   phone: string | null;
   telHref: string | null;
   pdfHref: string;
+  /** The payment providers this contractor actually switched on. The handheld
+   *  checkout sheet used to list all three unconditionally and only admit the
+   *  other two were off after the tap. */
+  providers: PayProvider[];
+  /** Org standard terms, shown as a disclosure. Empty when none are set. */
+  terms: string;
 };
+
+export type PayProvider = "stripe" | "square" | "paypal";
 
 /** The shape buildPortalView needs — structural, so this module never has to
  *  import Prisma's generated types and can stay safe to pull into a client
@@ -117,12 +125,16 @@ export function buildPortalView(
   publicId: string,
   proposal: ProposalRow,
   fmt: Fmt,
+  /** Read from the org by the caller, which already has the row. */
+  extras: { providers: PayProvider[]; terms: string } = { providers: [], terms: "" },
 ): PortalView {
   const { money, longDate } = fmt;
   const org = proposal.organization;
   const phone = org.phone?.trim() || null;
 
   return {
+    providers: extras.providers,
+    terms: extras.terms,
     publicId,
     status: proposal.status,
     total: proposal.total,

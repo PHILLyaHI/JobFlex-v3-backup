@@ -26,6 +26,7 @@ import {
   type JobCrewOption,
   type JobProposalOption,
   type JobStatus,
+  type MyAssignmentStatus,
 } from "@/components/v3/jobs-blueprint/jobs-data";
 
 export const dynamic = "force-dynamic";
@@ -126,6 +127,16 @@ export default async function JobsPage() {
     // The row menu's crew editor writes with these: `assignWorker` takes the
     // worker id, `unassignAssignment` takes the assignment id.
     assignments: j.assignments.map((a) => ({ id: a.id, workerId: a.worker.id })),
+    // The offer state (2026-08-21). Same include, no extra query: the
+    // assignment rows already carry `status`. A worker's row headlines THEIR
+    // answer ("Not accepted yet" / "Declined"); a manager's row gets the
+    // "awaiting crew" hint while anyone assigned hasn't answered.
+    myAssignment: isWorker
+      ? ((j.assignments.find((a) => a.workerId === workerId)?.status as
+          | MyAssignmentStatus
+          | undefined) ?? null)
+      : null,
+    pendingCrew: isWorker ? 0 : j.assignments.filter((a) => a.status === "PENDING").length,
   }));
 
   const clients: JobClientOption[] = clientRows.map((c) => ({ id: c.id, name: c.name }));
@@ -149,6 +160,7 @@ export default async function JobsPage() {
       crew={crew}
       proposals={proposals}
       canManage={canManage}
+      workerView={isWorker}
     />
   );
 }

@@ -23,8 +23,12 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
+import { BlueprintHandheldFrame } from "./blueprint-handheld-frame";
 import { NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
+import { SupportWidget } from "@/components/v3/support-widget/support-widget";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
+import type { SeenKey } from "@/lib/badgeCounts";
 
 /** CLAUDE.md's handheld target: ≤768px. Matches the mobile modules' own scale. */
 const HANDHELD = "(max-width: 768px)";
@@ -214,7 +218,52 @@ const PAGE_OWNED_STATIC = new Set([
   "/dashboard/subscription",
   "/dashboard/subscription-blueprint",
   "/dashboard/client-detail",
+  // Both editions need the org's next ticket number and whether the estimator
+  // key is configured — server facts — so the switch lives with the page
+  // (video-estimator-blueprint/video-estimator-viewport-switch.tsx) rather than
+  // in the props-less map above. Added 2026-08-22 with the wired estimator;
+  // before it, a phone on this URL got the desktop page and no handheld nav.
+  "/dashboard/video-estimator",
+  // Both editions need the caller's TradeNetworkProfile plus the two strings
+  // the talent directory prints for a row (their display name and their org
+  // name) — server facts — so the switch lives with the page
+  // (hire-profile-blueprint/hire-profile-viewport-switch.tsx) rather than in
+  // the props-less map above. Added 2026-08-24 with the listing editor; before
+  // it, this path resolved to a ComingSoon stub in the classic tree.
+  "/dashboard/hire/profile",
 ]);
+
+/** Mapped handheld surfaces that do NOT render <MobileNav />.
+ *
+ *  /dashboard (mobile-v2) is the fleet's oldest handheld page and the only one
+ *  that kept its own inline topbar, drawer and bottom bar when the other 21
+ *  moved onto the shared nav. Anything MobileNav mounts for every surface — the
+ *  estimator picker, the support widget — therefore has to be mounted for this
+ *  one from here. Verified by grep, not assumed: every other entry in
+ *  HANDHELD_SURFACES and every PAGE_OWNED branch imports mobile-shell/mobile-nav.
+ *  The day mobile-v2 adopts MobileNav, this set empties and goes. */
+const NO_MOBILE_NAV = new Set(["/dashboard"]);
+
+/** Seen-stamps for the HANDHELD branch. The desktop edition stamps from each
+ *  server page.tsx (<MarkNavSeen /> in the returned tree), but at ≤768px this
+ *  shell renders the mapped mobile component INSTEAD of the page's children —
+ *  the stamp in the page never mounts, and a badge a phone visit should clear
+ *  would survive the visit. So the handheld branch stamps here, keyed by
+ *  route. Deliberately absent:
+ *  · /dashboard/jobs — the offers popup stamps it (owner request 2026-08-21),
+ *    on both viewports; a route-level stamp would clear it on mere arrival.
+ *  · /dashboard/messages — clears per-thread via markConversationRead. */
+const HANDHELD_SEEN: Record<string, SeenKey> = {
+  "/dashboard/leads": "leads",
+  "/dashboard/proposals": "proposals",
+  "/dashboard/calendar": "calendar",
+  "/dashboard/workers": "workers",
+  "/dashboard/announcements": "announcements",
+  "/dashboard/trade": "trade",
+  "/dashboard/phone": "phone",
+  "/dashboard/referrals": "referrals",
+  "/dashboard/reviews": "reviews",
+};
 
 // Module-scope so the identities are stable across renders — a fresh
 // `subscribe` on every render makes useSyncExternalStore re-subscribe each
@@ -232,10 +281,24 @@ const getSnapshot = () => window.matchMedia(HANDHELD).matches;
 // visitor on every route, which is a worse trade.
 const getServerSnapshot = () => false;
 
+/** Blueprint routes with NO handheld build of their own that should still get
+ *  the handheld chrome rather than the desk shell. The page's own markup is
+ *  kept; only the frame around it changes (BlueprintHandheldFrame).
+ *
+ *  /dashboard/manual-blueprint is here because it is where the mobile "New
+ *  Proposal" button now lands, and on a phone it was arriving inside the desk
+ *  sidebar's chrome with no bottom nav — the one page you could not navigate
+ *  out of with a thumb. There is no mobile-manual-builder BLUEPRINT page yet;
+ *  the /mobile-manual-builder-v2 build is the older design. When a real
+ *  handheld build lands, move the route to HANDHELD_SURFACES above. */
+const BLUEPRINT_HANDHELD = new Set(["/dashboard/manual-blueprint"]);
+
 export function ResponsiveDashboardShell({
   children,
   user,
   identity,
+  badges,
+  locked,
 }: {
   children: React.ReactNode;
   /** Signed-in identity, read in the server layout and handed to the desktop
@@ -246,6 +309,13 @@ export function ResponsiveDashboardShell({
    *  inside a mobile page, and the command palette. It wraps BOTH branches
    *  below, because the drawer is inside the handheld one. */
   identity?: NavIdentity;
+  /** Unread/pending counts by nav href, read server-side in the layout
+   *  (getBadgeCounts). Published through the same provider the identity rides,
+   *  for the same reason: the two nav shells sit at very different depths. */
+  badges?: Record<string, number>;
+  /** Custom-plan blocked hrefs (lib/customPageAccess), same provider, same
+   *  reason: every nav filter at every depth reads one list. */
+  locked?: string[];
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const pathname = usePathname();
@@ -258,11 +328,26 @@ export function ResponsiveDashboardShell({
   // the new build instead. Keyed on the pathname so navigating off a surface
   // whose chunk is missing clears the panel rather than carrying it along.
   if (isHandheld && Handheld) {
+    const seenSurface = HANDHELD_SEEN[pathname ?? ""];
     return (
-      <NavRoleProvider identity={identity}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+        {/* Keyed: this shell persists across navigation, and MarkNavSeen only
+            stamps once per mount — a new key remounts it for the new surface. */}
+        {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
         <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
           <Handheld />
         </ChunkRecoveryBoundary>
+        {/* The support composer. Every other handheld surface gets it from
+            <MobileNav />; /dashboard is the one mapped surface that kept its
+            own topbar and drawer instead of the shared nav, so its copy is
+            mounted from out here. Its LAUNCHER is the Help button in that
+            page's own topbar (mobile-v2/mobile-dashboard.tsx) — nothing floats
+            at this width, which is what keeps the button off the error toast's
+            only dismiss control. Mounted last so the sheet paints over the
+            page, which is `position: fixed; z-index: 20`. */}
+        {NO_MOBILE_NAV.has(pathname ?? "") && (
+          <SupportWidget signedIn={Boolean(identity?.name)} />
+        )}
       </NavRoleProvider>
     );
   }
@@ -284,14 +369,21 @@ export function ResponsiveDashboardShell({
   // Page-owned handheld branches render their own chrome (which reaches for
   // MobileNav), so they need the provider just as much as the mapped ones.
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
-    return <NavRoleProvider identity={identity}>{children}</NavRoleProvider>;
+    return <NavRoleProvider identity={identity} badges={badges} locked={locked}>{children}</NavRoleProvider>;
   }
   if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
-    return <NavRoleProvider identity={identity}>{children}</NavRoleProvider>;
+    return <NavRoleProvider identity={identity} badges={badges} locked={locked}>{children}</NavRoleProvider>;
+  }
+  if (isHandheld && BLUEPRINT_HANDHELD.has(pathname ?? "")) {
+    return (
+      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+        <BlueprintHandheldFrame>{children}</BlueprintHandheldFrame>
+      </NavRoleProvider>
+    );
   }
 
   return (
-    <NavRoleProvider identity={identity}>
+    <NavRoleProvider identity={identity} badges={badges} locked={locked}>
       <BlueprintShell user={user}>{children}</BlueprintShell>
     </NavRoleProvider>
   );

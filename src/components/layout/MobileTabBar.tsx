@@ -7,6 +7,7 @@ import {
   FileText,
   Hammer,
   LayoutDashboard,
+  CircleHelp,
   LogOut,
   MoreHorizontal,
   Plus,
@@ -22,6 +23,7 @@ import {
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/cn";
 import { MobileDrawer } from "@/components/ui/MobileDrawer";
+import { openSupportComposer } from "@/components/v3/support-widget/support-widget";
 import { NavBadge } from "./NavBadge";
 
 type TabKey = "dashboard" | "proposals" | "schedule" | "jobs" | "leads" | "clients" | "smart" | "more";
@@ -127,26 +129,43 @@ function fabFor(active: TabKey, role?: string | null): FabConfig | null {
 export function MobileTabBar({
   role,
   badges,
+  lockedHrefs,
 }: {
   role?: string | null;
   /** Unread / pending counts keyed by nav href. Populated by the layout. */
   badges?: Record<string, number>;
+  /** Custom-plan blocked hrefs (lib/customPageAccess) — tabs and More rows
+   *  under one of these prefixes are not drawn. Empty/undefined = no lock. */
+  lockedHrefs?: string[];
 }) {
   const pathname = usePathname();
   const isWorker = role === "INSTALLER";
   const isSales = role === "SALES";
   const isEstimator = role === "ESTIMATOR";
   const active = getActiveKey(pathname ?? "");
-  const tabs = isWorker ? WORKER_TABS : isSales ? SALES_TABS : isEstimator ? ESTIMATOR_TABS : TABS;
-  const moreNav: MoreNavItem[] = isWorker
-    ? WORKER_MORE_NAV
-    : isSales
-      ? SALES_MORE_NAV
-      : isEstimator
-        ? ESTIMATOR_MORE_NAV
-        : MORE_NAV;
+  const lockedOut = React.useCallback(
+    (href: string) =>
+      Boolean(lockedHrefs?.some((p) => href === p || href.startsWith(p + "/"))),
+    [lockedHrefs],
+  );
+  const tabs = (
+    isWorker ? WORKER_TABS : isSales ? SALES_TABS : isEstimator ? ESTIMATOR_TABS : TABS
+  ).filter((t) => t.href.startsWith("#") || !lockedOut(t.href));
+  const moreNav: MoreNavItem[] = (
+    isWorker
+      ? WORKER_MORE_NAV
+      : isSales
+        ? SALES_MORE_NAV
+        : isEstimator
+          ? ESTIMATOR_MORE_NAV
+          : MORE_NAV
+  ).filter((item) => !lockedOut(item.href));
   const fab = isWorker ? null : fabFor(active, role);
   const [moreOpen, setMoreOpen] = React.useState(false);
+  /** The "More" tab itself — the one control that is still on screen after the
+   *  drawer it opens has closed. The Help row hands it to the composer as the
+   *  element focus returns to. */
+  const moreTabRef = React.useRef<HTMLButtonElement>(null);
 
   // The "More" tab hides several surfaces behind a drawer — surface their
   // combined count on the tab itself so nothing goes unnoticed at a glance.
@@ -217,6 +236,7 @@ export function MobileTabBar({
               return (
                 <li key={tab.key} className="flex-1">
                   <button
+                    ref={moreTabRef}
                     type="button"
                     onClick={() => setMoreOpen(true)}
                     className={cn(itemClass, "w-full")}
@@ -258,6 +278,36 @@ export function MobileTabBar({
               <NavBadge count={badges?.[item.href] ?? 0} className="shrink-0" />
             </Link>
           ))}
+          {/* Help — this group's handheld launcher for the support composer
+              the layout mounts. It is a row in the drawer, not a corner
+              button: below 768 the bottom-right of every page in this group is
+              already the create button standing over the tab bar. */}
+          <button
+            type="button"
+            onClick={() => {
+              // Read BEFORE the close, and handed over explicitly. The drawer
+              // restores focus to its trigger from an effect cleanup, and a
+              // requestAnimationFrame is not guaranteed to run after that
+              // cleanup — so at the moment the composer opens, focus can still
+              // be on this row, which is unmounting. Every fallback the
+              // composer has is unrendered below 768: the floating plate is
+              // display:none under 860 and the classic topbar that carries the
+              // docked button is `hidden md:flex`. Focus went to <body>.
+              // The "More" tab is on screen at this width by definition — it is
+              // what opened the drawer.
+              const opener = moreTabRef.current;
+              setMoreOpen(false);
+              // Still next frame: opening in this tick would put the composer
+              // up while the drawer is still animating out over it.
+              requestAnimationFrame(() => openSupportComposer(opener));
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--r-sm)] text-[13px] text-[color:var(--ink-soft)] hover:bg-black/[0.04] focus-ring text-left"
+          >
+            <span className="text-[color:var(--ink-muted)]">
+              <CircleHelp className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1 truncate">Help</span>
+          </button>
           <div className="pt-3 mt-3 border-t border-[color:var(--ink-line)]">
             <button
               type="button"

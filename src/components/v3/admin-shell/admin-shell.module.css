@@ -1,0 +1,83 @@
+/* ============================================================
+   ADMIN SHELL — the platform console's chrome additions.
+
+   Everything structural (.layout / .sb* / .main / .topbar / .content) is the
+   dashboard donor's, reached through the two `.bp` modules the shell root
+   carries. This file holds ONLY what the admin variant adds on top, under the
+   newer convention: HASHED classes scoped `:global(.jf-blueprint) .cls`, so
+   nothing here is registered in PAGE_STYLES and nothing can leak onto a
+   dashboard page. Tokens only — every colour resolves from the `.bp` root.
+   ============================================================ */
+
+/* The root carries this beside the two .bp hashes; it exists so the handheld
+   overrides below can address the donor's global classes from a selector the
+   dashboard shell never matches. */
+:global(.jf-blueprint).admin {
+  /* no declarations — the hook itself is the point */
+}
+
+/* ── Topbar identity ───────────────────────────────────────────────
+   One line: the cookie-door principal is literally named "Platform admin", so
+   the mono kicker above it printed the same string twice and was removed
+   (admin-topbar.tsx). What is left is a flex box so `.who` is blockified and
+   its ellipsis works, and `min-width: 0` so the box can shrink for it. */
+:global(.jf-blueprint) .ident {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+:global(.jf-blueprint) .who {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sign out is the one control that ends a session, so its reach carries the
+   danger tone — the same rule the dashboard footer's sign-out follows. Rest
+   state stays the ghost plate. */
+:global(.jf-blueprint) .out:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+  box-shadow: 3px 3px 0 var(--danger);
+}
+:global(.jf-blueprint) .out[disabled] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* ── Handheld ────────────────────────────────────────────────────────
+   The donor's own mobile layer (dashboard module, ≤860px) already turns `.sb`
+   into a slide-in drawer behind #navBurger with #sbOverlay — so the 768px
+   handheld target is covered by construction. What it does NOT do is size for
+   thumbs: drawer rows are ~36px and the burger 40px. Lift both to the ≥44px
+   touch rule here. Same breakpoint as the donor so the two layers never
+   disagree about which mode the shell is in. */
+@media (max-width: 860px) {
+  :global(.jf-blueprint).admin :global(.sb-link) {
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  :global(.jf-blueprint).admin :global(.nav-burger) {
+    width: 44px;
+    height: 44px;
+  }
+  :global(.jf-blueprint).admin :global(.topbar) {
+    gap: 12px;
+  }
+  :global(.jf-blueprint) .who {
+    font-size: 13px;
+  }
+  :global(.jf-blueprint) .out {
+    min-height: 44px;
+  }
+  :global(.jf-blueprint).admin :global(.sb-foot-acc) {
+    min-height: 44px;
+  }
+}

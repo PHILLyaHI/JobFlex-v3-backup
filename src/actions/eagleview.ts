@@ -10,9 +10,11 @@ import {
   placeOrder,
   getReportSummary,
   getMeasurementModel,
+  runEagleViewDiagnostics,
   type RoofModel,
   type EvOrderInput,
   type EvProduct,
+  type EvDiagnostics,
 } from "@/lib/eagleview";
 
 // NOTE: EV_SAMPLES (sample report ids) lives in ./roofViz (a client-safe module)
@@ -22,6 +24,19 @@ import {
 export async function evEnabled(): Promise<boolean> {
   await requireEstimatorOrManager();
   return isEagleViewEnabled();
+}
+
+// Connection health for the roof estimator's "Diagnostics" button. Auth-gated to
+// estimators/managers; returns non-secret status (hosts, HTTP codes, errors).
+export async function evDiagnostics(): Promise<
+  { ok: true; diag: EvDiagnostics } | { ok: false; error: string }
+> {
+  await requireEstimatorOrManager();
+  try {
+    return { ok: true, diag: await runEagleViewDiagnostics() };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : "Diagnostics failed" };
+  }
 }
 
 export async function evProducts(): Promise<

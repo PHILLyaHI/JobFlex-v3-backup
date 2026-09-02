@@ -31,6 +31,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { money, longDate } from "@/lib/format";
+import { parsePaymentSettings, parseProposalSettings } from "@/lib/settings";
 import { buildPortalView } from "@/components/v3/mobile-proposal-client/portal-view";
 import { PortalActions } from "./portal-actions";
 import { PortalReveal } from "./portal-reveal";
@@ -72,7 +73,19 @@ export default async function PublicProposalPortal({
       installments: { orderBy: { position: "asc" } },
       client: true,
       organization: {
-        select: { name: true, logoUrl: true, phone: true, address: true },
+        // paymentSettingsJson decides WHICH pay buttons this client is offered:
+        // the portal used to print Stripe, Square and PayPal to everyone and
+        // only admit that two of them were switched off after the click, in a
+        // toast written for the contractor ("add the keys to .env") and shown
+        // to their customer.
+        select: {
+          name: true,
+          logoUrl: true,
+          phone: true,
+          address: true,
+          paymentSettingsJson: true,
+          proposalSettingsJson: true,
+        },
       },
     },
   });
@@ -101,6 +114,10 @@ export default async function PublicProposalPortal({
   }
 
   const org = proposal.organization;
+  // Only the providers the contractor actually switched on in settings/payment.
+  const pay = parsePaymentSettings(org.paymentSettingsJson);
+  const payProviders = (["stripe", "square", "paypal"] as const).filter((k) => pay[k]);
+  const orgTerms = parseProposalSettings(org.proposalSettingsJson).terms?.trim() || "";
   const monogram = (org.name?.trim()?.[0] ?? "J").toUpperCase();
   const clientName = proposal.client?.name?.trim() || "you";
 
@@ -126,7 +143,10 @@ export default async function PublicProposalPortal({
   // return_url, so it does not become a client-side fetch. `view` is the same
   // row, already formatted, in a plain serialisable shape. No data-layer
   // change: same query, same includes, same endpoints.
-  const view = buildPortalView(publicId, proposal, { money, longDate });
+  const view = buildPortalView(publicId, proposal, { money, longDate }, {
+    providers: [...payProviders],
+    terms: orgTerms,
+  });
 
   return (
     <PortalViewport view={view}>
@@ -166,6 +186,7 @@ export default async function PublicProposalPortal({
               publicId={publicId}
               status={proposal.status}
               total={proposal.total}
+              providers={payProviders}
             />
           </div>
 
@@ -250,6 +271,22 @@ export default async function PublicProposalPortal({
                 </div>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {/* TERMS & CONDITIONS — a disclosure, closed by default.
+            Source is the ORG's terms (settings/proposals). The manual builder
+            has a per-proposal terms box, but nothing persists it: the bridge
+            writes `terms: ""` in both directions and the Proposal model has no
+            column for it, so the org default is the only terms text that
+            actually survives a save. Flagged for the owner — storing them per
+            proposal is a schema change. */}
+        {orgTerms ? (
+          <section className="pv-sec rv">
+            <details className="pv-terms">
+              <summary>Terms &amp; conditions</summary>
+              <div className="pv-terms-body">{orgTerms}</div>
+            </details>
           </section>
         ) : null}
 

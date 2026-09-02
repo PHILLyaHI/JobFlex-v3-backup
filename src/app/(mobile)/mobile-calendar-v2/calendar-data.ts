@@ -58,6 +58,15 @@ export type CalEvent = {
   addr?: string;
   scope?: string;
   notes?: string;
+  /** JobAssignment id per worker id, for the crew this event's job already has.
+   *  Written by the server read (calendar-query.ts) and needed to REMOVE
+   *  someone: `unassignWorker` takes the assignment row, not the worker. The
+   *  handheld type simply never declared it, though the data was always there.
+   *  Absent for a worker added in this session and not yet read back. */
+  assignmentIds?: Record<string, string>;
+  /** Per-worker JobAssignment response (PENDING | ACCEPTED | DECLINED |
+   *  COMPLETED), keyed by workerId — the detail sheet's crew chips. */
+  assignmentStatus?: Record<string, string>;
   /** Blocked time created with no crew picked — the block belongs to the owner. */
   selfOnly?: boolean;
   /** Spans whole days: it has a date but no clock span, so it has no duration. */
@@ -66,7 +75,14 @@ export type CalEvent = {
 
 export type CalWorker = { id: string; name: string; role: string };
 export type TrayJob = { id: string; title: string; client: string; city: string; duration: string };
-export type InboxItem = { id: string; title: string; worker: string; when: string };
+export type InboxItem = {
+  id: string;
+  title: string;
+  worker: string;
+  when: string;
+  /** JobAssignment response state; absent reads as PENDING (stale seeds). */
+  status?: "PENDING" | "ACCEPTED" | "DECLINED";
+};
 export type JobStatus = { value: string; label: string };
 
 /**
@@ -111,6 +127,8 @@ export type CalendarBook = {
   workers: CalWorker[];
   tray: TrayJob[];
   inbox: InboxItem[];
+  /** Unseen crew answers since the inbox was last opened (see desktop seed). */
+  inboxUnseen?: number;
   links: LinkOption[];
   createKinds: CalKind[];
   canManage: boolean;
@@ -166,24 +184,22 @@ export type LinkOption = {
 };
 
 /**
- * Which record kinds each event kind may link to.
- *
- * ONE kind each, and not the desktop's wider sets (owner, 2026-08-15). A JOB
- * event is delivery: it hangs off a Job, and the proposal path — which
- * get-or-CREATES a job as a side effect of scheduling — is not something a
- * one-handed phone form should be able to trigger by accident. A VISIT is the
- * sales call that happens BEFORE any of that exists, so it links the LEAD it is
- * about. Blocked time links nothing; it is not about a record.
+ * Which record kinds each event kind may link to — the DESKTOP's sets,
+ * restored 2026-08-22 (owner request: "everything you can schedule linked on
+ * desktop, I should be able to schedule linked on mobile"). This reverses the
+ * 2026-08-15 one-kind-each narrowing; the proposal path's create-a-job side
+ * effect is accepted as the same deliberate act it is on the desktop picker.
+ * Blocked time still links nothing; it is not about a record.
  */
 export const LINK_TABS: Record<string, LinkKind[]> = {
-  job: ["job"],
-  appointment: ["lead"],
+  job: ["job", "proposal"],
+  appointment: ["lead", "client", "proposal"],
 };
 
 /** The field label per event kind — "Linked record" said nothing about which. */
 export const LINK_FIELD_LABEL: Record<string, string> = {
-  job: "Linked job",
-  appointment: "Linked lead",
+  job: "Linked job or proposal",
+  appointment: "Linked lead, client or proposal",
 };
 
 export const LINK_LABEL: Record<LinkKind, string> = {

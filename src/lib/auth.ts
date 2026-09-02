@@ -169,6 +169,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.activeOrgId = dbUser.activeOrgId ?? m?.organizationId ?? null;
           token.role = m?.role ?? null;
           token.orgName = m?.organization?.name ?? null;
+          token.orgCheckedAt = Date.now();
+        }
+      }
+
+      // Keep the org claims honest between logins. The role/org above were
+      // stamped at sign-in and otherwise live for the JWT's 7 days — so a role
+      // change (promotion, demotion, org switch) left middleware's route-gate
+      // enforcing the OLD role until the user signed out. Server guards always
+      // re-read the DB, but the middleware gate bounced every nav click to the
+      // stale role's home page. Re-read the membership on a short TTL so the
+      // token converges within a minute of any role change.
+      if (!user && token.principal !== "INFLUENCER" && token.id) {
+        const checkedAt = typeof token.orgCheckedAt === "number" ? token.orgCheckedAt : 0;
+        if (Date.now() - checkedAt > 60_000) {
+          const dbUser = await db.user.findUnique({
+            where: { id: String(token.id) },
+            include: {
+              memberships: {
+                include: { organization: { select: { id: true, name: true } } },
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          });
+          if (dbUser) {
+            const m =
+              dbUser.memberships.find((x) => x.organizationId === dbUser.activeOrgId) ??
+              dbUser.memberships[0];
+            token.cv = dbUser.credentialVersion ?? 0;
+            token.activeOrgId = dbUser.activeOrgId ?? m?.organizationId ?? null;
+            token.role = m?.role ?? null;
+            token.orgName = m?.organization?.name ?? null;
+          }
+          token.orgCheckedAt = Date.now();
         }
       }
       return token;

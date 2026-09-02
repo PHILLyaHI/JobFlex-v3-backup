@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { readAdminCookie } from "@/lib/adminAuth";
 
 export class UnauthorizedError extends Error {
   constructor(message = "Unauthorized") {
@@ -40,7 +41,15 @@ export async function requireUser() {
 // Platform-admin authority for the (admin) console. Re-reads the DB flag every
 // call — never trusts the 7-day JWT — so revoking access takes effect at once.
 // Returns the live User row so callers can use it as the action's "issuer".
+//
+// TWO DOORS, ONE SHAPE. The username/password admin login (src/actions/
+// adminAuth.ts) sets a signed `jf_admin` cookie and is tried FIRST; a NextAuth
+// session whose user carries isPlatformAdmin is the second path. Both return
+// the same `{ id, email, name, isPlatformAdmin }` row — the cookie principal is
+// a real User row too — so every existing admin action keeps working unchanged.
 export async function requirePlatformAdmin() {
+  const viaCookie = await readAdminCookie();
+  if (viaCookie) return viaCookie;
   const sessionUser = await requireUser();
   const user = await db.user.findUnique({
     where: { id: sessionUser.id },

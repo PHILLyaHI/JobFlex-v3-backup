@@ -16,6 +16,7 @@
 //     dragleave test reads `relatedTarget` against that exact element.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { submitHomeownerRequest, suggestHomeownerQuestions } from "@/actions/homeowner";
 import {
   CATEGORIES,
   CONTACT_FIELDS,
@@ -29,6 +30,9 @@ import {
 type Upload = { name: string; kind: "pdf" | "photo"; progress: number };
 
 const UID = "w0";
+/** How long the thinking pane will wait for the adaptive questions before
+ *  going on with the static set. */
+const AI_WAIT_MS = 6500;
 
 /* Contact-form validation. The donor shipped these four inputs inert — you
    could send an empty form — so the owner asked for everything not marked
@@ -53,9 +57,23 @@ export function HomeownerWizard() {
   const [showCats, setShowCats] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
+  /* Questions written from THIS description (server, OpenAI). Null until the
+     homeowner asks to refine, and null again whenever the answer could not be
+     written — the static set in homeowner-data.ts is the fallback, never a
+     blank step. */
+  const [aiQs, setAiQs] = useState<Question[] | null>(null);
   const [contact, setContact] = useState<string[]>(() => CONTACT_FIELDS.map(() => ""));
   const [thinking, setThinking] = useState(false);
   const [drag, setDrag] = useState(false);
+  /* The Lead Center write. The donor's wizard had no submit target at all —
+     step 4 was a static "done" pane — so this is the one behaviour added to
+     the port (owner, 2026-08-23: "connect the homeowner portal blueprint
+     design with the lead center"). `sending` blocks a double-send; `sendErr`
+     keeps the wizard on the contact step when the write is refused, because a
+     "we've sent it" pane over a failed submission is the one outcome worse
+     than an error. */
+  const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState("");
 
   const winRef = useRef<HTMLDivElement>(null);
   const descRef = useRef<HTMLTextAreaElement | null>(null);
@@ -82,7 +100,7 @@ export function HomeownerWizard() {
     suggested = hit && desc.length > 8 ? hit : null;
   }
 
-  const qs: Question[] = QUESTIONS[category ?? ""] || QUESTIONS["default"];
+  const qs: Question[] = aiQs ?? QUESTIONS[category ?? ""] ?? QUESTIONS["default"];
   /* Donor gate was `> 12` — a whole phrase before the button woke up, which
      read as broken. One character is enough now (owner's call). */
   const canRefine = desc.trim().length > 0;
@@ -97,21 +115,76 @@ export function HomeownerWizard() {
     return f.toLowerCase().includes("email") ? EMAIL_RE.test(v) : true;
   });
 
+  /* ---- send: the donor's dead button, wired ----
+     CONTACT_FIELDS is ["Full name", "Email", "Phone (optional)", "ZIP code"],
+     so the four answers map positionally. The scope answers ride along in the
+     description because `submitHomeownerRequest` takes one free-text body —
+     the same shape the marketing intake posts. Attachments are NOT sent: the
+     donor's uploader never leaves the browser and giving it a real destination
+     is a storage decision, not a wiring one. */
+  const send = useCallback(async () => {
+    if (sending) return;
+    setSendErr("");
+    setSending(true);
+    const [name, email, phone, zip] = contact.map((v) => v.trim());
+    const extra = answers
+      .map((a, i) => (a && a.trim() && qs[i] ? qs[i].q + " " + a.trim() : ""))
+      .filter(Boolean)
+      .join("\n");
+    try {
+      await submitHomeownerRequest({
+        name,
+        email,
+        phone: phone || undefined,
+        zip: zip || undefined,
+        projectType: category ?? undefined,
+        description: extra ? desc.trim() + "\n\n" + extra : desc.trim(),
+      });
+      setStep(4);
+    } catch (err) {
+      setSendErr(
+        err instanceof Error && err.message
+          ? err.message
+          : "Couldn't send that. Check your connection and try again.",
+      );
+    } finally {
+      setSending(false);
+    }
+  }, [sending, contact, answers, category, desc, qs]);
+
   /* ---- head: donor renderHead() ---- */
   let headLabel = step < 4 ? STEP_NAMES[step] : "Done";
   if (step === 1 && category) headLabel += " · " + category;
 
-  /* ---- donor go(n): 850ms thinking pane between steps ---- */
-  const go = useCallback((n: number) => {
+  /* ---- donor go(n): 850ms thinking pane between steps ----
+     `work` is awaited UNDER the same pane: writing the questions from the
+     description is exactly what "Reading your description…" claims to be
+     doing, so the wait is the one the copy already promised. It is capped —
+     a slow model must not strand a homeowner on a spinner. */
+  const go = useCallback((n: number, work?: Promise<unknown>) => {
     setThinking(true);
-    window.setTimeout(
-      () => {
-        setThinking(false);
-        setStep(n);
-      },
-      reducedRef.current ? 0 : 850,
-    );
+    const beat = new Promise<void>((r) => window.setTimeout(r, reducedRef.current ? 0 : 850));
+    const capped = work
+      ? Promise.race([work, new Promise((r) => window.setTimeout(r, AI_WAIT_MS))])
+      : null;
+    void Promise.all([beat, capped]).then(() => {
+      setThinking(false);
+      setStep(n);
+    });
   }, []);
+
+  /* Ask the server for questions about THIS project, then step forward. A
+     failure, a slow answer or no API key all land on the static set. */
+  const refine = useCallback(() => {
+    setAiQs(null);
+    setAnswers([]);
+    const work = suggestHomeownerQuestions({ description: desc, category })
+      .then((res) => {
+        if (res.questions && res.questions.length) setAiQs(res.questions);
+      })
+      .catch(() => {});
+    go(1, work);
+  }, [desc, category, go]);
 
   /* ---- donor addFiles(): cap 6, 22-char name ellipsis ---- */
   const addFiles = useCallback((list: FileList) => {
@@ -231,15 +304,19 @@ export function HomeownerWizard() {
 
   const paneDescribe = (
     <div className="pane">
-      <textarea ref={attachDesc} className="desc" rows={3} aria-label="Describe your project"
-        value={desc} onChange={(e) => setDesc(e.target.value)} />
+      {/* One focus ring around the field AND the category guess — the guess is
+          part of the input, not a control parked under it. */}
+      <div className="desc-wrap">
+        <textarea ref={attachDesc} className="desc" rows={3} aria-label="Describe your project"
+          value={desc} onChange={(e) => setDesc(e.target.value)} />
 
-      {suggested && !category ? (
-        <button className="guess" type="button"
-          onClick={() => setCategory(suggested)}>
-          <i />Looks like: {suggested} — tap to confirm
-        </button>
-      ) : null}
+        {suggested && !category ? (
+          <button className="guess" type="button"
+            onClick={() => setCategory(suggested)}>
+            Looks like: {suggested} — tap to confirm
+          </button>
+        ) : null}
+      </div>
 
       {uploads.length ? (
         <div className="ups">
@@ -284,10 +361,9 @@ export function HomeownerWizard() {
         <button className="go go-refine" type="button" disabled={!canRefine}
           onClick={() => {
             if (!canRefine) return;
-            setAnswers(qs.map(() => ""));
-            go(1);
+            refine();
           }}>
-          <svg className="ic"><use href="#i-bulb" /></svg>Refine instructions
+          Refine instructions<svg className="ic"><use href="#i-arrow-r" /></svg>
         </button>
       </div>
     </div>
@@ -384,14 +460,22 @@ export function HomeownerWizard() {
           );
         })}
       </div>
+      {/* A refused send keeps the homeowner on this step with their answers
+          intact, and says why. Without it the only signal would be a button
+          that stopped saying "Sending…". */}
+      {sendErr ? (
+        <div className="send-err" role="alert">
+          {sendErr}
+        </div>
+      ) : null}
       <div className="pane-foot">
         <button className="back" type="button" data-to="2" onClick={() => setStep(2)}>‹ Back</button>
         {/* Gated with the donor's own `.go:disabled` styling — the same
             affordance "Refine instructions" already uses on step 0, so the
             rule stays legible without adding a new error state. */}
-        <button className="go go-send" type="button" disabled={!canSend}
-          onClick={() => { if (canSend) setStep(4); }}>
-          Send to contractors
+        <button className="go go-send" type="button" disabled={!canSend || sending}
+          onClick={() => { if (canSend && !sending) void send(); }}>
+          {sending ? "Sending…" : "Send to contractors"}
         </button>
       </div>
     </div>

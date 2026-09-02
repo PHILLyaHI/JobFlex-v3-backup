@@ -57,6 +57,7 @@ export default async function CompanyPage() {
         primaryColor: org.primaryColor ?? "",
         logoUrl: org.logoUrl,
         tradeTypes: parseTradeTypes(org.tradeTypesJson),
+        otherTrade: org.otherTrade ?? "",
         leadOffersEnabled: org.leadOffersEnabled,
         publicProfileEnabled: org.publicProfileEnabled,
         landingHeroTitle: org.landingHeroTitle ?? "",

@@ -225,7 +225,7 @@ export function MobileHomeowner() {
         <div className="hero-in">
           <div className="hero-top">
             <div className="pill anim a1">
-              <i></i>Free — no account required
+              Free — no account required
             </div>
             <h1 className="h1 anim a2">
               Describe your project.

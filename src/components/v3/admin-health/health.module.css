@@ -1,0 +1,81 @@
+/* ============================================================
+   ADMIN HEALTH — /admin/health
+
+   Almost everything this page needs already exists: the donor's
+   .page-head / .card / .card-head / .card-rule / .chip / .empty come
+   from the shell's dashboard module, and the row, mix-strip, dashed
+   note and env-key vocabulary come from
+   admin-overview/admin-shared.module.css (imported, not re-derived —
+   decisions.md: "never create parallel style sets").
+
+   What is left here is the one thing this page invents: a COLUMN
+   HEADER on the right of a card head, which states the class of
+   evidence every row below it carries ("answered this request" vs
+   "key present, not contacted") once, instead of per row.
+
+   Hashed classes scoped `:global(.jf-blueprint .content) .cls` ⇒
+   (0,3,0), which beats the dashboard module's (0,2,0) resets.
+   Tokens only.
+   ============================================================ */
+
+/* Card head that can carry a column header: it wraps instead of
+   squeezing the title when the two do not fit on one line. */
+:global(.jf-blueprint .content) .head {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+/* The column header itself — a drawing annotation, right over the
+   state column it describes. */
+:global(.jf-blueprint .content) .colHead {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: right;
+}
+
+/* Signal names are short fixed strings, so they WRAP instead of
+   truncating: on a handheld a clipped name has no hover to recover it,
+   and the shared row's ellipsis is meant for user-typed text.
+   (0,4,0) so it beats the shared row title's (0,3,0) whatever order the
+   two modules land in. */
+:global(.jf-blueprint .content) .sigRow .sigName {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+/* A failed probe's reason, under the signal's name. Shown ONLY on
+   failure — a state with no reason is not actionable. */
+:global(.jf-blueprint .content) .rowErr {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Counted failures read in the danger tone, like any other status. */
+:global(.jf-blueprint .content) div.bad {
+  color: var(--danger);
+}
+
+/* Dashed note under the mix strip (last webhook failure). */
+:global(.jf-blueprint .content) .below {
+  margin-top: 16px;
+}
+
+/* ── Mobile layer — LAST in the cascade ─────────────────────── */
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .colHead {
+    margin-left: 0;
+    width: 100%;
+    text-align: left;
+  }
+}

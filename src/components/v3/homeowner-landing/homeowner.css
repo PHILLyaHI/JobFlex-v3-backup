@@ -197,8 +197,6 @@ body:has(.jf-homeowner-landing)::before { content: none; }
   border: var(--border); border-radius: var(--radius); background: var(--success-soft);
   box-shadow: 3px 3px 0 var(--shadow);
   font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; }
-.jf-homeowner-landing .pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--success);
-  animation: ho_blink 1.9s infinite; }
 .jf-homeowner-landing .h1 { margin-top: 22px; font-size: clamp(31px, 5.6vw, 78px); font-weight: 900;
   letter-spacing: -0.05em; line-height: 0.98; text-transform: uppercase; text-wrap: balance; }
 .jf-homeowner-landing .h1 .inv { display: inline-block; padding: 0 13px 3px; border-radius: var(--radius);
@@ -249,12 +247,11 @@ body:has(.jf-homeowner-landing)::before { content: none; }
   background: transparent; outline: none; padding: 18px 20px 6px;
   font-size: 16px; line-height: 1.6; color: var(--ink); }
 .jf-homeowner-landing .desc::placeholder { color: var(--muted); }
-.jf-homeowner-landing .guess { display: inline-flex; align-items: center; gap: 9px; margin: 0 20px 4px;
+.jf-homeowner-landing .guess { display: inline-flex; align-items: center; gap: 9px; margin: 10px 20px 6px;
   padding: 6px 12px; border: 1.5px solid var(--blueprint); border-radius: var(--radius);
   background: rgba(24,84,160,.06); color: var(--blueprint);
   font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
   animation: ho_slidein .3s var(--ease-out); }
-.jf-homeowner-landing .guess i { width: 6px; height: 6px; background: var(--success); }
 .jf-homeowner-landing .ups { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 20px 2px; }
 .jf-homeowner-landing .up { position: relative; display: inline-flex; align-items: center; gap: 7px; overflow: hidden;
   padding: 6px 10px; border: 1.5px solid var(--hair); border-radius: var(--radius);
@@ -278,6 +275,12 @@ body:has(.jf-homeowner-landing)::before { content: none; }
 .jf-homeowner-landing .tool:focus-visible, .jf-homeowner-landing .go:focus-visible, .jf-homeowner-landing .chip:focus-visible, .jf-homeowner-landing .cat:focus-visible,
 .jf-homeowner-landing .q-in:focus-visible, .jf-homeowner-landing .desc:focus-visible, .jf-homeowner-landing .back:focus-visible, .jf-homeowner-landing .restart:focus-visible
   { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+/* The ring is drawn by the WRAPPER, inset, so it encloses the field and the
+   category chip that appears under it — one live input, one box. The textarea
+   keeps no ring of its own or there would be two. */
+.jf-homeowner-landing .desc-wrap { display: block; padding-bottom: 2px; }
+.jf-homeowner-landing .desc-wrap:focus-within { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+.jf-homeowner-landing .desc:focus-visible { outline: none; }
 .jf-homeowner-landing .cat-wrap { position: relative; }
 .jf-homeowner-landing .cats { position: absolute; left: 0; bottom: 48px; z-index: 40; display: none;
   width: 274px; padding: 12px; border: var(--border); border-radius: var(--radius);
@@ -737,3 +740,10 @@ body:has(.jf-homeowner-landing)::before { content: none; }
   .jf-homeowner-landing .rv { opacity: 1; transform: none; }
   .jf-homeowner-landing .anim { opacity: 1; animation: none; }
 }
+
+/* Send failure — the page's own status treatment (danger frame, soft fill),
+   shown in place so the contact answers stay on screen. */
+.jf-homeowner-landing .send-err { margin: 14px 20px 0; padding: 10px 12px;
+  border: 1.5px solid var(--danger, #a83232); border-left-width: 5px; border-radius: var(--radius);
+  background: rgba(168,50,50,.08); color: var(--danger, #a83232);
+  font-size: 12.5px; font-weight: 600; line-height: 1.45; }

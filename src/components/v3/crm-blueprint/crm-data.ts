@@ -53,18 +53,18 @@ export type QueueItem = {
   days: number;
 };
 
-export const STATUS_ORDER = ['PAID', 'ACCEPTED', 'VIEWED', 'SENT', 'DRAFT', 'DECLINED', 'EXPIRED', 'ARCHIVED'];
+export const STATUS_ORDER = ['PAID', 'COMPLETED', 'ACCEPTED', 'VIEWED', 'SENT', 'DRAFT', 'DECLINED', 'EXPIRED', 'ARCHIVED'];
 
 export const STATUS_CLS: Record<string, string> = {
-  PAID: 'pstatus--paid', ACCEPTED: 'pstatus--accepted', VIEWED: 'pstatus--viewed',
-  SENT: 'pstatus--sent', DRAFT: '', DECLINED: 'pstatus--declined',
-  EXPIRED: 'pstatus--expired', ARCHIVED: ''
+  PAID: 'pstatus--paid', COMPLETED: 'pstatus--paid', ACCEPTED: 'pstatus--accepted',
+  VIEWED: 'pstatus--viewed', SENT: 'pstatus--sent', DRAFT: '',
+  DECLINED: 'pstatus--declined', EXPIRED: 'pstatus--expired', ARCHIVED: ''
 };
 
 export const STATUS_DOT: Record<string, string> = {
-  PAID: 'var(--success-dark)', ACCEPTED: 'var(--success)', VIEWED: 'var(--blueprint)',
-  SENT: 'var(--sky)', DRAFT: 'var(--muted-faint)', DECLINED: 'var(--danger)',
-  EXPIRED: 'var(--warning)', ARCHIVED: 'var(--muted-faint)'
+  PAID: 'var(--success-dark)', COMPLETED: 'var(--success-dark)', ACCEPTED: 'var(--success)',
+  VIEWED: 'var(--blueprint)', SENT: 'var(--sky)', DRAFT: 'var(--muted-faint)',
+  DECLINED: 'var(--danger)', EXPIRED: 'var(--warning)', ARCHIVED: 'var(--muted-faint)'
 };
 
 // Workflows: FollowUpRule — name, triggerStatus, delayMinutes, enabled, template

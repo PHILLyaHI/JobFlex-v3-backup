@@ -25,6 +25,7 @@ export type CalEvent = {
    *  (unassignWorker takes that, not the worker), so the mapping ships with the
    *  event instead of being re-queried on save. */
   assignmentIds?: Record<string, string>;
+  assignmentStatus?: Record<string, string>;
   kind: CalKind;
   title: string;
   start: Date;
@@ -54,8 +55,20 @@ export type CalEvent = {
 };
 
 export type CalWorker = { id: string; name: string; role: string };
+/** Per-worker JobAssignment response for a job event's crew, keyed by
+ *  workerId — PENDING | ACCEPTED | DECLINED | COMPLETED. Absent on fixture
+ *  rows and non-job events. */
+export type CalAssignmentStatus = Record<string, string>;
 export type TrayJob = { id: string; title: string; client: string; city: string; duration: string };
-export type InboxItem = { id: string; title: string; worker: string; when: string };
+export type InboxItem = {
+  id: string;
+  title: string;
+  worker: string;
+  when: string;
+  /** JobAssignment response state. Optional so the fixture rows (all pending)
+   *  and any stale seed keep rendering; absent reads as "PENDING". */
+  status?: "PENDING" | "ACCEPTED" | "DECLINED";
+};
 export type JobStatus = { value: string; label: string };
 
 /** Wednesday, 22 July 2026 — the donor's frozen "today". */
@@ -160,6 +173,10 @@ export type CalendarSeed = {
   /** Pending JobAssignments. `id` is the assignment id `markAssignmentAccepted`
    *  takes. */
   inbox: InboxItem[];
+  /** Crew answers (accept / decline) the office has not looked at since it
+   *  last opened the inbox sheet — the bell's "things to see" count on top of
+   *  the pending workload. Optional: fixtures and stale seeds read as 0. */
+  inboxUnseen?: number;
   links: LinkOption[];
   /**
    * Which kinds this role may actually create, in tab order. The three create

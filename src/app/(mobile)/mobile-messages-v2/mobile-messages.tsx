@@ -43,8 +43,18 @@
 //  · The new-conversation modal becomes a form sheet with its submit pair in a
 //    beige foot outside the scrolling body.
 //
-// Content is the donor demo fixture by design: the data layer is out of scope
-// until the layout is signed off.
+// Content is the ORG'S REAL INBOX (2026-08-21). The component is mounted
+// props-less — by ResponsiveDashboardShell on /dashboard/messages and by the
+// standalone /mobile-messages-v2 route — and asks `getMessagesSeed()` for the
+// same book the desktop page computes server-side (same visibility scoping,
+// per-viewer names, clearedAt filter, readAt receipts, unread counts). Every
+// write goes through the same server actions the desktop sheet calls
+// (postMessage / markConversationRead / clearConversation /
+// createConversation), optimistically where the desktop is optimistic, with
+// the same rollback contract. A 5s pollMessages() loop keeps the rail and the
+// open thread live — same merge rules as messages-behavior.ts. The old demo
+// fixture in ./messages-data survives only as the pure helpers and types this
+// file still shares with it; no fixture rows ever render.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import styles from "./mobile-messages.module.css";
@@ -52,14 +62,22 @@ import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import {
+  clearConversation,
+  createConversation,
+  getMessagesSeed,
+  markConversationRead,
+  pollMessages,
+  postMessage,
+} from "@/actions/messages";
+import type {
+  Conv as ServerConv,
+  Member,
+} from "@/components/v3/messages-blueprint/messages-data";
+import {
   ALL,
-  CONV_SEQ_START,
   FILTERS,
-  MSG_SEQ_START,
   PAGE_SIZE,
-  TEAM,
   clockOf,
-  cloneSeed,
   filterCount,
   initials,
   matchesFilter,
@@ -71,6 +89,89 @@ import {
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- live data shapes -----------------------------------------------
+   The server hands back the blueprint's Conv/Msg (epoch-ms `ts` numbers); this
+   surface renders the fixture's display strings (`day` / `at` / `when`). A
+   LiveMsg / LiveConv is the fixture shape PLUS the server numbers, so every
+   existing helper (preview, matchesFilter, the thread grouping) keeps working
+   untouched while the receipts and the poll watermark read real timestamps. */
+type LiveMsg = Msg & { ts: number };
+type LiveConv = Omit<Conv, "msgs"> & {
+  /** Last activity, epoch ms — the rail's real sort key. */
+  ts: number;
+  /** Server-computed read receipt for the viewer's own messages, or null. */
+  readAt: number | null;
+  msgs: LiveMsg[];
+};
+
+/** The rail's relative timestamp — "now", "12m", "1h", "2d", "3w". Same
+ *  formula as messages-behavior.ts. */
+function whenLabel(ts: number): string {
+  const d = Date.now() - ts;
+  if (d < 60000) return "now";
+  const m = Math.floor(d / 60000);
+  if (m < 60) return m + "m";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h";
+  const days = Math.floor(h / 24);
+  if (days < 7) return days + "d";
+  return Math.floor(days / 7) + "w";
+}
+
+/** The thread's day divider — "Today", "Yesterday", then "Jul 20". */
+function dayLabel(ts: number): string {
+  const d = new Date(ts);
+  const today = new Date();
+  const midnight = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((midnight(today) - midnight(d)) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function toLiveMsg(m: ServerConv["msgs"][number]): LiveMsg {
+  return {
+    id: m.id,
+    who: m.who,
+    me: m.me,
+    ts: m.ts,
+    day: dayLabel(m.ts),
+    at: clockOf(new Date(m.ts)),
+    body: m.body,
+  };
+}
+
+function toLiveConv(c: ServerConv): LiveConv {
+  return {
+    id: c.id,
+    kind: c.kind,
+    title: c.title,
+    job: c.job,
+    unread: c.unread,
+    ts: c.ts,
+    readAt: c.readAt,
+    when: whenLabel(c.ts),
+    msgs: c.msgs.map(toLiveMsg),
+  };
+}
+
+/** Newest activity first — the same order the seed arrives in, re-applied
+ *  after every send and every poll merge so a thread that just spoke rises. */
+function sortByTs(rows: LiveConv[]): LiveConv[] {
+  return rows.slice().sort((a, b) => b.ts - a.ts);
+}
+
+/** Server actions reject with an Error whose message is written for the user.
+ *  Surface that text; fall back to a generic line for anything unrecognisable.
+ *  Same helper as messages-behavior.ts. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
 
 function Icon({ id, className }: { id: string; className?: string }) {
   return (
@@ -129,7 +230,7 @@ type MenuRow = {
 /** One rendered line of a thread: a day rule, or a bubble. */
 type ThreadLine =
   | { kind: "day"; key: string; label: string }
-  | { kind: "msg"; key: string; m: Msg; showWho: boolean; last: boolean };
+  | { kind: "msg"; key: string; m: LiveMsg; showWho: boolean; last: boolean };
 
 export function MobileMessages() {
   const scrollRef = useRef<HTMLElement>(null);
@@ -139,7 +240,15 @@ export function MobileMessages() {
   const filterRef = useRef<HTMLDivElement>(null);
   const thSrchRef = useRef<HTMLInputElement>(null);
 
-  const [data, setData] = useState<Conv[]>(() => cloneSeed());
+  /* The org's real threads. Empty until getMessagesSeed() lands (booted flips
+     true), then every write patches this copy after — or optimistically
+     before — the matching server action, exactly like the desktop sheet's
+     convData. */
+  const [data, setData] = useState<LiveConv[]>([]);
+  const [booted, setBooted] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [team, setTeam] = useState<Member[]>([]);
+  const [meName, setMeName] = useState("You");
   /* Threads read during this mount that were unread when they were opened.
      They keep their place in the unread group even though their badge is gone —
      see openThread. Ids are only ever added, and only from an event handler. */
@@ -165,10 +274,131 @@ export function MobileMessages() {
   const [groupTitle, setGroupTitle] = useState("");
   const [memberErr, setMemberErr] = useState(false);
 
-  /* Sequences kept out of state: they only ever advance, and nothing renders
-     from them, so a re-render must not be able to rewind an id. */
-  const convSeq = useRef(CONV_SEQ_START);
-  const msgSeq = useRef(MSG_SEQ_START);
+  /* Optimistic-send sequence, kept out of state: it only ever advances, and
+     nothing renders from it, so a re-render must not be able to rewind an id. */
+  const tmpSeq = useRef(0);
+  /* A create is on the wire — the Start key must not double-submit. */
+  const [newBusy, setNewBusy] = useState(false);
+  const [newErr, setNewErr] = useState<string | null>(null);
+
+  /* Live mirrors for the poll tick, which runs from an interval and would
+     otherwise close over stale state. Refreshed after every commit — an
+     effect, not a render-body write (react-hooks/refs). */
+  const dataRef = useRef<LiveConv[]>(data);
+  const openIdRef = useRef<string | null>(openId);
+  useEffect(() => {
+    dataRef.current = data;
+    openIdRef.current = openId;
+  });
+  /* Watermark of SERVER timestamps only — an optimistic bubble's client clock
+     never leaks in, so a fast local clock can't swallow real rows. */
+  const pollTs = useRef(0);
+
+  /* ---------- seed: the org's real inbox --------------------------------
+     Props-less fetch, the pattern mobile-calendar set: this component is
+     mounted without props on both routes, so it asks the read-only action for
+     the same book the desktop page computes. */
+  const loadSeed = useCallback(() => {
+    let alive = true;
+    getMessagesSeed()
+      .then((seed) => {
+        if (!alive) return;
+        pollTs.current = seed.conversations.reduce(
+          (a, c) => c.msgs.reduce((b, m) => Math.max(b, m.ts), a),
+          pollTs.current,
+        );
+        setData(sortByTs(seed.conversations.map(toLiveConv)));
+        setTeam(seed.team);
+        setMeName(seed.meName);
+        setLoadErr(null);
+        setBooted(true);
+      })
+      .catch((err) => {
+        if (!alive) return;
+        // Never fake people: the rail stays empty and says why.
+        setLoadErr(actionError(err));
+        setBooted(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useEffect(() => loadSeed(), [loadSeed]);
+
+  /* ---------- live poll: new messages + read receipts -------------------
+     Every 5s (hidden tabs skip, refocus ticks immediately, unmount clears),
+     one pollMessages() round trip — the same merge rules as the desktop's
+     messages-behavior.ts: dedupe by id, skip own in-flight optimistic
+     duplicates, bump unread only off the active thread, stamp the active one
+     read, add rail rows for threads this client has never seen. */
+  useEffect(() => {
+    if (!booted) return;
+    let inFlight = false;
+    const tick = async () => {
+      if (inFlight || document.hidden) return;
+      inFlight = true;
+      try {
+        const res = await pollMessages(pollTs.current);
+        const activeId = openIdRef.current;
+        const next = dataRef.current.slice();
+        const at = new Map(next.map((c, i) => [c.id, i] as const));
+        let changed = false;
+        let readActive = false;
+        for (const r of res.receipts) {
+          const i = at.get(r.id);
+          if (i === undefined || next[i].readAt === r.readAt) continue;
+          next[i] = { ...next[i], readAt: r.readAt };
+          changed = true;
+        }
+        for (const u of res.updates) {
+          for (const m of u.msgs) pollTs.current = Math.max(pollTs.current, m.ts);
+          let i = at.get(u.id);
+          if (i === undefined) {
+            // A thread someone else just started with us.
+            next.push({
+              id: u.id, kind: u.kind, title: u.title, job: u.job,
+              unread: 0, when: "now", ts: 0, readAt: null, msgs: [],
+            });
+            i = next.length - 1;
+            at.set(u.id, i);
+            changed = true;
+          }
+          let c = next[i];
+          for (const m of u.msgs) {
+            if (c.msgs.some((x) => x.id === m.id)) continue;
+            // Our own send still on the wire: the optimistic tmp- bubble IS
+            // this row; postMessage's return will claim the real id.
+            if (m.me && c.msgs.some((x) => x.id.startsWith("tmp-") && x.body === m.body)) {
+              continue;
+            }
+            c = { ...c, msgs: [...c.msgs, toLiveMsg(m)] };
+            if (!m.me && c.id !== activeId) c = { ...c, unread: c.unread + 1 };
+            if (m.ts > c.ts) c = { ...c, ts: m.ts, when: whenLabel(m.ts) };
+            if (c.id === activeId) readActive = true;
+            changed = true;
+          }
+          next[i] = c;
+        }
+        if (changed) setData(sortByTs(next));
+        if (readActive && activeId) {
+          // Reading is happening right now — stamp it so the sender's
+          // Delivered flips to Read and the nav badge stays honest.
+          void markConversationRead(activeId).catch(() => {});
+        }
+      } catch {
+        /* next tick retries */
+      } finally {
+        inFlight = false;
+      }
+    };
+    const iv = window.setInterval(() => void tick(), 5000);
+    const onFocus = () => void tick();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(iv);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [booted]);
 
   /* ---------- viewport height ------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
@@ -558,13 +788,18 @@ export function MobileMessages() {
     // the thread you just tapped sorts away underneath your finger while the
     // sheet is still animating in, and again when you close. Reading a thread
     // should retire the badge, not move the row.
+    const wasUnread = data.some((c) => c.id === id && c.unread > 0);
     setHeldTop((prev) => {
-      if (!data.some((c) => c.id === id && c.unread > 0) || prev.has(id)) return prev;
+      if (!wasUnread || prev.has(id)) return prev;
       const next = new Set(prev);
       next.add(id);
       return next;
     });
     setData((prev) => prev.map((c) => (c.id === id ? { ...c, unread: 0 } : c)));
+    // Stamps lastReadAt for this viewer — the same call that clears the nav
+    // unread badge. Fire-and-forget: the badge is cosmetic and a failed stamp
+    // must not block opening the thread. Same gate as the desktop rail click.
+    if (wasUnread) void markConversationRead(id).catch(() => {});
     setDraft("");
     setThQuery("");
     // Always arrive at 60%, even if the last thread was left full — the detent
@@ -587,17 +822,30 @@ export function MobileMessages() {
     const text = draft.trim();
     const c = openConv;
     if (!text || !c) return;
-    msgSeq.current += 1;
-    const rec: Msg = {
-      id: `m${msgSeq.current}`,
-      who: "Ivan",
+    // Optimistic: the bubble lands the instant Enter is pressed and reads
+    // "Sending…" until postMessage resolves with the database row's id + stamp.
+    // If it rejects, the bubble is taken back out and the text is returned to
+    // the composer — never a silent drop. Same contract as the desktop sheet.
+    tmpSeq.current += 1;
+    const tmpId = `tmp-${tmpSeq.current}`;
+    const now = Date.now();
+    const rec: LiveMsg = {
+      id: tmpId,
+      who: meName,
       me: true,
-      day: "Today",
-      at: clockOf(new Date()),
+      ts: now,
+      day: dayLabel(now),
+      at: clockOf(new Date(now)),
       body: text,
     };
+    const prevTs = c.ts;
+    const prevWhen = c.when;
     setData((prev) =>
-      prev.map((x) => (x.id === c.id ? { ...x, when: "now", msgs: [...x.msgs, rec] } : x)),
+      sortByTs(
+        prev.map((x) =>
+          x.id === c.id ? { ...x, ts: now, when: "now", msgs: [...x.msgs, rec] } : x,
+        ),
+      ),
     );
     setDraft("");
     // Sending ends the search. Otherwise the reply you just wrote lands outside
@@ -605,6 +853,44 @@ export function MobileMessages() {
     setThQuery("");
     const box = boxRef.current;
     if (box) box.style.height = "";
+
+    postMessage(c.id, text)
+      .then((res) => {
+        // Swap the optimistic row for the database row; the poll watermark
+        // takes the server stamp so this send never echoes back as a dupe.
+        if (res) pollTs.current = Math.max(pollTs.current, res.ts);
+        setData((prev) =>
+          prev.map((x) =>
+            x.id !== c.id
+              ? x
+              : {
+                  ...x,
+                  msgs: x.msgs.map((m) =>
+                    m.id !== tmpId
+                      ? m
+                      : res
+                        ? { ...m, id: res.id, ts: res.ts, day: dayLabel(res.ts), at: clockOf(new Date(res.ts)) }
+                        : { ...m, id: `sent-${tmpId}` },
+                  ),
+                },
+          ),
+        );
+      })
+      .catch(() => {
+        // Rollback: the bubble comes out, the row's clock rewinds, and the
+        // text goes back into the composer for another try.
+        setData((prev) =>
+          sortByTs(
+            prev.map((x) =>
+              x.id !== c.id
+                ? x
+                : { ...x, ts: prevTs, when: prevWhen, msgs: x.msgs.filter((m) => m.id !== tmpId) },
+            ),
+          ),
+        );
+        setDraft(text);
+        boxRef.current?.focus();
+      });
   };
 
   /* ---------- actions sheet -------------------------------------------- */
@@ -633,7 +919,7 @@ export function MobileMessages() {
       {
         act: "del", icon: "i-trash", tone: styles.cmiDanger,
         title: c.kind === "GROUP" ? "Leave group" : "Delete conversation",
-        sub: "Removes the thread permanently", danger: true,
+        sub: "Clears it from your list — others keep their copy", danger: true,
       },
     ];
   }, [sheetConv]);
@@ -645,14 +931,29 @@ export function MobileMessages() {
     if (act === "open") {
       openThread(c.id);
     } else if (act === "read") {
-      setData((prev) => prev.map((x) => (x.id === c.id ? { ...x, unread: x.unread > 0 ? 0 : 1 } : x)));
+      const makingRead = c.unread > 0;
+      setData((prev) => prev.map((x) => (x.id === c.id ? { ...x, unread: makingRead ? 0 : 1 } : x)));
+      // Reading really stamps lastReadAt (nav badge + sender's receipt).
+      // "Mark as unread" stays a local flag — the server has no unread stamp,
+      // and the next seed read rebuilds the true count.
+      if (makingRead) void markConversationRead(c.id).catch(() => {});
       setLandedId(c.id);
-    } else if (act === "clear") {
-      setData((prev) => prev.map((x) => (x.id === c.id ? { ...x, when: "now", msgs: [] } : x)));
+    } else if (act === "clear" || act === "del") {
+      // Both rows are the per-user clear: the server stamps the caller's
+      // clearedAt watermark (clearConversation) and every read path filters
+      // behind it — other participants keep their transcript, and the thread
+      // row stays on the rail, matching the desktop UX. Optimistic, with the
+      // desktop's rollback if the action rejects.
+      const prevMsgs = c.msgs;
+      const prevWhen = c.when;
+      setData((prev) => prev.map((x) => (x.id === c.id ? { ...x, unread: 0, when: "now", msgs: [] } : x)));
       setLandedId(c.id);
-    } else if (act === "del") {
-      setData((prev) => prev.filter((x) => x.id !== c.id));
-      if (openId === c.id) closeThread();
+      clearConversation(c.id).catch(() => {
+        setData((prev) =>
+          prev.map((x) => (x.id === c.id ? { ...x, when: prevWhen, msgs: prevMsgs } : x)),
+        );
+      });
+      if (act === "del" && openId === c.id) closeThread();
     }
   };
 
@@ -662,6 +963,7 @@ export function MobileMessages() {
     setMemberQuery("");
     setGroupTitle("");
     setMemberErr(false);
+    setNewErr(null);
     setNewOpen(true);
   };
 
@@ -672,41 +974,66 @@ export function MobileMessages() {
 
   const memberRows = useMemo(() => {
     const q = memberQuery.trim().toLowerCase();
-    return TEAM.filter((m) => !q || m.name.toLowerCase().includes(q));
-  }, [memberQuery]);
+    return team.filter((m) => !q || m.name.toLowerCase().includes(q));
+  }, [team, memberQuery]);
 
   const isGroupDraft = selected.length > 1;
 
   const submitNew = (e: React.FormEvent) => {
     e.preventDefault();
-    const chosen = TEAM.filter((m) => selected.includes(m.id));
+    const chosen = team.filter((m) => selected.includes(m.id));
     if (!chosen.length) {
       setMemberErr(true);
       return;
     }
+    if (newBusy) return;
     const group = chosen.length > 1;
     const custom = groupTitle.trim();
-    convSeq.current += 1;
-    const rec: Conv = {
-      id: `k${convSeq.current}`,
+    const title = group
+      ? custom || chosen.map((m) => m.name.split(" ")[0]).join(", ")
+      : chosen[0].name;
+    setNewErr(null);
+    setNewBusy(true);
+    // The action returns the real conversation id, so the row appended below
+    // is the database row — every later send posts against it. NOT optimistic:
+    // a thread with a fake id would swallow the first message sent into it.
+    createConversation({
+      participantIds: chosen.map((m) => m.id),
       kind: group ? "GROUP" : "DIRECT",
-      title: group ? custom || chosen.map((m) => m.name.split(" ")[0]).join(", ") : chosen[0].name,
-      job: null,
-      unread: 0,
-      when: "now",
-      msgs: [],
-    };
-    setData((prev) => [rec, ...prev]);
-    resetFilters();
-    setNewOpen(false);
-    setLandedId(rec.id);
-    setDraft("");
-    setOpenId(rec.id);
-    // The only thing you can do in a brand-new thread is type, so land in the
-    // composer — but after the sheet settles: focusing mid-transform makes the
-    // keyboard fight the animation, and the keyboard's own resize is what
-    // republishes --app-h.
-    window.setTimeout(() => boxRef.current?.focus(), prefersReducedMotion() ? 0 : 340);
+      title,
+    })
+      .then((created) => {
+        const rec: LiveConv = {
+          id: created.id,
+          kind: group ? "GROUP" : "DIRECT",
+          title,
+          job: null,
+          unread: 0,
+          when: "now",
+          // A brand-new thread is the newest thing on the rail.
+          ts: Date.now(),
+          // Nobody has opened it yet, so nothing is read.
+          readAt: null,
+          msgs: [],
+        };
+        setData((prev) => [rec, ...prev]);
+        resetFilters();
+        setNewOpen(false);
+        setLandedId(rec.id);
+        setDraft("");
+        setThQuery("");
+        setDetent("peek");
+        setDragY(null);
+        setOpenId(rec.id);
+        // The only thing you can do in a brand-new thread is type, so land in
+        // the composer — but after the sheet settles: focusing mid-transform
+        // makes the keyboard fight the animation, and the keyboard's own
+        // resize is what republishes --app-h.
+        window.setTimeout(() => boxRef.current?.focus(), prefersReducedMotion() ? 0 : 340);
+      })
+      // Plan limits ("You've hit your conversation limit…") land here too.
+      .catch((err) => setNewErr(actionError(err)))
+      .finally(() => setNewBusy(false));
   };
 
   const anySheet = Boolean(sheetConv) || newOpen;
@@ -794,18 +1121,28 @@ export function MobileMessages() {
           </div>
 
           {/* CONVERSATION RAIL */}
-          {visible.length === 0 ? (
+          {!booted ? null : visible.length === 0 ? (
             <div className={styles.cempty}>
               {data.length === 0 ? (
-                <>
-                  <div className={styles.cemptyT}>No conversations</div>
-                  <div className={styles.cemptyS}>
-                    Nothing in the rail yet. Start a thread with someone on the crew.
-                  </div>
-                  <button className={styles.cemptyA} type="button" onClick={openNew}>
-                    <Icon id="i-plus" />New chat
-                  </button>
-                </>
+                loadErr ? (
+                  <>
+                    <div className={styles.cemptyT}>Couldn’t load messages</div>
+                    <div className={styles.cemptyS}>{loadErr}</div>
+                    <button className={styles.cemptyA} type="button" onClick={() => loadSeed()}>
+                      <Icon id="i-rotate" />Try again
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className={styles.cemptyT}>No conversations</div>
+                    <div className={styles.cemptyS}>
+                      Nothing in the rail yet. Start a thread with someone on the crew.
+                    </div>
+                    <button className={styles.cemptyA} type="button" onClick={openNew}>
+                      <Icon id="i-plus" />New chat
+                    </button>
+                  </>
+                )
               ) : (
                 <>
                   <div className={styles.cemptyT}>No matches</div>
@@ -1033,7 +1370,18 @@ export function MobileMessages() {
                   </span>
                   <span className={styles.msgMeta}>
                     {l.m.at}
-                    {l.m.me && l.last ? " · Delivered" : ""}
+                    {/* The status is REAL: "Sending…" while the optimistic
+                        tmp- row is on the wire, then "Read" once every other
+                        participant's lastReadAt (server-computed readAt — seed,
+                        then the poll) covers this message's stamp, "Delivered"
+                        until then. Same formula as the desktop thread. */}
+                    {l.m.me && l.last
+                      ? l.m.id.startsWith("tmp-")
+                        ? " · Sending…"
+                        : openConv?.readAt != null && l.m.ts <= openConv.readAt
+                          ? " · Read"
+                          : " · Delivered"
+                      : ""}
                   </span>
                 </div>
               ),
@@ -1169,12 +1517,21 @@ export function MobileMessages() {
               </span>
             </div>
           ) : null}
+
+          {/* A rejected createConversation (plan limits included) lands here —
+              the sheet stays open so the pick survives the retry. */}
+          {newErr ? (
+            <div className={styles.fld}>
+              <span className={styles.fldErr}>{newErr}</span>
+            </div>
+          ) : null}
         </form>
         <div className={styles.formFoot}>
           <button className={`${styles.btn} ${styles.btnGhost}`} type="button" onClick={() => setNewOpen(false)}>
             Cancel
           </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mmNewForm">
+          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" form="mmNewForm"
+            disabled={newBusy}>
             <Icon id="i-check" />Start
           </button>
         </div>

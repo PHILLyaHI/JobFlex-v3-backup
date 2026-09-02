@@ -35,6 +35,12 @@ import type { ArmedOpening } from "@/stores/useFenceStudioStore";
 // studio's literals — the blueprint Fence studio passes --blueprint / --muted.
 const DEFAULT_ACCENT = "#1f7a52"; // Pressed Sage (locked accent) for the drawn line
 const DEFAULT_DOOR_INK = "#5a6473"; // cool-ink-muted — doors read neutral vs the sage gate
+// Surveyed property line — blueprint blue everywhere, on purpose. A parcel
+// boundary is REFERENCE geometry, not the thing being sold, so it reads in the
+// system's one blue while the traced fence keeps the host's own accent. It used
+// to be near-black, which on satellite imagery was indistinguishable from a roof
+// edge or a kerb.
+const PARCEL_BLUE = "#1854a0";
 // A real residential lot that is inside the Regrid free-trial coverage, so the map
 // is never blank and the sample "Load Property Lines" works out of the box.
 const DEFAULT_CENTER: LatLng = { lat: 32.834967, lng: -96.563861 };
@@ -129,8 +135,12 @@ export type FenceDrawMapProps = {
    * because one listed side can span several surveyed segments (see
    * lib/parcels groupSides). Display only: the polygon is not clickable and
    * never enters the trace.
+   *
+   * `rings` is the whole PROPERTY when it is recorded as more than one lot (two
+   * adjoining deeds bought together). Every ring is drawn; `ring` stays as the
+   * subject lot for hosts that only ever have one.
    */
-  parcel?: { ring: LatLng[]; highlight?: LatLng[] | null } | null;
+  parcel?: { ring: LatLng[]; rings?: LatLng[][]; highlight?: LatLng[] | null } | null;
   /** Raster parcel-boundary tiles (proxied ReportAll layer, zoom 14–21). */
   parcelTiles?: boolean;
 };
@@ -704,6 +714,49 @@ export function FenceDrawMap({
         };
         readZoom();
         window.addEventListener("resize", readZoom);
+        // The SAME mismatch bites Google's own hit test: it derives `e.latLng`
+        // from the pointer's VIEWPORT coordinates and measures them against the
+        // map div as though the two spaces were one. Under a zoomed host every
+        // click therefore resolves SHORT of the cursor, by exactly the drift the
+        // chip above corrects — a dot lands up-left of where it was placed, and
+        // the error grows with the distance from the map's top-left corner.
+        // So the pointer is re-projected here instead of trusted: viewport delta
+        // -> local pixels -> the map's own projection. The overlay exists only to
+        // hand back that projection (getProjection is an OverlayView method).
+        const projector = new maps.OverlayView();
+        projector.onAdd = () => {};
+        projector.draw = () => {};
+        projector.onRemove = () => {};
+        projector.setMap(map);
+        /** Where the pointer REALLY is. Google's own answer is kept whenever the
+         *  correction cannot be made — an unzoomed host, a projection that has
+         *  not drawn yet, or an event with no pointer behind it. */
+        const trueLL = (e: GMaps): GMaps | null => {
+          const fallback = e.latLng ?? null;
+          if (hostZoom === 1) return fallback;
+          const dom = e.domEvent as MouseEvent | undefined;
+          const el = mountRef.current;
+          const rect = el?.getBoundingClientRect();
+          if (!dom || typeof dom.clientX !== "number" || !el || !rect) return fallback;
+          const p = projector.getProjection();
+          if (!p) return fallback;
+          // TWO corrections, both from the same root cause. Google measured this
+          // container with getBoundingClientRect() — viewport pixels, 20% short
+          // here — but lays its panes out in the element's OWN pixels, and
+          // centres the map on the size it measured. So (a) the pointer delta is
+          // in viewport pixels and has to be divided back into element pixels,
+          // and (b) Google's container origin sits half the difference between
+          // the two sizes in from this element's top-left corner. Correcting only
+          // the scale leaves a constant ~65px drift; correcting only the origin
+          // leaves the fence measuring 17% short.
+          const padX = (el.offsetWidth - rect.width) / 2;
+          const padY = (el.offsetHeight - rect.height) / 2;
+          const px = new core.Point(
+            (dom.clientX - rect.left) / hostZoom - padX,
+            (dom.clientY - rect.top) / hostZoom - padY,
+          );
+          return p.fromContainerPixelToLatLng(px) ?? fallback;
+        };
         const totalLenFt = () => {
           let total = 0;
           for (const r of runs) {
@@ -714,7 +767,8 @@ export function FenceDrawMap({
           return total;
         };
         const onMove = (e: GMaps) => {
-          if (!e.latLng) {
+          const at = trueLL(e);
+          if (!at) {
             previewLine.setPath([]);
             hideGhost();
             return;
@@ -722,8 +776,8 @@ export function FenceDrawMap({
           const busy = !!armedRef.current || aligningRef.current;
           // Endpoint magnet: within the pixel radius the cursor locks to the
           // nearest dot (and unlocks the moment it leaves the radius).
-          const mag = busy ? null : magnetVertex(e.latLng, magnetFt());
-          const cursorLL = mag ? mag.ll : e.latLng;
+          const mag = busy ? null : magnetVertex(at, magnetFt());
+          const cursorLL = mag ? mag.ll : at;
           const act = drawing && !busy ? runs[activeIdx] : null;
           const ap = act?.line.getPath();
           const an = ap ? ap.getLength() : 0;
@@ -746,7 +800,7 @@ export function FenceDrawMap({
           if (armedRef.current) {
             // Magnet preview: the ghost seats itself on the fence line whenever
             // the cursor is close enough that a click would snap there.
-            const snapped = updateGhost(e.latLng);
+            const snapped = updateGhost(at);
             const a = armedRef.current;
             // "double gate" for built-ins; a custom type reads by its own name.
             const armedName = VARIANT_LABEL[a.variant]
@@ -843,10 +897,11 @@ export function FenceDrawMap({
           map.addListener("mouseout", hideMeasure),
           map.addListener("click", (e: GMaps) => {
             if (aligningRef.current) return;
+            const at = trueLL(e);
             const a = armedRef.current;
             if (a) {
-              if (!e.latLng) return;
-              const p = ll2ft(e.latLng);
+              if (!at) return;
+              const p = ll2ft(at);
               const hit = nearestSegment(p, pointsRef.current);
               if (hit && hit.dist <= SNAP_ON_FT) {
                 // Very close to a run → magnet on, seated fully along the fence line.
@@ -857,8 +912,8 @@ export function FenceDrawMap({
               }
               return;
             }
-            if (!e.latLng) return;
-            const mag = magnetVertex(e.latLng, magnetFt());
+            if (!at) return;
+            const mag = magnetVertex(at, magnetFt());
             if (drawing) {
               const act = runs[activeIdx];
               if (!act) return stopTrace();
@@ -875,7 +930,7 @@ export function FenceDrawMap({
                 }
                 return stopTrace();
               }
-              ap.push(e.latLng);
+              ap.push(at);
               commit();
               return;
             }
@@ -891,7 +946,7 @@ export function FenceDrawMap({
               startRun(mp.getAt(mag.vi));
               return;
             }
-            startRun(e.latLng);
+            startRun(at);
           }),
           map.addListener("rightclick", () => {
             // Right-click away from a vertex: just stop the run from following the cursor.
@@ -970,6 +1025,7 @@ export function FenceDrawMap({
           window.removeEventListener("resize", readZoom);
           for (const mk of openings.values()) removeMarker(mk);
           openings.clear();
+          projector.setMap(null);
           previewLine.setMap(null);
           ghostCenter.setMap(null);
           ghostSpan.setMap(null);
@@ -992,26 +1048,32 @@ export function FenceDrawMap({
   // stroke over the hovered side. Display-only objects, torn down whole on
   // every change — a parcel has a few dozen vertices, so rebuild is cheap and
   // there is no incremental state to get wrong.
-  const fittedRingRef = React.useRef<LatLng[] | null>(null);
+  const fittedRingRef = React.useRef<LatLng[] | LatLng[][] | null>(null);
   React.useEffect(() => {
     const map = gmapRef.current;
     const maps = mapsLibRef.current;
     if (!map || !maps) return;
-    const ring = parcel?.ring;
-    if (!ring || ring.length < 3) return;
+    // Every lot of the property, not just the subject one: a house bought as two
+    // adjoining deeds has two rings, and drawing one of them is drawing half the
+    // land the fence goes round.
+    const all = (parcel?.rings ?? (parcel?.ring ? [parcel.ring] : [])).filter((r) => r.length >= 3);
+    if (!all.length) return;
 
     const ACCENT = accentRef.current ?? DEFAULT_ACCENT;
-    const polygon = new maps.Polygon({
-      map,
-      paths: ring,
-      clickable: false,
-      fillColor: ACCENT,
-      fillOpacity: 0.14,
-      strokeColor: "#0a0a0a",
-      strokeOpacity: 0.9,
-      strokeWeight: 2,
-      zIndex: 1,
-    });
+    const polygons: GMaps[] = all.map(
+      (r) =>
+        new maps.Polygon({
+          map,
+          paths: r,
+          clickable: false,
+          fillColor: ACCENT,
+          fillOpacity: 0.14,
+          strokeColor: PARCEL_BLUE,
+          strokeOpacity: 0.95,
+          strokeWeight: 2,
+          zIndex: 1,
+        }),
+    );
 
     let highlightLine: GMaps | null = null;
     const hi = parcel?.highlight;
@@ -1031,15 +1093,16 @@ export function FenceDrawMap({
     // large parcel is not half off-screen at the address zoom. LatLngBounds is
     // a core class — read off the global namespace the loader has populated.
     const g = (window as unknown as { google?: GMaps }).google;
-    if (fittedRingRef.current !== ring && g?.maps?.LatLngBounds) {
-      fittedRingRef.current = ring;
+    const fitKey = parcel?.rings ?? parcel?.ring ?? null;
+    if (fittedRingRef.current !== fitKey && g?.maps?.LatLngBounds) {
+      fittedRingRef.current = fitKey;
       const b = new g.maps.LatLngBounds();
-      for (const p of ring) b.extend(p);
+      for (const r of all) for (const p of r) b.extend(p);
       map.fitBounds(b, 48);
     }
 
     return () => {
-      polygon.setMap(null);
+      polygons.forEach((p) => p.setMap(null));
       highlightLine?.setMap(null);
     };
   }, [parcel, mapEpoch]);

@@ -1,10 +1,6 @@
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { StatCard } from "@/components/ui/StatCard";
-import { StaggerGrid } from "@/components/ui/StaggerGrid";
-import { money } from "@/lib/format";
-import { ReferralsAdminClient, type ConversionDTO } from "./referrals-client";
+import { AdminReferralsContent, type ConversionDTO } from "@/components/v3/admin-referrals/referrals-content";
 
 export default async function AdminReferralsPage() {
   await requirePlatformAdmin();
@@ -42,27 +38,8 @@ export default async function AdminReferralsPage() {
     rewardAppliedAt: c.rewardAppliedAt ? c.rewardAppliedAt.toISOString() : null,
     createdAt: c.createdAt.toISOString(),
     convertedAt: c.convertedAt ? c.convertedAt.toISOString() : null,
+    note: c.note,
   }));
 
-  const pending = dto.filter((c) => c.status === "PENDING").length;
-  const owed = dto.filter((c) => c.status === "CONVERTED" && !c.rewardAppliedAt).length;
-  const creditedCents = dto
-    .filter((c) => c.status === "PAID")
-    .reduce((sum, c) => sum + (c.rewardCents ?? 0), 0);
-
-  return (
-    <>
-      <PageHeader
-        eyebrow="Platform"
-        title="Referrals"
-        description="Member-to-member referrals. Conversions advance automatically when the referred workspace first pays; the referrer's 50%-of-a-month credit applies to their Stripe balance."
-      />
-      <StaggerGrid className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Pending signups" value={String(pending)} />
-        <StatCard label="Credits owed" value={String(owed)} hint="converted, not yet credited" />
-        <StatCard label="Credited to date" value={money(creditedCents / 100)} />
-      </StaggerGrid>
-      <ReferralsAdminClient conversions={dto} />
-    </>
-  );
+  return <AdminReferralsContent conversions={dto} />;
 }

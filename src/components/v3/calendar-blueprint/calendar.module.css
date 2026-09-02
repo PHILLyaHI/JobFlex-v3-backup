@@ -773,6 +773,9 @@
 .bp :global(.content .pstatus--viewed)   { border-color: var(--blueprint); color: var(--blueprint-dark); background: rgba(24, 84, 160, 0.1); }
 .bp :global(.content .pstatus--accepted) { border-color: var(--success); color: var(--success); background: var(--success-soft); }
 .bp :global(.content .pstatus--paid)     { border-color: var(--success-dark); color: var(--success-dark); background: var(--success-soft); }
+/* COMPLETED (job finished; the link picker renders `pstatus--<status>` raw) —
+   same green as paid, the word carries the difference. */
+.bp :global(.content .pstatus--completed) { border-color: var(--success-dark); color: var(--success-dark); background: var(--success-soft); }
 .bp :global(.content .pstatus--declined) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .bp :global(.content .pstatus--expired)  { border-color: var(--warning); color: var(--warning); background: var(--warning-soft); }
 
@@ -2379,4 +2382,114 @@
   .bp :global(.content .dtp-times) { max-height: 148px; border-left: none; border-top: 1.5px solid var(--hair-soft); }
   .bp :global(.content .sf-kind) { font-size: 10.5px; padding: 0 4px; }
   .bp :global(.content .sf-kind .ic) { display: none; }
+}
+
+/* Copied verbatim from jobs.module.css (house pattern: each page module
+   re-declares the shared chrome it mounts — same as the pstatus plates).
+   The offers island now also rides the calendar bar for limited roles
+   (2026-08-22, owner request: the ask must be answerable from the
+   calendar, not only the jobs board). */
+/* ============================================================
+   JOB OFFERS (2026-08-21) — the crew member's answer surface.
+   `.jofr` is a React island in the ported page head (job-offers.tsx);
+   its rules live in this same `:global` layer so the popup is drawn
+   with the sheet's own vocabulary. Status tones only, never
+   decoration (DESIGN.md).
+   ============================================================ */
+.bp :global(.content .jofr) { position: relative; }
+.bp :global(.content .jofr-btn) { gap: 8px; }
+/* The count bubble: an ink stamp riding the button's corner. It says "new
+   since you last opened this", not "open offers" — opening clears it. */
+.bp :global(.content .jofr-n) {
+  position: absolute; top: -8px; right: -8px;
+  min-width: 19px; height: 19px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--paper);
+  border-radius: var(--radius);
+  background: var(--ink); color: var(--paper);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  line-height: 1;
+}
+
+/* The popup — anchored to the button's own wrapper (absolute, not fixed:
+   position maths in the zoomed shell is exactly the trap openMenu documents,
+   and an anchored box never has to do any). */
+.bp :global(.content .jofr-pop) {
+  position: absolute; right: 0; top: calc(100% + 10px);
+  z-index: 70;
+  width: min(400px, calc(100vw - 32px));
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.14);
+}
+.bp :global(.content .jofr-head) {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 12px 14px 10px;
+  border-bottom: 2px solid var(--hair-soft);
+}
+.bp :global(.content .jofr-kick) {
+  display: block;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+}
+.bp :global(.content .jofr-title) {
+  display: block; margin-top: 3px;
+  font-size: 15px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--ink);
+}
+.bp :global(.content .jofr-x) {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex-shrink: 0;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: var(--paper); color: var(--ink);
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.bp :global(.content .jofr-x:hover) { background: var(--paper-deep); transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
+.bp :global(.content .jofr-x .ic) { width: 13px; height: 13px; }
+
+.bp :global(.content .jofr-list) { max-height: min(430px, 60vh); overflow-y: auto; padding: 6px 0 10px; }
+.bp :global(.content .jofr-row) { padding: 11px 14px 13px; border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .jofr-row:last-of-type) { border-bottom: none; }
+.bp :global(.content .jofr-job) { font-size: 13.5px; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; }
+.bp :global(.content .jofr-meta) {
+  margin-top: 3px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--muted);
+}
+.bp :global(.content .jofr-scope) {
+  margin-top: 6px;
+  font-size: 12px; line-height: 1.5; color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.bp :global(.content .jofr-acts) { display: flex; gap: 8px; margin-top: 10px; }
+/* Accept / Decline: the status-badge grammar as buttons — 1.5px base-tone
+   frame, soft fill, caps mono. Same tones the row's own plate will flip to. */
+.bp :global(.content .jofr-ok), .bp :global(.content .jofr-no) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  flex: 1 1 0; min-height: 36px; padding: 0 10px;
+  border-radius: var(--radius);
+  font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.bp :global(.content .jofr-ok .ic), .bp :global(.content .jofr-no .ic) { width: 14px; height: 14px; }
+.bp :global(.content .jofr-ok) { border: 1.5px solid var(--success); background: var(--success-soft); color: var(--success-dark); }
+.bp :global(.content .jofr-ok:hover) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--success-dark); }
+.bp :global(.content .jofr-no) { border: 1.5px solid var(--danger); background: var(--danger-soft); color: var(--danger); }
+.bp :global(.content .jofr-no:hover) { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--danger); }
+.bp :global(.content .jofr-ok:disabled), .bp :global(.content .jofr-no:disabled) {
+  opacity: 0.55; cursor: progress; transform: none; box-shadow: none;
+}
+.bp :global(.content .jofr-empty) {
+  margin: 12px 14px; padding: 14px 12px;
+  border: 1.5px dashed var(--muted-faint); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--muted);
+  text-align: center;
+}
+.bp :global(.content .jofr-err) {
+  margin: 8px 14px 4px; padding: 8px 10px;
+  border: 1.5px solid var(--danger); border-radius: var(--radius);
+  background: var(--danger-soft);
+  font-size: 11.5px; font-weight: 700; line-height: 1.4; color: var(--danger);
 }

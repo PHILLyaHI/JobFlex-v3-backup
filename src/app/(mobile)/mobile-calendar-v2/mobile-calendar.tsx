@@ -75,10 +75,27 @@ import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { getCalendarSeed } from "@/app/dashboard/calendar/calendar-actions";
-import { createJobEvent } from "@/actions/jobs";
-import { createAppointment } from "@/actions/appointments";
-import { createBlockedTime } from "@/actions/blockedTime";
-import { assignWorker } from "@/actions/workers";
+import {
+  createJobEvent,
+  deleteJobEvent,
+  rescheduleJobEventTime,
+  updateJob,
+  updateJobEvent,
+} from "@/actions/jobs";
+import {
+  createAppointment,
+  deleteAppointment,
+  rescheduleAppointment,
+  updateAppointment,
+} from "@/actions/appointments";
+import {
+  createBlockedTime,
+  deleteBlockedTime,
+  rescheduleBlockedTime,
+} from "@/actions/blockedTime";
+import { assignWorker, markAssignmentAccepted, unassignWorker } from "@/actions/workers";
+import { markNavSeen } from "@/actions/notifications";
+import { MobileJobOffers } from "@/app/(mobile)/mobile-jobs-v2/mobile-jobs";
 import {
   ALL,
   DOW,
@@ -280,7 +297,14 @@ function metaRowsFor(e: CalEvent): [string, string][] {
     "Crew",
     e.kind === "blocked" && e.selfOnly
       ? `Just me · ${OWNER.name}`
-      : e.workers.map(workerName).join(", ") || "Unassigned",
+      : // Each person's answer rides their name on a job event (2026-08-22):
+        // "Casey Stone · accepted, Dima · pending".
+        e.workers
+          .map((id) => {
+            const st = e.kind === "job" ? e.assignmentStatus?.[id] : undefined;
+            return workerName(id) + (st ? ` · ${st.toLowerCase()}` : "");
+          })
+          .join(", ") || "Unassigned",
   ]);
   if (e.scope) rows.push(["Scope", e.scope]);
   return rows;
@@ -847,6 +871,9 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
   );
   const [tray, setTray] = useState<TrayJob[]>(() => book.tray.map((j) => ({ ...j })));
   const [inbox, setInbox] = useState<InboxItem[]>(() => book.inbox.map((r) => ({ ...r })));
+  /** Crew answers not yet looked at — rides the bell with the pending count;
+   *  opening the sheet clears it and stamps the server. */
+  const [inboxUnseen, setInboxUnseen] = useState<number>(book.inboxUnseen ?? 0);
 
   const [view, setView] = useState<ViewKey>("month");
   // Team is a DISPATCH view: a rail of every crew member with their role, drawn
@@ -1224,6 +1251,13 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
     [router],
   );
 
+  // Delete / done / push are REAL SERVER WRITES now (2026-08-21). They used to
+  // mutate React state and stop — the DB rows survived, so a "deleted" event
+  // resurrected on the very next seed read (creating another event, a remount,
+  // a reload) and a "completed" one reverted. Optimistic update stays for the
+  // hand-feel; the matching action lands the change, and a reject rolls the
+  // local state back so the calendar never lies about what the server holds.
+  // Rows without `rid` (purely local, pre-wire) keep the local-only path.
   const runMenu = (act: string) => {
     const e = actEvent;
     setActId(null);
@@ -1234,19 +1268,47 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
     }
     if (act === "del") {
       setData((prev) => prev.filter((x) => x.id !== e.id));
+      if (e.rid) {
+        const del =
+          e.kind === "job"
+            ? deleteJobEvent(e.rid)
+            : e.kind === "appointment"
+              ? deleteAppointment(e.rid)
+              : deleteBlockedTime(e.rid);
+        void del.catch(() => setData((prev) => [...prev, e]));
+      }
       return;
     }
     if (act === "done") {
       setData((prev) => prev.map((x) => (x.id === e.id ? { ...x, status: "COMPLETED" } : x)));
       setLandedId(e.id);
+      // Status lives on the JOB row — the menu only offers Done for job events.
+      if (e.jobId) {
+        void updateJob(e.jobId, { status: "COMPLETED" }).catch(() =>
+          setData((prev) => prev.map((x) => (x.id === e.id ? { ...x, status: e.status } : x))),
+        );
+      }
       return;
     }
     if (act === "push") {
-      setData((prev) =>
-        prev.map((x) => (x.id === e.id ? { ...x, start: addDays(x.start, 1), end: addDays(x.end, 1) } : x)),
-      );
+      const start = addDays(e.start, 1);
+      const end = addDays(e.end, 1);
+      setData((prev) => prev.map((x) => (x.id === e.id ? { ...x, start, end } : x)));
       setSel(addDays(e.start, 1));
       setLandedId(e.id);
+      if (e.rid) {
+        const mv =
+          e.kind === "job"
+            ? rescheduleJobEventTime(e.rid, start.toISOString(), end.toISOString())
+            : e.kind === "appointment"
+              ? rescheduleAppointment(e.rid, start.toISOString())
+              : rescheduleBlockedTime(e.rid, start.toISOString());
+        void mv.catch(() =>
+          setData((prev) =>
+            prev.map((x) => (x.id === e.id ? { ...x, start: e.start, end: e.end } : x)),
+          ),
+        );
+      }
       return;
     }
     if (act === "edit") openEdit(e);
@@ -1411,10 +1473,29 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
    * carrying its real `rid` and `jobId`. No new data layer: these are the
    * pre-existing, individually guarded actions.
    *
-   * EDIT is still local. That is a bigger job than a create — it is four update
-   * actions plus assignment diffing against `assignmentIds` — and it is called
-   * out in the report rather than half-done here.
+   * EDITING IS A REAL SERVER WRITE TOO (2026-08-21). It was local-only for the
+   * same reason creating once was, with the same consequence: adding a crew
+   * member to an existing booking on a phone wrote nothing, emailed nobody and
+   * vanished on reload. It now runs the same update actions the desktop sheet
+   * does, plus assignment diffing against `assignmentIds`.
    */
+  /** Assignment diff for a job's crew - mirrors the desktop sheet's
+   *  `syncJobCrew`. Adding someone runs `assignWorker`, which is what emails
+   *  them and writes the activity row; removing runs `unassignWorker` against
+   *  the id the seed read back. A worker added and removed inside one session
+   *  has no assignment id yet, so it is skipped rather than guessed at. */
+  const syncJobCrew = async (row: CalEvent, next: string[]) => {
+    if (!row.jobId) return;
+    const prev = row.workers.slice();
+    const added = next.filter((w) => prev.indexOf(w) === -1);
+    const removed = prev.filter((w) => next.indexOf(w) === -1);
+    for (const w of removed) {
+      const aid = row.assignmentIds?.[w];
+      if (aid) await unassignWorker(aid);
+    }
+    for (const w of added) await assignWorker(row.jobId, w);
+  };
+
   const submitForm = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (saving) return;
@@ -1437,6 +1518,64 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
 
     if (form.mode === "edit" && form.id) {
       const id = form.id;
+      const row = data.find((x) => x.id === id);
+      const nextCrew = selfOnly ? [OWNER.id] : form.crew.slice();
+      const notesOut = form.notes.trim();
+
+      // EDIT IS A REAL SERVER WRITE. It used to mutate React state and return,
+      // so a manager could open a booking on a phone, add a crew member, watch
+      // the chip appear, and have written nothing at all: no assignment, no
+      // email to that worker, and the change gone on the next reload. Same
+      // actions the desktop sheet calls, in the same order.
+      if (row?.rid) {
+        setSaveErr(null);
+        setSaving(true);
+        try {
+          if (row.kind === "job") {
+            await updateJobEvent(row.rid, { title, notes: notesOut || null });
+            const timeChanged =
+              row.start.getTime() !== start.getTime() || row.end.getTime() !== end.getTime();
+            if (timeChanged || Boolean(row.allDay) !== form.allDay) {
+              await rescheduleJobEventTime(row.rid, start.toISOString(), end.toISOString());
+            }
+            // Status and crew live on the JOB, not the event.
+            if (row.jobId) {
+              const picked = JOB_STATUSES.find((st) => st.value === form.status);
+              if (picked && picked.value !== row.status) {
+                await updateJob(row.jobId, {
+                  status: picked.value as "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELED",
+                });
+              }
+              await syncJobCrew(row, nextCrew);
+            } else if (form.status !== row.status || nextCrew.join() !== row.workers.join()) {
+              // Say it rather than drop it — the desktop refuses the same way.
+              setSaving(false);
+              setSaveErr(
+                "This event is not linked to a job, so it has no status or crew of its own. The title, notes and times were saved.",
+              );
+            }
+          } else if (row.kind === "appointment") {
+            await updateAppointment(row.rid, {
+              title,
+              notes: notesOut || null,
+              startsAt: start.toISOString(),
+              endsAt: end.toISOString(),
+              workerIds: nextCrew,
+            });
+          } else {
+            // Blocked time has no update action - only a move.
+            if (row.start.getTime() !== start.getTime()) {
+              await rescheduleBlockedTime(row.rid, start.toISOString());
+            }
+          }
+        } catch (err) {
+          setSaving(false);
+          setSaveErr(actionError(err));
+          return;
+        }
+        setSaving(false);
+      }
+
       setData((prev) =>
         prev.map((x) =>
           x.id === id
@@ -1444,9 +1583,9 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
                 ...x, title, start, end,
                 allDay: form.allDay || undefined,
                 status: x.kind === "job" ? form.status : x.status,
-                workers: selfOnly ? [OWNER.id] : form.crew.slice(),
+                workers: nextCrew,
                 selfOnly: selfOnly || undefined,
-                notes: form.notes.trim() || undefined,
+                notes: notesOut || undefined,
               }
             : x,
         ),
@@ -1588,14 +1727,46 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => openNew()}>
                 <Icon id="i-plus" />New event
               </button>
-              <button
-                className={`${styles.btn} ${styles.btnGhost}`}
-                type="button"
-                onClick={() => setInboxOpen(true)}
-              >
-                <Icon id="i-bell" />Crew inbox
-                {inbox.length ? <span className={styles.btnCount}>{inbox.length}</span> : null}
-              </button>
+              {/* The crew member's side of the same conversation (2026-08-22):
+                  offers land answerable right on the calendar — the island
+                  polls and auto-opens on arrival, same brain as the jobs page.
+                  Hidden while the create/edit sheet is up, like on jobs. */}
+              {!book.canManage && (
+                <MobileJobOffers
+                  // Answering changes the JOB's board labels, not this grid —
+                  // the event row was already visible via the assignment.
+                  // Nothing to reload here.
+                  onAnswered={() => {}}
+                  otherOverlayOpen={formOpen || inboxOpen || trayOpen || detailId !== null}
+                />
+              )}
+              {/* Manager-only, like the desktop dispatch surfaces: a limited
+                  role's seed carries no inbox, so the button was an empty
+                  sheet — and confirmations are office work anyway. The badge
+                  counts only PENDING rows; the ledger also holds answers. */}
+              {book.canManage && (
+                <button
+                  className={`${styles.btn} ${styles.btnGhost}`}
+                  type="button"
+                  onClick={() => {
+                    setInboxOpen(true);
+                    // Looking is seeing: unseen answers clear on open, and
+                    // the server remembers (fire-and-forget bookkeeping).
+                    if (inboxUnseen) {
+                      setInboxUnseen(0);
+                      void markNavSeen("crewInbox").catch(() => {});
+                    }
+                  }}
+                >
+                  <Icon id="i-bell" />Crew inbox
+                  {(() => {
+                    const n =
+                      inbox.filter((x) => (x.status ?? "PENDING") === "PENDING").length +
+                      inboxUnseen;
+                    return n ? <span className={styles.btnCount}>{n}</span> : null;
+                  })()}
+                </button>
+              )}
             </div>
           </div>
 
@@ -2134,28 +2305,54 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
         <div className={styles.sheetGrab} {...inboxDrag.handleProps} />
         <div className={styles.sheetHead} {...inboxDrag.handleProps}>
           <div className={styles.sheetKicker}>Crew confirmations</div>
-          <div className={styles.sheetTitle}>{inbox.length} pending</div>
+          <div className={styles.sheetTitle}>
+            {inbox.filter((x) => (x.status ?? "PENDING") === "PENDING").length} pending
+          </div>
         </div>
         <div className={styles.sheetBody}>
+          {/* A confirmation LEDGER (2026-08-22): pending, accepted and declined
+              rows all show — a decline must not vanish and read as handled.
+              "Mark accepted" is a REAL write now; it used to filter local
+              state only, and the row resurrected on the next seed read. */}
           {inbox.length ? (
-            inbox.map((r) => (
-              <div className={styles.qrow} key={r.id}>
-                <div className={styles.qrowT}>{r.title}</div>
-                <div className={styles.qrowS}>
-                  {r.worker} · {r.when}
+            inbox.map((r) => {
+              const st = r.status ?? "PENDING";
+              return (
+                <div className={styles.qrow} key={r.id}>
+                  <div className={styles.qrowT}>{r.title}</div>
+                  <div className={styles.qrowS}>
+                    {r.worker} · {r.when}
+                  </div>
+                  <div className={styles.qrowFoot}>
+                    <span
+                      className={`${styles.estatus} ${
+                        st === "ACCEPTED" ? styles.stDone : st === "DECLINED" ? styles.stCancel : styles.stProg
+                      }`}
+                    >
+                      {st === "ACCEPTED" ? "Accepted" : st === "DECLINED" ? "Declined" : "Pending"}
+                    </span>
+                    {st === "PENDING" && (
+                      <button
+                        className={styles.queueBtn}
+                        type="button"
+                        onClick={() => {
+                          setInbox((prev) =>
+                            prev.map((x) => (x.id === r.id ? { ...x, status: "ACCEPTED" } : x)),
+                          );
+                          void markAssignmentAccepted(r.id).catch(() =>
+                            setInbox((prev) =>
+                              prev.map((x) => (x.id === r.id ? { ...x, status: "PENDING" } : x)),
+                            ),
+                          );
+                        }}
+                      >
+                        <Icon id="i-check" />Mark accepted
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className={styles.qrowFoot}>
-                  <span className={`${styles.estatus} ${styles.stProg}`}>Pending</span>
-                  <button
-                    className={styles.queueBtn}
-                    type="button"
-                    onClick={() => setInbox((prev) => prev.filter((x) => x.id !== r.id))}
-                  >
-                    <Icon id="i-check" />Mark accepted
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className={styles.qempty}>
               <div className={styles.emptyT}>Everyone has confirmed</div>

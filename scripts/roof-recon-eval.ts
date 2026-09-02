@@ -12,12 +12,22 @@
  * prints a table and exits 0. Reads GOOGLE_MAPS_API_KEY / EAGLEVIEW_* from
  * .env.local itself, since tsx does not load Next's env files.
  */
-import { loadHarnessEnv } from "./qa/roof/env";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // ── env ──────────────────────────────────────────────────────────────────────
-loadHarnessEnv();
+for (const file of [".env.local", ".env"]) {
+  try {
+    for (const line of readFileSync(resolve(process.cwd(), file), "utf8").split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+      if (m && process.env[m[1]] === undefined) {
+        process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+      }
+    }
+  } catch {
+    /* optional */
+  }
+}
 
 import { getMeasurementModel, getReportSummary, type RoofModel, EV_LINE_TYPES } from "../src/lib/eagleview";
 import { getBuildingInsights, getDataLayers, fetchRaster } from "../src/lib/solar";

@@ -616,7 +616,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
           role: "system",
           content:
             'You are a senior construction material planner. From a project description, output the full bill of materials needed to complete the job. Return JSON only matching: {"materials": [{"category": string, "materialName": string, "estimatedQuantity": number, "unit": string, "searchQuery": string}]}. ' +
-            "Rules: `category` is the trade grouping (e.g. 'Drywall', 'Framing', 'Tile', 'Fixtures'); `estimatedQuantity` is the raw measured quantity needed BEFORE waste or packaging; `unit` is the natural measurement unit (sqft, ln ft, sheet, each, box, roll); `searchQuery` is a highly optimized retail search term a buyer would type into Home Depot, Lowe's, or Amazon to find the exact product, including dimensions and spec (e.g. '1/2 in. moisture resistant greenboard drywall 4x8'). Include 5-12 line items covering both materials and key fixtures. Return JSON only.",
+            "Rules: `category` is the trade grouping (e.g. 'Drywall', 'Framing', 'Tile', 'Fixtures'); `estimatedQuantity` is the raw measured quantity needed BEFORE waste or packaging; `unit` MUST be one of exactly these ten, spelled exactly as written: sqft, lf, linear ft, sq boards, cu yards, yards, sq yards, unit, hour, fixed — this is the proposal builder's own picker and no other word is a legal value (a box, roll, sheet, bag, gallon or 'each' is `unit`; the pack spec belongs in the estimate's `dimensions` field, never here); `searchQuery` is a highly optimized retail search term a buyer would type into Home Depot, Lowe's, or Amazon to find the exact product, including dimensions and spec (e.g. '1/2 in. moisture resistant greenboard drywall 4x8'). Include 5-12 line items covering both materials and key fixtures. Return JSON only.",
         },
         {
           role: "user",
@@ -694,7 +694,7 @@ Description: ${input.description}${assumptionsBlock}${photoBlock}`,
             'You are a senior contractor AI estimator and purchasing agent. You receive a planned bill of materials (each with an `index`) where each item carries up to 3 live retail product "options" (each with an `option` number) from web search. Produce a final, purchase-ready estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit, sourceIndex, optionIndex, dimensions, notes}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays: number}. ' +
             `For every planned material: (1) choose the single best product option fitting the "${qualityTier}" quality tier — budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end — set \`sourceIndex\` to the planned material's \`index\`, set \`optionIndex\` to the chosen option's \`option\` number, and use the chosen option's price as \`unitPrice\`. If an item has no options, set optionIndex to null and price it from your own market knowledge. NEVER output store names, product URLs, or image URLs — they are attached automatically from your chosen option; ` +
             "(2) apply standard construction waste factors to the estimatedQuantity: 10% for tile and drywall, 15% for lumber and trim, 0% for fixtures and fittings; " +
-            "(3) infer the purchase package from the chosen product (sold by box, roll, sheet, or each) and round the final purchase quantity UP to the nearest whole package so the crew never runs short — set `quantity` to that final purchase count and `unit` to the package unit; " +
+            "(3) infer the purchase package from the chosen product (sold by box, roll, sheet, or each) and round the final purchase quantity UP to the nearest whole package so the crew never runs short — set `quantity` to that final purchase count. `unit` MUST be one of exactly these ten, spelled exactly as written: sqft, lf, linear ft, sq boards, cu yards, yards, sq yards, unit, hour, fixed — a product sold by the box, roll, sheet, bag, gallon or 'each' takes `unit`, and the package itself is described in `dimensions` (step 4), never in `unit`; " +
             "(4) ALWAYS set `dimensions` to the chosen product's real size/pack spec (never omit it) — e.g. '4x8 sheet', '12x12 in tile', '5 gal', '16 oz', '50 lb bag', '8 ft board'; if a precise size is unknown, give the sell-unit (e.g. 'per sheet', 'per box'). " +
             "(5) in `notes`, briefly explain the waste factor and any package rounding (e.g. 'Added 10% waste: 20 -> 22 sqft, rounded to 1 box of 30 sqft'). " +
             "For labor: estimate 2-4 trade labor line items as DOLLAR amounts based on the final scope; each labor line's quantity x unitPrice must equal its labor dollars (e.g. quantity 1 with unitPrice = crew cost, or hours x hourly rate). Apply realistic US pricing adjusted for the stated location. Return JSON only.",
@@ -1179,6 +1179,40 @@ const convertInput = z.object({
   discount: discountSchema.nullish(),
 });
 
+/**
+ * An estimate line's unit → the `LineItem.measurementType` column.
+ *
+ * The estimator is instructed to answer from the manual builder's own ten-value
+ * picker, and this collapses those ten onto the six the schema has — the same
+ * lossy map the builder itself applies (see manual-blueprint-bridge.ts). It
+ * still tolerates the older free-text units ("ln ft", "each", "box") that live
+ * on estimates generated before the vocabulary was pinned, so reopening one of
+ * those does not land every line on UNIT by accident.
+ */
+const MEASUREMENT_FOR_UNIT: Record<string, string> = {
+  sqft: "SQFT",
+  "sq ft": "SQFT",
+  "sq yards": "SQFT",
+  sqyards: "SQFT",
+  lf: "LINEAR_FT",
+  "linear ft": "LINEAR_FT",
+  "ln ft": "LINEAR_FT",
+  yards: "LINEAR_FT",
+  "cu yards": "CUBIC_FT",
+  "sq boards": "UNIT",
+  unit: "UNIT",
+  each: "UNIT",
+  hour: "HOUR",
+  hr: "HOUR",
+  hours: "HOUR",
+  fixed: "LUMP_SUM",
+  "lump sum": "LUMP_SUM",
+};
+
+function measurementForUnit(unit: string | null | undefined): string {
+  return MEASUREMENT_FOR_UNIT[(unit ?? "").trim().toLowerCase()] ?? "UNIT";
+}
+
 export async function convertEstimateToProposal(raw: unknown) {
   const { organizationId, user } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "proposalsCreated");
@@ -1216,7 +1250,7 @@ export async function convertEstimateToProposal(raw: unknown) {
       return {
         name,
         description: l.unit ? `Measured in ${l.unit}` : null,
-        measurementType: l.unit === "sqft" ? "SQFT" : l.unit === "ln ft" ? "LINEAR_FT" : l.unit === "hour" ? "HOUR" : "UNIT",
+        measurementType: measurementForUnit(l.unit),
         quantity: l.quantity,
         unitPrice: sell,
         materialCost: l.unitPrice,
@@ -1233,7 +1267,7 @@ export async function convertEstimateToProposal(raw: unknown) {
     ...data.labor.map((l) => ({
       name: l.name,
       description: l.unit ? `Measured in ${l.unit}` : null,
-      measurementType: l.unit === "hour" ? "HOUR" : l.unit === "sqft" ? "SQFT" : "UNIT",
+      measurementType: measurementForUnit(l.unit),
       quantity: l.quantity,
       unitPrice: sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
       materialCost: 0,

@@ -49,6 +49,7 @@ import {
   type FrontSideMatch,
   type ParcelSide,
   type RingPoint,
+  type RoadLine,
 } from "@/lib/parcels";
 import { pointInRing } from "@/lib/parcel";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
@@ -62,9 +63,12 @@ import {
   type OpeningType,
 } from "./fence-estimator-data";
 
-/** Where a created proposal opens. `(dashboard)/dashboard/proposals/[id]` — the
- *  classic-shell detail route; this blueprint fleet only owns the LIST page. */
-const PROPOSAL_ROUTE = "/dashboard/proposals/";
+/** Where a created proposal opens: the BLUEPRINT manual builder, loaded with
+ *  the record that was just written (`?proposal=<id>`). A fence estimate that
+ *  converted into the old classic-shell editor left the blueprint fleet at the
+ *  exact moment the contractor starts editing — the estimate is a draft of a
+ *  proposal, and the builder is where a proposal is drafted. */
+const PROPOSAL_ROUTE = "/dashboard/manual-blueprint?proposal=";
 
 /** Supplied by the page component, which is the only thing on this route that
  *  can hold a Next router. */
@@ -101,6 +105,14 @@ type FenceState = {
   material: string;
   height: number;
   demo: boolean;
+  /** Edited base rates, keyed by material id — what the contractor typed over
+   *  the figure on the material's own row. Survives a navigation within the tab
+   *  (sessionStorage): a shop that prices cedar at $34 should not retype it per
+   *  address. */
+  rates: Record<string, number>;
+  /** Materials the contractor added. Same shape as the card's built-ins, so
+   *  every consumer (rows, ticket, 3D colour, proposal) reads them unchanged. */
+  customMats: Material[];
   runs: FenceRun[];
   openings: FenceOpening[];
 };
@@ -175,21 +187,83 @@ export function initFenceEstimatorContent(
   // The sequence counters are per-mount; ids only have to be unique within one
   // visit, and a navigation away rebuilds the module's whole closure.
   let runSeq = 0,
-    opSeq = 0;
+    opSeq = 0,
+    matSeq = 0;
   const fs: FenceState = {
     mode: 'draw', material: 'composite', height: 6, demo: false,
+    rates: {},
+    customMats: [],
     runs: [],
     openings: []
   };
 
+  /** Per tab, not per browser: a rate card is a shop's decision for the session,
+   *  and a stale one silently pricing next week's estimate is worse than
+   *  retyping it. Holds the edited rates AND the materials the shop added. */
+  const RATE_KEY = 'jf.fence.mats';
+  /** The colour a new material's swatch takes until the palette is exhausted —
+   *  a custom material still has to READ as a material in the row and in 3D. */
+  const CUSTOM_COLORS = ['#5f7d4f', '#8a5a3c', '#4a5b6b', '#9b8557', '#6b5b7d'];
+
   function money(n: number) { return '$' + Math.round(n).toLocaleString('en-US'); }
-  function mat(): Material { return MATERIALS.find(function (m) { return m.id === fs.material; }) || MATERIALS[0]; }
+  /** Built-ins plus whatever the shop added, in that order. */
+  function allMats(): Material[] { return MATERIALS.concat(fs.customMats); }
+  function mat(): Material {
+    return allMats().find(function (m) { return m.id === fs.material; }) || MATERIALS[0];
+  }
+  /** The $/lf a material is priced at: the edited figure when there is one, else
+   *  the card's own. This is the ONLY rate on the page — there is no second box
+   *  that could disagree with the number on the row. */
+  function baseOf(m: Material): number {
+    const edited = fs.rates[m.id];
+    return Number.isFinite(edited) && edited > 0 ? edited : m.base;
+  }
+  function isEdited(m: Material): boolean {
+    return Number.isFinite(fs.rates[m.id]) && fs.rates[m.id] > 0 && fs.rates[m.id] !== m.base;
+  }
   function heightMult() { const h = HEIGHTS.find(function (x) { return x.ft === fs.height; }); return h ? h.mult : 1; }
   function opType(id: string): OpeningType { return OPENINGS.find(function (o) { return o.id === id; }) || OPENINGS[0]; }
   function totalFt() { return fs.runs.reduce(function (a, r) { return a + (r.ft || 0); }, 0); }
+  /** The picked material's rate at the picked height. */
+  function cardPerFt() { return baseOf(mat()) * heightMult(); }
+  function saveRate() {
+    try {
+      window.sessionStorage.setItem(
+        RATE_KEY,
+        JSON.stringify({ rates: fs.rates, customMats: fs.customMats }),
+      );
+    } catch {
+      // Storage denied (private windows) — the edits still hold for this mount.
+    }
+  }
+  function restoreRate() {
+    try {
+      const raw = window.sessionStorage.getItem(RATE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw) as { rates?: Record<string, number>; customMats?: Material[] };
+      if (data.rates && typeof data.rates === 'object') {
+        Object.keys(data.rates).forEach(function (k) {
+          const n = Number(data.rates?.[k]);
+          if (Number.isFinite(n) && n > 0) fs.rates[k] = n;
+        });
+      }
+      if (Array.isArray(data.customMats)) {
+        fs.customMats = data.customMats.filter(function (m) {
+          return m && typeof m.id === 'string' && typeof m.label === 'string' && Number.isFinite(m.base);
+        });
+        // Ids are minted from this counter, so it has to clear the restored ones.
+        fs.customMats.forEach(function (m) {
+          const n = parseInt(m.id.replace(/^custom-/, ''), 10);
+          if (Number.isFinite(n) && n > matSeq) matSeq = n;
+        });
+      }
+    } catch {
+      // Same: no storage or a corrupt value, no restore.
+    }
+  }
   function price() {
     const ft = totalFt();
-    const perFt = mat().base * heightMult();
+    const perFt = cardPerFt();
     const fence = ft * perFt;
     const ops = fs.openings.reduce(function (a, o) { return a + opType(o.type).price; }, 0);
     const demo = fs.demo ? ft * DEMO_PER_FT : 0;
@@ -253,6 +327,36 @@ export function initFenceEstimatorContent(
       '<span class="run-u">ft</span>' +
       '<button class="row-x" type="button" data-del-run aria-label="Remove run">×</button></li>';
   }
+  /** One material row. The RATE IS THE CONTROL: `.mat-rate` is a button, and
+   *  clicking it swaps in a number field over the same figure (see `editRate`),
+   *  which is why there is no separate rate box on the card any more. A material
+   *  the shop added also carries a delete. */
+  function matRowHtml(m: Material) {
+    const on = fs.material === m.id;
+    const custom = !MATERIALS.some(function (b) { return b.id === m.id; });
+    return '<li class="' + (on ? 'on' : '') + '" data-mat="' + esc(m.id) +
+      '" role="option" tabindex="0" aria-selected="' + (on ? 'true' : 'false') + '">' +
+      '<span class="mat-sw" style="background:' + esc(m.color) + '"></span>' +
+      '<span class="mat-name">' + esc(m.label) + '</span>' +
+      '<button class="mat-rate' + (isEdited(m) ? ' is-custom' : '') + '" type="button" data-rate="' +
+      esc(m.id) + '" aria-label="Edit the ' + esc(m.label) + ' rate">' + money(baseOf(m)) + '/lf</button>' +
+      (custom
+        ? '<button class="row-x" type="button" data-del-mat="' + esc(m.id) + '" aria-label="Remove ' + esc(m.label) + '">×</button>'
+        : '') +
+      '</li>';
+  }
+
+  /** Repaint one material row's rate cell after an edit — the list is not
+   *  rebuilt, so the row the user just typed in keeps its place and its focus
+   *  ring instead of re-cascading. */
+  function paintMatRate(id: string) {
+    const m = allMats().find(function (x) { return x.id === id; });
+    const cell = $('#matList [data-rate="' + id + '"]');
+    if (!m || !cell) return;
+    cell.textContent = money(baseOf(m)) + '/lf';
+    cell.classList.toggle('is-custom', isEdited(m));
+  }
+
   /** Grouped by kind, so the native menu shows a labelled rule between the gates
    *  and the doors instead of one flat list of seven look-alike entries. */
   function openOptionsHtml(selected: string) {
@@ -343,13 +447,7 @@ export function initFenceEstimatorContent(
     const heights = $('#heights');
     const demoTgl = $('#demoTgl');
     if (!matList || !heights || !demoTgl) return;
-    matList.innerHTML = MATERIALS.map(function (m) {
-      return '<li class="' + (fs.material === m.id ? 'on' : '') + '" data-mat="' + m.id +
-        '" role="option" tabindex="0" aria-selected="' + (fs.material === m.id ? 'true' : 'false') + '">' +
-        '<span class="mat-sw" style="background:' + m.color + '"></span>' +
-        '<span class="mat-name">' + m.label + '</span>' +
-        '<span class="mat-rate">' + money(m.base) + '/lf</span></li>';
-    }).join('');
+    matList.innerHTML = allMats().map(matRowHtml).join('');
     heights.innerHTML = HEIGHTS.map(function (h) {
       return '<button class="seg-btn' + (fs.height === h.ft ? ' on' : '') + '" type="button" data-h="' + h.ft + '">' + h.ft + ' ft</button>';
     }).join('');
@@ -415,10 +513,156 @@ export function initFenceEstimatorContent(
     renderFigures();
   }
 
+  // ── The rate IS the row ────────────────────────────────────────────────────
+  // Clicking the figure on a material row turns it into a number field over the
+  // same spot. There is deliberately no second "Rate" box on the card: two
+  // places to set one price is one place too many, and the one on the row is the
+  // one the contractor is already reading.
+
+  /** Swap a rate cell for an input. Commits on Enter / blur, cancels on Esc; an
+   *  empty or nonsense value means "back to the card price" rather than $0. */
+  function editRate(cell: HTMLElement) {
+    const id = cell.dataset.rate || '';
+    const m = allMats().find(function (x) { return x.id === id; });
+    if (!m || cell.dataset.editing) return;
+    cell.dataset.editing = '1';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '1';
+    input.step = '1';
+    input.inputMode = 'decimal';
+    input.className = 'mat-rate-in';
+    input.value = String(Math.round(baseOf(m) * 100) / 100);
+    input.setAttribute('aria-label', m.label + ' rate, dollars per linear foot');
+    cell.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const finish = (commit: boolean) => {
+      if (done) return;
+      done = true;
+      if (commit) {
+        const n = parseFloat(input.value);
+        if (Number.isFinite(n) && n > 0) fs.rates[id] = n;
+        else delete fs.rates[id];
+        saveRate();
+      }
+      delete cell.dataset.editing;
+      input.replaceWith(cell);
+      paintMatRate(id);
+      // A rate that is not the picked material's still moves nothing on the
+      // ticket, and renderFigures is cheap enough not to branch on it.
+      renderFigures();
+    };
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', function () { finish(true); });
+  }
+
+  /** The add-material row: a name, a rate, and the swatch colour it will carry.
+   *  Appended to the list rather than opened as a dialog — it is two fields, and
+   *  it belongs among the materials it is joining. */
+  function openMatAdd() {
+    const list = $('#matList');
+    if (!list || list.querySelector('.mat-new')) {
+      list?.querySelector<HTMLInputElement>('.mat-new-name')?.focus();
+      return;
+    }
+    const color = CUSTOM_COLORS[fs.customMats.length % CUSTOM_COLORS.length];
+    const li = document.createElement('li');
+    li.className = 'mat-new';
+    li.innerHTML =
+      '<span class="mat-sw" style="background:' + color + '"></span>' +
+      '<input class="mat-new-name" type="text" placeholder="Material name" aria-label="Material name" maxlength="40">' +
+      '<span class="mat-new-rate"><span class="mat-cur">$</span>' +
+      '<input class="mat-new-in" type="number" min="1" step="1" inputmode="decimal" placeholder="0" aria-label="Rate, dollars per linear foot"></span>' +
+      '<button class="btn btn-primary btn--sm" type="button" data-mat-save>Add</button>' +
+      '<button class="row-x" type="button" data-mat-cancel aria-label="Cancel">×</button>';
+    list.appendChild(li);
+    staggerIn([li]);
+    li.querySelector<HTMLInputElement>('.mat-new-name')?.focus();
+  }
+
+  function closeMatAdd() {
+    $('#matList .mat-new')?.remove();
+  }
+
+  /** Commit the add row. A material with no name or no rate is not a material,
+   *  so the row stays open and says which field is missing rather than adding
+   *  "Untitled · $0/lf" to the card. */
+  function saveMatAdd() {
+    const li = $('#matList .mat-new');
+    if (!li) return;
+    const nameEl = li.querySelector<HTMLInputElement>('.mat-new-name');
+    const rateEl = li.querySelector<HTMLInputElement>('.mat-new-in');
+    const name = (nameEl?.value || '').trim();
+    const rate = parseFloat(rateEl?.value || '');
+    if (!name) { nameEl?.focus(); sayHint('Give the material a name before adding it.'); return; }
+    if (!Number.isFinite(rate) || rate <= 0) {
+      rateEl?.focus();
+      sayHint('Give the material a price per linear foot before adding it.');
+      return;
+    }
+    matSeq += 1;
+    const m: Material = {
+      id: 'custom-' + matSeq,
+      label: name,
+      base: rate,
+      color: CUSTOM_COLORS[(matSeq - 1) % CUSTOM_COLORS.length],
+    };
+    fs.customMats.push(m);
+    saveRate();
+    li.remove();
+    appendRow($('#matList'), matRowHtml(m));
+    // Added means chosen: a contractor typing in their own fence material is
+    // pricing THIS job with it.
+    const row = $('#matList [data-mat="' + m.id + '"]');
+    if (row) pickMaterial(row);
+    else renderFigures();
+  }
+
+  /** Remove a material the shop added. Built-ins have no delete. */
+  function deleteMaterial(id: string) {
+    const li = $('#matList [data-mat="' + id + '"]');
+    fs.customMats = fs.customMats.filter(function (m) { return m.id !== id; });
+    delete fs.rates[id];
+    saveRate();
+    const fallback = () => {
+      // The deleted material cannot stay picked; the card's first entry is the
+      // page's own default and is always present.
+      if (fs.material === id) {
+        fs.material = MATERIALS[0].id;
+        const next = $('#matList [data-mat="' + fs.material + '"]');
+        if (next) pickMaterial(next);
+      }
+      renderFigures();
+    };
+    if (li) leave(li, fallback);
+    else fallback();
+  }
+
   // ================= EVENTS =================
   on(document, 'click', function (e) {
     if (!(e.target instanceof Element)) return;
     const target = e.target;
+    // Before `[data-mat]`: these controls live INSIDE a material row, and the
+    // row's own handler would otherwise swallow the click.
+    const rateCell = target.closest<HTMLElement>('[data-rate]');
+    if (rateCell) {
+      editRate(rateCell);
+      return;
+    }
+    const delMat = target.closest<HTMLElement>('[data-del-mat]');
+    if (delMat) {
+      deleteMaterial(delMat.dataset.delMat || '');
+      return;
+    }
+    if (target.closest('[data-mat-save]')) { saveMatAdd(); return; }
+    if (target.closest('[data-mat-cancel]')) { closeMatAdd(); return; }
+    if (target.closest('#matAdd')) { openMatAdd(); return; }
     const md = target.closest<HTMLElement>('[data-mode]');
     if (md) {
       fs.mode = md.dataset.mode || '';
@@ -594,6 +838,8 @@ export function initFenceEstimatorContent(
       fs.demo = false;
       fs.material = 'composite';
       fs.height = 6;
+      // The rate card and any materials the shop added SURVIVE: they are the
+      // shop's prices, not this property's geometry.
       renderStudio();
       playStagger?.();
       mapOwnsRuns = false;
@@ -641,10 +887,10 @@ export function initFenceEstimatorContent(
       after(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1600);
       return;
     }
-    if (target.closest('#parcelBtn')) {
-      const btn = target.closest<HTMLElement>('#parcelBtn');
+    if (target.closest('#fenceBtn')) {
+      const btn = target.closest<HTMLElement>('#fenceBtn');
       if (!btn || btn.dataset.busy) return;
-      void loadParcel(btn);
+      putDownTheFence(btn);
       return;
     }
     const conv = target.closest<HTMLElement>('#convertBtn');
@@ -656,8 +902,22 @@ export function initFenceEstimatorContent(
   // are focusable options, not buttons, so the key path is wired by hand.
   on(document, 'keydown', function (e) {
     const ev = e as KeyboardEvent;
-    if (ev.key !== 'Enter' && ev.key !== ' ') return;
     if (!(ev.target instanceof Element)) return;
+    // The add-material row is a two-field form: Enter adds it, Esc drops it.
+    if (ev.target.closest('.mat-new')) {
+      if (ev.key === 'Enter') { ev.preventDefault(); saveMatAdd(); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); closeMatAdd(); }
+      return;
+    }
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    // Enter/Space on the rate cell opens the editor — it is a button inside the
+    // row, so the row's own key handler must not answer for it.
+    const rate = ev.target.closest<HTMLElement>('[data-rate]');
+    if (rate) {
+      ev.preventDefault();
+      editRate(rate);
+      return;
+    }
     const m = ev.target.closest<HTMLElement>('[data-mat]');
     if (m) {
       ev.preventDefault(); // Space must select, not scroll the page.
@@ -676,6 +936,7 @@ export function initFenceEstimatorContent(
       renderTicket();
       const strip = $('#statStrip');
       if (strip) strip.innerHTML = statStripHtml();
+      return;
     }
   });
   on(document, 'change', function (e) {
@@ -692,6 +953,7 @@ export function initFenceEstimatorContent(
       // from it — and re-cascaded every other opening.
       paintOpenRow(li, o);
       renderFigures();
+      return;
     }
   });
 
@@ -731,18 +993,37 @@ export function initFenceEstimatorContent(
   let armed: ArmedOpening | null = null;
   let aligning = false;
   // ── Cadastral parcel (ReportAll via /api/parcels) ──
-  /** The lot's outer ring as surveyed, [lat, lng] — full resolution. */
-  let parcelRingPts: RingPoint[] | null = null;
-  /** The same ring in the map's vocabulary — the polygon overlay's path. */
-  let parcelRing: Array<{ lat: number; lng: number }> | null = null;
-  /** Readable walls: consecutive collinear segments merged (lib/parcels
-   *  groupSides), so a 22-segment survey lists as 4–8 rows. */
-  let parcelSides: ParcelSide[] = [];
-  /** Which sides count toward "Use N ft" — the street side defaults to off,
-   *  but only when the geometry singles one out (see detectFrontSide). */
-  let parcelChecked: boolean[] = [];
+  /**
+   * The PROPERTY, lot by lot. A point query answers with the lot the pin is in,
+   * but a house bought as two adjoining deeds is two lots and the fence goes
+   * round both — so every lot the lookup returned is held here and every one of
+   * them is drawn. There is no "which lot" picker any more: the land is the
+   * land, and a deed boundary running through the middle of it is not a choice
+   * the contractor has to make.
+   */
+  interface ParcelLot {
+    choice: ParcelChoiceApi;
+    /** The lot's outer ring as surveyed, [lat, lng] — full resolution. */
+    ringPts: RingPoint[];
+    /** The same ring in the map's vocabulary — a polygon overlay path. */
+    ring: Array<{ lat: number; lng: number }>;
+    /** Readable walls: consecutive collinear segments merged (lib/parcels
+     *  groupSides), so a 22-segment survey lists as 4–8 rows. */
+    sides: ParcelSide[];
+    /** Which sides the fence is laid along — the street side defaults to off,
+     *  but only when the geometry singles one out (see detectFrontSides). */
+    checked: boolean[];
+    /** The sides this lot's frontage matched, for the row's street tag. */
+    fronts: FrontSideMatch[];
+  }
+  let parcelLots: ParcelLot[] = [];
   /** Hovered row in the sides list — highlighted on the map. */
-  let parcelHover: number | null = null;
+  let parcelHover: { lot: number; side: number } | null = null;
+  /** Whether the answer cost quota — shown in the panel meta line. */
+  let parcelWasCached = false;
+  /** OSM street centrelines from the same load, kept so a re-render can decide
+   *  frontage again without a second Overpass round trip. */
+  let parcelRoads: RoadLine[] = [];
   /** ReportAll raster boundary tiles (the "Lot lines" tool). */
   let lotLines = false;
   let parcelBusy = false;
@@ -843,7 +1124,13 @@ export function initFenceEstimatorContent(
       onApi: function (api) { mapApi = api; },
       accentColor: token('--blueprint'),
       doorColor: token('--muted'),
-      parcel: parcelRing ? { ring: parcelRing, highlight: hoveredSidePath() } : null,
+      parcel: parcelLots.length
+        ? {
+            ring: parcelLots[0].ring,
+            rings: parcelLots.map(function (l) { return l.ring; }),
+            highlight: hoveredSidePath(),
+          }
+        : null,
       parcelTiles: lotLines,
     };
   }
@@ -1008,10 +1295,29 @@ export function initFenceEstimatorContent(
     pushMap();
   }
 
-  /** Mount the surface into `#mapSlot`. Without a browser key nothing mounts and
-   *  the donor's placeholder stands, which is still the honest state. */
+  /**
+   * Mount the surface into `#mapSlot`. Called only once an address has
+   * RESOLVED: the surface opens on a default lot in Texas when it is given no
+   * origin, and a page that greets every visitor with a stranger's house is
+   * showing a fixture. Until then `#mapSlot` keeps its "Enter the address"
+   * prompt, which is the true state of the page.
+   *
+   * Without a browser key nothing mounts at all and the prompt is rewritten to
+   * say so — that is still the honest state, just a different one.
+   */
   function mountMap() {
-    if (!isMapsBrowserEnabled()) return;
+    if (mapIsland) return;
+    if (!isMapsBrowserEnabled()) {
+      const t = $('.map-slot-in .ms-t');
+      const h = $('.map-slot-in .ms-h');
+      if (t) t.textContent = 'Map surface unavailable';
+      if (h) {
+        h.textContent =
+          'Tracing needs a Google Maps browser key (NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY). ' +
+          'The ledger and the price still work from run lengths typed by hand.';
+      }
+      return;
+    }
     const slot = $('#mapSlot');
     if (!slot) return;
     // The island needs a node this module never writes to again. `.map-slot-in`
@@ -1215,6 +1521,8 @@ export function initFenceEstimatorContent(
       // The local-feet frame is defined by this origin, so the surface rebuilds
       // its map on it (its own effect depends on lat/lng).
       mapOrigin = { lat: p.lat, lng: p.lng };
+      // First resolved address is what brings the surface into existence.
+      mountMap();
       pushMap();
       // The parcel lookup keys off the same point. Fired here — not from a
       // button — so the boundary and the sides list are already waiting by the
@@ -1260,19 +1568,33 @@ export function initFenceEstimatorContent(
   }
 
   // ================= PROPERTY LINES (ReportAll) =================
-  // The parcel now comes from /api/parcels — ReportAll USA cadastral polygons
-  // behind a permanent server-side cache (the account quota is ALLTIME, so a
-  // repeat address costs nothing). The boundary is NOT dumped into the trace
-  // any more: it renders as a display-only polygon overlay, and every side
-  // becomes a checkbox row in `#parcelPanel`. The checked sides — the front is
-  // unchecked by default — are what "Use N ft in estimate" seeds into the
-  // trace/ledger through the ordinary `applyTracedPath` pipeline.
+  // The parcel comes from /api/parcels — ReportAll USA cadastral polygons behind
+  // a permanent server-side cache (the account quota is ALLTIME, so a repeat
+  // address costs nothing). It is NOT dumped into the trace: every lot renders
+  // as a display-only polygon overlay, and every side of every lot becomes a
+  // checkbox row in `#parcelPanel`. The checked sides — the frontage is
+  // unchecked by default — are what "Put down the fence" lays fence along.
+  //
+  // IT LOADS ITSELF. There is no "Load property lines" button any more: the
+  // lookup fires the moment an address resolves, because a contractor who has
+  // typed the address has already said which property this is.
   //
   // Building footprints still come from the OLD `fetchPropertyBoundary` action
   // (Regrid may be dead, but its OSM half fails soft and still returns the
   // neighbourhood): they are the 3D view's spatial context, fetched in parallel
   // and never allowed to block or fail the parcel.
 
+  /** One lot of the property. `/api/parcels` returns these grouped per parcel —
+   *  the lots the point itself hit, plus the same owner's adjoining lots, which
+   *  is what makes a two-deed property drawable at all (the flat `rings` array
+   *  cannot say where one lot ends and the next begins). */
+  interface ParcelChoiceApi {
+    robustId: string;
+    owner: string | null;
+    address: string | null;
+    acreage: number | null;
+    rings: RingPoint[][];
+  }
   interface ParcelApiHit {
     found: true;
     cached: boolean;
@@ -1283,6 +1605,8 @@ export function initFenceEstimatorContent(
       acreage: number | null;
     };
     rings: RingPoint[][];
+    /** Every lot of the property, SUBJECT FIRST. Older responses omit it. */
+    parcels?: ParcelChoiceApi[];
   }
 
   /** The ring that contains the origin, else the longest one — a MULTIPOLYGON
@@ -1297,35 +1621,59 @@ export function initFenceEstimatorContent(
     return best;
   }
 
-  /** The side a contractor usually does NOT fence: the street-facing front.
-   *  Heuristic — the side whose midpoint sits closest to the geocoded address
-   *  point, which Google places at the rooftop/street side of the lot. Wrong
-   *  sometimes; that is what the checkbox is for. */
   /** The surveyed vertices a listed side actually runs through — one listed
    *  side can span several segments, so the hover highlight is a PATH. */
-  function sidePath(i: number): Array<{ lat: number; lng: number }> | null {
-    const ring = parcelRingPts;
-    const s = parcelSides[i];
-    if (!ring || !s) return null;
+  function sidePath(lotIndex: number, i: number): Array<{ lat: number; lng: number }> | null {
+    const lot = parcelLots[lotIndex];
+    const s = lot?.sides[i];
+    if (!lot || !s) return null;
     const out: Array<{ lat: number; lng: number }> = [];
     for (let k = 0; k <= s.span; k++) {
-      const p = ring[(s.start + k) % ring.length];
+      const p = lot.ringPts[(s.start + k) % lot.ringPts.length];
       out.push({ lat: p[0], lng: p[1] });
     }
     return out;
   }
 
   function hoveredSidePath(): Array<{ lat: number; lng: number }> | null {
-    return parcelHover === null ? null : sidePath(parcelHover);
+    return parcelHover === null ? null : sidePath(parcelHover.lot, parcelHover.side);
   }
 
   function hideParcelPanel() {
-    parcelRingPts = null;
-    parcelRing = null;
-    parcelSides = [];
-    parcelChecked = [];
+    parcelLots = [];
     parcelHover = null;
+    parcelRoads = [];
     $('#parcelPanel')?.classList.add('is-hidden');
+    syncFenceBtn();
+  }
+
+  /** "Put down the fence" is only an offer while there is a property line to lay
+   *  it along and at least one side is checked. */
+  function syncFenceBtn() {
+    const btn = $('#fenceBtn') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.disabled = checkedParcelFt() <= 0;
+  }
+
+  /** Turn one API lot into panel/map state. Returns null when the lot came back
+   *  without usable geometry — a lot with no ring is not a lot to fence. */
+  function toLot(choice: ParcelChoiceApi, o: { lat: number; lng: number }, roads: RoadLine[]): ParcelLot | null {
+    const ringPts = pickRing(choice.rings, o);
+    if (!ringPts || ringPts.length < 3) return null;
+    const sides = groupSides(ringPts);
+    const checked = sides.map(function () { return true; });
+    const fronts = roads.length ? detectFrontSides(sides, roads) : [];
+    // A contractor does not fence the frontage. A corner lot faces two streets
+    // and loses both.
+    fronts.forEach(function (f) { checked[f.index] = false; });
+    return {
+      choice: choice,
+      ringPts: ringPts,
+      ring: ringPts.map(function (p) { return { lat: p[0], lng: p[1] }; }),
+      sides: sides,
+      checked: checked,
+      fronts: fronts,
+    };
   }
 
   async function loadParcelForOrigin() {
@@ -1339,8 +1687,8 @@ export function initFenceEstimatorContent(
       const osmPromise = fetchPropertyBoundary(o.lat, o.lng);
       osmPromise
         .then(function (res) {
-          const ringPts = parcelRing
-            ? parcelRing.map(function (ll) { return latLngToLocalFeet(o, ll); })
+          const ringPts = parcelLots.length
+            ? parcelLots[0].ring.map(function (ll) { return latLngToLocalFeet(o, ll); })
             : null;
           siteBuildings = buildingsToFootprints(res.buildings, o, ringPts);
           pushModel();
@@ -1371,33 +1719,43 @@ export function initFenceEstimatorContent(
         return;
       }
       const data = (await res.json()) as ParcelApiHit;
-      const ring = pickRing(data.rings, o);
-      if (!ring) {
+      // One lot or several, the rest of this function works off the same list.
+      const choices: ParcelChoiceApi[] = data.parcels && data.parcels.length
+        ? data.parcels
+        : [{ robustId: data.parcel.robustId, owner: data.parcel.owner, address: data.parcel.address, acreage: data.parcel.acreage, rings: data.rings }];
+      parcelWasCached = data.cached;
+
+      // The lots draw immediately; the sides list waits for the streets, which
+      // are already in flight. Doing it the other way round would show a panel
+      // whose checkboxes change under the contractor's cursor a second later.
+      const build = (roads: RoadLine[]) =>
+        choices
+          .map(function (c) { return toLot(c, o, roads); })
+          .filter(function (l): l is ParcelLot { return l !== null; });
+      parcelLots = build([]);
+      parcelHover = null;
+      if (!parcelLots.length) {
         hideParcelPanel();
         pushMap();
         sayHint('Parcel geometry was empty — trace the fence manually.');
         return;
       }
-      parcelRingPts = ring;
-      parcelRing = ring.map(function (p) { return { lat: p[0], lng: p[1] }; });
-      parcelSides = groupSides(ring);
-      parcelChecked = parcelSides.map(function () { return true; });
-      parcelHover = null;
-      // The lot draws immediately; the sides list waits for the streets, which
-      // are already in flight. Doing it the other way round would show a panel
-      // whose checkboxes change under the contractor's cursor a second later.
       pushMap();
 
-      // The street side comes off by default — a contractor does not fence the
-      // frontage. A corner lot faces two streets and loses both.
       const osm = await osmPromise.catch(function () { return null; });
-      const fronts = osm ? detectFrontSides(parcelSides, osm.roads) : [];
-      fronts.forEach(function (f) { parcelChecked[f.index] = false; });
-      renderParcelPanel(data, fronts);
-      if (!fronts.length) {
+      parcelRoads = osm ? osm.roads : [];
+      parcelLots = build(parcelRoads);
+      renderParcelPanel();
+      pushMap();
+      if (parcelLots.length > 1) {
+        sayHint('This property is recorded as ' + parcelLots.length +
+          ' lots — every one of them is drawn, and every side is listed below.');
+      }
+      const anyFront = parcelLots.some(function (l) { return l.fronts.length > 0; });
+      if (!anyFront) {
         sayHint(
           osm && osm.roads.length
-            ? 'No street runs close enough to call a frontage here — check the sides yourself before using the footage.'
+            ? 'No street runs close enough to call a frontage here — check the sides yourself before laying the fence.'
             : 'Street data was unavailable, so no side was marked as frontage — uncheck the street side manually.',
         );
       }
@@ -1409,41 +1767,53 @@ export function initFenceEstimatorContent(
     }
   }
 
-  /** Indices of the stubs — real boundary, too small to be worth a row. */
-  function shortSideIndices(): number[] {
+  /** Indices of one lot's stubs — real boundary, too small to be worth a row. */
+  function shortSideIndices(lot: ParcelLot): number[] {
     const out: number[] = [];
-    parcelSides.forEach(function (s, i) { if (s.short) out.push(i); });
+    lot.sides.forEach(function (s, i) { if (s.short) out.push(i); });
     return out;
   }
 
-  /** Escape a value that came from OSM before it goes into innerHTML — a street
-   *  name is third-party text, not a literal. */
+  /** Escape a value that came from OSM or a deed record before it goes into
+   *  innerHTML — an owner or a street name is third-party text, not a literal. */
   function esc(s: string): string {
     return s.replace(/[&<>"]/g, function (c) {
       return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
     });
   }
 
-  function renderParcelPanel(data: ParcelApiHit, fronts: FrontSideMatch[]) {
+  /** Every lot's sides, in one list. With more than one lot each gets a heading
+   *  row naming the deed, so a side belongs to a lot the contractor can see. */
+  function renderParcelPanel() {
     const panel = $('#parcelPanel');
     const meta = $('#parcelMeta');
     const list = $('#parcelSides');
-    if (!panel || !meta || !list) return;
+    if (!panel || !meta || !list || !parcelLots.length) return;
+    const subject = parcelLots[0].choice;
     const bits: string[] = [];
-    if (data.parcel.owner) bits.push(data.parcel.owner);
-    if (typeof data.parcel.acreage === 'number') bits.push(data.parcel.acreage.toFixed(2) + ' ac');
-    if (data.cached) bits.push('cached');
+    if (subject.owner) bits.push(subject.owner);
+    const acres = parcelLots.reduce(function (a, l) { return a + (l.choice.acreage ?? 0); }, 0);
+    if (acres > 0) bits.push(acres.toFixed(2) + ' ac');
+    if (parcelLots.length > 1) bits.push(parcelLots.length + ' lots');
+    if (parcelWasCached) bits.push('cached');
     meta.textContent = bits.join(' · ') || '—';
 
-    const frontBy = new Map<number, FrontSideMatch>();
-    fronts.forEach(function (f) { frontBy.set(f.index, f); });
+    let html = '';
+    parcelLots.forEach(function (lot, li) {
+      if (parcelLots.length > 1) {
+        const name = lot.choice.address || lot.choice.owner || 'Lot ' + (li + 1);
+        const ac = typeof lot.choice.acreage === 'number' ? ' · ' + lot.choice.acreage.toFixed(2) + ' ac' : '';
+        html += '<li class="ps-lot"><span class="ps-lot-n">Lot ' + (li + 1) + '</span>' +
+          '<span class="ps-lot-a">' + esc(name + ac) + '</span></li>';
+      }
+      const frontBy = new Map<number, FrontSideMatch>();
+      lot.fronts.forEach(function (f) { frontBy.set(f.index, f); });
 
-    // Only the walls get rows, numbered as they read (1..N), not by their index
-    // in the surveyed ring.
-    let n = 0;
-    let html = parcelSides
-      .map(function (s, i) {
-        if (s.short) return '';
+      // Only the walls get rows, numbered as they read (1..N), not by their
+      // index in the surveyed ring.
+      let n = 0;
+      lot.sides.forEach(function (s, i) {
+        if (s.short) return;
         n += 1;
         const front = frontBy.get(i);
         // The street's own name is the contractor's confirmation that the right
@@ -1452,34 +1822,33 @@ export function initFenceEstimatorContent(
         const trailing = front && front.streetName
           ? '<span class="ps-street">' + esc(front.streetName) + '</span>'
           : '<span class="ps-dir">' + bearingLabel(s.bearing) + '</span>';
-        return (
-          '<li class="ps-row" data-side="' + i + '">' +
+        html +=
+          '<li class="ps-row" data-lot="' + li + '" data-side="' + i + '">' +
           '<label class="ps-label">' +
-          '<input type="checkbox" data-side-check="' + i + '"' + (parcelChecked[i] ? ' checked' : '') + ' />' +
+          '<input type="checkbox" data-side-check="' + i + '"' + (lot.checked[i] ? ' checked' : '') + ' />' +
           '<span class="ps-name">Side ' + n + '</span>' +
           (front ? '<span class="ps-tag">street</span>' : '') +
           '<span class="ps-ft">' + Math.round(s.feet) + ' ft</span>' +
           trailing +
-          '</label></li>'
-        );
-      })
-      .join('');
+          '</label></li>';
+      });
 
-    // The stubs, as ONE row. They stay in the geometry (dropping them would
-    // open gaps at the corners they connect) and default to included.
-    const shorts = shortSideIndices();
-    if (shorts.length) {
-      const ft = shorts.reduce(function (sum, i) { return sum + parcelSides[i].feet; }, 0);
-      const on = shorts.every(function (i) { return parcelChecked[i]; });
-      html +=
-        '<li class="ps-row ps-row--short" data-side-short="1">' +
-        '<label class="ps-label">' +
-        '<input type="checkbox" data-side-short-check="1"' + (on ? ' checked' : '') + ' />' +
-        '<span class="ps-name">+' + shorts.length + ' short segments</span>' +
-        '<span class="ps-ft">' + Math.round(ft) + ' ft</span>' +
-        '<span class="ps-dir">—</span>' +
-        '</label></li>';
-    }
+      // The stubs, as ONE row per lot. They stay in the geometry (dropping them
+      // would open gaps at the corners they connect) and default to included.
+      const shorts = shortSideIndices(lot);
+      if (shorts.length) {
+        const ft = shorts.reduce(function (sum, i) { return sum + lot.sides[i].feet; }, 0);
+        const on = shorts.every(function (i) { return lot.checked[i]; });
+        html +=
+          '<li class="ps-row ps-row--short" data-lot="' + li + '" data-side-short="1">' +
+          '<label class="ps-label">' +
+          '<input type="checkbox" data-side-short-check="1"' + (on ? ' checked' : '') + ' />' +
+          '<span class="ps-name">+' + shorts.length + ' short segments</span>' +
+          '<span class="ps-ft">' + Math.round(ft) + ' ft</span>' +
+          '<span class="ps-dir">—</span>' +
+          '</label></li>';
+      }
+    });
 
     list.innerHTML = html;
     panel.classList.remove('is-hidden');
@@ -1487,36 +1856,35 @@ export function initFenceEstimatorContent(
     updateParcelSum();
   }
 
+  /** Checked footage across the WHOLE property, every lot included. */
   function checkedParcelFt(): number {
-    return parcelSides.reduce(function (sum, s, i) {
-      return sum + (parcelChecked[i] ? s.feet : 0);
+    return parcelLots.reduce(function (total, lot) {
+      return total + lot.sides.reduce(function (sum, s, i) {
+        return sum + (lot.checked[i] ? s.feet : 0);
+      }, 0);
     }, 0);
   }
 
   function updateParcelSum() {
-    const lbl = $('#parcelUseLbl');
-    const btn = $('#parcelUse') as HTMLButtonElement | null;
+    const sum = $('#parcelSum');
     const ft = Math.round(checkedParcelFt());
-    if (lbl) lbl.textContent = 'Use ' + ft + ' ft in estimate';
-    if (btn) btn.disabled = ft <= 0;
+    if (sum) sum.textContent = ft + ' ft checked';
+    syncFenceBtn();
   }
 
-  /** Checked sides → the trace. Consecutive checked sides share vertices, so
-   *  they arrive as one polyline; an unchecked side between two checked ones
-   *  becomes a run break (`gap` on the next group's first point) — the same
-   *  encoding a hand-drawn multi-run trace uses. Wrap-around is honoured: side
-   *  n-1 flowing into side 0 is one continuous run when both are checked. */
-  function applyParcelSelection() {
-    const o = mapOrigin;
-    if (!o || !parcelSides.length) return;
-    const n = parcelSides.length;
-    if (!parcelChecked.some(Boolean)) return;
+  /** One lot's checked sides → a list of polylines in local feet. Consecutive
+   *  checked sides share vertices, so they come out as one line; an unchecked
+   *  side between two checked ones splits the lot into two lines. Wrap-around is
+   *  honoured: side n-1 flowing into side 0 is one continuous run when both are
+   *  checked. */
+  function lotFenceLines(lot: ParcelLot, o: { lat: number; lng: number }): PathPoint[][] {
+    const n = lot.sides.length;
+    if (!n || !lot.checked.some(Boolean)) return [];
 
-    // Group indices of maximal consecutive checked runs, in ring order.
     let groups: number[][] = [];
     let current: number[] = [];
     for (let i = 0; i < n; i++) {
-      if (parcelChecked[i]) {
+      if (lot.checked[i]) {
         current.push(i);
       } else if (current.length) {
         groups.push(current);
@@ -1538,84 +1906,105 @@ export function initFenceEstimatorContent(
     // surveyed kink between them. That is both what gets built (a fence runs
     // straight between its end posts) and what keeps the ledger legible: one
     // ledger run per row in the panel.
-    const pts: PathPoint[] = [];
-    groups.forEach(function (g, gi) {
-      const start = parcelSides[g[0]].from;
-      const startPt = latLngToLocalFeet(o, { lat: start[0], lng: start[1] });
-      pts.push(gi === 0 ? startPt : { ...startPt, gap: true });
-      g.forEach(function (i) {
-        const to = parcelSides[i].to;
-        pts.push(latLngToLocalFeet(o, { lat: to[0], lng: to[1] }));
-      });
-    });
+    //
     // NOTE: when every side is checked the last vertex coincides with the
     // first. It STAYS — that duplicate is what closes the loop and what makes
-    // the final side exist. Popping it (as this did) silently dropped one whole
-    // side of the lot from the estimate.
+    // the final side exist.
+    return groups.map(function (g) {
+      const start = lot.sides[g[0]].from;
+      const line: PathPoint[] = [latLngToLocalFeet(o, { lat: start[0], lng: start[1] })];
+      g.forEach(function (i) {
+        const to = lot.sides[i].to;
+        line.push(latLngToLocalFeet(o, { lat: to[0], lng: to[1] }));
+      });
+      return line;
+    });
+  }
+
+  /**
+   * "Put down the fence": lay fence along the checked sides of every lot.
+   *
+   * ADDITIVE, on purpose. Anything already traced on the map stays exactly where
+   * it is and the property lines arrive as further runs — a `gap` on each new
+   * line's first point is the same encoding a hand-drawn multi-run trace uses,
+   * so the two are one trace from here on and the ledger numbers them together.
+   */
+  function putDownTheFence(btn: HTMLElement) {
+    const o = mapOrigin;
+    if (!o || !parcelLots.length) {
+      sayHint('Search the property address first — the fence is laid along the lot lines that loads.');
+      return;
+    }
+    const lines: PathPoint[][] = [];
+    parcelLots.forEach(function (lot) {
+      lotFenceLines(lot, o).forEach(function (line) { if (line.length >= 2) lines.push(line); });
+    });
+    if (!lines.length) {
+      sayHint('No sides are checked — tick the property sides you are fencing, then put the fence down.');
+      return;
+    }
+
+    const pts: PathPoint[] = mapPoints.slice();
+    lines.forEach(function (line) {
+      line.forEach(function (p, i) {
+        // The first point of every appended line breaks the run, so no fence is
+        // drawn across the connector back to whatever was traced before it.
+        pts.push(i === 0 && pts.length ? { ...p, gap: true } : p);
+      });
+    });
     applyTracedPath(pts);
+
+    const old = btn.innerHTML;
+    btn.dataset.busy = '1';
+    btn.innerHTML = '<svg class="ic"><use href="#i-check"/></svg>Fence down';
+    after(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1600);
     sayHint(
-      'Fence seeded from ' + Math.round(checkedParcelFt()) +
-      ' ft of property line — drag the dots to fine-tune, or add gates and doors.',
+      Math.round(checkedParcelFt()) + ' ft of fence laid along the property line' +
+      (parcelLots.length > 1 ? ' across ' + parcelLots.length + ' lots' : '') +
+      ' — drag the dots to fine-tune, or add gates and doors.',
     );
   }
 
   // Panel wiring — delegated, registered once (the panel node is in the initial
-  // markup; only its LIST is rebuilt per parcel).
+  // markup; only its LIST is rebuilt per property).
   const parcelPanelEl = $('#parcelPanel');
   if (parcelPanelEl) {
     on(parcelPanelEl, 'change', function (e) {
       const el = e.target as HTMLElement;
+      const row = el.closest<HTMLElement>('[data-lot]');
+      const lot = parcelLots[Number(row?.dataset.lot ?? -1)];
+      if (!lot) return;
       const box = el.closest<HTMLInputElement>('[data-side-check]');
       if (box) {
-        parcelChecked[Number(box.dataset.sideCheck)] = box.checked;
+        lot.checked[Number(box.dataset.sideCheck)] = box.checked;
         updateParcelSum();
         return;
       }
       // The stubs move together — they are one row, so they are one decision.
       const shortBox = el.closest<HTMLInputElement>('[data-side-short-check]');
       if (shortBox) {
-        shortSideIndices().forEach(function (i) { parcelChecked[i] = shortBox.checked; });
+        shortSideIndices(lot).forEach(function (i) { lot.checked[i] = shortBox.checked; });
         updateParcelSum();
       }
     });
-    on(parcelPanelEl, 'click', function (e) {
-      if ((e.target as HTMLElement).closest('#parcelUse')) applyParcelSelection();
-    });
     on(parcelPanelEl, 'mouseover', function (e) {
       const row = (e.target as HTMLElement).closest<HTMLElement>('[data-side]');
-      const next = row ? Number(row.dataset.side) : null;
-      if (next !== parcelHover) { parcelHover = next; pushMap(); }
+      const next = row
+        ? { lot: Number(row.dataset.lot ?? 0), side: Number(row.dataset.side) }
+        : null;
+      const same =
+        (next === null && parcelHover === null) ||
+        (next !== null &&
+          parcelHover !== null &&
+          next.lot === parcelHover.lot &&
+          next.side === parcelHover.side);
+      if (!same) { parcelHover = next; pushMap(); }
     });
     on(parcelPanelEl, 'mouseleave', function () {
       if (parcelHover !== null) { parcelHover = null; pushMap(); }
     });
   }
 
-  /** The old "Load property lines" button — now a manual retrigger of the same
-   *  ReportAll flow (useful after a miss, or to re-open the sides panel). */
-  async function loadParcel(btn: HTMLElement) {
-    const say = (icon: string, label: string) => {
-      btn.innerHTML = '<svg class="ic"><use href="#' + icon + '"/></svg>' + label;
-    };
-    const old = btn.innerHTML;
-    btn.dataset.busy = '1';
-    if (!mapIsland) {
-      // No browser key → no surface to draw a parcel on. Checked FIRST: without
-      // a key the address search cannot resolve either, so "search an address"
-      // would send the user after something that can't happen.
-      say('i-board', 'Map layer required');
-    } else if (!mapOrigin) {
-      // The parcel is looked up BY POINT: without a resolved address the only
-      // point available is the surface's sample lot, which is someone else's.
-      say('i-pin', 'Search an address');
-      sayHint('Search the property address first — property lines are looked up from that point.');
-    } else {
-      say('i-board', 'Loading…');
-      await loadParcelForOrigin();
-      say(parcelRing ? 'i-check' : 'i-board', parcelRing ? 'Lines loaded' : 'No parcel data');
-    }
-    after(function () { btn.innerHTML = old; delete btn.dataset.busy; }, 1800);
-  }
 
   // ================= CONVERT TO PROPOSAL =================
   // The last leg of the flow, and the only one that writes. It used to be a
@@ -1752,8 +2141,14 @@ export function initFenceEstimatorContent(
   }
 
   // ================= INITIALIZATION =================
+  // The rate override is read BEFORE the first paint: restoring it afterwards
+  // would render the card price and then swap it, which reads as a glitch.
+  restoreRate();
   renderStudio();
-  mountMap();
+  // The map is NOT mounted here: it mounts when an address resolves (showSite).
+  // Without a browser key there is no surface to wait for, so the slot is told
+  // that now rather than leaving a prompt that can never be satisfied.
+  if (!isMapsBrowserEnabled()) mountMap();
 
   // The matchMedia polyfill, mobile nav drawer and FLUID SCALE belong to the
   // persistent chrome and live in

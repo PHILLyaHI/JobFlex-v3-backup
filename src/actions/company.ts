@@ -1,10 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireManager } from "@/lib/orgContext";
+import { requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { TRADE_TYPES } from "@/lib/tradeTypes";
+import { TRADE_TYPES, parseTradeTypes } from "@/lib/tradeTypes";
 import { geocodeAddress } from "@/lib/maps";
+import { loadTeamActivity } from "@/lib/teamActivity";
+import { toActivityEntries } from "@/components/v3/company-blueprint/company-data";
 
 const brandingInput = z.object({
   name: z.string().min(1).optional(),
@@ -61,6 +63,10 @@ const leadProfileInput = z.object({
   address: z.string().trim().max(240).nullable().optional(),
   phone: z.string().trim().max(40).nullable().optional(),
   tradeTypes: z.array(z.enum(TRADE_TYPES)).max(TRADE_TYPES.length).optional(),
+  // Free text under the "Other" chip. It has its own column because
+  // tradeTypesJson is validated against the closed TRADE_TYPES vocabulary and
+  // drops anything else on read (same rule the register form follows).
+  otherTrade: z.string().trim().max(80).nullable().optional(),
   leadOffersEnabled: z.boolean().optional(),
 });
 
@@ -88,12 +94,55 @@ export async function updateLeadProfile(raw: unknown) {
       ...(data.address !== undefined && { address: data.address }),
       ...(data.phone !== undefined && { phone: data.phone }),
       ...(data.tradeTypes !== undefined && { tradeTypesJson: JSON.stringify(data.tradeTypes) }),
+      // Dropping "Other" drops the text with it — a named trade nobody can see
+      // is a value that quietly keeps matching against a chip that is off.
+      ...(data.tradeTypes !== undefined &&
+        !data.tradeTypes.includes("Other") && { otherTrade: null }),
+      ...(data.otherTrade !== undefined && { otherTrade: data.otherTrade || null }),
       ...(data.leadOffersEnabled !== undefined && { leadOffersEnabled: data.leadOffersEnabled }),
       ...(geoData ?? {}),
     },
   });
   revalidatePath("/dashboard/company");
   revalidatePath("/dashboard");
+}
+
+/**
+ * Read-only seed for the handheld Company surface (mobile-company-v2), which
+ * ResponsiveDashboardShell mounts props-less. Same guard and same reads as the
+ * desktop page (app/dashboard/company/page.tsx): requireOrg() for the org row,
+ * loadTeamActivity for members + feed, and the SAME toActivityEntries mapper —
+ * plus the ActivityEvent id per entry, which the handheld feed needs for React
+ * keys and its row-actions sheet.
+ */
+export async function getCompanySeed() {
+  const { organizationId } = await requireOrg();
+  const [org, activity] = await Promise.all([
+    db.organization.findUnique({ where: { id: organizationId } }),
+    loadTeamActivity(organizationId),
+  ]);
+  if (!org) throw new Error("Organization not found");
+
+  const entries = toActivityEntries(activity.activities);
+  return {
+    org: {
+      name: org.name,
+      billingEmail: org.billingEmail ?? "",
+      phone: org.phone ?? "",
+      website: org.website ?? "",
+      address: org.address ?? "",
+      primaryColor: org.primaryColor ?? "",
+      logoUrl: org.logoUrl,
+      tradeTypes: parseTradeTypes(org.tradeTypesJson) as string[],
+      leadOffersEnabled: org.leadOffersEnabled,
+      publicProfileEnabled: org.publicProfileEnabled,
+      landingHeroTitle: org.landingHeroTitle ?? "",
+      landingHeroSubtitle: org.landingHeroSubtitle ?? "",
+    },
+    members: activity.members,
+    // toActivityEntries maps rows 1:1 and in order, so index i is row i.
+    activity: entries.map((e, i) => ({ ...e, id: activity.activities[i].id })),
+  };
 }
 
 const landingInput = z.object({

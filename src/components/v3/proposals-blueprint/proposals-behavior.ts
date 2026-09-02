@@ -47,8 +47,12 @@ import {
   uploadProposalPhoto,
 } from "@/actions/proposals";
 import { notifyPaymentReminder } from "@/actions/notify";
+// The handheld surface's route-local read of the SAME book this page renders
+// from (same query, same requireProposalStaff guard) — used to pick up a row
+// the server just created without leaving the page.
+import { loadProposalBook } from "@/app/(mobile)/mobile-proposals-v2/proposals-actions";
 import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
-import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { currentZoom, leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { MDL_EXIT_MS, closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { mountIsland, type Island } from "@/components/v3/blueprint-shell/react-island";
 import {
@@ -856,19 +860,31 @@ export function initProposalsContent(
       '<div class="pmenu-div"></div>' +
       menuItem("i-trash", "pmi--danger", "Delete proposal", "Permanent", "del", { danger: true });
     pMenu.classList.add("open");
-    // The donor zooms document.documentElement; the port zooms the page root.
-    const z = parseFloat(root.style.getPropertyValue("zoom")) || 1;
+    // FLUID SCALE zoom lives on the SHELL ROOT (.jf-blueprint), not on this
+    // page's `.content` column and not on documentElement — so reading it off
+    // `root` here always parsed "" to NaN and fell through to 1. At any window
+    // other than the ~1728px reference the menu was then laid out in the wrong
+    // unit system: on a wide screen (zoom up to 1.35) it painted 254 × zoom
+    // wide while the clamp still believed 254, and ran off the right edge of
+    // the viewport with the client's email clipped in half.
+    const z = currentZoom(btn);
     const vw = window.innerWidth / z,
       vh = window.innerHeight / z;
+    // getBoundingClientRect reports ZOOMED pixels; `left`/`top` are written
+    // back into the zoomed subtree, which measures in unzoomed ones. Every
+    // measurement crossing that boundary has to be divided by z.
     const r = btn.getBoundingClientRect();
+    const rRight = r.right / z,
+      rTop = r.top / z,
+      rBottom = r.bottom / z;
     const mw = 254;
-    let left = Math.min(r.right - mw, vw - mw - 12);
+    let left = Math.min(rRight - mw, vw - mw - 12);
     left = Math.max(12, left);
     pMenu.style.left = left + "px";
     pMenu.style.top = "0px";
     const mh = pMenu.offsetHeight;
-    let top = r.bottom + 6;
-    if (top + mh > vh - 12) top = Math.max(12, r.top - mh - 6);
+    let top = rBottom + 6;
+    if (top + mh > vh - 12) top = Math.max(12, rTop - mh - 6);
     pMenu.style.top = top + "px";
   }
   function closeMenu() {
@@ -1139,16 +1155,38 @@ export function initProposalsContent(
     btn?.classList.add("is-busy");
     try {
       const res = await duplicateProposal(p.id);
-      // The copy's publicId is generated server-side and is not returned, so
-      // there is nothing honest to append to the list here. The classic menu
-      // opened the copy in the editor ("Clone & edit"); do the same — the copy
-      // exists in the database either way.
-      window.location.assign("/dashboard/proposals/" + encodeURIComponent(res.id));
+      // Duplicating is a LIST action: it makes a second row, and the person
+      // doing it is working through the list. Sending them into an editor for
+      // the copy (which is what "Clone & edit" used to do, via a hard
+      // location.assign that also replayed the whole blueprint entrance) threw
+      // away their filter, their tab and their scroll position to open a
+      // document they had not asked to edit.
+      //
+      // Re-reading the book is what makes the copy appear: duplicateProposal
+      // returns only an id, and a row needs a publicId, a client, totals and a
+      // Zillow link — all server-derived. loadProposalBook() is the SAME query
+      // the page rendered from, behind the same guard.
+      proposalsData = cloneRows(await loadProposalBook());
+      renderAll();
+      repaintExcept("all");
+      pstate.writing = false;
+      btn?.classList.remove("is-busy");
+      flashRow(res.id);
     } catch (err) {
       pstate.writing = false;
       btn?.classList.remove("is-busy");
       showAlert("Couldn't duplicate", actionError(err));
     }
+  }
+
+  /** Bring a freshly-created row into view and mark it, so a copy that lands
+   *  further down a long list is not silently off-screen. */
+  function flashRow(id: string) {
+    const tr = findRow($("#propTableBody"), id);
+    if (!tr) return;
+    tr.scrollIntoView({ block: "center", behavior: "smooth" });
+    tr.classList.add("is-fresh");
+    window.setTimeout(() => tr.classList.remove("is-fresh"), 2200);
   }
 
   let sendId: string | null = null;

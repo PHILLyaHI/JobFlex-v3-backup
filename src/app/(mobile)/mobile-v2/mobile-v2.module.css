@@ -191,11 +191,13 @@
    92px step, which quietly clipped ~1px off each side of the mark. */
 .tbarMarkBox {
   position: relative;
-  /* Top-anchored, not centred: --mark-top IS where the ink's top edge sits,
-     measured from the bar's top. The -0.5px is the hair of clearance the box
-     carries so antialiasing is not clipped. */
-  align-self: flex-start;
-  margin-top: calc(var(--mark-top) - 0.5px);
+  /* CENTRED, not top-anchored — same correction as the shared bar's own box in
+     mobile-shell/mobile-nav.module.css, and it has to be made in both places
+     because this surface draws its own copy of the topbar. --mark-top pinned
+     the ink's top edge at a flat 9px, which put ~50.3px of ink 8.5px down a
+     62px bar: ~2.7px BELOW the axis the wordmark beside it is centred on, and
+     that is the offset visible in the bar. */
+  align-self: center;
   width: calc(var(--mark-size) * 0.3462 + 1px);
   height: calc(var(--mark-size) * 0.4253 + 1px);
   overflow: hidden;
@@ -303,6 +305,10 @@
   width: 19px;
   height: 19px;
 }
+/* Pushes the bell to the right edge of the bar; the wordmark keeps its place
+   next to the burger. */
+.tbarBell { margin-left: auto; }
+
 .bellDot {
   position: absolute;
   top: 9px;
@@ -342,6 +348,15 @@
 .scroll::-webkit-scrollbar {
   width: 0;
 }
+/* The boot/failure screen renders without the topbar, so it has to claim the
+   grid's middle row explicitly — otherwise it sits in the topbar row and is
+   clipped to its height. Centred, because there is nothing else on the sheet. */
+.bootMain {
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+}
+
 .content {
   position: relative;
   z-index: 1;
@@ -1971,3 +1986,11 @@
     width: 58px;
   }
 }
+
+/* ── Room for the floating support plate ──────────────────────
+   The Help launcher is a fixed pill in the bottom-right corner
+   again (support-widget.css, owner's call 2026-08-27). It floats
+   just above this fleet's tab bar, so the scroller reserves the
+   strip it stands in — otherwise the last row of every list ends
+   underneath it with no way to scroll clear. */
+.scroll { padding-bottom: 60px; }

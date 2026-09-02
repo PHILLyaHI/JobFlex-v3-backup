@@ -1,0 +1,67 @@
+// Admin shell — the platform console's navigation map. ONE source of truth
+// for the desktop sidebar and the handheld drawer (they are the same `.sb`
+// markup; the donor's mobile layer turns it into a drawer below 860px).
+//
+// Plain data + pure functions, no "use client" — importable from the server
+// layout as well as the client sidebar. Shaped like blueprint-shell/nav-map's
+// NavSection so the sidebar markup can stay the donor's verbatim.
+//
+// Icons are sprite symbol ids from proposals-blueprint/sprite.tsx — the admin
+// shell mounts that same sprite. Where no symbol fits the surface literally,
+// the closest in meaning was taken; none are invented.
+
+import type { NavSection } from "@/components/v3/blueprint-shell/nav-map";
+
+export const ADMIN_HOME = "/admin";
+
+export const ADMIN_NAV_SECTIONS: NavSection[] = [
+  {
+    label: "Platform",
+    items: [
+      { label: "Overview", icon: "i-grid", href: "/admin" },
+      { label: "Traffic", icon: "i-chart", href: "/admin/traffic" },
+      { label: "Subscribers", icon: "i-card", href: "/admin/subscribers" },
+    ],
+  },
+  {
+    label: "Manage",
+    items: [
+      { label: "Users & subscriptions", icon: "i-users", href: "/admin/users" },
+      { label: "Plans", icon: "i-file", href: "/admin/plans" },
+      { label: "Influencers", icon: "i-megaphone", href: "/admin/influencers" },
+      { label: "Payouts", icon: "i-bank", href: "/admin/payouts" },
+      { label: "Referrals", icon: "i-gift", href: "/admin/referrals" },
+    ],
+  },
+  {
+    label: "Operate",
+    items: [
+      { label: "Lead Center", icon: "i-target", href: "/admin/lead-center" },
+      { label: "Support", icon: "i-msg", href: "/admin/support" },
+      { label: "Health", icon: "i-check", href: "/admin/health" },
+      { label: "Integrations", icon: "i-link", href: "/admin/integrations" },
+      { label: "Campaigns", icon: "i-send", href: "/admin/campaigns" },
+      { label: "Specialties", icon: "i-box", href: "/admin/specialties" },
+    ],
+  },
+];
+
+/**
+ * The nav item that owns `pathname`: exact match for the Overview root, longest
+ * prefix match for everything else so child routes (/admin/users/[id]) keep
+ * their parent lit. Null when nothing in the map claims the path.
+ */
+export function activeAdminHref(pathname: string): string | null {
+  let best: string | null = null;
+  for (const section of ADMIN_NAV_SECTIONS) {
+    for (const item of section.items) {
+      if (item.href === ADMIN_HOME) {
+        if (pathname === ADMIN_HOME && best === null) best = item.href;
+        continue;
+      }
+      const hit = pathname === item.href || pathname.startsWith(item.href + "/");
+      if (hit && (best === null || item.href.length > best.length)) best = item.href;
+    }
+  }
+  return best;
+}

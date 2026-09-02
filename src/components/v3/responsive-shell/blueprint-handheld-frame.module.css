@@ -1,0 +1,24 @@
+/* The blueprint page's own layout is a desk grid: `.layout` reserves a sidebar
+   column and `.main` is the scrolling pane beside it. In this frame there is no
+   sidebar and the document itself scrolls, so both collapse to plain blocks.
+   Everything below `.content` is the page's own stylesheet, untouched. */
+.frame :global(.layout) {
+  display: block;
+  min-height: 0;
+}
+.frame :global(.main) {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+/* Handheld gutters, and the same bottom strip every other surface reserves for
+   the floating support plate (support-widget.css). */
+.frame :global(.content) {
+  padding: 18px 14px 132px;
+}
+/* The desk shell's graph-paper wash is drawn by `.main::before` as a FIXED
+   layer sized to the sidebar; with no sidebar it would sit under the topbar at
+   the wrong offset, so it is turned off here rather than re-measured. */
+.frame :global(.main)::before {
+  display: none;
+}

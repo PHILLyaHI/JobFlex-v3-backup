@@ -1,0 +1,665 @@
+/* LANDING B — rev 2 (owner review, 2026-08-23).
+
+   PLAIN STYLESHEET, NOT A CSS MODULE — and that is structural, not taste.
+   Three constructs below break under module hashing:
+     1. `.jf-landing-b *` — a scoped universal reset. `*` is not a class, so
+        the modules pipeline would leave it UNSCOPED and it would flatten every
+        other page in the app.
+     2. the `body:has(.jf-landing-b)` host neutralizers — they have to reach
+        <body>, which sits outside any hashed subtree.
+     3. `.lb-rv` is queried by literal string from use-landing-b-behavior.ts.
+   So every selector carries one literal `.jf-landing-b` prefix, uniformly.
+   Relative specificity is therefore unchanged from the unprefixed form, which
+   is what makes the transform safe. Same precedent as
+   src/components/v3/landing/landing.css.
+
+   ── WHAT CHANGED IN REV 2 ────────────────────────────────────────────────
+   The ground is WHITE. Rev 1 used the house beige (#f2f0eb) and every card had
+   to be a lighter surface laid on it, so the page carried two competing
+   grounds everywhere and read as busy. On white there are exactly three
+   surfaces — page, one alternating grey band, and the hairline — and the ink
+   does the rest of the work. The blueprint identity now rests on four things
+   and nothing else: near-black heavy caps, one blue, squared 2px corners, and
+   the mono annotation layer. No graph paper, no crop marks, no stamps, no
+   dimension strings anywhere on the page.
+
+   Rhythm is one number, `--lb-gap`, and it is large on purpose: cal.com's calm
+   is mostly vertical space, not decoration.
+
+   @keyframes cannot nest under a class, so the one keyframe carries the `lb_`
+   prefix already used by `hire_sheetIn` / `calendar_scrimIn` elsewhere. */
+
+/* ── host neutralizers ──────────────────────────────────────────────────────
+   globals.css paints a drafting grid and a grain layer on <body> for the app
+   shell. This page is white and they show through it. Both are `:has()`-gated
+   so they restore themselves the moment this tree unmounts — no cleanup code,
+   no risk of a marketing page permanently altering the app. */
+body:has(.jf-landing-b) {
+  background-image: none;
+  background-color: #ffffff;
+}
+body:has(.jf-landing-b)::before {
+  content: none;
+}
+
+.jf-landing-b {
+  /* surface — three tones, and that is the whole palette */
+  --lb-bg: #ffffff;
+  --lb-bg-alt: #f7f7f8;
+  --lb-line: #e6e6e9;
+  --lb-line-2: #d3d3d8;
+
+  /* ink — three weights, all AA or better on both grounds */
+  --lb-ink: #0a0a0a; /* 19.3:1 on white */
+  --lb-ink-2: #52525b; /*  7.6:1 — body copy */
+  --lb-ink-3: #7c7c86; /*  4.6:1 — meta, labels */
+  --lb-onink: #ffffff;
+  --lb-onink-2: #a1a1aa;
+
+  /* accent — one blue, and it is never a large fill */
+  --lb-blue: #1854a0; /* 7.4:1 on white, safe as text */
+  --lb-blue-deep: #0e3d7a;
+
+  --lb-font: var(--font-inter), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --lb-mono: var(--font-jbmono), "SF Mono", ui-monospace, monospace;
+
+  --lb-r: 2px;
+  --lb-shell: 1120px;
+  --lb-pad: clamp(20px, 5vw, 40px);
+  --lb-gap: clamp(84px, 10vw, 148px);
+  --lb-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  position: relative;
+  background: var(--lb-bg);
+  color: var(--lb-ink);
+  font-family: var(--lb-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* scoped reset — see the header for why this cannot be a module */
+.jf-landing-b *,
+.jf-landing-b *::before,
+.jf-landing-b *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+.jf-landing-b ul {
+  list-style: none;
+}
+.jf-landing-b a {
+  color: inherit;
+  text-decoration: none;
+}
+.jf-landing-b img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.jf-landing-b :focus-visible {
+  outline: 2px solid var(--lb-blue);
+  outline-offset: 3px;
+  border-radius: var(--lb-r);
+}
+
+.jf-landing-b .lb-skip {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 60;
+  padding: 12px 16px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--lb-ink);
+  color: var(--lb-onink);
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: var(--lb-r);
+  transition: top 0.16s var(--lb-ease);
+}
+.jf-landing-b .lb-skip:focus-visible {
+  top: 12px;
+}
+
+.jf-landing-b .lb-shell {
+  width: 100%;
+  max-width: var(--lb-shell);
+  margin-inline: auto;
+  padding-inline: var(--lb-pad);
+}
+
+/* ── nav ──────────────────────────────────────────────────────────────────
+   cal's floating detached bar. It is a hairline at rest and only earns its
+   frame once the page has moved — a border pinned to the top of a white page
+   with nothing above it is a line for its own sake. */
+.jf-landing-b .lb-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--lb-bg) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s var(--lb-ease);
+}
+.jf-landing-b .lb-nav.is-scrolled {
+  border-bottom-color: var(--lb-line);
+}
+.jf-landing-b .lb-nav-in {
+  width: 100%;
+  max-width: var(--lb-shell);
+  margin-inline: auto;
+  padding: 14px var(--lb-pad);
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.jf-landing-b .lb-brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.jf-landing-b .lb-nav-links {
+  display: flex;
+  gap: 26px;
+  margin-left: 12px;
+}
+.jf-landing-b .lb-nav-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--lb-ink-2);
+  transition: color 0.14s var(--lb-ease);
+}
+.jf-landing-b .lb-nav-links a:hover {
+  color: var(--lb-ink);
+}
+.jf-landing-b .lb-nav-act {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.jf-landing-b .lb-signin {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 4px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── buttons — ink is primary, blue is never a large fill ─────────────── */
+.jf-landing-b .lb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1.5px solid var(--lb-ink);
+  border-radius: var(--lb-r);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.13s var(--lb-ease),
+    box-shadow 0.13s var(--lb-ease),
+    background 0.13s var(--lb-ease);
+}
+.jf-landing-b .lb-btn-primary {
+  background: var(--lb-ink);
+  color: var(--lb-onink);
+}
+.jf-landing-b .lb-btn-ghost {
+  background: var(--lb-bg);
+  color: var(--lb-ink);
+}
+.jf-landing-b .lb-btn-lg {
+  min-height: 50px;
+  padding: 0 24px;
+  font-size: 15px;
+}
+.jf-landing-b .lb-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--lb-ink);
+}
+.jf-landing-b .lb-btn-primary:hover {
+  background: #1c1c1c;
+}
+.jf-landing-b .lb-btn-ghost:hover {
+  background: var(--lb-bg-alt);
+}
+.jf-landing-b .lb-btn:active {
+  transform: none;
+  box-shadow: none;
+}
+.jf-landing-b .lb-arw {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+  transition: transform 0.16s var(--lb-ease);
+}
+.jf-landing-b .lb-btn:hover .lb-arw {
+  transform: translateX(2px);
+}
+
+/* ── hero ─────────────────────────────────────────────────────────────── */
+.jf-landing-b .lb-hero {
+  padding-top: clamp(56px, 8vw, 104px);
+  padding-bottom: clamp(40px, 5vw, 72px);
+  text-align: center;
+}
+.jf-landing-b .lb-eyebrow {
+  font-family: var(--lb-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lb-ink-3);
+  margin-bottom: 22px;
+}
+.jf-landing-b .lb-h1 {
+  font-size: clamp(38px, 6.4vw, 68px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+  max-width: 16ch;
+  margin-inline: auto;
+  text-wrap: balance;
+}
+.jf-landing-b .lb-lede {
+  margin: 22px auto 0;
+  max-width: 46ch;
+  font-size: clamp(15.5px, 1.5vw, 17.5px);
+  line-height: 1.55;
+  color: var(--lb-ink-2);
+  text-wrap: pretty;
+}
+.jf-landing-b .lb-cta {
+  margin-top: 30px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+.jf-landing-b .lb-note {
+  margin-top: 16px;
+  font-family: var(--lb-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lb-ink-3);
+}
+
+/* the product shot — one frame, one hairline, no chrome around it */
+.jf-landing-b .lb-shot {
+  margin-top: clamp(44px, 6vw, 76px);
+  border: 1px solid var(--lb-line);
+  border-radius: var(--lb-r);
+  overflow: hidden;
+  background: var(--lb-bg);
+}
+.jf-landing-b .lb-shot figcaption {
+  padding: 12px 16px;
+  border-top: 1px solid var(--lb-line);
+  background: var(--lb-bg-alt);
+  font-family: var(--lb-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--lb-ink-3);
+  text-align: left;
+}
+.jf-landing-b .lb-shot-sm {
+  margin-top: 0;
+}
+
+/* ── trades strip ─────────────────────────────────────────────────────── */
+.jf-landing-b .lb-trades {
+  padding-block: clamp(28px, 4vw, 44px);
+  border-block: 1px solid var(--lb-line);
+}
+.jf-landing-b .lb-trades-in {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 4vw, 44px);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.jf-landing-b .lb-trades-lbl {
+  font-family: var(--lb-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lb-ink-3);
+}
+.jf-landing-b .lb-trades ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(18px, 3.2vw, 40px);
+  justify-content: center;
+}
+.jf-landing-b .lb-trades li {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--lb-ink-2);
+}
+
+/* ── bands ────────────────────────────────────────────────────────────── */
+.jf-landing-b .lb-band {
+  padding-block: var(--lb-gap);
+}
+.jf-landing-b .lb-band-alt {
+  background: var(--lb-bg-alt);
+  border-block: 1px solid var(--lb-line);
+}
+.jf-landing-b .lb-head {
+  margin-bottom: clamp(36px, 4.5vw, 56px);
+  max-width: 34ch;
+}
+.jf-landing-b .lb-h2 {
+  font-size: clamp(27px, 3.6vw, 40px);
+  font-weight: 800;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.jf-landing-b .lb-sub {
+  margin-top: 12px;
+  font-size: clamp(15px, 1.4vw, 16.5px);
+  line-height: 1.55;
+  color: var(--lb-ink-2);
+  text-wrap: pretty;
+}
+
+/* ── 3-up grid — the estimators and the quotes share it ───────────────── */
+.jf-landing-b .lb-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(18px, 2.2vw, 26px);
+}
+.jf-landing-b .lb-card {
+  border: 1px solid var(--lb-line);
+  border-radius: var(--lb-r);
+  background: var(--lb-bg);
+  overflow: hidden;
+  transition:
+    border-color 0.16s var(--lb-ease),
+    transform 0.16s var(--lb-ease);
+}
+.jf-landing-b .lb-card:hover {
+  border-color: var(--lb-line-2);
+  transform: translateY(-2px);
+}
+.jf-landing-b .lb-card-img {
+  border-bottom: 1px solid var(--lb-line);
+  background: var(--lb-bg);
+}
+.jf-landing-b .lb-card-t {
+  margin: 20px 20px 0;
+  font-size: 16.5px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+.jf-landing-b .lb-card-d {
+  margin: 7px 20px 22px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--lb-ink-2);
+  text-wrap: pretty;
+}
+
+/* ── split bands ──────────────────────────────────────────────────────── */
+.jf-landing-b .lb-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: center;
+}
+.jf-landing-b .lb-split-txt {
+  max-width: 40ch;
+}
+.jf-landing-b .lb-note-b {
+  margin-top: 20px;
+  color: var(--lb-blue);
+}
+.jf-landing-b .lb-list {
+  margin-top: 26px;
+  display: grid;
+  gap: 1px;
+  background: var(--lb-line);
+  border-block: 1px solid var(--lb-line);
+}
+.jf-landing-b .lb-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 14px 0;
+  background: inherit;
+}
+.jf-landing-b .lb-band .lb-list li {
+  background: var(--lb-bg);
+}
+.jf-landing-b .lb-band-alt .lb-list li {
+  background: var(--lb-bg-alt);
+}
+.jf-landing-b .lb-list b {
+  font-size: 14.5px;
+  font-weight: 700;
+  min-width: 168px;
+}
+.jf-landing-b .lb-list span {
+  font-size: 14.5px;
+  color: var(--lb-ink-2);
+}
+
+/* ── quotes — the face is the wayfinding cue, per the owner's read of cal ── */
+.jf-landing-b .lb-quote {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--lb-line);
+  border-radius: var(--lb-r);
+  background: var(--lb-bg);
+}
+.jf-landing-b .lb-quote-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.jf-landing-b .lb-ava {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--lb-line);
+  background: var(--lb-bg-alt);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.jf-landing-b .lb-quote-who span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.jf-landing-b .lb-quote-who b {
+  font-size: 14px;
+  font-weight: 700;
+}
+.jf-landing-b .lb-quote-who em {
+  font-style: normal;
+  font-family: var(--lb-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lb-ink-3);
+}
+.jf-landing-b .lb-quote-q {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--lb-ink);
+  text-wrap: pretty;
+}
+
+/* ── close ────────────────────────────────────────────────────────────── */
+.jf-landing-b .lb-close {
+  padding-block: var(--lb-gap);
+  border-top: 1px solid var(--lb-line);
+}
+.jf-landing-b .lb-close-in {
+  text-align: center;
+}
+.jf-landing-b .lb-close-h {
+  max-width: 18ch;
+  margin-inline: auto;
+}
+.jf-landing-b .lb-close .lb-cta {
+  margin-top: 28px;
+}
+
+/* ── footer ───────────────────────────────────────────────────────────── */
+.jf-landing-b .lb-foot {
+  background: var(--lb-ink);
+  color: var(--lb-onink);
+  padding-top: clamp(48px, 6vw, 72px);
+}
+.jf-landing-b .lb-foot-in {
+  display: grid;
+  grid-template-columns: 1.6fr repeat(3, 1fr);
+  gap: clamp(28px, 4vw, 48px);
+  padding-bottom: clamp(40px, 5vw, 60px);
+}
+.jf-landing-b .lb-foot-brand p {
+  margin-top: 12px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--lb-onink-2);
+  max-width: 26ch;
+}
+.jf-landing-b .lb-foot-t {
+  font-family: var(--lb-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lb-onink-2);
+  margin-bottom: 14px;
+}
+.jf-landing-b .lb-foot-col li a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14px;
+  color: var(--lb-onink);
+  transition: color 0.14s var(--lb-ease);
+}
+.jf-landing-b .lb-foot-col li a:hover {
+  color: var(--lb-onink-2);
+}
+.jf-landing-b .lb-foot-base {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  justify-content: space-between;
+  padding-block: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: var(--lb-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lb-onink-2);
+}
+
+/* ── reveal ───────────────────────────────────────────────────────────────
+   Fail-safe by construction: the hidden state only applies inside a root the
+   hook has stamped with `data-rv-ready`, and the hook only stamps it after
+   confirming IntersectionObserver exists and reduced motion is off. If JS
+   never runs, the page renders fully visible — the animation cannot eat the
+   content. */
+.jf-landing-b[data-rv-ready] .lb-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.5s var(--lb-ease),
+    transform 0.5s var(--lb-ease);
+}
+.jf-landing-b[data-rv-ready] .lb-rv.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-landing-b *,
+  .jf-landing-b *::before,
+  .jf-landing-b *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  .jf-landing-b[data-rv-ready] .lb-rv {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── responsive ───────────────────────────────────────────────────────────
+   Two breakpoints, both structural. Everything else is clamp(). */
+@media (max-width: 900px) {
+  .jf-landing-b .lb-nav-links {
+    display: none;
+  }
+  .jf-landing-b .lb-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .jf-landing-b .lb-split,
+  .jf-landing-b .lb-split-rev {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  /* The image leads on a phone in both split bands: on a narrow column the
+     picture is what tells you which section you are in. */
+  .jf-landing-b .lb-split .lb-shot-sm {
+    order: -1;
+  }
+  .jf-landing-b .lb-foot-in {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .jf-landing-b .lb-cta .lb-btn {
+    width: 100%;
+  }
+  .jf-landing-b .lb-list li {
+    gap: 2px;
+  }
+  .jf-landing-b .lb-list b {
+    min-width: 100%;
+  }
+  .jf-landing-b .lb-foot-in {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

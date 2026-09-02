@@ -160,6 +160,10 @@
 
 /* ── чипы (виды работ) ── */
 .bp :global(.chips) { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+/* Revealed only while the "Other" chip is on: the trade the closed taxonomy
+   has no word for. Sits under the chip row, indented by nothing — it is a
+   continuation of the answer above it, not a new field. */
+.bp :global(.fld-in--other) { margin-top: 9px; }
 .bp :global(.chip) {
   height: 34px; padding: 0 12px;
   border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
@@ -325,25 +329,10 @@
   background-size: 34px 34px, 34px 34px, auto;
 }
 .bp :global(.side-wash) {
-  position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(ellipse 70% 50% at 80% 20%, rgba(24, 84, 160, 0.12), transparent 60%);
-}
-.bp :global(.side-card) {
-  position: absolute; right: clamp(20px, 2.6vw, 40px); bottom: clamp(20px, 3vh, 40px);
-  width: min(384px, calc(100% - clamp(40px, 5.2vw, 80px)));
-  margin: 0; padding: clamp(18px, 2.6vh, 24px);
-  border: var(--border); border-radius: var(--radius);
-  background: var(--paper); box-shadow: 6px 6px 0 var(--ink);
-}
-.bp :global(.side-card.is-hidden) { display: none; }
-.bp :global(.side-q) {
-  margin: clamp(8px, 1.4vh, 12px) 0 0;
-  font-size: clamp(17px, 2.4vh, 22px); font-weight: 900;
-  line-height: 1.32; letter-spacing: -0.015em;
-}
-.bp :global(.side-n) {
-  margin: clamp(11px, 1.8vh, 16px) 0 0;
-  font-size: 11.5px; line-height: 1.55; color: var(--muted);
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(10,10,10,.55), rgba(10,10,10,.15) 42%, rgba(10,10,10,.72)),
+    radial-gradient(ellipse 70% 50% at 80% 20%, rgba(24, 84, 160, 0.22), transparent 62%);
 }
 
 /* карточка выгоды (регистрация, шаг 2) — занимает поле над цитатой */
@@ -447,3 +436,411 @@
 .bp :global(.side-perk .pk-rule) { background: rgba(242,240,235,.25); }
 .bp :global(.side-perk .pk-facts span) { color: rgba(242,240,235,.62); }
 .bp :global(.side-perk .pk-facts b) { color: var(--paper); }
+
+/* ── THE ART PANEL ────────────────────────────────────────────
+   Replaces the quote card (2026-08-28). A picture, not a
+   testimonial: `object-fit: contain` so the drawing is never cut
+   through its own frames, a cap on its size so it sits IN the
+   panel rather than filling it, and a hard shadow so it reads as
+   a printed object on the ink field. Decorative — alt="" and
+   aria-hidden, because it says nothing a reader needs. */
+.bp :global(.side-art) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: 60% 50%;
+  pointer-events: none;
+  /* The photo is the ground, not the subject: it sits under the ink wash and
+     the drafting grid, dimmed enough that the form column keeps the contrast
+     budget. */
+  opacity: 0.82;
+  filter: saturate(0.92) contrast(1.04);
+}
+
+/* ============================================================
+   STEP 3 — THE PLAN
+   Aesthetic: the page's own industrial drafting brutalism, pushed
+   harder because this screen has to sell. 2px ink frames, hard
+   offset shadows, no blur, one blueprint blue, mono annotation
+   layer. What changed from the first pass and why:
+     · FULL BLEED. The art column slides out and the form column
+       takes the screen — a three-way comparison is a table, and a
+       table does not fit in half a viewport.
+     · ONE SHARED FEATURE LIST per column, included rows in ink,
+       excluded rows in grey with a dash. The difference between
+       the columns is the sales argument and it is now visible
+       without reading a word.
+     · TYPE, LOUDER: price 44px/900 against 11px mono labels. The
+       first pass ran 30px prices next to 12px paragraphs, which
+       is why nothing led.
+     · The promo APPLY lives inside the field's own frame.
+   ============================================================ */
+
+/* The panel leaves rather than disappearing: 380ms, the shell's
+   own easing, and the grid closes behind it. `visibility` is on
+   the transition so the slid-out panel stops taking clicks. */
+.bp :global(.auth) { transition: grid-template-columns 0.38s var(--ease); }
+.bp :global(.auth--wide) { grid-template-columns: minmax(0, 1fr) 0fr; }
+.bp :global(.auth-side) {
+  transition: transform 0.38s var(--ease), opacity 0.28s var(--ease), visibility 0s linear 0s;
+}
+.bp :global(.auth-side.is-out) {
+  transform: translateX(100%);
+  opacity: 0;
+  visibility: hidden;
+  transition: transform 0.38s var(--ease), opacity 0.28s var(--ease), visibility 0s linear 0.38s;
+}
+/* The form column stops being a 620px letterbox for this step only. */
+.bp :global(.auth--wide) :global(.auth-form) { max-width: 1180px; padding: 40px 48px; }
+
+.bp :global(.pw-head) {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap; flex: 0 0 auto;
+}
+/* THE QUESTION OUTRANKS THE CONTROL. The step's h1 inherits the auth column's
+   clamp (~33px at 900px tall), which put it at eye level with the 40px switch
+   beside it — a heading and a widget reading as two tabs. This screen is the
+   sale; its question is set a size up so the row is title-then-control, not
+   two peers (owner, 2026-08-29). */
+.bp :global(#stepPlan) :global(.auth-h1) {
+  font-size: clamp(32px, 5.2vh, 50px);
+  letter-spacing: -0.03em;
+}
+.bp :global(.pw-lede) { font-size: 15px; line-height: 1.4; color: var(--muted); }
+.bp :global(.pw-lede b) { color: var(--ink); font-weight: 800; }
+
+.bp :global(.pw-int) {
+  /* `inline-flex` does NOT size this to its content here: the parent is a flex
+     COLUMN, whose default `align-items: stretch` blows any child out to the
+     full width — which is why the two-word switch ran the whole 1180px with
+     its labels stranded at the left edge. `align-self` is the opt-out. */
+  /* `flex: 0 0 auto` is load-bearing wherever this sits: as a flex item it is
+     shrinkable by default, and in the height-bound column it used to live in
+     the plan row crushed it to ~28px and sliced the labels in half. */
+  display: inline-flex; flex: 0 0 auto; margin: 0;
+  border: var(--border); border-radius: var(--radius); overflow: hidden;
+  box-shadow: 3px 3px 0 var(--hair-soft, rgba(10, 10, 10, 0.14));
+}
+.bp :global(.pw-int-b) {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 18px;
+  border: none; border-right: var(--border); background: var(--paper);
+  font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); cursor: pointer;
+}
+.bp :global(.pw-int-b:last-child) { border-right: none; }
+.bp :global(.pw-int-b.on) { background: var(--ink); color: var(--paper); }
+.bp :global(.pw-int-b i) {
+  font-style: normal; font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.06em; color: var(--blueprint);
+}
+.bp :global(.pw-int-b.on i) { color: var(--sky); }
+
+/* THREE COLUMNS, equal height, so the feature rows line up across them —
+   that alignment is what makes the comparison readable at a glance. */
+/* WHY THIS STEP IS A HEIGHT LAYOUT, NOT A TALL PAGE
+   `.auth` is `height: 100dvh; overflow: hidden` — the donor's whole auth
+   surface is a fixed screen. The plan step's content was taller than that, so
+   the bottom of it (the promo row, the CTA, the skip) was simply CUT OFF with
+   no way to reach it: the page could not scroll because the page was never
+   allowed to.
+   The step now fills that fixed height instead of overflowing it: head and
+   switch take what they need, the plan row takes the rest (`1fr`, `min-height:
+   0` so it may actually shrink), and each card scrolls its own feature list if
+   the screen is short. Nothing is ever unreachable, and the page still does not
+   scroll — which is the behaviour the rest of the flow has.
+   The short/narrow media query below still hands scrolling back. */
+/* `:not(.is-hidden)` IS LOAD-BEARING. `.bp :global(.step.is-hidden)` — the one
+   rule that takes every step off the screen — is (0,3,0); an ID selector is
+   (1,0,0) and beats it outright, so this `display: flex` overruled the hide and
+   the whole plan step, cards and all, painted BELOW the account form on step 1.
+   Narrowing the selector rather than raising the hide's specificity keeps one
+   rule in charge of hiding a step. */
+.bp :global(#stepPlan:not(.is-hidden)) {
+  display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto;
+  /* Head+switch read as one block, the card row gets the air: a flat gap put
+     the same space between the title and the switch as between the switch and
+     the thing it controls, so nothing was grouped. */
+  gap: clamp(10px, 1.8vh, 18px);
+}
+.bp :global(.auth--wide) :global(.auth-form) { justify-content: flex-start; }
+.bp :global(.pw-plans) {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px;
+  align-items: stretch; min-height: 0; flex: 1 1 auto;
+  /* ROOM FOR THE TAG. "Most picked" is pinned 11px above its card's top edge,
+     so the row has to reserve that band or the badge is cut in half by
+     whatever is above it. */
+  padding-top: 13px;
+}
+.bp :global(.pw-plan) {
+  position: relative; display: flex; flex-direction: column; gap: clamp(6px, 1vh, 10px);
+  padding: clamp(14px, 2vh, 22px) clamp(14px, 1.2vw, 20px) clamp(12px, 1.6vh, 20px);
+  text-align: left; cursor: pointer; min-height: 0;
+  /* NOT `hidden`. The card clipped its own "Most picked" tag — the badge sits
+     above the top border by design. The only thing that ever needed clipping
+     is the feature list, and that scrolls itself. */
+  overflow: visible;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); color: var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease);
+}
+.bp :global(.pw-plan:hover) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
+.bp :global(.pw-plan.on) { border-color: var(--blueprint); box-shadow: 6px 6px 0 var(--blueprint); }
+/* The recommended column has to LOOK recommended before the badge is read: a
+   tint alone put it at the same weight as the $1 tier next to it. An ink rule
+   across the top and the standing offset shadow lift it out of the row without
+   changing its size — which would break the feature rows' alignment across the
+   four columns, and that alignment is the whole comparison. */
+.bp :global(.pw-plan--hero) {
+  background: var(--paper-deep);
+  /* ONE shadow, ink, cast down-right like every other plate in this system.
+     The inset rule that used to sit along the top edge read as a SECOND shadow
+     on the opposite side of the card (owner, 2026-08-29) — two light sources on
+     one object. The tint, the badge and the offset carry the emphasis instead,
+     and none of them cost layout: a thicker border would push every feature row
+     out of line with the same row in the columns beside it. */
+  box-shadow: 4px 4px 0 var(--ink);
+}
+/* Ink here too, not blueprint: this is the one card whose shadow the owner
+   called black, and the blue border is already what says "selected". */
+.bp :global(.pw-plan--hero.on) { box-shadow: 6px 6px 0 var(--ink); }
+.bp :global(.pw-tag) {
+  position: absolute; top: -12px; left: 16px; z-index: 2; padding: 4px 10px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--blueprint); color: #fff;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.bp :global(.pw-plan-n) {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+}
+.bp :global(.pw-price) {
+  font-size: clamp(30px, 4.4vh, 44px); font-weight: 900; line-height: 0.95;
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+}
+.bp :global(.pw-price i) { font-style: normal; font-size: 14px; font-weight: 800; color: var(--muted); }
+/* WHAT THE YEAR WOULD HAVE COST. The struck figure is the argument for the
+   annual price above it, so it is drawn once, small, in mono — it must not
+   compete with the price it is discounting. */
+.bp :global(.pw-save) {
+  display: inline-flex; align-items: baseline; gap: 7px; margin-top: -2px;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--success, #1f7a52);
+}
+.bp :global(.pw-save s) { color: var(--muted-light, #8a8a8a); text-decoration-thickness: 1.5px; }
+/* The card's own state, drawn where a button would be — the whole card is the
+   control, so this reads as a label, not a second target. */
+.bp :global(.pw-pick) {
+  align-self: flex-start; padding: 6px 13px;
+  border: var(--border); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  /* INK, not muted. This is the one affordance on a card whose entire purpose
+     is to be picked, and it was the lowest-contrast element on it — grey text
+     in a grey frame, under a 44px price. */
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink);
+  background: var(--paper);
+}
+.bp :global(.pw-plan:hover) :global(.pw-pick) { background: var(--ink); color: var(--paper); }
+.bp :global(.pw-plan.on) :global(.pw-pick) { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+
+.bp :global(.pw-feats) {
+  display: flex; flex-direction: column; gap: 0;
+  margin-top: 6px; padding-top: 2px;
+  border-top: 1.5px solid var(--hair-soft, rgba(10,10,10,.14));
+  /* The one thing allowed to scroll on this screen, and only when the viewport
+     is too short for the list. */
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  /* A CUT ROW HAS TO READ AS "MORE", NOT AS "BROKEN". The list ends mid-row on
+     a short screen; the mask fades the last 22px out so the cut is deliberate.
+     `to bottom` on both axes of the pair keeps the top edge hard against the
+     hairline above it. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+}
+/* Scrollbar: drawn, not native. `scrollbar-width` is deliberately NOT set —
+   declaring it in Chrome switches the element to the standard scrollbar and
+   silently drops every ::-webkit- rule below, and the thumb needs `border:
+   none` for the same reason. */
+.bp :global(.pw-feats::-webkit-scrollbar) { width: 4px; }
+.bp :global(.pw-feats::-webkit-scrollbar-track) { background: transparent; }
+.bp :global(.pw-feats::-webkit-scrollbar-thumb) {
+  border: none; border-radius: 2px;
+  background: var(--hair-soft, rgba(10, 10, 10, 0.18));
+}
+.bp :global(.pw-feats:hover::-webkit-scrollbar-thumb) { background: var(--muted-light, #8a8a8a); }
+.bp :global(.pw-f) {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: clamp(5px, 0.9vh, 9px) 0; border-bottom: 1px solid var(--hair-soft, rgba(10,10,10,.10));
+  font-size: clamp(11.5px, 1.4vh, 13px); font-weight: 600; line-height: 1.3; color: var(--ink);
+}
+.bp :global(.pw-f:last-child) { border-bottom: none; }
+.bp :global(.pw-f .ic) { width: 14px; height: 14px; margin-top: 2px; flex-shrink: 0; color: var(--blueprint); }
+/* NOT included: the row still prints, in grey with a dash. The empty space in
+   the cheaper column is the argument for the dearer one. */
+.bp :global(.pw-f--no) { color: var(--muted-light, #8a8a8a); font-weight: 500; }
+.bp :global(.pw-f--no .ic) { color: var(--muted-faint, #b8b4ad); }
+
+/* FOOT — promo and the primary on one line, the promo's Apply inside its own
+   frame so the row is two objects, not three. */
+/* THE CUSTOM CARD. Same frame, one extra affordance: the row that says the
+   price is built from ticks, and the control that opens the picker. */
+.bp :global(.pw-plan--custom) { border-style: dashed; }
+.bp :global(.pw-plan--custom.on) { border-style: solid; }
+.bp :global(.pw-f--add) { color: var(--blueprint); font-weight: 800; }
+.bp :global(.pw-f--add .ic) { color: var(--blueprint); }
+.bp :global(.pw-edit) {
+  /* Under the list it belongs to, not pinned to the floor: `margin-top: auto`
+     left a hand's width of empty card between the last page row and the only
+     control on it, which read as a column that had failed to load. */
+  margin-top: 14px; align-self: flex-start; padding: 7px 12px;
+  border: var(--border); border-radius: var(--radius); background: var(--ink); color: var(--paper);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer;
+}
+.bp :global(.pw-edit:hover) { background: var(--blueprint); }
+
+.bp :global(.pw-foot) { display: flex; align-items: stretch; gap: 12px; margin-top: 0; flex: 0 0 auto; }
+.bp :global(.pw-promo) {
+  /* 300px cut "PROMO OR REFERRAL CODE" mid-word — a field whose placeholder does
+     not fit cannot say what it is for. It takes the width it needs now and the
+     primary gives it up: a 1180px row does not need a 700px button. */
+  display: flex; align-items: stretch; flex: 0 1 400px; min-width: 320px;
+  border: var(--border); border-radius: var(--radius); background: var(--paper); overflow: hidden;
+}
+.bp :global(.pw-promo.is-on) { border-color: var(--success, #1f7a52); }
+.bp :global(.pw-promo-in) {
+  flex: 1; min-width: 0; height: clamp(42px, 5.4vh, 52px); padding: 0 14px;
+  border: none; background: transparent;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink);
+}
+.bp :global(.pw-promo-in::placeholder) { color: var(--muted-light, #8a8a8a); letter-spacing: 0.06em; }
+.bp :global(.pw-promo-b) {
+  flex: 0 0 auto; padding: 0 18px; border: none; border-left: var(--border);
+  background: var(--paper-deep); color: var(--ink); cursor: pointer;
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+}
+.bp :global(.pw-promo-b:hover:not(:disabled)) { background: var(--ink); color: var(--paper); }
+.bp :global(.pw-promo-b:disabled) { color: var(--muted-light, #8a8a8a); cursor: default; }
+.bp :global(.pw-go.pw-go) {
+  /* No cap: the foot's right edge is the card grid's right edge, and a capped
+     button left a gutter under the Custom column that read as a layout bug
+     (owner, 2026-08-29). The promo field takes what its placeholder needs and
+     this takes the rest. */
+  flex: 1 1 auto; height: clamp(42px, 5.4vh, 52px);
+  /* The screen's one commitment, and it was set two points under the promo
+     field's own placeholder. */
+  font-size: clamp(13.5px, 1.8vh, 15.5px); letter-spacing: 0.06em;
+}
+.bp :global(.pw-promo-ok) {
+  margin-top: 10px; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--success, #1f7a52);
+}
+.bp :global(.pw-note) {
+  margin-top: 4px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-light, #8a8a8a);
+}
+
+.bp :global(.pw-skip) {
+  position: absolute; right: 0; bottom: -4px;
+  border: none; background: none; padding: 6px 2px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-light, #8a8a8a);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.bp :global(.pw-skip:hover) { color: var(--ink); }
+.bp :global(#stepPlan) { position: relative; padding-bottom: 26px; }
+
+@media (max-width: 1400px) {
+  .bp :global(.pw-plans) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bp :global(.auth) { height: auto; min-height: 100dvh; overflow: visible; }
+  .bp :global(.auth-form) { max-height: none; overflow: visible; }
+}
+@media (max-width: 1100px) {
+  .bp :global(.pw-plans) { grid-template-columns: 1fr; }
+  .bp :global(.pw-foot) { flex-direction: column; }
+  .bp :global(.pw-promo) { flex: 1 1 auto; max-width: none; }
+  .bp :global(.pw-skip) { position: static; display: block; margin: 16px auto 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.auth), .bp :global(.auth-side) { transition: none; }
+}
+
+/* ── THE PAGE PICKER ──────────────────────────────────────────
+   Hand-rolled, like every dialog in this fleet. Scrim + one ink
+   frame; the list is the only thing that scrolls; the running
+   total sits in the foot beside the way out. */
+.bp :global(.pwp) { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 20px; }
+/* IN AND OUT ON A CURVE. The component mounts the dialog and unmounts it, so
+   both halves are driven by `.is-on`, which is added a frame after the mount
+   and removed 220ms before the unmount (PICKER_EXIT_MS in register-content).
+   The scrim leads on the way in and the panel leads on the way out, which is
+   what makes the close read as the panel leaving rather than the page blinking:
+   the box's exit is shorter than the scrim's, so the ink is still down when the
+   panel has gone. */
+.bp :global(.pwp-scrim) {
+  position: absolute; inset: 0; background: rgba(10, 10, 10, 0.55);
+  opacity: 0; transition: opacity 0.22s var(--ease);
+}
+.bp :global(.pwp.is-on) :global(.pwp-scrim) { opacity: 1; }
+.bp :global(.pwp-box) {
+  position: relative; width: min(560px, 100%); max-height: min(86dvh, 760px);
+  display: flex; flex-direction: column;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper); box-shadow: 8px 8px 0 var(--ink);
+  opacity: 0; transform: translateY(12px) scale(0.985); transform-origin: 50% 0;
+  transition:
+    opacity 0.16s var(--ease),
+    transform 0.22s var(--ease);
+}
+.bp :global(.pwp.is-on) :global(.pwp-box) { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.pwp-scrim), .bp :global(.pwp-box) { transition: none; }
+}
+.bp :global(.pwp-head) {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  padding: 20px 22px 14px; border-bottom: var(--border);
+}
+.bp :global(.pwp-kick) {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--blueprint);
+}
+.bp :global(.pwp-h) { margin-top: 5px; font-size: 22px; font-weight: 900; letter-spacing: -0.02em; }
+.bp :global(.pwp-x) { font-size: 22px; line-height: 1; color: var(--muted); padding: 2px 6px; }
+.bp :global(.pwp-x:hover) { color: var(--ink); }
+.bp :global(.pwp-lede) { padding: 14px 22px 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.bp :global(.pwp-list) { padding: 12px 22px 4px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.bp :global(.pwp-row) {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 11px 13px; border: 1.5px solid var(--hair); border-radius: var(--radius);
+  background: var(--paper); cursor: pointer;
+  transition: border-color 0.1s var(--ease), background 0.1s var(--ease);
+}
+.bp :global(.pwp-row:hover) { border-color: var(--ink); }
+.bp :global(.pwp-row.on) { border-color: var(--blueprint); background: rgba(24, 84, 160, 0.07); }
+.bp :global(.pwp-box-t) {
+  width: 20px; height: 20px; flex: 0 0 auto; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius); background: var(--paper);
+}
+.bp :global(.pwp-row.on) :global(.pwp-box-t) { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.bp :global(.pwp-box-t .ic) { width: 13px; height: 13px; }
+.bp :global(.pwp-txt) { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bp :global(.pwp-n) { font-size: 14px; font-weight: 800; }
+.bp :global(.pwp-note) { font-size: 11.5px; color: var(--muted); }
+.bp :global(.pwp-p) {
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.bp :global(.pwp-foot) {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 16px 22px 18px; border-top: var(--border); margin-top: auto;
+}
+.bp :global(.pwp-total) { font-size: 26px; font-weight: 900; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.bp :global(.pwp-total i) { font-style: normal; font-size: 13px; font-weight: 800; color: var(--muted); }
+.bp :global(.pwp-done.pwp-done) { width: auto; padding: 0 26px; height: 44px; }

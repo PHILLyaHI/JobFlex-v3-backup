@@ -50,10 +50,6 @@ export interface ReconOptions {
    *  rounded. Empty = snap to the nearest integer. */
   pitchPriors12?: number[];
   pitchSnapMax12?: number; //    refuse to move a pitch further than this (0 disables)
-  /** Заявленные кольца пенетраций (Instant ROOFPENETRATION), в футах
-   *  РАСТРОВОГО кадра (x восток, y север от центра растра). Их пиксели
-   *  исключаются из подгонки плоскостей и роста регионов. */
-  penetrationRingsFt?: Array<Array<{ x: number; y: number }>>;
   maxPitch12?: number; //        steeper than this is a wall, not roof (default 24)
   wallProbeFt?: number; //       how far past an edge to look for a wall
   wallStepFt?: number; //        height rise that counts as a wall
@@ -83,8 +79,6 @@ export interface ReconResult {
   model: RoofModel;
   diagnostics: {
     buildingPx: number;
-    /** Пиксели маски пенетраций (индексы растра) — для штриховки и учёта. */
-    penetrationPx: number[];
     clusters: number;
     droppedClusters: number;
     groundElevFt: number;
@@ -102,21 +96,6 @@ export interface ReconResult {
     fragmentsMerged: number; //       how many were absorbed
     droppedSteep: number; //          rejected as too steep to be roof
     pitches12: number[]; //           final per-facet pitch, rise/12
-    clusterSqft: number[]; //         3D surface area of each, same order as pitches12
-    clusterAzimuthDeg: number[]; //   downslope compass bearing of each, same order
-    clusterCentroidFt: Array<[number, number]>; // plan centroid, frame feet
-    /** Up to 64 sample points per cluster, frame feet. A centroid is not enough:
-     *  an L-shaped or crescent facet has its centroid off itself, so "which plane
-     *  is on this side of that line" cannot be answered from centroids alone. */
-    clusterSamplesFt: Array<Array<[number, number]>>;
-    /** Fitted plane z = a·x + b·y + c per cluster (frame feet), same order. */
-    clusterPlanes: Array<{ a: number; b: number; c: number }>;
-    /** Per-pixel cluster id (-1 = none). Same raster grid as the DSM. Heavy
-     *  (w·h int32) but the DSM-layout measurement needs adjacency, and
-     *  re-deriving it outside would be a second segmentation (§K7). */
-    assign: Int32Array;
-    clusterTopFt: number[]; //        highest point of each cluster above ground
-    clusterBotFt: number[]; //        lowest point of each cluster above ground
   };
 }
 
@@ -126,7 +105,7 @@ interface P2 {
   x: number;
   y: number;
 }
-export interface Plane {
+interface Plane {
   a: number; //  z = a*x + b*y + c, in feet
   b: number;
   c: number;
@@ -147,7 +126,7 @@ function planeNormal(p: Plane): { x: number; y: number; z: number } {
 }
 
 // Pitch as rise per 12 (EagleView's convention).
-export function planePitch12(p: Plane): number {
+function planePitch12(p: Plane): number {
   return Math.hypot(p.a, p.b) * 12;
 }
 
@@ -158,7 +137,7 @@ function planeAzimuth(p: Plane): number {
   return (deg + 360) % 360;
 }
 
-export function fitPlane(pts: Array<{ x: number; y: number; z: number }>): Plane | null {
+function fitPlane(pts: Array<{ x: number; y: number; z: number }>): Plane | null {
   // Normal equations for z = ax + by + c.
   let sx = 0, sy = 0, sz = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0;
   const n = pts.length;
@@ -484,11 +463,6 @@ function computeGeometry(
 
 // ── 3. plane segmentation by region growing ──────────────────────────────────
 
-/** The region-growing tolerance: a pixel belongs to a plane within this
- *  distance. Exported so the stitch judges its cells by the SAME figure the
- *  clustering grew them with. */
-export const DEFAULT_PLANE_TOL_FT = 0.6;
-
 interface Cluster {
   id: number;
   plane: Plane;
@@ -503,8 +477,6 @@ function segmentPlanes(
   angleTolDeg: number,
   planeTolFt: number,
   minPx: number,
-  /** Полуширина окна нормалей: ленты уже полного окна ((2·half+1) px) — артефакт. */
-  half = 2,
 ): { clusters: Cluster[]; assign: Int32Array; dropped: number } {
   const { width: w, height: h, pixelSizeM } = dsm;
   const pxAreaSqft = (pixelSizeM * FT_PER_M) ** 2;
@@ -568,45 +540,6 @@ function segmentPlanes(
       for (const p of pixels) assign[p] = -2; // parked: too small to be a facet
       dropped++;
       continue;
-    }
-    // ЛЕНТА НИЖЕ РАЗРЕШАЮЩЕЙ ШИРИНЫ (полное окно нормалей, (2·half+1) px):
-    // полоса скругления гребня образует свой «кластер» шириной 1-1.5 ft с
-    // промежуточными нормалями — это артефакт окна, не измеренная
-    // плоскость (12618: полосы 24×1.2 ft по обе стороны конька, «уклон»
-    // 22/12, кривизна 1.8 ft). Её пиксели уходят в неназначенные — склоны
-    // встречаются напрямую, границу ставит пересечение их плоскостей.
-    {
-      // ширина меряется ЭРОЗИЕЙ (глубина ядра), не 2A/P: рваный пиксельный
-      // периметр занижал 2A/P, и настоящие скаты с бахромой умирали как
-      // «ленты» (12629: сегментация падала до 7 кластеров, грани-монстры
-      // 507/423 sf накрывали по два ската). Лента — блоб, чьё ядро мельче
-      // половины окна нормалей: эрозия до пустоты за ≤ half проходов.
-      const inCl = new Set(pixels);
-      let core = pixels.slice();
-      let passes = 0;
-      while (core.length && passes <= half) {
-        const next: number[] = [];
-        const coreSet = new Set(core);
-        for (const i of core) {
-          const px = i % w;
-          const py = Math.floor(i / w);
-          let interior = true;
-          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-            const nx = px + dx;
-            const ny = py + dy;
-            if (nx < 0 || ny < 0 || nx >= w || ny >= h || !coreSet.has(ny * w + nx)) { interior = false; break; }
-          }
-          if (interior) next.push(i);
-        }
-        core = next;
-        passes++;
-        if (!core.length) break;
-      }
-      if (!core.length && passes <= half) {
-        for (const p of pixels) assign[p] = -2;
-        dropped++;
-        continue;
-      }
     }
     // Plan-view pixel area → true surface area via the plane's slope. Recomputed
     // after claimLeftovers(), which is what finally sets the facet extents.
@@ -887,7 +820,7 @@ function quantizeAzimuth(
     sy += Math.sin(a4) * c.areaSqft;
   }
   if (!sx && !sy) return 0;
-  const axisDeg = ((Math.atan2(sy, sx) / (2 * Math.PI)) * 90 + 90) % 90;
+  let axisDeg = ((Math.atan2(sy, sx) / (2 * Math.PI)) * 90 + 90) % 90;
 
   for (const c of clusters) {
     const slope = Math.hypot(c.plane.a, c.plane.b);
@@ -975,7 +908,7 @@ export function reconstructRoof(
 ): ReconResult {
   const half = opts.normalWindow ?? 2;
   const angleTolDeg = opts.angleTolDeg ?? 14;
-  const planeTolFt = opts.planeTolFt ?? DEFAULT_PLANE_TOL_FT;
+  const planeTolFt = opts.planeTolFt ?? 0.6;
   // 12 sqft, measured: at 25 the small dormer/entry facets were dropped (15 vs
   // EagleView's 22) and their edges lost with them; at 6 the count is right but
   // noise clusters survive and area falls to -9%. 12 keeps the real small facets
@@ -1018,197 +951,9 @@ export function reconstructRoof(
   const groundElevFt =
     (offRoof.length ? offRoof[Math.floor(offRoof.length * 0.2)] : 0) * FT_PER_M;
 
-  // ── МАСКА ПЕНЕТРАЦИЙ (2026-08-30) ──────────────────────────────────────────
-  // Труба/вент загрязняет подгонку плоскостей и рост регионов ИЗНУТРИ
-  // кластера (12629: z-рассогласование A7/A3 до 3.8 ft у гребня, куст
-  // осколков A1, шпилька ендовы). Пиксели пенетраций исключаются ДО
-  // кластеризации, не постфактум. Источники: заявленные кольца
-  // (opts.penetrationRingsFt) и DSM-клифы — блоб пикселей над медианой
-  // окружающего кольца на ≥ переписной пол ступени (2.0 ft, бимодальный
-  // зазор 1.8–2.2) площадью ≤ minFacetSqft (меньше грани — не
-  // архитектура). Радиусы кольца — из того же minFacetSqft: полуширина
-  // блоба √12/2 ≈ 1.7 ft → внутренний 2 ft, внешний 4 ft.
-  const pen = new Uint8Array(w * h);
-  {
-    const PEN_DZ_FT = 2.0;
-    const rIn = Math.max(1, Math.ceil(2 / stepFt));
-    const rOut = Math.max(rIn + 1, Math.ceil(4 / stepFt));
-    const zft = (i: number): number => dsm.data[i] * FT_PER_M - groundElevFt;
-    const cand = new Uint8Array(w * h);
-    const base = new Float32Array(w * h);
-    for (let py = 0; py < h; py++) {
-      for (let px = 0; px < w; px++) {
-        const i = py * w + px;
-        if (!building[i]) continue;
-        const ringZ: number[] = [];
-        for (let dy = -rOut; dy <= rOut; dy++) {
-          for (let dx = -rOut; dx <= rOut; dx++) {
-            if (Math.max(Math.abs(dx), Math.abs(dy)) < rIn) continue;
-            const qx = px + dx;
-            const qy = py + dy;
-            if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
-            const q = qy * w + qx;
-            if (building[q]) ringZ.push(zft(q));
-          }
-        }
-        if (ringZ.length < 8) continue;
-        ringZ.sort((a2, b2) => a2 - b2);
-        const med = ringZ[Math.floor(ringZ.length / 2)];
-        if (zft(i) - med >= PEN_DZ_FT) { cand[i] = 1; base[i] = med; }
-      }
-    }
-    const capPx = Math.ceil(minFacetSqft / (stepFt * stepFt));
-    const seenP = new Uint8Array(w * h);
-    for (let s2 = 0; s2 < cand.length; s2++) {
-      if (!cand[s2] || seenP[s2]) continue;
-      // возвышенный объект мерится ЦЕЛИКОМ: разлив от кандидата по всем
-      // пикселям выше ЕГО базы (медианы кольца) на ≥ порог — угол дормера
-      // локально неотличим от трубы, но разлив охватывает весь дормер
-      // (30 sf > cap → архитектура), а трубу — только её квадрат
-      const med0 = base[s2];
-      const blob: number[] = [s2];
-      seenP[s2] = 1;
-      for (let bi = 0; bi < blob.length; bi++) {
-        const i = blob[bi];
-        const bx = i % w;
-        const by = Math.floor(i / w);
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-          const qx = bx + dx;
-          const qy = by + dy;
-          if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
-          const q = qy * w + qx;
-          if (seenP[q] || !building[q]) continue;
-          if (zft(q) - med0 >= PEN_DZ_FT) { seenP[q] = 1; blob.push(q); }
-        }
-      }
-      // компактность: пенетрация — квадратный блоб (труба), не дуга вдоль
-      // ребра настоящей ступени/дормера (обод даёт кандидатов шириной в
-      // пиксель — маска не смеет есть архитектуру). Сторона bbox ≤
-      // √minFacetSqft ≈ 3.5 ft — из того же закона «меньше грани».
-      let minX = w, maxX = 0, minY = h, maxY = 0;
-      for (const i of blob) {
-        const bx = i % w;
-        const by = Math.floor(i / w);
-        minX = Math.min(minX, bx); maxX = Math.max(maxX, bx);
-        minY = Math.min(minY, by); maxY = Math.max(maxY, by);
-      }
-      const sidePx = Math.ceil(Math.sqrt(minFacetSqft) / stepFt);
-      const compact = maxX - minX + 1 <= sidePx && maxY - minY + 1 <= sidePx;
-      if (compact && blob.length <= capPx) for (const i of blob) pen[i] = 1;
-    }
-    const inPoly = (x: number, y: number, ring: Array<{ x: number; y: number }>): boolean => {
-      let ins = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const a2 = ring[i];
-        const b2 = ring[j];
-        if (a2.y > y !== b2.y > y && x < ((b2.x - a2.x) * (y - a2.y)) / (b2.y - a2.y) + a2.x) ins = !ins;
-      }
-      return ins;
-    };
-    const cx2 = w / 2;
-    const cy2 = h / 2;
-    for (const ring of opts.penetrationRingsFt ?? []) {
-      if (ring.length < 3) continue;
-      for (let py = 0; py < h; py++) {
-        for (let px = 0; px < w; px++) {
-          const i = py * w + px;
-          if (!building[i] || pen[i]) continue;
-          if (inPoly((px + 0.5 - cx2) * stepFt, (cy2 - py - 0.5) * stepFt, ring)) pen[i] = 1;
-        }
-      }
-    }
-  }
-  const penetrationPx: number[] = [];
-  for (let i = 0; i < pen.length; i++) if (pen[i]) penetrationPx.push(i);
-  // partic — участники измерения: контур/периметр/земля остаются на building
-  const partic = building.slice() as Uint8Array;
-  for (const i of penetrationPx) partic[i] = 0;
-
-  const g = computeGeometry(dsm, partic, groundElevFt, half);
+  const g = computeGeometry(dsm, building, groundElevFt, half);
   const minPx = Math.max(8, Math.round(minFacetSqft / (stepFt * stepFt)));
-  const seg = segmentPlanes(dsm, partic, g, angleTolDeg, planeTolFt, minPx, half);
-  // ── СЛИЯНИЕ КОПЛАНАРНЫХ СОСЕДЕЙ (эталон владельца по граням, 2026-08-30:
-  //    «A4 не существует — это продолжение A7»; клин 84 sf между коньками
-  //    один скат, подогнанный двумя половинами, union-RMS 0.25) ──
-  // Закон: смежные кластеры, чьё ОБЪЕДИНЕНИЕ ложится на одну плоскость в
-  // пределах planeTol (тот же порог, которым рос каждый), — один скат.
-  // Итеративно, пока есть что сливать. Заодно воссоединяет скат с его
-  // крутой бахромой (cl7∪cl8 RMS 0.22) — продолжение починки §K14.
-  {
-    const zof = (i: number): number => dsm.data[i] * 3.28084 - groundElevFt;
-    for (let guard = 0; guard < 50; guard++) {
-      const pixOf = new Map<number, number[]>();
-      for (let i = 0; i < seg.assign.length; i++) if (seg.assign[i] >= 0) {
-        (pixOf.get(seg.assign[i]) ?? pixOf.set(seg.assign[i], []).get(seg.assign[i])!).push(i);
-      }
-      const adjPairs = new Set<string>();
-      for (let py = 0; py < h - 1; py++) for (let px = 0; px < w - 1; px++) {
-        const i = py * w + px;
-        const a = seg.assign[i];
-        if (a < 0) continue;
-        for (const j of [i + 1, i + w]) {
-          const b = seg.assign[j];
-          if (b >= 0 && b !== a) adjPairs.add(a < b ? a + "|" + b : b + "|" + a);
-        }
-      }
-      let mergedPair: [number, number] | null = null;
-      let bestRms = Infinity;
-      for (const k of adjPairs) {
-        const [a, b] = k.split("|").map(Number);
-        const pa = pixOf.get(a) ?? [];
-        const pb = pixOf.get(b) ?? [];
-        if (!pa.length || !pb.length) continue;
-        let sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0, n = 0;
-        for (const i of [...pa, ...pb]) {
-          const x = ((i % w) + 0.5 - w / 2) * stepFt;
-          const y = (h / 2 - Math.floor(i / w) - 0.5) * stepFt;
-          const z = zof(i);
-          sx += x; sy += y; sz += z; sxx += x * x; sxy += x * y; syy += y * y;
-          sxz += x * z; syz += y * z; n++;
-        }
-        const M = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, n]];
-        const B = [sxz, syz, sz];
-        const det3 = (m2: number[][]) =>
-          m2[0][0] * (m2[1][1] * m2[2][2] - m2[1][2] * m2[2][1]) -
-          m2[0][1] * (m2[1][0] * m2[2][2] - m2[1][2] * m2[2][0]) +
-          m2[0][2] * (m2[1][0] * m2[2][1] - m2[1][1] * m2[2][0]);
-        const D = det3(M);
-        if (Math.abs(D) < 1e-9) continue;
-        const col = (k2: number) => M.map((r2, i2) => r2.map((v2, j2) => (j2 === k2 ? B[i2] : v2)));
-        const pa2 = det3(col(0)) / D;
-        const pb2 = det3(col(1)) / D;
-        const pc2 = det3(col(2)) / D;
-        let rss = 0;
-        for (const i of [...pa, ...pb]) {
-          const x = ((i % w) + 0.5 - w / 2) * stepFt;
-          const y = (h / 2 - Math.floor(i / w) - 0.5) * stepFt;
-          rss += (pa2 * x + pb2 * y + pc2 - zof(i)) ** 2;
-        }
-        const rms = Math.sqrt(rss / n);
-        if (rms <= planeTolFt && rms < bestRms) { bestRms = rms; mergedPair = [a, b]; }
-      }
-      if (!mergedPair) break;
-      const [a, b] = mergedPair;
-      for (let i = 0; i < seg.assign.length; i++) if (seg.assign[i] === b) seg.assign[i] = a;
-      const ca = seg.clusters.find((c2) => c2.id === a);
-      const cb = seg.clusters.find((c2) => c2.id === b);
-      if (ca && cb) {
-        ca.pixels = [...ca.pixels, ...cb.pixels];
-        const pts = ca.pixels.map((i) => ({ x: ((i % w) + 0.5 - w / 2) * stepFt, y: (h / 2 - Math.floor(i / w) - 0.5) * stepFt, z: zof(i) }));
-        const refit = fitPlane(pts);
-        if (refit) ca.plane = refit;
-        ca.areaSqft = ca.pixels.length * (stepFt * stepFt) * Math.hypot(ca.plane.a, ca.plane.b, 1);
-        seg.clusters = seg.clusters.filter((c2) => c2.id !== b);
-      }
-    }
-    // перенумерация: ниже по конвейеру clusters индексируются по assign
-    const remap2 = new Map<number, number>();
-    seg.clusters.forEach((c2, i2) => remap2.set(c2.id, i2));
-    for (let i = 0; i < seg.assign.length; i++) {
-      if (seg.assign[i] >= 0) seg.assign[i] = remap2.get(seg.assign[i]) ?? -1;
-    }
-    seg.clusters.forEach((c2, i2) => { c2.id = i2; });
-  }
+  const seg = segmentPlanes(dsm, building, g, angleTolDeg, planeTolFt, minPx);
   const { assign, dropped } = seg;
   let clusters = seg.clusters;
 
@@ -1657,7 +1402,6 @@ export function reconstructRoof(
     model,
     diagnostics: {
       buildingPx,
-      penetrationPx,
       clusters: clusters.length,
       droppedClusters: dropped,
       groundElevFt,
@@ -1678,32 +1422,6 @@ export function reconstructRoof(
       fragmentsMerged: fragmentsBefore - clusters.length,
       droppedSteep: steep.droppedSteep,
       pitches12: clusters.map((c) => Math.hypot(c.plane.a, c.plane.b) * 12),
-      clusterSqft: clusters.map((c) => c.areaSqft),
-      clusterAzimuthDeg: clusters.map((c) => planeAzimuth(c.plane)),
-      clusterPlanes: clusters.map((c) => ({ a: c.plane.a, b: c.plane.b, c: c.plane.c })),
-      assign,
-      clusterSamplesFt: clusters.map((c) => {
-        const step = Math.max(1, Math.floor(c.pixels.length / 64));
-        const pts: Array<[number, number]> = [];
-        for (let i = 0; i < c.pixels.length; i += step) pts.push([g.x[c.pixels[i]], g.y[c.pixels[i]]]);
-        return pts;
-      }),
-      clusterCentroidFt: clusters.map((c) => {
-        let sx = 0, sy = 0;
-        for (const i of c.pixels) { sx += g.x[i]; sy += g.y[i]; }
-        const n = c.pixels.length || 1;
-        return [sx / n, sy / n] as [number, number];
-      }),
-      clusterTopFt: clusters.map((c) => {
-        let t = -Infinity;
-        for (const i of c.pixels) if (g.z[i] > t) t = g.z[i];
-        return t === -Infinity ? 0 : t; // g.z is already height above ground
-      }),
-      clusterBotFt: clusters.map((c) => {
-        let b = Infinity;
-        for (const i of c.pixels) if (g.z[i] < b) b = g.z[i];
-        return b === Infinity ? 0 : b;
-      }),
     },
   };
 }

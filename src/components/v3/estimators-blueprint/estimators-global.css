@@ -267,6 +267,14 @@
   gap: 16px;
   padding: 20px 22px 6px;
 }
+/* An ODD number of live engines leaves the last card alone in its row beside a
+   hole. Let it take the full width instead — the drawing plate scales with the
+   card, so it reads as a wider sheet, not a stretched one. Written as a
+   condition rather than a hard-coded nth-child so adding or gating an engine
+   can never leave this stale: with an even count nothing matches. Harmless in
+   the handheld one-column grid below, where every card is already full width.
+   (Fires today because Video made the roster five — 2026-08-22.) */
+.estp .estp-grid > .estp-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .estp .estp-card {
   appearance: none;
   text-align: left;
@@ -343,14 +351,9 @@
   text-transform: lowercase;
   color: var(--muted);
 }
-.estp .estp-time {
-  margin-left: auto;
-  font-size: 16px;
-  font-weight: 900;
-  letter-spacing: -.005em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+/* `.estp-time` — the "~9 min" figure in the card's right-hand slot — was
+   taken off the cards on the owner's call (2026-08-22); the roster no longer
+   carries the value either (estimators-data.ts). */
 
 .estp .estp-queue {
   display: flex;
@@ -636,14 +639,6 @@
        the tracking alone was the difference between one line and two. */
     letter-spacing: .05em;
   }
-  .estp .estp-time {
-    /* Never shrink the figure — all shrink is absorbed by `.estp-nm`, which has
-       `min-width: 0` and wraps. A shrunk nowrap figure would overflow its box
-       instead of wrapping. */
-    flex: 0 0 auto;
-    font-size: clamp(14px, 4.2vw, 16px);
-  }
-
   /* ── Queue strip ───────────────────────────────────────────
      The label takes its own row (`flex-basis: 100%`) so the three stubs sit on
      one line at 320px instead of wrapping into a third row. Same labelled-strip

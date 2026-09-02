@@ -109,6 +109,31 @@ function cx(...names: Array<string | false | null | undefined>): string {
     .join(" ");
 }
 
+/**
+ * Where a hand-rolled dialog is portalled.
+ *
+ * NOT `.content`: the shell transforms the content column, and a transformed
+ * ancestor becomes the containing block for `position: fixed` — an "inset: 0"
+ * overlay hosted there covers only the column, sliding under the topbar and
+ * leaving the chrome undimmed.
+ *
+ * NOT `<body>` either, which is what it was and what broke the plates: every
+ * design token (`--ink`, `--blueprint`, `--border`, `--radius`, `--paper-deep`,
+ * `--font-mono`, `--ease`) is declared on the shell's `.bp` root, so a dialog
+ * outside it resolves each `var()` to nothing. The frame and the 5px hard
+ * shadow silently vanished, the intake footer lost its plate, and the active
+ * step's travelling line kept animating a stroke that was never painted — the
+ * dashed square still drew, which is what made it read as "the animation
+ * stopped" rather than "the colour is gone".
+ *
+ * The shell root carries `jf-blueprint`, is untransformed, and is the token
+ * host, so it is the one place that satisfies both constraints.
+ */
+function dialogHost(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  return document.querySelector<HTMLElement>(".jf-blueprint") ?? document.body;
+}
+
 /** The overlay's exit is skipped, not merely un-animated, when motion is off. */
 function reducedMotion(): boolean {
   return (
@@ -209,7 +234,10 @@ export function AdvancedAiContent() {
   const clarifyResolve = useRef<((v: ClarifyAnswer[] | null) => void) | null>(null);
   const [briefUsed, setBriefUsed] = useState("");
   const [typeUsed, setTypeUsed] = useState("");
+  /** The pricing MARKET ("City, ST") the estimate was costed against. */
   const [locationUsed, setLocationUsed] = useState("");
+  /** The full job ADDRESS as typed. Saved onto the proposal; never a market. */
+  const [addrUsed, setAddrUsed] = useState("");
 
   // ── Refine ───────────────────────────────────────────────────────
   const [refineText, setRefineText] = useState("");
@@ -217,7 +245,13 @@ export function AdvancedAiContent() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [undoSnap, setUndoSnap] = useState<Snapshot | null>(null);
   const [history, setHistory] = useState<string[]>([]);
-  const [saveBusy, setSaveBusy] = useState(false);
+  // Three-valued, not a boolean. `router.push` resolves immediately and the
+  // navigation continues afterwards, so clearing the flag in a `finally` put the
+  // button back to "Save as proposal" while the app was still loading the
+  // builder — on a cold route that reads as "the click did nothing", which is
+  // exactly how it was reported. "opening" holds until the new page takes over
+  // and unmounts this one.
+  const [saveBusy, setSaveBusy] = useState<null | "saving" | "opening">(null);
 
   /** The one cell currently being typed into — see the header note. */
   const [field, setField] = useState<{ key: string; text: string } | null>(null);
@@ -240,8 +274,13 @@ export function AdvancedAiContent() {
     if (panel !== "intake") return;
     const input = addrRef.current;
     if (!input) return;
+    // NOT cityOnly. The field asks for "address or city", and restricting the
+    // query to `locality` meant a typed street address could only ever come back
+    // as some unrelated town that fuzzy-matched the string — type "6232 97th Dr
+    // NE" and Google answers with Naivasha. Unrestricted suggestions resolve the
+    // address itself, and the addressComponents parse below still lifts the city
+    // and state out of it, so regional pricing is unaffected.
     return attachPlacesSuggest(input, {
-      cityOnly: true,
       onPick(p) {
         setAddr(p.typed ? p.address : p.formatted || p.address);
         if (p.typed || !p.state) return;
@@ -272,6 +311,15 @@ export function AdvancedAiContent() {
     const t = setTimeout(() => setStageIdx((i) => Math.min(i + 1, last)), dwell);
     return () => clearTimeout(t);
   }, [generating, genDone, stageIdx]);
+
+  // The builder this page hands off to lives at a top-level /dashboard route of
+  // its own, so it is never warmed by the shell's nav. Prefetch it the moment an
+  // estimate exists — by the time Save is pressed the route is compiled and the
+  // hand-off is a render, not a build.
+  useEffect(() => {
+    if (lines.length === 0) return;
+    router.prefetch("/dashboard/manual-blueprint" as never);
+  }, [lines.length, router]);
 
   // ── Derived money ────────────────────────────────────────────────
   const totals = useMemo(
@@ -379,10 +427,17 @@ export function AdvancedAiContent() {
         return;
       }
       // The gate normalizes "bothel wa" to "Bothell, WA" before anything is
-      // priced against it — so use the corrected string, and show it.
+      // priced against it. That string is a MARKET, not an address — its
+      // contract is literally "City, ST" — so it drives SerpAPI localization
+      // and nothing else. It used to be written back over the address field,
+      // which silently destroyed the street line the contractor typed: enter
+      // "13520 Bothell-Everett Hwy, Bothell, WA" and the proposal saved a job
+      // address of "Bothell, WA". The two are now kept apart.
       const fixed = gate.data.correctedLocation?.trim() || "";
       const useLocation = fixed || location;
-      if (fixed && fixed !== location) setAddr(fixed);
+      // The full address as typed, at the moment of generation — this is what
+      // the proposal's job address is built from.
+      const useAddress = location;
 
       // ── The thin-brief gate ────────────────────────────────────────
       // The gate has already decided; asking here costs no extra model call.
@@ -436,6 +491,7 @@ export function AdvancedAiContent() {
       setBriefUsed(description);
       setTypeUsed(projectType);
       setLocationUsed(useLocation);
+      setAddrUsed(useAddress);
       setHistory([]);
       setUndoSnap(null);
       setPending(null);
@@ -645,9 +701,12 @@ export function AdvancedAiContent() {
   // ══════════════ SAVE AS PROPOSAL ══════════════
   async function saveAsProposal() {
     if (lines.length === 0) return;
-    setSaveBusy(true);
+    setSaveBusy("saving");
     try {
-      if (!(await ensureWithinLimit("proposalsCreated"))) return;
+      if (!(await ensureWithinLimit("proposalsCreated"))) {
+        setSaveBusy(null);
+        return;
+      }
       const data = estimateFromLines(lines, {
         title: title || projectType || "Estimate",
         scope: scope || briefUsed,
@@ -657,7 +716,7 @@ export function AdvancedAiContent() {
       });
       await saveEstimate({
         projectType: typeUsed || projectType,
-        location: locationUsed || location || null,
+        location: addrUsed || location || null,
         data,
       });
       const res = await convertEstimateToProposal({
@@ -667,19 +726,31 @@ export function AdvancedAiContent() {
         materials: data.materials,
         labor: data.labor,
         assumptions: data.assumptions,
-        location: locationUsed || location || undefined,
+        // The site, not the pricing market — this becomes `Proposal.address`.
+        location: addrUsed || location || undefined,
         discount: data.discount ?? undefined,
       });
       toast.success("Proposal created", "Opening it now.");
+      // The record is written; everything from here is navigation. Hold the
+      // button in its "opening" state — do NOT release it in a `finally`, which
+      // would fire before the route has even started rendering.
+      setSaveBusy("opening");
+      // Straight into the BLUEPRINT manual builder. This used to push
+      // /dashboard/proposals/<id>, which is the legacy builder-a editor — the
+      // one that greets a fresh save with its own corner transfer modal and a
+      // five-second auto-redirect. The estimate is already persisted at this
+      // point, so ?proposal=<id> reopens it with every line, assumption and
+      // discount in place.
       // router.push, never location.assign — a hard nav replays the blueprint
       // entrance and the page visibly double-takes.
-      router.push(`/dashboard/proposals/${res.id}` as never);
+      router.push(`/dashboard/manual-blueprint?proposal=${res.id}` as never);
     } catch (err) {
+      // Every failure path releases the button; the success path deliberately
+      // does not, so there is no `finally` here.
+      setSaveBusy(null);
       if (reportPlanLimit(err)) return;
       const msg = err instanceof Error ? err.message : "Couldn't save the proposal.";
       toast.error("Couldn't save", msg);
-    } finally {
-      setSaveBusy(false);
     }
   }
 
@@ -1102,7 +1173,7 @@ export function AdvancedAiContent() {
           <button
             className={cx("btn", "btn-danger")}
             type="button"
-            disabled={uiLocked || saveBusy}
+            disabled={uiLocked || Boolean(saveBusy)}
             onClick={startOver}
           >
             <svg className={cx("ic")}>
@@ -1113,13 +1184,13 @@ export function AdvancedAiContent() {
           <button
             className={cx("btn", "btn-primary")}
             type="button"
-            disabled={uiLocked || saveBusy || lines.length === 0}
+            disabled={uiLocked || Boolean(saveBusy) || lines.length === 0}
             onClick={saveAsProposal}
           >
             <svg className={cx("ic")}>
               <use href="#i-file" />
             </svg>
-            {saveBusy ? "Saving…" : "Save as proposal"}
+            {saveBusy === "opening" ? "Opening…" : saveBusy ? "Saving…" : "Save as proposal"}
           </button>
         </div>
       </div>
@@ -1564,12 +1635,9 @@ function GenerateOverlay({
 }) {
   // Resolved lazily rather than in an effect: this component only ever mounts
   // in response to a click, so `document` is always there and there is no
-  // hydration pass to disagree with.
-  const [host] = useState<HTMLElement | null>(() =>
-    typeof document === "undefined"
-      ? null
-      : document.querySelector<HTMLElement>(".jf-blueprint .content"),
-  );
+  // hydration pass to disagree with. See `dialogHost` for why it is the shell
+  // root and not `.content` or `<body>`.
+  const [host] = useState<HTMLElement | null>(dialogHost);
   if (!host) return null;
   return createPortal(
     <div
@@ -1636,11 +1704,10 @@ function ClarifyDialog({
   questions: ClarifyQuestion[];
   onSettle: (value: ClarifyAnswer[] | null) => void;
 }) {
-  const [host] = useState<HTMLElement | null>(() =>
-    typeof document === "undefined"
-      ? null
-      : document.querySelector<HTMLElement>(".jf-blueprint .content"),
-  );
+  // Portalled into the shell root — see `dialogHost`. The footer's `.btn` rules
+  // carry a `.clq-acts` selector for exactly this reason: they are otherwise
+  // scoped under `.content`, which is not an ancestor here.
+  const [host] = useState<HTMLElement | null>(dialogHost);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [custom, setCustom] = useState<Record<string, boolean>>({});
   const [exiting, setExiting] = useState(false);

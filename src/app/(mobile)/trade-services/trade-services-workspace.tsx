@@ -1,7 +1,16 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Inbox, Megaphone, EyeOff, HandHeart, Radio, Sprout } from "lucide-react";
+import {
+  Plus,
+  Inbox,
+  Megaphone,
+  EyeOff,
+  HandHeart,
+  Radio,
+  Sprout,
+  Filter,
+} from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/components/ui/Toast";
@@ -10,13 +19,18 @@ import { TradeTabs } from "./trade-tabs";
 import { TradeJobCard } from "./trade-job-card";
 import { TradeJobDetail } from "./trade-job-detail";
 import { OwnPostCard } from "./own-post-card";
+import { OwnPostDetail } from "./own-post-detail";
+import { DeletePostSheet } from "./delete-post-sheet";
 import { PostJobSheet } from "./post-job-sheet";
 import { TradeChatSheet } from "./trade-chat-sheet";
+import { TradeFilterBar } from "./trade-filter-bar";
 import {
+  STATUS,
   type TradeJob,
   type OwnPost,
   type ChatMessage,
   type TabKey,
+  type JobStatus,
   type ViewerStatus,
   type TradeInboxDTO,
   type TradeNetworkProfileDTO,
@@ -25,6 +39,7 @@ import {
   respondToTradeJob,
   restoreTradeJob,
   setTradeJobStatus,
+  deleteTradeJob,
   getTradeConversation,
   sendTradeMessage,
   setTradeNetworkOptIn,
@@ -64,6 +79,22 @@ export function TradeServicesWorkspace({
   const [chatJob, setChatJob] = React.useState<TradeJob | null>(null);
   const [chatOpen, setChatOpen] = React.useState(false);
 
+  // ── My Posts: detail, edit, delete ───────────────────────────────────
+  const [postDetailId, setPostDetailId] = React.useState<string | null>(null);
+  const [postDetailOpen, setPostDetailOpen] = React.useState(false);
+  const [editingPost, setEditingPost] = React.useState<OwnPost | null>(null);
+  const [deleting, setDeleting] = React.useState<OwnPost | null>(null);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+
+  // ── Filters ──────────────────────────────────────────────────────────
+  // One trade filter over the inbox tabs, status + trade over My Posts. Held
+  // here rather than inside the bar so switching tabs and coming back does not
+  // silently reset what the user chose.
+  const [jobTrade, setJobTrade] = React.useState("");
+  const [postStatus, setPostStatus] = React.useState("");
+  const [postTrade, setPostTrade] = React.useState("");
+
   // Reconcile optimistic local state with authoritative server data when a refresh
   // delivers new props. All three props refresh together (one server render), so
   // tracking the inbox identity is enough. Done during render (not in an effect)
@@ -90,7 +121,23 @@ export function TradeServicesWorkspace({
   const detailJob = detailJobId
     ? jobs.find((j) => j.id === detailJobId) ?? null
     : null;
+  // Read live off the array, so an optimistic status change repaints the open
+  // panel instead of leaving it describing the post as it used to be.
+  const postDetail = postDetailId
+    ? ownPosts.find((p) => p.id === postDetailId) ?? null
+    : null;
   const showFab = !(tab === "posts" && ownPosts.length === 0);
+
+  const uniq = (v: string[]) => Array.from(new Set(v)).sort();
+  const jobTrades = uniq(jobs.map((j) => j.tradeType));
+  const postTrades = uniq(ownPosts.map((p) => p.tradeType));
+
+  const byTrade = (list: TradeJob[]) =>
+    jobTrade ? list.filter((j) => j.tradeType === jobTrade) : list;
+  const visiblePosts = ownPosts.filter(
+    (p) =>
+      (!postStatus || p.status === postStatus) && (!postTrade || p.tradeType === postTrade),
+  );
 
   // Run a mutation, surface errors, and always resync from the server.
   const run = (p: Promise<unknown>, errMsg: string) =>
@@ -164,6 +211,55 @@ export function TradeServicesWorkspace({
     );
     toast.info("Post cancelled", "It's no longer broadcasting.");
     run(setTradeJobStatus(post.id, "CANCELLED"), "Couldn't update post");
+  };
+
+  const openPostDetail = (post: OwnPost) => {
+    setPostDetailId(post.id);
+    setPostDetailOpen(true);
+  };
+
+  const handleEditPost = (post: OwnPost) => {
+    setPostDetailOpen(false);
+    setEditingPost(post);
+  };
+
+  /** The editor hands back the row the SERVER saved, so the list shows what the
+   *  database now holds rather than what was typed into the form. */
+  const handlePostSaved = (saved: OwnPost) => {
+    setOwnPosts((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+    setEditingPost(null);
+    router.refresh();
+  };
+
+  const askDeletePost = (post: OwnPost) => {
+    setPostDetailOpen(false);
+    setDeleting(post);
+    setDeleteOpen(true);
+  };
+
+  /** Not optimistic. A row that vanishes and then reappears because the server
+   *  said no is worse than a button that spins for half a second — and the
+   *  confirmation sheet is already holding the user still. */
+  const handleDeletePost = (post: OwnPost) => {
+    setDeleteBusy(true);
+    deleteTradeJob(post.id)
+      .then(() => {
+        setOwnPosts((prev) => prev.filter((p) => p.id !== post.id));
+        setDeleteOpen(false);
+        setDeleting(null);
+        if (postDetailId === post.id) setPostDetailId(null);
+        toast.success(
+          "Post deleted",
+          post.broadcastCount > 0
+            ? "Withdrawn from the network. Existing conversations are untouched."
+            : post.title,
+        );
+        router.refresh();
+      })
+      .catch((e: unknown) =>
+        toast.error("Couldn't delete post", e instanceof Error ? e.message : undefined),
+      )
+      .finally(() => setDeleteBusy(false));
   };
 
   // ── Network opt-in / dev seed ────────────────────────────────────────
@@ -264,7 +360,14 @@ export function TradeServicesWorkspace({
                 }
               />
             ) : (
-              <CardStack jobs={newJobs} handlers={cardHandlers} />
+              <FilteredStack
+                jobs={byTrade(newJobs)}
+                total={newJobs.length}
+                trades={jobTrades}
+                trade={jobTrade}
+                onTrade={setJobTrade}
+                handlers={cardHandlers}
+              />
             )}
           </TabPanel>
         )}
@@ -284,7 +387,14 @@ export function TradeServicesWorkspace({
                 description="Tap Interested on a job and it moves here, with a private chat to work out timing, price and details."
               />
             ) : (
-              <CardStack jobs={tradeJobs} handlers={cardHandlers} />
+              <FilteredStack
+                jobs={byTrade(tradeJobs)}
+                total={tradeJobs.length}
+                trades={jobTrades}
+                trade={jobTrade}
+                onTrade={setJobTrade}
+                handlers={cardHandlers}
+              />
             )}
           </TabPanel>
         )}
@@ -314,16 +424,69 @@ export function TradeServicesWorkspace({
                 }
               />
             ) : (
-              <div className="space-y-3">
-                {ownPosts.map((post) => (
-                  <OwnPostCard
-                    key={post.id}
-                    post={post}
-                    onMarkFilled={handleMarkFilled}
-                    onCancel={handleCancelPost}
+              <>
+                <TradeFilterBar
+                  shown={visiblePosts.length}
+                  total={ownPosts.length}
+                  fields={[
+                    {
+                      key: "status",
+                      label: "Status",
+                      value: postStatus,
+                      allLabel: "All statuses",
+                      options: ["OPEN", "FILLED", "CANCELLED"],
+                      optionLabel: (v) => STATUS[v as JobStatus].label,
+                    },
+                    {
+                      key: "trade",
+                      label: "Trade",
+                      value: postTrade,
+                      allLabel: "All trades",
+                      options: postTrades,
+                    },
+                  ]}
+                  onChange={(k, v) => (k === "status" ? setPostStatus(v) : setPostTrade(v))}
+                  onClear={() => {
+                    setPostStatus("");
+                    setPostTrade("");
+                  }}
+                />
+                {visiblePosts.length === 0 ? (
+                  /* A filter finding nothing is NOT the same as having posted
+                     nothing, and it must never be able to imitate it. */
+                  <EmptyState
+                    icon={<Filter className="h-5 w-5" />}
+                    title="No posts match these filters"
+                    description={`All ${ownPosts.length} of your posts are hidden by the status and trade you picked.`}
+                    action={
+                      <Button
+                        variant="ghost"
+                        className="h-11"
+                        onClick={() => {
+                          setPostStatus("");
+                          setPostTrade("");
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    }
                   />
-                ))}
-              </div>
+                ) : (
+                  <div className="space-y-3">
+                    {visiblePosts.map((post) => (
+                      <OwnPostCard
+                        key={post.id}
+                        post={post}
+                        onOpen={openPostDetail}
+                        onEdit={handleEditPost}
+                        onDelete={askDeletePost}
+                        onMarkFilled={handleMarkFilled}
+                        onCancel={handleCancelPost}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </TabPanel>
         )}
@@ -343,7 +506,14 @@ export function TradeServicesWorkspace({
                 description="Jobs you pass on wait here for 7 days in case you change your mind, then clear on their own."
               />
             ) : (
-              <CardStack jobs={hiddenJobs} handlers={cardHandlers} />
+              <FilteredStack
+                jobs={byTrade(hiddenJobs)}
+                total={hiddenJobs.length}
+                trades={jobTrades}
+                trade={jobTrade}
+                onTrade={setJobTrade}
+                handlers={cardHandlers}
+              />
             )}
           </TabPanel>
         )}
@@ -377,10 +547,34 @@ export function TradeServicesWorkspace({
         onRestore={handleRestore}
         onChat={handleChat}
       />
+      <OwnPostDetail
+        post={postDetail}
+        open={postDetailOpen}
+        onClose={() => setPostDetailOpen(false)}
+        onEdit={handleEditPost}
+        onDelete={askDeletePost}
+        onMarkFilled={handleMarkFilled}
+        onCancel={handleCancelPost}
+      />
+      <DeletePostSheet
+        post={deleting}
+        open={deleteOpen}
+        busy={deleteBusy}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleDeletePost}
+      />
+      {/* One composer, two jobs. `editing` decides which — see PostJobSheet. */}
       <PostJobSheet
         open={postSheetOpen}
         onClose={() => setPostSheetOpen(false)}
         onPosted={handlePosted}
+      />
+      <PostJobSheet
+        open={!!editingPost}
+        editing={editingPost}
+        onClose={() => setEditingPost(null)}
+        onPosted={handlePosted}
+        onSaved={handlePostSaved}
       />
       <TradeChatSheet
         open={chatOpen}
@@ -416,24 +610,67 @@ function TabPanel({
   );
 }
 
-function CardStack({
-  jobs,
-  handlers,
-}: {
-  jobs: TradeJob[];
-  handlers: {
-    onOpen: (j: TradeJob) => void;
-    onInterested: (j: TradeJob) => void;
-    onNotInterested: (j: TradeJob) => void;
-    onRestore: (j: TradeJob) => void;
-    onChat: (j: TradeJob) => void;
-  };
-}) {
+interface CardHandlers {
+  onOpen: (j: TradeJob) => void;
+  onInterested: (j: TradeJob) => void;
+  onNotInterested: (j: TradeJob) => void;
+  onRestore: (j: TradeJob) => void;
+  onChat: (j: TradeJob) => void;
+}
+
+function CardStack({ jobs, handlers }: { jobs: TradeJob[]; handlers: CardHandlers }) {
   return (
     <div className="space-y-3">
       {jobs.map((job) => (
         <TradeJobCard key={job.id} job={job} {...handlers} />
       ))}
     </div>
+  );
+}
+
+/** A job list with its trade filter above it. `total` is the tab's real count,
+ *  so the filtered-empty state can say how many rows the filter is hiding —
+ *  and can never be confused with the tab having nothing in it. */
+function FilteredStack({
+  jobs,
+  total,
+  trades,
+  trade,
+  onTrade,
+  handlers,
+}: {
+  jobs: TradeJob[];
+  total: number;
+  trades: string[];
+  trade: string;
+  onTrade: (v: string) => void;
+  handlers: CardHandlers;
+}) {
+  return (
+    <>
+      <TradeFilterBar
+        shown={jobs.length}
+        total={total}
+        fields={[
+          { key: "trade", label: "Trade", value: trade, allLabel: "All trades", options: trades },
+        ]}
+        onChange={(_k, v) => onTrade(v)}
+        onClear={() => onTrade("")}
+      />
+      {jobs.length === 0 ? (
+        <EmptyState
+          icon={<Filter className="h-5 w-5" />}
+          title="No jobs in that trade"
+          description={`All ${total} job${total === 1 ? "" : "s"} here are under a different trade. Clear the filter to see them.`}
+          action={
+            <Button variant="ghost" className="h-11" onClick={() => onTrade("")}>
+              Clear filter
+            </Button>
+          }
+        />
+      ) : (
+        <CardStack jobs={jobs} handlers={handlers} />
+      )}
+    </>
   );
 }

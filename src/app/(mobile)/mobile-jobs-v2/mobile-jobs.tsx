@@ -73,6 +73,7 @@ import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { createJob, updateJob } from "@/actions/jobs";
 import { assignWorker, unassignWorker } from "@/actions/workers";
+import { offerRange, scopeSnippet, useJobOffers } from "@/components/v3/jobs-blueprint/job-offers";
 import { loadJobsBoard } from "./jobs-board";
 import {
   OPEN_STATUSES,
@@ -171,6 +172,154 @@ type MenuRow = {
   disabled?: boolean;
   danger?: boolean;
 };
+
+/**
+ * JOB OFFERS (2026-08-21) — the crew member's answer surface, handheld face.
+ *
+ * The brain is the shared `useJobOffers` hook (jobs-blueprint/job-offers.tsx):
+ * one poll cadence, one seen rule, one optimistic-answer discipline for both
+ * viewports. This component only gives it this surface's clothes — an Offers
+ * button with a count bubble in the page head, and the family's bottom sheet
+ * (44px+ targets, swipe-down dismissal, own scrim). Mounted for LIMITED roles
+ * only; managers never see it.
+ */
+export function MobileJobOffers({
+  onAnswered,
+  otherOverlayOpen,
+}: {
+  /** A row was accepted or declined — the board reloads so its labels move. */
+  onAnswered: () => void;
+  /** True while another sheet is up: the poll's auto-open waits its turn
+   *  (the count bubble still announces the arrival). */
+  otherOverlayOpen: boolean;
+}) {
+  // Mirrors written from an effect, not during render (React 19 hooks rule):
+  // the hook's callbacks must see the current values without re-arming.
+  const onAnsweredRef = useRef(onAnswered);
+  const overlayRef = useRef(otherOverlayOpen);
+  useEffect(() => {
+    onAnsweredRef.current = onAnswered;
+    overlayRef.current = otherOverlayOpen;
+  });
+
+  const { offers, loaded, unseen, open, openOffers, closeOffers, respond, busyId, error } =
+    useJobOffers({
+      onAnswered: () => onAnsweredRef.current(),
+      allowAutoOpen: () => !overlayRef.current,
+    });
+
+  const drag = useSheetDrag(open, closeOffers);
+
+  // Esc closes the sheet. The page's own Esc handler never claims this one —
+  // its chain only covers the overlays the page itself owns.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeOffers();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, closeOffers]);
+
+  // No offers and nothing open: the head stays clean. The poll brings the
+  // button (and the sheet) back the moment an offer lands.
+  if (!loaded || (offers.length === 0 && !open)) return null;
+
+  return (
+    <>
+      <button
+        className={`${styles.btn} ${styles.btnGhost} ${styles.offersBtn}`}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={open ? closeOffers : openOffers}
+      >
+        <Icon id="i-bell" />
+        Offers
+        {unseen > 0 ? <span className={styles.offersN}>{unseen}</span> : null}
+      </button>
+
+      <div
+        className={`${styles.scrim} ${open ? styles.on : ""}`}
+        aria-hidden="true"
+        onClick={() => {
+          if (!busyId) closeOffers();
+        }}
+      />
+      <div
+        className={`${styles.sheet} ${open ? styles.on : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Job offers"
+        aria-hidden={!open}
+        {...drag.sheetProps}
+      >
+        <div className={styles.sheetGrab} {...drag.handleProps} />
+        <div className={styles.sheetHead} {...drag.handleProps}>
+          <div className={styles.sheetKicker}>
+            {offers.length
+              ? `${offers.length} awaiting your answer`
+              : "Dispatch / offers"}
+          </div>
+          <div className={styles.sheetTitle}>Job offers</div>
+        </div>
+        <div className={styles.sheetBody}>
+          {offers.length === 0 ? (
+            <div className={styles.sheetNote}>No open offers — you&rsquo;re all caught up.</div>
+          ) : (
+            offers.map((o) => {
+              const range = offerRange(o);
+              const scope = scopeSnippet(o.scope);
+              const busy = busyId === o.assignmentId;
+              return (
+                <div className={styles.offerRow} key={o.assignmentId}>
+                  <div className={styles.offerT}>{o.title}</div>
+                  <div className={styles.offerMeta}>
+                    {o.client ?? "No client"} · {range ?? "Unscheduled"}
+                  </div>
+                  {scope ? <div className={styles.offerScope}>{scope}</div> : null}
+                  <div className={styles.offerActs}>
+                    <button
+                      className={`${styles.offerBtn} ${styles.offerOk}`}
+                      type="button"
+                      disabled={Boolean(busyId)}
+                      onClick={() => void respond(o, "ACCEPTED")}
+                    >
+                      <Icon id="i-check" />
+                      {busy ? "Working…" : "Accept"}
+                    </button>
+                    <button
+                      className={`${styles.offerBtn} ${styles.offerNo}`}
+                      type="button"
+                      disabled={Boolean(busyId)}
+                      onClick={() => void respond(o, "DECLINED")}
+                    >
+                      <Icon id="i-x" />
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          {error ? (
+            <div className={styles.sheetErr} role="alert">
+              {error}
+            </div>
+          ) : null}
+        </div>
+        <button
+          className={styles.sheetCancel}
+          type="button"
+          disabled={Boolean(busyId)}
+          onClick={closeOffers}
+        >
+          Close
+        </button>
+      </div>
+    </>
+  );
+}
 
 export function MobileJobs() {
   const scrollRef = useRef<HTMLElement>(null);
@@ -725,6 +874,15 @@ export function MobileJobs() {
           <div className={styles.pageHead}>
             <h1 className={styles.pageTitle}>Jobs</h1>
             <div className={styles.pageActions}>
+              {/* Crew roles: pending offers with Accept / Decline, polling. The
+                  component renders its own scrim + bottom sheet; only the
+                  button lives here. */}
+              {board?.isWorker ? (
+                <MobileJobOffers
+                  onAnswered={() => void reload().catch((err) => setLoadErr(actionError(err)))}
+                  otherOverlayOpen={anyOverlay}
+                />
+              ) : null}
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={openNew}>
                 <Icon id="i-plus" />New job
               </button>
@@ -897,11 +1055,27 @@ export function MobileJobs() {
                       {sched ? sched : <span className={styles.jmetaDim}>Unscheduled</span>}
                     </div>
 
-                    {/* line 3 — status badge FIRST, crew at the far right */}
+                    {/* line 3 — status badge FIRST, crew at the far right.
+                        A crew member's unanswered offer outranks the job
+                        status on their row: "Not accepted yet" (amber) until
+                        they answer, "Declined" (danger) if they said no. */}
                     <div className={styles.jfoot}>
-                      <span className={`${styles.jstatus} ${STATUS_CLASS[j.status]}`}>
-                        {statusLabel(j.status)}
-                      </span>
+                      {board?.isWorker && j.myAssignment === "PENDING" ? (
+                        <span className={`${styles.jstatus} ${styles.stOffer}`}>
+                          Not accepted yet
+                        </span>
+                      ) : board?.isWorker && j.myAssignment === "DECLINED" ? (
+                        <span className={`${styles.jstatus} ${styles.stDeclinedMine}`}>
+                          Declined
+                        </span>
+                      ) : (
+                        <span className={`${styles.jstatus} ${STATUS_CLASS[j.status]}`}>
+                          {statusLabel(j.status)}
+                        </span>
+                      )}
+                      {!board?.isWorker && j.pendingCrew > 0 ? (
+                        <span className={styles.awaitHint}>awaiting crew</span>
+                      ) : null}
                       {rel ? (
                         <span className={`${styles.jrel} ${rel === "today" ? styles.jrelNow : ""}`}>
                           {rel}

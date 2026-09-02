@@ -54,6 +54,11 @@ model Organization {
   // model which steers AI estimator prompts). lat/lng geocoded from `address` at
   // register/profile-save; orgs without coords are ineligible for platform lead offers.
   tradeTypesJson    String?  @default("[]")
+  // Free text typed under the register form's "Other" trade chip. Deliberately
+  // NOT folded into tradeTypesJson: that column is validated against the closed
+  // TRADE_TYPES vocabulary (src/lib/tradeTypes.ts) and anything unrecognised is
+  // dropped on read, so a custom trade needs a column of its own to survive.
+  otherTrade        String?
   lat               Float?
   lng               Float?
   geocodedAt        DateTime?
@@ -823,6 +828,10 @@ model ConversationParticipant {
   userId         String
   createdAt      DateTime  @default(now())
   lastReadAt     DateTime?
+  // Per-person "clear thread" watermark: this participant sees only messages
+  // newer than this. Clearing NEVER deletes Message rows — the other side
+  // keeps their copy (owner request 2026-08-21).
+  clearedAt      DateTime?
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)

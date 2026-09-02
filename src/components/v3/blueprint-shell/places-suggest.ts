@@ -254,11 +254,16 @@ export function attachPlacesSuggest(
       hide();
       return;
     }
-    debounce = setTimeout(() => fetchSuggestions(q), 250);
+    debounce = setTimeout(() => fetchSuggestions(q), 160);
   };
 
   const onFocus = () => {
     focused = true;
+    // Warm the Maps library while they are still reaching for the first key.
+    // Loading it lazily on the first query put a script fetch + SDK parse in
+    // front of the first suggestion, which is what made the list feel like it
+    // arrived a beat after the typing had stopped.
+    void ensurePlaces().catch(() => {});
     if (list.length) show();
   };
   const onBlur = () => {

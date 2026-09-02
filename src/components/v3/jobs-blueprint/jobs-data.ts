@@ -23,6 +23,9 @@ export type JobTab = { key: "ALL" | JobStatus; label: string };
  *  toggle needs both and neither can be derived from a display name. */
 export type JobAssignmentRef = { id: string; workerId: string };
 
+/** JobAssignment.status, as the board sees it. */
+export type MyAssignmentStatus = "PENDING" | "ACCEPTED" | "DECLINED";
+
 export type Job = {
   id: string;
   title: string;
@@ -38,6 +41,14 @@ export type Job = {
   /** The same crew as ids. Absent on the fixture rows (mock routes make no
    *  writes); the live board always carries it, in `crew` order. */
   assignments?: JobAssignmentRef[];
+  /** LIMITED roles only: the caller's OWN assignment status on this job. A
+   *  PENDING row prints "Not accepted yet" instead of the job status, DECLINED
+   *  prints "Declined" — the worker's answer is the row's headline until it is
+   *  given. Null/absent for managers and on the fixture. */
+  myAssignment?: MyAssignmentStatus | null;
+  /** Managers only: how many of this job's assignments are still PENDING —
+   *  drives the small "awaiting crew" hint next to the status plate. */
+  pendingCrew?: number;
 };
 
 /** A client the create dialog can attach the new job to. */

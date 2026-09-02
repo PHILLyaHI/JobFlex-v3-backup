@@ -37,16 +37,61 @@ const EMPTY: NavIdentity = { role: null, name: null };
 
 const NavRoleContext = createContext<NavIdentity>(EMPTY);
 
+// Nav badge counts, keyed by nav href ("/dashboard/leads" → 3). Computed once,
+// server-side, by the layout (getBadgeCounts in @/lib/badgeCounts) and handed
+// down here for the same reason the identity is: the desktop sidebar, the
+// handheld drawer and any future tab bar sit at very different depths, and the
+// drawer is mounted by every mobile page from inside its own tree. Same
+// provider, second channel — NOT folded into NavIdentity, because "who is
+// looking" and "what is unread" change for different reasons.
+const EMPTY_BADGES: Record<string, number> = {};
+
+const NavBadgesContext = createContext<Record<string, number>>(EMPTY_BADGES);
+
+// The custom plan's page gate, third channel. Hrefs the active org may NOT
+// open — computed once, server-side, by the layout (lib/customPageAccess) and
+// read by every chrome filter alongside the role. Empty for every plan that is
+// not the custom one. Same reason it is not folded into NavIdentity: "who is
+// looking" and "what their plan bought" change for different reasons.
+const EMPTY_LOCKED: string[] = [];
+
+const NavLockedContext = createContext<string[]>(EMPTY_LOCKED);
+
 export function NavRoleProvider({
   identity,
+  badges,
+  locked,
   children,
 }: {
   identity?: NavIdentity;
+  /** Unread/pending counts by nav href, from the layout's getBadgeCounts. */
+  badges?: Record<string, number>;
+  /** Custom-plan blocked hrefs, from the layout's getBlockedCustomPages. */
+  locked?: string[];
   children: React.ReactNode;
 }) {
   return (
-    <NavRoleContext.Provider value={identity ?? EMPTY}>{children}</NavRoleContext.Provider>
+    <NavRoleContext.Provider value={identity ?? EMPTY}>
+      <NavBadgesContext.Provider value={badges ?? EMPTY_BADGES}>
+        <NavLockedContext.Provider value={locked ?? EMPTY_LOCKED}>
+          {children}
+        </NavLockedContext.Provider>
+      </NavBadgesContext.Provider>
+    </NavRoleContext.Provider>
   );
+}
+
+/** The custom plan's blocked hrefs, or an empty list outside the provider and
+ *  on every non-custom plan — which draws everything, the pre-existing nav. */
+export function useNavLocked(): string[] {
+  return useContext(NavLockedContext);
+}
+
+/** Badge counts by nav href, or an empty map outside the provider (the
+ *  standalone /mobile-*-v2 review URLs), which renders no badges — exactly
+ *  what those fixture routes showed before. */
+export function useNavBadges(): Record<string, number> {
+  return useContext(NavBadgesContext);
 }
 
 /** The signed-in identity, or a null identity outside the provider. A null role

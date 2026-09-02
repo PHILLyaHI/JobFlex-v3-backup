@@ -45,7 +45,10 @@ import type { Route } from "next";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./mobile-v2.module.css";
-import { useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import { useNavIdentity, useNavLocked, useNavRole } from "@/components/v3/blueprint-shell/nav-role";
+import { canOpen } from "@/components/v3/blueprint-shell/nav-map";
+import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
+import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
 import {
   LEAD_STAGES,
   navSectionsFor,
@@ -66,6 +69,7 @@ import {
   type BoardLead,
   type DashboardData,
 } from "@/components/v3/dashboard-blueprint/blueprint-data";
+import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -87,7 +91,10 @@ const R = {
   jobs: "/dashboard/jobs",
   leads: "/dashboard/leads",
   company: "/dashboard/company",
-  newProposal: "/dashboard/proposals/new",
+  // The blueprint builder, not the classic editor: /dashboard/proposals/new is
+  // the old design, and the handheld route map sends this one through the
+  // mobile manual builder (responsive-dashboard-shell).
+  newProposal: "/dashboard/manual-blueprint",
   preferences: "/dashboard/settings/preferences",
   account: "/dashboard/settings/account",
   login: "/auth/login",
@@ -216,8 +223,19 @@ export function MobileDashboard({ data: seed }: { data?: DashboardData }) {
     if (seed) return;
     let alive = true;
     getDashboardData()
-      .then((d) => {
-        if (alive) setData(d);
+      .then((res) => {
+        if (!alive) return;
+        if (res.ok) {
+          setData(res.data);
+          return;
+        }
+        // Not a fault: a signed-in login with no company, or a session that has
+        // lapsed. Both used to arrive here as a 500 from the action.
+        setLoadError(
+          res.reason === "no-org"
+            ? "This account isn't a member of any company yet, so there's nothing to show. Sign in with the address you registered, or ask for a new invite."
+            : "Your session has expired. Sign in again to continue.",
+        );
       })
       .catch((err) => {
         if (alive) setLoadError(actionError(err));
@@ -239,7 +257,11 @@ function BootScreen({ error }: { error: string | null }) {
     <div className={styles.app}>
       <Sprite />
       {error ? (
-        <main className={styles.scroll}>
+        /* bootMain, not scroll alone: `.app` is a three-row grid whose first row
+           is the topbar, and this screen renders no topbar — so the card landed
+           in the 56px topbar row and was clipped to a sliver. It is pinned to
+           the middle row instead. */
+        <main className={`${styles.scroll} ${styles.bootMain}`}>
           <div className={styles.content}>
             <div className={styles.card}>
               <div className={styles.cardHead}>
@@ -762,7 +784,19 @@ function DashboardView({ data }: { data: DashboardData }) {
   // the provider the blueprint layout mounts — `data.viewer.role` beside it is
   // already humanised for display and cannot be matched against "INSTALLER".
   const navRole = useNavRole();
-  const navSections = navSectionsFor(navRole);
+  // Custom-plan page locks, same provider; empty on every other plan.
+  const navLocked = useNavLocked();
+  const navSections = navSectionsFor(navRole, navLocked);
+  /* The composer this page's Help button opens is mounted by the responsive
+     shell, which only wraps the authenticated route. On the standalone
+     /mobile-v2 review URL there is no provider and no session, so the button
+     would dispatch at nothing — it is not drawn there. */
+  const signedIn = Boolean(useNavIdentity().name);
+  // Every engine the picker offers sits outside a field worker's allow-list, so
+  // the button is only drawn for roles that can open one (same test the other
+  // bars use).
+  const estimatorRole = useNavIdentity().role;
+  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(estimatorRole, href, navLocked));
   const heroRevenue = data.kpiRaw.revenue;
   const pipeline = compactMoney(data.kpiRaw.pipeline);
 
@@ -802,7 +836,39 @@ function DashboardView({ data }: { data: DashboardData }) {
           <span className={styles.tbarName}>JOBFLEX</span>
           <span className={styles.tbarSub}>Contractor OS</span>
         </span>
+        {/* This bar carried a burger and a wordmark and nothing else, so the
+            one surface an owner opens first on a phone had no notification
+            surface at all — while the handheld shell used by every OTHER
+            route (mobile-shell/mobile-nav) did have a bell, and that one had
+            no handler. Same component both places now. `.bellDot` already
+            exists in this module; it was written for the bell that was never
+            built here. */}
+        {/* Help moved OUT of this bar on 2026-08-27 (owner's call): the
+            support launcher is the floating plate in the bottom-right corner
+            again, mounted by the widget itself. New Estimate takes the slot it
+            left — the same control the other handheld bar carries, opening the
+            same picker dialog. */}
+        {canEstimate && (
+          <button
+            className={styles.tbarBtn}
+            type="button"
+            aria-label="New estimate"
+            onClick={() => document.dispatchEvent(new CustomEvent("jf:estimator-picker"))}
+          >
+            <Icon id="i-plus" />
+          </button>
+        )}
+        <NotificationBell
+          buttonClassName={signedIn ? styles.tbarBtn : `${styles.tbarBtn} ${styles.tbarBell}`}
+          dotClassName={styles.bellDot}
+          iconClassName={styles.ic}
+        />
       </header>
+
+      {/* The dialog the bar's New Estimate button opens. Every other handheld
+          surface gets it from <MobileNav />; this page draws its own bar, so it
+          mounts its own copy. */}
+      <EstimatorPicker />
 
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>

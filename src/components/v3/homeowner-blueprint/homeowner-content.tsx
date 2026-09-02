@@ -132,7 +132,7 @@ export function HomeownerContent() {
       <section className="hero" id="top">
         <div className="hero-in">
           <div className="hero-top">
-            <div className="pill anim a1"><i></i>Free — no account required</div>
+            <div className="pill anim a1">Free — no account required</div>
             {/* `.brm` is a phone-only break: it is `display: none` above 700px, so
                 desktop keeps the donor's two lines. Below 700px it forces
                 "Get real / contractor quotes." instead of letting the clause wrap

@@ -1,0 +1,133 @@
+/* ============================================================
+   PLATFORM ADMIN — SIGN IN
+   /admin/login
+
+   Standalone chrome (not mounted inside a blueprint shell), so the page
+   carries its own token block — the same values the house auth page
+   declares, so the two doors read as one product. EVERY rule is prefixed
+   `:global(.jf-admin-login)` (the literal root class the form wrapper
+   wears); the classes themselves stay hashed and are reached through the
+   module import. Light mode only.
+
+   Composition: a graph-paper field (the blueprint grid over paper) with one
+   ink-framed plate centred on it — the drawing's title block, not a modal.
+   ============================================================ */
+
+:global(.jf-admin-login) {
+  --paper: #f2f0eb; --paper-deep: #ffffff;
+  --ink: #0a0a0a; --ink-soft: #2a2a2a;
+  --muted: #555; --muted-light: #888; --muted-faint: #b0aea8;
+  --blueprint: #1854a0; --blueprint-dark: #0e3d7a; --sky: #4a9eff;
+  --danger: #a83232; --danger-soft: rgba(168, 50, 50, 0.08);
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --font: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-jbmono), 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --radius: 2px; --border: 2px solid var(--ink);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1); --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  font-family: var(--font); background: var(--paper); color: var(--ink);
+  -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto;
+  /* Environment restores — the same two the house auth page makes: Tailwind
+     preflight's line-height 1.5 and globals.css's Inter feature set. */
+  line-height: normal;
+  font-feature-settings: normal;
+}
+:global(.jf-admin-login) * { box-sizing: border-box; margin: 0; padding: 0; }
+:global(.jf-admin-login) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+:global(.jf-admin-login) input { font-family: inherit; }
+
+/* ── the field ── */
+:global(.jf-admin-login) .field {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── the plate ── */
+:global(.jf-admin-login) .frame {
+  width: 100%;
+  max-width: 420px;
+  padding: 36px 36px 32px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 6px 6px 0 var(--ink);
+  animation: adminPlateIn 420ms var(--ease-out) both;
+}
+@keyframes adminPlateIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+:global(.jf-admin-login) .brand { display: inline-flex; align-items: center; gap: 11px; margin-bottom: 34px; }
+:global(.jf-admin-login) .mark {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--ink); color: var(--paper);
+  font-size: 16px; font-weight: 900;
+}
+:global(.jf-admin-login) .brandName { font-size: 19px; font-weight: 900; letter-spacing: -0.01em; }
+
+:global(.jf-admin-login) .kicker {
+  display: flex; align-items: center; gap: 9px; margin-bottom: 12px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-admin-login) .kicker::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--sky); }
+:global(.jf-admin-login) .h1 { font-size: 32px; font-weight: 900; line-height: 1.04; letter-spacing: -0.025em; }
+
+/* ── the form ── */
+:global(.jf-admin-login) .form { margin-top: 28px; }
+:global(.jf-admin-login) .fld { display: block; margin-bottom: 16px; }
+:global(.jf-admin-login) .lbl {
+  display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+}
+:global(.jf-admin-login) .in {
+  width: 100%; height: 46px; padding: 0 13px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--paper-deep); font-size: 14.5px; color: var(--ink);
+  box-shadow: none;
+  transition: box-shadow 0.14s var(--ease);
+}
+:global(.jf-admin-login) .in:focus { outline: none; box-shadow: 4px 4px 0 var(--ink); }
+
+:global(.jf-admin-login) .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 48px; padding: 0 20px; width: 100%; margin-top: 6px;
+  border: var(--border); border-radius: var(--radius);
+  background: var(--blueprint); color: #fff;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s var(--ease), box-shadow 0.1s var(--ease), background 0.12s;
+}
+:global(.jf-admin-login) .btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); background: var(--blueprint-dark); }
+:global(.jf-admin-login) .btn:active { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+:global(.jf-admin-login) .btn[disabled] { opacity: 0.55; pointer-events: none; }
+
+:global(.jf-admin-login) .err {
+  margin-top: 16px; padding: 12px 14px;
+  border: 1.5px solid var(--danger); border-left-width: 5px; border-radius: var(--radius);
+  background: var(--danger-soft); font-size: 12.5px; line-height: 1.5; color: var(--danger);
+}
+:global(.jf-admin-login) .errHidden { display: none; }
+
+:global(.jf-admin-login) :focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* ── handheld ── */
+@media (max-width: 560px) {
+  :global(.jf-admin-login) .field { padding: 20px 14px; align-items: start; }
+  :global(.jf-admin-login) .frame { padding: 28px 22px 26px; box-shadow: 4px 4px 0 var(--ink); }
+  :global(.jf-admin-login) .brand { margin-bottom: 26px; }
+  :global(.jf-admin-login) .h1 { font-size: 27px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-admin-login) .frame { animation: none; }
+  :global(.jf-admin-login) * { transition: none !important; }
+}

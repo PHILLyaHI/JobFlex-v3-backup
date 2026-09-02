@@ -1,0 +1,119 @@
+/* ============================================================
+   ADMIN CAMPAIGNS — BLUEPRINT
+   /admin/campaigns
+
+   Page vocabulary only. The shared furniture (row list, chips,
+   dialog frame, compact buttons, empty state) comes from
+   admin-influencers/admin-ui.module.css — a second copy of any
+   of it would be the typography drift decisions.md warns about.
+
+   Every class is hashed and scoped `:global(.jf-blueprint
+   .content) .cls` ⇒ (0,3,0), which outranks the shell's
+   `.bp :global(.content *)` resets at (0,2,0).
+   ============================================================ */
+
+:global(.jf-blueprint .content) .root { display: flex; flex-direction: column; gap: 22px; }
+
+/* ── Composer ───────────────────────────────────────────────
+   The form is on the page, not in a dialog, so the donor's `.mf`
+   field set (scoped `.content .pmdl`) does not reach it. Field
+   metrics below match that set's mono label and the 38px control
+   height the console's selects use. */
+:global(.jf-blueprint .content) .form { display: flex; flex-direction: column; gap: 14px; }
+
+/* Title and expiry share one row so the select sits beside the input
+   at exactly its height. */
+:global(.jf-blueprint .content) .row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 14px; align-items: end;
+}
+:global(.jf-blueprint .content) .fld { display: flex; flex-direction: column; min-width: 0; }
+:global(.jf-blueprint .content) .lbl {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+  margin-bottom: 6px;
+}
+
+:global(.jf-blueprint .content) .in {
+  width: 100%; min-width: 0; height: 38px; padding: 0 11px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background-color: var(--paper);
+  font-family: var(--font); font-size: 13.5px; font-weight: 600; color: var(--ink);
+  transition: background-color 0.12s, box-shadow 0.12s;
+}
+:global(.jf-blueprint .content) .area {
+  width: 100%; min-width: 0; min-height: 132px; padding: 10px 11px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background-color: var(--paper);
+  font-family: var(--font); font-size: 13.5px; font-weight: 500; line-height: 1.6; color: var(--ink);
+  resize: vertical;
+  transition: background-color 0.12s, box-shadow 0.12s;
+}
+:global(.jf-blueprint .content) .in:hover,
+:global(.jf-blueprint .content) .area:hover { background-color: var(--paper-deep); }
+:global(.jf-blueprint .content) .in:focus-visible,
+:global(.jf-blueprint .content) .area:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* THE ADMIN SELECT is published in blueprint-global.css: the shared
+   `.bp-sel` control plus the `.bp-sel--admin` modifier. The expiry picker
+   wears that; this file used to carry a third copy of the treatment. */
+
+:global(.jf-blueprint .content) .foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+  margin-top: 4px;
+}
+
+/* ── Sent list ──────────────────────────────────────────────
+   announcement · state · posted · ends · delete */
+:global(.jf-blueprint .content) .cols {
+  grid-template-columns: minmax(0, 2.2fr) 104px minmax(0, 1fr) minmax(0, 1fr) 118px;
+}
+
+/* A pasted title is hostile input: wrap it, clamp it, keep the row's
+   other columns on screen. */
+:global(.jf-blueprint .content) .name {
+  font-size: 13.5px; font-weight: 700; color: var(--ink);
+  overflow-wrap: anywhere; line-height: 1.35;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+:global(.jf-blueprint .content) .body {
+  margin-top: 4px; font-size: 12px; font-weight: 500; color: var(--muted-light);
+  overflow-wrap: anywhere; line-height: 1.5;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+/* Dates stay in the mono annotation layer, left-aligned under their
+   headers — the kit's `.tdNum` is right-aligned, which is for amounts. */
+:global(.jf-blueprint .content) .dt {
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink);
+}
+:global(.jf-blueprint .content) .dtMute { color: var(--muted-light); }
+
+:global(.jf-blueprint .content) .more { margin-top: 12px; }
+
+/* ── Delete dialog ──────────────────────────────────────────
+   Deeper than the proposals module's own `.content .pmdl` rules. */
+:global(.jf-blueprint .content .pmdl) .delName {
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: var(--paper); padding: 11px 12px;
+  font-size: 13.5px; font-weight: 700; color: var(--ink);
+  overflow-wrap: anywhere; line-height: 1.4;
+}
+:global(.jf-blueprint .content .pmdl) .delLine {
+  margin-top: 12px; font-size: 13px; font-weight: 500; line-height: 1.55; color: var(--muted);
+}
+
+/* ── Handheld ───────────────────────────────────────────────
+   860px, not 768: the input and the published admin select beside
+   it must change height together, and the shell hands the layout
+   to its mobile layer here. */
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .row { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .in { height: 44px; font-size: 15px; }
+  :global(.jf-blueprint .content) .area { font-size: 15px; }
+  :global(.jf-blueprint .content) .foot :global(.btn) { flex: 1; justify-content: center; min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint .content) .in,
+  :global(.jf-blueprint .content) .area { transition: none !important; }
+}

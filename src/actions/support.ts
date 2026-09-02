@@ -1,37 +1,93 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireManager, requirePlatformAdmin } from "@/lib/orgContext";
+import { requireOrg, requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { appBaseUrl } from "@/lib/appUrl";
-import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
-import { renderEmail } from "@/lib/email/renderEmail";
-import { buildSupportTicket } from "@/lib/email/build/operator";
+import { notifySupportTicket, supportTicketRef } from "@/lib/notify";
+import { rateLimit, retryInWords } from "@/lib/rateLimit";
 
-// Support taxonomy — kept in lockstep with the customer form's chips and the
-// admin triage tags. Not exported: a "use server" module may only export async
-// functions, and these are used internally by the validators below.
+// Support taxonomy — kept in lockstep with the customer form's chips, the
+// corner Help widget's categories and the admin triage tags. Not exported: a
+// "use server" module may only export async functions, and these are used
+// internally by the validators below.
 const SUPPORT_CATEGORIES = ["billing", "technical", "account", "feature", "general"] as const;
 const SUPPORT_PRIORITIES = ["low", "normal", "high"] as const;
 
 const ticketInput = z.object({
-  subject: z.string().min(1, "Add a subject").max(200),
-  body: z.string().min(1, "Describe the issue").max(5000),
+  // Optional since the Help widget landed: that composer is one message field
+  // and one button, deliberately — a subject line is a form asking the user to
+  // summarise their own problem before they have described it. When it is
+  // absent the subject is taken from the message's own first line (below), so
+  // the column stays a real, human-written summary rather than a placeholder.
+  subject: z.string().max(200).optional(),
+  // Trimmed BEFORE the length check: a body of spaces satisfied `min(1)`, and
+  // the derived subject below then came out empty — a blank row in the admin
+  // queue that no filter or search could reach.
+  body: z.string().trim().min(1, "Describe the issue").max(5000),
   category: z.enum(SUPPORT_CATEGORIES).default("general"),
   priority: z.enum(SUPPORT_PRIORITIES).default("normal"),
 });
 
-// Manager-facing: raise a support ticket from inside the dashboard. Org-scoped via
-// requireManager(), and stamped with the submitting user so admins can follow up.
-export async function submitSupportTicket(raw: unknown) {
-  const { organizationId, user } = await requireManager();
+/** The message's first line, clipped to a subject-sized string. The user's own
+ *  words — nothing is generated. Falls back to the whole message when it is a
+ *  single unbroken paragraph. */
+function subjectFromBody(body: string): string {
+  const firstLine = body.split(/\r?\n/).find((l) => l.trim().length > 0)?.trim() ?? body.trim();
+  if (firstLine.length <= 80) return firstLine;
+  const cut = firstLine.slice(0, 80);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+export interface SubmitTicketResult {
+  id: string;
+  /** Short human reference, shown to the submitter and printed on the alert. */
+  ref: string;
+  /** Whether the operator alert actually went out. False is not a failure of
+   *  the submission — the ticket is filed either way — but the caller is told
+   *  the truth rather than a blanket success. */
+  notified: boolean;
+}
+
+/**
+ * Raise a support ticket.
+ *
+ * GUARD: `requireOrg`, not `requireManager` (changed with the Help widget). The
+ * widget is mounted for every signed-in user on every surface, crew included,
+ * and a field worker who cannot open the app is exactly the person who needs to
+ * say so. Manager-only was never a security property here — a ticket is the
+ * submitter's own words about their own org, scoped to their own membership;
+ * it read no data and wrote nothing a limited role can reach. Viewing the
+ * ticket HISTORY at /dashboard/support is still manager-only, and scoped to
+ * the viewer's own tickets.
+ *
+ * RATE LIMIT: widening the guard to every org member also widened who can make
+ * this write a row and send mail, and the composer is two taps from every
+ * screen in the app. Five in ten minutes per user — far above anyone with a
+ * real problem to report, far below a stuck retry loop. Counted BEFORE the
+ * validator so a malformed body cannot be replayed for free.
+ */
+const TICKETS_PER_WINDOW = 5;
+const TICKET_WINDOW_MS = 10 * 60 * 1000;
+
+export async function submitSupportTicket(raw: unknown): Promise<SubmitTicketResult> {
+  const { organizationId, user } = await requireOrg();
+
+  const gate = rateLimit(`support:${user.id}`, TICKETS_PER_WINDOW, TICKET_WINDOW_MS);
+  if (!gate.ok) {
+    throw new Error(
+      `That is several tickets in a row. Try again in ${retryInWords(gate.retryAfterMs)}.`,
+    );
+  }
+
   const data = ticketInput.parse(raw);
+  const subject = data.subject?.trim() || subjectFromBody(data.body);
 
   const ticket = await db.supportTicket.create({
     data: {
       organizationId,
       userId: user.id,
-      subject: data.subject,
+      subject,
       body: data.body,
       category: data.category,
       priority: data.priority,
@@ -39,14 +95,19 @@ export async function submitSupportTicket(raw: unknown) {
     },
   });
 
-  // Heads-up to platform admins. Best-effort and fully isolated — a broken mail
-  // transport must never fail the customer's submission.
+  // Heads-up to the operator. Best-effort by contract — notifySupportTicket
+  // never throws, so a dead transport cannot fail a submission that is already
+  // in the database — but it no longer fails SILENTLY either: it logs, and it
+  // reports back so this return can say what actually happened.
   const [org, submitter] = await Promise.all([
     db.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
     db.user.findUnique({ where: { id: user.id }, select: { email: true } }),
   ]);
-  await notifyAdminsOfTicket({
-    subject: data.subject,
+  const ref = supportTicketRef(ticket.id);
+  const alert = await notifySupportTicket({
+    ticketId: ticket.id,
+    ref,
+    subject,
     body: data.body,
     category: data.category,
     priority: data.priority,
@@ -57,47 +118,17 @@ export async function submitSupportTicket(raw: unknown) {
   revalidatePath("/dashboard/support");
   revalidatePath("/admin/support");
   revalidatePath("/admin");
-  return { id: ticket.id };
+  return { id: ticket.id, ref, notified: alert.sent };
 }
 
 // ── Admin notification feed (platform-admin only) ─────────────────────────────
-
-export interface SupportFeedItem {
-  id: string;
-  subject: string;
-  category: string;
-  priority: string;
-  status: string;
-  orgName: string;
-  submitterEmail: string | null;
-  createdAt: Date;
-  /** true while the admin hasn't opened the inbox since this ticket arrived. */
-  unread: boolean;
-}
-
-/** Recent tickets across every org, for the admin header bell + overview feed. */
-export async function recentSupportTickets(limit = 8): Promise<SupportFeedItem[]> {
-  await requirePlatformAdmin();
-  const rows = await db.supportTicket.findMany({
-    orderBy: { createdAt: "desc" },
-    take: limit,
-    include: {
-      organization: { select: { name: true } },
-      user: { select: { email: true } },
-    },
-  });
-  return rows.map((t) => ({
-    id: t.id,
-    subject: t.subject,
-    category: t.category,
-    priority: t.priority,
-    status: t.status,
-    orgName: t.organization.name,
-    submitterEmail: t.user?.email ?? null,
-    createdAt: t.createdAt,
-    unread: t.adminReadAt === null,
-  }));
-}
+//
+// `recentSupportTickets` used to live here — a cross-org feed of every ticket's
+// subject, org and submitter. Its one consumer (the admin header bell's inline
+// list) was replaced by the /admin/support queue, and every export of a
+// "use server" module is a live POST endpoint whether or not any component
+// imports it. An unused one is an endpoint nobody is reading the guard on, so
+// it is gone rather than kept warm. The queue's own page loader is the feed.
 
 /** Count of tickets the admin hasn't seen yet — drives the nav + bell badges. */
 export async function unreadSupportCount(): Promise<number> {
@@ -115,51 +146,4 @@ export async function markSupportTicketsRead(): Promise<void> {
   });
   revalidatePath("/admin/support");
   revalidatePath("/admin");
-}
-
-// ── internals ─────────────────────────────────────────────────────────────────
-
-// Where new-ticket alerts go: an explicit SUPPORT_NOTIFY_EMAIL (comma-separated)
-// if set, otherwise every flagged platform admin's address.
-async function platformAdminEmails(): Promise<string[]> {
-  const override = process.env.SUPPORT_NOTIFY_EMAIL?.trim();
-  if (override) {
-    return override.split(",").map((s) => s.trim()).filter(Boolean);
-  }
-  const admins = await db.user.findMany({
-    where: { isPlatformAdmin: true },
-    select: { email: true },
-  });
-  return admins.map((a) => a.email).filter((e): e is string => Boolean(e));
-}
-
-async function notifyAdminsOfTicket(t: {
-  subject: string;
-  body: string;
-  category: string;
-  priority: string;
-  orgName: string;
-  submitterEmail: string | null;
-}): Promise<void> {
-  try {
-    if (!isEmailEnabled()) return;
-    const to = await platformAdminEmails();
-    if (to.length === 0) return;
-
-    const appUrl = await appBaseUrl();
-    const { subject: ticketSubject, html: ticketHtml } = renderEmail(
-      buildSupportTicket({
-        subject: t.subject,
-        body: t.body,
-        category: t.category,
-        priority: t.priority,
-        orgName: t.orgName,
-        submitterEmail: t.submitterEmail,
-        href: `${appUrl}/admin/support`,
-      }),
-    );
-    await sendEmail({ to, subject: ticketSubject, html: ticketHtml });
-  } catch {
-    // Swallowed by design: support submission succeeds regardless of mail state.
-  }
 }

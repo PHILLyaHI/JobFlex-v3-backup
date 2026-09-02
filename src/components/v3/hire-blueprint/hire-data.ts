@@ -1,18 +1,17 @@
-// Hire blueprint — the donor's embedded demo data, hardcoded verbatim from
-// jobflex-hire-blueprint_4.html. Every id, string, phone number, role, source
-// and relative timestamp is the donor's exact value; only the shape is typed.
+// Hire blueprint — static shape of the hub + pipeline, typed from the donor
+// (jobflex-hire-blueprint_4.html). Every value that used to be a fixture is
+// now real:
 //
-// `APPLICANTS_SEED` is now a FALLBACK ONLY. The live page reads the org's real
-// applicants in src/app/dashboard/hire/page.tsx and hands them to the behavior
-// module, which writes every change back through src/actions/applicants.ts. The
-// seed is what a standalone/mock render (no session, nothing to query) falls
-// back to so the board is never blank in a design preview.
-//
-// The hub blocks below (HUB_DOORS / HUB_TALLY / HUB_LINKS) stay literal on
-// purpose: the marketplace layer (contracts, job posts, outbound applications)
-// has no Prisma models yet, and the classic hub at
-// src/app/(dashboard)/dashboard/hire/hub/page.tsx zeroes exactly the same three
-// tallies for exactly that reason. Wire them when the models land.
+// - The applicant pipeline is read in src/app/dashboard/hire/page.tsx (via
+//   getHireSeed in src/actions/applicants.ts) and every change goes back
+//   through the applicant server actions. There is NO fixture fallback — a
+//   render with nothing to query shows the board's own empty state.
+// - The hub tallies are computed from the org's trade-network records
+//   (TradeJob / TradeJobRecipient) plus the pipeline's HIRED count — see
+//   HireTallies below and buildTally in hire-behavior.ts.
+// - Both marketplace doors open real panels: the talent directory
+//   (discoverTradeProfiles) and the open-for-work profile
+//   (get/setTradeNetworkOptIn), both in src/actions/tradeServices.ts.
 
 export type HireColumnKey = "APPLIED" | "INTERVIEWING" | "HIRED" | "REJECTED";
 
@@ -23,7 +22,7 @@ export type HireColumn = {
 };
 
 export type Applicant = {
-  /** The real `Applicant.id` (cuid) once the page is fed from the database. */
+  /** The real `Applicant.id` (cuid). */
   id: string;
   name: string;
   email: string | null;
@@ -34,6 +33,7 @@ export type Applicant = {
   /** Relative "applied" plate — `relative(createdAt)` from @/lib/format. */
   age: string;
   notes: string;
+  resumeUrl?: string | null;
 };
 
 export type HubDoor = {
@@ -42,20 +42,31 @@ export type HubDoor = {
   title: string;
   body: string;
   cta: string;
-};
-
-export type HubTally = {
-  label: string;
-  value: string;
-  hint: string;
+  /** The in-route panel the door opens (data-panel name). */
+  goto: string;
 };
 
 export type HubLink = {
   icon: string;
   label: string;
   sub: string;
+  /** Swap to another panel on this route… */
   goto?: string;
-  soon?: boolean;
+  /** …or navigate to another route entirely. */
+  href?: string;
+};
+
+/** The three "Your activity" numbers, computed server-side in page.tsx:
+ *  - hired: pipeline records in HIRED
+ *  - openPosts / totalPosts: the caller's TradeJobs (getMyTradeJobs)
+ *  - interestReceived: INTERESTED responses on the caller's TradeJobs
+ *  - interestSent: trade jobs the caller raised a hand for (getTradeInbox) */
+export type HireTallies = {
+  hired: number;
+  openPosts: number;
+  totalPosts: number;
+  interestReceived: number;
+  interestSent: number;
 };
 
 // Applicant: fullName, email, phone, role, status, source, notes, createdAt.
@@ -68,34 +79,21 @@ export const HK_COLUMNS: HireColumn[] = [
 
 export const SOURCES: string[] = ["Indeed", "Referral", "Walk-in", "LinkedIn", "Job fair", "Other"];
 
-export const APPLICANTS_SEED: Applicant[] = [
-  { id: 'a1', name: 'Casey Stone',    email: 'casey.stone@mail.com',  phone: '(425) 555-0210', role: 'Roofer',            status: 'APPLIED',      source: 'Indeed',   age: '2h ago', notes: '6 years on asphalt and metal. Has own truck and basic hand tools.' },
-  { id: 'a2', name: 'Priya Raman',    email: 'p.raman@mail.com',      phone: '(425) 555-0211', role: 'Estimator',         status: 'APPLIED',      source: 'LinkedIn', age: '1d ago', notes: 'Came from a fencing shop; comfortable with takeoffs and client calls.' },
-  { id: 'a3', name: 'Owen Fletcher',  email: 'owen.f@mail.com',       phone: null,             role: 'Laborer',           status: 'APPLIED',      source: 'Walk-in',  age: '3d ago', notes: 'No experience, eager. Available immediately.' },
-  { id: 'a4', name: 'Marisol Vega',   email: 'm.vega@mail.com',       phone: '(425) 555-0212', role: 'Foreman',           status: 'INTERVIEWING', source: 'Referral', age: '5d ago', notes: 'Referred by Marcus. Ran three-man crews for eight years.' },
-  { id: 'a5', name: 'Derek Olsen',    email: 'derek.olsen@mail.com',  phone: '(425) 555-0213', role: 'Gutter installer',  status: 'INTERVIEWING', source: 'Indeed',   age: '1w ago', notes: 'Phone screen done — wants $34/hr, ok with early starts.' },
-  { id: 'a6', name: 'Hana Whitmore',  email: 'hana.w@mail.com',       phone: '(425) 555-0214', role: 'Siding installer',  status: 'HIRED',        source: 'Job fair', age: '2w ago', notes: 'Starts Monday. Paperwork signed, portal invite pending.' },
-  { id: 'a7', name: 'Bruno Salas',    email: 'bruno.salas@mail.com',  phone: null,             role: 'Deck carpenter',    status: 'REJECTED',     source: 'Other',    age: '3w ago', notes: 'Wanted subcontract work only; not a fit for crew slots right now.' },
-];
-
 export const HUB_DOORS: HubDoor[] = [
-  { icon: 'i-search', kicker: 'For hirers', title: 'Discover talent',
-    body: 'Browse worker profiles, view portfolios, and find the right contractor for your next project.',
-    cta: 'Browse the marketplace' },
-  { icon: 'i-userplus', kicker: 'For workers', title: 'Publish your profile',
-    body: 'Showcase your skills and past work, then get discovered by companies looking to hire.',
-    cta: 'Manage your profile' },
-];
-
-export const HUB_TALLY: HubTally[] = [
-  { label: 'Active contracts', value: '0', hint: 'None in progress' },
-  { label: 'Job posts', value: '0', hint: 'None live' },
-  { label: 'Applications', value: '0', hint: 'None sent' },
+  { icon: 'i-search', kicker: '', title: 'Find a contractor',
+    body: 'Companies near you that are open for work.',
+    cta: 'Open the directory', goto: 'talent' },
+  // Was "Publish your profile" — the panel behind it became the Post-a-job
+  // composer (owner, 2026-08-23). Listing management moved to a hub row below
+  // (/trade-services carries the same opt-in form the panel used to).
+  { icon: 'i-send', kicker: '', title: 'Post a job',
+    body: 'Send work you can\'t take to contractors who can.',
+    cta: 'Post a job', goto: 'profile' },
 ];
 
 export const HUB_LINKS: HubLink[] = [
-  { icon: 'i-users',   label: 'Applicant pipeline', sub: 'Track candidates through your hiring funnel', goto: 'pipeline' },
-  { icon: 'i-jobs',    label: 'Job posts',          sub: 'Manage your job listings', soon: true },
-  { icon: 'i-file',    label: 'Contracts',          sub: 'View active agreements', soon: true },
-  { icon: 'i-send',    label: 'Applications',       sub: "Track what you've applied to", soon: true },
+  // Applicant pipeline / Job posts / Applications were dropped (owner,
+  // 2026-08-24): all three re-entered panels the hub already puts a full card
+  // on, so the row was a second door to the same room.
+  { icon: 'i-userplus', label: 'Manage your profile', sub: 'Your trades, rate and service area', href: '/dashboard/hire/profile' },
 ];

@@ -109,6 +109,12 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
+  // The accept flourish — set on the click that settles the deal, never on a
+  // reload of an already-accepted page.
+  const [cheer, setCheer] = useState(false);
+  // Only the providers this contractor switched on in settings/payment. The
+  // sheet used to list all three and tell the CLIENT to "add the keys to .env".
+  const payOptions = PROVIDERS.filter((p) => view.providers.includes(p.id));
   const [note, setNote] = useState("");
   const [noteErr, setNoteErr] = useState(false);
   const [local, setLocal] = useState<Settled>(null);
@@ -210,14 +216,22 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
   }, [local]);
 
   async function accept() {
+    // Flip FIRST. The accept endpoint blocks on sending two emails, so waiting
+    // for it left a thumb on an unchanged screen for seconds — and a reload in
+    // that window showed the proposal still open. Roll back only if the server
+    // actually refuses.
+    const previous = local;
+    setBusy("accept");
+    closeSheets();
+    setLocal("accepted");
+    setCheer(true);
     try {
-      setBusy("accept");
       const res = await fetch(`/api/public-quote/${view.publicId}/accept`, { method: "POST" });
       if (!res.ok) throw new Error("Couldn't record acceptance");
-      closeSheets();
-      setLocal("accepted");
       router.refresh();
     } catch (err) {
+      setLocal(previous);
+      setCheer(false);
       toast.error("Acceptance failed", err instanceof Error ? err.message : undefined);
     } finally {
       setBusy(null);
@@ -326,7 +340,19 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
               </div>
             </div>
 
-            <div className="mpc-state" role="status" hidden={!positive}>
+            <div
+              className="mpc-state"
+              role="status"
+              hidden={!positive}
+              data-cheer={cheer ? "1" : undefined}
+            >
+              {cheer && (
+                <span className="mpc-cheer" aria-hidden="true">
+                  {Array.from({ length: 8 }, (_, i) => (
+                    <i key={i} style={{ "--i": i } as React.CSSProperties} />
+                  ))}
+                </span>
+              )}
               <IcCheck />
               <span>
                 {settled === "paid"
@@ -334,6 +360,24 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
                   : "Accepted — thank you. The team has been notified."}
               </span>
             </div>
+
+            {/* HOW TO PAY — only once accepted. It used to live in the action
+                bar next to Decline, asking for money before the client had
+                agreed to anything; and because that bar is hidden the moment
+                the proposal settles, paying became unreachable at exactly the
+                point it starts to make sense. */}
+            {settled === "accepted" && payOptions.length > 0 ? (
+              <button
+                className="mpc-btn mpc-btn--frame mpc-paynow"
+                type="button"
+                disabled={busy !== null}
+                aria-haspopup="dialog"
+                aria-expanded={payOpen}
+                onClick={() => setPayOpen(true)}
+              >
+                Pay your deposit
+              </button>
+            ) : null}
             <div
               className="mpc-state mpc-state--declined"
               role="status"
@@ -417,6 +461,18 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
           </section>
         ) : null}
 
+        {/* Terms as a disclosure — closed by default. Long legal copy between a
+            thumb and the Accept button is copy nobody reads, but it has to be
+            one tap away. A real <details>, so it prints open. */}
+        {view.terms ? (
+          <section className="mpc-sec rv">
+            <details className="mpc-terms">
+              <summary>Terms &amp; conditions</summary>
+              <div className="mpc-terms-b">{view.terms}</div>
+            </details>
+          </section>
+        ) : null}
+
         {view.telHref ? (
           <section className="mpc-call rv">
             <div className="mpc-call-t">Questions in the meantime? Just call.</div>
@@ -448,20 +504,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
           </button>
           <div className="mpc-bar-row">
             <button
-              className="mpc-btn mpc-btn--frame"
-              type="button"
-              disabled={busy !== null}
-              aria-haspopup="dialog"
-              aria-expanded={payOpen}
-              onClick={() => {
-                setDeclineOpen(false);
-                setPayOpen(true);
-              }}
-            >
-              Pay now
-            </button>
-            <button
-              className="mpc-btn mpc-btn--quiet"
+              className="mpc-btn mpc-btn--danger"
               type="button"
               disabled={busy !== null}
               aria-haspopup="dialog"
@@ -499,7 +542,7 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
           <div className="mpc-sheet-t" id="mpc-pay-t">{`Pay ${view.totalLabel}`}</div>
         </div>
         <div className="mpc-sheet-b">
-          {PROVIDERS.map((p, i) => (
+          {payOptions.map((p, i) => (
             <button
               className="mpc-opt"
               type="button"

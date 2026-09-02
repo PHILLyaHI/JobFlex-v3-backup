@@ -118,10 +118,7 @@
    (`box-sizing`, heading/list margins, the button reset), so the mount needs
    none of this — it needs to be left alone.
    ============================================================ */
-/* `:where()` keeps these at the donor's (0,2,0): written bare, the two
-   `:not()`s lift the reset to (0,4,0) and it out-specifies every donor
-   content rule (.bp .content .rf-head is (0,3,0)) — paddings vanish. */
-.bp :global(.content :where(*:not(.rfx):not(.rfx *))) {
+.bp :global(.content *:not(.rfx):not(.rfx *)) {
   margin: 0; padding: 0; box-sizing: border-box;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
   scrollbar-width: auto;
@@ -129,9 +126,9 @@
 }
 /* preflight sets svg{display:block;vertical-align:middle} — donor: browser
    defaults. */
-.bp :global(.content :where(svg:not(.rfx *))) { display: inline; vertical-align: baseline; }
-.bp :global(.content :where(button:not(.rfx *))) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
-.bp :global(.content :where(a:not(.rfx *))) { text-decoration: none; color: inherit; }
+.bp :global(.content svg:not(.rfx *)) { display: inline; vertical-align: baseline; }
+.bp :global(.content button:not(.rfx *)) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.bp :global(.content a:not(.rfx *)) { text-decoration: none; color: inherit; }
 .bp :global(.content ul), .bp :global(.content ol) { list-style: none; }
 .bp :global(.content input), .bp :global(.content select) { font-family: inherit; }
 .bp :global(.content svg.ic) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; shape-rendering: geometricPrecision; }
@@ -595,16 +592,6 @@
 }
 .bp :global(.content .chip.ok) { color: var(--success); background: var(--success-soft); }
 .bp :global(.content .chip.wait) { color: var(--warning); background: var(--warning-soft); }
-.bp :global(.content .chip.bad) { color: var(--danger); background: var(--danger-soft); }
-
-/* The verbatim failure text under a notice — evidence, in the smaller voice. */
-.bp :global(.content .rf-why) {
-  display: block;
-  margin: 6px 0 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-}
 
 /* Capped lists: <=4 in full, 5–10 scroll, >10 truncate + button */
 .bp :global(.content .list) { position: relative; }
@@ -1738,152 +1725,6 @@
 .bp :global(.content .bo-total) { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border-top: 2px solid var(--ink); background: var(--paper-deep); }
 .bp :global(.content .bo-total-v) { font-size: 24px; font-weight: 900; color: var(--blueprint); font-variant-numeric: tabular-nums; }
 
-/* ════════════════════════════════════════════════════════════════════════════
-   DONOR MARKUP ON REAL DATA (2026-08-23)
-   roof-estimator-blueprint-form.tsx renders the donor's own markup again;
-   everything above already dresses it. The handful of rules below are the
-   seams where the REAL flow has something the fixture never had: live viewers
-   in the canvas, a billable-order dialog, the synthetic-estimate notice, the
-   report deliverables and the AI assumptions under the estimate.
-   ════════════════════════════════════════════════════════════════════════════ */
-
-/* The live viewers replace the donor's generated SVG. The canvas keeps its
-   graph paper; the stage inside is the fixed box both viewers size from, and
-   it carries .rfx so the donor reset leaves their Tailwind alone. */
-.bp :global(.content .rf-canvas--live) { padding: 0; }
-.bp :global(.content .rf-canvas--live .rf-stage) { position: relative; height: var(--viewer-h); }
-.bp :global(.content .rf-canvas--live .rf-stage > *) { width: 100%; height: 100%; }
-.bp :global(.content .rf-3d-loading) {
-  display: grid; place-items: center; height: 100%;
-  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
-}
-
-/* Report deliverables sit on the legend strip's right edge. */
-.bp :global(.content .rf-legend .rf-files) { margin-left: auto; display: inline-flex; gap: 8px; }
-.bp :global(.content .rf-legend .rf-files .btn) { height: 28px; padding: 0 10px; font-size: 11px; }
-.bp :global(.content .rf-legend .rf-files .btn .ic) { width: 13px; height: 13px; }
-
-/* Synthetic-estimate notice above the hero: the donor's .call, full width. */
-.bp :global(.content .rf-notice) { margin-bottom: 16px; }
-.bp :global(.content .rf-notice .call) { font-size: 12.5px; line-height: 1.55; }
-.bp :global(.content .rf-notice .call b) { color: var(--ink); }
-
-/* The intake's sandbox chip sits on the card head's right edge. */
-.bp :global(.content .rf-head--bar > .chip) { flex: 0 0 auto; margin-top: 2px; }
-
-/* Sample tiles are plain text again — the donor's block tile, no status dot. */
-.bp :global(.content .sample) { display: block; }
-.bp :global(.content .sample > span) { display: block; min-width: 0; }
-
-/* Styled selects on the donor's field metrics (the shared .bp-sel treatment,
-   at .est-in height). */
-.bp :global(.content .est-field .bp-sel) { display: block; }
-.bp :global(.content .est-field .bp-sel-in) { height: var(--field-h); width: 100%; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); padding: 0 30px 0 11px; font-family: var(--font); font-size: 13px; }
-.bp :global(.content .est-field .bp-sel-in:hover),
-.bp :global(.content .est-field .bp-sel-in:focus) { border-color: var(--ink); outline: none; }
-.bp :global(.content .rf-actions .btn:disabled) { opacity: 0.5; pointer-events: none; }
-.bp :global(.content .build-ctl .btn:disabled) { opacity: 0.5; pointer-events: none; }
-
-/* AI assumptions under the two estimate tables. */
-.bp :global(.content .bo-assume) { padding: 12px 16px 14px; border-top: 1.5px solid var(--hair-soft); background: var(--paper-deep); }
-.bp :global(.content .bo-assume ul) { margin-top: 8px; padding-left: 18px; list-style: disc; }
-.bp :global(.content .bo-assume li) { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-
-/* Billable-order dialog — the shared .mdl shape every create dialog uses
-   (announcements / workers / leads carry the identical block). */
-.bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
-.bp :global(.content .mdl.open) { display: flex; }
-.bp :global(.content:has(.mdl.open)) { z-index: auto; }
-.bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
-.bp :global(.content .mdl-box) { position: relative; width: min(460px, 100%); max-height: 88vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
-.bp :global(.content .mdl-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
-.bp :global(.content .mdl-title) { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
-.bp :global(.content .mdl-x) {
-  width: 26px; height: 26px; flex: 0 0 auto; margin: -2px -3px 0 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
-  color: var(--muted);
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
-}
-.bp :global(.content .mdl-x:hover) { border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
-.bp :global(.content .mdl-x .ic) { width: 14px; height: 14px; }
-.bp :global(.content .mdl-body) { padding: 15px 17px 16px; overflow-y: auto; flex: 1; }
-.bp :global(.content .mdl-body .rf-note) { max-width: none; }
-.bp :global(.content .mdl-body .rf-note b) { color: var(--ink); }
-.bp :global(.content .mdl-foot) { display: flex; gap: 9px; padding: 11px 17px; border-top: 1.5px solid var(--ink); background: var(--paper-deep); flex: 0 0 auto; }
-.bp :global(.content .mdl-foot .btn) { flex: 1; justify-content: center; }
-.bp :global(.content .mdl-foot .btn.btn--sm:hover) { box-shadow: 2px 2px 0 var(--ink); }
-
-/* ════════════════════════════════════════════════════════════════════════════
-   ROOF DIAGRAM (2026-08-23) — what the drawing flow added to the donor's sheet:
-   the layer toggle group beside the 2D/3D switch, the Recent measurements
-   list under the intake, the Details card in the sidebar, the stamp plate in
-   the notice and the attach-diagram checkbox next to Convert. Donor
-   vocabulary throughout: 1.5px hair-soft borders, 2px radius, mono 9.5–10px
-   caps labels, the --field-h control row.
-   ════════════════════════════════════════════════════════════════════════════ */
-
-/* Layer toggles — the .vsw look, but each segment is an independent on/off
-   (aria-pressed), not a radio. On = the ink fill the active .vsw-btn uses. */
-.bp :global(.content .rf-layers) { display: inline-flex; flex-wrap: wrap; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); overflow: hidden; background: #fff; }
-.bp :global(.content .rf-layer) { height: 30px; padding: 0 10px; border-right: 1.5px solid var(--hair-soft); font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); transition: background 0.12s, color 0.12s; }
-.bp :global(.content .rf-layer:last-child) { border-right: none; }
-.bp :global(.content .rf-layer:hover) { background: var(--paper-deep); color: var(--ink); }
-.bp :global(.content .rf-layer[aria-pressed="true"]) { background: var(--ink); color: var(--paper); }
-.bp :global(.content .rf-layer:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: -2px; }
-
-/* Export buttons on the legend strip: a disabled one reads as disabled, not hovered. */
-.bp :global(.content .rf-legend .rf-files .btn:disabled) { opacity: 0.5; pointer-events: none; }
-
-/* Stamp plate inside the notice — the drawing's "ESTIMATE — NOT MEASURED". */
-.bp :global(.content .rf-stamp) { display: inline-block; margin: 0 9px 0 0; padding: 2px 7px; background: var(--ink); color: var(--paper); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; vertical-align: 1px; }
-.bp :global(.content .rf-notice .call + .call) { margin-top: 10px; }
-
-/* Recent measurements — a cell-button list: the button fills the row, the
-   row's own hairline is the divider (no boxes in boxes). */
-.bp :global(.content .rf-recent-card) { margin-top: 16px; }
-.bp :global(.content .rf-recent) { padding: 0; }
-.bp :global(.content .rf-recent li) { padding: 0; }
-.bp :global(.content .rf-recent-row) { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; width: 100%; min-height: 44px; padding: 9px 18px; text-align: left; font-size: 13px; color: var(--ink); transition: background 0.12s; }
-.bp :global(.content .rf-recent-row:hover) { background: var(--paper-deep); }
-.bp :global(.content .rf-recent-row:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: -2px; }
-.bp :global(.content .rf-recent-row:disabled) { opacity: 0.5; pointer-events: none; }
-.bp :global(.content .rf-recent-row[aria-busy="true"]) { opacity: 1; }
-.bp :global(.content .rf-recent-main) { display: block; min-width: 0; }
-.bp :global(.content .rf-recent-addr) { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bp :global(.content .rf-recent-meta) { display: block; margin-top: 3px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bp :global(.content .rf-recent-src) { font-size: 9.5px; padding: 3px 7px; }
-.bp :global(.content .rf-recent-fig) { min-width: 64px; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bp :global(.content .rf-recent-fig span) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted); margin-left: 4px; }
-.bp :global(.content .rf-recent-empty) { margin: 14px 18px 18px; padding: 16px; border: 1.5px dashed var(--muted-faint); border-radius: var(--radius); font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); text-align: center; }
-
-/* Details card — a <dl> in the .lf-list rhythm: section kickers in mono caps,
-   rows label / tabular value, 1.5px hairline dividers. */
-.bp :global(.content .rf-details) { margin: 0; padding: 4px 16px 12px; }
-.bp :global(.content .rf-details-sec) { padding: 12px 0 2px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
-.bp :global(.content .rf-details-row) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1.5px solid var(--hair-soft); font-size: 13px; }
-.bp :global(.content .rf-details-row:last-child) { border-bottom: none; }
-.bp :global(.content .rf-details-row dt) { color: var(--ink-soft); }
-.bp :global(.content .rf-details-row dd) { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; text-transform: capitalize; }
-.bp :global(.content .rf-details-row dd span) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--muted); margin-left: 4px; text-transform: none; }
-.bp :global(.content .rf-details-how) { margin-left: 6px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-
-/* Attach-diagram checkbox beside Convert: a control-row box (--field-h) with a
-   square ink checkbox — the checklist mark, not the OS widget. */
-.bp :global(.content .bo-total-acts) { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-.bp :global(.content .rf-attach) { display: inline-flex; align-items: center; gap: 9px; min-height: var(--field-h); padding: 0 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); cursor: pointer; user-select: none; transition: border-color 0.12s, opacity 0.12s; }
-.bp :global(.content .rf-attach:hover) { border-color: var(--ink); }
-.bp :global(.content .rf-attach.is-off) { opacity: 0.6; }
-.bp :global(.content .rf-attach input) { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; cursor: pointer; }
-.bp :global(.content .rf-attach input:checked) { background: var(--ink); box-shadow: inset 0 0 0 2.5px #fff; }
-.bp :global(.content .rf-attach input:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
-
-/* The 2D drawing's host inside the stage. It stays mounted under the 3D
-   model — `hidden`, not unmounted — so the export ref survives the switch. */
-.bp :global(.content .rf-canvas--live .rf-stage-host) { width: 100%; height: 100%; }
-.bp :global(.content .rf-canvas--live .rf-stage-host > *) { width: 100%; height: 100%; }
-.bp :global(.content .rf-canvas--live .rf-stage-host[hidden]) { display: none !important; }
-
 @media (max-width: 1100px) { .bp :global(.content .rf-grid) { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 860px) {
   .bp :global(.content .addr-grid) { grid-template-columns: 1fr 1fr; }
@@ -1897,59 +1738,4 @@
   .bp :global(.content .build-ctl) { width: 100%; }
   .bp :global(.content .build-ctl .btn) { flex: 1; justify-content: center; }
   .bp :global(.content .hero-cell) { border-right: none; border-bottom: 1.5px solid var(--hair-soft); }
-}
-
-/* Geometry gate: shown INSTEAD of a plan that fails the R01–R16 invariants
-   (src/lib/roofDiagram/validate.ts). Blueprint vocabulary, no new tokens. */
-.bp :global(.content .rf-gate) {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 24px;
-  text-align: center;
-  background: var(--paper);
-  border: 1px dashed var(--rule);
-}
-.bp :global(.content .rf-gate-title) {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  color: var(--ink);
-  font-weight: 700;
-}
-.bp :global(.content .rf-gate-body) {
-  max-width: 46ch;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-2, var(--ink));
-}
-.bp :global(.content .rf-gate-codes) {
-  max-width: 60ch;
-  margin: 0;
-  padding: 10px 12px;
-  list-style: none;
-  text-align: left;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--ink-2, var(--ink));
-  background: var(--paper-2, transparent);
-  border: 1px solid var(--rule);
-  overflow: auto;
-  max-height: 40%;
-}
-
-/* The gate panel stands in for the whole report body, so it carries the card's
-   own padding and a working minimum height. */
-.bp :global(.content .rf-gate-card .rf-gate) {
-  min-height: 320px;
-  border: 0;
-}
-.bp :global(.content .rf-gate-card .rf-files) {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
 }

@@ -1,0 +1,1160 @@
+/* ============================================================
+   LANDING-D — ported marketing landing (/landing-d)
+   ============================================================
+   The donor ran Tailwind v4, where its palette and component classes lived in
+   `@theme` / `@layer components`. Here the palette is `lp-*` in
+   tailwind.config.ts and the component classes are below, plain and prefixed
+   `lp-` so nothing leaks into the blueprint surfaces.
+
+   Plain CSS, not a CSS Module: module hashing kills bare element selectors and
+   the `*` reset the donor leans on. Everything is scoped under `.jf-lp`, and
+   that scope is also what lets a rule outrank a Tailwind utility — our global
+   config flattens every radius to 2px, which is right for the blueprint app
+   and wrong for a marketing page.
+   ============================================================ */
+
+.jf-lp {
+  /* Tuning knobs for this page — change here, not in the markup. */
+  --lp-wrap: 76rem;           /* content column (donor shipped 86rem) */
+  --lp-gutter: clamp(20px, 5vw, 72px);
+  /* Cut sharper again (owner, 2026-08-23): the whole scale steps down so the
+     cards read as drawn plates rather than soft app surfaces. Still short of
+     the blueprint's flat 2px — a marketing page needs the corner to be
+     visible, just not friendly. */
+  --lp-r-sm: 2px;
+  --lp-r: 3px;
+  --lp-r-md: 3px;
+  --lp-r-lg: 4px;
+  --lp-r-xl: 5px;
+  --lp-r-2xl: 6px;
+  --lp-ease: cubic-bezier(0.694, 0, 0.31, 1);
+
+  /* our type tokens, not the donor's */
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  color: #112220;
+  background: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+.jf-lp h1,
+.jf-lp h2,
+.jf-lp h3,
+.jf-lp h4 {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Numerals in the mocks read as instrument readouts, so they take the mono
+   token the rest of the product uses for the same job. */
+.jf-lp .tabular,
+.jf-lp .lp-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Content column ──────────────────────────────────────────
+   One class instead of the donor's repeated `max-w-[86rem]`, so the column
+   width and the side gutter are a single edit. */
+.jf-lp .lp-wrap {
+  width: 100%;
+  max-width: var(--lp-wrap);
+  padding-inline: var(--lp-gutter);
+}
+
+/* ── Radius ──────────────────────────────────────────────────
+   Softer than the blueprint's 2px, far short of the donor's pill corners. */
+.jf-lp .rounded-sm { border-radius: var(--lp-r-sm); }
+.jf-lp .rounded { border-radius: var(--lp-r); }
+.jf-lp .rounded-md { border-radius: var(--lp-r-md); }
+.jf-lp .rounded-lg { border-radius: var(--lp-r-lg); }
+.jf-lp .rounded-xl { border-radius: var(--lp-r-xl); }
+.jf-lp .rounded-2xl { border-radius: var(--lp-r-2xl); }
+.jf-lp .rounded-3xl { border-radius: 8px; }
+.jf-lp .rounded-\[28px\] { border-radius: 8px; }
+.jf-lp .rounded-\[26px\] { border-radius: 7px; }
+.jf-lp .rounded-\[5px\] { border-radius: var(--lp-r-sm); }
+.jf-lp .rounded-t { border-radius: var(--lp-r) var(--lp-r) 0 0; }
+.jf-lp .rounded-t-2xl { border-radius: var(--lp-r-2xl) var(--lp-r-2xl) 0 0; }
+.jf-lp .rounded-tl { border-top-left-radius: var(--lp-r); }
+.jf-lp .rounded-br { border-bottom-right-radius: var(--lp-r); }
+.jf-lp .rounded-bl { border-bottom-left-radius: var(--lp-r); }
+/* pills, avatars and dots stay circular */
+.jf-lp .rounded-full { border-radius: 9999px; }
+
+/* ── Brand lockup ─────────────────────────────────────────
+   The blueprint shell's logo, not the donor's rounded-square glyph. The mark
+   asset carries a wide transparent margin, so the box clips it and the image is
+   pulled up by that inset — same ratios as blueprint.module.css, scaled by
+   --lp-mark-size. */
+.jf-lp .lp-mark-box {
+  --lp-mark-size: 84px;
+  position: relative;
+  display: block;
+  width: calc(var(--lp-mark-size) * 0.3462 + 1px);
+  height: calc(var(--lp-mark-size) * 0.4253 + 1px);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.jf-lp .lp-mark-img {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--lp-mark-size) * -0.2876 + 0.5px);
+  width: var(--lp-mark-size);
+  height: var(--lp-mark-size);
+  transform: translateX(-50%);
+  object-fit: contain;
+  filter: brightness(0);
+}
+.jf-lp .lp-mark-img--paper { filter: brightness(0) invert(1); }
+.jf-lp .lp-mark-box--xs { --lp-mark-size: 46px; }
+
+/* Nav lockup, one step up (owner, 2026-08-25). The wordmark was reading as a
+   caption next to the links rather than as the brand. */
+.jf-lp .lp-brand--lg { gap: 13px; }
+.jf-lp .lp-brand--lg .lp-mark-box { --lp-mark-size: 104px; }
+.jf-lp .lp-brand--lg .lp-brand-name { font-size: 21px; }
+.jf-lp .lp-brand--lg .lp-brand-sub { font-size: 10.5px; letter-spacing: 0.24em; }
+@media (max-width: 640px) {
+  .jf-lp .lp-brand--lg .lp-mark-box { --lp-mark-size: 92px; }
+  .jf-lp .lp-brand--lg .lp-brand-name { font-size: 19px; }
+  .jf-lp .lp-brand--lg .lp-brand-sub { font-size: 9.5px; }
+}
+
+/* ── Hero CTAs ────────────────────────────────────────────
+   Both buttons take one size so the pair reads as a matched set — the donor
+   sized them independently and the Google button ran taller and wider. */
+.jf-lp .lp-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 22px;
+  min-width: 15.5rem;
+  border-radius: var(--lp-r-md);
+  font-size: 15.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+}
+.jf-lp .lp-cta--solid { background: #15171a; color: #fff; padding: 0 22px; }
+.jf-lp .lp-cta--solid:hover { background: #112220; }
+.jf-lp .lp-cta--ghost {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #112220;
+}
+.jf-lp .lp-cta--ghost:hover { border-color: #cbd5e1; background: #f8fafc; }
+@media (max-width: 640px) {
+  .jf-lp .lp-cta { width: 100%; min-width: 0; }
+}
+
+.jf-lp .lp-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--lp-ink-plate, #15171a);
+  color: #fff;
+  padding: 8px 14px 8px 12px;
+  border-radius: var(--lp-r);
+}
+.jf-lp .lp-brand--bare { background: transparent; padding: 0; }
+.jf-lp .lp-brand-txt { display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.jf-lp .lp-brand-name { font-size: 16px; font-weight: 900; letter-spacing: 0.01em; line-height: 1; }
+.jf-lp .lp-brand-sub {
+  font-size: 9px; font-weight: 800;
+  letter-spacing: 0.26em; text-transform: uppercase;
+  color: #4a9eff;
+  line-height: 1;
+}
+
+/* ── Blueprint product shot ───────────────────────────────
+   The hero mock speaks the app's own language: drafting paper, 2px ink frames,
+   near-square corners, labels above numerals. Values are literal here rather
+   than var()-ed off globals.css — this subtree is a picture of the product, and
+   it must not shift if the app's live tokens are retuned. */
+.jf-lp .lp-bp {
+  /* White-toned, not the app's drafting beige (owner, 2026-08-24): on the
+     black hero the warm paper read as aged; a cool white keeps the plate
+     looking like a live screen. */
+  --bp-paper: #ffffff;
+  --bp-paper-deep: #f3f4f6;
+  --bp-ink: #0a0a0a;
+  --bp-blue: #1854a0;
+  --bp-sky: #4a9eff;
+  --bp-muted: #555;
+  --bp-hair: rgba(10, 10, 10, 0.12);
+
+  /* Softer than the rest of the page on purpose (owner, 2026-08-24): the plate
+     is a device showing a screen, and a device has rounded corners. The blueprint
+     language inside it keeps its 2px ink frames. */
+  --bp-r: 14px;
+  --bp-r-in: 7px;
+
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  /* No ground of its own (owner, 2026-08-25). Each corner was showing a pale
+     arc inside the border: the rounded clip antialiases EVERY painted layer it
+     cuts, so a background here plus a background on the child composited two
+     partial edges over each other and landed halfway between them. Exactly one
+     layer may paint at each corner, and that layer is the child — the sidebar
+     head at the top left, the account row at the bottom left, .lp-bp-main down
+     the right. Between them they cover the whole plate, so nothing shows
+     through. */
+  background: transparent;
+  /* The top edge is inked like every other side. Leaving it open showed a pale
+     hairline along the top of the plate against the black hero — the paper
+     itself, not a border (owner, 2026-08-24). */
+  border: 2px solid var(--bp-ink);
+  border-radius: var(--bp-r);
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--bp-ink);
+  text-align: left;
+}
+
+.jf-lp .lp-bp-sb {
+  position: relative;
+  border-right: 2px solid var(--bp-ink);
+  /* Transparent for the same reason as .lp-bp — the rows inside carry the
+     paper, and one of them owns each corner. */
+  background: transparent;
+  min-width: 0; overflow: hidden;
+}
+.jf-lp .lp-bp-sb-inner {
+  position: absolute; inset: 0;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.jf-lp .lp-bp-sb-head {
+  display: flex; align-items: center; gap: 9px;
+  height: 56px; padding: 0 14px;
+  background: var(--bp-ink); color: var(--bp-paper);
+  border-bottom: 2px solid var(--bp-ink);
+}
+.jf-lp .lp-bp-sb-brand { display: flex; flex-direction: column; gap: 2px; }
+.jf-lp .lp-bp-sb-name { font-size: 11px; font-weight: 900; letter-spacing: 0.01em; line-height: 1; }
+.jf-lp .lp-bp-sb-sub {
+  font-size: 6.5px; font-weight: 800; letter-spacing: 0.24em;
+  text-transform: uppercase; color: var(--bp-sky); line-height: 1;
+}
+.jf-lp .lp-bp-sb-scroll { padding: 10px 0 8px; overflow: hidden; background: var(--bp-paper); }
+.jf-lp .lp-bp-sb-lbl {
+  padding: 12px 12px 5px;
+  font-size: 7.5px; font-weight: 800; letter-spacing: 0.2em;
+  text-transform: uppercase; color: #888;
+}
+.jf-lp .lp-bp-sb-link {
+  display: flex; align-items: center; gap: 9px;
+  margin: 2px 9px; padding: 7px 9px;
+  font-size: 10.5px; font-weight: 600; color: #2a2a2a;
+  border: 1.5px solid transparent; border-radius: var(--bp-r-in);
+}
+.jf-lp .lp-bp-sb-link.is-on {
+  font-weight: 800; color: var(--bp-ink);
+  border-color: var(--bp-ink); box-shadow: 2px 2px 0 var(--bp-ink);
+}
+.jf-lp .lp-bp-sb-dot {
+  width: 9px; height: 9px; flex-shrink: 0;
+  border: 1.5px solid currentColor; border-radius: 1px; opacity: 0.55;
+}
+.jf-lp .lp-bp-sb-link.is-on .lp-bp-sb-dot { opacity: 1; color: var(--bp-blue); }
+.jf-lp .lp-bp-sb-badge {
+  margin-left: auto;
+  background: var(--bp-blue); color: #fff;
+  border-radius: 1px; padding: 1px 4px;
+  font-size: 8px; font-weight: 800;
+}
+
+.jf-lp .lp-bp-sb-acct {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 12px; border-top: 1.5px solid var(--bp-ink);
+  background: var(--bp-paper);
+}
+.jf-lp .lp-bp-sb-avatar {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 26px; height: 26px; border-radius: var(--bp-r-in);
+  background: var(--bp-ink); color: #fff;
+  font-size: 9px; font-weight: 900; letter-spacing: 0.04em;
+}
+.jf-lp .lp-bp-sb-acct-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jf-lp .lp-bp-sb-acct-name { font-size: 10px; font-weight: 700; line-height: 1; }
+.jf-lp .lp-bp-sb-acct-role {
+  font-size: 7px; font-weight: 800; letter-spacing: 0.2em;
+  text-transform: uppercase; color: #888; line-height: 1;
+}
+.jf-lp .lp-bp-sb-acct-gear {
+  display: grid; place-items: center; margin-left: auto; flex-shrink: 0;
+  width: 22px; height: 22px;
+  border: 1.5px solid var(--bp-hair); border-radius: var(--bp-r-in);
+  color: var(--bp-muted);
+}
+
+.jf-lp .lp-bp-main { min-width: 0; background: var(--bp-paper); }
+.jf-lp .lp-bp-topbar {
+  display: flex; align-items: center; gap: 12px;
+  height: 56px; padding: 0 16px;
+  border-bottom: 2px solid var(--bp-ink);
+}
+/* Sized like a search field, not like the bar it sits in (owner, 2026-08-25):
+   flexing it to the full column made the topbar read as one long input. */
+.jf-lp .lp-bp-search {
+  flex: 0 1 320px; min-width: 0; height: 28px;
+  border: 2px solid var(--bp-ink); border-radius: var(--bp-r-in);
+  padding: 0 10px; font-size: 10px; color: #888;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jf-lp .lp-bp-btn {
+  flex-shrink: 0; height: 28px; margin-left: auto;
+  background: var(--bp-blue); color: #fff;
+  border: 2px solid var(--bp-ink); border-radius: var(--bp-r-in);
+  padding: 0 12px;
+  font-size: 8.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.jf-lp .lp-bp-btn.is-ghost { background: var(--bp-paper); color: var(--bp-ink); }
+
+.jf-lp .lp-bp-content { padding: 26px 30px 30px; }
+.jf-lp .lp-bp-kicker {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 8px; font-weight: 800; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--bp-muted);
+}
+.jf-lp .lp-bp-kicker::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--bp-sky);
+}
+
+.jf-lp .lp-bp-title {
+  margin: 7px 0 16px;
+  font-size: 30px; font-weight: 900;
+  letter-spacing: -0.03em; text-transform: uppercase; line-height: 0.95;
+}
+
+.jf-lp .lp-bp-kpis {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  border: 2px solid var(--bp-ink); border-radius: var(--bp-r-in);
+  overflow: hidden; margin-bottom: 12px;
+}
+.jf-lp .lp-bp-kpi { padding: 13px 13px 15px; border-right: 1.5px solid var(--bp-ink); min-width: 0; }
+.jf-lp .lp-bp-kpi:last-child { border-right: none; }
+.jf-lp .lp-bp-kpi-lbl {
+  font-size: 7.5px; font-weight: 800; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--bp-muted); margin-bottom: 7px;
+}
+.jf-lp .lp-bp-kpi-val {
+  font-size: 21px; font-weight: 900; letter-spacing: -0.01em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.jf-lp .lp-bp-kpi-val.is-accent { color: var(--bp-blue); }
+
+.jf-lp .lp-bp-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 12px; }
+.jf-lp .lp-bp-card {
+  border: 2px solid var(--bp-ink); border-radius: var(--bp-r-in);
+  background: var(--bp-paper); padding: 14px 15px 15px;
+  box-shadow: 3px 3px 0 rgba(10, 10, 10, 0.06);
+  min-width: 0;
+}
+.jf-lp .lp-bp-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.jf-lp .lp-bp-card-title {
+  font-size: 9px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.jf-lp .lp-bp-tag {
+  margin-left: auto;
+  border: 1.5px solid var(--bp-ink); border-radius: var(--lp-r-sm);
+  padding: 2px 6px; font-size: 7.5px; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.jf-lp .lp-bp-chart { display: block; width: 100%; height: auto; }
+.jf-lp .lp-bp-axis {
+  display: flex; justify-content: space-between; margin-top: 5px;
+  font-size: 7.5px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #888;
+}
+
+.jf-lp .lp-bp-act {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11.5px 0; border-bottom: 1px solid rgba(10, 10, 10, 0.07);
+}
+.jf-lp .lp-bp-act:last-child { border-bottom: none; }
+.jf-lp .lp-bp-act-ic {
+  display: grid; place-items: center;
+  width: 22px; height: 22px; flex-shrink: 0;
+  border: 1.5px solid var(--bp-ink); border-radius: var(--lp-r-sm);
+  color: var(--bp-ink);
+}
+.jf-lp .lp-bp-act-body { min-width: 0; }
+.jf-lp .lp-bp-act-title {
+  display: block; font-size: 9.5px; font-weight: 600; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jf-lp .lp-bp-act-meta {
+  display: block; margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 7px; font-weight: 600; letter-spacing: 0.08em; color: #888;
+}
+
+@media (max-width: 860px) {
+  .jf-lp .lp-bp { grid-template-columns: minmax(0, 1fr); }
+  .jf-lp .lp-bp-sb { display: none; }
+  .jf-lp .lp-bp-kpis { grid-template-columns: 1fr 1fr; }
+  .jf-lp .lp-bp-kpi:nth-child(2) { border-right: none; }
+  .jf-lp .lp-bp-kpi:nth-child(-n + 2) { border-bottom: 1.5px solid var(--bp-ink); }
+  .jf-lp .lp-bp-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Crew schedule (blueprint) ────────────────────────────
+   Same vocabulary as the product shot above: paper, ink frames, square crew
+   plates. Chip tone carries job state and nothing else. */
+/* The crew schedule wears the hero plate's detailing (owner, 2026-08-24): a
+   white screen rather than drafting beige, the same softened plate corner, the
+   same roomier gutters. The 2px ink frames and status tones are unchanged —
+   those are the blueprint language, not the plate. */
+.jf-lp .lp-jb {
+  --bp-r: 14px;
+  --bp-r-in: 7px;
+
+  background: #ffffff;
+  border: 2px solid #0a0a0a;
+  border-radius: var(--bp-r);
+  box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.07);
+  padding: 22px 26px 10px;
+  text-align: left;
+}
+.jf-lp .lp-jb-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.jf-lp .lp-jb-title {
+  font-size: 22px; font-weight: 900;
+  letter-spacing: -0.02em; text-transform: uppercase; line-height: 1;
+}
+.jf-lp .lp-jb-tag {
+  border: 1.5px solid #0a0a0a; border-radius: var(--bp-r-in, 7px);
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.jf-lp .lp-jb-btn {
+  margin-left: auto;
+  background: #1854a0; color: #fff;
+  border: 2px solid #0a0a0a; border-radius: var(--bp-r-in, 7px);
+  padding: 8px 14px;
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.jf-lp .lp-jb-days {
+  display: grid; grid-template-columns: 10rem repeat(5, 1fr);
+  border-bottom: 2px solid #0a0a0a; padding-bottom: 8px;
+}
+.jf-lp .lp-jb-day {
+  display: flex; align-items: baseline; justify-content: center; gap: 6px;
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase; color: #888;
+}
+.jf-lp .lp-jb-day.is-today { color: #0a0a0a; }
+.jf-lp .lp-jb-day-n { font-family: var(--font-mono); font-size: 12px; font-weight: 700; }
+.jf-lp .lp-jb-day.is-today .lp-jb-day-n {
+  background: #1854a0; color: #fff;
+  border-radius: var(--bp-r-in, 7px); padding: 1px 6px;
+}
+
+.jf-lp .lp-jb-row {
+  display: grid; grid-template-columns: 10rem repeat(5, 1fr);
+  border-bottom: 1px solid rgba(10, 10, 10, 0.1);
+}
+.jf-lp .lp-jb-row:last-child { border-bottom: none; }
+.jf-lp .lp-jb-crew { display: flex; align-items: center; gap: 9px; padding: 12px 10px 12px 0; min-width: 0; }
+.jf-lp .lp-jb-av {
+  position: relative;
+  display: grid; place-items: center;
+  width: 30px; height: 30px; flex-shrink: 0;
+  background: #1854a0; color: #fff;
+  border: 1.5px solid #0a0a0a; border-radius: var(--bp-r-in, 7px);
+  font-size: 12px; font-weight: 900;
+}
+.jf-lp .lp-jb-crew-txt { min-width: 0; }
+.jf-lp .lp-jb-crew-name {
+  display: block; font-size: 13px; font-weight: 800; color: #0a0a0a;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jf-lp .lp-jb-crew-role {
+  display: block; margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase; color: #888;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jf-lp .lp-jb-lane { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(5, 1fr); }
+.jf-lp .lp-jb-cell { border-left: 1px solid rgba(10, 10, 10, 0.1); }
+.jf-lp .lp-jb-cell.is-today { background: rgba(24, 84, 160, 0.05); }
+.jf-lp .lp-jb-chip {
+  z-index: 1;
+  margin: 9px 6px 9px 5px;
+  display: flex; align-items: center;
+  min-height: 30px; padding: 0 9px;
+  border: 1.5px solid currentColor; border-radius: var(--bp-r-in, 7px);
+  font-size: 11px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jf-lp .lp-jb-chip.tone-bp { color: #1854a0; background: rgba(24, 84, 160, 0.09); }
+.jf-lp .lp-jb-chip.tone-sky { color: #0e3d7a; background: rgba(74, 158, 255, 0.14); border-color: #4a9eff; }
+.jf-lp .lp-jb-chip.tone-ok { color: #3a7d44; background: rgba(58, 125, 68, 0.09); }
+.jf-lp .lp-jb-chip.tone-warn { color: #b88420; background: rgba(184, 132, 32, 0.1); }
+.jf-lp .lp-jb-chip.tone-bad { color: #a83232; background: rgba(168, 50, 50, 0.09); }
+.jf-lp .lp-jb-chip.tone-mute { color: #555; background: rgba(10, 10, 10, 0.05); }
+
+.jf-lp .lp-jb-dispatch {
+  --bp-r: 14px;
+  --bp-r-in: 7px;
+
+  z-index: 20;
+  margin-top: 22px;
+  background: #ffffff;
+  border: 2px solid #0a0a0a;
+  border-radius: var(--bp-r);
+  box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.09);
+  padding: 18px 20px 20px;
+  text-align: left;
+}
+@media (min-width: 1024px) {
+  /* Room for the dispatch panel to overlap padding instead of live rows. */
+  .jf-lp .lp-jb { padding-bottom: 84px; }
+  .jf-lp .lp-jb-dispatch {
+    position: absolute; right: 1rem; bottom: -6.5rem;
+    margin-top: 0; width: 20rem;
+  }
+}
+.jf-lp .lp-jb-dispatch-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.jf-lp .lp-jb-card-title {
+  font-size: 11px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.jf-lp .lp-jb-dispatch-head .lp-jb-tag { margin-left: auto; }
+.jf-lp .lp-jb-dispatch-job { font-size: 18px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.1; }
+.jf-lp .lp-jb-dispatch-lbl {
+  margin: 14px 0 8px;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.18em;
+  text-transform: uppercase; color: #555;
+}
+.jf-lp .lp-jb-avrow { display: flex; align-items: center; gap: 9px; }
+.jf-lp .lp-jb-av.is-dim { opacity: 0.4; }
+.jf-lp .lp-jb-av.is-picked { box-shadow: 2px 2px 0 #0a0a0a; }
+.jf-lp .lp-jb-av-tick {
+  position: absolute; right: -6px; bottom: -6px;
+  display: grid; place-items: center;
+  width: 15px; height: 15px;
+  background: #3a7d44; color: #fff;
+  border: 1.5px solid #0a0a0a; border-radius: 5px;
+  font-size: 9px; font-weight: 900;
+}
+.jf-lp .lp-jb-toggles { margin-top: 16px; border-top: 1.5px solid rgba(10, 10, 10, 0.12); }
+.jf-lp .lp-jb-toggle-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(10, 10, 10, 0.08);
+  font-size: 12.5px; font-weight: 700;
+}
+.jf-lp .lp-jb-toggle-row:last-child { border-bottom: none; }
+
+/* ── Donor component classes ─────────────────────────────── */
+.jf-lp .lp-eyebrow {
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.jf-lp .lp-btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--lp-r-md);
+  background: #15171a;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  transition: background-color 0.2s;
+}
+.jf-lp .lp-btn-dark:hover { background: #112220; }
+
+.jf-lp .lp-btn-lime {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--lp-r-md);
+  background: #1854a0;
+  padding: 16px 28px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  transition: transform 0.2s, background-color 0.2s;
+}
+.jf-lp .lp-btn-lime:hover { background: #0e3d7a; transform: scale(1.02); }
+
+.jf-lp .lp-arrow-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+.jf-lp .lp-arrow-link .arrow { transition: transform 0.3s var(--lp-ease); }
+.jf-lp .lp-arrow-link:hover .arrow { transform: translateX(4px); }
+
+/* Scroll reveal — the class the IntersectionObserver in reveal.tsx drives. */
+.jf-lp .lp-reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.75s var(--lp-ease), transform 0.75s var(--lp-ease);
+}
+.jf-lp .lp-reveal.lp-in {
+  opacity: 1;
+  transform: none;
+}
+
+.jf-lp .lp-tile {
+  overflow: hidden;
+  border-radius: var(--lp-r-md);
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.1), 0 12px 24px -8px rgb(15 23 42 / 0.18);
+  break-inside: avoid;
+  transition: transform 0.35s var(--lp-ease), box-shadow 0.35s var(--lp-ease);
+}
+.jf-lp .lp-tile:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.12), 0 24px 44px -10px rgb(15 23 42 / 0.3);
+}
+
+/* iOS-style switch in the client-portal mock */
+.jf-lp .lp-toggle {
+  position: relative;
+  display: inline-block;
+  height: 26px;
+  width: 44px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: #e2e8f0;
+  transition: background-color 0.25s var(--lp-ease);
+}
+.jf-lp .lp-toggle::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  height: 22px;
+  width: 22px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 0.25s var(--lp-ease);
+}
+.jf-lp .lp-toggle.on { background: #1854a0; }
+.jf-lp .lp-toggle.on::after { transform: translateX(18px); }
+
+/* Swipe strips hide their scrollbars */
+.jf-lp .no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.jf-lp .no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ── Keyframes used by the section mocks ─────────────────── */
+@keyframes lpScanline {
+  0% { top: 8%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 88%; opacity: 0; }
+}
+@keyframes lpToastIn {
+  0% { opacity: 0; transform: translateY(8px) scale(0.96); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes lpCaret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes lpEnvelopePop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+@keyframes lpSlideFill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+/* the donor referenced these by their bare names in inline styles */
+@keyframes scanline {
+  0% { top: 8%; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { top: 88%; opacity: 0; }
+}
+@keyframes toast-in {
+  0% { opacity: 0; transform: translateY(8px) scale(0.96); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes caret {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes envelope-pop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+@keyframes slide-fill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+/* Proposal plate: the "awaiting signature" dot, and the ACCEPTED stamp
+   landing on the document once the client signs. */
+@keyframes lpPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@keyframes lpStamp {
+  0% { opacity: 0; transform: rotate(-9deg) scale(1.5); }
+  60% { opacity: 1; transform: rotate(-9deg) scale(0.94); }
+  100% { opacity: 1; transform: rotate(-9deg) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-lp .lp-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .jf-lp *,
+  .jf-lp *::before,
+  .jf-lp *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Integration tiles — sharper than the 12px `rounded-2xl` they inherited, but
+   deliberately not square (owner, 2026-08-23). 5px is the same near-square
+   corner the house system uses at `--lp-r`, so the tiles now read as part of
+   the drafting language rather than as generic app icons. The class replaces
+   `rounded-2xl` on both the tile frame and the coloured logo fill inside it —
+   if only the frame were re-cut, the fill's larger corner would show through
+   at the edges. */
+.jf-lp .lp-int-tile { border-radius: var(--lp-r); }
+
+/* Icons in the product shot — one stroke weight, two sizes. */
+.jf-lp .lp-bp-ic { width: 15px; height: 15px; flex-shrink: 0; opacity: 0.72; }
+.jf-lp .lp-bp-ic--sm { width: 12.5px; height: 12.5px; }
+.jf-lp .lp-bp-sb-link.is-on .lp-bp-ic { opacity: 1; color: var(--bp-blue); }
+.jf-lp .lp-bp-search { display: flex; align-items: center; gap: 8px; }
+.jf-lp .lp-bp-btn { display: inline-flex; align-items: center; gap: 6px; }
+.jf-lp .lp-bp-act-ic .lp-bp-ic { opacity: 0.85; }
+
+/* ── Hero, inverted ───────────────────────────────────────
+   The first section only (owner, 2026-08-24): ink ground, paper type. The
+   product shot keeps its drafting paper — on black it reads as a lit drawing
+   on a desk, which is the point. Inversion is done here rather than by
+   rewriting the markup's utilities, so the section can be flipped back by
+   deleting this block. */
+.jf-lp .lp-hero { background: #0d0f12; }
+.jf-lp .lp-hero h1 { color: #fff; }
+.jf-lp .lp-hero .lp-cta--solid { background: #fff; color: #0d0f12; }
+.jf-lp .lp-hero .lp-cta--solid:hover { background: #e8e8e4; }
+.jf-lp .lp-hero .lp-cta--ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+.jf-lp .lp-hero .lp-cta--ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.jf-lp .lp-hero { position: relative; overflow: hidden; }
+
+/* ── Dissolving section backgrounds ───────────────────────
+   Photographs that end in the page rather than against it. The images are
+   generated to fade out already, but the fade is ALSO masked here: a mask
+   guarantees the seam regardless of what the asset does at its edge, so the
+   picture can never show a horizon line against the section colour.
+
+   Every layer is inert — aria-hidden, pointer-events: none — and sits under
+   `z-[1]` content. Under prefers-reduced-motion nothing here animates; these
+   are static plates by design. */
+.jf-lp .lp-bg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-size: cover;
+  z-index: 0;
+}
+
+/* Hero: a ridge of framed houses in fog, the black section's horizon. */
+.jf-lp .lp-bg--ridge {
+  /* The horizon sits BELOW the headline, not through it. Where the ridge
+     crossed the type, the trusses and the bright fog band fought the
+     letterforms at exactly the point that should be quiet; dropped here, the
+     same picture becomes the ground the product plate rises out of. */
+  /* Full-height atmosphere, not a band (owner, 2026-08-24). The plate covers
+     the middle of the section, so a short strip only ever showed as a sliver;
+     at full height the fog carries the whole first screen and the ridge still
+     lands near the floor. The mask holds the top clear so the headline keeps
+     pure black behind it. */
+  bottom: 0;
+  height: 100%;
+  background-image: url("/landing-d/bg-hero-ridge.png");
+  background-size: cover;
+  background-position: center 62%;
+  opacity: 0.95;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.55) 22%, #000 46%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.55) 22%, #000 46%, #000 88%, transparent 100%);
+}
+
+/* Intro: the truck at the kerb of a half-framed house — the everyday scene the
+   sentence is about. Held to a whisper for the same reason as the frame below:
+   this block is one paragraph and one button, and the type has to win. */
+.jf-lp .lp-bg--truck {
+  top: 0;
+  height: 100%;
+  background-image: url("/landing-d/bg-intro-truck.png");
+  background-position: center 58%;
+  opacity: 0.16;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 94%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 52%, transparent 94%);
+}
+
+/* Built for the field: a roof frame dissolving down out of the white. */
+.jf-lp .lp-bg--frame {
+  top: 0;
+  height: 62%;
+  background-image: url("/landing-d/bg-field-frame.png");
+  /* A whisper, not a picture: this section is text-led, and at any real
+     opacity the timber ate the headline's contrast. */
+  background-position: center top;
+  opacity: 0.13;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 34%, transparent 88%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 34%, transparent 88%);
+}
+
+/* Closing CTA: a far roofline under the last word. */
+.jf-lp .lp-bg--roofs {
+  bottom: 0;
+  height: 70%;
+  background-image: url("/landing-d/bg-cta-roofs.png");
+  background-position: center bottom;
+  opacity: 0.6;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 46%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 46%, #000 100%);
+}
+
+@media (max-width: 860px) {
+  /* Narrow viewports crop the wide plates too hard to read as anything;
+     keep only the two that still hold their shape. */
+  .jf-lp .lp-bg--frame { opacity: 0.1; height: 46%; }
+  .jf-lp .lp-bg--roofs { opacity: 0.5; }
+}
+
+/* ── Navbar, on the inverted first screen ─────────────────
+   The bar is ink so the nav and hero read as one black field rather than a
+   white lid on a dark box. The brand plate would vanish on it, so the lockup
+   drops its plate here and the links invert. */
+.jf-lp .lp-nav { background: #0d0f12; }
+.jf-lp .lp-nav .lp-brand { background: transparent; padding-left: 0; }
+.jf-lp .lp-nav a { color: rgba(255, 255, 255, 0.72); }
+.jf-lp .lp-nav a:hover { color: #fff; }
+.jf-lp .lp-nav .lp-brand-name { color: #fff; }
+.jf-lp .lp-nav .lp-btn-dark {
+  background: #fff;
+  color: #0d0f12;
+}
+.jf-lp .lp-nav .lp-btn-dark:hover { background: #e8e8e4; }
+
+/* Week strip along the bottom of the product shot. */
+.jf-lp .lp-bp-week { margin-top: 12px; }
+.jf-lp .lp-bp-days {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  border: 1.5px solid var(--bp-ink); border-radius: var(--bp-r-in);
+  overflow: hidden;
+}
+.jf-lp .lp-bp-day {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 2px 9px;
+  border-right: 1px solid rgba(10, 10, 10, 0.12);
+}
+.jf-lp .lp-bp-day:last-child { border-right: none; }
+.jf-lp .lp-bp-day-d {
+  font-size: 7.5px; font-weight: 800; letter-spacing: 0.16em;
+  text-transform: uppercase; color: #888;
+}
+.jf-lp .lp-bp-day-n { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.jf-lp .lp-bp-day-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--bp-blue); }
+.jf-lp .lp-bp-day-dot.is-off { opacity: 0; }
+.jf-lp .lp-bp-day.is-today { background: var(--bp-blue); border-right-color: var(--bp-blue); }
+.jf-lp .lp-bp-day.is-today .lp-bp-day-d { color: rgba(255, 255, 255, 0.7); }
+.jf-lp .lp-bp-day.is-today .lp-bp-day-n { color: #fff; }
+.jf-lp .lp-bp-day.is-today .lp-bp-day-dot { background: #fff; }
+
+/* ── Blueprint plate, handheld ────────────────────────────
+   The phone build of the same product the desktop plate shows (owner,
+   2026-08-25). Not the desktop plate squeezed: the sidebar becomes an ink
+   topbar with the drawer button and the utility row, and the page below it is
+   the app's real handheld layout — kicker, hard title, then blocks.
+
+   Its own token block, like .lp-bp, so a retune of the live app cannot move
+   the picture of the app. */
+.jf-lp .lp-ph {
+  --bp-paper: #ffffff;
+  --bp-paper-deep: #f4f5f7;
+  --bp-ink: #0a0a0a;
+  --bp-blue: #1854a0;
+  --bp-sky: #4a9eff;
+  --bp-muted: #555;
+  --bp-hair: rgba(10, 10, 10, 0.12);
+  --bp-r: 14px;
+  --bp-r-in: 6px;
+
+  overflow: hidden;
+  background: var(--bp-ink);
+  border: 2px solid var(--bp-ink);
+  border-radius: var(--bp-r);
+  color: var(--bp-ink);
+  text-align: left;
+}
+
+.jf-lp .lp-ph-bar {
+  display: flex; align-items: center; gap: 9px;
+  height: 52px; padding: 0 10px;
+  background: var(--bp-ink); color: #fff;
+}
+.jf-lp .lp-ph-sq {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 32px; height: 32px;
+  border: 1.5px solid rgba(255, 255, 255, 0.32);
+  border-radius: var(--bp-r-in);
+  color: #fff;
+}
+.jf-lp .lp-ph-brand { display: flex; align-items: center; gap: 7px; margin-right: auto; }
+.jf-lp .lp-ph-brand-txt { display: flex; flex-direction: column; gap: 2px; }
+.jf-lp .lp-ph-name { font-size: 13px; font-weight: 900; letter-spacing: 0.01em; line-height: 1; }
+.jf-lp .lp-ph-sub {
+  font-size: 7px; font-weight: 800; letter-spacing: 0.24em;
+  text-transform: uppercase; color: var(--bp-sky); line-height: 1;
+}
+.jf-lp .lp-ph-ic { width: 15px; height: 15px; }
+
+.jf-lp .lp-ph-body { background: var(--bp-paper); padding: 16px 14px 18px; }
+.jf-lp .lp-ph-kicker {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--bp-muted);
+}
+.jf-lp .lp-ph-kicker::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--bp-sky);
+}
+.jf-lp .lp-ph-title {
+  margin: 6px 0 14px;
+  font-size: 30px; font-weight: 900; line-height: 1;
+  letter-spacing: -0.02em; text-transform: uppercase;
+}
+
+/* Blocks the screens are built from */
+.jf-lp .lp-ph-card {
+  border: 2px solid var(--bp-ink); border-radius: var(--bp-r-in);
+  background: var(--bp-paper); overflow: hidden;
+}
+.jf-lp .lp-ph-card + .lp-ph-card { margin-top: 10px; }
+.jf-lp .lp-ph-card-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 11px; border-bottom: 1.5px solid var(--bp-ink);
+}
+.jf-lp .lp-ph-card-title {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
+}
+.jf-lp .lp-ph-tag {
+  margin-left: auto;
+  border: 1.5px solid var(--bp-ink); border-radius: 2px; padding: 1px 5px;
+  font-size: 8px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+}
+
+.jf-lp .lp-ph-kpis { display: grid; grid-template-columns: 1fr 1fr; }
+.jf-lp .lp-ph-kpi {
+  padding: 11px 11px 13px;
+  border-right: 1.5px solid var(--bp-ink);
+  border-bottom: 1.5px solid var(--bp-ink);
+  min-width: 0;
+}
+.jf-lp .lp-ph-kpi:nth-child(2n) { border-right: none; }
+.jf-lp .lp-ph-kpi:nth-last-child(-n + 2) { border-bottom: none; }
+.jf-lp .lp-ph-kpi-lbl {
+  font-size: 8px; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--bp-muted);
+}
+.jf-lp .lp-ph-kpi-val {
+  margin-top: 4px; font-size: 20px; font-weight: 900; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-lp .lp-ph-kpi-val.is-accent { color: var(--bp-blue); }
+
+.jf-lp .lp-ph-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; min-height: 44px; margin-bottom: 8px;
+  border: 2px solid var(--bp-ink); border-radius: var(--bp-r-in);
+  background: var(--bp-blue); color: #fff;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.jf-lp .lp-ph-btn.is-ghost { background: var(--bp-paper); color: var(--bp-ink); }
+
+.jf-lp .lp-ph-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 11px; border-bottom: 1px solid rgba(10, 10, 10, 0.09);
+}
+.jf-lp .lp-ph-row:last-child { border-bottom: none; }
+.jf-lp .lp-ph-row-body { min-width: 0; flex: 1; }
+.jf-lp .lp-ph-row-t {
+  display: block; font-size: 12.5px; font-weight: 700; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jf-lp .lp-ph-row-m {
+  display: block; margin-top: 2px;
+  font-size: 10px; color: var(--bp-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jf-lp .lp-ph-row-v {
+  flex-shrink: 0; font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.jf-lp .lp-ph-chip {
+  display: inline-block; flex-shrink: 0;
+  border: 1.5px solid var(--bp-ink); border-radius: 2px; padding: 2px 5px;
+  font-family: var(--font-mono);
+  font-size: 8px; font-weight: 800; letter-spacing: 0.08em;
+}
+.jf-lp .lp-ph-chip.is-blue { border-color: var(--bp-blue); color: var(--bp-blue); }
+.jf-lp .lp-ph-chip.is-paid { border-color: #059669; color: #047857; }
+.jf-lp .lp-ph-chip.is-draft { border-style: dashed; color: #777; border-color: #999; }
+
+/* Day strip, phone width */
+.jf-lp .lp-ph-days { display: grid; grid-template-columns: repeat(5, 1fr); }
+.jf-lp .lp-ph-day {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 2px;
+  border-right: 1px solid rgba(10, 10, 10, 0.12);
+}
+.jf-lp .lp-ph-day:last-child { border-right: none; }
+.jf-lp .lp-ph-day-d {
+  font-size: 7.5px; font-weight: 800; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #888;
+}
+.jf-lp .lp-ph-day-n { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.jf-lp .lp-ph-day.is-today { background: var(--bp-blue); border-right-color: var(--bp-blue); }
+.jf-lp .lp-ph-day.is-today .lp-ph-day-d { color: rgba(255, 255, 255, 0.72); }
+.jf-lp .lp-ph-day.is-today .lp-ph-day-n { color: #fff; }
+
+/* One crew lane: name plate on the left, the week to the right of it */
+.jf-lp .lp-ph-lane {
+  display: grid; grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center; gap: 8px;
+  padding: 8px 11px; border-bottom: 1px solid rgba(10, 10, 10, 0.09);
+}
+.jf-lp .lp-ph-lane:last-child { border-bottom: none; }
+.jf-lp .lp-ph-lane-who { font-size: 10.5px; font-weight: 800; }
+.jf-lp .lp-ph-lane-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+.jf-lp .lp-ph-slot { height: 26px; border: 1px dashed rgba(10, 10, 10, 0.16); border-radius: 2px; }
+.jf-lp .lp-ph-job {
+  display: flex; align-items: center; padding: 0 5px; height: 26px;
+  border: 1.5px solid var(--bp-ink); border-radius: 2px;
+  background: var(--bp-paper);
+  font-size: 8.5px; font-weight: 700; line-height: 1;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.jf-lp .lp-ph-job.tone-blue { background: var(--bp-blue); border-color: var(--bp-blue); color: #fff; }
+.jf-lp .lp-ph-job.tone-sky {
+  background: rgba(74, 158, 255, 0.16); border-color: var(--bp-blue); color: var(--bp-blue);
+}
+
+/* Money bars */
+.jf-lp .lp-ph-bars {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  align-items: end; gap: 8px; height: 92px;
+  padding: 14px 11px 0;
+}
+.jf-lp .lp-ph-col { display: flex; flex-direction: column; align-items: center; gap: 5px; height: 100%; justify-content: flex-end; }
+.jf-lp .lp-ph-col-fill {
+  width: 100%; background: var(--bp-blue);
+  border: 1.5px solid var(--bp-ink); border-bottom: none;
+  transition: height 0.7s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.jf-lp .lp-ph-col-fill.is-quiet { background: var(--bp-paper-deep); }
+.jf-lp .lp-ph-col-m {
+  font-size: 7.5px; font-weight: 800; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #888;
+}
+.jf-lp .lp-ph-axis { border-top: 1.5px solid var(--bp-ink); margin: 0 11px 11px; }
+
+/* ── Estimators showcase ──────────────────────────────────
+   One build for both viewports (owner, 2026-08-25). Beside the stage the
+   takeoff rail is a left-bordered column; stacked under it on a handheld the
+   same border has to run along the top instead, or the rail reads as a
+   detached slab. */
+.jf-lp .lp-est-rail {
+  border-top: 2px solid transparent;
+  /* Stacked under the stage it must take no room until there is a takeoff to
+     show — an invisible rail was reserving ~230px of blank card. */
+  max-height: 0;
+  padding: 0 16px;
+  transition: max-height 0.7s var(--lp-ease), padding 0.4s ease, opacity 0.55s ease,
+    transform 0.7s var(--lp-ease), background 0.4s ease, border-color 0.4s ease;
+}
+.jf-lp .lp-est-rail.is-on {
+  border-top-color: #0a0a0a;
+  max-height: 460px;
+  padding: 16px;
+}
+@media (min-width: 640px) {
+  .jf-lp .lp-est-rail {
+    border-top: none;
+    border-left: 2px solid transparent;
+    max-height: none;
+    padding: 16px;
+  }
+  .jf-lp .lp-est-rail.is-on { border-left-color: #0a0a0a; }
+}
+
+/* The parcel button taking a click. */
+@keyframes lpRipple {
+  0% { opacity: 0.9; transform: scale(0.82); }
+  100% { opacity: 0; transform: scale(1.45); }
+}
+
+/* Where the aerial plate sits inside the estimator stage. The prompt overlays
+   the top of the stage, so a dead-centre plate crowded the field and left an
+   empty strip along the floor (owner, 2026-08-25). */
+.jf-lp .lp-est-stage { --plan-y: 53%; --plan-inset: 0px; }
+@media (max-width: 639px) {
+  /* Bled past the stage's own width so the 3:2 plate is tall enough to reach
+     the floor — at exactly stage width it left a dead strip under the drawing
+     and another above it. */
+  .jf-lp .lp-est-stage { --plan-y: 53%; --plan-inset: -17%; }
+}
+
+/* One content width for the whole page on a handheld (owner, 2026-08-25).
+   lp-wrap's own gutter stacked on top of each section's px-5, so every section
+   carrying it ran 20px narrower per side than the hero, the estimators and the
+   montage — the page visibly stepped in halfway down. */
+@media (max-width: 639px) {
+  .jf-lp .lp-wrap { padding-inline: 0; }
+}
+
+/* The landing runs edge to edge; the browser's scrollbar gutter cut into that
+   on every section that bleeds to the viewport edge. Scoped with :has so it
+   only applies while this route is mounted. */
+html:has(.jf-lp) { scrollbar-width: none; -ms-overflow-style: none; }
+html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }

@@ -32,9 +32,9 @@ import { RoofWireframe } from "./RoofWireframe";
 import { RoofFacetTable } from "./RoofFacetTable";
 import { PlacesAutocomplete, type PickedAddress } from "./PlacesAutocomplete";
 import { pitchLabel, LABEL_MODES, EV_SAMPLES, type LabelMode } from "./roofViz";
-import { evRoofModel, evPriceRoof, evOrderRoof, evReportStatus } from "@/actions/eagleview";
+import { evRoofModel, evPriceRoof, evOrderRoof, evReportStatus, evDiagnostics } from "@/actions/eagleview";
 import { reconRoofPreview } from "@/actions/roofRecon";
-import type { RoofModel } from "@/lib/eagleview";
+import type { RoofModel, EvDiagnostics } from "@/lib/eagleview";
 import { estimateRoof, convertRoofEstimateToProposal } from "@/actions/roofEstimator";
 import {
   reportPlanLimit,
@@ -78,6 +78,10 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
   const [labelMode, setLabelMode] = React.useState<LabelMode>("shaded");
   const [showHouse, setShowHouse] = React.useState(true);
   const [showIntake, setShowIntake] = React.useState(true);
+
+  // EagleView connection diagnostics (the "Diagnostics" button on the intake card).
+  const [diag, setDiag] = React.useState<EvDiagnostics | null>(null);
+  const [diagBusy, setDiagBusy] = React.useState(false);
 
   // Warm the 3D viewer chunk in the background after first paint, so switching
   // to the 3D view later is instant (the page still loads light without it).
@@ -177,6 +181,20 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
 
   function orderInput() {
     return { address: picked?.address ?? "", city, state: stateCode, zip, lat: picked?.lat, lng: picked?.lng };
+  }
+
+  async function runDiag() {
+    setDiagBusy(true);
+    try {
+      const res = await evDiagnostics();
+      if (!res.ok) {
+        toast.error("Diagnostics failed", res.error);
+        return;
+      }
+      setDiag(res.diag);
+    } finally {
+      setDiagBusy(false);
+    }
   }
 
   async function getPrice() {
@@ -340,8 +358,49 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   Pull contract-grade EagleView geometry — every facet’s pitch, area, and edges.
                 </CardSubtitle>
               </div>
-              <Badge tone="neutral">Sandbox</Badge>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge tone={diag && !diag.isSandboxApi ? "accent" : "neutral"}>
+                  {diag ? (diag.isSandboxApi ? "Sandbox" : "Production") : "Sandbox"}
+                </Badge>
+                <Button variant="outline" size="sm" loading={diagBusy} onClick={runDiag}>
+                  Diagnostics
+                </Button>
+              </div>
             </CardHeader>
+
+            {diag && (
+              <div className="mb-4 rounded-[var(--r-md)] hairline bg-[color:var(--paper-deep)] p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="quiet-caps text-[color:var(--ink-faint)]">EagleView diagnostics</span>
+                  <span
+                    className={
+                      "text-[11px] font-medium tabular " +
+                      (diag.isSandboxApi ? "text-amber-700" : "text-[color:var(--accent-ink)]")
+                    }
+                  >
+                    {diag.isSandboxApi ? "⚠ SANDBOX host" : "● PRODUCTION host"}
+                  </span>
+                </div>
+                <div className="mb-2 break-all text-[11px] text-[color:var(--ink-muted)]">
+                  API host: <span className="font-mono">{diag.apiBase}</span>
+                </div>
+                <ul className="space-y-1.5">
+                  {diag.checks.map((c, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[12px]">
+                      <span className={(c.ok ? "text-[color:var(--accent)]" : "text-rose-600") + " mt-[1px]"}>
+                        {c.ok ? "✓" : "✗"}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="font-medium text-[color:var(--ink)]">{c.name}</span>
+                        <span className="block break-words text-[11px] text-[color:var(--ink-muted)]">
+                          {c.detail}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="grid lg:grid-cols-2 lg:gap-8 gap-6">
               {/* Instant samples */}
@@ -381,7 +440,7 @@ export function RoofEstimatorForm({ evEnabled, aiEnabled }: Props) {
                   for contract-grade geometry. The current <strong>sandbox</strong> account only returns the
                   canned samples — measuring a real address needs a <strong>production</strong> account.
                 </p>
-                <PlacesAutocomplete onPick={onPick} />
+                <PlacesAutocomplete onPick={onPick} enableFind />
                 <div className="grid grid-cols-3 gap-2">
                   <Input label="City" value={city} onChange={(e) => setCity(e.target.value)} />
                   <Input label="State" value={stateCode} onChange={(e) => setStateCode(e.target.value)} />

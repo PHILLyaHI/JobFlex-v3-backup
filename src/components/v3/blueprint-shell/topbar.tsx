@@ -14,17 +14,19 @@
 // something you type into was the lie. It opens the thing you type into.
 
 import { canOpen } from "./nav-map";
-import { useNavRole } from "./nav-role";
+import { useNavIdentity, useNavLocked } from "./nav-role";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
+import { NotificationBell } from "./notification-bell";
 
 export function Topbar() {
-  const role = useNavRole();
+  const { role } = useNavIdentity();
   // Every engine the picker offers sits outside a field worker's allow-list, so
   // the app's most prominent CTA would open a dialog whose every card bounces
   // them back to Jobs. Asked of the engine list itself so a new engine cannot
   // leave this behind. The production topbar strips the same controls from
   // limited roles (components/layout/Topbar.tsx, `stripped`).
-  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href));
+  const locked = useNavLocked();
+  const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href, locked));
 
   const openPalette = () => {
     document.dispatchEvent(new CustomEvent("jf:command-palette"));
@@ -69,22 +71,22 @@ export function Topbar() {
             New Estimate
           </button>
         )}
-        {/* The bell had no handler, and `.bell-dot` was a static CSS dot no
-            code ever toggled — so it advertised unread notifications
-            permanently, whether or not any existed. Until a notification
-            surface exists, it opens the palette (where everything reachable
-            is listed) and the dot is gone rather than lying. */}
-        <button
-          className="icon-btn"
-          type="button"
-          title="Notifications"
-          aria-label="Notifications"
-          onClick={openPalette}
-        >
-          <svg className="ic">
-            <use href="#i-bell" />
-          </svg>
-        </button>
+        {/* The bell now has a real feed — see ./notification-bell.tsx. It used
+            to open the command palette because no notification surface existed
+            on the promoted routes; the only feed in the codebase was mounted by
+            the legacy topbar and was manager-gated, so a field worker had no
+            in-app notification surface at all. */}
+        {/* Help — the launcher for the composer this shell mounts, at EVERY
+            width. It used to be the handheld half of a pair, with a floating
+            plate above 860px; the plate is retired, because a globally mounted
+            button in the bottom-right corner loses that corner to the page —
+            to whatever a handheld surface pins to the bottom of the screen,
+            and on the desk to FloatingCostsCard, permanent furniture on the
+            proposal editor. A top bar is the one corner nothing else claims.
+            `.icon-btn` draws it at the bar's own 40px like the bell beside it;
+            the widget's stylesheet adds the 44px hit floor without changing
+            the plate, so the bar's rhythm is untouched. */}
+        <NotificationBell />
       </div>
     </header>
   );

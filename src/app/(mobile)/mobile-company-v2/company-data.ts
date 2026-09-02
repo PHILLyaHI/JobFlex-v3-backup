@@ -1,30 +1,16 @@
-// Mobile company (mobile-company-v2) — demo fixture.
+// Mobile company (mobile-company-v2) — types + pure derivations.
 //
-// Carried over VERBATIM from the desktop company donor
-// (src/components/v3/company-blueprint/company-data.ts): same values, same
-// order, same field names, including the inline <b> markup inside `summary`.
-// The identity / lead / landing seeds below are the same strings the desktop
-// markup ships as `defaultValue` / `placeholder` on its inputs
-// (company-content.tsx), lifted into data so the handheld page is judged
-// against exactly the same content as the desktop sheet.
+// This surface is no longer a fixture. The component fetches `getCompanySeed()`
+// (actions/company.ts) on mount — the same org row, member roster and
+// `toActivityEntries` feed mapping the desktop page
+// (app/dashboard/company/page.tsx) renders — and every save runs the same
+// three server actions the desktop sheet runs (updateBranding /
+// updateLeadProfile / updateLanding).
 //
-// Seattle-area contractor texture: Bell Roofing & Fence out of Bothell, a crew
-// of four, twelve audit entries across four categories.
-//
-// Reachable states baked into the fixture:
-//  · two entries with cat "team" — they have no work record attached, which is
-//    what makes the row sheet's DISABLED "Open record" row reachable;
-//  · four entries with tone "" — no state change, so the bead and the row badge
-//    render neutral rather than in a status colour;
-//  · three entries carry money in `meta`, nine do not — the nine render the
-//    em-dash absence rather than "$0";
-//  · every actor is also a MEMBERS option, so the sheet's "Show only …" row can
-//    always resolve to a real person filter.
-//
-// This is a design surface: the data layer is out of scope, so nothing here
-// touches Prisma or a server action. The arrays are mutated at runtime (row
-// delete, trade toggles, identity edits), so the component clones the seed per
-// mount.
+// What stays here is the donor's presentation vocabulary: the row derivations
+// (monogram, summary runs, meta splitting, badge + tone), and the three filter
+// axes. The person filter now matches on the membership user id (like the
+// desktop feed), not the display name — two crew members can share a name.
 
 /* ============================================================
    BRANDING
@@ -41,7 +27,7 @@ export const COLOR_PRESETS = [
   "#111113",
 ];
 
-/** The donor's initial brand colour (`co.color` in company-behavior.ts). */
+/** Fallback when the org has no primaryColor yet — the blueprint green. */
 export const DEFAULT_COLOR = "#1F7A52";
 
 export type Identity = {
@@ -52,52 +38,20 @@ export type Identity = {
   addr: string;
 };
 
-/** The donor's `[data-b]` field values, verbatim. */
-export const IDENTITY_SEED: Identity = {
-  name: "Bell Roofing & Fence",
-  email: "billing@bellroofing.com",
-  phone: "(425) 555-0100",
-  site: "bellroofing.com",
-  addr: "1180 Monroe Ave NE, Bothell, WA 98011",
-};
-
 /* ============================================================
-   LEAD MATCHING
+   LEAD MATCHING — the canonical taxonomy, never a private list:
+   updateLeadProfile validates with z.enum(TRADE_TYPES) from lib/tradeTypes.
    ============================================================ */
 
-export const TRADE_TYPES = [
-  "Flooring",
-  "Tile",
-  "Countertops",
-  "Plumbing",
-  "Electrical",
-  "Carpentry",
-  "Painting",
-  "Roofing",
-  "Fencing",
-  "Decking",
-  "Siding",
-  "Kitchen & Bath",
-];
-
-/** The donor's `co.trades`. */
-export const DEFAULT_TRADES = ["Roofing", "Fencing", "Decking", "Siding"];
+export { TRADE_TYPES } from "@/lib/tradeTypes";
 
 export type LeadProfile = { addr: string; phone: string };
 
-/** The donor's `[data-l]` field values, verbatim. */
-export const LEAD_SEED: LeadProfile = {
-  addr: "1180 Monroe Ave NE, Bothell, WA 98011",
-  phone: "(425) 555-0100",
-};
-
 /* ============================================================
-   LANDING BUILDER (ships empty on the desktop — placeholders only)
+   LANDING BUILDER (ships empty until the org customizes — placeholders only)
    ============================================================ */
 
 export type Landing = { title: string; sub: string };
-
-export const LANDING_SEED: Landing = { title: "", sub: "" };
 
 export const LANDING_PLACEHOLDERS: Landing = {
   title: "Roofing and fencing done right, on schedule",
@@ -110,6 +64,8 @@ export const LANDING_PLACEHOLDERS: Landing = {
 
 export type ActCat = { key: string; label: string };
 
+// The five chips ARE the classic feed's category lens (lib/teamActivityView
+// CATEGORIES) — same keys `categoryOf` emits, same labels, same order.
 export const ACT_CATS: ActCat[] = [
   { key: "all", label: "All" },
   { key: "proposals", label: "Proposals" },
@@ -118,17 +74,18 @@ export const ACT_CATS: ActCat[] = [
   { key: "team", label: "Team" },
 ];
 
-export const MEMBERS = ["Everyone", "Ivan", "Marcus B.", "Sofia R.", "Dan K."];
-
-/** MEMBERS minus the "Everyone" filter option — the actual crew. */
-export const CREW = MEMBERS.slice(1);
-
 export const ALL_CAT = "all";
+/** Sentinel id for the person filter's "everyone" option. Member ids are
+ *  cuids, so this can never collide with a real membership. */
 export const EVERYONE = "Everyone";
 
+/** The desktop mapper's row shape (company-blueprint/company-data.ts). */
 export type ActivityEntry = {
   day: string;
   actor: string;
+  /** Membership user id, or "" for a client-side / system event. The person
+   *  filter matches on this, not on the display name. */
+  actorId: string;
   cat: string;
   /** Contains inline <b> markup — donor-exact. Rendered via summaryParts(). */
   summary: string;
@@ -137,31 +94,37 @@ export type ActivityEntry = {
   tone: string;
 };
 
-export const ACTIVITY_DATA: ActivityEntry[] = [
-  { day: "Today", actor: "Ivan", cat: "proposals", summary: "sent proposal <b>#2851</b> to M. Henderson", meta: "Proposal · $24,600", time: "25m", tone: "var(--blueprint)" },
-  { day: "Today", actor: "Marcus B.", cat: "jobs", summary: "started <b>Roof tear-off — 4812 Maple Ave</b>", meta: "Job · in progress", time: "2h", tone: "var(--warning)" },
-  { day: "Today", actor: "Sofia R.", cat: "leads", summary: "claimed lead <b>S. Rao</b>", meta: "Lead · Facebook", time: "5h", tone: "var(--blueprint)" },
-  { day: "Today", actor: "Ivan", cat: "leads", summary: "added client <b>R. Tran</b>", meta: "Client", time: "8h", tone: "" },
-  { day: "Yesterday", actor: "Dan K.", cat: "jobs", summary: "completed <b>Deck power wash — 55 Cedar Loop</b>", meta: "Job · completed", time: "1d", tone: "var(--success)" },
-  { day: "Yesterday", actor: "Ivan", cat: "proposals", summary: "marked <b>Cedar fence, 140 ft</b> accepted", meta: "Proposal · $12,400", time: "1d", tone: "var(--success)" },
-  { day: "Yesterday", actor: "Sofia R.", cat: "team", summary: "invited <b>Tyler Brooks</b> to the crew", meta: "Team · invite sent", time: "1d", tone: "" },
-  { day: "Jul 20", actor: "Marcus B.", cat: "jobs", summary: "scheduled <b>Fence repair — 1409 Fern St</b>", meta: "Job · Jul 23", time: "2d", tone: "var(--blueprint)" },
-  { day: "Jul 20", actor: "Ivan", cat: "proposals", summary: "recorded payment on <b>#2825</b>", meta: "Payment · $8,400", time: "2d", tone: "var(--success)" },
-  { day: "Jul 19", actor: "Sofia R.", cat: "leads", summary: "moved <b>P. Delgado</b> to lost", meta: "Lead · lost", time: "3d", tone: "var(--danger)" },
-  { day: "Jul 19", actor: "Dan K.", cat: "jobs", summary: "uploaded 6 photos to <b>Gutter guards — Redmond</b>", meta: "Job · photos", time: "3d", tone: "" },
-  { day: "Jul 18", actor: "Ivan", cat: "team", summary: "changed <b>Dan K.</b> role to installer", meta: "Team · role", time: "4d", tone: "" },
-];
-
-/** The feed row needs a stable identity for React keys and for delete. */
+/** The feed row needs a stable identity for React keys and the row sheet —
+ *  the seed carries the ActivityEvent id. */
 export type ActivityRecord = ActivityEntry & { id: string };
 
-/**
- * One clone per mount. The desktop feed is read-only; the handheld sheet can
- * remove an entry, so runtime mutations must not leak into the next mount.
- */
-export function cloneActivity(): ActivityRecord[] {
-  return ACTIVITY_DATA.map((e, i) => ({ ...e, id: `a${String(i + 1).padStart(2, "0")}` }));
-}
+/* ============================================================
+   SEED — what getCompanySeed() (actions/company.ts) returns
+   ============================================================ */
+
+export type CompanyOrg = {
+  name: string;
+  billingEmail: string;
+  phone: string;
+  website: string;
+  address: string;
+  primaryColor: string;
+  logoUrl: string | null;
+  /** Canonical trades (lib/tradeTypes) the org takes platform leads for. */
+  tradeTypes: string[];
+  leadOffersEnabled: boolean;
+  publicProfileEnabled: boolean;
+  landingHeroTitle: string;
+  landingHeroSubtitle: string;
+};
+
+export type CompanyMember = { id: string; name: string };
+
+export type CompanySeed = {
+  org: CompanyOrg;
+  members: CompanyMember[];
+  activity: ActivityRecord[];
+};
 
 /**
  * The desktop pages the log six at a time behind "Load more". A handheld row is
@@ -169,6 +132,26 @@ export function cloneActivity(): ActivityRecord[] {
  * 12 to 8 and the proposals ledger from 8 to 6.
  */
 export const PAGE_SIZE = 5;
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
+/** Server actions treat "" as a value; absent columns are null. */
+export const orNull = (v: string) => (v ? v : null);
+
+/** A server action failure, as one sentence a save line can carry. */
+export function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  // Zod's parse failures are JSON blobs, not sentences.
+  if (msg.startsWith("[") || msg.startsWith("{")) {
+    return "Couldn’t save — check the highlighted fields.";
+  }
+  return msg;
+}
 
 /* ============================================================
    DERIVATIONS — everything the row and the sheet read
@@ -189,7 +172,7 @@ export function plainSummary(summary: string): string {
 }
 
 /**
- * The fixture's inline <b> is carried verbatim, so it has to be RENDERED rather
+ * The mapper's inline <b> is carried verbatim, so it has to be RENDERED rather
  * than injected: this splits the string into runs, and the row emits real <b>
  * elements. No dangerouslySetInnerHTML anywhere on the surface.
  */
@@ -208,12 +191,14 @@ export function summaryParts(summary: string): { text: string; bold: boolean }[]
   return out;
 }
 
-/** "Proposal · $24,600" → "Proposal". The record type, for the mono meta line. */
+/** "Proposal · M. Henderson" → "Proposal". The record type, for the meta line. */
 export function metaType(meta: string): string {
   return meta.split(" · ")[0];
 }
 
-/** "Proposal · $24,600" → 24600; "Job · in progress" → null. */
+/** "Proposal · $24,600" → 24600; "Job" → null. The real mapper carries no
+ *  amounts today, so this renders the em-dash absence — kept so the column
+ *  lights up the day the mapper does. */
 export function metaAmount(meta: string): number | null {
   const m = /\$([\d,]+)/.exec(meta);
   return m ? Number(m[1].replace(/,/g, "")) : null;
@@ -224,10 +209,9 @@ export function catLabel(key: string): string {
 }
 
 /**
- * The row's status badge. `meta`'s tail is the record's state where it has one
- * ("in progress", "completed", "lost", "invite sent", "Jul 23", "Facebook");
- * where the tail is money or missing, the category stands in, so every row
- * carries exactly one badge.
+ * The row's status badge. `meta`'s tail is the record's context where it has
+ * one (the client behind a proposal event); where the tail is money or
+ * missing, the category stands in, so every row carries exactly one badge.
  */
 export function rowBadge(e: ActivityEntry): string {
   const rest = e.meta.split(" · ").slice(1).join(" · ").trim();
@@ -238,7 +222,7 @@ export function rowBadge(e: ActivityEntry): string {
 export type ToneKey = "bp" | "warn" | "ok" | "danger" | "none";
 
 /**
- * The donor stores the bead colour as a raw `var(--…)` string. Mapping it to a
+ * The mapper stores the bead colour as a raw `var(--…)` string. Mapping it to a
  * key lets the badge take all THREE tones (base border / soft fill / base text)
  * from the stylesheet instead of colouring one property inline.
  */
@@ -250,7 +234,7 @@ export function toneKey(tone: string): ToneKey {
   return "none";
 }
 
-/** A team change has no proposal / job / lead behind it. */
+/** A team / system event has no proposal, lead or client behind it. */
 export function hasRecord(e: ActivityEntry): boolean {
   return e.cat !== "team";
 }
@@ -263,8 +247,9 @@ export function matchesCat(e: ActivityEntry, cat: string): boolean {
   return cat === ALL_CAT || e.cat === cat;
 }
 
+/** `person` is a membership user id, or the EVERYONE sentinel. */
 export function matchesPerson(e: ActivityEntry, person: string): boolean {
-  return person === EVERYONE || e.actor === person;
+  return person === EVERYONE || (e.actorId !== "" && e.actorId === person);
 }
 
 /** Donor-exact haystack: actor + summary + meta, tags stripped. */

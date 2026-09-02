@@ -233,6 +233,11 @@ export type JobDetailRecord = {
    *  for INSTALLER: the page renders as a record and hides the controls rather
    *  than offering buttons that can only fail. */
   canWrite: boolean;
+  /** Photos are crew-writable (2026-08-21): true for the office AND for an
+   *  assigned worker, whose edition is otherwise read-only. Gates only the
+   *  Photos tab's upload controls; uploadJobPhoto enforces the same rule
+   *  server-side. */
+  canPhotos: boolean;
   /** Which audience this record was read for — see the block above `JdViewer`.
    *  It decides which SECTIONS exist, where `canWrite` decides which CONTROLS
    *  do; the two are independent (a sales rep is a manager-viewer who cannot

@@ -56,7 +56,13 @@
 //   · `pdf` — the four page decisions, which describe the paper rather than the
 //     proposal.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
+import type { Route } from "next";
+import { toast } from "@/components/ui/Toast";
+// One definition of the post-action hold, shared with the register surfaces.
+import { REDIRECT_SECONDS } from "@/components/v3/auth-register-blueprint/register-content";
 import { saveProposal, sendProposal } from "@/actions/proposals";
 import { createClient } from "@/actions/clients";
 import { ensureWithinLimit, reportPlanLimit } from "@/stores/usePlanLimitStore";
@@ -72,7 +78,7 @@ import type {
 // What survives from the donor's data module: the starter TERMS text (a button
 // the user presses, not seeded content) and the address → sales-tax lookup.
 // Every fixture record, the seeded draft and the fake org identity are gone.
-import { TERMS_TEMPLATE, estimateFromAddress } from "../manual-focus/manual-focus-data";
+import { TERMS_TEMPLATE, estimateFromAddress, taxForState } from "../manual-focus/manual-focus-data";
 import { computeTotals, money, newId } from "../manual-focus/manual-focus-math";
 import styles from "./manual-blueprint.module.css";
 import { Btn, Card, Field, Group, Pair, TextArea, TextField, cx } from "./bp-ui";
@@ -98,6 +104,7 @@ import {
   whyNotSavable,
   type SheetIdentity,
 } from "./manual-blueprint-bridge";
+import { setClientEmail } from "@/actions/clients";
 import type { ManualBuilderData } from "./manual-blueprint-load";
 import { useReveal } from "./use-reveal";
 
@@ -120,12 +127,24 @@ function contactOf(clients: ClientRecord[], choice: ClientChoice) {
 
 /** Re-runs the address estimate, but ONLY while the rate is still automatic.
  *  The moment the field has been typed in, a later address change must not
- *  silently rewrite it. */
-function withTax(d: Draft): Draft {
+ *  silently rewrite it.
+ *
+ *  `stateHint` is the selected client's own `state` column. It is tried FIRST
+ *  because it is a fact, where the job-address parse is a guess: that parse
+ *  scans the address string for a two-letter state token, so a client whose
+ *  address was typed as one line ("12103 202nd St SE") carries no token, no
+ *  state is found, and the tax field just sat at zero. */
+function withTax(d: Draft, stateHint?: string): Draft {
   if (!d.taxAuto) return d;
-  const est = estimateFromAddress(d.address);
+  const code = (stateHint ?? "").trim().toUpperCase();
+  const est = (code ? taxForState(code) : null) ?? estimateFromAddress(d.address);
   if (!est) return { ...d, taxState: "" };
   return { ...d, taxPct: est.pct, taxState: est.code };
+}
+
+/** The client record behind a choice, or undefined for a free-text/blank one. */
+function recordOf(clients: ClientRecord[], choice: ClientChoice): ClientRecord | undefined {
+  return choice.mode === "record" ? clients.find((c) => c.id === choice.id) : undefined;
 }
 
 /**
@@ -145,7 +164,7 @@ function openingDraft(data: ManualBuilderData): Draft {
   // A reopened proposal has `addressAuto: false` and its own saved address, so
   // this only ever fills a blank sheet.
   if (next.addressAuto && !next.address) next.address = addressOf(rec);
-  return withTax(next);
+  return withTax(next, rec.state);
 }
 
 export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
@@ -159,6 +178,22 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         : { mode: "none" },
     ),
   );
+  const router = useRouter();
+  // Set on a successful save or send: the panel that says so out loud and then
+  // hands over to the proposals list. The bar's status chip alone was too quiet
+  // to answer "did that work?" — a send that succeeded looked identical to a
+  // click that never registered.
+  const [done, setDone] = useState<{ sent: boolean; text: string } | null>(null);
+  // Set when "Save & send" is pressed against a client with no email on file.
+  // The send is not refused — it is PAUSED on one question, and answering it
+  // writes the address to the client record so the next proposal already has
+  // it. `sendProposal` reads the client's stored email, so a value typed only
+  // into the sheet's contact row would have gone nowhere.
+  const [askEmail, setAskEmail] = useState<{ clientId: string; name: string } | null>(null);
+
+  // Mirrors the ClientField's inline "add a new client" form — see the card
+  // below, which hides the selected client's contact rows while it is open.
+  const [addingClient, setAddingClient] = useState(false);
   const [openLines, setOpenLines] = useState<string[]>([]);
   const [note, setNote] = useState<Note>(() =>
     data.proposalMissing
@@ -197,11 +232,9 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   const setClient = (choice: ClientChoice) => {
     edit((d) => {
       const next: Draft = { ...d, client: choice };
-      if (choice.mode === "record" && d.addressAuto) {
-        const rec = clients.find((c) => c.id === choice.id);
-        if (rec) next.address = addressOf(rec);
-      }
-      return withTax(next);
+      const rec = recordOf(clients, choice);
+      if (rec && d.addressAuto) next.address = addressOf(rec);
+      return withTax(next, rec?.state);
     });
     setContact(contactOf(clients, choice));
   };
@@ -235,11 +268,14 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     };
     setClients((list) => [...list, rec]);
     setDraft((d) =>
-      withTax({
-        ...d,
-        client: { mode: "record", id: rec.id },
-        address: d.addressAuto && !d.address ? addressOf(rec) : d.address,
-      }),
+      withTax(
+        {
+          ...d,
+          client: { mode: "record", id: rec.id },
+          address: d.addressAuto && !d.address ? addressOf(rec) : d.address,
+        },
+        rec.state,
+      ),
     );
     setContact({ email: rec.email, phone: rec.phone });
     setNote(NOTE_EDITED);
@@ -279,6 +315,25 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   const addFiles = (staged: StagedFile[]) =>
     edit((d) => ({ ...d, files: [...d.files, ...staged] }));
 
+  /**
+   * The answer to that question. Writes the address onto the client RECORD —
+   * the sheet's contact row is display state and never reaches the database,
+   * so persisting there is the only thing that makes the send work — then
+   * resumes the send it interrupted.
+   */
+  async function confirmEmail(email: string) {
+    const ask = askEmail;
+    if (!ask) return;
+    const rec = clients.find((c) => c.id === ask.clientId);
+    if (!rec) return;
+    const next = { ...rec, email };
+    await setClientEmail(ask.clientId, email);
+    setClients((list) => list.map((c) => (c.id === ask.clientId ? next : c)));
+    setContact((c) => ({ ...c, email }));
+    setAskEmail(null);
+    await persist({ sendAfter: true, sentTo: email });
+  }
+
   /* ---- the two writes ----------------------------------------------- */
 
   /**
@@ -289,11 +344,30 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
    * router push here would re-render the server component and replay the whole
    * entrance cascade over a form the user is still typing in.
    */
-  async function persist(opts?: { sendAfter?: boolean }) {
+  async function persist(opts?: { sendAfter?: boolean; sentTo?: string }) {
     const why = whyNotSavable(draft);
     if (why) {
       setNote({ tone: "err", text: why });
       return;
+    }
+    // A send with nowhere to go used to complete "successfully" and report
+    // "marked sent — no client email on file", which reads as a delivery.
+    // Stop on the missing fact instead and ask for it.
+    // `sentTo` is set by the gate's own resume and doubles as the "already
+    // asked" flag: React has not flushed the updated `clients` yet at that
+    // point, so re-running the check here would read the stale record and
+    // reopen the dialog forever.
+    if (opts?.sendAfter && !opts.sentTo) {
+      const pick = draft.client;
+      if (pick.mode !== "record") {
+        setNote({ tone: "err", text: "Pick a client before sending" });
+        return;
+      }
+      const rec = clients.find((c) => c.id === pick.id);
+      if (!rec?.email?.trim()) {
+        setAskEmail({ clientId: pick.id, name: rec?.name ?? "this client" });
+        return;
+      }
     }
     // A brand-new proposal counts against the monthly cap; the dialog the shell
     // already mounts is what explains it.
@@ -315,14 +389,23 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
       if (opts?.sendAfter) {
         setNote({ tone: "live", text: "Sending…" });
         await sendProposal(res.id);
-        setNote({
-          tone: "ok",
-          text: contact.email
-            ? `${ref} · sent to ${contact.email}`
-            : `${ref} · marked sent — no client email on file`,
-        });
+        // `sendProposal` sends to the CLIENT RECORD's address, so that is the
+        // one this line may name — handed in by the gate when it just wrote it,
+        // read from the record otherwise. The gate guarantees one exists.
+        const to =
+          opts.sentTo ||
+          clients.find((c) => (draft.client.mode === "record" ? c.id === draft.client.id : false))
+            ?.email ||
+          "";
+        const text = to ? `${ref} · sent to ${to}` : `${ref} · sent`;
+        setNote({ tone: "ok", text });
+        toast.success("Proposal sent", text);
+        setDone({ sent: true, text });
       } else {
-        setNote({ tone: "ok", text: `${ref} · saved to your proposals` });
+        const text = `${ref} · saved to your proposals`;
+        setNote({ tone: "ok", text });
+        toast.success("Proposal saved", text);
+        setDone({ sent: false, text });
       }
     } catch (err: unknown) {
       if (reportPlanLimit(err)) {
@@ -331,13 +414,14 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
       }
       // A zod failure serialises to a JSON array — never surface that raw.
       const raw = err instanceof Error ? err.message : "";
-      setNote({
-        tone: "err",
-        text:
-          raw && !raw.trim().startsWith("[")
-            ? raw
-            : "Save failed — check the title and that every line has a name",
-      });
+      const text =
+        raw && !raw.trim().startsWith("[")
+          ? raw
+          : "Save failed — check the title and that every line has a name";
+      setNote({ tone: "err", text });
+      // The chip in the masthead is easy to miss from the bar at the bottom of
+      // a long sheet, which is how a failed send read as a dead button.
+      toast.error(opts?.sendAfter ? "Couldn't send" : "Couldn't save", text);
     } finally {
       setBusy(null);
     }
@@ -427,7 +511,15 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
               choice={draft.client}
               onChoice={setClient}
               onCreate={createClientRecord}
+              onCreatingChange={setAddingClient}
             />
+            {/* The contact rows describe the SELECTED client. While the inline
+                "add a new client" form is open it collects its own email, phone
+                and address, so showing these underneath stacked two identical
+                sets of boxes on one card — the lower pair looking editable but
+                belonging to a client that has not been chosen yet. They come
+                back the moment the form is closed or the client is saved. */}
+            {!addingClient && (
             <Pair>
               <Field
                 label="Email"
@@ -456,14 +548,17 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
                 />
               </Field>
             </Pair>
+            )}
           </Group>
-          <Field
-            label="Job address"
-            htmlFor="q-address"
-            hint={draft.addressAuto ? "From the client record" : undefined}
-          >
-            <TextField id="q-address" value={draft.address} onChange={setAddress} />
-          </Field>
+          {!addingClient && (
+            <Field
+              label="Job address"
+              htmlFor="q-address"
+              hint={draft.addressAuto ? "From the client record" : undefined}
+            >
+              <TextField id="q-address" value={draft.address} onChange={setAddress} />
+            </Field>
+          )}
         </Card>
 
         {/* 03 ------------------------------------------------------- */}
@@ -661,6 +756,23 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         </Card>
       </div>
 
+      {askEmail && (
+        <EmailPanel
+          name={askEmail.name}
+          onCancel={() => setAskEmail(null)}
+          onConfirm={confirmEmail}
+        />
+      )}
+
+      {done && (
+        <DonePanel
+          sent={done.sent}
+          text={done.text}
+          onGo={() => router.push("/dashboard/proposals" as Route)}
+          onStay={() => setDone(null)}
+        />
+      )}
+
       {/* THE ONE PERSISTENT DEVICE ---------------------------------- */}
       <div className={styles.bar} data-rv="">
         <div>
@@ -691,5 +803,192 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * What a finished save or send looks like.
+ *
+ * The bar's status chip lives at the bottom of a sheet that can run several
+ * screens; a person who clicks "Save & send" and stays where they are gets no
+ * answer they can see. This says what happened, then hands over to the
+ * proposals list on a five-second clock — with a way out for anyone who wants
+ * to keep editing, because a redirect nobody can stop is its own bug.
+ *
+ * Portalled into <body>: the builder's own column is a transformed, scrolling
+ * surface, and a fixed overlay hosted inside it would be clipped by the column
+ * instead of covering the viewport.
+ */
+/**
+ * "Where should this go?" — the one question a send with no client email has to
+ * answer before it can mean anything.
+ *
+ * Same plate as DonePanel, portalled to the same host for the same reasons; see
+ * the note there. It is a PAUSE, not a refusal: Escape and Cancel abandon the
+ * send, and confirming writes the address to the client record and resumes it.
+ */
+function EmailPanel({
+  name,
+  onCancel,
+  onConfirm,
+}: {
+  name: string;
+  onCancel: () => void;
+  onConfirm: (email: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  async function submit() {
+    const email = value.trim();
+    // The shape check is the page's, so a typo is caught before a round trip;
+    // the action parses it again, which is the boundary that actually counts.
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      setErr("Enter a valid email address");
+      inputRef.current?.focus();
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      await onConfirm(email);
+    } catch (e: unknown) {
+      setBusy(false);
+      setErr(e instanceof Error ? e.message : "Couldn't save that address");
+    }
+  }
+
+  if (typeof document === "undefined") return null;
+  const host = document.querySelector<HTMLElement>(".jf-blueprint") ?? document.body;
+
+  return createPortal(
+    <div
+      className={styles.doneWrap}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="mb-email-h"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div className={styles.doneBox}>
+        <p className={styles.doneKicker}>Send</p>
+        <h2 className={styles.doneH} id="mb-email-h">
+          Where should this go?
+        </h2>
+        <p className={styles.doneText}>
+          {name} has no email on file. Add one and the proposal goes out now — it is
+          saved to the client, so the next one already has it.
+        </p>
+        <input
+          ref={inputRef}
+          className={styles.emailIn}
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          placeholder="name@company.com"
+          value={value}
+          aria-invalid={err ? true : undefined}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (err) setErr("");
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void submit();
+          }}
+        />
+        {err ? (
+          <p className={styles.emailErr} role="alert">
+            {err}
+          </p>
+        ) : null}
+        <div className={styles.doneActions}>
+          <Btn tone="primary" onClick={() => void submit()} disabled={busy}>
+            {busy ? "Sending…" : "Send proposal"}
+          </Btn>
+          <Btn tone="quiet" onClick={onCancel} disabled={busy}>
+            Cancel
+          </Btn>
+        </div>
+      </div>
+    </div>,
+    host,
+  );
+}
+
+function DonePanel({
+  sent,
+  text,
+  onGo,
+  onStay,
+}: {
+  sent: boolean;
+  text: string;
+  onGo: () => void;
+  onStay: () => void;
+}) {
+  const [left, setLeft] = useState(REDIRECT_SECONDS);
+  useEffect(() => {
+    if (left <= 0) {
+      onGo();
+      return;
+    }
+    const t = window.setTimeout(() => setLeft((n) => n - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [left, onGo]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onStay();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onStay]);
+
+  if (typeof document === "undefined") return null;
+
+  // The shell root, NOT <body>. Every rule this panel paints with resolves
+  // against tokens declared on that root (`--ink`, `--border`, `--radius`,
+  // `--blueprint`, `--muted`, `--font-mono`), and `Btn` is styled
+  // `:global(.jf-blueprint) .btn` — it needs `.jf-blueprint` as an ANCESTOR.
+  // Portalled into <body> the panel lost all of it at once: the 2px frame and
+  // the hard offset shadow vanished, the kicker went grey, and the two actions
+  // rendered as bare text. The root is untransformed, so a fixed overlay still
+  // covers the viewport — which is the reason the portal exists at all.
+  const host = document.querySelector<HTMLElement>(".jf-blueprint") ?? document.body;
+
+  return createPortal(
+    <div className={styles.doneWrap} role="dialog" aria-modal="true" aria-labelledby="mb-done-h">
+      <div className={styles.doneBox}>
+        <p className={styles.doneKicker}>{sent ? "Sent" : "Saved"}</p>
+        <h2 className={styles.doneH} id="mb-done-h">
+          {sent ? "Your proposal is on its way." : "Your proposal is saved."}
+        </h2>
+        <p className={styles.doneText}>{text}</p>
+        <p className={styles.doneCount} role="status">
+          Taking you to your proposals in {left}…
+        </p>
+        <div className={styles.doneActions}>
+          <Btn tone="primary" onClick={onGo}>
+            Go now
+          </Btn>
+          <Btn tone="quiet" onClick={onStay}>
+            Stay on this sheet
+          </Btn>
+        </div>
+      </div>
+    </div>,
+    host,
   );
 }

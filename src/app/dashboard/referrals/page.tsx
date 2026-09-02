@@ -18,6 +18,7 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { relative } from "@/lib/format";
 import { getOrCreateMyReferralCode } from "@/actions/referrals";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { ReferralsContent } from "@/components/v3/referrals-blueprint/referrals-content";
 import type {
   Conversion,
@@ -84,6 +85,11 @@ export default async function ReferralsPage() {
   const appUrl = await appBaseUrl();
 
   return (
+    <>
+    {/* Clears the referrals nav badge (pending conversions) on open. Desktop
+        edition only — the handheld build is stamped by the responsive shell
+        (HANDHELD_SEEN). */}
+    <MarkNavSeen surface="referrals" />
     <ReferralsContent
       code={code.code}
       signupUrl={`${appUrl}/auth/register?ref=${code.code}`}
@@ -97,5 +103,6 @@ export default async function ReferralsPage() {
       onTheWayCount={converted}
       creditedCents={credited._sum.rewardCents ?? 0}
     />
+    </>
   );
 }

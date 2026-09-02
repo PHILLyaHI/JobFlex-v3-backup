@@ -141,18 +141,39 @@ async function getToken(): Promise<string> {
  * no ceiling is a call that will eventually hold something open.
  */
 async function evFetch(path: string, init?: RequestInit): Promise<Response> {
-  const token = await getToken();
-  return evRequest(
-    `${API_BASE}${path}`,
-    {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(init?.headers ?? {}),
+  const send = async (token: string) =>
+    evRequest(
+      `${API_BASE}${path}`,
+      {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(init?.headers ?? {}),
+        },
       },
-    },
-    `reports ${path.split("?")[0]}`,
-  );
+      `reports ${path.split("?")[0]}`,
+    );
+
+  // A cached token can outlive its validity (key rotation, revocation, or a
+  // server that restarted the clock). One forced re-mint distinguishes a stale
+  // token from a genuinely unauthorized request, so callers never see a 401
+  // that a refresh would have fixed. evRequest surfaces 401 as an auth-kind
+  // EagleViewUnavailableError rather than a Response, so the retry hangs off
+  // the error path.
+  try {
+    return await send(await getToken());
+  } catch (err) {
+    if (
+      err instanceof EagleViewUnavailableError &&
+      err.kind === "auth" &&
+      err.httpStatus === 401 &&
+      tokenCache
+    ) {
+      tokenCache = null;
+      return send(await getToken());
+    }
+    throw err;
+  }
 }
 
 // Build a human error from a failed response. The sandbox is a mock — it 400s
@@ -170,6 +191,19 @@ async function evError(res: Response, op: string): Promise<Error> {
       "The EagleView sandbox only prices/orders its built-in test addresses. Use the sample roofs above, or connect a production EagleView account to measure a real address.",
     );
   }
+  // 401 here means the token minted fine but the API host rejected it — almost
+  // always a host/credential mismatch rather than a bad key. Sandbox keys hit
+  // against the production host answer "Authorization has been denied for this
+  // request."; the sandbox answers "invalid AccessToken" for a bad token. Name
+  // the host in the message, because the failure is invisible from the UI.
+  if (res.status === 401) {
+    const denied = /Authorization has been denied/i.test(detail);
+    return new Error(
+      denied
+        ? `EagleView rejected these credentials for ${API_BASE}. Sandbox keys only work against the sandbox host — set EAGLEVIEW_API_BASE_URL to https://sandbox.apicenter.eagleview.com (or unset it to use the default), then redeploy.`
+        : `EagleView authorization failed for ${API_BASE} (401)${detail ? `: ${detail.slice(0, 140)}` : ""}. Check EAGLEVIEW_CLIENT_ID / EAGLEVIEW_CLIENT_SECRET.`,
+    );
+  }
   return new Error(`${op} failed (${res.status})${detail ? `: ${detail.slice(0, 140)}` : ""}`);
 }
 
@@ -185,7 +219,7 @@ export interface EvProduct {
 
 export async function getAvailableProducts(): Promise<EvProduct[]> {
   const res = await evFetch("/v2/Product/GetAvailableProducts");
-  if (!res.ok) throw new Error(`GetAvailableProducts failed (${res.status})`);
+  if (!res.ok) throw await evError(res, "GetAvailableProducts");
   return (await res.json()) as EvProduct[];
 }
 
@@ -284,7 +318,7 @@ export interface EvReportSummary {
 
 export async function getReportSummary(reportId: number): Promise<EvReportSummary> {
   const res = await evFetch(`/v3/Report/GetReport?reportId=${encodeURIComponent(String(reportId))}`);
-  if (!res.ok) throw new Error(`GetReport failed (${res.status})`);
+  if (!res.ok) throw await evError(res, "GetReport");
   const r = (await res.json()) as Record<string, any>;
   const status = String(r.Status ?? "");
   return {
@@ -314,7 +348,7 @@ export async function getMeasurementModel(reportId: number): Promise<RoofModel> 
   const res = await evFetch(
     `/v1/File/GetReportFileAnyFormat?fileType=${EV_FILE.MEASUREMENT_JSON}&reportId=${encodeURIComponent(String(reportId))}`,
   );
-  if (!res.ok) throw new Error(`GetMeasurementJson failed (${res.status})`);
+  if (!res.ok) throw await evError(res, "GetMeasurementJson");
   const raw = await res.json();
   return parseRoofModel(raw, reportId);
 }
@@ -327,6 +361,86 @@ export function reportFilePath(reportId: number, fileType: number): string {
 
 export async function getReportFile(reportId: number, fileType: number): Promise<Response> {
   return evFetch(reportFilePath(reportId, fileType));
+}
+
+// ── Diagnostics ────────────────────────────────────────────────────────────────
+// Connection health for the roof estimator. Returns NON-secret status only —
+// hosts, HTTP codes, error text, product counts — NEVER the token or the
+// client id/secret. Lets a manager see, in production, whether the key works and
+// (critically) whether calls hit the SANDBOX host or the PRODUCTION host.
+export interface EvDiagnosticCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+export interface EvDiagnostics {
+  configured: boolean;
+  apiBase: string;
+  tokenBase: string;
+  isSandboxApi: boolean;
+  checks: EvDiagnosticCheck[];
+}
+
+export async function runEagleViewDiagnostics(): Promise<EvDiagnostics> {
+  const apiBase = API_BASE;
+  const tokenBase = TOKEN_BASE;
+  const isSandboxApi = /sandbox/i.test(apiBase);
+  const checks: EvDiagnosticCheck[] = [];
+  const configured = isEagleViewEnabled();
+
+  if (!configured) {
+    checks.push({
+      name: "Credentials",
+      ok: false,
+      detail: "EAGLEVIEW_CLIENT_ID / EAGLEVIEW_CLIENT_SECRET are not set.",
+    });
+    return { configured, apiBase, tokenBase, isSandboxApi, checks };
+  }
+  checks.push({ name: "Credentials present", ok: true, detail: "CLIENT_ID and CLIENT_SECRET are set." });
+
+  // 1) OAuth token — minted on the token host (always the production apicenter).
+  try {
+    await getToken();
+    checks.push({ name: "OAuth token", ok: true, detail: `Minted OK against ${tokenBase}.` });
+  } catch (e: unknown) {
+    checks.push({
+      name: "OAuth token",
+      ok: false,
+      detail: `Failed against ${tokenBase}: ${e instanceof Error ? e.message : "unknown error"}`,
+    });
+    return { configured, apiBase, tokenBase, isSandboxApi, checks };
+  }
+
+  // 2) A real, NON-billable API call against the API host. Proves the key is
+  //    valid AND that we're pointed at the right host: a production key hitting
+  //    the sandbox host (or vice-versa) fails here with a 401/403.
+  try {
+    const res = await evFetch("/v2/Product/GetAvailableProducts");
+    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      const count = Array.isArray(data) ? data.length : "?";
+      checks.push({
+        name: "API call · GetAvailableProducts",
+        ok: true,
+        detail: `HTTP ${res.status} · ${count} products · host ${apiBase}`,
+      });
+    } else {
+      const body = await res.text().catch(() => "");
+      checks.push({
+        name: "API call · GetAvailableProducts",
+        ok: false,
+        detail: `HTTP ${res.status} · host ${apiBase}${body ? ` · ${body.slice(0, 160)}` : ""}`,
+      });
+    }
+  } catch (e: unknown) {
+    checks.push({
+      name: "API call · GetAvailableProducts",
+      ok: false,
+      detail: `Request threw: ${e instanceof Error ? e.message : "unknown"} · host ${apiBase}`,
+    });
+  }
+
+  return { configured, apiBase, tokenBase, isSandboxApi, checks };
 }
 
 // ── Measurement-JSON parser ───────────────────────────────────────────────────

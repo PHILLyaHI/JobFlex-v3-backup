@@ -94,12 +94,20 @@ async function syncAssignments(
   organizationId: string,
   appointmentId: string,
   workerIds: string[],
-) {
+): Promise<{ added: string[] }> {
   const valid = await db.workerProfile.findMany({
     where: { id: { in: workerIds }, organizationId },
     select: { id: true },
   });
   const validIds = valid.map((w) => w.id);
+  // Who is on it ALREADY, so the caller can mail only the people this save
+  // actually adds — re-saving an appointment must not re-notify the crew that
+  // was already on it.
+  const before = await db.appointmentAssignment.findMany({
+    where: { appointmentId },
+    select: { workerId: true },
+  });
+  const had = new Set(before.map((a) => a.workerId));
   await db.appointmentAssignment.deleteMany({
     where: { appointmentId, workerId: { notIn: validIds } },
   });
@@ -109,6 +117,19 @@ async function syncAssignments(
       update: {},
       create: { appointmentId, workerId },
     });
+  }
+  return { added: validIds.filter((id) => !had.has(id)) };
+}
+
+/** Mail the people this save just put on the appointment. Best-effort: a mail
+ *  failure must never roll back a booking that is already in the calendar. */
+async function notifyNewlyStaffed(appointmentId: string, added: string[]) {
+  if (!added.length) return;
+  try {
+    const { notifyAppointmentAssigned } = await import("@/lib/notify");
+    await notifyAppointmentAssigned(appointmentId, added);
+  } catch (err) {
+    console.warn("[appointments] assignment notify failed:", err);
   }
 }
 
@@ -133,7 +154,8 @@ export async function createAppointment(raw: unknown) {
     },
   });
   if (workerIds?.length) {
-    await syncAssignments(organizationId, apt.id, workerIds);
+    const { added } = await syncAssignments(organizationId, apt.id, workerIds);
+    await notifyNewlyStaffed(apt.id, added);
   }
   revalidatePath("/dashboard/calendar");
   return { id: apt.id };
@@ -178,7 +200,8 @@ export async function updateAppointment(id: string, rawInput: Partial<z.infer<ty
   });
   if (raw.workerIds) {
     const workerIds = await filterWorkerIdsForRole(role, user.id, raw.workerIds);
-    await syncAssignments(organizationId, id, workerIds ?? []);
+    const { added } = await syncAssignments(organizationId, id, workerIds ?? []);
+    await notifyNewlyStaffed(id, added);
   }
   revalidatePath("/dashboard/calendar");
 }

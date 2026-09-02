@@ -18,6 +18,7 @@ import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { relative } from "@/lib/format";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { TradeContent } from "@/components/v3/trade-blueprint/trade-content";
 import type { TradePost } from "@/components/v3/trade-blueprint/trade-data";
 
@@ -67,5 +68,13 @@ export default async function TradePage() {
     mine: p.authorId === userId,
   }));
 
-  return <TradeContent entries={entries} viewer={viewer} />;
+  return (
+    <>
+      {/* Clears the trade nav badge (work sent to you + interest on your
+          posts) on open. Desktop edition only — the handheld build is stamped
+          by the responsive shell (HANDHELD_SEEN). */}
+      <MarkNavSeen surface="trade" />
+      <TradeContent entries={entries} viewer={viewer} />
+    </>
+  );
 }

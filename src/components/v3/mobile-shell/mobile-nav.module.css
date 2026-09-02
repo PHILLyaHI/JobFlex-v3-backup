@@ -42,13 +42,11 @@
   --lockup-gap: clamp(2px, 0.7vw, 5px);
   /* Mark geometry. --mark-size is the RENDER size of the square asset; the ink
      inside it is only ~34.6% x 42.5% of that, so the box below derives its own
-     dimensions from the same token rather than repeating measured pixels.
-     --mark-top pins the ink's top edge, which is what makes the logo grow
-     downward when --mark-size changes. 116px is near the ceiling for a 64px
-     bar: the ink ends ~3.7px above the 2px bottom border. Going bigger means
-     raising --topbar-h first. */
+     dimensions from the same token rather than repeating measured pixels. The
+     box is CENTRED in the bar (see .tbarMarkBox), so this is the only number
+     to set: 116px puts ~50.3px of ink in a 62px bar with ~5.8px of air over
+     and under it. Going bigger means raising --topbar-h first. */
   --mark-size: 116px;
-  --mark-top: 9px;
   height: var(--topbar-h);
   padding: 0 var(--pad-x);
   background: var(--ink);
@@ -81,11 +79,15 @@
    against a wordmark that measures ~89.4px at the 7.8px sub floor. */
 .tbarMarkBox {
   position: relative;
-  /* Top-anchored, not centred: --mark-top IS where the ink's top edge sits,
-     measured from the bar's top. The -0.5px is the hair of clearance the box
-     carries so antialiasing is not clipped. */
-  align-self: flex-start;
-  margin-top: calc(var(--mark-top) - 0.5px);
+  /* CENTRED, not top-anchored. --mark-top pinned the ink's top edge at a flat
+     9px, which was only ever right for one combination of --mark-size and
+     --topbar-h: at the current 116px mark the ink is ~50.3px tall, so 9px from
+     the top of a 64px bar (62px inside its 2px bottom border) left ~5.8px under
+     it and ~8.5px over it — the logo sat ~2.7px BELOW the centre line the
+     wordmark beside it is on, which is the offset visible in the bar. Centring
+     is also self-correcting: change either token and the mark stays on the
+     wordmark's axis instead of needing --mark-top re-measured. */
+  align-self: center;
   width: calc(var(--mark-size) * 0.3462 + 1px);
   height: calc(var(--mark-size) * 0.4253 + 1px);
   overflow: hidden;
@@ -266,6 +268,21 @@
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .sbLink .ic { width: 17px; height: 17px; opacity: 0.72; }
+/* Unread count — the desktop sidebar's sb-badge voice: a small blueprint
+   plate with mono numerals, pushed to the row's right edge. Slightly larger
+   than desktop's 18px because the drawer rows themselves are. */
+.sbBadge {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  color: #fff;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px; font-weight: 700;
+  line-height: 1;
+}
 .sbLink:active:not(.active) { background: var(--paper-deep); }
 .sbLink.active { color: var(--ink); font-weight: 700; border-color: var(--ink); }
 .sbLink.active .ic { opacity: 1; color: var(--blueprint); }

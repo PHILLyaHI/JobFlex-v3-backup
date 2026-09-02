@@ -15,6 +15,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { ProposalsContent } from "@/components/v3/proposals-blueprint/proposals-content";
 import { readProposalBook } from "@/components/v3/proposals-blueprint/proposals-query";
 import type { ProposalRow } from "@/components/v3/proposals-blueprint/proposals-data";
@@ -36,5 +37,13 @@ export default async function ProposalsPage() {
     throw err;
   }
 
-  return <ProposalsContent rows={rows} />;
+  return (
+    <>
+      {/* Clears the proposals nav badge (accepted-but-unscheduled work) on
+          open. Desktop edition only — the handheld build is stamped by the
+          responsive shell (HANDHELD_SEEN). */}
+      <MarkNavSeen surface="proposals" />
+      <ProposalsContent rows={rows} />
+    </>
+  );
 }

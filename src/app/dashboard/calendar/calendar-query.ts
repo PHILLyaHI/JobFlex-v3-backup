@@ -22,6 +22,7 @@ import {
 } from "@/lib/orgContext";
 import { roleLabel } from "@/lib/prismaEnums";
 import { db } from "@/lib/db";
+import { countNewForSurface } from "@/lib/badgeCounts";
 import type {
   CalEvent,
   CalKind,
@@ -96,12 +97,15 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
 
   const worker = isWorkerRole(role);
   const sales = isSalesRole(role);
-  // Everyone else (OWNER / ADMIN / MANAGER / ESTIMATOR / legacy roles) gets the
-  // manager calendar — exactly the fallthrough the archived page used. The
-  // dispatch actions are `requireManager()`-guarded on their own, so this flag
-  // only decides what the UI offers, never what the server permits.
-  const canManage = !worker && !sales;
   const estimator = isEstimatorRole(role);
+  // Owner/manager only (2026-08-22, owner rule): estimators used to fall
+  // through to the manager calendar and could read EVERY org event,
+  // appointment, personal blocked-time, the dispatch tray and the crew inbox —
+  // while every write action refused them. Limited roles (installer / sales /
+  // estimator) now see only work that names them: assigned, created, or
+  // hanging off their own proposal.
+  const limited = worker || sales || estimator;
+  const canManage = !limited;
 
   // Mirrors the three create actions' own guards, so the sheet never shows a tab
   // whose submit can only be refused: `createJobEvent` bars SALES + ESTIMATOR,
@@ -110,47 +114,35 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
   if (!sales && !estimator) createKinds.push("job");
   if (!worker && !estimator) createKinds.push("appointment", "blocked");
 
-  const self = worker || sales
+  const self = limited
     ? await db.workerProfile.findUnique({ where: { userId }, select: { id: true } })
     : null;
   const selfWorkerId = self?.id ?? "__none__";
 
-  // ── Role-scoped where-clauses (archived page, verbatim shapes) ────────────
-  const jobEventWhere = worker
+  // ── Role-scoped where-clauses ─────────────────────────────────────────────
+  // One rule for every limited role (2026-08-22): an event is yours if you are
+  // on its crew, you created it, or it belongs to a job whose proposal you
+  // own. Owner/manager read everything. The old shape gave each limited role
+  // a slightly different slice (and estimators the whole org).
+  const jobEventWhere = limited
     ? {
         organizationId,
         startsAt: { gte: from, lte: to },
         OR: [
           { job: { assignments: { some: { workerId: selfWorkerId } } } },
           { createdById: userId },
+          { job: { proposal: { ownerId: userId } } },
         ],
       }
-    : sales
-      ? {
-          organizationId,
-          startsAt: { gte: from, lte: to },
-          job: {
-            OR: [
-              { assignments: { some: { workerId: selfWorkerId } } },
-              { proposal: { ownerId: userId } },
-            ],
-          },
-        }
-      : { organizationId, startsAt: { gte: from, lte: to } };
+    : { organizationId, startsAt: { gte: from, lte: to } };
 
-  const appointmentWhere = worker
+  const appointmentWhere = limited
     ? {
         organizationId,
         startsAt: { gte: from, lte: to },
-        assignments: { some: { workerId: selfWorkerId } },
+        OR: [{ assignments: { some: { workerId: selfWorkerId } } }, { createdById: userId }],
       }
-    : sales
-      ? {
-          organizationId,
-          startsAt: { gte: from, lte: to },
-          OR: [{ assignments: { some: { workerId: selfWorkerId } } }, { createdById: userId }],
-        }
-      : { organizationId, startsAt: { gte: from, lte: to } };
+    : { organizationId, startsAt: { gte: from, lte: to } };
 
   // Blocked time: managers see the org's; everyone else sees their own plus the
   // org-wide (ownerless) blocks, which is the archived sales branch's scope.
@@ -172,7 +164,7 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
             status: true,
             client: { select: { name: true, phone: true, address: true, city: true, state: true } },
             proposal: { select: { scopeOfWork: true } },
-            assignments: { select: { id: true, workerId: true } },
+            assignments: { select: { id: true, workerId: true, status: true } },
           },
         },
       },
@@ -218,7 +210,11 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
           take: 30,
         }),
         db.jobAssignment.findMany({
-          where: { status: "PENDING", job: { organizationId } },
+          // ALL response states, not only PENDING (2026-08-22): the crew inbox
+          // is the manager's confirmation ledger — it must say who accepted
+          // and who declined, not silently drop a row the moment the worker
+          // answers. DECLINED especially: a vanished row read as "handled".
+          where: { status: { in: ["PENDING", "ACCEPTED", "DECLINED"] }, job: { organizationId } },
           include: {
             worker: { select: { displayName: true } },
             job: { select: { id: true, title: true, startsAt: true } },
@@ -236,9 +232,10 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     sales
       ? Promise.resolve([])
       : db.job.findMany({
-          where: worker
-            ? { organizationId, assignments: { some: { workerId: selfWorkerId } } }
-            : { organizationId },
+          where:
+            worker || estimator
+              ? { organizationId, assignments: { some: { workerId: selfWorkerId } } }
+              : { organizationId },
           orderBy: { createdAt: "desc" },
           include: { client: { select: { name: true, city: true } } },
           take: 80,
@@ -246,7 +243,9 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     worker
       ? Promise.resolve([])
       : db.proposal.findMany({
-          where: sales ? { organizationId, ownerId: userId } : { organizationId },
+          // Estimators share the sales rule: their proposals, not the org's —
+          // proposalScope (orgContext) already says so for every other read.
+          where: sales || estimator ? { organizationId, ownerId: userId } : { organizationId },
           orderBy: { createdAt: "desc" },
           include: { client: { select: { name: true, city: true } } },
           take: 60,
@@ -254,16 +253,17 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     worker
       ? Promise.resolve([])
       : db.lead.findMany({
-          where: sales
-            ? {
-                organizationId,
-                status: { in: ["NEW", "ROUTED", "CLAIMED", "CONTACTED", "QUOTED"] },
-                OR: [{ assignedToId: userId }, { claimedById: userId }, { status: "NEW" }],
-              }
-            : {
-                organizationId,
-                status: { in: ["NEW", "ROUTED", "CLAIMED", "CONTACTED", "QUOTED"] },
-              },
+          where:
+            sales || estimator
+              ? {
+                  organizationId,
+                  status: { in: ["NEW", "ROUTED", "CLAIMED", "CONTACTED", "QUOTED"] },
+                  OR: [{ assignedToId: userId }, { claimedById: userId }, { status: "NEW" }],
+                }
+              : {
+                  organizationId,
+                  status: { in: ["NEW", "ROUTED", "CLAIMED", "CONTACTED", "QUOTED"] },
+                },
           orderBy: { createdAt: "desc" },
           select: { id: true, name: true, status: true, projectType: true, city: true },
           take: 60,
@@ -303,6 +303,11 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     workers: e.job?.assignments.map((a) => a.workerId) ?? [],
     assignmentIds: Object.fromEntries(
       (e.job?.assignments ?? []).map((a) => [a.workerId, a.id]),
+    ),
+    // Per-worker response state, for the detail sheet's crew chips: has each
+    // person actually confirmed this booking, or is the office still waiting?
+    assignmentStatus: Object.fromEntries(
+      (e.job?.assignments ?? []).map((a) => [a.workerId, a.status]),
     ),
     client: e.job?.client?.name ?? undefined,
     phone: e.job?.client?.phone ?? undefined,
@@ -357,6 +362,10 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     id: a.id,
     title: a.job.title,
     worker: a.worker.displayName,
+    status: (a.status === "ACCEPTED" || a.status === "DECLINED" ? a.status : "PENDING") as
+      | "PENDING"
+      | "ACCEPTED"
+      | "DECLINED",
     when: a.job.startsAt
       ? a.job.startsAt.toLocaleString("en-US", {
           month: "short",
@@ -406,12 +415,26 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     })),
   ];
 
+  // Crew answers the office hasn't seen: seen-stamped per user when the inbox
+  // sheet opens (markNavSeen("crewInbox")), counted the same way the nav
+  // badges are. Owner request 2026-08-22: a decline must register on the bell
+  // even after the pending count drops to zero.
+  let inboxUnseen = 0;
+  if (canManage) {
+    const seen = await db.navSeen.findUnique({
+      where: { userId_organizationId_key: { userId, organizationId, key: "crewInbox" } },
+      select: { seenAt: true },
+    });
+    inboxUnseen = await countNewForSurface("crewInbox", organizationId, seen?.seenAt, userId);
+  }
+
   return {
     today: new Date().toISOString(),
     events: [...jobEvents, ...appointmentEvents, ...blockedEvents],
     workers,
     tray,
     inbox,
+    inboxUnseen,
     links,
     createKinds,
     canManage,

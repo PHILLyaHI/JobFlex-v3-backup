@@ -27,6 +27,7 @@ import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
 import { attachCombo, type ComboItem } from "./combo";
+import { OFFER_ANSWERED_EVENT, type OfferAnsweredDetail } from "./job-offers";
 import {
   JOB_TABS,
   ACCENT,
@@ -56,6 +57,11 @@ export type JobsContentOptions = {
   /** Owner/manager — gates the row menu's status writes. `updateJob` calls
    *  `requireManager`, so for anyone else the items are not offered at all. */
   canManage?: boolean;
+  /** LIMITED role. The rows headline the caller's OWN answer while it is
+   *  outstanding ("Not accepted yet" / "Declined" instead of the job status),
+   *  and the offers popup in the page head patches them through the
+   *  OFFER_ANSWERED_EVENT listener below. */
+  workerView?: boolean;
   /**
    * Next's client-side router push, handed down from jobs-content.tsx.
    *
@@ -190,6 +196,7 @@ export function initJobsContent(
   const crewOptions: JobCrewOption[] = options.crew ?? [];
   const proposalOptions: JobProposalOption[] = options.proposals ?? [];
   const canManage = options.canManage ?? false;
+  const workerView = options.workerView ?? false;
 
   const jstate = { tab: "ALL" as "ALL" | JobStatus, page: 1, menuId: null as string | null };
 
@@ -303,6 +310,7 @@ export function initJobsContent(
       "</div></td>" +
       '<td data-cell="status">' +
       statusPill(j) +
+      awaitHint(j) +
       "</td>" +
       '<td data-cell="when">' +
       whenHtml(j) +
@@ -330,14 +338,29 @@ export function initJobsContent(
       "</tr>"
     );
   }
+  /** What the status plate SAYS for this viewer. A crew member's unanswered
+   *  offer outranks the job status — "Not accepted yet" (warning tone) until
+   *  they answer, "Declined" (danger) if they said no. Everyone else reads the
+   *  job's own status. */
+  function pillState(j: Job): { cls: string; label: string } {
+    if (workerView && j.myAssignment === "PENDING") {
+      return { cls: "jst--offer_pending", label: "Not accepted yet" };
+    }
+    if (workerView && j.myAssignment === "DECLINED") {
+      return { cls: "jst--offer_declined", label: "Declined" };
+    }
+    return { cls: "jst--" + j.status.toLowerCase(), label: statusLabel(j.status) };
+  }
   function statusPill(j: Job) {
-    return (
-      '<span class="pstatus jst--' +
-      j.status.toLowerCase() +
-      '">' +
-      statusLabel(j.status) +
-      "</span>"
-    );
+    const s = pillState(j);
+    return '<span class="pstatus ' + s.cls + '">' + s.label + "</span>";
+  }
+  /** The manager's small print under the status plate: somebody assigned to
+   *  this job has not answered yet. Annotation layer — mono, muted, quiet. */
+  function awaitHint(j: Job) {
+    return !workerView && (j.pendingCrew ?? 0) > 0
+      ? '<span class="j-await">awaiting crew</span>'
+      : "";
   }
   function whenHtml(j: Job) {
     const range = rangeLabel(j);
@@ -347,6 +370,7 @@ export function initJobsContent(
   }
   function cardHtml(j: Job) {
     const range = rangeLabel(j);
+    const st = pillState(j);
     return (
       '<li><a class="jcard" href="' +
       jobHref(j.id) +
@@ -366,11 +390,15 @@ export function initJobsContent(
       '">' +
       esc(j.client || "No client") +
       "</div></div>" +
-      '<span class="pstatus jst--' +
-      j.status.toLowerCase() +
+      // The plate and the manager's awaiting-crew hint stack in their own
+      // column, so the card head stays a two-child space-between row.
+      '<div class="jcard-st"><span class="pstatus ' +
+      st.cls +
       '" data-cell="status">' +
-      statusLabel(j.status) +
-      "</span></div>" +
+      st.label +
+      "</span>" +
+      awaitHint(j) +
+      "</div></div>" +
       // Both slots carry `data-cell` so a schedule or crew write can be patched
       // into the card in place, the way the status pill already is.
       '<div class="jcard-bot">' +
@@ -685,18 +713,43 @@ export function initJobsContent(
     if (rowEl) {
       rowEl.style.setProperty("--acc", ACCENT[next]);
       const cell = rowEl.querySelector<HTMLElement>('[data-cell="status"]');
-      if (cell) cell.innerHTML = statusPill(j);
+      if (cell) cell.innerHTML = statusPill(j) + awaitHint(j);
     }
     if (cardEl) {
       cardEl.style.setProperty("--acc", ACCENT[next]);
       const pill = cardEl.querySelector<HTMLElement>('[data-cell="status"]');
       if (pill) {
-        pill.className = "pstatus jst--" + next.toLowerCase();
+        const st = pillState(j);
+        pill.className = "pstatus " + st.cls;
         pill.setAttribute("data-cell", "status");
-        pill.textContent = statusLabel(next);
+        pill.textContent = st.label;
       }
     }
   }
+
+  /** A crew member answered an offer through the page-head popup (see
+   *  ./job-offers). Their row's headline is that answer, so it flips here —
+   *  in place, no reload, same patch discipline as applyStatus. */
+  on(window, OFFER_ANSWERED_EVENT, (e) => {
+    const detail = (e as CustomEvent<OfferAnsweredDetail>).detail;
+    if (!detail?.jobId) return;
+    const j = jobsData.find((x) => x.id === detail.jobId);
+    if (!j) return;
+    j.myAssignment = detail.response === "DECLINED" ? "DECLINED" : "ACCEPTED";
+    const rowCell = root.querySelector<HTMLElement>(
+      '#jobsBody .prow[data-id="' + sel(j.id) + '"] [data-cell="status"]',
+    );
+    if (rowCell) rowCell.innerHTML = statusPill(j) + awaitHint(j);
+    const pill = root.querySelector<HTMLElement>(
+      '#jobsCards .jcard[data-id="' + sel(j.id) + '"] [data-cell="status"]',
+    );
+    if (pill) {
+      const st = pillState(j);
+      pill.className = "pstatus " + st.cls;
+      pill.setAttribute("data-cell", "status");
+      pill.textContent = st.label;
+    }
+  });
 
   /** The schedule changed. Same contract as applyStatus: patch the two cells
    *  that print it, never re-render the list around the menu the user is in. */

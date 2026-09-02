@@ -1,0 +1,19 @@
+/* VIDEO ESTIMATOR — the one rule that cannot live in the CSS module.
+ *
+ * Lightning CSS rejects `@keyframes` inside a CSS module, and a module-local
+ * `animation: vtBlink …` would be hashed away from a keyframe declared
+ * anywhere else — so the blinking progress dot ships here as a literal global,
+ * scoped the same way blueprint-global.css scopes the dialog animations.
+ *
+ * Donor values verbatim (jobflex-videoestimator-blueprint.html):
+ *   .vt-prog-dot { width: 8px; height: 8px; background: var(--blueprint);
+ *                  animation: vtBlink 1s steps(1) infinite; }
+ *   @keyframes vtBlink { 50% { opacity: .2; } }
+ */
+
+@keyframes vtBlink { 50% { opacity: .2; } }
+
+.jf-blueprint .content .vt-prog-dot {
+  width: 8px; height: 8px; background: var(--blueprint);
+  animation: vtBlink 1s steps(1) infinite;
+}

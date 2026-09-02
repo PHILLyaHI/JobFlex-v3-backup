@@ -77,7 +77,10 @@ export const PSTATUS: Record<string, { label: string; cls: string }> = {
   ACCEPTED: { label: "Accepted", cls: "pstatus--accepted" },
   DECLINED: { label: "Declined", cls: "pstatus--declined" },
   EXPIRED: { label: "Expired", cls: "pstatus--expired" },
-  PAID: { label: "Completed", cls: "pstatus--paid" },
+  // COMPLETED = the linked job finished (stamped by updateJob); PAID = money
+  // collected. Both wear the green plate; the words carry the difference.
+  COMPLETED: { label: "Completed", cls: "pstatus--paid" },
+  PAID: { label: "Paid", cls: "pstatus--paid" },
   // Not a donor status, but a real one in the schema — a row carrying it must
   // still render a plate instead of crashing the row builder.
   ARCHIVED: { label: "Archived", cls: "" },

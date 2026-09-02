@@ -1,24 +1,121 @@
-import { PageHeader } from "@/components/ui/PageHeader";
-import { getIntegrationStatuses } from "@/lib/sdk/integrations";
-import { HealthDashboard, type ServiceStatus } from "@/components/admin/HealthDashboard";
+import { requirePlatformAdmin } from "@/lib/orgContext";
+import { db } from "@/lib/db";
+import { getTrafficSnapshot } from "@/lib/posthog";
+import { checkStripeReachable, isStripeWebhookConfigured } from "@/lib/sdk/integrations";
+import { isStripeEnabled } from "@/lib/sdk/stripe";
+import { isLiveStripeKey, isStripeWriteAllowed } from "@/lib/stripeSafety";
+import { isResendEnabled } from "@/lib/sdk/resend";
+import { isSmtpEnabled } from "@/lib/sdk/smtp";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { isBlobEnabled } from "@/lib/sdk/blob";
+import { WebhookEventStatus } from "@/lib/prismaEnums";
+import {
+  AdminHealthContent,
+  type HealthData,
+  type ProbeState,
+  type WebhookSnapshot,
+} from "@/components/v3/admin-health/health-content";
 
-export default function AdminHealthPage() {
-  const statuses = getIntegrationStatuses();
-  const services: ServiceStatus[] = statuses.map((s, i) => ({
-    ...s,
-    // Synthetic latency: deterministic per service (so refreshes don't churn).
-    latencyMs: s.enabled ? 60 + ((s.key.charCodeAt(0) * 11 + i * 17) % 220) : 0,
-    lastChecked: new Date().toISOString(),
-  }));
+/** A real round trip to the database — the cheapest statement that proves it. */
+async function probeDatabase(): Promise<{ state: ProbeState; message: string | null }> {
+  try {
+    await db.$queryRaw`SELECT 1`;
+    return { state: "ok", message: null };
+  } catch (err) {
+    return {
+      state: "error",
+      message: err instanceof Error ? err.message : "The database did not answer.",
+    };
+  }
+}
 
-  return (
-    <>
-      <PageHeader
-        eyebrow="Platform"
-        title="Health & telemetry"
-        description="Live status of every integrated service. Disabled cards just need an API key."
-      />
-      <HealthDashboard services={services} />
-    </>
-  );
+/** Rows the Stripe webhook route and the reconcile cron wrote. Nothing derived. */
+async function readWebhooks(since: Date): Promise<WebhookSnapshot> {
+  const [last, received24h, processed24h, failed24h, lastFailure] = await Promise.all([
+    db.webhookEvent.findFirst({ orderBy: { receivedAt: "desc" }, select: { receivedAt: true } }),
+    db.webhookEvent.count({ where: { receivedAt: { gte: since } } }),
+    db.webhookEvent.count({
+      where: { receivedAt: { gte: since }, status: WebhookEventStatus.PROCESSED },
+    }),
+    db.webhookEvent.count({
+      where: { receivedAt: { gte: since }, status: WebhookEventStatus.FAILED },
+    }),
+    db.webhookEvent.findFirst({
+      where: { status: WebhookEventStatus.FAILED },
+      orderBy: { receivedAt: "desc" },
+      select: { type: true, receivedAt: true, error: true },
+    }),
+  ]);
+
+  return {
+    lastAt: last ? last.receivedAt.toISOString() : null,
+    received24h,
+    processed24h,
+    failed24h,
+    lastFailure: lastFailure
+      ? {
+          type: lastFailure.type,
+          at: lastFailure.receivedAt.toISOString(),
+          error: lastFailure.error,
+        }
+      : null,
+  };
+}
+
+export default async function AdminHealthPage() {
+  await requirePlatformAdmin();
+
+  const now = new Date();
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  const [database, stripe, traffic] = await Promise.all([
+    probeDatabase(),
+    checkStripeReachable(),
+    getTrafficSnapshot(),
+  ]);
+
+  // Everything below reads the database, so it only runs once the probe above
+  // says there is one to read. A failed probe leaves these null and the card
+  // says so rather than showing zeros.
+  let webhooks: WebhookSnapshot | null = null;
+  let reconcileAt: string | null = null;
+  if (database.state === "ok") {
+    try {
+      const [snapshot, sync] = await Promise.all([
+        readWebhooks(since),
+        db.syncState.findUnique({ where: { key: "reconcile-stripe" } }),
+      ]);
+      webhooks = snapshot;
+      reconcileAt = sync ? sync.updatedAt.toISOString() : null;
+    } catch {
+      webhooks = null;
+    }
+  }
+
+  const stripeEnabled = isStripeEnabled();
+  const data: HealthData = {
+    generatedAt: now.toISOString(),
+    database,
+    stripeApi: {
+      state: stripe.state,
+      message: stripe.state === "error" ? stripe.message : null,
+    },
+    analytics: {
+      state: traffic.status === "ok" ? "ok" : traffic.status === "error" ? "error" : "off",
+      message: traffic.status === "error" ? traffic.message : null,
+    },
+    emailTransport: isResendEnabled() ? "resend" : isSmtpEnabled() ? "smtp" : "none",
+    smsConfigured: isTwilioEnabled(),
+    blobConfigured: isBlobEnabled(),
+    stripeConfigured: stripeEnabled,
+    stripeWebhookSecret: isStripeWebhookConfigured(),
+    stripeKeyMode: !stripeEnabled ? "none" : isLiveStripeKey() ? "live" : "test",
+    stripeWritesAllowed: isStripeWriteAllowed(),
+    cronSecret: Boolean(process.env.CRON_SECRET),
+    adminDoor: Boolean(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD),
+    webhooks,
+    reconcileAt,
+  };
+
+  return <AdminHealthContent data={data} />;
 }

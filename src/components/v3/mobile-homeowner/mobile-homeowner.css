@@ -407,13 +407,6 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
-.jf-mobile-homeowner .pill i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success);
-  animation: jfmh-blink 1.9s infinite;
-}
 /* The donor pins line 2 with `white-space: nowrap`, which overflows a 320px
    viewport by ~14px once the inverse plate's padding is counted. Dropped, and
    the plate's horizontal padding trimmed 13px → 9px, so the line wraps
@@ -566,12 +559,16 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
   color: var(--ink);
 }
 .jf-mobile-homeowner .desc::placeholder { color: var(--muted); }
+/* One focus ring for the field and its category chip. */
+.jf-mobile-homeowner .desc-wrap { display: flex; flex-direction: column; padding-bottom: 2px; }
+.jf-mobile-homeowner .desc-wrap:focus-within { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+.jf-mobile-homeowner .desc:focus-visible { outline: none; }
 .jf-mobile-homeowner .guess {
   display: inline-flex;
   align-items: center;
   gap: 9px;
   align-self: flex-start;
-  margin: 0 16px 4px;
+  margin: 10px 16px 6px;
   min-height: 44px;
   padding: 8px 12px;
   text-align: left;
@@ -585,7 +582,6 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
   line-height: 1.35;
   animation: jfmh-slidein 0.3s var(--ease-out);
 }
-.jf-mobile-homeowner .guess i { flex-shrink: 0; width: 6px; height: 6px; background: var(--success); }
 .jf-mobile-homeowner .ups { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 16px 2px; }
 .jf-mobile-homeowner .up {
   position: relative;
@@ -1619,4 +1615,18 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
   }
   .jf-mobile-homeowner .rv { opacity: 1; transform: none; }
   .jf-mobile-homeowner .anim { opacity: 1; animation: none; }
+}
+
+/* Send failure — shown in place so the contact answers stay on screen. */
+.jf-mobile-homeowner .send-err {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border: 1.5px solid var(--danger, #a83232);
+  border-left-width: 5px;
+  border-radius: var(--radius);
+  background: rgba(168, 50, 50, 0.08);
+  color: var(--danger, #a83232);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.45;
 }

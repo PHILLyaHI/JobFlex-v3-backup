@@ -24,6 +24,28 @@ export async function middleware(req: NextRequest) {
     req.cookies.get("authjs.session-token")?.value ??
     req.cookies.get("__Secure-authjs.session-token")?.value;
 
+  // Platform admin console. Two cookies open it: the authjs session (a user
+  // flagged isPlatformAdmin) or the signed `jf_admin` cookie minted by the
+  // username/password login (src/actions/adminAuth.ts). Presence only, like the
+  // rule below — the (admin) layout verifies the signature and the DB flag.
+  // /admin/login is reachable with neither, or the door could never be opened.
+  // The pathname header is set here too: the (admin) layout reads it to render
+  // the login page bare instead of guarding it (a guard there would redirect
+  // the login page to itself).
+  if (pathname.startsWith("/admin")) {
+    const adminHeaders = new Headers(req.headers);
+    adminHeaders.set("x-pathname", pathname);
+    const isLogin = pathname === "/admin/login" || pathname.startsWith("/admin/login/");
+    const adminCookie = req.cookies.get("jf_admin")?.value;
+    if (!isLogin && !sessionToken && !adminCookie) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/admin/login";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next({ request: { headers: adminHeaders } });
+  }
+
   if (!sessionToken) {
     const url = req.nextUrl.clone();
     url.pathname = pathname.startsWith("/influencer") ? "/influencer/login" : "/auth/login";

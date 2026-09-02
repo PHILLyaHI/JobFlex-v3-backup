@@ -34,6 +34,8 @@ export type CompanyOrgState = {
   logoUrl: string | null;
   /** Canonical trades (lib/tradeTypes) the org takes platform leads for. */
   tradeTypes: string[];
+  /** What the shop typed under the "Other" chip, or "" when it is not picked. */
+  otherTrade: string;
   leadOffersEnabled: boolean;
   publicProfileEnabled: boolean;
   landingHeroTitle: string;
