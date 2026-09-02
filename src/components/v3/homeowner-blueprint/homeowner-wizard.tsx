@@ -73,6 +73,8 @@ export function HomeownerWizard() {
      "we've sent it" pane over a failed submission is the one outcome worse
      than an error. */
   const [sending, setSending] = useState(false);
+  // The status-page path submitHomeownerRequest hands back — Done links it.
+  const [statusPath, setStatusPath] = useState<string | null>(null);
   const [sendErr, setSendErr] = useState("");
 
   const winRef = useRef<HTMLDivElement>(null);
@@ -132,7 +134,7 @@ export function HomeownerWizard() {
       .filter(Boolean)
       .join("\n");
     try {
-      await submitHomeownerRequest({
+      const res = await submitHomeownerRequest({
         name,
         email,
         phone: phone || undefined,
@@ -140,6 +142,7 @@ export function HomeownerWizard() {
         projectType: category ?? undefined,
         description: extra ? desc.trim() + "\n\n" + extra : desc.trim(),
       });
+      setStatusPath(res.statusPath ?? null);
       setStep(4);
     } catch (err) {
       setSendErr(
@@ -489,9 +492,18 @@ export function HomeownerWizard() {
         Verified local contractors are reviewing your scope now. Expect 3–5 line-item proposals in your
         inbox — the first usually lands within 4 hours.
       </p>
+      {statusPath && (
+        <p className="done-p">
+          {/* The same link the confirmation email carries — the one place the
+              request can be followed (and, later, re-matched). */}
+          <a href={statusPath} style={{ textDecoration: "underline", textUnderlineOffset: 3 }}>
+            Track your request →
+          </a>
+        </p>
+      )}
       <button className="restart" type="button"
         onClick={() => {
-          setStep(0); setDesc(""); setCategory(null);
+          setStep(0); setDesc(""); setCategory(null); setStatusPath(null);
           setUploads([]); setAnswers([]); setContact(CONTACT_FIELDS.map(() => ""));
         }}>
         Start another project

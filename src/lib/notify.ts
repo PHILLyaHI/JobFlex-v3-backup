@@ -26,7 +26,13 @@ import {
   buildSupportTicket,
 } from "@/lib/email/build/operator";
 import { buildAppointmentAssignment, buildJobAssignment } from "@/lib/email/build/worker";
-import { buildRequestReceived, buildHomeownerMatched } from "@/lib/email/build/platform";
+import {
+  buildRequestReceived,
+  buildHomeownerMatched,
+  buildShopClientReroute,
+  buildHomeownerRerouting,
+  buildHomeownerManualQueue,
+} from "@/lib/email/build/platform";
 import { parseGmailSettings } from "@/lib/settings";
 
 export { formatUSD };
@@ -507,7 +513,11 @@ export async function notifyHomeownerRequestReceived(platformLeadId: string) {
   if (!pl) return { skipped: true as const };
 
   const { subject, html } = renderEmail(
-    buildRequestReceived({ name: pl.name, projectType: pl.projectType ?? null }),
+    buildRequestReceived({
+      name: pl.name,
+      projectType: pl.projectType ?? null,
+      statusUrl: await statusUrlFor(pl),
+    }),
   );
   await sendEmail({ to: pl.email, subject, html });
 
@@ -595,6 +605,7 @@ export async function notifyHomeownerMatched(platformLeadId: string) {
       phone: org.phone,
       rating,
       projectType: pl.detectedTrade ?? pl.projectType ?? null,
+      statusUrl: await statusUrlFor(pl),
     }),
   );
   await sendEmail({
@@ -610,6 +621,90 @@ export async function notifyHomeownerMatched(platformLeadId: string) {
       `JobFlex: you're matched! ${org.name} will contact you about your ${pl.detectedTrade ?? "project"}${org.phone ? ` — or call them at ${org.phone}` : ""}.`,
     ).catch(() => null);
   }
+  return { skipped: false as const, enabled: isEmailEnabled() };
+}
+
+/** The homeowner's status page URL, or null for legacy rows with no token. */
+async function statusUrlFor(pl: { accessToken: string | null }): Promise<string | null> {
+  if (!pl.accessToken) return null;
+  return `${await appBaseUrl()}/request/${pl.accessToken}`;
+}
+
+// ── "Find me another contractor" (homeowner re-route) ────────────────────────
+
+/**
+ * To the shop that HAD the lead: the client asked for another contractor.
+ * Honest, with their reason when they gave one, and explicit that the shop's
+ * standing is untouched (owner's rules #4–5).
+ */
+export async function notifyShopClientRequestedReroute(
+  platformLeadId: string,
+  prevOrgId: string,
+  reason: string | null,
+) {
+  const [pl, org] = await Promise.all([
+    db.platformLead.findUnique({ where: { id: platformLeadId } }),
+    db.organization.findUnique({
+      where: { id: prevOrgId },
+      select: { name: true, billingEmail: true },
+    }),
+  ]);
+  if (!pl || !org) return { skipped: true as const };
+
+  const to = await ownerEmailFor(prevOrgId, org.billingEmail);
+  if (!to) return { skipped: true as const };
+
+  const { subject, html } = renderEmail(
+    buildShopClientReroute({
+      orgName: org.name,
+      homeownerName: pl.name,
+      projectType: pl.detectedTrade ?? pl.projectType ?? null,
+      reason,
+    }),
+  );
+  await sendEmail({ to, subject, html });
+  return { skipped: false as const, enabled: isEmailEnabled() };
+}
+
+/** To the homeowner, right after their button press: we're re-matching. */
+export async function notifyHomeownerRerouting(platformLeadId: string) {
+  const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
+  if (!pl) return { skipped: true as const };
+
+  const { subject, html } = renderEmail(
+    buildHomeownerRerouting({
+      name: pl.name,
+      projectType: pl.detectedTrade ?? pl.projectType ?? null,
+      statusUrl: await statusUrlFor(pl),
+    }),
+  );
+  await sendEmail({ to: pl.email, subject, html });
+
+  if (pl.phone && isTwilioEnabled()) {
+    await sendSMS(
+      pl.phone,
+      `JobFlex: got it — we're matching your ${pl.detectedTrade ?? "project"} request with another local pro. You'll hear back within 24 hours.`,
+    ).catch(() => null);
+  }
+  return { skipped: false as const, enabled: isEmailEnabled() };
+}
+
+/**
+ * To the homeowner when the automatic pool ran out: a person takes over, no
+ * timeframe promised (owner's rule #3).
+ */
+export async function notifyHomeownerManualQueue(platformLeadId: string) {
+  const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
+  if (!pl) return { skipped: true as const };
+
+  const { subject, html } = renderEmail(
+    buildHomeownerManualQueue({
+      name: pl.name,
+      projectType: pl.detectedTrade ?? pl.projectType ?? null,
+      statusUrl: await statusUrlFor(pl),
+    }),
+  );
+  await sendEmail({ to: pl.email, subject, html });
   return { skipped: false as const, enabled: isEmailEnabled() };
 }
 

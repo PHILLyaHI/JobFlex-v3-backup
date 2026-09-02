@@ -13,6 +13,9 @@ import {
   buildPasswordReset,
   buildRequestReceived,
   buildHomeownerMatched,
+  buildShopClientReroute,
+  buildHomeownerRerouting,
+  buildHomeownerManualQueue,
   buildPartnerInvite,
   buildTestEmail,
 } from "./build/platform";
@@ -441,22 +444,55 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
   {
     id: "b-request-received",
     label: "19 · buildRequestReceived()",
-    note: "Platform lockup. Solo anchor, no CTA — nothing to click (principle 06·a).",
+    note: "Platform lockup. The CTA is the homeowner's one link into the system — the status page.",
     doc: buildRequestReceived({
       name: "Dana Whitfield",
       projectType: "Kitchen remodel",
+      statusUrl: "https://jobflex.app/request/tok_fixture",
     }),
   },
   {
     id: "b-homeowner-matched",
     label: "20 · buildHomeownerMatched()",
-    note: "Platform lockup even though the copy names the matched shop — the mail is still from JobFlex, not the org (principle 20). No CTA.",
+    note: "Platform lockup even though the copy names the matched shop — the mail is still from JobFlex, not the org (principle 20). CTA opens the status page; the fine print names the re-match option.",
     doc: buildHomeownerMatched({
       name: "Dana Whitfield",
       orgName: "Cedar & Oak Builders",
       phone: "(503) 555-0142",
       rating: "4.8",
       projectType: "Kitchen remodel",
+      statusUrl: "https://jobflex.app/request/tok_fixture",
+    }),
+  },
+  {
+    id: "b-shop-client-reroute",
+    label: "20c · buildShopClientReroute()",
+    note: "To the shop that HAD the lead: honest that the client asked for another contractor (owner's rule #4), with their reason when given, explicit that standing is untouched.",
+    doc: buildShopClientReroute({
+      orgName: "Cedar & Oak Builders",
+      homeownerName: "Dana Whitfield",
+      projectType: "Kitchen remodel",
+      reason: "Never heard from them",
+    }),
+  },
+  {
+    id: "b-homeowner-rerouting",
+    label: "20d · buildHomeownerRerouting()",
+    note: "Confirmation right after the homeowner's re-match button — same 24h anchor as the original receipt.",
+    doc: buildHomeownerRerouting({
+      name: "Dana Whitfield",
+      projectType: "Kitchen remodel",
+      statusUrl: "https://jobflex.app/request/tok_fixture",
+    }),
+  },
+  {
+    id: "b-homeowner-manual-queue",
+    label: "20e · buildHomeownerManualQueue()",
+    note: "The pool ran dry (owner's rule #3): a person takes over and no timeframe is promised.",
+    doc: buildHomeownerManualQueue({
+      name: "Dana Whitfield",
+      projectType: "Kitchen remodel",
+      statusUrl: "https://jobflex.app/request/tok_fixture",
     }),
   },
   {

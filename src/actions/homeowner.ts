@@ -1,4 +1,5 @@
 "use server";
+import { randomBytes } from "crypto";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { detectTrade } from "@/lib/ai/detectTrade";
@@ -98,6 +99,10 @@ export async function submitHomeownerRequest(raw: unknown) {
   const platformLead = await db.platformLead.create({
     data: {
       homeownerRequestId: req.id,
+      // Capability token for the status page (/request/[token]): the link in
+      // the confirmation email IS the authorization — same pattern as the
+      // admin cookie's HMAC. 144 bits, URL-safe.
+      accessToken: randomBytes(18).toString("base64url"),
       name: data.name,
       email: data.email,
       phone: data.phone,
@@ -146,7 +151,12 @@ export async function submitHomeownerRequest(raw: unknown) {
     }
   }
 
-  return { ok: true, platformLeadId: platformLead.id };
+  return {
+    ok: true,
+    platformLeadId: platformLead.id,
+    /** The homeowner's status page — the wizard's Done screen links it. */
+    statusPath: `/request/${platformLead.accessToken}`,
+  };
 }
 
 // ── Adaptive clarify questions ─────────────────────────────────────────────

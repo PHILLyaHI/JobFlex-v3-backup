@@ -496,6 +496,10 @@ model PlatformLead {
   aiConfidence       Float?
   status             String    @default("MATCHING") // MATCHING | OFFERED | MATCHED | MANUAL_QUEUE
   attemptCount       Int       @default(0)
+  // Capability token for the homeowner's status page (/request/[token]) — the
+  // secret IS the authorization, like jf_admin's HMAC or CRON_SECRET. Nullable:
+  // rows created before the page existed never got one and stay unreachable.
+  accessToken        String?   @unique
   rankingJson        String? // snapshot: ordered [{orgId,orgName,score,distanceMi,distanceScore,ratingScore,respScore,fallback}]
   queueReason        String? // NO_CANDIDATES | EXHAUSTED
   matchedOrgId       String?
@@ -516,9 +520,13 @@ model LeadOffer {
   platformLeadId     String
   organizationId     String
   attempt            Int // 1..3
-  status             String    @default("OFFERED") // OFFERED | ACCEPTED | DECLINED | EXPIRED | CANCELLED
+  status             String    @default("OFFERED") // OFFERED | ACCEPTED | DECLINED | EXPIRED | CANCELLED | REJECTED_BY_CLIENT
   score              Float
   scoreBreakdownJson String? // {distanceMi,distanceScore,ratingScore,respScore,total,fallback}
+  // Why the homeowner asked for another contractor (REJECTED_BY_CLIENT rows
+  // only) — one of the portal's canned options or their own words. Optional by
+  // design: the dialog skips in one tap.
+  declineReason      String?
   expiresAt          DateTime
   respondedAt        DateTime?
   respondedById      String?

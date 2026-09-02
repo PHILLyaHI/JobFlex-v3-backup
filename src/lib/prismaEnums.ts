@@ -71,6 +71,7 @@ export const LeadOfferStatus = {
   DECLINED: "DECLINED",
   EXPIRED: "EXPIRED",
   CANCELLED: "CANCELLED", // superseded by accept elsewhere or admin manual assign
+  REJECTED_BY_CLIENT: "REJECTED_BY_CLIENT", // homeowner pressed "find me another" after a match
 } as const;
 export type LeadOfferStatus = (typeof LeadOfferStatus)[keyof typeof LeadOfferStatus];
 
