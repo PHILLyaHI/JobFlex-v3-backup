@@ -122,10 +122,6 @@ const MobileMessages = dynamic(
   () => import("@/app/(mobile)/mobile-messages-v2/mobile-messages").then((m) => m.MobileMessages),
   { ssr: false, loading: MobileHold },
 );
-const MobileAnnouncements = dynamic(
-  () => import("@/app/(mobile)/mobile-announcements-v2/mobile-announcements").then((m) => m.MobileAnnouncements),
-  { ssr: false, loading: MobileHold },
-);
 const MobileReviews = dynamic(
   () => import("@/app/(mobile)/mobile-reviews-v2/mobile-reviews").then((m) => m.MobileReviews),
   { ssr: false, loading: MobileHold },
@@ -174,7 +170,6 @@ const HANDHELD_SURFACES: Record<string, React.ComponentType> = {
   "/dashboard/fence-estimator": MobileFenceEstimator,
   "/dashboard/phone": MobilePhone,
   "/dashboard/messages": MobileMessages,
-  "/dashboard/announcements": MobileAnnouncements,
   "/dashboard/reviews": MobileReviews,
   "/dashboard/trade": MobileTrade,
   "/dashboard/referrals": MobileReferrals,
@@ -259,7 +254,6 @@ const HANDHELD_SEEN: Record<string, SeenKey> = {
   "/dashboard/proposals": "proposals",
   "/dashboard/calendar": "calendar",
   "/dashboard/workers": "workers",
-  "/dashboard/announcements": "announcements",
   "/dashboard/trade": "trade",
   "/dashboard/phone": "phone",
   "/dashboard/referrals": "referrals",

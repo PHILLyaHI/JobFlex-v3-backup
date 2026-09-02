@@ -39,7 +39,6 @@ import jobsStyles from "@/components/v3/jobs-blueprint/jobs.module.css";
 import leadsStyles from "@/components/v3/leads-blueprint/leads.module.css";
 import projectsStyles from "@/components/v3/projects-blueprint/projects.module.css";
 import workersStyles from "@/components/v3/workers-blueprint/workers.module.css";
-import announcementsStyles from "@/components/v3/announcements-blueprint/announcements.module.css";
 import estimatorsStyles from "@/components/v3/estimators-blueprint/estimators.module.css";
 import "@/components/v3/estimators-blueprint/estimators-global.css";
 import fenceEstimatorStyles from "@/components/v3/fence-estimator-blueprint/fence-estimator.module.css";
@@ -66,7 +65,6 @@ const PAGE_STYLES: Record<string, string> = {
   // scoped `:global(.jf-blueprint .content) .cls`, and the page component
   // imports it directly. Nothing has to be registered here, and no page can
   // leak its rules onto a sibling that shares a pageKey.
-  announcements: announcementsStyles.bp,
   calendar: calendarStyles.bp,
   clients: clientsStyles.bp,
   company: companyStyles.bp,

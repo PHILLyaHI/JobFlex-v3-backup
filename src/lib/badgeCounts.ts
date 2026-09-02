@@ -16,7 +16,6 @@ export const SEEN_SURFACES = {
   calendar: "/dashboard/calendar",
   jobs: "/dashboard/jobs",
   workers: "/dashboard/workers",
-  announcements: "/dashboard/announcements",
   trade: "/dashboard/trade",
   phone: "/dashboard/phone",
   // Not a nav item: the calendar's crew-confirmation bell. Seen-stamped when
@@ -103,21 +102,19 @@ export async function getBadgeCounts(
   const seenAt = (key: SeenKey) => seenRows.find((r) => r.key === key)?.seenAt;
 
   if (role === "INSTALLER") {
-    // A field worker's world: their own assignments, their inbox, and the
-    // org announcements. The jobs badge is SEEN-gated on purpose — opening
+    // A field worker's world: their own assignments, their inbox and their
+    // calendar. The jobs badge is SEEN-gated on purpose — opening
     // the offers popup clears it even without an accept/decline (owner
     // request 2026-08-21); the offers themselves stay listed until answered.
-    const [jobsNew, messagesUnread, calendarNew, announcementsNew] = await Promise.all([
+    const [jobsNew, messagesUnread, calendarNew] = await Promise.all([
       countNewForSurface("jobs", organizationId, seenAt("jobs"), userId),
       getUnreadMessageCount(organizationId, userId),
       countNewForSurface("calendar", organizationId, seenAt("calendar"), userId),
-      countNewForSurface("announcements", organizationId, seenAt("announcements"), userId),
     ]);
     return {
       "/dashboard/jobs": jobsNew,
       "/dashboard/messages": messagesUnread,
       "/dashboard/calendar": calendarNew,
-      "/dashboard/announcements": announcementsNew,
     };
   }
 
@@ -131,7 +128,6 @@ export async function getBadgeCounts(
     calendarNew,
     jobsNew,
     workersNew,
-    announcementsNew,
     tradeNew,
     phoneMissed,
   ] = await Promise.all([
@@ -144,7 +140,6 @@ export async function getBadgeCounts(
     countNewForSurface("calendar", organizationId, seenAt("calendar"), userId),
     countNewForSurface("jobs", organizationId, seenAt("jobs"), userId),
     countNewForSurface("workers", organizationId, seenAt("workers")),
-    countNewForSurface("announcements", organizationId, seenAt("announcements"), userId),
     countNewForSurface("trade", organizationId, seenAt("trade"), userId),
     countNewForSurface("phone", organizationId, seenAt("phone")),
   ]);
@@ -163,7 +158,6 @@ export async function getBadgeCounts(
     "/dashboard/calendar": calendarNew,
     "/dashboard/jobs": jobsNew,
     "/dashboard/workers": workersNew,
-    "/dashboard/announcements": announcementsNew,
     "/dashboard/trade": tradeNew,
     "/dashboard/phone": phoneMissed,
   };
@@ -179,8 +173,8 @@ export async function countNewForSurface(
   key: SeenKey,
   organizationId: string,
   since: Date | undefined,
-  // Needed by the person-scoped surfaces (calendar / jobs / trade /
-  // announcements); the org-scoped ones ignore it.
+  // Needed by the person-scoped surfaces (calendar / jobs / trade); the
+  // org-scoped ones ignore it.
   userId?: string,
 ): Promise<number> {
   const after = since ? { gt: since } : undefined;
@@ -217,17 +211,6 @@ export async function countNewForSurface(
       // proposal link — that's what separates them from proposal accepts).
       return db.activityEvent.count({
         where: { organizationId, kind: "ACCEPTED", proposalId: null, createdAt: after },
-      });
-    }
-    case "announcements": {
-      // Org + platform-wide announcements still in force, minus this
-      // author's own (posting one should not badge the poster).
-      return db.announcement.count({
-        where: {
-          OR: [{ organizationId }, { scope: "PLATFORM" }],
-          AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }],
-          createdAt: after,
-        },
       });
     }
     case "trade": {

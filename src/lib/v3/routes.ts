@@ -145,7 +145,6 @@ export const V3_PORTED_ROUTES = {
   mobileFenceEstimatorV2: "/mobile-fence-estimator-v2",
   mobilePhoneV2: "/mobile-phone-v2",
   mobileMessagesV2: "/mobile-messages-v2",
-  mobileAnnouncementsV2: "/mobile-announcements-v2",
   mobileReviewsV2: "/mobile-reviews-v2",
   mobileTradeV2: "/mobile-trade-v2",
   mobileReferralsV2: "/mobile-referrals-v2",

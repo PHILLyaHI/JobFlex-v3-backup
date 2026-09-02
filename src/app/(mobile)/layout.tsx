@@ -49,7 +49,6 @@ const DESKTOP_TWIN: Record<string, string> = {
   "/mobile-fence-estimator-v2": "/dashboard/fence-estimator",
   "/mobile-phone-v2": "/dashboard/phone",
   "/mobile-messages-v2": "/dashboard/messages",
-  "/mobile-announcements-v2": "/dashboard/announcements",
   "/mobile-reviews-v2": "/dashboard/reviews",
   "/mobile-trade-v2": "/dashboard/trade",
   "/trade-services": "/dashboard/trade",

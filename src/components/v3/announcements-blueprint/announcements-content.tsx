@@ -24,10 +24,10 @@ import { initAnnouncementsContent } from "./announcements-behavior";
 import type { Announcement } from "./announcements-data";
 
 /**
- * @param entries the org's real announcements, read in the page's server
- *   component. The behavior module takes them as its starting state and then
- *   keeps itself in step with the database through the announcement server
- *   actions (publish → createAnnouncement, retire → dismissAnnouncement).
+ * @param entries the platform's real announcements, read in the admin page's
+ *   server component. The behavior module takes them as its starting state and
+ *   then keeps itself in step with the database through the platform server
+ *   actions (publish → sendPlatformCampaign, retire → retirePlatformCampaign).
  */
 export function AnnouncementsContent({ entries }: { entries?: Announcement[] } = {}) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
@@ -47,7 +47,7 @@ export function AnnouncementsContent({ entries }: { entries?: Announcement[] } =
     <>
       <div className="page-head">
         <div>
-          <div className="kicker">Communication</div>
+          <div className="kicker">Platform · Communication</div>
           <h1 className="page-title">Announcements</h1>
         </div>
         <div className="page-actions">
@@ -65,7 +65,7 @@ export function AnnouncementsContent({ entries }: { entries?: Announcement[] } =
         <div className="an-head">
           <div>
             <div className="card-title">Active</div>
-            <div className="card-sub">Visible on every dashboard page right now.</div>
+            <div className="card-sub">Visible on every organization&rsquo;s dashboard right now.</div>
           </div>
           <span className="pstatus an-count" id="activeCount">0</span>
         </div>

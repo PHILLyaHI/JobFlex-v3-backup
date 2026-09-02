@@ -88,7 +88,6 @@ const groups: NavGroup[] = [
       },
       { href: "/dashboard/phone", label: "Phone", icon: <Phone className="h-4 w-4" /> },
       { href: "/dashboard/messages", label: "Messages", icon: <MessagesSquare className="h-4 w-4" /> },
-      { href: "/dashboard/announcements", label: "Announcements", icon: <Megaphone className="h-4 w-4" /> },
       { href: "/dashboard/reviews", label: "Reviews", icon: <Star className="h-4 w-4" /> },
       { href: "/dashboard/trade", label: "Trade board", icon: <MessageSquare className="h-4 w-4" /> },
       { href: "/dashboard/referrals", label: "Referrals", icon: <Gift className="h-4 w-4" /> },

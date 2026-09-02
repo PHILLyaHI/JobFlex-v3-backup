@@ -25,7 +25,7 @@ import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
 import { initSelectPopovers } from "@/components/v3/shared/select-popover";
-import { createAnnouncement, dismissAnnouncement } from "@/actions/announcements";
+import { retirePlatformCampaign, sendPlatformCampaign } from "@/actions/admin";
 import { longDate } from "@/lib/format";
 import { ANN_SEED, PRIORITY, type Announcement, type BannerModel } from "./announcements-data";
 
@@ -233,7 +233,7 @@ export function initAnnouncementsContent(
     box.textContent = msg || '';
     box.classList.toggle('is-hidden', !msg);
   }
-  /** Publish button label + disabled state while createAnnouncement is in flight. */
+  /** Publish button label + disabled state while the publish is in flight. */
   function setPublishing(on: boolean) {
     saving = on;
     const btn = root.querySelector<HTMLButtonElement>('#publishBtn');
@@ -286,10 +286,11 @@ export function initAnnouncementsContent(
   });
 
   // ================= WRITES (real server actions) =================
-  // src/actions/announcements.ts — the same two the classic page used. Both are
-  // org-scoped on the server (createAnnouncement is manager-gated) and both
-  // revalidate, so a reload reads back exactly what the board shows. The local
-  // array is patched only AFTER the action resolves; nothing here is a fake.
+  // src/actions/admin.ts — the board lives on the PLATFORM console now, so a
+  // publish writes an Announcement with scope="PLATFORM" (every tenant's
+  // banner reads it) and a retire stamps its expiry. Both are platform-admin
+  // gated and both revalidate, so a reload reads back exactly what the board
+  // shows. The local array is patched only AFTER the action resolves.
 
   /** Retire = the classic page's dismiss: the server stamps `expiresAt = now`,
    *  which drops the row out of `active` and into the archive on the next read. */
@@ -307,7 +308,7 @@ export function initAnnouncementsContent(
     btn.disabled = true;
     card.classList.add('is-busy');
     try {
-      await dismissAnnouncement(id);
+      await retirePlatformCampaign(id);
     } catch (err) {
       // The write did NOT land — leave the banner exactly where it is and say why.
       saving = false;
@@ -365,7 +366,7 @@ export function initAnnouncementsContent(
     setPublishing(true);
     let created: { id: string };
     try {
-      created = await createAnnouncement({ title, body, priority, expiresAt });
+      created = await sendPlatformCampaign({ title, body, priority, expiresAt });
     } catch (err) {
       setPublishing(false);
       showError('annErr', actionError(err));

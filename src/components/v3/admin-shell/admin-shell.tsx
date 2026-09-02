@@ -13,9 +13,15 @@
 // shell-behavior module (drawer, fluid scale, sidebar cascade, sliding
 // indicator, parallax) — then swaps in an admin sidebar and an admin topbar.
 //
-// Nothing is registered in PAGE_STYLES. data-page="admin" drives the
-// `[data-page]` token arbitration in blueprint-global.css (the dashboard
-// donor's hairline values) and is otherwise inert.
+// Nothing is registered in the dashboard shell's PAGE_STYLES. data-page="admin"
+// drives the `[data-page]` token arbitration in blueprint-global.css (the
+// dashboard donor's hairline values) and is otherwise inert.
+//
+// ADMIN_PAGE_STYLES below is this shell's own tiny version of that map: the
+// announcements board moved here from the contractor dashboard with its donor
+// stylesheet intact, and its rules are `.bp :global(.content …)` — they need
+// the module's hashed `.bp` on the shell root, applied only while that page is
+// the one on screen (same isolation argument as the dashboard map).
 //
 // CONTENT CONTRACT for the page agents: pages are server components returning
 // fragments that become `.content` children. The donor classes they can rely
@@ -30,9 +36,22 @@ import { Sprite } from "@/components/v3/blueprint-shell/sprite";
 import proposalStyles from "@/components/v3/proposals-blueprint/proposals.module.css";
 import dashboardStyles from "@/components/v3/dashboard-blueprint/blueprint.module.css";
 import "@/components/v3/dashboard-blueprint/blueprint-global.css";
+import announcementsStyles from "@/components/v3/announcements-blueprint/announcements.module.css";
 import styles from "./admin-shell.module.css";
 import { AdminSidebar } from "./admin-sidebar";
 import { AdminTopbar, type SignOutMode } from "./admin-topbar";
+
+/** Per-page stylesheets — active page only, keyed by route prefix. */
+const ADMIN_PAGE_STYLES: Record<string, string> = {
+  "/admin/announcements": announcementsStyles.bp,
+};
+
+function adminPageStyle(pathname: string): string | null {
+  for (const [prefix, cls] of Object.entries(ADMIN_PAGE_STYLES)) {
+    if (pathname === prefix || pathname.startsWith(prefix + "/")) return cls;
+  }
+  return null;
+}
 
 export function AdminShell({
   children,
@@ -68,7 +87,9 @@ export function AdminShell({
   return (
     <div
       ref={rootRef}
-      className={[proposalStyles.bp, dashboardStyles.bp, "jf-blueprint", styles.admin].join(" ")}
+      className={[proposalStyles.bp, dashboardStyles.bp, adminPageStyle(pathname), "jf-blueprint", styles.admin]
+        .filter(Boolean)
+        .join(" ")}
       data-page="admin"
     >
       <Sprite />

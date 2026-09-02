@@ -107,7 +107,6 @@ const NAV: {
       { label: "Fence estimator", icon: "i-fence", href: "/dashboard/advanced-ai" },
       { label: "Phone", icon: "i-phone", href: "/dashboard/phone" },
       { label: "Messages", icon: "i-msg", href: "/dashboard/messages" },
-      { label: "Announcements", icon: "i-megaphone", href: "/dashboard/announcements" },
       { label: "Reviews", icon: "i-thumb", href: "/dashboard/reviews" },
       { label: "Trade board", icon: "i-board", href: "/dashboard/trade" },
       { label: "Referrals", icon: "i-gift", href: "/dashboard/referrals" },

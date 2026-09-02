@@ -41,8 +41,10 @@ import { getBlockedCustomPages } from "@/lib/customPageAccess";
 import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
 import { isCustomBlockedPath } from "@/lib/customPlan";
 import { getBadgeCounts } from "@/lib/badgeCounts";
+import { db } from "@/lib/db";
 import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/responsive-dashboard-shell";
 import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
+import { DashboardAnnouncementDismiss } from "@/app/(dashboard)/announcement-dismiss";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
  *  sidebar shows it to a human, so title-case it. */
@@ -70,6 +72,17 @@ export default async function DashboardBlueprintLayout({
   // The custom plan's page locks: hrefs this org did not buy, or null on every
   // other plan. Read beside the identity because both come from the same ctx.
   let lockedPages: string[] | null = null;
+  // Platform announcements — published from /admin/announcements, shown as a
+  // banner on every organization's dashboard. Read HERE because the shell is a
+  // client tree; a failed read costs the banner, never the page.
+  let announcements: Array<{
+    id: string;
+    title: string;
+    body: string;
+    priority: number;
+    createdAt: Date;
+    expiresAt: Date | null;
+  }> = [];
   try {
     const ctx = await requireOrg();
     role = ctx.role;
@@ -88,6 +101,17 @@ export default async function DashboardBlueprintLayout({
     lockedPages = await getBlockedCustomPages(ctx.organizationId).catch(() =>
       getBlockedCustomPages(ctx.organizationId),
     );
+    announcements = await db.announcement
+      .findMany({
+        where: {
+          scope: "PLATFORM",
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+        take: 6,
+        select: { id: true, title: true, body: true, priority: true, createdAt: true, expiresAt: true },
+      })
+      .catch(() => []);
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }
@@ -135,6 +159,7 @@ export default async function DashboardBlueprintLayout({
       badges={badges}
       locked={lockedPages ?? undefined}
     >
+      {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
       {customGate ?? children}
       {canHandleLeads ? <LeadOfferPopup /> : null}
     </ResponsiveDashboardShell>

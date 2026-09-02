@@ -192,24 +192,39 @@ const campaignInput = z.object({
   title: z.string().min(1),
   body: z.string().min(1),
   expiresInDays: z.number().min(1).max(365).optional(),
+  /** Absolute expiry — the announcements board publishes with a date, not a
+   *  day count. When both are sent, the absolute one wins. */
+  expiresAt: z.union([z.string(), z.date()]).nullable().optional(),
+  /** Banner tone: 0 normal · 1 warn · 2 high. Campaigns keeps its old 1. */
+  priority: z.number().min(0).max(2).optional(),
 });
 
 export async function sendPlatformCampaign(raw: unknown) {
   const user = await requirePlatformAdmin();
   const data = campaignInput.parse(raw);
 
-  // We need *some* organizationId for the FK; pick the user's first
-  // membership as the "issuer" — the ANNOUNCEMENT.scope=PLATFORM is what
-  // actually marks it as cross-tenant.
-  const m = await db.membership.findFirst({
-    where: { userId: user.id, role: { in: ["OWNER", "ADMIN"] } },
-    select: { organizationId: true },
-  });
-  if (!m) throw new Error("Need an admin/owner membership to issue platform campaigns.");
+  // We need *some* organizationId for the FK; the ANNOUNCEMENT.scope=PLATFORM
+  // is what actually marks it as cross-tenant. Prefer the admin's own
+  // membership, but a cookie-door platform admin (ADMIN_USERNAME login) has
+  // none — any organization serves as the FK anchor then, since the issuer
+  // org is never used for visibility.
+  const m =
+    (await db.membership.findFirst({
+      where: { userId: user.id, role: { in: ["OWNER", "ADMIN"] } },
+      select: { organizationId: true },
+    })) ??
+    (await db.organization
+      .findFirst({ select: { id: true } })
+      .then((o) => (o ? { organizationId: o.id } : null)));
+  if (!m) throw new Error("No organization exists yet to anchor the announcement row.");
 
-  const expiresAt = data.expiresInDays
-    ? new Date(Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000)
-    : null;
+  const expiresAt = data.expiresAt
+    ? data.expiresAt instanceof Date
+      ? data.expiresAt
+      : new Date(data.expiresAt)
+    : data.expiresInDays
+      ? new Date(Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000)
+      : null;
 
   const created = await db.announcement.create({
     data: {
@@ -217,7 +232,7 @@ export async function sendPlatformCampaign(raw: unknown) {
       title: data.title,
       body: data.body,
       scope: "PLATFORM",
-      priority: 1,
+      priority: data.priority ?? 1,
       expiresAt,
     },
   });
@@ -227,8 +242,26 @@ export async function sendPlatformCampaign(raw: unknown) {
   const organizations = await db.organization.count();
 
   revalidatePath("/admin/campaigns");
+  revalidatePath("/admin/announcements");
   revalidatePath("/dashboard"); // banner re-renders
   return { id: created.id, organizations };
+}
+
+/**
+ * Retire a platform announcement: stamp `expiresAt = now`, so it leaves every
+ * tenant's banner on the next read but stays on the board's archive — the
+ * announcements page's semantics, vs deletePlatformCampaign's hard delete.
+ */
+export async function retirePlatformCampaign(id: string) {
+  await requirePlatformAdmin();
+  const { count } = await db.announcement.updateMany({
+    where: { id, scope: "PLATFORM" },
+    data: { expiresAt: new Date() },
+  });
+  if (count === 0) throw new Error("That announcement no longer exists.");
+  revalidatePath("/admin/campaigns");
+  revalidatePath("/admin/announcements");
+  revalidatePath("/dashboard");
 }
 
 export async function deletePlatformCampaign(id: string) {

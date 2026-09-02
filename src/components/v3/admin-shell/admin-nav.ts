@@ -40,6 +40,7 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       { label: "Support", icon: "i-msg", href: "/admin/support" },
       { label: "Health", icon: "i-check", href: "/admin/health" },
       { label: "Integrations", icon: "i-link", href: "/admin/integrations" },
+      { label: "Announcements", icon: "i-bell", href: "/admin/announcements" },
       { label: "Campaigns", icon: "i-send", href: "/admin/campaigns" },
       { label: "Specialties", icon: "i-box", href: "/admin/specialties" },
     ],
