@@ -47,6 +47,17 @@ function actionError(err: unknown): string {
   return msg;
 }
 
+/** The most one line may hold — the server's own ceiling (actions/overhead.ts),
+ *  applied here as well so a run-on keystroke cannot paint a 40-digit figure
+ *  across the sheet before the server refuses it. A percent line tops out at
+ *  the whole of revenue. */
+const MAX_LINE = 100_000_000;
+const MAX_PCT = 100;
+
+/** How long after the last keystroke a month is written. Long enough to type
+ *  "4200" as one figure, short enough that leaving the tab never loses it. */
+const SAVE_AFTER_MS = 700;
+
 /** Ids for custom lines. Not a database id — the row is stored as JSON, so
  *  this only has to be unique within one sheet. */
 function lineId(): string {
@@ -85,7 +96,16 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
 
   // Opens on the newest month — the one being lived in, not the oldest on file.
   let idx = months.length - 1;
-  let saving = false;
+
+  // Autosave bookkeeping, per month key. A month is written SAVE_AFTER_MS
+  // after its last edit; an edit that lands while its write is on the wire
+  // marks it to go again as soon as that write returns, so the last keystroke
+  // always wins and no two writes for one month overlap.
+  const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const inFlight = new Set<string>();
+  const again = new Set<string>();
+  /** Months written during THIS visit — "Saved" is a receipt, not a state. */
+  const everSaved = new Set<string>();
 
   const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
   const esc = (s: string) =>
@@ -112,7 +132,7 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
       '<span class="oh-lbl">' + esc(label) + "</span>" +
       '<span class="oh-in">' +
       '<i class="oh-unit" data-unit="' + key + '">$</i>' +
-      '<input class="pinput oh-input" type="number" min="0" step="1" inputmode="decimal" ' +
+      '<input class="pinput oh-input" type="number" min="0" max="' + MAX_LINE + '" step="1" inputmode="decimal" ' +
       'data-k="' + key + '" placeholder="0" aria-label="' + esc(label) + '">' +
       "</span>" +
       (pctKey
@@ -134,7 +154,7 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
       'data-cfield="label" value="' + esc(c.label) + '" aria-label="Custom cost name">' +
       '<span class="oh-in">' +
       '<i class="oh-unit">$</i>' +
-      '<input class="pinput oh-input" type="number" min="0" step="1" inputmode="decimal" ' +
+      '<input class="pinput oh-input" type="number" min="0" max="' + MAX_LINE + '" step="1" inputmode="decimal" ' +
       'data-cfield="amount" placeholder="0" value="' + (c.amount ? esc(String(c.amount)) : "") + '" ' +
       'aria-label="Custom cost amount">' +
       "</span>" +
@@ -276,7 +296,9 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
     if (prev) prev.disabled = idx <= 0;
     if (next) next.disabled = idx >= months.length - 1;
 
-    note(dirty.has(m.key) ? "Unsaved" : "", dirty.has(m.key) ? "warn" : "");
+    if (inFlight.has(m.key)) note("Saving…", "");
+    else if (!dirty.has(m.key) && everSaved.has(m.key)) note("Saved", "ok");
+    else if (!dirty.has(m.key)) note("", "");
 
     opts.onTotals?.({ key: m.key, total: t.total, left: t.left, covered: t.covered, empty: t.empty });
   }
@@ -294,6 +316,26 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
   }
 
   // ================= EVENTS =================
+  /** Read a typed figure, clamped. When the clamp bites, the field is rewritten
+   *  so what is shown is what is stored — the user sees the ceiling, not a
+   *  figure the sheet silently ignored. */
+  function readFigure(input: HTMLInputElement, max: number): number {
+    const raw = Number(input.value);
+    let v = Number.isFinite(raw) && raw > 0 ? raw : 0;
+    if (v > max) {
+      v = max;
+      input.value = String(max);
+    }
+    return v;
+  }
+
+  function touched() {
+    const key = month().key;
+    dirty.add(key);
+    paintTotals();
+    scheduleSave(key);
+  }
+
   on(panel, "input", (e) => {
     const target = e.target as HTMLInputElement;
 
@@ -303,23 +345,21 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
       const line = sheet().custom.find((c) => c.id === crow.dataset.cid);
       if (!line) return;
       if (target.dataset.cfield === "label") line.label = target.value.slice(0, 40);
-      else {
-        const raw = Number(target.value);
-        line.amount = Number.isFinite(raw) && raw > 0 ? raw : 0;
-      }
-      dirty.add(month().key);
-      paintTotals();
+      else line.amount = readFigure(target, MAX_LINE);
+      touched();
       return;
     }
 
     const input = target.closest<HTMLInputElement>(".oh-input[data-k]");
     if (!input || !input.dataset.k) return;
     const s = sheet();
-    const raw = Number(input.value);
-    const v = Number.isFinite(raw) && raw > 0 ? raw : 0;
-    (s as unknown as Record<string, number>)[input.dataset.k] = v;
-    dirty.add(month().key);
-    paintTotals();
+    const row = input.closest<HTMLElement>(".oh-row");
+    const isPct = Boolean(row?.classList.contains("is-pct"));
+    (s as unknown as Record<string, number>)[input.dataset.k] = readFigure(
+      input,
+      isPct ? MAX_PCT : MAX_LINE,
+    );
+    touched();
   });
 
   on(panel, "click", (e) => {
@@ -342,6 +382,7 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
       if (amountKey) s[amountKey] = 0;
       dirty.add(month().key);
       render();
+      scheduleSave(month().key);
       return;
     }
 
@@ -350,9 +391,9 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
       if (lines.length >= OVERHEAD_CUSTOM_MAX) return;
       const line: OverheadCustomLine = { id: lineId(), label: "", amount: 0 };
       lines.push(line);
-      dirty.add(month().key);
       paintCustom();
-      // Straight into the name — the click said "I have a cost to add".
+      // Straight into the name — the click said "I have a cost to add". An
+      // empty line is not worth a write; the first keystroke into it is.
       panel
         .querySelector<HTMLInputElement>('[data-cid="' + line.id + '"] .oh-name')
         ?.focus();
@@ -366,48 +407,90 @@ export function initOverheadPanel(root: HTMLElement, opts: OverheadOptions): () 
       if (!cid) return;
       const s = sheet();
       s.custom = s.custom.filter((c) => c.id !== cid);
-      dirty.add(month().key);
       paintCustom();
-      paintTotals();
+      touched();
       return;
     }
 
     const step = el.closest<HTMLElement>("#ohPrev, #ohNext");
     if (step) {
+      // Leaving a month writes it now rather than in 700ms: the cursor is a
+      // deliberate act, and a write that is due should not trail behind it.
+      flush(month().key);
       idx = Math.max(0, Math.min(months.length - 1, idx + (step.id === "ohNext" ? 1 : -1)));
       render();
       return;
     }
-
-    if (el.closest("#ohSave")) {
-      void save();
-    }
   });
 
-  async function save() {
-    if (saving) return;
-    const btn = $("#ohSave") as HTMLButtonElement | null;
-    const m = month();
-    saving = true;
-    btn?.classList.add("is-busy");
-    if (btn) btn.disabled = true;
-    note("Saving…", "");
+  // ================= AUTOSAVE =================
+  function scheduleSave(key: string) {
+    const t = saveTimers.get(key);
+    if (t) clearTimeout(t);
+    saveTimers.set(
+      key,
+      setTimeout(() => {
+        saveTimers.delete(key);
+        void save(key);
+      }, SAVE_AFTER_MS),
+    );
+  }
+
+  /** Write a month that has a pending timer immediately. */
+  function flush(key: string) {
+    const t = saveTimers.get(key);
+    if (!t) return;
+    clearTimeout(t);
+    saveTimers.delete(key);
+    void save(key);
+  }
+
+  async function save(key: string) {
+    if (!dirty.has(key)) return;
+    if (inFlight.has(key)) {
+      again.add(key);
+      return;
+    }
+    const s = sheets[key];
+    inFlight.add(key);
+    if (key === month().key) note("Saving…", "");
     try {
-      const saved = await saveMonthlyOverhead({ ...sheet(), year: m.year, month: m.month });
-      sheets[m.key] = { ...saved, custom: (saved.custom ?? []).map((c) => ({ ...c })) };
-      dirty.delete(m.key);
-      render();
-      note("Saved", "ok");
+      const saved = await saveMonthlyOverhead({ ...s, year: s.year, month: s.month });
+      // Only the SERVER'S shape replaces the local copy (dropped empty custom
+      // lines, clamped percents) — and only if nothing was typed meanwhile.
+      // If something was, the local copy is newer and goes out again next.
+      if (!again.has(key)) {
+        sheets[key] = { ...saved, custom: (saved.custom ?? []).map((c) => ({ ...c })) };
+        dirty.delete(key);
+        everSaved.add(key);
+        if (key === month().key) render();
+      }
     } catch (err) {
-      note(actionError(err), "bad");
-    } finally {
-      saving = false;
-      btn?.classList.remove("is-busy");
-      if (btn) btn.disabled = false;
+      if (key === month().key) note(actionError(err), "bad");
+      // Left dirty: the next edit reschedules, and so does leaving the month.
+      inFlight.delete(key);
+      again.delete(key);
+      return;
+    }
+    inFlight.delete(key);
+    if (again.has(key)) {
+      again.delete(key);
+      void save(key);
+    } else if (key === month().key) {
+      note("Saved", "ok");
     }
   }
 
+  // A hidden tab or a closing window fires no more keystrokes; whatever is
+  // due goes out on its way to the background.
+  on(document, "visibilitychange", () => {
+    if (document.visibilityState === "hidden") for (const k of Array.from(saveTimers.keys())) flush(k);
+  });
+
   render();
 
-  return () => disposers.forEach((d) => d());
+  return () => {
+    for (const k of Array.from(saveTimers.keys())) flush(k);
+    disposers.forEach((d) => d());
+  };
 }

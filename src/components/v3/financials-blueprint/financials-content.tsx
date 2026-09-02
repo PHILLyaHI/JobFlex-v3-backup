@@ -296,13 +296,10 @@ export function FinancialsContent(props: FinancialsContentProps) {
                   <b className="oh-total-val" id="ohTotal"></b>
                 </div>
               </div>
+              {/* No Save button: the sheet writes itself 700ms after the last
+                  keystroke (overhead-behavior). This row is the receipt. */}
               <div className="oh-total-act">
-                <button className="btn btn-primary oh-save" type="button" id="ohSave">
-                  <svg className="ic">
-                    <use href="#i-check" />
-                  </svg>
-                  <span data-save-lbl>Save month</span>
-                </button>
+                <span className="oh-auto">Saves as you type</span>
                 <span className="oh-note is-hidden" id="ohNote" role="status"></span>
               </div>
             </div>
