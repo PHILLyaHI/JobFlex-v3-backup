@@ -35,6 +35,7 @@ import {
   errorMessage,
 } from "@/components/v3/admin-users/admin-kit";
 import { useAdminMotion } from "@/components/v3/admin-users/use-admin-motion";
+import { StripeModeSwitch } from "@/components/v3/admin-integrations/integrations-content";
 import s from "./admin-plans.module.css";
 
 const cx = makeCx(s, shared);
@@ -95,7 +96,7 @@ const LIMIT_GROUPS: Array<{ title: string; keys: LimitKey[] }> = [
   { title: "Clients", keys: ["clients"] },
   { title: "Leads", keys: ["leads"] },
   { title: "Projects & schedules", keys: ["projects", "calendarCards", "calendarEvents"] },
-  { title: "Jobs & crew", keys: ["jobs", "workers", "teamSeats"] },
+  { title: "Jobs & crew", keys: ["jobs", "workers", "teamSeats", "managers"] },
   { title: "Comms", keys: ["conversationsStarted", "messagesSent", "aiPhoneCalls", "reviewRequests"] },
 ];
 const DEF_BY_KEY = new Map(LIMIT_DEFS.map((d) => [d.key, d]));
@@ -135,11 +136,16 @@ export function AdminPlansContent({
   synced,
   stripeEnabled,
   promos,
+  stripeMode,
+  stripeModes,
 }: {
   plans: HydratedPlan[];
   synced: Record<string, SyncedInfo>;
   stripeEnabled: boolean;
   promos: PromoDTO[];
+  /** The live/sandbox payments switch — same control /admin/integrations has. */
+  stripeMode: "live" | "test";
+  stripeModes: { live: boolean; test: boolean };
 }) {
   useAdminMotion(KIT_BTN_CLASS);
   const router = useRouter();
@@ -245,6 +251,12 @@ export function AdminPlansContent({
           </button>
         </div>
       </div>
+
+      {/* WHERE THESE PLANS CHARGE — the same live/sandbox switch
+          /admin/integrations owns, one SyncState row behind both. Mounted here
+          too because "which account does checkout hit" is a question asked
+          while editing plans (owner's call, 2026-08-31). */}
+      <StripeModeSwitch mode={stripeMode} modes={stripeModes} />
 
       {warning ? <Note>{warning}</Note> : null}
       {!stripeEnabled ? (

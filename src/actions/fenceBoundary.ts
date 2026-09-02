@@ -35,6 +35,7 @@ import { lookupParcelByPoint } from "@/lib/parcelLookup";
 // The street centrelines this action now returns are consumed by the parcel
 // geometry lib, which owns the type.
 import type { RoadLine } from "@/lib/parcels";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 export type { LatLngPoint };
 
@@ -216,7 +217,8 @@ export async function fetchPropertyBoundary(
   | { ok: true; ring: LatLngPoint[]; buildings: BuildingRing[]; roads: RoadLine[] }
   | { ok: false; error: string; buildings: BuildingRing[]; roads: RoadLine[] }
 > {
-  await requireEstimatorOrManager();
+  const { organizationId: rlOrg } = await requireEstimatorOrManager();
+  await enforceRateLimit(`parcels:${rlOrg}`, 30, HOUR, "property lookups");
   // Three independent lookups, and they stay independent: OSM context, the
   // parcel, and Regrid footprints. A failure in any one must not take the other
   // two down — the front-side decision in particular is derived from `roads`

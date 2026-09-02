@@ -1,5 +1,5 @@
 import { requireOrg } from "@/lib/orgContext";
-import { getTemplatesWithUsage } from "@/actions/templates";
+import { getTemplatesWithUsage } from "@/lib/templatesUsage";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FileText } from "lucide-react";

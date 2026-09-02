@@ -14,7 +14,15 @@
 import { useCallback, useRef } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initFinancialsContent, type FinancialsJob } from "./financials-behavior";
-import type { ChangeOrder, Expense, Invoice, MonthPoint, Rollup } from "./financials-data";
+import type {
+  ChangeOrder,
+  Expense,
+  Invoice,
+  MonthPoint,
+  OverheadMonth,
+  OverheadSheet,
+  Rollup,
+} from "./financials-data";
 import { FinancialsSprite } from "./sprite";
 
 export type FinancialsContentProps = {
@@ -27,6 +35,11 @@ export type FinancialsContentProps = {
   expenses: Expense[];
   orders: ChangeOrder[];
   invoices: Invoice[];
+  /** Twelve months of job money, oldest first — the Overhead tab's month
+   *  cursor walks this, so switching months costs no round trip. */
+  overheadMonths: OverheadMonth[];
+  /** Every overhead sheet the org has saved, keyed "YYYY-MM". */
+  overheadSheets: Record<string, OverheadSheet>;
 };
 
 export function FinancialsContent(props: FinancialsContentProps) {
@@ -45,6 +58,8 @@ export function FinancialsContent(props: FinancialsContentProps) {
       expenses: d.expenses,
       orders: d.orders,
       invoices: d.invoices,
+      overheadMonths: d.overheadMonths,
+      overheadSheets: d.overheadSheets,
     });
   }, []);
   useBlueprintContent(init);
@@ -64,6 +79,12 @@ export function FinancialsContent(props: FinancialsContentProps) {
             <use href="#i-grid" />
           </svg>
           Overview
+        </button>
+        <button className="fi-tab" type="button" data-tab="overhead">
+          <svg className="ic">
+            <use href="#i-building" />
+          </svg>
+          Overhead
         </button>
         <button className="fi-tab" type="button" data-tab="expenses">
           <svg className="ic">
@@ -170,6 +191,118 @@ export function FinancialsContent(props: FinancialsContentProps) {
               </div>
             </div>
             <ul className="att-list" id="attList"></ul>
+          </div>
+        </div>
+      </section>
+
+      {/* ========== OVERHEAD ==========
+          The month's recurring cost of staying open, against what the work
+          actually cleared. Every dynamic region is left empty and filled by
+          overhead-behavior on mount — same contract as the rest of the page.
+
+          Card heads use the donor's `.card-title` voice (15px / 900 / caps)
+          rather than the 11px `.kpi-lbl` the stat cards wear: these are three
+          named sheets, and the verdict beneath Coverage must not outrank the
+          card it sits in. */}
+      <section className="ppanel is-hidden" data-panel="overhead">
+        <div className="card fi-card oh-card oh-cover">
+          <div className="oh-head">
+            <div className="card-titles">
+              <div className="card-title">Coverage</div>
+              <div className="card-sub" id="ohScope"></div>
+            </div>
+            <div className="oh-month">
+              <button className="icon-sq" type="button" id="ohPrev" aria-label="Previous month">
+                <svg className="ic rot-l">
+                  <use href="#i-chev" />
+                </svg>
+              </button>
+              <span className="oh-month-lbl" id="ohMonth"></span>
+              <button className="icon-sq" type="button" id="ohNext" aria-label="Next month">
+                <svg className="ic rot-r">
+                  <use href="#i-chev" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {/* Quarter marks: a gauge with no scale is a slab. The fill reads
+              against them, and 100 is where the bills are paid. */}
+          <div className="oh-bar">
+            <div className="oh-bar-fill" id="ohFill"></div>
+            <i className="oh-tick" style={{ left: "25%" }}></i>
+            <i className="oh-tick" style={{ left: "50%" }}></i>
+            <i className="oh-tick" style={{ left: "75%" }}></i>
+          </div>
+          <div className="oh-scale" aria-hidden="true">
+            <span>0</span>
+            <span>25</span>
+            <span>50</span>
+            <span>75</span>
+            <span>100%</span>
+          </div>
+          <div className="oh-verdict" id="ohVerdict"></div>
+          <div className="oh-figs" id="ohFigs"></div>
+        </div>
+
+        {/* One sheet, two columns. Fixed is the long column (eight lines plus
+            whatever the contractor adds); the short scaling column carries the
+            totals and the write beneath it, so the page ends where the money
+            does instead of leaving a void under three rows. */}
+        <div className="oh-sheet">
+          <div className="card fi-card oh-card">
+            <div className="oh-head">
+              <div className="card-titles">
+                <div className="card-title">Fixed</div>
+                <div className="card-sub">Same every month.</div>
+              </div>
+              <span className="oh-sum" id="ohFixedSum"></span>
+            </div>
+            <div className="oh-grid">
+              <div id="ohFixed"></div>
+              <div id="ohCustom"></div>
+              <button className="oh-add" type="button" id="ohAddLine">
+                <svg className="ic">
+                  <use href="#i-plus" />
+                </svg>
+                Add a line
+              </button>
+            </div>
+          </div>
+
+          <div className="oh-col">
+            <div className="card fi-card oh-card">
+              <div className="oh-head">
+                <div className="card-titles">
+                  <div className="card-title">Scales with revenue</div>
+                  <div className="card-sub">Dollars, or a percent of the month.</div>
+                </div>
+                <span className="oh-sum" id="ohVarSum"></span>
+              </div>
+              <div className="oh-grid" id="ohVar"></div>
+            </div>
+
+            <div className="card fi-card oh-card oh-total-card">
+              <div className="oh-total-rows">
+                <div className="oh-total-row">
+                  <span className="oh-lbl">Fixed</span>
+                  <b id="ohSumFixed"></b>
+                </div>
+                <div className="oh-total-row">
+                  <span className="oh-lbl">Scaling</span>
+                  <b id="ohSumVar"></b>
+                </div>
+                <div className="oh-total-row oh-total-row--total">
+                  <span className="card-title">Total overhead</span>
+                  <b className="oh-total-val" id="ohTotal"></b>
+                </div>
+              </div>
+              {/* No Save button: the sheet writes itself 700ms after the last
+                  keystroke (overhead-behavior). This row is the receipt. */}
+              <div className="oh-total-act">
+                <span className="oh-auto">Saves as you type</span>
+                <span className="oh-note is-hidden" id="ohNote" role="status"></span>
+              </div>
+            </div>
           </div>
         </div>
       </section>

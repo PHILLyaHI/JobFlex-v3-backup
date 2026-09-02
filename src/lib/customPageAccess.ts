@@ -39,9 +39,13 @@ export async function getBlockedCustomPages(
   organizationId: string | null | undefined,
 ): Promise<string[] | null> {
   if (!organizationId) return null;
-  const sub = await db.subscription
-    .findUnique({ where: { organizationId }, select: { plan: true } })
-    .catch(() => null);
+  // One retry: dev SQLite throws transient "database is locked" under a
+  // dashboard's burst of parallel reads, and a swallowed error here is the
+  // gate failing OPEN. Two misses in a row we accept — a plan gate that can
+  // brick every org on a flaky DB is worse than one skipped render.
+  const readPlan = () =>
+    db.subscription.findUnique({ where: { organizationId }, select: { plan: true } });
+  const sub = await readPlan().catch(() => readPlan().catch(() => null));
   if ((sub?.plan ?? "").toUpperCase() !== "CUSTOM") return null;
 
   const row = await db.syncState

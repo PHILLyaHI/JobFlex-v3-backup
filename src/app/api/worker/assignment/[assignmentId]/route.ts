@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { touchWorkerActivity } from "@/lib/workerActivity";
 import { applyAssignmentResponse } from "@/lib/assignmentResponse";
+import { tokensEqual } from "@/lib/tokens";
 
 export async function POST(
   req: Request,
@@ -21,7 +22,9 @@ export async function POST(
       job: { select: { id: true, title: true, status: true, organizationId: true } },
     },
   });
-  if (!assignment || assignment.worker.token !== body.token) {
+  // Constant-time compare: a plain `!==` returns at the first differing byte,
+  // which is the classic timing side channel on a bearer token.
+  if (!assignment || !tokensEqual(assignment.worker.token, body.token)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

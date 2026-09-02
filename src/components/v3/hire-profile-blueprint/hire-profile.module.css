@@ -71,6 +71,7 @@
 :global(.jf-blueprint .content) .page-head {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 20px; flex-wrap: wrap; padding-top: 6px; margin-bottom: 14px;
+  width: 100%; max-width: 1180px; /* the band and the grid stop here; so does Back to Hire */
 }
 :global(.jf-blueprint .content) .kicker {
   display: inline-flex; align-items: center; gap: 8px;
@@ -137,6 +138,7 @@
   grid-template-columns: 1fr auto;
   gap: 18px 24px;
   max-width: 1180px;
+  width: 100%; /* fill to the shared 1180 stop, same as the head and the grid */
   padding: 22px 26px 24px;
   border: var(--border); border-radius: var(--radius);
   background: #fff;
@@ -149,7 +151,7 @@
   background-image: none;
   box-shadow: inset 5px 0 0 var(--blueprint), 3px 3px 0 var(--shadow);
 }
-:global(.jf-blueprint .content) .hp-band-main { display: flex; align-items: flex-start; gap: 18px; min-width: 0; }
+:global(.jf-blueprint .content) .hp-band-main { display: flex; align-items: center; gap: 18px; min-width: 0; }
 :global(.jf-blueprint .content) .hp-stamp {
   flex-shrink: 0;
   display: inline-flex; align-items: center;
@@ -161,37 +163,39 @@
 :global(.jf-blueprint .content) .hp-stamp.is-listed { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
 :global(.jf-blueprint .content) .hp-stamp.is-off { background: var(--paper); border-color: var(--muted-faint); color: var(--muted); }
 :global(.jf-blueprint .content) .hp-band-t { font-size: 19px; font-weight: 900; letter-spacing: -0.015em; line-height: 1.15; }
-:global(.jf-blueprint .content) .hp-band-m { margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--muted); max-width: 62ch; }
+:global(.jf-blueprint .content) .hp-band-m { margin-top: 8px; font-size: 13px; line-height: 1.6; color: var(--muted); max-width: 70ch; }
+:global(.jf-blueprint .content) .hp-band-m b { color: var(--ink); font-weight: 800; }
 
 :global(.jf-blueprint .content) .hp-band-side {
-  display: flex; flex-direction: column; align-items: flex-end; gap: 7px; justify-self: end;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 7px; justify-self: end; align-self: center;
 }
 
-/* ── The switch. Hand-rolled (no Radix), 44px tall, drawn in ink. ── */
+/* ── The switch. Hand-rolled (no Radix), drawn in ink. No plate around it any
+      more (owner, 2026-09-02): the track IS the control, so it grew instead. ── */
 :global(.jf-blueprint .content) .hp-sw {
-  display: inline-flex; align-items: center; gap: 11px;
-  height: 44px; padding: 0 14px 0 12px;
-  border: var(--border); border-radius: var(--radius);
-  background: #fff; color: var(--ink); cursor: pointer;
-  font-size: 11.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
-  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+  display: inline-flex; align-items: center; gap: 14px;
+  height: 44px; padding: 0;
+  border: none; border-radius: 0;
+  background: transparent; color: var(--ink); cursor: pointer;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+  transition: color 0.14s var(--ease);
 }
-:global(.jf-blueprint .content) .hp-sw:hover { background: var(--paper-deep); }
-:global(.jf-blueprint .content) .hp-sw:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+:global(.jf-blueprint .content) .hp-sw:hover .hp-sw-track { border-color: var(--ink); }
+:global(.jf-blueprint .content) .hp-sw:focus-visible { outline: 2px solid var(--sky); outline-offset: 4px; }
 :global(.jf-blueprint .content) .hp-sw:disabled { cursor: default; opacity: 0.55; }
-:global(.jf-blueprint .content) .hp-sw.is-on { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint .content) .hp-sw:not(.is-on) { color: var(--muted); }
 :global(.jf-blueprint .content) .hp-sw-track {
-  position: relative; width: 40px; height: 22px;
-  border: var(--border-thin); border-radius: var(--radius);
-  background: var(--paper); transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
+  position: relative; width: 64px; height: 34px; flex-shrink: 0;
+  border: var(--border); border-radius: var(--radius);
+  background: #fff; transition: background 0.16s var(--ease), border-color 0.16s var(--ease);
 }
-:global(.jf-blueprint .content) .hp-sw.is-on .hp-sw-track { background: var(--sky); border-color: var(--paper); }
+:global(.jf-blueprint .content) .hp-sw.is-on .hp-sw-track { background: var(--blueprint); border-color: var(--blueprint); }
 :global(.jf-blueprint .content) .hp-sw-knob {
-  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  position: absolute; top: 4px; left: 4px; width: 22px; height: 22px;
   background: var(--ink); border-radius: 1px;
   transition: transform 0.18s var(--ease-out), background 0.16s var(--ease);
 }
-:global(.jf-blueprint .content) .hp-sw.is-on .hp-sw-knob { transform: translateX(18px); background: var(--paper); }
+:global(.jf-blueprint .content) .hp-sw.is-on .hp-sw-knob { transform: translateX(30px); background: #fff; }
 :global(.jf-blueprint .content) .hp-sw-lbl { line-height: 1; }
 
 :global(.jf-blueprint .content) .hp-pending {
@@ -199,20 +203,6 @@
   letter-spacing: 0.14em; text-transform: uppercase; color: var(--warning-dark);
   text-align: right;
 }
-
-/* ── The honest copy. Two facts, no marketing. ── */
-:global(.jf-blueprint .content) .hp-facts {
-  grid-column: 1 / -1;
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 26px;
-  list-style: none; margin: 4px 0 0; padding: 16px 0 0;
-  border-top: 1.5px solid var(--hair-soft);
-}
-:global(.jf-blueprint .content) .hp-fact {
-  display: flex; align-items: flex-start; gap: 11px;
-  font-size: 12.5px; line-height: 1.55; color: var(--muted);
-}
-:global(.jf-blueprint .content) .hp-fact .ic { width: 16px; height: 16px; margin-top: 2px; color: var(--blueprint); }
-:global(.jf-blueprint .content) .hp-fact b { color: var(--ink); font-weight: 800; }
 
 /* ============================================================
    THE TWO COLUMNS — what you edit, and what everybody else sees
@@ -223,7 +213,7 @@
    misrepresents the thing it exists to show. */
 :global(.jf-blueprint .content) .hp-grid {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 0.95fr);
-  gap: 22px; max-width: 1180px; align-items: start;
+  gap: 22px; width: 100%; max-width: 1180px; align-items: start;
 }
 
 :global(.jf-blueprint .content) .hp-form { display: flex; flex-direction: column; gap: 22px; }

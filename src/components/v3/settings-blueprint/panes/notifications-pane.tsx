@@ -19,11 +19,22 @@
 // The pane wrapper (`.pane`) and its `.pane-h` header belong to
 // settings-content.tsx; this file starts at the first `<section class="sc">`.
 // Class names are plain global strings — the stylesheet is applied upstream.
+//
+// REAL DATA. The whole pane is one blob on the signed-in user's own row —
+// `User.notificationPrefsJson` — hydrated by `parseNotificationPrefs` on the
+// server and written back by `updateNotificationPrefs`. A user who has never
+// saved sees the donor's seed matrix; from then on it is theirs. The SMS number
+// lives in the same blob (`User.phone` is the Profile card's field, and is a
+// contact number rather than a notification route).
+//
+// "Send test notification" is the one footer button with nothing behind it —
+// no test-notification path exists — so it stays inert.
 
 import { useState } from "react";
 
+import { updateNotificationPrefs } from "@/actions/accountSettings";
 import { Cbx, Field, SaveBar, Sel, Toggle } from "../ui";
-import type { MatrixAction } from "../settings-data";
+import type { DeliveryToggleKey, MatrixAction, PaneProps } from "../settings-data";
 import {
   DELIVERY_CARD,
   DELIVERY_TOGGLES,
@@ -37,41 +48,54 @@ import {
   NOTIFICATION_FOOTER_ACTIONS,
   QUIET_FROM_SELECT,
   QUIET_TO_SELECT,
-  SMS_NUMBER_FIELD,
+  SMS_NUMBER_LABEL,
+  notificationCountBadge,
 } from "../settings-data";
 
 /** Donor inline sizing on the three `.nfoot` buttons (line 2111-2115). */
 const NFOOT_BTN_STYLE = { height: "38px", padding: "0 14px" } as const;
 
-export function NotificationsPane() {
+type Triple = [boolean, boolean, boolean];
+
+export function NotificationsPane({ data }: PaneProps) {
+  const prefs = data.notifications;
+
   /* ── matrix: one boolean row per event, one column per channel ── */
-  const [matrix, setMatrix] = useState<boolean[][]>(() =>
-    NOTIFICATION_EVENTS.map((event) => [...event.channels]),
+  const [matrix, setMatrix] = useState<Triple[]>(() =>
+    NOTIFICATION_EVENTS.map((event) => {
+      const stored = prefs.matrix[event.key];
+      return stored ? ([...stored] as Triple) : ([...event.channels] as Triple);
+    }),
   );
+
+  const mapRow = (cells: Triple, fn: (on: boolean, ci: number) => boolean): Triple =>
+    [fn(cells[0], 0), fn(cells[1], 1), fn(cells[2], 2)] as Triple;
 
   const setCell = (row: number, col: number, next: boolean) => {
     setMatrix((prev) =>
       prev.map((cells, ri) =>
-        ri === row ? cells.map((on, ci) => (ci === col ? next : on)) : cells,
+        ri === row ? mapRow(cells, (on, ci) => (ci === col ? next : on)) : cells,
       ),
     );
   };
 
   /** F17 — a column toggle drives every checkbox beneath it. */
   const setColumn = (col: number, next: boolean) => {
-    setMatrix((prev) => prev.map((cells) => cells.map((on, ci) => (ci === col ? next : on))));
+    setMatrix((prev) =>
+      prev.map((cells) => mapRow(cells, (on, ci) => (ci === col ? next : on))),
+    );
   };
 
   const columnAllOn = (col: number) => matrix.every((cells) => cells[col] === true);
 
   /** Donor `data-nall="1"`. */
-  const enableAll = () => setMatrix((prev) => prev.map((cells) => cells.map(() => true)));
+  const enableAll = () => setMatrix((prev) => prev.map((cells) => mapRow(cells, () => true)));
 
   /** Donor `data-nall="0"` — only the Email column survives. */
   const emailOnly = () =>
-    setMatrix((prev) => prev.map((cells) => cells.map((_, ci) => ci === EMAIL_COLUMN_INDEX)));
+    setMatrix((prev) => prev.map((cells) => mapRow(cells, (_, ci) => ci === EMAIL_COLUMN_INDEX)));
 
-  /** "Send test notification" has no donor behaviour, so it gets no handler. */
+  /** "Send test notification" has no path behind it, so it gets no handler. */
   const footerHandler = (action: MatrixAction): (() => void) | undefined => {
     if (action === "enable-all") return enableAll;
     if (action === "email-only") return emailOnly;
@@ -79,15 +103,29 @@ export function NotificationsPane() {
   };
 
   /* ── delivery ── */
-  const [quietFrom, setQuietFrom] = useState(QUIET_FROM_SELECT.defaultValue);
-  const [quietTo, setQuietTo] = useState(QUIET_TO_SELECT.defaultValue);
-  const [digest, setDigest] = useState(DIGEST_SELECT.defaultValue);
-  const [deliveryOn, setDeliveryOn] = useState<boolean[]>(() =>
-    DELIVERY_TOGGLES.map((row) => row.on),
-  );
+  const [quietFrom, setQuietFrom] = useState(prefs.quietFrom);
+  const [quietTo, setQuietTo] = useState(prefs.quietTo);
+  const [digest, setDigest] = useState(prefs.digest);
+  const [sms, setSms] = useState(prefs.sms);
+  const [delivery, setDelivery] = useState<Record<DeliveryToggleKey, boolean>>({
+    muteWeekends: prefs.muteWeekends,
+    desktopPush: prefs.desktopPush,
+    soundOnLead: prefs.soundOnLead,
+  });
 
-  const setDelivery = (index: number, next: boolean) => {
-    setDeliveryOn((prev) => prev.map((on, i) => (i === index ? next : on)));
+  const save = () => {
+    const next: Record<string, Triple> = {};
+    NOTIFICATION_EVENTS.forEach((event, ri) => {
+      next[event.key] = matrix[ri] ?? ([...event.channels] as Triple);
+    });
+    return updateNotificationPrefs({
+      matrix: next,
+      quietFrom,
+      quietTo,
+      digest,
+      sms,
+      ...delivery,
+    });
   };
 
   return (
@@ -98,12 +136,11 @@ export function NotificationsPane() {
             <div className="sc-t">{NOTIFICATIONS_CARD.title}</div>
             <div className="sc-s">{NOTIFICATIONS_CARD.sub}</div>
           </div>
-          {NOTIFICATIONS_CARD.badge ? (
-            <span className={`badge2 ${NOTIFICATIONS_CARD.badge.tone}`}>
-              <i />
-              {NOTIFICATIONS_CARD.badge.label}
-            </span>
-          ) : null}
+          {/* Counted from the event list, never typed. */}
+          <span className={`badge2 ${notificationCountBadge(NOTIFICATION_EVENTS.length).tone}`}>
+            <i />
+            {notificationCountBadge(NOTIFICATION_EVENTS.length).label}
+          </span>
         </div>
 
         <div className="sc-b">
@@ -139,7 +176,7 @@ export function NotificationsPane() {
 
               <tbody>
                 {NOTIFICATION_EVENTS.map((event, ri) => (
-                  <tr key={event.name}>
+                  <tr key={event.key}>
                     <td>
                       {/* F16 — icon box before the event text. */}
                       <span className="nrow">
@@ -221,20 +258,22 @@ export function NotificationsPane() {
                 options={DIGEST_SELECT.options}
                 onChange={setDigest}
               />
-              <Field label={SMS_NUMBER_FIELD.label} value={SMS_NUMBER_FIELD.value} />
+              <Field label={SMS_NUMBER_LABEL} value={sms} onChange={setSms} />
             </div>
           </div>
 
           <div style={{ marginTop: "6px" }}>
-            {DELIVERY_TOGGLES.map((row, i) => (
-              <div className="trow" key={row.name}>
+            {DELIVERY_TOGGLES.map((row) => (
+              <div className="trow" key={row.key}>
                 <span className="trow-b">
                   <span className="trow-n">{row.name}</span>
                   <span className="trow-d">{row.desc}</span>
                 </span>
                 <Toggle
-                  checked={deliveryOn[i] ?? false}
-                  onChange={(next) => setDelivery(i, next)}
+                  checked={delivery[row.key]}
+                  onChange={(next) =>
+                    setDelivery((prev) => ({ ...prev, [row.key]: next }))
+                  }
                   ariaLabel={row.name}
                 />
               </div>
@@ -242,7 +281,9 @@ export function NotificationsPane() {
           </div>
         </div>
 
-        <SaveBar />
+        {/* One blob, one Save bar — it writes the matrix and the delivery rules
+            together, so the matrix card above needs none of its own. */}
+        <SaveBar onSave={save} />
       </section>
     </>
   );

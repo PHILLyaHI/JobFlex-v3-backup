@@ -3,13 +3,21 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { safeHref } from "@/lib/safeHref";
 
 const expenseInput = z.object({
   jobId: z.string(),
   category: z.string().min(1),
   amount: z.number().min(0),
   note: z.string().optional().nullable(),
-  receiptUrl: z.string().optional().nullable(),
+  // Rendered as <a href> / <img src> for every manager: only https URLs and
+  // inline images may be stored (no javascript:, no external http pages).
+  receiptUrl: z
+    .string()
+    .max(2_000_000)
+    .refine((v) => safeHref(v) !== null && !v.startsWith("/"), "Receipt must be an https URL or image")
+    .optional()
+    .nullable(),
   ocrJson: z.string().optional().nullable(),
 });
 

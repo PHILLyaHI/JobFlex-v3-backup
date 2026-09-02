@@ -1,6 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
@@ -17,6 +18,8 @@ export async function createReviewRequest(jobId: string) {
   const req = await db.reviewRequest.create({
     data: {
       organizationId,
+      // 122-bit CSPRNG token instead of the structured cuid() default.
+      publicToken: randomUUID(),
       jobId,
       clientId: job.clientId,
       status: "SENT",

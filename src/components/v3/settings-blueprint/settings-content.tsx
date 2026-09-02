@@ -33,8 +33,10 @@
 // dropdown/toggle state, and unmounting the inactive ones would silently
 // discard whatever the user had typed on another tab.
 //
-// This page is presentational — the donor content ships as fixture data in
-// ./settings-data.ts. No server actions, API routes or Prisma reads.
+// The page is no longer presentational: the server component builds one
+// `SettingsData` object from the database and this component threads it into
+// every pane. ./settings-data.ts still owns the donor's copy, types and option
+// lists — only the VALUES moved out of it.
 
 import { useState } from "react";
 import type { ComponentType } from "react";
@@ -48,7 +50,9 @@ import {
   PANE_KICKER,
   RAIL_ITEMS,
   RAIL_NEW_BADGE,
+  type PaneProps,
   type RailKey,
+  type SettingsData,
 } from "./settings-data";
 import { AccountPane } from "./panes/account-pane";
 import { PaymentsPane } from "./panes/payments-pane";
@@ -61,7 +65,7 @@ import { NotificationsPane } from "./panes/notifications-pane";
  * `RailKey`, so adding a rail item without its pane is a type error rather
  * than an empty tab.
  */
-const PANE_BODIES: Record<RailKey, ComponentType> = {
+const PANE_BODIES: Record<RailKey, ComponentType<PaneProps>> = {
   account: AccountPane,
   payments: PaymentsPane,
   billing: BillingPane,
@@ -69,7 +73,7 @@ const PANE_BODIES: Record<RailKey, ComponentType> = {
   notifications: NotificationsPane,
 };
 
-export function SettingsContent() {
+export function SettingsContent({ data }: { data: SettingsData }) {
   const [active, setActive] = useState<RailKey>(DEFAULT_RAIL);
 
   // Donor JS 2201: the page kicker mirrors the active rail label. RAIL_ITEMS is
@@ -136,7 +140,7 @@ export function SettingsContent() {
                   <div className="pane-k">{PANE_KICKER}</div>
                   <div className="pane-t">{item.label}</div>
                 </div>
-                <PaneBody />
+                <PaneBody data={data} />
               </div>
             );
           })}

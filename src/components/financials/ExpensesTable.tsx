@@ -3,6 +3,7 @@ import * as React from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { Trash2, Receipt, ExternalLink } from "lucide-react";
+import { safeHref } from "@/lib/safeHref";
 import { toast } from "@/components/ui/Toast";
 import { Badge } from "@/components/ui/Badge";
 import { money, shortDate } from "@/lib/format";
@@ -97,9 +98,9 @@ export function ExpensesTable({ rows }: Props) {
               </td>
               <td className="px-3 py-3.5">
                 <div className="flex justify-end gap-1">
-                  {r.receiptUrl && (
+                  {safeHref(r.receiptUrl) && (
                     <a
-                      href={r.receiptUrl}
+                      href={safeHref(r.receiptUrl) ?? undefined}
                       target="_blank"
                       rel="noreferrer"
                       className="h-7 w-7 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.04]"

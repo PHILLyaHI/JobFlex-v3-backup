@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { appBaseUrl } from "@/lib/appUrl";
 import { db } from "@/lib/db";
 import { isPayPalEnabled, getPayPalAccessToken, paypalBase } from "@/lib/sdk/paypal";
+import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -8,6 +10,8 @@ export async function POST(req: Request) {
   if (!isPayPalEnabled()) return NextResponse.json({ disabled: true });
   // Amount is derived server-side from the proposal, never from the body.
   const { publicId } = await req.json();
+  const gate = await rateLimitShared(`checkout:${ipFromRequest(req)}`, 10, HOUR);
+  if (!gate.ok) return NextResponse.json({ error: "Too many requests — try again later." }, { status: 429 });
   if (!publicId) return NextResponse.json({ error: "Missing publicId" }, { status: 400 });
 
   const proposal = await db.proposal.findUnique({ where: { publicId } });
@@ -19,7 +23,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Nothing to pay on this proposal" }, { status: 400 });
   }
 
-  const origin = req.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // Redirect targets come from the platform-set host, never the caller's
+  // Origin header — a forged Origin minted a real, contractor-branded checkout
+  // whose post-payment landing page was an attacker domain.
+  const origin = await appBaseUrl();
   const token = await getPayPalAccessToken();
 
   // Create an Order

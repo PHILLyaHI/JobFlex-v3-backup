@@ -195,3 +195,15 @@ body {
   --gmp-mat-color-outline: var(--ink-line);
   --gmp-mat-color-primary: var(--accent);
 }
+
+/* The desktop shell, server-rendered for a route that has a handheld build
+   (responsive-dashboard-shell.tsx marks it). At handheld width it is never the
+   layout a phone should see — hydration swaps it for the mobile tree — so it
+   is kept out of the paint until then, and a reload no longer flashes the desk
+   layout before the real one. `visibility`, not `display`: the tree must keep
+   its layout so hydration matches. */
+@media (max-width: 768px) {
+  [data-desk-fallback] > * {
+    visibility: hidden;
+  }
+}

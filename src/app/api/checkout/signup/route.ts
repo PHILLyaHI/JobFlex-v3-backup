@@ -15,10 +15,11 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
-import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { readPendingSignup } from "@/actions/signupCheckout";
 import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
+import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 
 /** The custom plan trials for the same fortnight the catalog plans do. */
 const CUSTOM_TRIAL_DAYS = 14;
@@ -60,20 +61,31 @@ export async function POST(req: Request) {
   let trialDays = 0;
   let planLabel = String(planSlug);
 
+  // Mode-aware from the top: the admin's live/sandbox switch (lib/stripeMode)
+  // decides which account this session is created on, and only the LIVE path
+  // requires a PlanPrice mirror — the sandbox has no such ids, so test mode
+  // prices inline from the catalog row.
+  const { stripe, mode } = await getStripeClient();
+
   if (isCustom) {
     const pages = pending.customPages;
     const amount = customPriceCents(pages, interval);
     trialDays = CUSTOM_TRIAL_DAYS;
     planLabel = CUSTOM_PLAN_SLUG;
+    /* A REUSED price, not inline price_data: inline data mints a fresh
+       Product+Price per checkout and would litter the Stripe dashboard with a
+       product per signup. The custom price space is tiny ($20 + $10 × 0–9
+       pages), so lib/stripePriceCache keeps ONE "JobFlex Custom" product per
+       account and reuses a price per distinct amount. */
     lineItem = {
-      price_data: {
-        currency: "usd",
-        unit_amount: amount,
-        recurring: { interval: interval === "YEAR" ? "year" : "month" },
-        product_data: {
-          name: `JobFlex Custom — ${pages.length} extra page${pages.length === 1 ? "" : "s"}`,
-        },
-      },
+      price: await ensureRecurringPrice({
+        stripe,
+        mode,
+        kind: "custom",
+        name: "JobFlex Custom plan",
+        interval,
+        cents: amount,
+      }),
       quantity: 1,
     };
   } else {
@@ -81,20 +93,39 @@ export async function POST(req: Request) {
     if (!plan || !plan.active || plan.isFree) {
       return NextResponse.json({ error: "That plan is not available." }, { status: 404 });
     }
-    const price = await db.planPrice.findFirst({
-      where: { planSlug: plan.slug, interval, active: true },
-    });
-    if (!price) {
-      return NextResponse.json({ error: "That plan isn't available for checkout yet." }, { status: 404 });
-    }
     trialDays = plan.trialDays;
     planLabel = plan.slug;
-    lineItem = { price: price.stripePriceId, quantity: 1 };
+    if (mode === "live") {
+      const price = await db.planPrice.findFirst({
+        where: { planSlug: plan.slug, interval, active: true },
+      });
+      if (!price) {
+        return NextResponse.json({ error: "That plan isn't available for checkout yet." }, { status: 404 });
+      }
+      lineItem = { price: price.stripePriceId, quantity: 1 };
+    } else {
+      const cents = interval === "YEAR" ? (plan.yearlyPriceCents ?? 0) : plan.priceCents;
+      if (cents <= 0) {
+        return NextResponse.json({ error: "That plan is not available." }, { status: 404 });
+      }
+      // Sandbox: same reuse as the custom plan — one product per plan slug on
+      // the test account, one price per amount, no per-checkout clutter.
+      lineItem = {
+        price: await ensureRecurringPrice({
+          stripe,
+          mode,
+          kind: plan.slug,
+          name: `JobFlex ${plan.name}`,
+          interval,
+          cents,
+        }),
+        quantity: 1,
+      };
+    }
   }
 
   const origin = new URL(req.url).origin;
   try {
-    const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer_email: pending.email,

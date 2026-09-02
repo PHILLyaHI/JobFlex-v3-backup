@@ -874,7 +874,10 @@
   background: #fff;
   color: #0d0f12;
 }
-.jf-lp .lp-nav .lp-btn-dark:hover { background: #e8e8e4; }
+/* `color` restated: `.jf-lp .lp-nav a:hover { color:#fff }` is (0,3,1) and
+   outranked the button's base (0,3,0) ink — white text on the near-white
+   hover plate, an invisible label (owner's report, 2026-08-31). */
+.jf-lp .lp-nav .lp-btn-dark:hover { background: #e8e8e4; color: #0d0f12; }
 
 /* Week strip along the bottom of the product shot. */
 .jf-lp .lp-bp-week { margin-top: 12px; }

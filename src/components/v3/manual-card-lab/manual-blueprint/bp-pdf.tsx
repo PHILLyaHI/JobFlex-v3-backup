@@ -77,7 +77,8 @@ import {
 // arrive as `doc.identity`, read on the server. See manual-blueprint-bridge.ts.
 import type { SheetIdentity } from "./manual-blueprint-bridge";
 import styles from "./manual-blueprint.module.css";
-import { Btn, Segmented, ToggleCell, cx } from "./bp-ui";
+import { Btn, Segmented, Toggle, ToggleCell, cx } from "./bp-ui";
+import { useHandheld } from "./use-handheld";
 
 /* ============================================================
    SETUP — the four decisions that belong to the DOCUMENT
@@ -179,6 +180,10 @@ export function PdfBlock({
 }) {
   const [open, setOpen] = useState(false);
   const [zoomAt, setZoomAt] = useState(ZOOM_FIT);
+  // The card's CHROME has a handheld build; the document, the page estimate,
+  // the vault and the print path below are identical on both viewports and
+  // stay single-sourced. See ./use-handheld.ts.
+  const handheld = useHandheld();
   const [blocks, setBlocks] = useState<Block[]>([]);
   const flowRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -304,45 +309,112 @@ export function PdfBlock({
         {`@page { size: ${paper.css} portrait; margin: ${TRIM_MM.top}mm ${TRIM_MM.side}mm ${TRIM_MM.bottom}mm; }`}
       </style>
 
-      <div className={styles.pdfSpec}>
-        <SpecCell label="Paper" value={paper.label} />
-        <SpecCell label="Orient" value="Portrait" />
-        <SpecCell label="Length" value={pages > 0 ? `≈ ${pages} ${pages === 1 ? "page" : "pages"}` : "—"} />
-        <SpecCell label="Sections" value={String(count)} />
-      </div>
+      {/* ── THE CARD'S CHROME, IN TWO BUILDS ──────────────────────────
+          On the desk it is a four-cell spec strip, a labelled segmented
+          control and a three-across row of switch cells. None of the three
+          survives 390px: the strip's four columns are ~85px each and every
+          value inside them wraps ("US / Letter", "≈ 2 / pages"), and the
+          three switch cells wrap their labels onto three lines apiece under
+          22px plates.
 
-      <div className={styles.toggles}>
-        <Segmented<PaperSize>
-          label="Paper size"
-          value={setup.paper}
-          options={[
-            { value: "letter", label: "Letter" },
-            { value: "a4", label: "A4" },
-          ]}
-          onChange={(v) => onPatch({ paper: v })}
-        />
-        {/* The same three-cell row as card 06, for the same reason: three
-            independent yes/no facts about one sheet, scanned in one sweep. */}
-        <div className={styles.switchRow}>
-          <ToggleCell
-            label="Cover page"
-            on={setup.cover}
-            onChange={(on) => onPatch({ cover: on })}
-          />
-          <ToggleCell
-            label="Letterhead every page"
-            on={setup.letterhead}
-            onChange={(on) => onPatch({ letterhead: on })}
-          />
-          <ToggleCell
-            label="Footer every page"
-            on={setup.footer}
-            onChange={(on) => onPatch({ footer: on })}
-          />
+          The handheld build asks the same four questions down one column:
+          the spec strip becomes ONE mono line (it is a readout, and a readout
+          is a sentence before it is a table), the paper control takes the full
+          measure with its heading above it, the three facts become three
+          full-width rows — label left, plate right, the whole row a target —
+          and the two actions stack rather than splitting an already narrow
+          card in half. */}
+      {handheld ? (
+        <div className={styles.pdfMobSpec}>
+          {pages > 0 ? `≈ ${pages} ${pages === 1 ? "page" : "pages"}` : "Empty"}
+          <span className={styles.pdfMobDot} aria-hidden="true">
+            ·
+          </span>
+          {count} {count === 1 ? "section" : "sections"}
+          <span className={styles.pdfMobDot} aria-hidden="true">
+            ·
+          </span>
+          {/* No "portrait". The desk strip names the orientation because it has
+              a cell going spare; here it is the one fact on the line nobody can
+              change, and carrying it wrapped the readout onto a second row. */}
+          {paper.label}
         </div>
-      </div>
+      ) : (
+        <div className={styles.pdfSpec}>
+          <SpecCell label="Paper" value={paper.label} />
+          <SpecCell label="Orient" value="Portrait" />
+          <SpecCell label="Length" value={pages > 0 ? `≈ ${pages} ${pages === 1 ? "page" : "pages"}` : "—"} />
+          <SpecCell label="Sections" value={String(count)} />
+        </div>
+      )}
 
-      <div className={styles.pdfActions}>
+      {handheld ? (
+        <div className={styles.pdfMobSet}>
+          <div className={styles.pdfMobField}>
+            <span className={styles.pdfMobLbl}>Paper size</span>
+            <Segmented<PaperSize>
+              label="Paper size"
+              hideLabel
+              value={setup.paper}
+              options={[
+                { value: "letter", label: "US Letter" },
+                { value: "a4", label: "A4" },
+              ]}
+              onChange={(v) => onPatch({ paper: v })}
+            />
+          </div>
+          <div className={styles.pdfMobRows}>
+            <Toggle
+              label="Cover page"
+              on={setup.cover}
+              onChange={(on) => onPatch({ cover: on })}
+            />
+            <Toggle
+              label="Letterhead every page"
+              on={setup.letterhead}
+              onChange={(on) => onPatch({ letterhead: on })}
+            />
+            <Toggle
+              label="Footer every page"
+              on={setup.footer}
+              onChange={(on) => onPatch({ footer: on })}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className={styles.toggles}>
+          <Segmented<PaperSize>
+            label="Paper size"
+            value={setup.paper}
+            options={[
+              { value: "letter", label: "Letter" },
+              { value: "a4", label: "A4" },
+            ]}
+            onChange={(v) => onPatch({ paper: v })}
+          />
+          {/* The same three-cell row as card 06, for the same reason: three
+              independent yes/no facts about one sheet, scanned in one sweep. */}
+          <div className={styles.switchRow}>
+            <ToggleCell
+              label="Cover page"
+              on={setup.cover}
+              onChange={(on) => onPatch({ cover: on })}
+            />
+            <ToggleCell
+              label="Letterhead every page"
+              on={setup.letterhead}
+              onChange={(on) => onPatch({ letterhead: on })}
+            />
+            <ToggleCell
+              label="Footer every page"
+              on={setup.footer}
+              onChange={(on) => onPatch({ footer: on })}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className={cx(styles.pdfActions, handheld && styles.pdfActionsStack)}>
         <Btn icon="file" onClick={() => setOpen(true)}>
           Preview the sheet
         </Btn>

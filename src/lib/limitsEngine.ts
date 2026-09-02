@@ -46,6 +46,13 @@ import {
 
 export type LimitResource = LimitKey;
 
+/** Roles that hold full manager access (everything requireManager admits
+ *  except OWNER). The "managers" seat meter counts all of them. */
+export const MANAGER_EQUIVALENT_ROLES = ["MANAGER", "ADMIN", "ACCOUNTANT", "USER"] as const;
+export function isManagerEquivalentRole(role: string | null | undefined): boolean {
+  return (MANAGER_EQUIVALENT_ROLES as readonly string[]).includes(role ?? "");
+}
+
 export interface LimitStatus {
   resource: LimitResource;
   /** The configured cap, or null when unlimited. */
@@ -222,6 +229,28 @@ async function countUsage(
       return db.aiPhoneCall.count({ where: { organizationId, startedAt: since } });
     case "reviewRequests":
       return db.reviewRequest.count({ where: { organizationId, createdAt: since } });
+    case "managers": {
+      // Absolute — manager-equivalent seats held plus such invites still in
+      // flight (a pending invite reserves its seat, same rule as teamSeats).
+      // Counts every role requireManager admits except OWNER — ADMIN /
+      // ACCOUNTANT / USER carry full manager access, so metering only the
+      // literal "MANAGER" string let an org sidestep the seat cap by picking
+      // a synonym.
+      const [managers, pendingMgr] = await Promise.all([
+        db.membership.count({
+          where: { organizationId, role: { in: [...MANAGER_EQUIVALENT_ROLES] } },
+        }),
+        db.invite.count({
+          where: {
+            organizationId,
+            acceptedAt: null,
+            expiresAt: { gt: new Date() },
+            role: { in: [...MANAGER_EQUIVALENT_ROLES] },
+          },
+        }),
+      ]);
+      return managers + pendingMgr;
+    }
     case "teamSeats": {
       // Absolute — office seats: non-INSTALLER members plus live pending
       // invites (a pending invite reserves its seat so acceptInvite never gets
@@ -338,7 +367,10 @@ export async function checkPlanLimit(
   resource: LimitResource,
   needed = 1,
 ): Promise<LimitStatus> {
-  if (LIMITS_DISABLED) {
+  // "managers" is carved out of the app-wide quota switch-off: it is plan
+  // COMPOSITION (which plans sell manager seats at all), not a usage upsell,
+  // and it only bites when /admin/plans sets a number for the plan.
+  if (LIMITS_DISABLED && resource !== "managers") {
     return { resource, limit: null, used: 0, remaining: null, allowed: true };
   }
   const { limits, cycleStart } = await resolvePlan(organizationId);

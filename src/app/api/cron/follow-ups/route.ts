@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runDueFollowUps } from "@/actions/followUps";
+import { runDueFollowUps } from "@/lib/followUps/engine";
 import { isCronAuthorized } from "@/lib/cronAuth";
 
 export const runtime = "nodejs";

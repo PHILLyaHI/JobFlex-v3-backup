@@ -38,6 +38,7 @@ import { headers } from "next/headers";
 import { requireOrg } from "@/lib/orgContext";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { getBlockedCustomPages } from "@/lib/customPageAccess";
+import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
 import { isCustomBlockedPath } from "@/lib/customPlan";
 import { getBadgeCounts } from "@/lib/badgeCounts";
 import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/responsive-dashboard-shell";
@@ -74,10 +75,19 @@ export default async function DashboardBlueprintLayout({
     role = ctx.role;
     name = ctx.user.name || ctx.user.email || "Account";
     user = { name, role: humanRole(ctx.role) };
-    [badges, lockedPages] = await Promise.all([
-      getBadgeCounts(ctx.organizationId, ctx.user.id, ctx.role),
+    // SEPARATE awaits, each with its own failure story. Bundled in one
+    // Promise.all, a transient badge-count failure (SQLite "database is
+    // locked" under the dashboard's burst of parallel reads) rejected the
+    // whole bundle, the outer catch swallowed it, and lockedPages stayed null
+    // — the plan gate silently FAILING OPEN because unread counts hiccuped.
+    // Badges may fail quietly (a missing badge is cosmetic); the gate read
+    // retries once and is never allowed to take the badges down with it.
+    badges = await getBadgeCounts(ctx.organizationId, ctx.user.id, ctx.role).catch(
+      () => undefined,
+    );
+    lockedPages = await getBlockedCustomPages(ctx.organizationId).catch(() =>
       getBlockedCustomPages(ctx.organizationId),
-    ]);
+    );
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }
@@ -91,16 +101,18 @@ export default async function DashboardBlueprintLayout({
     if (pathname && !isPathAllowed(gate, pathname)) redirect(gate.home as Route);
   }
 
-  // THE CUSTOM PLAN'S PAGE GATE — same arrangement as the role gate above:
-  // plan from the DB, path from the middleware-set header, fail-closed. An org
-  // that bought two add-on pages may open those two and the base workspace;
-  // a URL to any other add-on bounces to Overview, which every custom plan
-  // includes. The nav below is handed the same list so it never draws the
-  // link in the first place — but this redirect, not the nav, is the boundary.
+  // THE CUSTOM PLAN'S PAGE GATE — same inputs as the role gate above (plan
+  // from the DB, path from the middleware-set header, fail-closed), but it
+  // RENDERS the upgrade offer at the blocked URL instead of redirecting
+  // (owner's call, 2026-08-31): the nav draws locked pages as dimmed padlocked
+  // rows that still navigate, and this is what they open onto. The children —
+  // the page's own server component — are never rendered for a blocked path,
+  // so the gate is the boundary, not a curtain.
+  let customGate: React.ReactNode = null;
   if (lockedPages?.length) {
     const pathname = (await headers()).get("x-pathname") ?? "";
     if (pathname && isCustomBlockedPath(lockedPages, pathname)) {
-      redirect("/dashboard" as Route);
+      customGate = <UpgradeGate pathname={pathname} />;
     }
   }
 
@@ -123,7 +135,7 @@ export default async function DashboardBlueprintLayout({
       badges={badges}
       locked={lockedPages ?? undefined}
     >
-      {children}
+      {customGate ?? children}
       {canHandleLeads ? <LeadOfferPopup /> : null}
     </ResponsiveDashboardShell>
   );

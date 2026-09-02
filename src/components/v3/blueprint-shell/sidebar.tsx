@@ -101,20 +101,27 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
               ) : (
                 <Link
                   key={item.label}
-                  className={`sb-link${item.href === active ? " active" : ""}`}
+                  className={`sb-link${item.href === active ? " active" : ""}${item.locked ? " sb-lockd" : ""}`}
                   href={item.href as Route}
                 >
                   <svg className="ic">
                     <use href={`#${item.icon}`} />
                   </svg>
                   {item.label}
-                  {/* Unread count — the messages ledger's conv-badge voice:
-                      a small blueprint plate with mono numerals, right-aligned
-                      in the row. Zero draws nothing. */}
-                  {(badges[item.href] ?? 0) > 0 && (
-                    <span className="sb-badge" aria-label={`${badges[item.href]} new`}>
-                      {badges[item.href] > 99 ? "99+" : badges[item.href]}
-                    </span>
+                  {/* CUSTOM-PLAN LOCK — the page is not in this org's plan.
+                      Still a live link on purpose: the route renders the
+                      upgrade offer, so the padlock is a door, not a wall. */}
+                  {item.locked ? (
+                    <svg className="sb-lock-ic" viewBox="0 0 24 24" aria-label="Not in your plan">
+                      <rect x="5" y="11" width="14" height="10" rx="1.5" />
+                      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                  ) : (
+                    (badges[item.href] ?? 0) > 0 && (
+                      <span className="sb-badge" aria-label={`${badges[item.href]} new`}>
+                        {badges[item.href] > 99 ? "99+" : badges[item.href]}
+                      </span>
+                    )
                   )}
                 </Link>
               ),

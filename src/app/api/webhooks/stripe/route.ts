@@ -39,8 +39,18 @@ export async function POST(req: Request) {
     await db.webhookEvent.create({
       data: { eventId: event.id, type: event.type, status: WebhookEventStatus.RECEIVED },
     });
-  } catch {
-    return NextResponse.json({ duplicate: true });
+  } catch (createErr) {
+    // Only a PROCESSED duplicate is dropped. A FAILED row (handler threw, we
+    // returned 500, Stripe is retrying) or a RECEIVED row (crashed mid-flight)
+    // must fall through and re-dispatch — otherwise a transient error made the
+    // retry a "duplicate" 200 and the event (a cancellation, a paid invoice, a
+    // proposal payment) was lost for good. A missing row means the create
+    // failed for a real DB reason: surface it so Stripe retries.
+    const existing = await db.webhookEvent.findUnique({ where: { eventId: event.id } });
+    if (!existing) throw createErr;
+    if (existing.status === WebhookEventStatus.PROCESSED) {
+      return NextResponse.json({ duplicate: true });
+    }
   }
 
   try {
@@ -132,6 +142,14 @@ async function handleProposalPayment(session: Stripe.Checkout.Session) {
   const expected = Math.round(proposal.total * 100);
   const paid = session.amount_total ?? 0;
   const fullyPaid = paid >= expected;
+
+  // Re-dispatch safety (see the idempotency envelope above): one Payment row
+  // per checkout session, no matter how many deliveries reach this handler.
+  const already = await db.payment.findFirst({
+    where: { externalId: session.id, provider: "STRIPE" },
+    select: { id: true },
+  });
+  if (already) return;
 
   await db.payment.create({
     data: {

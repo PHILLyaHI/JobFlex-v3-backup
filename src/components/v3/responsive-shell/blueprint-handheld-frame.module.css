@@ -1,24 +1,103 @@
-/* The blueprint page's own layout is a desk grid: `.layout` reserves a sidebar
-   column and `.main` is the scrolling pane beside it. In this frame there is no
-   sidebar and the document itself scrolls, so both collapse to plain blocks.
-   Everything below `.content` is the page's own stylesheet, untouched. */
-.frame :global(.layout) {
-  display: block;
-  min-height: 0;
+/* THE HANDHELD SHELL FOR A BLUEPRINT PAGE.
+ *
+ * The page's own markup is kept; what changes is the frame around it. Two jobs:
+ *
+ * 1. DECLARE THE HANDHELD TOKEN CONTRACT. <MobileNav /> reads --pad-x /
+ *    --tbar-gap / --topbar-h / --sidebar-w / --safe-b / --ease-out /
+ *    --ease-soft from the page root it is mounted inside; every mobile-*-v2
+ *    page declares them on its own `.app`. This frame did not, so the shared
+ *    bar rendered with `padding: 0` and `gap: normal` (an invalid `var()` falls
+ *    back to the property's initial value, not to nothing) — the burger sat
+ *    flush against the screen edge and the controls bunched. Same numbers as
+ *    the mobile fleet's modules, deliberately: one bar, one geometry.
+ *
+ * 2. BE THE SCROLLER. blueprint-global.css locks the document
+ *    (`body:has(.jf-blueprint) { height: 100%; overflow: hidden }`) because on
+ *    the desk `.main` is the only scroll container. With `.main` collapsed to a
+ *    plain block for handheld, NOTHING scrolled — the page was stuck at one
+ *    screenful with the rest of the builder unreachable. So the frame does what
+ *    every mobile-*-v2 `.app` does: pins itself to the viewport, gives the
+ *    topbar its row and hands the rest to `.layout`, which scrolls.
+ */
+.frame {
+  /* ---- handheld shell tokens (mirrors mobile-*-v2 `.app`) ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
 }
-.frame :global(.main) {
+
+/* The blueprint page's own layout is a desk grid: `.layout` reserves a sidebar
+   column and `.main` is the scrolling pane beside it. Here there is no sidebar
+   and `.layout` IS the scroller. Doubled class so this out-specifies
+   `.bp .layout { height: var(--app-h) }`, which would otherwise re-pin it to a
+   full viewport inside a shell that is already exactly that tall. */
+.frame.frame :global(.layout) {
+  display: block;
+  height: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+/* No visible track: the handheld fleet scrolls edge to edge. Width only —
+   setting `scrollbar-width` here would disable ::-webkit-scrollbar styling in
+   Chrome for the whole subtree. */
+.frame.frame :global(.layout)::-webkit-scrollbar {
+  width: 0;
+}
+.frame.frame :global(.main) {
   height: auto;
   min-height: 0;
   overflow: visible;
 }
-/* Handheld gutters, and the same bottom strip every other surface reserves for
-   the floating support plate (support-widget.css). */
-.frame :global(.content) {
-  padding: 18px 14px 132px;
+/* Handheld gutters. The bottom is DELIBERATELY small: the builder's own sticky
+   action bar is the last thing in this column's flow, so it reserves its own
+   height at the end of the scroll and the support plate is positioned by
+   measuring that bar. A tall reserve here does not add clearance, it PUSHES the
+   bar up off the bottom edge at full scroll — which is exactly where the plate
+   had already been placed, so the two collided on the last screenful. */
+.frame.frame :global(.content) {
+  /* 30 at the top, not 18. The masthead is a 40px+ caps heading landing
+     directly under a solid ink topbar; at 18 the two read as one band of
+     chrome with the title pinned to the bottom of it. The extra 12px is the
+     gap that lets the page start. */
+  padding: 30px var(--pad-x) 28px;
+}
+/* The page head's kicker — "Proposal builder" over "Manual proposal" — is desk
+   furniture. On a phone it sits directly under a topbar that already says
+   JOBFLEX / CONTRACTOR OS, above a masthead that already says what the page is,
+   so it is a third label in three lines of chrome saying one thing. Dropped on
+   handheld only; the desk head keeps it (owner, 2026-09-01). */
+.frame.frame :global(.kicker) {
+  display: none;
+}
+/* The masthead at the mobile fleet's size, not the desk shell's narrow-window
+   one. blueprint.module.css steps `.page-title` down to 30px under 860px,
+   which is right for a desk window being squeezed and wrong for a phone, where
+   the title is the largest thing on the screen by design. Same clamp the
+   mobile-*-v2 pages use for their mastheads (--fs-mast): ~41px at 390. */
+.frame.frame :global(.page-title) {
+  font-size: clamp(34px, 10.6vw, 48px);
+  line-height: 0.95;
 }
 /* The desk shell's graph-paper wash is drawn by `.main::before` as a FIXED
    layer sized to the sidebar; with no sidebar it would sit under the topbar at
    the wrong offset, so it is turned off here rather than re-measured. */
-.frame :global(.main)::before {
+.frame.frame :global(.main)::before {
   display: none;
 }

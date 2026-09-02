@@ -88,6 +88,11 @@ import { ClientField, ProjectField, type NewClientInput } from "./bp-pickers";
 // money columns carrying their own running totals in the header. It lives
 // outside this folder because it is shared with the line-item lab.
 import { LinesV2 } from "../lines-v2/lines-v2";
+// The handheld build of the same card. Not lazy: it is ~6KB beside a page that
+// already ships the desk table, and a `dynamic()` here would blank the tallest
+// card in the column for a frame on every phone load.
+import { LinesMobile } from "../lines-mobile/lines-mobile";
+import type { LineItemsProps } from "../lines-lab/lines-contract";
 import { PaymentBlock } from "./bp-money";
 import { MarkupBlock } from "./bp-markup";
 import { PrintOptions, FilesBlock } from "./bp-blocks";
@@ -107,6 +112,7 @@ import {
 import { setClientEmail } from "@/actions/clients";
 import type { ManualBuilderData } from "./manual-blueprint-load";
 import { useReveal } from "./use-reveal";
+import { useHandheld } from "./use-handheld";
 
 /**
  * The masthead chip. ONE state rather than a status enum plus a message,
@@ -183,7 +189,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   // hands over to the proposals list. The bar's status chip alone was too quiet
   // to answer "did that work?" — a send that succeeded looked identical to a
   // click that never registered.
-  const [done, setDone] = useState<{ sent: boolean; text: string } | null>(null);
+  const [done, setDone] = useState<{ sent: boolean; ref: string; text: string } | null>(null);
   // Set when "Save & send" is pressed against a client with no email on file.
   // The send is not refused — it is PAUSED on one question, and answering it
   // writes the address to the client record so the next proposal already has
@@ -218,6 +224,19 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   // The fleet entrance cascade. Marker-driven, not children-driven — see
   // ./use-reveal.ts for why this page cannot use the donor's walk.
   useReveal();
+
+  // Two of the eleven cards get a handheld build rather than a squeezed copy of
+  // the desk one — the priced table (03) and the paper controls (11). See
+  // ./use-handheld.ts.
+  const handheld = useHandheld();
+
+  /* Card 03's two builds behind one name. Both implement the lab's
+     `LineItemsProps` contract — that contract exists precisely so a variant is
+     a one-line swap — plus the builder's `hideTax`, so the annotation is the
+     shared shape rather than either component's own. */
+  const Lines: (props: LineItemsProps & { hideTax?: boolean }) => React.ReactNode = handheld
+    ? LinesMobile
+    : LinesV2;
 
   const totals = useMemo(() => computeTotals(draft), [draft]);
 
@@ -348,6 +367,11 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     const why = whyNotSavable(draft);
     if (why) {
       setNote({ tone: "err", text: why });
+      // The chip is in the masthead, screens above the bar on a phone; the
+      // bar's two buttons used to be DISABLED with the reason in a `title`,
+      // which a touch screen never shows — so a tap on Save & send did
+      // nothing at all. The buttons stay live and the reason is said here.
+      toast.error(opts?.sendAfter ? "Can't send yet" : "Can't save yet", why);
       return;
     }
     // A send with nowhere to go used to complete "successfully" and report
@@ -361,6 +385,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
       const pick = draft.client;
       if (pick.mode !== "record") {
         setNote({ tone: "err", text: "Pick a client before sending" });
+        toast.error("Can't send yet", "Pick a client record in card 02 first");
         return;
       }
       const rec = clients.find((c) => c.id === pick.id);
@@ -397,15 +422,17 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
           clients.find((c) => (draft.client.mode === "record" ? c.id === draft.client.id : false))
             ?.email ||
           "";
-        const text = to ? `${ref} · sent to ${to}` : `${ref} · sent`;
+        // No corner toast on success (owner, 2026-09-02): the panel below
+        // already says it, centred, and two notices for one save read as two
+        // events. The masthead chip keeps the short form for after the panel
+        // is dismissed.
+        const text = to ? `${ref} was sent to ${to}` : `${ref} was sent`;
         setNote({ tone: "ok", text });
-        toast.success("Proposal sent", text);
-        setDone({ sent: true, text });
+        setDone({ sent: true, ref, text });
       } else {
-        const text = `${ref} · saved to your proposals`;
+        const text = `${ref} was saved to your proposals`;
         setNote({ tone: "ok", text });
-        toast.success("Proposal saved", text);
-        setDone({ sent: false, text });
+        setDone({ sent: false, ref, text });
       }
     } catch (err: unknown) {
       if (reportPlanLimit(err)) {
@@ -454,21 +481,73 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
           <div className="kicker">Proposal builder</div>
           <h1 className="page-title">Manual proposal</h1>
         </div>
-        <div className={styles.meta}>
-          <span className={styles.metaMono}>
-            {identity.ref} · {identity.date}
-          </span>
-          <span className={styles.metaOrg}>{identity.orgName}</span>
-          <span className={styles.state} role="status">
+        {/* ── THE MASTHEAD'S ANNOTATIONS, IN TWO BUILDS ────────────────
+            On the desk they are a right-aligned column hanging off the
+            title: reference, org, save state, three sizes and three
+            colours, read as a margin note beside a 46px heading.
+
+            At 390 that column has nowhere to hang. Stacked left under the
+            title it became three unlabelled lines of near-identical
+            weight — "DRAFT · 2026-09-01", then a company name, then a
+            sentence about saving — and nothing said which of the three was
+            a fact about the document and which was a fact about THIS
+            MOMENT. The one that changes while you work was the quietest.
+
+            The handheld build separates those two questions. The save
+            state is promoted to a plate that carries its own tone (idle /
+            working / saved / blocked), because it is a status and a status
+            should look like one. Everything the document simply IS — its
+            reference, its date, whose it is — collapses onto ONE mono
+            annotation line under it, which is what the mono layer is for
+            on this page. Two rows, in rank order, instead of three that
+            rank equally. */}
+        {handheld ? (
+          <div className={styles.metaMob}>
             <span
               className={cx(
-                styles.stateDot,
-                (note.tone === "live" || note.tone === "err") && styles.stateDotLive,
+                styles.mstat,
+                note.tone === "live" && styles.mstatLive,
+                note.tone === "ok" && styles.mstatOk,
+                note.tone === "err" && styles.mstatErr,
               )}
-            />
-            {note.text}
-          </span>
-        </div>
+              role="status"
+            >
+              <span className={styles.mstatDot} aria-hidden="true" />
+              {note.text}
+            </span>
+            <span className={styles.mline}>
+              {identity.ref}
+              <span className={styles.mlineSep} aria-hidden="true">
+                ·
+              </span>
+              {identity.date}
+              {identity.orgName ? (
+                <>
+                  <span className={styles.mlineSep} aria-hidden="true">
+                    ·
+                  </span>
+                  {identity.orgName}
+                </>
+              ) : null}
+            </span>
+          </div>
+        ) : (
+          <div className={styles.meta}>
+            <span className={styles.metaMono}>
+              {identity.ref} · {identity.date}
+            </span>
+            <span className={styles.metaOrg}>{identity.orgName}</span>
+            <span className={styles.state} role="status">
+              <span
+                className={cx(
+                  styles.stateDot,
+                  (note.tone === "live" || note.tone === "err") && styles.stateDotLive,
+                )}
+              />
+              {note.text}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className={styles.stack}>
@@ -565,8 +644,13 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         {/* `wide` — the priced table is ~860px on its own grid, which is wider
             than a phone and is not a layout to squeeze. At handheld width it
             scrolls inside this card rather than panning the whole column. */}
-        <Card num="03" title="Line items" id="q-03" wide>
-          <LinesV2
+        {/* `wide` is the DESK card's escape hatch — the seven-column priced
+            table is ~860px and scrolls inside the card rather than taking the
+            whole column sideways. The handheld build has no table and no
+            overflow, so it must not get a scroll container: `wide` also clips,
+            and the row's unit <select> hangs its popup outside the body. */}
+        <Card num="03" title="Line items" id="q-03" wide={!handheld}>
+          <Lines
             lines={draft.lines}
             openIds={openLines}
             onToggle={(id) =>
@@ -767,6 +851,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
       {done && (
         <DonePanel
           sent={done.sent}
+          proposalRef={done.ref}
           text={done.text}
           onGo={() => router.push("/dashboard/proposals" as Route)}
           onStay={() => setDone(null)}
@@ -775,27 +860,32 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
 
       {/* THE ONE PERSISTENT DEVICE ---------------------------------- */}
       <div className={styles.bar} data-rv="">
-        <div>
+        <div className={styles.barTotal}>
           <div className={styles.barLabel}>Grand total</div>
-          <div className={styles.barMoney}>{money(totals.total)}</div>
+          {/* The figure steps down a size past 13 characters
+              ("$1,234,567.89"), the last that fits beside the two actions on
+              a 390px bar, and may break past that — a capped line is still
+              a 22-character total, and a 24px figure that could not break
+              ran 240px past the screen. */}
+          <div
+            className={cx(styles.barMoney, money(totals.total).length > 12 && styles.barMoneyLong)}
+          >
+            {money(totals.total)}
+          </div>
         </div>
         {/* The two actions that move the proposal forward, and nothing else —
             which is what a persistent bar should carry. Both are DISABLED
             rather than hidden while the sheet is not savable, and the reason
             travels in `title` and in the masthead chip. */}
         <div className={styles.barActions}>
-          <Btn
-            onClick={() => void persist()}
-            disabled={working || blocked !== null}
-            title={blocked ?? undefined}
-          >
+          <Btn onClick={() => void persist()} disabled={working} title={blocked ?? undefined}>
             {busy === "save" ? "Saving…" : "Save"}
           </Btn>
           <Btn
             tone="primary"
             icon="send"
             onClick={() => void persist({ sendAfter: true })}
-            disabled={working || blocked !== null}
+            disabled={working}
             title={blocked ?? undefined}
           >
             {busy === "send" ? "Sending…" : "Save & send"}
@@ -929,11 +1019,15 @@ function EmailPanel({
 
 function DonePanel({
   sent,
+  proposalRef,
   text,
   onGo,
   onStay,
 }: {
   sent: boolean;
+  /** The sheet's number — the one thing on the panel worth remembering. */
+  proposalRef: string;
+  /** The whole sentence, beginning with that number. */
   text: string;
   onGo: () => void;
   onStay: () => void;
@@ -975,10 +1069,19 @@ function DonePanel({
         <h2 className={styles.doneH} id="mb-done-h">
           {sent ? "Your proposal is on its way." : "Your proposal is saved."}
         </h2>
-        <p className={styles.doneText}>{text}</p>
+        <p className={styles.doneText}>
+          <b className={styles.doneRef}>{proposalRef}</b>
+          {text.startsWith(proposalRef) ? text.slice(proposalRef.length) : ` ${text}`}
+        </p>
         <p className={styles.doneCount} role="status">
           Taking you to your proposals in {left}…
         </p>
+        {/* The same five seconds, drawn: a rule that empties as the clock
+            runs, so the panel says "this page is leaving" without the line
+            above having to be read. */}
+        <div className={styles.doneBar} aria-hidden="true">
+          <span style={{ width: `${(left / REDIRECT_SECONDS) * 100}%` }} />
+        </div>
         <div className={styles.doneActions}>
           <Btn tone="primary" onClick={onGo}>
             Go now

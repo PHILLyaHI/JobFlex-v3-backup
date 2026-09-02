@@ -15,4 +15,8 @@ export const db =
         log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
       }));
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+// Cached on globalThis in EVERY environment. In production a warm serverless
+// instance re-evaluates modules across invocations; without the global cache
+// each one could mint a fresh PrismaClient (and its own connection pool)
+// against Neon's connection ceiling.
+globalForPrisma.prisma = db;

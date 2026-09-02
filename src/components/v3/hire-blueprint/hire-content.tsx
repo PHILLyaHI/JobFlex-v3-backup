@@ -199,6 +199,10 @@ export function HireContent({
               <div className="card-title">Your job posts</div>
             </div>
           </div>
+          {/* The draft, drawn as the row it will become — updates on every
+              keystroke in the composer above, so "how will this look" is
+              answered before Post is pressed. Empty form, no preview. */}
+          <div id="postPreview"></div>
           <div className="mf-err mf-err--boxed is-hidden" id="myPostsErr" role="alert"></div>
           <div id="myPostsBox"></div>
         </div>

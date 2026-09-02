@@ -5,6 +5,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { getBlockedCustomPages } from "@/lib/customPageAccess";
+import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
+import { CustomGateSwap } from "@/components/v3/upgrade-gate/custom-gate-swap";
 import { isCustomBlockedPath } from "@/lib/customPlan";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
@@ -100,10 +102,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // (/dashboard/advanced-ai/roof, /fence/studio) fall under the
   // /dashboard/advanced-ai prefix, so they are covered by the same list.
   const lockedPages = activeOrgId ? await getBlockedCustomPages(activeOrgId) : null;
+  // Renders the upgrade offer AT the blocked URL (not a redirect) — same
+  // choice as the blueprint layout, see the note there.
+  let customGate: React.ReactNode = null;
   if (lockedPages?.length) {
     const pathname = (await headers()).get("x-pathname") ?? "";
     if (pathname && isCustomBlockedPath(lockedPages, pathname)) {
-      redirect("/dashboard" as Route);
+      customGate = <UpgradeGate pathname={pathname} />;
     }
   }
 
@@ -144,7 +149,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 expiresAt: a.expiresAt,
               }))}
             />
-            {children}
+            {customGate ??
+              (lockedPages?.length ? (
+                // Client half of the gate: a layout only re-renders on a hard
+                // load, so soft navigation needs the swap — see its header.
+                <CustomGateSwap locked={lockedPages}>{children}</CustomGateSwap>
+              ) : (
+                children
+              ))}
           </div>
         </main>
         {!isLimited && <CommandK />}

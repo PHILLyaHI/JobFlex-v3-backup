@@ -9,26 +9,9 @@ export function isMapsEnabled() {
  * used 8 s since it was written, and it is the same kind of call — one JSON
  * lookup against the same host. The other two had NO ceiling at all, which is
  * how `geocode()` came to sit on the roof-measurement path able to hang
- * forever: buildReconModel geocodes whenever the caller has no coordinates.
+ * forever: it geocodes whenever the caller has no coordinates.
  */
 const MAPS_TIMEOUT_MS = 8_000;
-
-export function staticMapUrl(
-  lat: number,
-  lng: number,
-  opts?: { zoom?: number; size?: string; mapType?: "satellite" | "hybrid" | "roadmap" },
-): string | null {
-  if (!isMapsEnabled()) return null;
-  const p = new URLSearchParams({
-    center: `${lat},${lng}`,
-    zoom: String(opts?.zoom ?? 20),
-    size: opts?.size ?? "640x360",
-    maptype: opts?.mapType ?? "satellite",
-    scale: "2",
-    key: process.env.GOOGLE_MAPS_API_KEY!,
-  });
-  return `https://maps.googleapis.com/maps/api/staticmap?${p.toString()}`;
-}
 
 // Structured geocode for Lead Center matching — joins whatever address parts
 // exist and pins them. Best-effort by design: null on disabled / no result /

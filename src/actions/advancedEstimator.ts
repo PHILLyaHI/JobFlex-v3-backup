@@ -1,4 +1,5 @@
 "use server";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
@@ -480,6 +481,7 @@ export async function analyzeEstimatePrompt(input: {
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     const plan = await getOrgPlanById(organizationId);
@@ -568,6 +570,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     const plan = await getOrgPlanById(organizationId);
@@ -828,6 +831,7 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     const plan = await getOrgPlanById(organizationId);

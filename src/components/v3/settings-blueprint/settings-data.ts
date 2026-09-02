@@ -1,12 +1,19 @@
 /**
- * Fixture content for the Settings blueprint page.
+ * COPY + SHAPES for the Settings blueprint page.
  *
- * Every literal below is transcribed VERBATIM from the donor file
- * `jobflex-settings-blueprint (6).html`, lines 2004-2131. HTML entities are
- * stored as their real characters (¢ – — • & £ € ✓). Nothing here is derived
- * or rounded — if a value is in the donor, this is that exact value.
+ * Every label, card title, sub-line and option list below is transcribed
+ * VERBATIM from the donor file `jobflex-settings-blueprint (6).html`, lines
+ * 2004-2131. HTML entities are stored as their real characters (¢ – — • & £ € ✓).
  *
- * Presentational only: no server actions, no API calls, no Prisma.
+ * What this file no longer holds is DATA. The donor's fixture values (the
+ * "Ivan Petrov" profile, the two invented cards, the fake plan and payment
+ * history, the imaginary Gmail/Meta connection, the notification matrix) were
+ * replaced by the `SettingsData` object at the bottom of this file, which
+ * src/app/dashboard/settings/page.tsx builds from the database and threads down
+ * to each pane. The types and the copy are unchanged — only the values moved.
+ *
+ * No server imports here: this module is read by the server page AND by the
+ * five "use client" panes, so it must stay free of Prisma and "use server".
  */
 
 /* ------------------------------------------------------------------ */
@@ -145,62 +152,59 @@ export const DEFAULT_RAIL: RailKey = 'account';
 export const PROFILE_CARD: CardHead = {
   title: 'Profile',
   sub: 'Visible to your team and on outgoing emails.',
-  badge: { label: 'Owner', tone: 'bg-live' },
 };
 
-export const PROFILE_FIELDS: readonly FieldSpec[] = [
-  { label: 'Full name', value: 'Ivan Petrov' },
-  { label: 'Email', value: 'ivan@patelroofing.com', disabled: true },
-  { label: 'Phone', value: '(425) 555-0142' },
-  { label: 'Role', value: 'Owner', disabled: true },
-];
+/** Donor field labels. The values come from the signed-in User row. */
+export const PROFILE_LABELS = {
+  name: 'Full name',
+  email: 'Email',
+  phone: 'Phone',
+  role: 'Role',
+} as const;
 
 export const BUSINESS_CARD: CardHead = {
   title: 'Business',
   sub: 'Shown on proposals, invoices and your public portal.',
 };
 
-export const BUSINESS_FIELDS: readonly FieldSpec[] = [
-  { label: 'Business name', value: 'Patel Roofing & Co.' },
-  { label: 'Address', value: '1820 Monte Villa Pkwy, Bothell, WA 98021' },
-  { label: 'Website', value: 'patelroofing.com' },
-  { label: 'License №', value: 'WA-2847' },
-];
+/**
+ * Donor field labels. The donor's fourth field was "License №", which has no
+ * column on Organization — it is replaced by Phone, which does (and which
+ * `updateBusiness` writes alongside the other three).
+ */
+export const BUSINESS_LABELS = {
+  name: 'Business name',
+  address: 'Address',
+  website: 'Website',
+  phone: 'Phone',
+} as const;
 
 export const SECURITY_CARD: CardHead = {
   title: 'Security',
   sub: 'Password, two-factor and where you are signed in.',
 };
 
+export type SecurityKey = 'password' | 'twofactor' | 'sessions';
+
 /** F1 renders these three as one row of three `.seccol` columns. */
 export interface SecurityItem {
+  readonly key: SecurityKey;
   readonly icon: IconName;
   readonly name: string;
-  readonly desc: string;
   readonly action: string;
   readonly badge?: Badge;
 }
 
 export const SECURITY_ITEMS: readonly SecurityItem[] = [
+  { key: 'password', icon: 'i-eye-off', name: 'Password', action: 'Change' },
   {
-    icon: 'i-eye-off',
-    name: 'Password',
-    desc: 'Last changed 4 months ago.',
-    action: 'Change',
-  },
-  {
+    key: 'twofactor',
     icon: 'i-phone',
     name: 'Two-factor authentication',
-    desc: 'Codes by SMS to (425) 555-0142.',
     action: 'Turn on',
     badge: { label: 'Off', tone: 'bg-off' },
   },
-  {
-    icon: 'i-users',
-    name: 'Active sessions',
-    desc: '3 devices · Bothell WA, Seattle WA, iPhone.',
-    action: 'Sign out all',
-  },
+  { key: 'sessions', icon: 'i-users', name: 'Active sessions', action: 'Sign out all' },
 ];
 
 export const DANGER_CARD: CardHead = {
@@ -211,17 +215,19 @@ export const DANGER_CARD: CardHead = {
 
 export interface DangerZoneCopy {
   readonly name: string;
-  readonly desc: string;
   readonly action: ActionSpec;
 }
 
 /** F2 puts `action` at the right end of the title+description row. */
 export const DANGER_ZONE: DangerZoneCopy = {
   name: 'Delete organization',
-  desc:
-    'Removes clients, proposals, jobs and payment history for Patel Roofing & Co. Cannot be undone.',
   action: { label: 'Delete', icon: 'i-trash' },
 };
+
+/** The org name is spliced in at render time. */
+export function dangerZoneDesc(orgName: string): string {
+  return `Removes clients, proposals, jobs and payment history for ${orgName}. Cannot be undone.`;
+}
 
 /* ------------------------------------------------------------------ */
 /* Payments pane — processors                                          */
@@ -233,48 +239,58 @@ export const PROCESSORS_CARD: CardHead = {
   badge: { label: 'Live', tone: 'bg-live' },
 };
 
+/** Key into `PaymentSettings` — the boolean this row actually reads and writes. */
+export type ProcessorKey = 'stripe' | 'square' | 'paypal' | 'ach';
+
 export interface Processor {
+  readonly key: ProcessorKey;
   readonly icon: IconName;
   readonly name: string;
   readonly desc: string;
-  /** Donor `.prow-conn` sub-line. */
+  /** Donor `.prow-conn` sub-line. Product copy, not a connection read-out. */
   readonly conn?: string;
-  readonly action: ActionSpec;
 }
 
 /**
  * F3: ACH bank transfer gains the same Connect action as Square / PayPal.
  * F4: no `.tg` toggles on processor rows — the row carries only its button.
  * F5: the "Add a processor" `.sactions` block is removed entirely.
+ *
+ * The donor's `Connected · acct_1Q7f…` sub-line under Stripe was an invented
+ * account id and is gone; the row's button state now reflects the org's real
+ * `paymentSettingsJson` flag.
  */
 export const PROCESSORS: readonly Processor[] = [
   {
+    key: 'stripe',
     icon: 'i-card',
     name: 'Stripe',
     desc: 'Cards, Apple Pay, Google Pay. Fee 2.9% + 30¢.',
-    conn: 'Connected · acct_1Q7f…',
-    action: { label: 'Disconnect', icon: 'i-x', state: 'is-off' },
   },
   {
+    key: 'square',
     icon: 'i-bank',
     name: 'Square',
     desc: 'Cards + ACH for U.S. accounts. Fee 2.6% + 10¢.',
-    action: { label: 'Connect', icon: 'i-plus', state: 'is-on' },
   },
   {
+    key: 'paypal',
     icon: 'i-card',
     name: 'PayPal',
     desc: 'PayPal balance, cards, Pay Later.',
-    action: { label: 'Connect', icon: 'i-plus', state: 'is-on' },
   },
   {
+    key: 'ach',
     icon: 'i-bank',
     name: 'ACH bank transfer',
     desc: 'Lower fees on large jobs. 1–3 business days to clear.',
     conn: 'Via Stripe',
-    action: { label: 'Connect', icon: 'i-plus', state: 'is-on' },
   },
 ];
+
+/** The two donor button states a row can be in, reused wherever one is needed. */
+export const CONNECT_ACTION: ActionSpec = { label: 'Connect', icon: 'i-plus', state: 'is-on' };
+export const DISCONNECT_ACTION: ActionSpec = { label: 'Disconnect', icon: 'i-x', state: 'is-off' };
 
 /* ------------------------------------------------------------------ */
 /* Payments pane — payout account                                      */
@@ -286,21 +302,15 @@ export const PAYOUT_CARD: CardHead = {
   sub: 'Where cleared money lands.',
 };
 
-export interface PayoutAccount {
-  readonly icon: IconName;
-  readonly name: string;
-  readonly desc: string;
-  readonly badge: Badge;
-  readonly action: ActionSpec;
-}
-
-export const PAYOUT_ACCOUNT: PayoutAccount = {
-  icon: 'i-bank',
-  name: 'Washington Federal · checking •••• 3391',
-  desc: 'Default payout destination · verified.',
-  badge: { label: 'Default', tone: 'bg-ok' },
-  action: { label: 'Replace', icon: 'i-undo' },
-};
+/**
+ * The donor's "Washington Federal · checking •••• 3391" row was invented — no
+ * payout-account model exists — so the card renders this empty state instead.
+ */
+export const PAYOUT_EMPTY = {
+  icon: 'i-bank' as IconName,
+  name: 'No payout account',
+  desc: 'Add a bank account to receive cleared money.',
+} as const;
 
 /** F11: this button opens the Add-payout-account modal. */
 export const ADD_PAYOUT_ACTION: ActionSpec = {
@@ -341,11 +351,22 @@ export const NET_TERMS_OPTIONS: readonly string[] = [
 ];
 export const NET_TERMS_DEFAULT = 'Net 14' as const;
 
-/** The two plain text inputs in the Defaults `.fgrid` (Deposit %, Late fee). */
-export const PAYMENT_DEFAULT_FIELDS: readonly FieldSpec[] = [
-  { label: 'Deposit %', value: '30' },
-  { label: 'Late fee', value: '1.5%' },
-];
+/** The two plain text inputs in the Defaults `.fgrid`. Values come from
+ *  `paymentSettingsJson` (`depositPct`, `lateFeePct`). */
+export const PAYMENT_DEFAULT_LABELS = {
+  depositPct: 'Deposit %',
+  lateFeePct: 'Late fee',
+} as const;
+
+/** `paymentSettingsJson.currency` is stored bare ("USD"); the donor's dropdown
+ *  shows it with its symbol ("USD · $"). These two keep the pair in step. */
+export function currencyOptionFor(code: string): string {
+  const match = CURRENCY_OPTIONS.find((o) => o.split(' ')[0] === code);
+  return match ?? CURRENCY_DEFAULT;
+}
+export function currencyCodeFor(option: string): string {
+  return option.split(' ')[0] ?? 'USD';
+}
 
 /* ------------------------------------------------------------------ */
 /* Payments pane — automations + compliance                            */
@@ -356,21 +377,30 @@ export const PAYMENT_AUTOMATIONS_CARD: CardHead = {
   sub: 'Quiet, persistent reminders.',
 };
 
-export const PAYMENT_AUTOMATIONS: readonly ToggleRow[] = [
+/** Keys into `PaymentSettings`. */
+export type PaymentAutomationKey = 'autoRemind' | 'lateFees' | 'receiptsOnPayment';
+
+export interface PaymentAutomationRow {
+  readonly key: PaymentAutomationKey;
+  readonly name: string;
+  readonly desc: string;
+}
+
+export const PAYMENT_AUTOMATIONS: readonly PaymentAutomationRow[] = [
   {
+    key: 'autoRemind',
     name: 'Auto-remind on overdue invoices',
     desc: 'Day 1, day 7, day 14 after due date.',
-    on: true,
   },
   {
+    key: 'lateFees',
     name: 'Apply late fees automatically',
     desc: 'Adds the late fee to the next invoice.',
-    on: true,
   },
   {
+    key: 'receiptsOnPayment',
     name: 'Receipts on payment',
     desc: 'Emails the client a receipt the moment a payment clears.',
-    on: true,
   },
 ];
 
@@ -397,24 +427,17 @@ export const SEND_TEST_CHARGE_ACTION: ActionSpec = {
 export const PLAN_CARD: CardHead = {
   title: 'Your plan',
   sub: 'Active subscription',
-  badge: { label: 'Active', tone: 'bg-ok' },
 };
 
-export interface PlanSummary {
-  readonly name: string;
-  readonly nextBill: string;
-  readonly seats: string;
-  readonly primaryAction: ActionSpec;
-  readonly secondaryAction: ActionSpec;
-}
+/** Donor `.plan-meta` prefixes. The figures after them are read from the
+ *  Subscription row and the plan's own seat limit. */
+export const PLAN_META_PREFIX = {
+  nextBill: 'Next bill · ',
+  seats: 'Seats used · ',
+} as const;
 
-export const PLAN_SUMMARY: PlanSummary = {
-  name: 'Professional',
-  nextBill: 'Next bill · August 1, 2026',
-  seats: 'Seats used · 3 of 5',
-  primaryAction: { label: 'Change plan', icon: 'i-arrow' },
-  secondaryAction: { label: 'Cancel', icon: 'i-undo' },
-};
+export const PLAN_PRIMARY_ACTION: ActionSpec = { label: 'Change plan', icon: 'i-arrow' };
+export const PLAN_SECONDARY_ACTION: ActionSpec = { label: 'Cancel', icon: 'i-undo' };
 
 export const PAYMENT_METHODS_CARD: CardHead = {
   title: 'Payment methods',
@@ -427,28 +450,18 @@ export interface PaymentMethod {
   /** Rendered in its own flex slot straight after the `.prow-b` text block. */
   readonly badge?: Badge;
   readonly desc: string;
-  readonly action: ActionSpec;
-  /** aria-label on the trailing `.icon-sm` button. */
-  readonly removeLabel: string;
 }
 
-export const PAYMENT_METHODS: readonly PaymentMethod[] = [
-  {
-    icon: 'i-card',
-    name: 'Visa •••• 4242',
-    badge: { label: 'Default', tone: 'bg-ok' },
-    desc: 'Exp 08 / 27 · Ivan Petrov',
-    action: { label: 'Edit', icon: 'i-pen' },
-    removeLabel: 'Remove',
-  },
-  {
-    icon: 'i-card',
-    name: 'Mastercard •••• 8821',
-    desc: 'Exp 02 / 28 · Ivan Petrov',
-    action: { label: 'Make default', icon: 'i-check', state: 'is-on' },
-    removeLabel: 'Remove',
-  },
-];
+/**
+ * The donor's two invented cards (Visa •••• 4242 / Mastercard •••• 8821) are
+ * gone. Nothing in this codebase reads the customer's stored cards off Stripe,
+ * so the card renders this row until a payment method exists.
+ */
+export const PAYMENT_METHOD_EMPTY: PaymentMethod = {
+  icon: 'i-card',
+  name: 'No card on file',
+  desc: 'Add a payment method at checkout to keep your subscription active.',
+};
 
 export const ADD_PAYMENT_METHOD_ACTION: ActionSpec = {
   label: 'Add payment method',
@@ -476,6 +489,10 @@ export const PLANS_COLUMNS: readonly string[] = [
 /** Donor `style="min-width:560px"` on the Plans table. */
 export const PLANS_TABLE_MIN_WIDTH = '560px' as const;
 
+/**
+ * One row per PricingPlan in the catalog (/admin/plans is the single source of
+ * truth). Seats / Proposals / Estimators are that plan's own limits.
+ */
 export interface PlanRow {
   readonly plan: string;
   readonly seats: string;
@@ -486,42 +503,18 @@ export interface PlanRow {
   readonly current: boolean;
 }
 
-export const PLANS: readonly PlanRow[] = [
-  {
-    plan: 'Starter',
-    seats: '1',
-    proposals: '25 / mo',
-    estimators: '—',
-    price: '$0',
-    current: false,
-  },
-  {
-    plan: 'Professional',
-    seats: '5',
-    proposals: 'Unlimited',
-    estimators: 'Roof + fence',
-    price: '$79',
-    current: true,
-  },
-  {
-    plan: 'Advanced',
-    seats: 'Unlimited',
-    proposals: 'Unlimited',
-    estimators: 'All estimators',
-    price: '$149',
-    current: false,
-  },
-];
+/** Donor em dash, used wherever a plan sets no cap for a column. */
+export const PLAN_UNLIMITED = 'Unlimited' as const;
+export const PLANS_EMPTY = 'No plans are published yet.' as const;
 
 export const BILLING_CONTACT_CARD: CardHead = {
   title: 'Billing contact',
   sub: 'Where invoices and dunning notices go.',
 };
 
-export const BILLING_CONTACT_FIELDS: readonly FieldSpec[] = [
-  { label: 'Billing email', value: 'billing@patelroofing.com' },
-  { label: 'Tax ID', value: '', placeholder: 'EIN 00-0000000' },
-];
+/** The donor's second field, "Tax ID", has no column and no processor hand-off,
+ *  so it is not rendered — a text box that saves nowhere is worse than none. */
+export const BILLING_CONTACT_LABELS = { billingEmail: 'Billing email' } as const;
 
 export const PAYMENT_HISTORY_CARD: CardHead = {
   title: 'Payment history',
@@ -539,58 +532,20 @@ export const PAYMENT_HISTORY_COLUMNS: readonly string[] = [
 /** Donor `style="min-width:480px"` on the Payment history table. */
 export const PAYMENT_HISTORY_TABLE_MIN_WIDTH = '480px' as const;
 
+/** One settled Stripe subscription invoice. `invoiceHref` is null when Stripe
+ *  returned no hosted invoice / PDF for the charge. */
 export interface PaymentHistoryRow {
+  readonly id: string;
   readonly date: string;
   readonly description: string;
   readonly amount: string;
   readonly invoiceLabel: string;
   readonly invoiceIcon: IconName;
+  readonly invoiceHref: string | null;
 }
 
-export const PAYMENT_HISTORY: readonly PaymentHistoryRow[] = [
-  {
-    date: 'Jul 01, 2026',
-    description: 'Professional · monthly',
-    amount: '$79.00',
-    invoiceLabel: 'PDF',
-    invoiceIcon: 'i-download',
-  },
-  {
-    date: 'Jun 01, 2026',
-    description: 'Professional · monthly',
-    amount: '$79.00',
-    invoiceLabel: 'PDF',
-    invoiceIcon: 'i-download',
-  },
-  {
-    date: 'May 01, 2026',
-    description: 'Professional · monthly',
-    amount: '$79.00',
-    invoiceLabel: 'PDF',
-    invoiceIcon: 'i-download',
-  },
-  {
-    date: 'Apr 01, 2026',
-    description: 'Professional · monthly',
-    amount: '$79.00',
-    invoiceLabel: 'PDF',
-    invoiceIcon: 'i-download',
-  },
-  {
-    date: 'Mar 01, 2026',
-    description: 'Professional · monthly',
-    amount: '$79.00',
-    invoiceLabel: 'PDF',
-    invoiceIcon: 'i-download',
-  },
-  {
-    date: 'Feb 01, 2026',
-    description: 'Starter → Professional',
-    amount: '$79.00',
-    invoiceLabel: 'PDF',
-    invoiceIcon: 'i-download',
-  },
-];
+export const PAYMENT_HISTORY_INVOICE_LABEL = 'PDF' as const;
+export const PAYMENT_HISTORY_EMPTY = 'No subscription charges yet.' as const;
 
 /* ------------------------------------------------------------------ */
 /* Integrations pane — subtabs                                         */
@@ -618,8 +573,11 @@ export const DEFAULT_SUBTAB: SubTabKey = 'gmail';
 export const GMAIL_CONNECTION_CARD: CardHead = {
   title: 'Connection',
   sub: 'Send proposals and follow-ups from your own address.',
-  badge: { label: 'Not connected', tone: 'bg-off' },
 };
+
+/** Donor badge pair — which one shows is decided by `gmailTokensJson`. */
+export const CONNECTED_BADGE: Badge = { label: 'Connected', tone: 'bg-ok' };
+export const NOT_CONNECTED_BADGE: Badge = { label: 'Not connected', tone: 'bg-off' };
 
 export const GMAIL_CONNECT_ACTION: ActionSpec = {
   label: 'Connect Gmail',
@@ -631,10 +589,12 @@ export const GMAIL_FROM_CARD: CardHead = {
   sub: 'How outbound mail is signed.',
 };
 
-export const GMAIL_FROM_FIELDS: readonly FieldSpec[] = [
-  { label: 'Display name', value: '', placeholder: 'Patel Roofing & Co.' },
-  { label: 'Reply-to address', value: '', placeholder: 'ivan@patelroofing.com' },
-];
+/** Donor field labels. The placeholders are the org's own name and the signed-in
+ *  user's own email, not the donor's invented pair. */
+export const GMAIL_FROM_LABELS = {
+  displayName: 'Display name',
+  replyTo: 'Reply-to address',
+} as const;
 
 export const SIGNATURE_OPTIONS: readonly string[] = [
   'Brand signature',
@@ -643,26 +603,50 @@ export const SIGNATURE_OPTIONS: readonly string[] = [
 ];
 export const SIGNATURE_DEFAULT = 'Brand signature' as const;
 
+/** `gmailSettingsJson.signature` stores the bare key ("brand"); the dropdown
+ *  shows the donor's label. */
+const SIGNATURE_BY_KEY: Record<string, string> = {
+  brand: 'Brand signature',
+  personal: 'Personal signature',
+  none: 'No signature',
+};
+export function signatureOptionFor(key: string): string {
+  return SIGNATURE_BY_KEY[key] ?? SIGNATURE_DEFAULT;
+}
+export function signatureKeyFor(option: string): string {
+  const hit = Object.entries(SIGNATURE_BY_KEY).find(([, label]) => label === option);
+  return hit?.[0] ?? 'brand';
+}
+
 export const GMAIL_BEHAVIOR_CARD: CardHead = {
   title: 'Behavior',
   sub: 'Quietly improve every send.',
 };
 
-export const GMAIL_BEHAVIOR_TOGGLES: readonly ToggleRow[] = [
+/** Keys into `GmailSettings` — the flag each donor row reads and writes. */
+export type GmailToggleKey = 'sendFromUser' | 'trackOpens' | 'autoSync';
+
+export interface GmailToggleRow {
+  readonly key: GmailToggleKey;
+  readonly name: string;
+  readonly desc: string;
+}
+
+export const GMAIL_BEHAVIOR_TOGGLES: readonly GmailToggleRow[] = [
   {
+    key: 'sendFromUser',
     name: 'Send from my Gmail',
     desc: 'Outbound mail leaves from your connected address.',
-    on: true,
   },
   {
+    key: 'trackOpens',
     name: 'Track opens',
     desc: 'Adds an invisible pixel so you know when it landed.',
-    on: true,
   },
   {
+    key: 'autoSync',
     name: 'Two-way thread sync',
     desc: 'Replies come back into JobFlex conversations.',
-    on: false,
   },
 ];
 
@@ -674,12 +658,9 @@ export const GMAIL_PERMISSIONS_CARD: CardHead = {
 /** Donor `&#10003;` inside each `.scope > i`. */
 export const SCOPE_CHECK = '✓' as const;
 
-export const GMAIL_SCOPES: readonly string[] = [
-  'gmail.send',
-  'gmail.readonly',
-  'gmail.modify',
-  'userinfo.email',
-];
+/** Shown only once a connection exists; the list itself comes from
+ *  `GMAIL_SCOPES` in src/lib/sdk/gmail.ts (two scopes, not the donor's four). */
+export const GMAIL_SCOPES_EMPTY = 'No scopes granted — Gmail is not connected.' as const;
 
 /* ------------------------------------------------------------------ */
 /* Integrations — Meta business                                        */
@@ -688,50 +669,37 @@ export const GMAIL_SCOPES: readonly string[] = [
 export const META_CONNECTION_CARD: CardHead = {
   title: 'Connection',
   sub: 'Pull Facebook and Instagram leads straight into JobFlex.',
-  badge: { label: 'Connected', tone: 'bg-ok' },
 };
 
-export interface MetaConnection {
-  readonly icon: IconName;
-  readonly name: string;
-  readonly desc: string;
-  /** F15: rendered side by side, kept toward the left of the row. */
-  readonly actions: readonly ActionSpec[];
-}
-
-export const META_CONNECTION: MetaConnection = {
-  icon: 'i-globe',
-  name: 'Patel Roofing & Co.',
-  desc: 'App ID 8842… · connected Feb 12, 2026.',
-  actions: [{ label: 'Test event' }, { label: 'Disconnect' }],
-};
+/** The row's name is the org's own name; the sub-line states the real rule.
+ *  The donor's "App ID 8842… · connected Feb 12, 2026." was invented, and its
+ *  "Test event" button had nothing behind it, so neither survives. */
+export const META_CONNECTION_ICON: IconName = 'i-globe';
+export const META_CONNECTED_DESC =
+  'Lead forms on this page create leads in your pipeline.' as const;
+export const META_DISCONNECTED_DESC =
+  'Lead forwarding is off. Turn it on to receive form submissions.' as const;
+export const META_CONNECT_ACTION: ActionSpec = { label: 'Connect' };
+export const META_DISCONNECT_ACTION: ActionSpec = { label: 'Disconnect' };
 
 export interface CopyField {
   readonly label: string;
   readonly value: string;
 }
 
-export const META_CALLBACK_URL: CopyField = {
-  label: 'Callback URL',
-  value: 'https://api.jobflex.com/webhooks/meta',
-};
-
-export const META_VERIFY_TOKEN: CopyField = {
-  label: 'Verify token',
-  value: 'jf_mt_8f42c1d90ba7',
-};
+/** Only the label is fixed copy — the URL is built from the live app origin.
+ *  The donor's second field, "Verify token", is gone: no verify token exists in
+ *  the env contract, so there was nothing real to print. */
+export const META_CALLBACK_LABEL = 'Callback URL' as const;
 
 export const META_LEAD_CARD: CardHead = {
   title: 'Default lead handling',
   sub: 'What we do the second a form arrives.',
 };
 
-export const META_PAGE_OPTIONS: readonly string[] = [
-  'Patel Roofing & Co.',
-  'Patel Roofing — Austin',
-  'Patel Roofing — Dallas',
-];
-export const META_PAGE_DEFAULT = 'Patel Roofing & Co.' as const;
+/** The donor's three invented page names are replaced at render time by the
+ *  org's own name plus whatever `metaSettingsJson.defaultPage` already holds. */
+export const META_PAGE_LABEL = 'Default page' as const;
 
 export const META_CATEGORY_OPTIONS: readonly string[] = [
   'Auto-detect from form name',
@@ -741,16 +709,40 @@ export const META_CATEGORY_OPTIONS: readonly string[] = [
 ];
 export const META_CATEGORY_DEFAULT = 'Auto-detect from form name' as const;
 
-export const META_LEAD_TOGGLES: readonly ToggleRow[] = [
+/** `metaSettingsJson.formCategory` stores the bare key ("auto"). */
+const META_CATEGORY_BY_KEY: Record<string, string> = {
+  auto: 'Auto-detect from form name',
+  roofing: 'Always Roofing',
+  fencing: 'Always Fencing',
+  other: 'Always Other',
+};
+export function metaCategoryOptionFor(key: string): string {
+  return META_CATEGORY_BY_KEY[key] ?? META_CATEGORY_DEFAULT;
+}
+export function metaCategoryKeyFor(option: string): string {
+  const hit = Object.entries(META_CATEGORY_BY_KEY).find(([, label]) => label === option);
+  return hit?.[0] ?? 'auto';
+}
+
+/** Keys into `MetaSettings`. */
+export type MetaToggleKey = 'autoCreate' | 'autoText';
+
+export interface MetaToggleRow {
+  readonly key: MetaToggleKey;
+  readonly name: string;
+  readonly desc: string;
+}
+
+export const META_LEAD_TOGGLES: readonly MetaToggleRow[] = [
   {
+    key: 'autoCreate',
     name: 'Auto-create Lead',
     desc: 'Every submission becomes a lead in the pipeline.',
-    on: true,
   },
   {
+    key: 'autoText',
     name: 'Auto-text the prospect',
     desc: 'Sends the first touch within a minute.',
-    on: true,
   },
 ];
 
@@ -767,27 +759,9 @@ export interface WebhookDelivery {
   readonly error: boolean;
 }
 
-export const WEBHOOK_DELIVERIES: readonly WebhookDelivery[] = [
-  {
-    status: '200',
-    detail: 'lead_gen · Patel Roofing & Co.',
-    time: '2 min ago',
-    error: false,
-  },
-  {
-    status: '200',
-    detail: 'lead_gen · Patel Roofing — Austin',
-    time: '41 min ago',
-    error: false,
-  },
-  {
-    status: '200',
-    detail: 'lead_gen · Patel Roofing & Co.',
-    time: '3 h ago',
-    error: false,
-  },
-  { status: '410', detail: 'page unsubscribed', time: '9 h ago', error: true },
-];
+/** Nothing records webhook deliveries — there is no model and no
+ *  /api/webhooks/meta route — so this list is always empty today. */
+export const WEBHOOKS_EMPTY = 'No deliveries recorded.' as const;
 
 /* ------------------------------------------------------------------ */
 /* Integrations — Email templates                                      */
@@ -803,39 +777,16 @@ export const EMAIL_TEMPLATE_NEW_ACTION: ActionSpec = {
   icon: 'i-plus',
 };
 
+/** One row per EmailTemplate the org actually has. */
 export interface EmailTemplate {
+  readonly id: string;
   readonly kind: string;
   readonly subject: string;
   readonly trigger: string;
-  readonly editLabel: string;
 }
 
-export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
-  {
-    kind: 'Send',
-    subject: 'Your estimate from {{org}}',
-    trigger: 'Proposal sent',
-    editLabel: 'Edit',
-  },
-  {
-    kind: 'Reminder',
-    subject: 'Still thinking it over?',
-    trigger: 'Follow-up · day 3',
-    editLabel: 'Edit',
-  },
-  {
-    kind: 'Thank-you',
-    subject: 'Thanks for choosing {{org}}',
-    trigger: 'Thank you',
-    editLabel: 'Edit',
-  },
-  {
-    kind: 'Review',
-    subject: 'How was the work?',
-    trigger: 'Review request',
-    editLabel: 'Edit',
-  },
-];
+export const EMAIL_TEMPLATE_EDIT_LABEL = 'Edit' as const;
+export const EMAIL_TEMPLATES_EMPTY = 'No templates yet.' as const;
 
 export interface NoteCopy {
   readonly icon: IconName;
@@ -869,8 +820,12 @@ export const EMAIL_TEMPLATES_NOTE: NoteCopy = {
 export const NOTIFICATIONS_CARD: CardHead = {
   title: 'What reaches you',
   sub: 'Pick a channel per event. In-app always keeps a copy in the bell.',
-  badge: { label: '14 events', tone: 'bg-live' },
 };
+
+/** Donor `<span class="badge2 bg-live">14 events</span>` — counted, not typed. */
+export function notificationCountBadge(count: number): Badge {
+  return { label: `${count} event${count === 1 ? '' : 's'}`, tone: 'bg-live' };
+}
 
 /** Column order is load-bearing: index 1 is the "Email only" column. */
 export const NOTIFICATION_CHANNELS: readonly string[] = [
@@ -888,93 +843,110 @@ export const NOTIFICATION_EVENT_COLUMN = 'Event' as const;
 export type NotificationChannels = readonly [boolean, boolean, boolean];
 
 export interface NotificationEvent {
+  /** Stable storage key inside `User.notificationPrefsJson`. Never rendered. */
+  readonly key: string;
   /** F16 icon map. */
   readonly icon: IconName;
   readonly name: string;
   readonly sub: string;
+  /** Seed state used when the user has never saved the matrix. */
   readonly channels: NotificationChannels;
 }
 
 export const NOTIFICATION_EVENTS: readonly NotificationEvent[] = [
   {
+    key: 'lead-assigned',
     icon: 'i-target',
     name: 'New lead assigned',
     sub: 'A platform or web lead lands in your pipeline',
     channels: [true, true, true],
   },
   {
+    key: 'lead-offer-expiring',
     icon: 'i-hourglass',
     name: 'Lead offer expiring',
     sub: 'Under two hours left to accept',
     channels: [true, true, true],
   },
   {
+    key: 'proposal-viewed',
     icon: 'i-file',
     name: 'Proposal viewed',
     sub: 'The client opened your estimate',
     channels: [true, false, false],
   },
   {
+    key: 'proposal-accepted',
     icon: 'i-check',
     name: 'Proposal accepted',
     sub: 'Signed and ready to schedule',
     channels: [true, true, true],
   },
   {
+    key: 'proposal-declined',
     icon: 'i-x',
     name: 'Proposal declined',
     sub: 'With the reason the client gave',
     channels: [true, true, false],
   },
   {
+    key: 'payment-received',
     icon: 'i-bank',
     name: 'Payment received',
     sub: 'A deposit or installment cleared',
     channels: [true, true, false],
   },
   {
+    key: 'payment-overdue',
     icon: 'i-clock',
     name: 'Payment overdue',
     sub: 'Past the net terms on an invoice',
     channels: [true, true, true],
   },
   {
+    key: 'change-order',
     icon: 'i-pen',
     name: 'Change order submitted',
     sub: 'Waiting on client approval',
     channels: [true, true, false],
   },
   {
+    key: 'job-scheduled',
     icon: 'i-cal',
     name: 'Job scheduled',
     sub: 'A crew is booked for a date',
     channels: [true, false, false],
   },
   {
+    key: 'job-completed',
     icon: 'i-box',
     name: 'Job completed',
     sub: 'Crew marked the work done',
     channels: [true, true, false],
   },
   {
+    key: 'worker-responded',
     icon: 'i-hardhat',
     name: 'Worker responded',
     sub: 'Accepted or declined an assignment',
     channels: [true, false, true],
   },
   {
+    key: 'review-received',
     icon: 'i-thumb',
     name: 'Review received',
     sub: 'A homeowner left a rating',
     channels: [true, true, false],
   },
   {
+    key: 'trade-reply',
     icon: 'i-board',
     name: 'Trade board reply',
     sub: 'Someone answered your post',
     channels: [true, false, false],
   },
   {
+    key: 'team-mention',
     icon: 'i-users',
     name: 'Team mention',
     sub: 'A teammate tagged you in a note',
@@ -1030,23 +1002,38 @@ export const DIGEST_OPTIONS: readonly string[] = [
 ];
 export const DIGEST_DEFAULT = '08:00' as const;
 
-export const SMS_NUMBER_FIELD: FieldSpec = {
-  label: 'SMS number',
-  value: '(425) 555-0142',
-};
+export const SMS_NUMBER_LABEL = 'SMS number' as const;
 
-export const DELIVERY_TOGGLES: readonly ToggleRow[] = [
+/** Keys into the stored notification blob. */
+export type DeliveryToggleKey = 'muteWeekends' | 'desktopPush' | 'soundOnLead';
+
+export interface DeliveryToggleRow {
+  readonly key: DeliveryToggleKey;
+  readonly name: string;
+  readonly desc: string;
+  /** Seed state used when the user has never saved the blob. */
+  readonly on: boolean;
+}
+
+export const DELIVERY_TOGGLES: readonly DeliveryToggleRow[] = [
   {
+    key: 'muteWeekends',
     name: 'Mute everything on weekends',
     desc: 'Nothing but payment failures gets through Sat and Sun.',
     on: false,
   },
   {
+    key: 'desktopPush',
     name: 'Desktop push',
     desc: 'Browser notifications while JobFlex is open.',
     on: true,
   },
-  { name: 'Sound on new lead', desc: 'A short chime, once per lead.', on: true },
+  {
+    key: 'soundOnLead',
+    name: 'Sound on new lead',
+    desc: 'A short chime, once per lead.',
+    on: true,
+  },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -1077,11 +1064,9 @@ export const SIGNATURE_SELECT: SelectSpec = {
   defaultValue: SIGNATURE_DEFAULT,
 };
 
-export const META_PAGE_SELECT: SelectSpec = {
-  label: 'Default page',
-  options: META_PAGE_OPTIONS,
-  defaultValue: META_PAGE_DEFAULT,
-};
+/* META_PAGE_SELECT is gone: its option list is the org's own page names, built
+   on the server, so the Meta pane passes `META_PAGE_LABEL` + `pageOptions`
+   straight to `Sel` instead of a fixed SelectSpec. */
 
 export const META_CATEGORY_SELECT: SelectSpec = {
   label: 'Form to lead category',
@@ -1141,3 +1126,177 @@ export const ADD_PAYOUT_MODAL: ModalCopy = {
   submitLabel: 'Add payout account',
   cancelLabel: 'Cancel',
 };
+
+/* ------------------------------------------------------------------ */
+/* Notification preferences — User.notificationPrefsJson               */
+/* ------------------------------------------------------------------ */
+
+/** One `[in-app, email, sms]` triple per event key, plus the delivery rules. */
+export interface NotificationPrefs {
+  matrix: Record<string, [boolean, boolean, boolean]>;
+  quietFrom: string;
+  quietTo: string;
+  digest: string;
+  sms: string;
+  muteWeekends: boolean;
+  desktopPush: boolean;
+  soundOnLead: boolean;
+}
+
+/** What a user who has never touched the page sees: the donor's own seed
+ *  matrix, the donor's quiet-hours/digest defaults, and no SMS number. */
+export function defaultNotificationPrefs(): NotificationPrefs {
+  const matrix: Record<string, [boolean, boolean, boolean]> = {};
+  for (const e of NOTIFICATION_EVENTS) {
+    matrix[e.key] = [e.channels[0], e.channels[1], e.channels[2]];
+  }
+  return {
+    matrix,
+    quietFrom: QUIET_FROM_DEFAULT,
+    quietTo: QUIET_TO_DEFAULT,
+    digest: DIGEST_DEFAULT,
+    sms: '',
+    muteWeekends: false,
+    desktopPush: true,
+    soundOnLead: true,
+  };
+}
+
+function isTriple(v: unknown): v is [boolean, boolean, boolean] {
+  return Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'boolean');
+}
+
+/**
+ * Hydrate the stored blob over the defaults. Unknown event keys are dropped and
+ * new ones fall back to their seed row, so adding an event to the matrix never
+ * needs a migration.
+ */
+export function parseNotificationPrefs(json: string | null | undefined): NotificationPrefs {
+  const base = defaultNotificationPrefs();
+  if (!json) return base;
+  let raw: Record<string, unknown>;
+  try {
+    const v: unknown = JSON.parse(json);
+    if (!v || typeof v !== 'object') return base;
+    raw = v as Record<string, unknown>;
+  } catch {
+    return base;
+  }
+
+  const storedMatrix =
+    raw.matrix && typeof raw.matrix === 'object'
+      ? (raw.matrix as Record<string, unknown>)
+      : {};
+  for (const key of Object.keys(base.matrix)) {
+    const cells = storedMatrix[key];
+    if (isTriple(cells)) base.matrix[key] = cells;
+  }
+
+  const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallback);
+  const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
+
+  return {
+    matrix: base.matrix,
+    quietFrom: str(raw.quietFrom, base.quietFrom),
+    quietTo: str(raw.quietTo, base.quietTo),
+    digest: str(raw.digest, base.digest),
+    sms: str(raw.sms, base.sms),
+    muteWeekends: bool(raw.muteWeekends, base.muteWeekends),
+    desktopPush: bool(raw.desktopPush, base.desktopPush),
+    soundOnLead: bool(raw.soundOnLead, base.soundOnLead),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* SettingsData — everything the server page reads and threads down    */
+/* ------------------------------------------------------------------ */
+
+export interface AccountData {
+  /** The signed-in user. `email` and `role` are read-only on the page. */
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  /** Membership role, title-cased, shown as the Profile card's `.badge2`. */
+  roleBadge: string;
+  /** True for OWNER / ADMIN / MANAGER — the only roles that may edit the org. */
+  canEditBusiness: boolean;
+  business: { name: string; address: string; website: string; phone: string };
+  security: { passwordDesc: string; twoFactorDesc: string; sessionsDesc: string };
+  /** Where the Security card's password "Change" button goes. */
+  forgotHref: string;
+}
+
+export interface PaymentsData {
+  processors: Record<ProcessorKey, boolean>;
+  currency: string;
+  depositPct: string;
+  netTerms: string;
+  lateFeePct: string;
+  automations: Record<PaymentAutomationKey, boolean>;
+}
+
+export interface BillingData {
+  planName: string;
+  planBadge: Badge | null;
+  /** Already prefixed, or "" when there is nothing to show. */
+  nextBill: string;
+  seats: string;
+  billingEmail: string;
+  plans: readonly PlanRow[];
+  history: readonly PaymentHistoryRow[];
+  /** False when Stripe is off or the org has no Stripe customer yet. */
+  historyAvailable: boolean;
+  /** Real checkout — where "Change plan" / "Add payment method" lead. */
+  upgradeHref: string;
+}
+
+export interface GmailData {
+  connected: boolean;
+  connectedEmail: string;
+  displayName: string;
+  replyTo: string;
+  signature: string;
+  sendFromUser: boolean;
+  trackOpens: boolean;
+  autoSync: boolean;
+  /** Placeholders for the two From-address inputs. */
+  displayNamePlaceholder: string;
+  replyToPlaceholder: string;
+  /** Scopes actually requested by the OAuth route, short form. */
+  scopes: readonly string[];
+  connectHref: string;
+}
+
+export interface MetaData {
+  connected: boolean;
+  orgName: string;
+  autoCreate: boolean;
+  autoText: boolean;
+  defaultPage: string;
+  pageOptions: readonly string[];
+  formCategory: string;
+  callbackUrl: string;
+}
+
+export interface IntegrationsData {
+  gmail: GmailData;
+  meta: MetaData;
+  templates: readonly EmailTemplate[];
+  webhooks: readonly WebhookDelivery[];
+  /** True once RESEND_API_KEY or the SMTP_* block is configured. */
+  emailConfigured: boolean;
+}
+
+export interface SettingsData {
+  account: AccountData;
+  payments: PaymentsData;
+  billing: BillingData;
+  integrations: IntegrationsData;
+  notifications: NotificationPrefs;
+}
+
+/** Every pane takes exactly this. */
+export interface PaneProps {
+  data: SettingsData;
+}

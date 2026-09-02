@@ -3,7 +3,21 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/admin", "/influencer", "/v3"];
+// The standalone handheld URLs (/mobile-*, /trade-services) are protected too:
+// they render the same org data as their /dashboard twins and the (mobile)
+// group layout applies the same role + custom-plan gates, which read the
+// x-pathname header set here.
+const PROTECTED_PREFIXES = ["/dashboard", "/admin", "/influencer", "/v3", "/mobile-", "/trade-services"];
+
+// Handheld surfaces that are public by design (marketing, homeowner intake,
+// the customer's proposal view, the auth screens, the estimator picker).
+const PUBLIC_MOBILE_PREFIXES = [
+  "/mobile-landing-v2",
+  "/mobile-homeowner-v2",
+  "/mobile-proposal-client-v2",
+  "/mobile-estimator-picker-v2",
+  "/mobile-v1",
+];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -12,6 +26,9 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith("/influencer/login") ||
     pathname.startsWith("/influencer/set-password")
   ) {
+    return NextResponse.next();
+  }
+  if (PUBLIC_MOBILE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
 
@@ -97,5 +114,13 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/admin/:path*", "/influencer/:path*", "/v3/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/admin/:path*",
+    "/influencer/:path*",
+    "/v3/:path*",
+    "/mobile-:slug*",
+    "/trade-services/:path*",
+    "/trade-services",
+  ],
 };

@@ -75,5 +75,5 @@ const getServerSnapshot = () => false;
 
 export function SubscriptionResponsive(props: MobileSubscriptionProps) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  return isHandheld ? <MobileSubscription {...props} /> : <SubscriptionContent />;
+  return isHandheld ? <MobileSubscription {...props} /> : <SubscriptionContent {...props} />;
 }

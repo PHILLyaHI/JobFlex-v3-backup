@@ -8,6 +8,7 @@ import { revalidatePlanSurfaces } from "@/lib/planCatalogServer";
 import { syncPlanPricesToStripe } from "@/lib/planStripeSync";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { isStripeWriteAllowed } from "@/lib/stripeSafety";
+import { setStripeMode, getStripeMode, stripeKeyFor, type StripeMode } from "@/lib/stripeMode";
 
 // ── Pricing plans ─────────────────────────────────────
 
@@ -239,4 +240,36 @@ export async function deletePlatformCampaign(id: string) {
   if (count === 0) throw new Error("That announcement no longer exists.");
   revalidatePath("/admin/campaigns");
   revalidatePath("/dashboard");
+}
+
+// ── Stripe mode switch ────────────────────────────────
+// Live account vs the test sandbox — flipped from /admin/integrations. The
+// checkout routes read the row per request (lib/stripeMode), so the flip takes
+// effect on the next checkout without a deploy or restart.
+export async function setStripeModeAction(mode: StripeMode): Promise<{ ok: true; mode: StripeMode }> {
+  await requirePlatformAdmin();
+  if (mode !== "live" && mode !== "test") throw new Error("mode must be live or test");
+  if (!stripeKeyFor(mode)) {
+    throw new Error(
+      mode === "live"
+        ? "No live key configured (STRIPE_SECRET_KEY)."
+        : "No sandbox key configured (STRIPE_SECRET_KEY_TEST).",
+    );
+  }
+  await setStripeMode(mode);
+  revalidatePath("/admin/integrations");
+  return { ok: true, mode };
+}
+
+export async function getStripeModeAction(): Promise<{
+  mode: StripeMode;
+  liveConfigured: boolean;
+  testConfigured: boolean;
+}> {
+  await requirePlatformAdmin();
+  return {
+    mode: await getStripeMode(),
+    liveConfigured: Boolean(stripeKeyFor("live")),
+    testConfigured: Boolean(stripeKeyFor("test")),
+  };
 }

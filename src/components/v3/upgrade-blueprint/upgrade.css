@@ -1,0 +1,296 @@
+/* PLANS & UPGRADE — /dashboard/upgrade. Plain, self-scoped stylesheet (every
+   rule under .jf-upgrade): the page renders inside the blueprint shell but
+   must not lean on its hash space — same rule as the support widget and the
+   upgrade gate. Tokens read with fallbacks, never re-declared. */
+
+.jf-upgrade,
+.jf-upgrade *,
+.jf-upgrade *::before,
+.jf-upgrade *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.jf-upgrade.jf-upgrade {
+  font-family: var(--font, var(--font-sans, system-ui));
+  color: var(--ink, #101010);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-bottom: 30px;
+}
+
+/* head: title left, interval switch right — the signup step's arrangement */
+.jf-upgrade .jf-up-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.jf-upgrade .jf-up-kick {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--blueprint, #1854a0);
+}
+.jf-upgrade .jf-up-h1 {
+  margin-top: 6px;
+  font-size: clamp(28px, 4.6vh, 44px);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.jf-upgrade .jf-up-cur {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--muted, #57534b);
+}
+.jf-upgrade .jf-up-cur b {
+  color: var(--ink, #101010);
+  font-weight: 800;
+}
+
+.jf-upgrade .jf-up-int {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  overflow: hidden;
+  box-shadow: 3px 3px 0 var(--shadow, rgba(16, 16, 16, 0.14));
+}
+.jf-upgrade .jf-up-int-b {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-right: 2px solid var(--ink, #101010);
+  background: var(--paper, #f6f4ef);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted, #57534b);
+  cursor: pointer;
+}
+.jf-upgrade .jf-up-int-b:last-child {
+  border-right: none;
+}
+.jf-upgrade .jf-up-int-b.on {
+  background: var(--ink, #101010);
+  color: var(--paper, #f6f4ef);
+}
+.jf-upgrade .jf-up-int-b i {
+  font-style: normal;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--blueprint, #1854a0);
+}
+.jf-upgrade .jf-up-int-b.on i {
+  color: var(--sky, #7fb4ff);
+}
+
+/* status lines */
+.jf-upgrade .jf-up-sand,
+.jf-upgrade .jf-up-ok,
+.jf-upgrade .jf-up-err {
+  padding: 10px 14px;
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.jf-upgrade .jf-up-sand {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--paper-deep, #eceae3),
+    var(--paper-deep, #eceae3) 8px,
+    var(--paper, #f6f4ef) 8px,
+    var(--paper, #f6f4ef) 16px
+  );
+}
+.jf-upgrade .jf-up-ok {
+  border-color: var(--success, #1f7a52);
+  color: var(--success, #1f7a52);
+}
+.jf-upgrade .jf-up-err {
+  border-color: var(--danger, #a33);
+  color: var(--danger, #a33);
+}
+
+/* the row of plans */
+.jf-upgrade .jf-up-plans {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+  padding-top: 13px; /* room for the badge */
+}
+.jf-upgrade .jf-up-plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 18px;
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f6f4ef);
+}
+.jf-upgrade .jf-up-plan.hero {
+  background: var(--paper-deep, #eceae3);
+  box-shadow: 4px 4px 0 var(--ink, #101010);
+}
+.jf-upgrade .jf-up-plan.cur {
+  border-color: var(--blueprint, #1854a0);
+  box-shadow: 4px 4px 0 var(--blueprint, #1854a0);
+}
+.jf-upgrade .jf-up-tag {
+  position: absolute;
+  top: -12px;
+  left: 16px;
+  z-index: 2;
+  padding: 4px 10px;
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  background: var(--blueprint, #1854a0);
+  color: #fff;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 var(--ink, #101010);
+}
+.jf-upgrade .jf-up-n {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted, #57534b);
+}
+.jf-upgrade .jf-up-price {
+  font-size: 40px;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-upgrade .jf-up-price i {
+  font-style: normal;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--muted, #57534b);
+}
+.jf-upgrade .jf-up-save {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--success, #1f7a52);
+}
+.jf-upgrade .jf-up-save s {
+  color: var(--muted-light, #8a8a8a);
+}
+.jf-upgrade .jf-up-curlbl {
+  align-self: flex-start;
+  padding: 7px 13px;
+  border: 2px solid var(--blueprint, #1854a0);
+  border-radius: var(--radius, 2px);
+  background: var(--blueprint, #1854a0);
+  color: #fff;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.jf-upgrade .jf-up-go {
+  align-self: flex-start;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  background: var(--ink, #101010);
+  color: var(--paper, #f6f4ef);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.jf-upgrade .jf-up-go:hover:not(:disabled) {
+  background: var(--blueprint, #1854a0);
+  border-color: var(--blueprint, #1854a0);
+}
+.jf-upgrade .jf-up-go:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.jf-upgrade .jf-up-feats {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+  border-top: 1.5px solid var(--hair-soft, rgba(10, 10, 10, 0.14));
+}
+.jf-upgrade .jf-up-f {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hair-soft, rgba(10, 10, 10, 0.1));
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.jf-upgrade .jf-up-f:last-child {
+  border-bottom: none;
+}
+.jf-upgrade .jf-up-f.no {
+  color: var(--muted-light, #8a8a8a);
+  font-weight: 500;
+}
+.jf-upgrade .jf-up-fic {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--blueprint, #1854a0);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jf-upgrade .jf-up-f.no .jf-up-fic {
+  stroke: var(--muted-faint, #b8b4ad);
+}
+
+.jf-upgrade .jf-up-note {
+  font-size: 12.5px;
+  color: var(--muted, #57534b);
+}
+.jf-upgrade .jf-up-note a {
+  color: var(--blueprint, #1854a0);
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  .jf-upgrade .jf-up-plans {
+    grid-template-columns: 1fr;
+  }
+}

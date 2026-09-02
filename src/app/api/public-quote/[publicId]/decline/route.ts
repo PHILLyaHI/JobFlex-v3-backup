@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
 
 // Public proposal decline. Mirrors ../accept, but a short note is REQUIRED so
 // the contractor learns why. The note is recorded on the DECLINED ActivityEvent
@@ -9,6 +10,8 @@ export async function POST(
   ctx: { params: Promise<{ publicId: string }> },
 ) {
   const { publicId } = await ctx.params;
+  const gate = await rateLimitShared(`quote-respond:${ipFromRequest(req)}`, 20, HOUR);
+  if (!gate.ok) return NextResponse.json({ error: "Too many requests — try again later." }, { status: 429 });
 
   let body: unknown;
   try {

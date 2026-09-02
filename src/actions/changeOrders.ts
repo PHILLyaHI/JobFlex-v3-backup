@@ -1,6 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
@@ -36,6 +37,10 @@ export async function createChangeOrder(raw: unknown) {
   const co = await db.changeOrder.create({
     data: {
       organizationId,
+      // 122-bit CSPRNG token (the schema's cuid() default is time/counter
+      // structured and only ~41 bits random). Approving a change order moves
+      // the contract total, so the link must be unguessable.
+      publicToken: randomUUID(),
       jobId: data.jobId ?? null,
       proposalId: data.proposalId ?? null,
       title: data.title,

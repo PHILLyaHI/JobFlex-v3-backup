@@ -1,4 +1,5 @@
 "use client";
+import { safeNextPath } from "@/lib/safeNext";
 
 // SIGN IN — BLUEPRINT · the page.
 // Route: /auth/login.
@@ -89,8 +90,9 @@ function LoginInner() {
   const search = useSearchParams();
   // Only honor same-site relative paths so `?next=` can't be used as an open
   // redirect (reject absolute URLs and protocol-relative `//evil.com`).
-  const rawNext = search.get("next");
-  const nextPath = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
+  // A prefix check alone is not enough (`/\evil.com` resolves off-site) —
+  // see lib/safeNext for the origin comparison.
+  const nextPath = safeNextPath(search.get("next"));
   const [loading, setLoading] = React.useState(false);
   // Prefill demo credentials only in local development — never in production.
   const isDev = process.env.NODE_ENV === "development";
@@ -162,7 +164,8 @@ function LoginInner() {
         <section className={cx("auth-form")}>
           <Link className={cx("brand")} href="/"><span className={cx("brand-mark")}>J</span><span className={cx("brand-name")}>JobFlex</span></Link>
 
-          <div className={cx("auth-kicker", "kpi-lbl")}>Sign in</div>
+          {/* The "Sign in" kicker is gone (2026-09-02): the heading and the
+              button both already say it. Same call as register step 1. */}
           <h1 className={cx("auth-h1")}>Welcome back.</h1>
 
           <form onSubmit={onSubmit} noValidate>

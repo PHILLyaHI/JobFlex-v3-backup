@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createJobFromProposalInternal } from "@/lib/jobFromProposal";
+import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
 
 export async function POST(
   req: Request,
   ctx: { params: Promise<{ publicId: string }> },
 ) {
   const { publicId } = await ctx.params;
+  const gate = await rateLimitShared(`quote-respond:${ipFromRequest(req)}`, 20, HOUR);
+  if (!gate.ok) return NextResponse.json({ error: "Too many requests — try again later." }, { status: 429 });
   const proposal = await db.proposal.findUnique({ where: { publicId }, include: { client: true } });
   if (!proposal) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

@@ -267,6 +267,86 @@
   background: var(--blueprint);
 }
 
+/* ── THE HANDHELD MASTHEAD ANNOTATIONS ───────────────────────
+   Two rows in rank order, replacing the desk's three-line margin
+   column. See the comment on the branch in
+   manual-blueprint-content.tsx for the argument.
+
+   ROW 1 is a STATUS, so it is drawn as one: a bordered plate with
+   a dot, carrying the note's own tone. Idle is quiet (a muted
+   frame on the paper); working takes the blueprint, saved takes
+   success, blocked takes danger. This is the only thing in the
+   head that changes while the contractor works, and on the desk
+   it was the smallest and palest of the three lines.
+
+   ROW 2 is the document's identity — reference, date, whose it is
+   — as ONE mono annotation. Three separate lines said the same
+   thing at three weights; a single annotation line says it once,
+   in the layer this page reserves for exactly that. */
+:global(.jf-blueprint) .metaMob {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+:global(.jf-blueprint) .mstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--mb-well);
+  border: 1.5px solid var(--mb-line);
+  border-radius: var(--radius);
+}
+
+:global(.jf-blueprint) .mstatDot {
+  width: 7px;
+  height: 7px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* Unsaved edits in flight. */
+:global(.jf-blueprint) .mstatLive {
+  color: var(--blueprint);
+  border-color: var(--blueprint);
+  background: var(--chart-fill);
+}
+/* Written. */
+:global(.jf-blueprint) .mstatOk {
+  color: var(--success-dark);
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+/* Cannot be written, and the plate says why. */
+:global(.jf-blueprint) .mstatErr {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+:global(.jf-blueprint) .mline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint) .mlineSep {
+  padding: 0 6px;
+  color: var(--muted-faint);
+}
+
 /* ============================================================
    THE STACK
    32px between cards against 24px inside them. Ten ink frames can
@@ -1960,6 +2040,101 @@
   gap: 10px;
 }
 
+/* ── THE PDF CARD, HANDHELD ───────────────────────────────────
+   Card 11's chrome rebuilt for 390px. The desk build is a
+   four-column spec strip, a labelled segmented control and three
+   switch CELLS side by side; all three are width-hungry in the one
+   direction a phone has none. Every value in the strip wrapped
+   ("US / Letter", "≈ 2 / pages") and the three cells each carried
+   a three-line label under a 22px plate.
+
+   The questions do not change, only their arrangement: the strip
+   becomes one mono sentence, the paper control takes the full
+   measure under its own heading, the three facts become three
+   full-width ruled rows (the `.toggleRow` ladder this page already
+   uses on cards 06 and 08), and the two actions stack.
+
+   Drawn by React, not by a media query: the switch is
+   ./use-handheld.ts, so the two builds are two trees and neither
+   pays for the other's markup. */
+:global(.jf-blueprint) .pdfMobSpec {
+  display: block;
+  padding: 11px 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--mb-well);
+  border: var(--border);
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(.jf-blueprint) .pdfMobDot {
+  padding: 0 6px;
+  color: var(--muted-faint);
+}
+
+:global(.jf-blueprint) .pdfMobSet {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+:global(.jf-blueprint) .pdfMobField {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:global(.jf-blueprint) .pdfMobLbl {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted-light);
+}
+
+/* The paper control spans the card here — a two-option segment at
+   half width leaves the pair reading as a chip rather than a
+   choice, and each half has to clear 44px on its own. */
+:global(.jf-blueprint) .pdfMobField .segRowBare,
+:global(.jf-blueprint) .pdfMobField .seg {
+  width: 100%;
+}
+
+:global(.jf-blueprint) .pdfMobField .segBtn {
+  flex: 1;
+  min-height: 44px;
+}
+
+:global(.jf-blueprint) .pdfMobRows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Same ladder as `.toggles`, same suppressed top rule: the heading
+   above already closes that edge. (0,3,0), so it does not depend
+   on where it sits in the file. */
+:global(.jf-blueprint) .pdfMobRows > *:first-child {
+  border-top: none;
+}
+
+/* Two actions side by side in a ~350px card give each ~170px, and
+   "Preview the sheet" needs two lines to fit it. Stacked, both
+   read at one glance and both are a full-width target. */
+:global(.jf-blueprint) .pdfActionsStack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+:global(.jf-blueprint) .pdfActionsStack .btn {
+  justify-content: center;
+  min-height: 46px;
+}
+
 /* ── THE VAULT ────────────────────────────────────────────────
    Closed, the sheet is CLIPPED, not unmounted and not
    `display: none`. Two things need it laid out at all times: the
@@ -2592,6 +2767,15 @@
 /* Inter 900 tabular at -0.005em: the documented ceiling for large
    numerals, because compressing further sticks the digits
    together. Never mono — mono is banned on large amounts. */
+/* The total's own column: it shrinks and its figure may break, the
+   actions never do. Without `min-width: 0` a flex child refuses to
+   go narrower than its longest word, and a dollar amount is one
+   word — the bar was 630px wide on a 390px screen. */
+:global(.jf-blueprint) .barTotal {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 :global(.jf-blueprint) .barMoney {
   font-size: 24px;
   font-weight: 900;
@@ -2599,6 +2783,14 @@
   line-height: 1.05;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Past 13 characters (the component decides) — a size down before a
+   break, so a nine-figure total still reads as one line beside the
+   two actions on a phone. */
+:global(.jf-blueprint) .barMoneyLong {
+  font-size: 18px;
 }
 
 :global(.jf-blueprint) .barActions {
@@ -2694,26 +2886,176 @@
     height: 44px;
   }
 
-  /* The masthead's three annotations are a right-aligned column on
-     the desk, hanging off the title. At 390 they have the measure
-     to themselves, so they read left with the heading they belong
-     to instead of as a ragged right edge. */
+  /* ── THE CARD GUTTER ──────────────────────────────────────
+     24px inside a card is the DESK figure, argued at the top of
+     this file against an ~840px column. At 390 the same 24 is
+     taken twice out of a measure that has ~360 to give, so every
+     field on the page lost 48px — roughly an eighth of the screen
+     — to margin that is doing no work a phone can see. 14 keeps
+     the frame clearly a frame and hands the difference back to the
+     controls, which are the reason the card exists.
+
+     Declared as the TOKEN, not as a padding on `.card`: `--mb-pad`
+     is what the card, the sheet card and the section heads all
+     read, so moving it moves them together and the block cannot
+     drift apart at one width. */
+  :global(.jf-blueprint) .page {
+    --mb-pad: 14px;
+  }
+
+  /* The sides come down with the token; the top and bottom do NOT.
+     14 on every edge made each card a tight box with its heading
+     pressed against the frame. The vertical room is what lets a
+     card open and close as an object (owner, 2026-09-01), and it
+     costs nothing a phone is short of. Sides read the token, so the
+     bleed rules in lines-mobile keep landing on the walls. */
+  :global(.jf-blueprint) .card {
+    padding: 22px var(--mb-pad) 24px;
+  }
+
+  :global(.jf-blueprint) .cardSheet {
+    padding: 22px var(--mb-pad) 32px;
+  }
+
+  /* The masthead's annotations are a right-aligned column on the
+     desk, hanging off the title. The handheld build draws a
+     different tree entirely (`.metaMob`), so this only ever reaches
+     a narrow DESK shell — kept so that case still reads left with
+     the heading rather than as a ragged right edge. */
   :global(.jf-blueprint) .meta {
     align-items: flex-start;
     text-align: left;
   }
 
-  /* The bar is the one persistent device and it must not wrap: the
-     total keeps the left, the two actions keep the right, and the
-     actions shrink to their labels rather than the total losing
-     its digits. */
+  /* ── THE BAR GOES FULL BLEED ──────────────────────────────
+     It is the one persistent device on the page, and on a phone it
+     is also the bottom edge of the screen. Floated inside the page
+     gutter it read as an eleventh card that happened to be stuck
+     down there — same frame, same offset shadow, same 14px of
+     paper showing on both sides and beneath it — which is exactly
+     what a persistent bar must NOT read as.
+
+     So it spans the viewport: the two side gutters are cancelled
+     with negative margins, the bottom reserve is eaten the same
+     way so it lands flush at full scroll, and the frame drops to a
+     single top rule. The paddings then put the gutter back
+     INSIDE, so the total and the actions still line up with the
+     cards above them.
+
+     `--pad-x` and `--safe-b` come from the handheld frame root
+     (blueprint-handheld-frame.module.css); the fallbacks are what
+     stand on a narrow desk shell, which declares neither.
+
+     It must not wrap: the total keeps the left, the two actions
+     keep the right, and the actions shrink to their labels rather
+     than the total losing its digits. */
   :global(.jf-blueprint) .bar {
     gap: 12px;
+    margin-left: calc(-1 * var(--pad-x, 14px));
+    margin-right: calc(-1 * var(--pad-x, 14px));
+    margin-bottom: -28px;
+    padding: 11px var(--pad-x, 14px) calc(11px + var(--safe-b, 0px));
+    border: none;
+    border-top: var(--border);
+    border-radius: 0;
+    box-shadow: none;
   }
 
   :global(.jf-blueprint) .barActions {
     flex: 0 0 auto;
     gap: 8px;
+  }
+
+  /* The two actions take ~205px of a 375px bar, which leaves the total
+     ~130px: "$21,649.86" at 24px/900 is ~150 and broke mid-figure. 20px
+     seats a five-figure total on one line; past 12 characters it steps
+     to 15px before the last-resort break. */
+  :global(.jf-blueprint) .barMoney {
+    font-size: 20px;
+  }
+
+  :global(.jf-blueprint) .barMoneyLong {
+    font-size: 15px;
+  }
+
+  /* ── CARD 06 ON A PHONE: RUNGS, NOT CELLS ─────────────────
+     The three print switches are a three-column table on the desk,
+     where each cell gets ~300px. At 390px a cell is 119px: the
+     labels wrap to two and three lines, the three plates sit at
+     three different heights over three different depths of empty
+     cell, and the eye has to travel a different distance in each
+     column to connect a plate to its words. So the table turns
+     90°: three full-width ruled rows, label left and plate right,
+     the same ladder `.toggleRow` draws — the axis rotated back,
+     nothing new introduced.
+
+     The ladder keeps the table's frame: the 2px ink rule on top
+     still bleeds to the card's walls, the rows are ruled from each
+     other by the page's hairline, and the last rung still runs on
+     to the card's own bottom border so the FRAME closes the
+     ladder. Every rung is the same 56px, so the last one sits on
+     the frame with the same room the others have — not the desk
+     table's deeper foot, which here read as a rung that had
+     slipped.
+
+     Selectors mirror the desk rules exactly, so specificity ties
+     and source order decides. */
+  :global(.jf-blueprint) .switchRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :global(.jf-blueprint) .switchRow > .toggleCell,
+  :global(.jf-blueprint) .switchRow > .toggleCell:first-child,
+  :global(.jf-blueprint) .switchRow > .toggleCell:last-child,
+  :global(.jf-blueprint) .toggles:last-child > .switchRow:last-child > .toggleCell {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 56px;
+    padding: 8px var(--mb-pad);
+    border-left: none;
+    border-top: 1.5px solid var(--mb-rule);
+  }
+
+  /* The table's own 2px top rule is the first rung's edge. */
+  :global(.jf-blueprint) .switchRow > .toggleCell:first-child {
+    border-top: none;
+  }
+
+  /* Label first, plate at the far end — the reading order of a row,
+     where the desk cell put the plate first because it was scanned
+     as a row of three plates. */
+  :global(.jf-blueprint) .switchRow > .toggleCell > .cellText {
+    order: -1;
+    font-size: 15px;
+  }
+
+  /* QUOTE STYLE: the two halves grow to a real target. 32px plates
+     were the one control on the page under the 44px floor; 40px in
+     a 52px row, and equal halves so FULL and SUMMARY read as one
+     drawn switch rather than two buttons of different widths. */
+  :global(.jf-blueprint) .segRow {
+    gap: 14px;
+    min-height: 48px;
+    padding: 4px 0;
+  }
+
+  /* Smaller than the first cut's 40px x 196px (owner, 2026-09-02): the
+     control is a two-word switch beside its label, not a button row. The
+     ROW is the 44px target; the plates read at 34px. */
+  :global(.jf-blueprint) .segRow:not(.segRowBare) .seg {
+    flex: 0 1 auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 160px;
+  }
+
+  :global(.jf-blueprint) .segRow:not(.segRowBare) .segBtn {
+    min-width: 0;
+    min-height: 34px;
+    padding: 0 6px;
+    font-size: 9.5px;
   }
 }
 
@@ -2852,6 +3194,11 @@
 
   :global(.jf-blueprint) .card:has(.pdfBlock) .cardHead,
   :global(.jf-blueprint) .pdfSpec,
+  /* The handheld twins of the two above. Printing from a phone is a real
+     path — Download PDF is the same window.print() there — so the mobile
+     chrome has to leave the paper exactly as the desk chrome does. */
+  :global(.jf-blueprint) .pdfMobSpec,
+  :global(.jf-blueprint) .pdfBlock > .pdfMobSet,
   :global(.jf-blueprint) .pdfBlock > .toggles,
   :global(.jf-blueprint) .pdfActions,
   /* Screen chrome. The viewer bar must never reach the paper —
@@ -3066,16 +3413,61 @@
   color: var(--ink);
 }
 .doneText {
-  margin-top: 8px;
-  font-size: 13.5px;
-  line-height: 1.55;
+  margin-top: 10px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-soft, #3a3a3a);
+}
+/* The proposal's number is the one fact worth taking away from this
+   panel — it is how the sheet is found again in the list. Mono and
+   full ink, the drawing-annotation register the rest of the page
+   reserves for exactly this kind of reference. */
+.doneRef {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+/* THE CLOCK IS THE MOST CONSEQUENTIAL LINE ON THE PANEL — it says
+   the page is about to leave — and it was the faintest (11.5px in
+   --muted-faint, ~2.5:1). It reads at the caption register now, and
+   a drain bar under it says the same thing without being read at
+   all: a 4px rule that empties over the five seconds. */
+.doneCount {
+  margin-top: 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
 }
-.doneCount {
-  margin-top: 14px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--muted-faint);
+.doneBar {
+  margin-top: 8px;
+  height: 4px;
+  background: var(--mb-rule, rgba(10, 10, 10, 0.1));
+}
+.doneBar > span {
+  display: block;
+  height: 100%;
+  background: var(--blueprint);
+  transition: width 1s linear;
+}
+/* Thumb-sized on a phone: two full-width 48px plates, primary first,
+   rather than a 32px button beside a bare text link. */
+@media (max-width: 640px) {
+  .doneBox {
+    padding: 22px 18px 20px;
+  }
+  .doneActions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .doneActions > * {
+    width: 100%;
+    justify-content: center;
+    min-height: 48px;
+  }
 }
 /* The email gate's one field. Same control language as the sheet's own inputs —
    inverted well, 1.5px ink hairline, near-square corner — but declared here

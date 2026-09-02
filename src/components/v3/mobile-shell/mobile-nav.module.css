@@ -122,7 +122,7 @@
    The drawer head keeps a flat 9.5px; it has 288px to play with. */
 .tbarSub { font-size: clamp(7.8px, 2.4vw, 9px); font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase; color: var(--sky); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tbarRight { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-.tbarBtn {
+.tbar .tbarBtn {
   position: relative;
   width: 44px; height: 44px;
   display: flex; align-items: center; justify-content: center;
@@ -131,8 +131,8 @@
   color: var(--paper);
   transition: background 0.12s, border-color 0.12s;
 }
-.tbarBtn:active { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.35); }
-.tbarBtn .ic { width: 19px; height: 19px; }
+.tbar .tbarBtn:active { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.35); }
+.tbar .tbarBtn .ic { width: 19px; height: 19px; }
 /* Burger sits first — it is the navigation on this surface. No negative pull:
    the bar's left and right insets are both exactly var(--pad-x), so the
    burger's frame and the bell's frame are equidistant from their edges. */
@@ -225,7 +225,7 @@
 .sbHeadTxt { display: flex; flex-direction: column; justify-content: center; gap: 3px; }
 .sbHeadName { font-size: 16px; font-weight: 900; letter-spacing: 0.01em; line-height: 1; }
 .sbHeadSub { font-size: 9.5px; font-weight: 800; letter-spacing: 0.26em; text-transform: uppercase; color: var(--sky); line-height: 1; }
-.sbClose {
+.sbHead .sbClose {
   margin-left: auto; margin-right: -10px;
   width: 40px; height: 40px;
   border: 1.5px solid var(--paper);
@@ -233,7 +233,7 @@
   display: flex; align-items: center; justify-content: center;
   color: var(--paper);
 }
-.sbClose .ic { width: 16px; height: 16px; }
+.sbHead .sbClose .ic { width: 16px; height: 16px; }
 .sbScroll {
   position: relative;
   flex: 1;
@@ -254,7 +254,7 @@
 }
 /* Every nav item carries its own square outline — a drawn box per row.
    muted-faint so the ACTIVE item's ink plate + offset shadow still wins. */
-.sbLink {
+.sbScroll .sbLink {
   position: relative;
   z-index: 1;
   display: flex; align-items: center; gap: 12px;
@@ -267,11 +267,11 @@
   border-radius: var(--radius);
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.sbLink .ic { width: 17px; height: 17px; opacity: 0.72; }
+.sbScroll .sbLink .ic { width: 17px; height: 17px; opacity: 0.72; }
 /* Unread count — the desktop sidebar's sb-badge voice: a small blueprint
    plate with mono numerals, pushed to the row's right edge. Slightly larger
    than desktop's 18px because the drawer rows themselves are. */
-.sbBadge {
+.sbScroll .sbBadge {
   margin-left: auto;
   flex: 0 0 auto;
   min-width: 20px; height: 20px; padding: 0 6px;
@@ -283,9 +283,9 @@
   font-size: 10.5px; font-weight: 700;
   line-height: 1;
 }
-.sbLink:active:not(.active) { background: var(--paper-deep); }
-.sbLink.active { color: var(--ink); font-weight: 700; border-color: var(--ink); }
-.sbLink.active .ic { opacity: 1; color: var(--blueprint); }
+.sbScroll .sbLink:active:not(.active) { background: var(--paper-deep); }
+.sbScroll .sbLink.active { color: var(--ink); font-weight: 700; border-color: var(--ink); }
+.sbScroll .sbLink.active .ic { opacity: 1; color: var(--blueprint); }
 /* Active item is an outlined plate that SLIDES — never a black fill.
    z-index + transparent background so a neighbour's press underlay
    cannot paint over the offset shadow. */
@@ -311,7 +311,7 @@
   padding: 12px 14px calc(12px + var(--safe-b));
   display: flex; align-items: center; gap: 8px;
 }
-.sbFootAcc {
+.sbFoot .sbFootAcc {
   display: flex; align-items: center; gap: 10px;
   flex: 1; min-width: 0;
   padding: 5px 8px;
@@ -339,7 +339,7 @@
   color: var(--muted-light);
   line-height: 1;
 }
-.sbFootIc {
+.sbFoot .sbFootIc {
   width: 44px; height: 44px;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px solid var(--ink);
@@ -354,14 +354,14 @@
   padding: 0;
   cursor: pointer;
 }
-.sbFootIc .ic { width: 15px; height: 15px; }
+.sbFoot .sbFootIc .ic { width: 15px; height: 15px; }
 /* Sign out ends the session, so it takes the danger tone on press/hover while
    the settings gear beside it stays neutral. --danger is declared by the
    blueprint page roots; the handheld review URLs that don't declare it fall
    back to the app-global --rose, which is the same colour. */
 .sbFootOut { --sign-out: var(--danger, var(--rose)); }
-.sbFootOut:hover,
-.sbFootOut:active {
+.sbFoot .sbFootOut:hover,
+.sbFoot .sbFootOut:active {
   border-color: var(--sign-out);
   color: var(--sign-out);
 }
@@ -407,4 +407,13 @@
 @media (max-width: 860px) {
   .sb { display: flex; }
   .sbOverlay { display: block; }
+}
+
+/* Custom-plan locked page: dimmed row, padlock in the badge slot. The link
+   still navigates — the route renders the upgrade offer. */
+.sbLockd { opacity: 0.5; }
+.sbLockIc {
+  width: 14px; height: 14px; margin-left: auto; flex-shrink: 0;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; opacity: 0.8;
 }

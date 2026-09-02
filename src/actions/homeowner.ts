@@ -5,8 +5,8 @@ import { detectTrade } from "@/lib/ai/detectTrade";
 import { geocodeAddress } from "@/lib/maps";
 import { startCascade } from "@/lib/leadCenter/cascade";
 import { getRoutingMode, MANUAL_MODE_REASON } from "@/lib/leadCenter/routingMode";
-import { rateLimit } from "@/lib/rateLimit";
 import { suggestIntakeQuestions, type IntakeQuestion } from "@/lib/ai/homeownerQuestions";
+import { enforceRateLimit, clientIp, rateLimitShared, MINUTE } from "@/lib/rateLimit";
 
 const homeownerSchema = z.object({
   name: z.string().min(1),
@@ -68,6 +68,10 @@ async function geocodeOrReuse(parts: {
 // leads stuck in MATCHING.
 export async function submitHomeownerRequest(raw: unknown) {
   const data = homeownerSchema.parse(raw);
+  // Public, unauthenticated, and expensive downstream (AI, geocode, email, SMS
+  // to a caller-supplied number): per-IP cap plus a platform-wide ceiling.
+  await enforceRateLimit(`homeowner:${await clientIp()}`, 3, 10 * MINUTE, "requests");
+  await enforceRateLimit("homeowner:global", 60, MINUTE, "requests");
 
   const req = await db.homeownerRequest.create({
     data: {
@@ -135,7 +139,7 @@ export async function submitHomeownerRequest(raw: unknown) {
   // Record referral conversion if a valid ref code accompanied the submission
   if (data.referralCode) {
     try {
-      const { recordReferralConversion } = await import("./referrals");
+      const { recordReferralConversion } = await import("@/lib/referralConversion");
       await recordReferralConversion(data.referralCode, data.email);
     } catch (err) {
       console.warn("[homeowner] referral tracking failed:", err);
@@ -176,8 +180,8 @@ export async function suggestHomeownerQuestions(
     return { questions: null };
   }
   // No session to key on — this runs before a homeowner has told us anything
-  // about themselves. One shared window per instance is the honest brake.
-  const gate = rateLimit("homeowner-questions", QUESTIONS_PER_WINDOW, QUESTIONS_WINDOW_MS);
+  // about themselves, so the window is per client IP (cross-instance).
+  const gate = await rateLimitShared(`homeowner-questions:${await clientIp()}`, QUESTIONS_PER_WINDOW, QUESTIONS_WINDOW_MS);
   if (!gate.ok) return { questions: null };
   try {
     return { questions: await suggestIntakeQuestions(data.description, data.category ?? null) };

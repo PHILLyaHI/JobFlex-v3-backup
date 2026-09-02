@@ -9,7 +9,9 @@ import { requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { assertLinksInOrg } from "@/lib/assertLinksInOrg";
 import { isBlobEnabled, uploadBlob } from "@/lib/sdk/blob";
+import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { sellUnitPrice } from "@/lib/pricing/markup";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 
@@ -102,6 +104,9 @@ function computeTotals(
 export async function saveProposal(raw: unknown) {
   const { organizationId, user, proposalScope } = await requireProposalStaff();
   const data = proposalInput.parse(raw);
+  // The linked client must be this org's — a foreign id would make the portal,
+  // PDF and sendProposal address another tenant's customer.
+  await assertLinksInOrg(organizationId, { clientId: data.clientId });
   const { subtotal, discountTotal, taxTotal, total } = computeTotals(data);
   // Only callers that SENT the key own the proposal's discount — see the
   // tri-state note on discountSchema. `undefined` leaves both the column and
@@ -320,7 +325,7 @@ export async function sendProposal(id: string) {
 
   // Follow-up scheduling stays best-effort — it must never undo a confirmed send.
   try {
-    const { scheduleFollowUpsFor } = await import("./followUps");
+    const { scheduleFollowUpsFor } = await import("@/lib/followUps/engine");
     await scheduleFollowUpsFor(id, "SENT");
   } catch (err) {
     console.warn("[sendProposal] schedule failed:", err);
@@ -352,7 +357,7 @@ export async function updateProposalStatus(id: string, status: ProposalStatus) {
   }
   // Schedule any follow-ups watching this status
   try {
-    const { scheduleFollowUpsFor } = await import("./followUps");
+    const { scheduleFollowUpsFor } = await import("@/lib/followUps/engine");
     await scheduleFollowUpsFor(id, status);
   } catch (err) {
     console.warn("[updateProposalStatus] schedule failed:", err);
@@ -521,21 +526,19 @@ export async function uploadProposalPhoto(
   });
   if (!proposal) throw new Error("Not found");
 
+  // Inline image only — anything else would be stored verbatim as the photo
+  // URL and rendered on the public quote page.
+  const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+  if (!match || !IMAGE_DATA_URL.test(dataUrl)) throw new Error("Photo must be an image");
   let url = dataUrl;
   if (isBlobEnabled()) {
-    try {
-      const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
-      if (match) {
-        const buf = Buffer.from(match[2], "base64");
-        const res = await uploadBlob(
-          `proposals/${proposalId}/${slot}/${Date.now()}-${filename}`,
-          buf,
-        );
-        url = res.url;
-      }
-    } catch {
-      // fall through to inline data URL
-    }
+    const buf = Buffer.from(match[2], "base64");
+    const res = await uploadBlob(
+      `proposals/${proposalId}/${slot}/${Date.now()}-${safeFilename(filename, "photo")}`,
+      buf,
+      { contentType: match[1].toLowerCase() },
+    );
+    url = res.url;
   }
 
   const photo = { id: randomUUID(), url };

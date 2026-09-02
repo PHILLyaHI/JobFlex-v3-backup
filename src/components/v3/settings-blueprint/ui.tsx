@@ -25,20 +25,29 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 export interface FieldProps {
   /** Uppercased by CSS; pass it in sentence case exactly as the donor writes it. */
   label: string;
-  /** Uncontrolled initial value (donor `value="…"`). */
+  /** Uncontrolled initial value, or the controlled value when `onChange` is given. */
   value?: string;
   placeholder?: string;
   disabled?: boolean;
+  /**
+   * Supply this for any input whose value is saved. The field then runs
+   * CONTROLLED — the pane owns the string and can hand it to a server action.
+   * Omit it and the field stays uncontrolled, exactly as the donor's inert
+   * inputs were (the Add-payout modal still uses that mode).
+   */
+  onChange?: (next: string) => void;
 }
 
 /** `<label class="fld"><span>LABEL</span><input class="fin" …></label>` */
-export function Field({ label, value, placeholder, disabled }: FieldProps) {
+export function Field({ label, value, placeholder, disabled, onChange }: FieldProps) {
   return (
     <label className="fld">
       <span>{label}</span>
       <input
         className="fin"
-        defaultValue={value}
+        {...(onChange
+          ? { value: value ?? "", onChange: (e) => onChange(e.target.value) }
+          : { defaultValue: value })}
         placeholder={placeholder}
         disabled={disabled}
       />
@@ -279,11 +288,30 @@ export function CopyBox({ value }: CopyBoxProps) {
 export interface SaveBarProps {
   /** Extra buttons rendered between Save changes and the Saved tag. */
   extra?: ReactNode;
+  /**
+   * The card's real write. Resolves → the donor's "Saved" tag; rejects → the
+   * same tag slot carries the server action's own message, verbatim.
+   */
+  onSave?: () => Promise<unknown>;
+  /** Read-only role: the button is present but cannot be pressed. */
+  disabled?: boolean;
 }
 
-/** `.sactions` footer; click shows the `.saved.on` tag for 2200ms. */
-export function SaveBar({ extra }: SaveBarProps) {
+/** Server actions reject with a message written for the user. Show that text;
+ *  fall back to a generic line for anything unrecognisable. */
+function actionError(err: unknown): string {
+  const msg = err instanceof Error ? err.message.trim() : "";
+  if (!msg || msg.toLowerCase().includes("fetch failed")) {
+    return "Something went wrong. Check your connection and try again.";
+  }
+  return msg;
+}
+
+/** `.sactions` footer; a successful save flashes the `.saved.on` tag for 2200ms. */
+export function SaveBar({ extra, onSave, disabled }: SaveBarProps) {
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -293,27 +321,60 @@ export function SaveBar({ extra }: SaveBarProps) {
     [],
   );
 
-  const save = useCallback(() => {
-    setSaved(true);
+  const save = useCallback(async () => {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setSaved(false), 2200);
-  }, []);
+    setError("");
+    if (!onSave) {
+      // No write wired to this card yet — keep the donor's optimistic flash.
+      setSaved(true);
+      timer.current = setTimeout(() => setSaved(false), 2200);
+      return;
+    }
+    setBusy(true);
+    try {
+      await onSave();
+      setSaved(true);
+      timer.current = setTimeout(() => setSaved(false), 2200);
+    } catch (err) {
+      setSaved(false);
+      setError(actionError(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [onSave]);
 
   return (
     <div className="sactions">
-      <button className="btn btn-primary" type="button" onClick={save}>
+      <button
+        className="btn btn-primary"
+        type="button"
+        disabled={busy || disabled}
+        onClick={() => void save()}
+      >
         <svg className="ic">
           <use href="#i-check" />
         </svg>
         Save changes
       </button>
       {extra}
-      <span className={saved ? "saved on" : "saved"}>
-        <svg className="ic" style={{ width: "13px", height: "13px" }}>
-          <use href="#i-check" />
-        </svg>
-        Saved
-      </span>
+      {/* One tag slot, two states: the donor's green "Saved", or the action's
+          own failure message in the danger tone. No new CSS — the `.saved`
+          rules carry both, only the colour token differs. */}
+      {error ? (
+        <span className="saved on" style={{ color: "var(--danger)" }} role="status">
+          <svg className="ic" style={{ width: "13px", height: "13px" }}>
+            <use href="#i-x" />
+          </svg>
+          {error}
+        </span>
+      ) : (
+        <span className={saved ? "saved on" : "saved"} role="status">
+          <svg className="ic" style={{ width: "13px", height: "13px" }}>
+            <use href="#i-check" />
+          </svg>
+          Saved
+        </span>
+      )}
     </div>
   );
 }

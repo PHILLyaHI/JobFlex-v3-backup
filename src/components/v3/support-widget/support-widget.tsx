@@ -216,6 +216,12 @@ export function SupportLauncher({
  */
 /** Clearance between the plate and whatever it is standing on. */
 const FAB_GAP = 14;
+/** Where the plate rests when NOTHING is under it — the same corner inset the
+ *  desk stylesheet uses, so a bar-less handheld page (financials, the CRM
+ *  list) puts the plate in the corner and not 84px up it. The stylesheet's
+ *  handheld fallback assumes a tab bar and only stands until the first
+ *  measurement; this is what that measurement writes when it finds none. */
+const FAB_REST = 22;
 
 /**
  * How much of the bottom of the viewport is already spoken for — a tab bar, a
@@ -243,22 +249,60 @@ function bottomObstruction(fab: HTMLElement): { px: number; bar: HTMLElement | n
   if (typeof window === "undefined") return { px: 0, bar: null };
   const vh = window.innerHeight;
   const vw = window.innerWidth;
+
+  // ENDS ON the bottom edge, runs most of the way across, and is a band rather
+  // than a page: 40% of the viewport is already a generous bar.
+  //
+  // ENDS ON, not merely REACHES. The first cut accepted anything whose bottom
+  // was at or past the edge, and on a plain scrolling page that is every
+  // mid-size block the scroll position happens to leave straddling it: on the
+  // handheld financials page — no tab bar, no sticky bar at all — the revenue
+  // chart's SVG crossed the edge, passed as a bar, and the plate parked itself
+  // 111px up in the middle of the page. A bar is pinned: its bottom edge IS
+  // the viewport's, within a few px for a fractional layout. Content scrolled
+  // through the edge extends past it, and is not a bar.
+  const isBand = (el: Element): boolean => {
+    const r = el.getBoundingClientRect();
+    if (Math.abs(r.bottom - vh) > 4) return false;
+    if (r.height < 8 || r.height > vh * 0.4) return false;
+    if (r.width < vw * 0.6) return false;
+    return true;
+  };
+
   let top = vh;
   let bar: HTMLElement | null = null;
   for (const f of [0.18, 0.5, 0.82]) {
     const x = Math.round(vw * f);
-    for (const el of document.elementsFromPoint(x, vh - 2)) {
-      if (!(el instanceof HTMLElement) || el === fab || fab.contains(el)) continue;
-      const r = el.getBoundingClientRect();
-      // Reaches the bottom edge, runs most of the way across, and is a band
-      // rather than a page: 40% of the viewport is already a generous bar.
-      if (r.bottom < vh - 4) continue;
-      if (r.height < 8 || r.height > vh * 0.4) continue;
-      if (r.width < vw * 0.6) continue;
-      if (r.top < top) {
-        top = r.top;
-        bar = el;
+    const stack = document.elementsFromPoint(x, vh - 2);
+
+    // THE FRONTMOST band, then its outermost band ANCESTOR — not the outermost
+    // band in the whole hit list. `elementsFromPoint` returns everything under
+    // the point, painted or not, and a sticky bar has page content scrolled
+    // BEHIND it: on the manual builder the list held the bar (68px) and then a
+    // card body (327px) lying under it, and "smallest top wins" chose the body.
+    // The plate then parked itself 144px up, in the middle of the form, on a
+    // page whose bar is 68px tall. Content behind the bar is never an ancestor
+    // of the bar, so climbing from the front instead of scanning the stack
+    // cannot reach it — while still landing on the bar rather than a
+    // full-width row inside it, which was what the outermost rule was for.
+    let el: HTMLElement | null = null;
+    for (const hit of stack) {
+      if (!(hit instanceof HTMLElement) || hit === fab || fab.contains(hit)) continue;
+      if (isBand(hit)) {
+        el = hit;
+        break;
       }
+    }
+    if (!el) continue;
+    let p = el.parentElement;
+    while (p && p !== document.body && isBand(p)) {
+      el = p;
+      p = p.parentElement;
+    }
+    const r = el.getBoundingClientRect();
+    if (r.top < top) {
+      top = r.top;
+      bar = el;
     }
   }
   return { px: Math.max(0, Math.round(vh - top)), bar };
@@ -283,8 +327,31 @@ export function SupportFab() {
       raf = 0;
       const el = ref.current;
       if (!el) return;
+      // HANDHELD ONLY. On the desk the plate has its own corner — every page
+      // column stops well short of it and the shells reserve the strip under
+      // it — so a bar measured there only ever LIFTED the plate off the
+      // corner it was placed in (the manual builder's sticky total bar spans
+      // the column, not the screen, and the plate climbed it anyway). The
+      // stylesheet's desk inset stands; measurement is a phone's problem.
+      if (!window.matchMedia("(max-width: 768px)").matches) {
+        el.style.removeProperty("--jfsup-fab-bottom");
+        if (barObserved) {
+          barRO.unobserve(barObserved);
+          barObserved = null;
+        }
+        return;
+      }
       const { px, bar } = bottomObstruction(el);
-      el.style.setProperty("--jfsup-fab-bottom", `calc(${px + FAB_GAP}px + env(safe-area-inset-bottom, 0px))`);
+      // The probe measures in VIEWPORT px; `bottom` is applied in the plate's
+      // OWN px. Those differ inside the desk blueprint shell, whose FLUID SCALE
+      // puts `zoom: 0.78` on the root this plate is mounted in — 65 CSS px of
+      // inset there is ~51 visual px, and the plate sat on the bar's top edge
+      // with its 14px gap zoomed away. Dividing by the plate's render scale
+      // (its painted height over its layout height) converts back; 1 on every
+      // unzoomed surface.
+      const scale = el.offsetHeight > 0 ? el.getBoundingClientRect().height / el.offsetHeight : 1;
+      const inset = Math.round((px > 0 ? px + FAB_GAP : FAB_REST) / (scale || 1));
+      el.style.setProperty("--jfsup-fab-bottom", `calc(${inset}px + env(safe-area-inset-bottom, 0px))`);
       if (bar !== barObserved) {
         if (barObserved) barRO.unobserve(barObserved);
         if (bar) barRO.observe(bar);
@@ -301,6 +368,21 @@ export function SupportFab() {
     window.addEventListener("resize", schedule);
     window.addEventListener("orientationchange", schedule);
     window.addEventListener("scroll", schedule, { passive: true });
+    // THE BAR MOVES AFTER IT MOUNTS. The blueprint pages run an entrance
+    // cascade — the sticky bar arrives translated down and fading in over
+    // ~600ms — and every trigger above fires BEFORE that finishes: the
+    // mutation on mount, the initial scroll, nothing after. The last probe
+    // therefore read the bar ~14px lower than it would rest, and the plate
+    // sat on the bar's top edge until the first scroll happened to re-run
+    // it. Capture-phase, because neither event bubbles reliably out of a
+    // child that animates, and coalesced by `schedule` so a page full of
+    // reveal animations costs one rAF, not one per card.
+    document.addEventListener("animationend", schedule, true);
+    document.addEventListener("transitionend", schedule, true);
+    // And a settle pass regardless, for a cascade that ends on a `transform`
+    // the page clears without an event (reduced motion, an interrupted
+    // animation). 1.2s clears the longest entrance in the fleet.
+    const settle = window.setTimeout(schedule, 1200);
     // A route change swaps the whole page tree, bar included; childList on the
     // body is the cheapest signal that has happened, and the work is one rAF.
     const mo = new MutationObserver(schedule);
@@ -308,6 +390,9 @@ export function SupportFab() {
 
     return () => {
       if (raf) cancelAnimationFrame(raf);
+      window.clearTimeout(settle);
+      document.removeEventListener("animationend", schedule, true);
+      document.removeEventListener("transitionend", schedule, true);
       window.removeEventListener("resize", schedule);
       window.removeEventListener("orientationchange", schedule);
       window.removeEventListener("scroll", schedule);

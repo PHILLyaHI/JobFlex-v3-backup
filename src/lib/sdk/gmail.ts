@@ -82,11 +82,15 @@ export async function sendViaGmail(
   // can fall back to Resend quickly rather than stalling on doomed retries.
   await withEmailRetry(`gmail → ${recipientLabel(opts.to)}`, async () => {
     const gmail = await getGmailClient(tokens.accessToken, tokens.refreshToken);
-    const from = opts.fromName ? `${opts.fromName} <${tokens.email}>` : tokens.email;
+    // Header values are single-line by definition: strip CR/LF so a crafted
+    // address or display name cannot inject extra headers (Bcc:, etc.) into
+    // the raw MIME message.
+    const hv = (v: string) => v.replace(/[\r\n]+/g, " ").trim();
+    const from = opts.fromName ? `${hv(opts.fromName)} <${hv(tokens.email)}>` : hv(tokens.email);
     const headers = [
       `From: ${from}`,
-      `To: ${opts.to}`,
-      opts.replyTo ? `Reply-To: ${opts.replyTo}` : "",
+      `To: ${hv(opts.to)}`,
+      opts.replyTo ? `Reply-To: ${hv(opts.replyTo)}` : "",
       // RFC 2047 encode the subject so non-ASCII survives.
       `Subject: =?UTF-8?B?${Buffer.from(opts.subject).toString("base64")}?=`,
       "MIME-Version: 1.0",

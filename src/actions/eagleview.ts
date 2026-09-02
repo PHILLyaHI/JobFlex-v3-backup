@@ -1,4 +1,5 @@
 "use server";
+import { enforceRateLimit, DAY } from "@/lib/rateLimit";
 
 import { revalidatePath } from "next/cache";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
@@ -137,6 +138,7 @@ export async function evOrderRoof(
   input: EvOrderInput,
 ): Promise<{ ok: true; reportId: number } | { ok: false; error: string }> {
   const { organizationId, user } = await requireEstimatorOrManager();
+await enforceRateLimit(`ev-order:${organizationId}`, 5, DAY, "roof report orders");
   if (!isEagleViewEnabled()) return { ok: false, error: "EagleView is not configured" };
   try {
     const { reportId } = await placeOrder(input);

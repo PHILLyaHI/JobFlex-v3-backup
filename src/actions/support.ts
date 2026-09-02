@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireOrg, requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { notifySupportTicket, supportTicketRef } from "@/lib/notify";
-import { rateLimit, retryInWords } from "@/lib/rateLimit";
+import { rateLimitShared, retryInWords } from "@/lib/rateLimit";
 
 // Support taxonomy — kept in lockstep with the customer form's chips, the
 // corner Help widget's categories and the admin triage tags. Not exported: a
@@ -73,7 +73,7 @@ const TICKET_WINDOW_MS = 10 * 60 * 1000;
 export async function submitSupportTicket(raw: unknown): Promise<SubmitTicketResult> {
   const { organizationId, user } = await requireOrg();
 
-  const gate = rateLimit(`support:${user.id}`, TICKETS_PER_WINDOW, TICKET_WINDOW_MS);
+  const gate = await rateLimitShared(`support:${user.id}`, TICKETS_PER_WINDOW, TICKET_WINDOW_MS);
   if (!gate.ok) {
     throw new Error(
       `That is several tickets in a row. Try again in ${retryInWords(gate.retryAfterMs)}.`,

@@ -4,6 +4,7 @@ import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 
 export interface PhotoAnalysis {
   materials?: string[];
@@ -18,6 +19,7 @@ export async function analyzeJobPhoto(photoId: string): Promise<
   | { ok: false; error: string }
 > {
   const { organizationId } = await requireEstimatorOrManager();
+  await enforceRateLimit(`vision:${organizationId}`, 60, HOUR, "photo analyses");
   const photo = await db.jobPhoto.findUnique({
     where: { id: photoId },
     include: { job: { select: { organizationId: true } } },

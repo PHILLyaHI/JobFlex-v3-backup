@@ -811,7 +811,13 @@
 /* Above a handheld tab bar, never on it. */
 @media (max-width: 768px) {
   .jfsup-fab.jfsup-fab {
-    right: 14px;
+    /* 18, not 14, and the offset shadow is why. The plate carries
+       `box-shadow: 3px 3px 0`, so its VISUAL right edge is three px past its
+       box: at right:14 the drawing stopped 11px from the screen while the cards
+       under it stopped at the 14px page gutter, and the plate read as pushed
+       into the corner rather than placed in it. 18 puts the shadow's edge on
+       the gutter, which is the line the eye is actually measuring against. */
+    right: 18px;
     /* The handheld fallback clears the tab bar the whole mobile fleet carries;
        the measured value replaces it a frame later on every page. */
     bottom: var(--jfsup-fab-bottom, calc(84px + env(safe-area-inset-bottom, 0px)));

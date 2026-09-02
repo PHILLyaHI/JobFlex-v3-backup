@@ -19,8 +19,16 @@ export async function POST(
   const worker = await db.workerProfile.findUnique({ where: { token: body.token } });
   if (!worker) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Only a live assignment moves work forward — a DECLINED (or otherwise
+  // inactive) crew member must not be able to complete the job through the
+  // token door when the session door (setJobProgress) refuses them.
   const assignment = await db.jobAssignment.findFirst({
-    where: { jobId, workerId: worker.id },
+    where: {
+      jobId,
+      workerId: worker.id,
+      job: { organizationId: worker.organizationId },
+      status: { not: "DECLINED" },
+    },
   });
   if (!assignment) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -29,12 +37,21 @@ export async function POST(
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
+  const current = await db.job.findFirst({
+    where: { id: jobId, organizationId: worker.organizationId },
+    select: { status: true },
+  });
+  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (current.status === "CANCELED" || current.status === "COMPLETED") {
+    return NextResponse.json({ error: "Job is closed" }, { status: 409 });
+  }
+
   const job = await db.job.update({ where: { id: jobId }, data: { status: body.status } });
   // Same promotion updateJob does: the ACCEPTED proposal behind a finished
   // job reads COMPLETED, no matter which door completed the work.
   if (body.status === "COMPLETED" && job.proposalId) {
     await db.proposal.updateMany({
-      where: { id: job.proposalId, status: "ACCEPTED" },
+      where: { id: job.proposalId, organizationId: job.organizationId, status: "ACCEPTED" },
       data: { status: "COMPLETED" },
     });
   }

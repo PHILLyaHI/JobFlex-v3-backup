@@ -87,3 +87,163 @@ export type Invoice = {
   proposalId: string | null;
   overdue: boolean;
 };
+
+/* ============================================================
+   OVERHEAD — the recurring cost of keeping the business alive.
+
+   Per-job math ("job paid $10k, materials $6k, made $4k") says whether the
+   WORK paid. It cannot say whether the COMPANY paid, because rent, insurance,
+   the truck and the software never touch a job. These types carry the other
+   half: one sheet per calendar month, split fixed vs scaling, and the coverage
+   figure that compares the month's net profit from jobs against it.
+   ============================================================ */
+
+/** Fixed lines — flat dollars, unmoved by how much work came in. */
+export type OverheadFixedKey =
+  | "rent"
+  | "office"
+  | "insurance"
+  | "vehicles"
+  | "software"
+  | "warehouse"
+  | "utilities"
+  | "other";
+
+/** Lines that can scale with revenue. Each has a dollar field and a boolean
+ *  saying whether that number is dollars or a percent of revenue. */
+export type OverheadScalingKey = "workers" | "sales" | "marketing";
+export type OverheadPctKey = "workersPct" | "salesPct" | "marketingPct";
+
+/** A line the contractor named themself — a yard lease, a bookkeeper, a
+ *  storage unit. Always fixed: a custom line never scales with revenue. */
+export type OverheadCustomLine = { id: string; label: string; amount: number };
+
+/** Most custom lines one month may carry. Past this the sheet stops being a
+ *  glance and becomes a ledger, which is what Expenses is for. */
+export const OVERHEAD_CUSTOM_MAX = 12;
+
+/** One month's sheet, exactly as it is stored. */
+export type OverheadSheet = { year: number; month: number } & Record<
+  OverheadFixedKey | OverheadScalingKey,
+  number
+> &
+  Record<OverheadPctKey, boolean> & { custom: OverheadCustomLine[] };
+
+/** The fixed inputs, in the order they are drawn. One word each — the sheet is
+ *  read at a glance, not studied. `icon` is a sprite symbol id: the shell's
+ *  shared set plus the five the financials sprite adds for this tab. */
+export const OVERHEAD_FIXED: ReadonlyArray<{
+  key: OverheadFixedKey;
+  label: string;
+  icon: string;
+}> = [
+  { key: "rent", label: "Rent", icon: "i-building" },
+  { key: "insurance", label: "Insurance", icon: "i-shield" },
+  { key: "vehicles", label: "Vehicles", icon: "i-truck" },
+  { key: "software", label: "Software", icon: "i-laptop" },
+  { key: "office", label: "Office", icon: "i-briefcase" },
+  { key: "warehouse", label: "Warehouse", icon: "i-box" },
+  { key: "utilities", label: "Utilities", icon: "i-bolt" },
+  { key: "other", label: "Other", icon: "i-dots" },
+];
+
+/** The scaling inputs. `pctKey` is the flag that decides whether `key` is read
+ *  as dollars or as a percent of the month's revenue. */
+export const OVERHEAD_SCALING: ReadonlyArray<{
+  key: OverheadScalingKey;
+  pctKey: OverheadPctKey;
+  label: string;
+  icon: string;
+}> = [
+  { key: "workers", pctKey: "workersPct", label: "Workers", icon: "i-hardhat" },
+  { key: "sales", pctKey: "salesPct", label: "Sales", icon: "i-target" },
+  { key: "marketing", pctKey: "marketingPct", label: "Marketing", icon: "i-megaphone" },
+];
+
+/** An empty sheet for a month nothing has been entered against. Every figure
+ *  zero, every line in dollars — the honest starting state, not a fixture. */
+export function emptyOverheadSheet(year: number, month: number): OverheadSheet {
+  return {
+    year,
+    month,
+    rent: 0,
+    office: 0,
+    insurance: 0,
+    vehicles: 0,
+    software: 0,
+    warehouse: 0,
+    utilities: 0,
+    other: 0,
+    workers: 0,
+    workersPct: false,
+    sales: 0,
+    salesPct: false,
+    marketing: 0,
+    marketingPct: false,
+    custom: [],
+  };
+}
+
+/** One month of job-side money, as the Overhead tab needs it. `key` is
+ *  "YYYY-MM" — the same key `getMonthlyRollup` produces. */
+export type OverheadMonth = {
+  key: string;
+  /** "Aug 2026" — written once, on the server, by one clock. */
+  label: string;
+  year: number;
+  month: number;
+  revenue: number;
+  expenses: number;
+  /** revenue − expenses: what the WORK cleared, before any overhead. */
+  net: number;
+};
+
+/** What the coverage bar reports. */
+export type OverheadTotals = {
+  fixed: number;
+  variable: number;
+  total: number;
+  /** Net profit from jobs this month — the money available to pay the bills. */
+  net: number;
+  /** Net − total. Positive is true profit; negative is the month's shortfall. */
+  left: number;
+  /** 0–100, clamped. 100 means the bills are paid. */
+  pct: number;
+  covered: boolean;
+  /** Nothing entered for the month. `covered` is true here by arithmetic —
+   *  zero bills are always paid — but a surface must NOT read that as a win:
+   *  an unfilled sheet is a question, not an answer. Draw the empty state. */
+  empty: boolean;
+};
+
+/**
+ * Fold a sheet against a month's revenue and net.
+ *
+ * A percent line is a percent OF REVENUE, not of net or of overhead — that is
+ * what "marketing = 5% of revenue" means to the person typing it, and it is
+ * why a big month costs more marketing than a quiet one.
+ */
+export function overheadTotals(
+  sheet: OverheadSheet,
+  month: { revenue: number; net: number },
+): OverheadTotals {
+  let fixed = 0;
+  for (const f of OVERHEAD_FIXED) fixed += sheet[f.key] || 0;
+  for (const c of sheet.custom ?? []) fixed += c.amount || 0;
+
+  let variable = 0;
+  for (const f of OVERHEAD_SCALING) {
+    const v = sheet[f.key] || 0;
+    variable += sheet[f.pctKey] ? (month.revenue * v) / 100 : v;
+  }
+
+  const total = fixed + variable;
+  const net = month.net;
+  const left = net - total;
+  // Nothing entered = nothing to cover. Saying "0% covered" against an empty
+  // sheet would read as a failing month when it is really an unfilled one, so
+  // an empty sheet reads as covered.
+  const pct = total <= 0 ? 100 : Math.max(0, Math.min(100, (net / total) * 100));
+
+  return { fixed, variable, total, net, left, pct, covered: net >= total, empty: total <= 0 };
+}

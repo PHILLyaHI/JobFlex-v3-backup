@@ -25,6 +25,7 @@ import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
 import { BlueprintHandheldFrame } from "./blueprint-handheld-frame";
 import { NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
+import { CustomGateSwap } from "@/components/v3/upgrade-gate/custom-gate-swap";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
@@ -335,7 +336,9 @@ export function ResponsiveDashboardShell({
             stamps once per mount — a new key remounts it for the new surface. */}
         {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
         <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
-          <Handheld />
+          <CustomGateSwap>
+            <Handheld />
+          </CustomGateSwap>
         </ChunkRecoveryBoundary>
         {/* The support composer. Every other handheld surface gets it from
             <MobileNav />; /dashboard is the one mapped surface that kept its
@@ -369,22 +372,58 @@ export function ResponsiveDashboardShell({
   // Page-owned handheld branches render their own chrome (which reaches for
   // MobileNav), so they need the provider just as much as the mapped ones.
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
-    return <NavRoleProvider identity={identity} badges={badges} locked={locked}>{children}</NavRoleProvider>;
+    return (
+      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+        <CustomGateSwap>{children}</CustomGateSwap>
+      </NavRoleProvider>
+    );
   }
   if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
-    return <NavRoleProvider identity={identity} badges={badges} locked={locked}>{children}</NavRoleProvider>;
+    return (
+      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+        <CustomGateSwap>{children}</CustomGateSwap>
+      </NavRoleProvider>
+    );
   }
   if (isHandheld && BLUEPRINT_HANDHELD.has(pathname ?? "")) {
     return (
       <NavRoleProvider identity={identity} badges={badges} locked={locked}>
-        <BlueprintHandheldFrame>{children}</BlueprintHandheldFrame>
+        <BlueprintHandheldFrame>
+          <CustomGateSwap>{children}</CustomGateSwap>
+        </BlueprintHandheldFrame>
       </NavRoleProvider>
     );
   }
 
+  // THE DESK SHELL, AND WHETHER A PHONE MAY SEE IT. The server renders this
+  // branch for every route (it cannot know the viewport), so on a phone the
+  // desk layout is what the streamed HTML PAINTS while the client bundle is
+  // still loading — the sidebar, the fluid-scaled column, the desk topbar — and
+  // hydration then swaps it for the handheld tree. On a reload that read as
+  // "some other design for a second, then the real one". For a route that HAS
+  // a handheld branch above, the desk paint is never what a phone should see,
+  // so the shell is marked and a global rule hides it at handheld width until
+  // the swap (app/globals.css, `[data-desk-fallback]`). Routes with no
+  // handheld build stay unmarked: the desk shell IS their phone layout.
+  const switchable =
+    Boolean(Handheld) ||
+    BLUEPRINT_HANDHELD.has(pathname ?? "") ||
+    PAGE_OWNED_STATIC.has(pathname ?? "") ||
+    PAGE_OWNED_HANDHELD.test(pathname ?? "");
+  const desk = (
+    <BlueprintShell user={user}>
+      <CustomGateSwap>{children}</CustomGateSwap>
+    </BlueprintShell>
+  );
   return (
     <NavRoleProvider identity={identity} badges={badges} locked={locked}>
-      <BlueprintShell user={user}>{children}</BlueprintShell>
+      {switchable ? (
+        <div data-desk-fallback="" style={{ display: "contents" }}>
+          {desk}
+        </div>
+      ) : (
+        desk
+      )}
     </NavRoleProvider>
   );
 }

@@ -153,12 +153,15 @@ export function MobileVideoEstimator({
      sits at `mve-rv` opacity 0 until this runs — the donor's own explicit
      `rv` / `rv-in` add. The first pass is skipped so the initial screen keeps
      the entrance cascade's 60ms stagger instead of being revealed whole. */
-  const firstStep = useRef(true);
+  const shownStep = useRef(ve.step);
   useEffect(() => {
-    if (firstStep.current) {
-      firstStep.current = false;
-      return;
-    }
+    // Compare against the step LAST ACTED ON, not a first-run flag: React's
+    // StrictMode runs every effect twice on mount, and a flag that flipped on
+    // the first pass let the second one through — which scrolled the intake
+    // block to the top of the viewport on every load, before anyone had
+    // tapped anything. Same step as last time means nothing to reveal.
+    if (shownStep.current === ve.step) return;
+    shownStep.current = ve.step;
     const el = ve.step === "result" ? resultRef.current : intakeRef.current;
     if (!el) return;
     const reduce = prefersReducedMotion();
@@ -350,13 +353,28 @@ export function MobileVideoEstimator({
                 onChange={(e) => setField({ key: `${l.id}:qty`, text: e.target.value })}
                 onBlur={(e) => commitNumber(l.id, "qty", e.target.value)}
               />
-              <input
-                className="mve-unit"
-                aria-label="Unit"
-                value={l.unit}
-                list={`mve-units-${group}`}
-                onChange={(e) => ve.setLine(l.id, { unit: e.target.value })}
-              />
+              {/* A real select, as the manual builder's line items have (owner,
+                  2026-09-02) — a text field with a datalist was a field that
+                  happened to suggest things. The model's own unit is kept at
+                  the head of the list when it is not one of the house options,
+                  so switching the control never silently rewrites a line. */}
+              <span className="mve-unit-wrap">
+                <select
+                  className="mve-unit"
+                  aria-label="Unit"
+                  value={l.unit}
+                  onChange={(e) => ve.setLine(l.id, { unit: e.target.value })}
+                >
+                  {(unitOptionsFor(group).includes(l.unit)
+                    ? unitOptionsFor(group)
+                    : [l.unit, ...unitOptionsFor(group)]
+                  ).map((u) => (
+                    <option value={u} key={u}>
+                      {u || "unit"}
+                    </option>
+                  ))}
+                </select>
+              </span>
               <input
                 className="mve-in mve-in--price"
                 inputMode="decimal"
@@ -377,12 +395,6 @@ export function MobileVideoEstimator({
             </div>
           </div>
         ))}
-
-        <datalist id={`mve-units-${group}`}>
-          {unitOptionsFor(group).map((u) => (
-            <option value={u} key={u} />
-          ))}
-        </datalist>
 
         <button className="mve-addline" type="button" onClick={() => ve.addLine(group)}>
           <Icon id="i-plus" />

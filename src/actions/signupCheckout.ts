@@ -30,9 +30,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { TRADE_TYPES } from "@/lib/tradeTypes";
 import { bindAttributionToOrg } from "@/lib/attribution";
-import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
+import { SubscriptionStatus } from "@/lib/prismaEnums";
+import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
+import { mintSigninTicket } from "@/lib/signinTicket";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
  *  that an abandoned card never becomes an account a week later. */
@@ -66,6 +69,7 @@ function key(token: string): string {
 
 export async function startPendingSignup(raw: unknown): Promise<{ ok: true; token: string }> {
   const data = pendingSchema.parse(raw);
+  await enforceRateLimit(`signup-start:${await clientIp()}`, 5, HOUR, "sign-ups");
 
   // Same answer as registration gives, at the same point in the flow: you
   // cannot hide that an address is taken when the next step would collide.
@@ -111,17 +115,33 @@ export async function readPendingSignup(
     : null;
 }
 
-/** Record which pages a custom plan bought, for the org that was just created.
- *  Kept in the same key→string store the pending intent uses; the gate that
- *  reads it lives with the plan limits. */
-export async function readOrgCustomPages(organizationId: string): Promise<string[]> {
-  const row = await db.syncState.findUnique({ where: { key: `orgPages:${organizationId}` } }).catch(() => null);
-  if (!row) return [];
-  try {
-    return normalizeCustomPages(JSON.parse(row.cursor) as string[]);
-  } catch {
-    return [];
-  }
+/**
+ * Update the page selection on a live pending intent.
+ *
+ * THE $30-CHARGED-$20 BUG this closes: the intent is parked at the END OF STEP
+ * 2, but the pages are picked on STEP 3 — so the selection stored with the
+ * intent was whatever it held when the account form was submitted (empty), and
+ * the checkout route, which prices ONLY from the intent (never the request
+ * body, so a doctored request can't name its own price), charged the $20 base
+ * no matter what was ticked. The client now calls this right before asking for
+ * checkout; the same normalize-and-store, the same server-side pricing.
+ */
+export async function updatePendingSignupPages(
+  token: string,
+  pages: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const rec = await loadPending(token);
+  if (!rec) return { ok: false, error: "That signup expired. Start again." };
+  const next: PendingRecord = {
+    ...rec,
+    customPages: normalizeCustomPages(Array.isArray(pages) ? pages.map(String) : []),
+  };
+  await db.syncState.upsert({
+    where: { key: key(token) },
+    update: { cursor: JSON.stringify(next) },
+    create: { key: key(token), cursor: JSON.stringify(next) },
+  });
+  return { ok: true };
 }
 
 async function loadPending(token: string): Promise<PendingRecord | null> {
@@ -147,19 +167,40 @@ async function loadPending(token: string): Promise<PendingRecord | null> {
 export async function completePendingSignup(
   token: string,
   sessionId: string | null,
-): Promise<{ ok: true; email: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; email: string; ticket: string } | { ok: false; error: string }> {
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
+
+  // The skip path ("create the account with no subscription") is a testing
+  // exit. It is a public server action, so it is gated HERE, not in the UI:
+  // production never honours it, and outside production only when the
+  // operator opts in with SIGNUP_ALLOW_SKIP=true. Otherwise the paywall this
+  // file exists to enforce could be walked around with one call.
+  if (!sessionId) {
+    const skipAllowed =
+      process.env.NODE_ENV !== "production" && process.env.SIGNUP_ALLOW_SKIP === "true";
+    if (!skipAllowed) return { ok: false, error: "Choose a plan to finish creating your account." };
+  }
 
   let stripeCustomerId: string | null = null;
   let stripeSubscriptionId: string | null = null;
   let planSlug: string | null = null;
   let trialEnd: Date | null = null;
+  let periodEnd: Date | null = null;
+  // The page selection the customer actually PAID for. Stamped into the
+  // Checkout session's metadata by the checkout route from the intent as it
+  // was when the price was computed; read back from Stripe (immutable to the
+  // client) rather than from the intent, which updatePendingSignupPages can
+  // still rewrite after the session was priced.
+  let paidCustomPages: string[] | null = null;
 
   if (sessionId) {
     if (!isStripeEnabled()) return { ok: false, error: "Checkout is not configured." };
     try {
-      const stripe = getStripe();
+      // Same mode the session was created under, as long as the admin switch
+      // has not been flipped mid-checkout; a cross-mode session id simply
+      // fails to retrieve, which reads as "couldn't verify" — correct.
+      const { stripe } = await getStripeClient();
       const session = await stripe.checkout.sessions.retrieve(sessionId, {
         expand: ["subscription"],
       });
@@ -174,10 +215,15 @@ export async function completePendingSignup(
       if (sub && typeof sub !== "string") {
         stripeSubscriptionId = sub.id;
         trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
+        periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000) : null;
       } else if (typeof sub === "string") {
         stripeSubscriptionId = sub;
       }
       planSlug = (session.metadata?.planSlug as string | undefined) ?? null;
+      const metaPages = session.metadata?.customPages;
+      if (typeof metaPages === "string") {
+        paidCustomPages = normalizeCustomPages(metaPages.split(",").filter(Boolean));
+      }
     } catch (err) {
       console.warn("[signup] checkout verify failed:", err);
       return { ok: false, error: "Couldn't verify the payment. Try again." };
@@ -191,6 +237,7 @@ export async function completePendingSignup(
 
   const slug = await uniqueSlug(slugify(rec.businessName));
   let orgId: string;
+  let userId: string;
   try {
     const created = await db.$transaction(async (tx) => {
       const org = await tx.organization.create({
@@ -218,9 +265,10 @@ export async function completePendingSignup(
       await tx.membership.create({
         data: { userId: user.id, organizationId: org.id, role: "OWNER" },
       });
-      return { orgId: org.id };
+      return { orgId: org.id, userId: user.id };
     });
     orgId = created.orgId;
+    userId = created.userId;
   } catch (e: unknown) {
     const code = (e as { code?: string })?.code;
     if (code === "P2002") {
@@ -237,20 +285,29 @@ export async function completePendingSignup(
     await db.subscription
       .upsert({
         where: { organizationId: orgId },
+        // Status uses the canonical enum casing — the limits engine compares
+        // against SubscriptionStatus.ACTIVE/TRIALING and treated the old
+        // lowercase values as LAPSED (free quotas for a paying customer until
+        // the webhook happened to overwrite the row). currentPeriodEnd makes
+        // the row self-expiring if the webhook never arrives.
         update: {
           plan: planSlug === CUSTOM_PLAN_SLUG ? "CUSTOM" : (plan?.slug.toUpperCase() ?? "PRO"),
-          status: trialEnd ? "trialing" : "active",
+          status: trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE,
+          provider: "STRIPE",
           externalCustomerId: stripeCustomerId,
           externalSubId: stripeSubscriptionId,
           trialEndsAt: trialEnd,
+          currentPeriodEnd: periodEnd,
         },
         create: {
           organizationId: orgId,
           plan: planSlug === CUSTOM_PLAN_SLUG ? "CUSTOM" : (plan?.slug.toUpperCase() ?? "PRO"),
-          status: trialEnd ? "trialing" : "active",
+          status: trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE,
+          provider: "STRIPE",
           externalCustomerId: stripeCustomerId,
           externalSubId: stripeSubscriptionId,
           trialEndsAt: trialEnd,
+          currentPeriodEnd: periodEnd,
         },
       })
       .catch((err) => console.warn("[signup] subscription record failed:", err));
@@ -258,7 +315,9 @@ export async function completePendingSignup(
 
   // The custom plan's page selection belongs to the workspace it was bought
   // for, so it is written the moment that workspace exists.
-  const chosen = normalizeCustomPages(rec.customPages);
+  // Paid selection wins; the intent's copy is only used on the (non-prod) skip
+  // path where nothing was priced at all.
+  const chosen = paidCustomPages ?? (sessionId ? [] : normalizeCustomPages(rec.customPages));
   if (chosen.length || planSlug === CUSTOM_PLAN_SLUG) {
     await db.syncState
       .upsert({
@@ -277,7 +336,12 @@ export async function completePendingSignup(
 
   // The intent is spent.
   await db.syncState.delete({ where: { key: key(token) } }).catch(() => {});
-  return { ok: true, email: rec.email };
+  // The session hand-off: the client redeems this through the `signup-ticket`
+  // provider so the shop lands on its dashboard already signed in, instead of
+  // at the login wall with a password it typed two screens and one Stripe
+  // round-trip ago.
+  const ticket = await mintSigninTicket(userId);
+  return { ok: true, email: rec.email, ticket };
 }
 
 /* ── local helpers (the auth action's, kept private to this file) ───────── */

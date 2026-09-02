@@ -5,6 +5,7 @@
 // Quota: intentionally ALLOW-BUT-COUNT — completing a job should never fail on
 // the review-request cap; the row still counts toward usage. The manual send
 // (src/actions/reviewRequests.ts) is the enforced path.
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 
 export async function createReviewRequestInternal(jobId: string) {
@@ -15,6 +16,7 @@ export async function createReviewRequestInternal(jobId: string) {
   const req = await db.reviewRequest.create({
     data: {
       organizationId: job.organizationId,
+      publicToken: randomUUID(),
       jobId,
       clientId: job.clientId,
       status: "SENT",

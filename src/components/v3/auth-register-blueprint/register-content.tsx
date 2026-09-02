@@ -31,7 +31,7 @@
 import * as React from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { toast } from "@/components/ui/Toast";
 import { checkEmailAvailable } from "@/actions/auth";
@@ -44,7 +44,7 @@ import {
   type SignupPlan,
   type SignupPromo,
 } from "@/actions/signupPaywall";
-import { completePendingSignup, startPendingSignup } from "@/actions/signupCheckout";
+import { completePendingSignup, startPendingSignup, updatePendingSignupPages } from "@/actions/signupCheckout";
 import {
   CUSTOM_BASE_CENTS,
   CUSTOM_BASE_FEATURES,
@@ -80,37 +80,44 @@ function stItem(index: 0 | 1 | 2, step: Step): string {
 // Donor `#tradeNote`, verbatim.
 function tradeNote(n: number): string {
   return n === 0
-    ? "No trades picked — you can add them later, but no leads will be matched."
+    ? "Pick at least one — leads are matched to these."
     : n + (n === 1 ? " trade" : " trades") + " selected — leads will be matched to these.";
 }
 
 export function RegisterContent() {
   const router = useRouter();
   const rootRef = React.useRef<HTMLDivElement>(null);
-  const sideCardRef = React.useRef<HTMLImageElement>(null);
 
   /* THE RETURN FROM STRIPE. `?signup=<token>&session_id=…` is the success URL
-     the checkout route set, and it is the only input this needs — so it is read
-     ONCE during the first render (lazy state initialiser). Everything it
-     implies (which step to open on, which token this page belongs to, whether
-     to say the checkout was cancelled) is INITIAL STATE derived from it, not
-     state pushed from an effect. The effect below only does the part that talks
-     to the server. */
-  const [ret] = React.useState<{ token: string; sessionId: string | null; cancelled: boolean } | null>(
-    () => {
-      if (typeof window === "undefined") return null;
-      const url = new URL(window.location.href);
-      const t = url.searchParams.get("signup");
-      if (!t) return null;
-      return {
-        token: t,
-        sessionId: url.searchParams.get("session_id"),
-        cancelled: url.searchParams.get("checkout") === "cancelled",
-      };
-    },
-  );
+     the checkout route set, and it is the only input this needs. Read through
+     useSearchParams — NOT window.location: the window read returned null on
+     the server render, so the server drew step 1 and the client drew step 3,
+     and React threw the hydration-mismatch that made the whole return from a
+     PAID checkout arrive as a crash-and-regenerate (owner's report,
+     2026-08-31). useSearchParams gives both renders the same answer; the
+     RegisterSwitch above already provides the Suspense boundary it needs. */
+  const searchParams = useSearchParams();
+  const ret = React.useMemo<{ token: string; sessionId: string | null; cancelled: boolean } | null>(() => {
+    const t = searchParams?.get("signup");
+    if (!t) return null;
+    return {
+      token: t,
+      sessionId: searchParams.get("session_id"),
+      cancelled: searchParams.get("checkout") === "cancelled",
+    };
+    // Read once: the params only change via full navigations on this page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const [step, setStep] = React.useState<Step>(ret ? 3 : 1);
+  /* A PAID RETURN OPENS ON THE DONE PANEL, not on the plan page. Until
+     2026-09-02 the plan step was drawn while completePendingSignup ran, so the
+     visitor saw the pricing they had just paid for flash past before "Your
+     shop is live" — which read as being sent back (owner's report). The done
+     panel now carries a finalizing state (`payBusy`) for that second. */
+  const [step, setStep] = React.useState<Step>(ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : 1);
+  /* True once the ticket minted by completePendingSignup has been redeemed:
+     the browser holds a session, and step 4 may point at the dashboard. */
+  const [signedIn, setSignedIn] = React.useState(false);
 
   /* THE PLAN STEP. Everything here is read from the live catalog after the
      account exists — the step cannot price itself before there is an org to
@@ -240,6 +247,37 @@ export function RegisterContent() {
     return map;
   }, [plans]);
 
+  /* THE FADE IS A CLAIM — "there is more below" — so it must come OFF when
+     there is not: a list short enough to fit, or one scrolled to its end,
+     otherwise the LAST benefit prints permanently greyed-out as if disabled
+     (owner's screenshot, 2026-08-31). CSS cannot know scroll position, so
+     each card's list reports it via data-cut; the stylesheet only draws the
+     mask while data-cut is not "0". */
+  React.useEffect(() => {
+    if (step !== 3) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const els = Array.from(root.querySelectorAll<HTMLElement>(".pw-feats"));
+    if (!els.length) return;
+    const update = (el: HTMLElement) => {
+      el.dataset.cut = el.scrollHeight - el.clientHeight - el.scrollTop > 4 ? "1" : "0";
+    };
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) update(e.target as HTMLElement);
+    });
+    const handlers = els.map((el) => {
+      const h = () => update(el);
+      el.addEventListener("scroll", h, { passive: true });
+      ro.observe(el);
+      update(el);
+      return h;
+    });
+    return () => {
+      els.forEach((el, i) => el.removeEventListener("scroll", handlers[i]));
+      ro.disconnect();
+    };
+  }, [step, plans, customPages, interval]);
+
   const [name, setName] = React.useState("");
   const [biz, setBiz] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -272,24 +310,6 @@ export function RegisterContent() {
   const [creating, setCreating] = React.useState(false);
   const [doneNote, setDoneNote] = React.useState("");
   const [googleBusy, setGoogleBusy] = React.useState(false);
-
-  /* Donor `syncNewsHeight`: `.side-perk` is pinned above the art panel (the
-     quote card it replaced), so its `bottom` needs that panel's measured
-     height. The donor writes `--news-h` on
-     document.documentElement; it is written on the page wrapper here instead so
-     a client-side navigation away cannot leave the variable behind — the perk
-     block inherits it either way, so the computed value is identical. */
-  React.useEffect(() => {
-    function syncNewsHeight() {
-      const card = sideCardRef.current;
-      if (!card) return;
-      const h = card.getBoundingClientRect().height;
-      if (h) rootRef.current?.style.setProperty("--news-h", h + "px");
-    }
-    window.addEventListener("resize", syncNewsHeight);
-    syncNewsHeight();
-    return () => window.removeEventListener("resize", syncNewsHeight);
-  }, [step]);
 
   /* The catalog is read when the plan step opens, not on mount: before the
      account exists there is no owner to read it as. */
@@ -341,6 +361,17 @@ export function RegisterContent() {
     setPayBusy(true);
     setPlansErr(null);
     try {
+      /* THE INTENT IS RE-STAMPED WITH THE PAGES FIRST. It was parked at the
+         end of step 2, before any page was ticked, and the checkout route
+         prices ONLY from the intent — so without this the custom plan always
+         charged the bare $20 base whatever was selected. */
+      if (planSlug === CUSTOM_PLAN_SLUG && token) {
+        const upd = await updatePendingSignupPages(token, customPages);
+        if (!upd.ok) {
+          setPlansErr(upd.error);
+          return;
+        }
+      }
       const res = await fetch("/api/checkout/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -373,7 +404,9 @@ export function RegisterContent() {
         setPlansErr(res.error);
         return;
       }
-      await signIn("credentials", { email: res.email, password, redirect: false });
+      const auth = await signIn("signup-ticket", { ticket: res.ticket, redirect: false });
+      setSignedIn(Boolean(auth && !auth.error));
+      setDoneNote("Your workspace is ready.");
       toast.success("Welcome to JobFlex", "Your workspace is ready.");
       setStep(4);
     } catch {
@@ -383,35 +416,63 @@ export function RegisterContent() {
     }
   }
 
+  /* ONCE. The intent is spent by its first completion, and React's development
+     StrictMode mounts effects twice — the second call came back "That signup
+     expired" and threw the plan sheet over a shop that had just been created
+     and signed in. A ref survives the simulated remount; a `live` flag would
+     not. */
+  const completedRef = React.useRef(false);
   React.useEffect(() => {
     if (!ret?.sessionId || ret.cancelled) return;
+    if (completedRef.current) return;
+    completedRef.current = true;
     void completePendingSignup(ret.token, ret.sessionId)
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) {
+          // Back to the plan page, with the reason on it.
           setPlansErr(res.error);
+          setStep(3);
           return;
         }
-        // The password is not in scope on a fresh page load, so this hands over
-        // to sign-in rather than pretending to know it.
-        toast.success("You're in", "Sign in to open your new workspace.");
-        router.push("/auth/login" as Route);
+        /* THE SESSION IS ESTABLISHED HERE. The password typed on step 1 is
+           gone on this fresh load, so the account is signed in with the
+           single-use ticket the server minted alongside it (lib/signinTicket).
+           Being sent to the login wall after paying read as the signup
+           FAILING (owner's reports, 2026-08-31 and 2026-09-02). */
+        const auth = await signIn("signup-ticket", { ticket: res.ticket, redirect: false });
+        const ok = Boolean(auth && !auth.error);
+        setSignedIn(ok);
+        setDoneNote(
+          ok
+            ? `Your subscription is active and your workspace is ready for ${res.email}.`
+            : `Your subscription is active and your workspace is ready for ${res.email}. Sign in to open it.`,
+        );
       })
-      .catch(() => setPlansErr("Couldn't finish the signup. Try again."))
+      .catch(() => {
+        setPlansErr("Couldn't finish the signup. Try again.");
+        setStep(3);
+      })
       .finally(() => setPayBusy(false));
   }, [ret, router]);
 
-  // Tick the countdown down on the success step, then leave. Gated on `step` so
-  // the clock cannot start before the account exists, and cleared on unmount so
-  // a person who clicks the button first is not navigated a second time.
+  // Tick the countdown down on the success step, then leave — TO SIGN-IN. In
+  // the pay-first flow nobody at step 4 holds a session (the account was
+  // created seconds ago and no credentials were ever posted to NextAuth), so
+  // the old /dashboard target only bounced through the middleware to a bare
+  // login wall, which read as the signup failing. `next` carries them on to
+  // the dashboard the moment they sign in. Gated on `step` so the clock cannot
+  // start before the account exists, and cleared on unmount so a person who
+  // clicks the button first is not navigated a second time.
+  const doneHref = (signedIn ? "/dashboard" : "/auth/login?next=%2Fdashboard") as Route;
   React.useEffect(() => {
-    if (step !== 4) return;
+    if (step !== 4 || payBusy) return;
     if (countdown <= 0) {
-      router.push("/dashboard" as Route);
+      router.push(doneHref);
       return;
     }
     const t = window.setTimeout(() => setCountdown((n) => n - 1), 1000);
     return () => window.clearTimeout(t);
-  }, [step, countdown, router]);
+  }, [step, payBusy, countdown, router, doneHref]);
 
   function toggleTrade(t: TradeType) {
     setTrades((prev) => {
@@ -478,8 +539,20 @@ export function RegisterContent() {
      never subscribed still ended up with a workspace. The details are parked as
      a PENDING INTENT instead (actions/signupCheckout), and the account is
      created when checkout comes back — or when the testing skip is used. */
-  async function finish(withCompany: boolean) {
+  /* STEP 2 IS REQUIRED (owner's call, 2026-09-02): the address and at least
+     one trade are what the Lead Center matches on, so a shop without them is a
+     shop that never receives the free leads the step promises. The
+     "Skip — set this up later" exit is gone with it. */
+  async function finish() {
     if (creating) return;
+    if (!addr.trim()) {
+      setErr2("Enter your company address — leads are matched by distance.");
+      return;
+    }
+    if (trades.length === 0) {
+      setErr2("Pick at least one trade — leads are matched to it.");
+      return;
+    }
     setCreating(true);
     setErr2(null);
     try {
@@ -488,23 +561,14 @@ export function RegisterContent() {
         businessName: biz.trim(),
         email: email.trim(),
         password,
-        companyAddress: withCompany ? addr.trim() || undefined : undefined,
-        companyPhone: withCompany ? phone.trim() || undefined : undefined,
-        tradeTypes: withCompany && trades.length ? trades : undefined,
+        companyAddress: addr.trim(),
+        companyPhone: phone.trim() || undefined,
+        tradeTypes: trades,
         otherTrade:
-          withCompany && trades.includes("Other") && otherTrade.trim()
-            ? otherTrade.trim()
-            : undefined,
+          trades.includes("Other") && otherTrade.trim() ? otherTrade.trim() : undefined,
         attribution: attribution ?? undefined,
       });
       setToken(res.token);
-      if (!withCompany) {
-        setDoneNote(
-          (prev) =>
-            prev +
-            " Add your address and trades in Company settings when you want matched leads.",
-        );
-      }
       setStep(3);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Couldn't continue.";
@@ -525,52 +589,69 @@ export function RegisterContent() {
     void signIn("google", { callbackUrl: "/dashboard" });
   }
 
+  const brand = (
+    <Link className="brand" href={"/" as Route}>
+      <span className="brand-mark">J</span>
+      <span className="brand-name">JobFlex</span>
+    </Link>
+  );
+
+  /* The step indicator. Drawn twice — in the form column and on the plan
+     sheet — because the two are separate layers that slide past each other;
+     only one is ever visible. */
+  const stepper = (
+    <div className="stepper" id="stepper">
+      <div className={stItem(0, step)} data-step="1">
+        <span className="st-n">1</span>
+        <span className="st-txt">
+          <span className="st-t">Your account</span>
+          <span className="st-h">Required</span>
+        </span>
+      </div>
+      <span className="st-line"></span>
+      <div className={stItem(1, step)} data-step="2">
+        <span className="st-n">2</span>
+        <span className="st-txt">
+          <span className="st-t">Your company</span>
+          <span className="st-h">Required</span>
+        </span>
+      </div>
+      {/* Shown only once it is reached (owner's call, 2026-08-28): the
+          plan is the third step, but announcing it on the first screen
+          announces a price before anyone has seen the product. */}
+      {step >= 3 ? (
+        <>
+          <span className="st-line"></span>
+          <div className={stItem(2, step)} data-step="3">
+            <span className="st-n">3</span>
+            <span className="st-txt">
+              <span className="st-t">Your plan</span>
+              <span className="st-h">14 days free</span>
+            </span>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+
   return (
     <div className={styles.bp} ref={rootRef}>
       <RegisterSprite />
 
-      <main className={step === 3 ? "auth auth--wide" : "auth"}>
+      {/* TWO LAYERS, ONE MOTION. The account/company/done column and its art
+          panel are `.auth`; the plan is its own full-width sheet. Entering the
+          plan slides the whole screen off to the left while the sheet follows
+          it in from the right — one strip, one curve, one duration — instead
+          of the old arrangement where the art panel slid out on its own and
+          the grid collapsed under it on a second timer. */}
+      <main className={step === 3 ? "auth is-gone" : "auth"} aria-hidden={step === 3}>
         <section className="auth-form">
-          <Link className="brand" href={"/" as Route}>
-            <span className="brand-mark">J</span>
-            <span className="brand-name">JobFlex</span>
-          </Link>
+          {brand}
 
+          <div className="auth-body">
           <ReferralBanner onChange={setAttribution} />
 
-          {/* индикатор шагов */}
-          <div className="stepper" id="stepper">
-            <div className={stItem(0, step)} data-step="1">
-              <span className="st-n">1</span>
-              <span className="st-txt">
-                <span className="st-t">Your account</span>
-                <span className="st-h">Required</span>
-              </span>
-            </div>
-            <span className="st-line"></span>
-            <div className={stItem(1, step)} data-step="2">
-              <span className="st-n">2</span>
-              <span className="st-txt">
-                <span className="st-t">Your company</span>
-                <span className="st-h">Optional</span>
-              </span>
-            </div>
-            {/* Shown only once it is reached (owner's call, 2026-08-28): the
-                plan is the third step, but announcing it on the first screen
-                announces a price before anyone has seen the product. */}
-            {step >= 3 ? (
-              <>
-                <span className="st-line"></span>
-                <div className={stItem(2, step)} data-step="3">
-                  <span className="st-n">3</span>
-                  <span className="st-txt">
-                    <span className="st-t">Your plan</span>
-                    <span className="st-h">14 days free</span>
-                  </span>
-                </div>
-              </>
-            ) : null}
-          </div>
+          {stepper}
 
           {/* ───── ШАГ 1 ───── */}
           {/* The donor's "Get started" kicker is gone (owner's call) — the
@@ -667,7 +748,6 @@ export function RegisterContent() {
                     </svg>
                   </button>
                 </span>
-                <span className="fld-note">Type it once more.</span>
               </label>
 
               <button className="btn" type="submit" id="nextBtn" disabled={checking}>
@@ -719,7 +799,7 @@ export function RegisterContent() {
               noValidate
               onSubmit={(e) => {
                 e.preventDefault();
-                void finish(true);
+                void finish();
               }}
             >
               <div className="grid2">
@@ -802,19 +882,81 @@ export function RegisterContent() {
               </div>
             </form>
 
-            <div className="foot">
-              <button
-                className="link-quiet"
-                type="button"
-                id="skipBtn"
-                onClick={() => void finish(false)}
-              >
-                Skip — set this up later
-              </button>
+          </div>
+
+          <div className={step === 4 ? "step" : "step is-hidden"} id="stepDone">
+            <div className={payBusy ? "done-mark is-busy" : "done-mark"}>
+              <svg className="ic">
+                <use href="#i-check" />
+              </svg>
+            </div>
+            {payBusy ? (
+              <>
+                <h1 className="auth-h1">Setting up your shop…</h1>
+                <p className="auth-lede">Payment confirmed. Building your workspace.</p>
+              </>
+            ) : (
+              <>
+                <h1 className="auth-h1">Your shop is live.</h1>
+                <p className="auth-lede" id="doneNote">
+                  {doneNote}
+                </p>
+                <div className="btn-pair">
+                  <Link className="btn" href={doneHref}>
+                    {signedIn ? "Open your dashboard" : "Sign in to your dashboard"}
+                  </Link>
+                </div>
+                <p className="fld-note" role="status" id="doneCountdown">
+                  {signedIn
+                    ? countdown > 0
+                      ? `Opening your dashboard in ${countdown}…`
+                      : "Opening your dashboard…"
+                    : countdown > 0
+                      ? `Taking you to sign-in in ${countdown}…`
+                      : "Taking you to sign-in…"}
+                </p>
+              </>
+            )}
+          </div>
+          </div>
+        </section>
+
+        <aside className="auth-side">
+          <div className="side-wash"></div>
+          {/* THE PROMISE. One paper card on the ink field, top right, three
+              lines long: what you get, why this step. It enters with step 2
+              and leaves with it. */}
+          <div className={step === 2 ? "side-perk is-on" : "side-perk"} id="sidePerk" aria-hidden={step !== 2}>
+            <div className="pk">
+              <span className="pk-eyebrow">
+                <svg className="ic">
+                  <use href="#i-gift" />
+                </svg>
+                Free leads
+              </span>
+              <h2 className="pk-h">Fill this in and homeowner jobs near you come to you.</h2>
+              <p className="pk-p">Matched by your trades and address. No cost, no cap.</p>
             </div>
           </div>
 
-          {/* ───── ГОТОВО ───── */}
+          {/* THE ART PANEL — see the note in the login page: a picture in the
+              product's own drawing language instead of an invented quote. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            className="side-art"
+            id="sideCard"
+            src="/auth/side-site-2.png"
+            alt=""
+            aria-hidden="true"
+          />
+        </aside>
+      </main>
+
+      <section className={step === 3 ? "plan-sheet is-in" : "plan-sheet"} aria-hidden={step !== 3}>
+        <div className="plan-sheet-in">
+          {brand}
+          {stepper}
+
           {/* ───── ШАГ 3 · THE PLAN ─────
               INDUSTRIAL DRAFTING BRUTALISM, the page's own language, pushed
               harder because this is the one screen that has to sell:
@@ -1053,10 +1195,14 @@ export function RegisterContent() {
             </p>
 
             {/* The testing exit. Small, quiet, cornered — an escape, not an
-                offer. */}
-            <button className="pw-skip" type="button" onClick={() => void onSkipPlan()} disabled={payBusy}>
-              Skip for now
-            </button>
+                offer. Development builds only: the server refuses the
+                no-subscription path in production regardless (see
+                completePendingSignup), so the button is not drawn there. */}
+            {process.env.NODE_ENV !== "production" ? (
+              <button className="pw-skip" type="button" onClick={() => void onSkipPlan()} disabled={payBusy}>
+                Skip for now
+              </button>
+            ) : null}
 
             {/* THE PAGE PICKER. Hand-rolled (no Radix here, same as every other
                 dialog in this fleet): a scrim, one panel, Escape closes it. The
@@ -1147,70 +1293,8 @@ export function RegisterContent() {
               </div>
             ) : null}
           </div>
-
-
-          <div className={step === 4 ? "step" : "step is-hidden"} id="stepDone">
-            <div className="done-mark">
-              <svg className="ic">
-                <use href="#i-check" />
-              </svg>
-            </div>
-            <div className="auth-kicker kpi-lbl">Account created</div>
-            <h1 className="auth-h1">Your shop is live.</h1>
-            <p className="auth-lede" id="doneNote">
-              {doneNote}
-            </p>
-            <div className="btn-pair">
-              <Link className="btn" href={"/dashboard" as Route}>
-                Open the dashboard
-              </Link>
-            </div>
-            <p className="fld-note" role="status" id="doneCountdown">
-              {countdown > 0
-                ? `Taking you there in ${countdown}…`
-                : "Opening your dashboard…"}
-            </p>
-          </div>
-        </section>
-
-        <aside className={step === 3 ? "auth-side is-out" : "auth-side"} aria-hidden={step === 3}>
-          <div className="side-wash"></div>
-          {/* WHY FILL THIS IN. One white card against the ink field, three
-              lines long: what you get, what it costs, what it takes. The block
-              it replaces ran a paragraph, a rule, three stat chips and a
-              button to explain the same thing. */}
-          <div className={step === 2 ? "side-perk" : "side-perk is-hidden"} id="sidePerk">
-            <div className="pk">
-              <span className="pk-eyebrow">
-                <svg className="ic">
-                  <use href="#i-gift" />
-                </svg>
-                Free
-              </span>
-              <h2 className="pk-h">
-                Fill this in and
-                <br />
-                homeowner leads
-                <br />
-                come to you.
-              </h2>
-              <p className="pk-p">Your trades, near you. No cost, no cap.</p>
-            </div>
-          </div>
-
-          {/* THE ART PANEL — see the note in the login page: a picture in the
-              product's own drawing language instead of an invented quote. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            className="side-art"
-            id="sideCard"
-            ref={sideCardRef}
-            src="/auth/side-site-2.png"
-            alt=""
-            aria-hidden="true"
-          />
-        </aside>
-      </main>
+        </div>
+      </section>
     </div>
   );
 }

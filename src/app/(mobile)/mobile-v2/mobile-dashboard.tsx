@@ -1371,12 +1371,30 @@ function DashboardView({ data }: { data: DashboardData }) {
                   <Link
                     key={item.label}
                     className={cls}
+                    style={item.locked ? { opacity: 0.5 } : undefined}
                     href={item.href as Route}
                     aria-current={isActive ? "page" : undefined}
                     onClick={() => setNavOpen(false)}
                   >
                     <Icon id={item.icon} />
                     {item.label}
+                    {/* Custom-plan lock: page not in the org's plan; the link
+                        opens the upgrade offer. Inline svg — this surface's
+                        sprite has no padlock. */}
+                    {item.locked ? (
+                      <svg
+                        viewBox="0 0 24 24"
+                        aria-label="Not in your plan"
+                        style={{
+                          width: 14, height: 14, marginLeft: "auto", flexShrink: 0,
+                          fill: "none", stroke: "currentColor", strokeWidth: 2,
+                          strokeLinecap: "round", strokeLinejoin: "round", opacity: 0.8,
+                        }}
+                      >
+                        <rect x="5" y="11" width="14" height="10" rx="1.5" />
+                        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                      </svg>
+                    ) : null}
                   </Link>
                 );
               })}
