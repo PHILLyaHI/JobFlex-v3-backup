@@ -327,6 +327,20 @@ export function SupportFab() {
       raf = 0;
       const el = ref.current;
       if (!el) return;
+      // HANDHELD ONLY. On the desk the plate has its own corner — every page
+      // column stops well short of it and the shells reserve the strip under
+      // it — so a bar measured there only ever LIFTED the plate off the
+      // corner it was placed in (the manual builder's sticky total bar spans
+      // the column, not the screen, and the plate climbed it anyway). The
+      // stylesheet's desk inset stands; measurement is a phone's problem.
+      if (!window.matchMedia("(max-width: 768px)").matches) {
+        el.style.removeProperty("--jfsup-fab-bottom");
+        if (barObserved) {
+          barRO.unobserve(barObserved);
+          barObserved = null;
+        }
+        return;
+      }
       const { px, bar } = bottomObstruction(el);
       // The probe measures in VIEWPORT px; `bottom` is applied in the plate's
       // OWN px. Those differ inside the desk blueprint shell, whose FLUID SCALE

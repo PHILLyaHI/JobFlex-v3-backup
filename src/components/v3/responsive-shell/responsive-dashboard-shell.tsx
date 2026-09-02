@@ -395,11 +395,35 @@ export function ResponsiveDashboardShell({
     );
   }
 
+  // THE DESK SHELL, AND WHETHER A PHONE MAY SEE IT. The server renders this
+  // branch for every route (it cannot know the viewport), so on a phone the
+  // desk layout is what the streamed HTML PAINTS while the client bundle is
+  // still loading — the sidebar, the fluid-scaled column, the desk topbar — and
+  // hydration then swaps it for the handheld tree. On a reload that read as
+  // "some other design for a second, then the real one". For a route that HAS
+  // a handheld branch above, the desk paint is never what a phone should see,
+  // so the shell is marked and a global rule hides it at handheld width until
+  // the swap (app/globals.css, `[data-desk-fallback]`). Routes with no
+  // handheld build stay unmarked: the desk shell IS their phone layout.
+  const switchable =
+    Boolean(Handheld) ||
+    BLUEPRINT_HANDHELD.has(pathname ?? "") ||
+    PAGE_OWNED_STATIC.has(pathname ?? "") ||
+    PAGE_OWNED_HANDHELD.test(pathname ?? "");
+  const desk = (
+    <BlueprintShell user={user}>
+      <CustomGateSwap>{children}</CustomGateSwap>
+    </BlueprintShell>
+  );
   return (
     <NavRoleProvider identity={identity} badges={badges} locked={locked}>
-      <BlueprintShell user={user}>
-        <CustomGateSwap>{children}</CustomGateSwap>
-      </BlueprintShell>
+      {switchable ? (
+        <div data-desk-fallback="" style={{ display: "contents" }}>
+          {desk}
+        </div>
+      ) : (
+        desk
+      )}
     </NavRoleProvider>
   );
 }

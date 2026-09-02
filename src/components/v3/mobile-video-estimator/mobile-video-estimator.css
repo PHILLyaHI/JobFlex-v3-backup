@@ -1150,11 +1150,57 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
 .jf-mobile-video-estimator .mve-in:focus { outline: none; border-color: var(--blueprint); }
 .jf-mobile-video-estimator .mve-in--qty { flex: 0 0 56px; }
 .jf-mobile-video-estimator .mve-in--price { flex: 0 0 76px; }
-.jf-mobile-video-estimator .mve-unit {
+/* THE RESULT IS A STACK OF CARDS, and it is one child of `.mve-content`, so
+   the column's own gap never reached the cards inside it: the reading card,
+   the totals card and the materials request were butted frame to frame,
+   reading as one card with a 4px black seam through it. Same gap token as
+   the column, so the sheet has one card rhythm top to bottom. */
+.jf-mobile-video-estimator .mve-result,
+.jf-mobile-video-estimator .mve-intake {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-result[hidden],
+.jf-mobile-video-estimator .mve-intake[hidden] {
+  display: none;
+}
+
+/* The unit is a SELECT now. The wrapper hangs the drawn caret — two strokes
+   meeting at a point, the same device the manual builder's unit picker uses —
+   because the platform glyph is the one piece of OS chrome this system
+   cannot re-skin. */
+.jf-mobile-video-estimator .mve-unit-wrap {
+  position: relative;
+  display: flex;
   flex: 1 1 60px;
   min-width: 0;
+}
+.jf-mobile-video-estimator .mve-unit-wrap::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+.jf-mobile-video-estimator .mve-unit-wrap:focus-within::after {
+  border-color: var(--blueprint);
+}
+.jf-mobile-video-estimator .mve-unit {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: var(--tap);
-  padding: 0 8px;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0 24px 0 8px;
+  cursor: pointer;
   border: 1.5px solid rgba(10, 10, 10, 0.28);
   border-radius: var(--radius);
   background: var(--sheet);

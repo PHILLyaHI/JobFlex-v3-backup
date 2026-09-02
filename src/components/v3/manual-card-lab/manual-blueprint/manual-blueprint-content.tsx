@@ -189,7 +189,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   // hands over to the proposals list. The bar's status chip alone was too quiet
   // to answer "did that work?" — a send that succeeded looked identical to a
   // click that never registered.
-  const [done, setDone] = useState<{ sent: boolean; text: string } | null>(null);
+  const [done, setDone] = useState<{ sent: boolean; ref: string; text: string } | null>(null);
   // Set when "Save & send" is pressed against a client with no email on file.
   // The send is not refused — it is PAUSED on one question, and answering it
   // writes the address to the client record so the next proposal already has
@@ -367,6 +367,11 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     const why = whyNotSavable(draft);
     if (why) {
       setNote({ tone: "err", text: why });
+      // The chip is in the masthead, screens above the bar on a phone; the
+      // bar's two buttons used to be DISABLED with the reason in a `title`,
+      // which a touch screen never shows — so a tap on Save & send did
+      // nothing at all. The buttons stay live and the reason is said here.
+      toast.error(opts?.sendAfter ? "Can't send yet" : "Can't save yet", why);
       return;
     }
     // A send with nowhere to go used to complete "successfully" and report
@@ -380,6 +385,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
       const pick = draft.client;
       if (pick.mode !== "record") {
         setNote({ tone: "err", text: "Pick a client before sending" });
+        toast.error("Can't send yet", "Pick a client record in card 02 first");
         return;
       }
       const rec = clients.find((c) => c.id === pick.id);
@@ -416,15 +422,17 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
           clients.find((c) => (draft.client.mode === "record" ? c.id === draft.client.id : false))
             ?.email ||
           "";
-        const text = to ? `${ref} · sent to ${to}` : `${ref} · sent`;
+        // No corner toast on success (owner, 2026-09-02): the panel below
+        // already says it, centred, and two notices for one save read as two
+        // events. The masthead chip keeps the short form for after the panel
+        // is dismissed.
+        const text = to ? `${ref} was sent to ${to}` : `${ref} was sent`;
         setNote({ tone: "ok", text });
-        toast.success("Proposal sent", text);
-        setDone({ sent: true, text });
+        setDone({ sent: true, ref, text });
       } else {
-        const text = `${ref} · saved to your proposals`;
+        const text = `${ref} was saved to your proposals`;
         setNote({ tone: "ok", text });
-        toast.success("Proposal saved", text);
-        setDone({ sent: false, text });
+        setDone({ sent: false, ref, text });
       }
     } catch (err: unknown) {
       if (reportPlanLimit(err)) {
@@ -843,6 +851,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
       {done && (
         <DonePanel
           sent={done.sent}
+          proposalRef={done.ref}
           text={done.text}
           onGo={() => router.push("/dashboard/proposals" as Route)}
           onStay={() => setDone(null)}
@@ -859,7 +868,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
               a 22-character total, and a 24px figure that could not break
               ran 240px past the screen. */}
           <div
-            className={cx(styles.barMoney, money(totals.total).length > 13 && styles.barMoneyLong)}
+            className={cx(styles.barMoney, money(totals.total).length > 12 && styles.barMoneyLong)}
           >
             {money(totals.total)}
           </div>
@@ -869,18 +878,14 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             rather than hidden while the sheet is not savable, and the reason
             travels in `title` and in the masthead chip. */}
         <div className={styles.barActions}>
-          <Btn
-            onClick={() => void persist()}
-            disabled={working || blocked !== null}
-            title={blocked ?? undefined}
-          >
+          <Btn onClick={() => void persist()} disabled={working} title={blocked ?? undefined}>
             {busy === "save" ? "Saving…" : "Save"}
           </Btn>
           <Btn
             tone="primary"
             icon="send"
             onClick={() => void persist({ sendAfter: true })}
-            disabled={working || blocked !== null}
+            disabled={working}
             title={blocked ?? undefined}
           >
             {busy === "send" ? "Sending…" : "Save & send"}
@@ -1014,11 +1019,15 @@ function EmailPanel({
 
 function DonePanel({
   sent,
+  proposalRef,
   text,
   onGo,
   onStay,
 }: {
   sent: boolean;
+  /** The sheet's number — the one thing on the panel worth remembering. */
+  proposalRef: string;
+  /** The whole sentence, beginning with that number. */
   text: string;
   onGo: () => void;
   onStay: () => void;
@@ -1060,10 +1069,19 @@ function DonePanel({
         <h2 className={styles.doneH} id="mb-done-h">
           {sent ? "Your proposal is on its way." : "Your proposal is saved."}
         </h2>
-        <p className={styles.doneText}>{text}</p>
+        <p className={styles.doneText}>
+          <b className={styles.doneRef}>{proposalRef}</b>
+          {text.startsWith(proposalRef) ? text.slice(proposalRef.length) : ` ${text}`}
+        </p>
         <p className={styles.doneCount} role="status">
           Taking you to your proposals in {left}…
         </p>
+        {/* The same five seconds, drawn: a rule that empties as the clock
+            runs, so the panel says "this page is leaving" without the line
+            above having to be read. */}
+        <div className={styles.doneBar} aria-hidden="true">
+          <span style={{ width: `${(left / REDIRECT_SECONDS) * 100}%` }} />
+        </div>
         <div className={styles.doneActions}>
           <Btn tone="primary" onClick={onGo}>
             Go now

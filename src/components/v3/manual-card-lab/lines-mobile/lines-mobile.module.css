@@ -67,7 +67,12 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--muted-light, #888);
+  /* CAPTIONS IN --muted, NOT --muted-light (owner, 2026-09-02): #888 on the
+     warm well is ~3.3:1, which reads as disabled on a phone in daylight. #555
+     is ~7:1 and still a clear step under the ink figures. Every caption
+     register in this block moved together — index, cell labels, the split
+     row's name, the foot's two part names, the tax label. */
+  color: var(--muted, #555);
 }
 /* The row's answer. It wears no field rule — the absence of the box is the
    signal that this figure is read, not typed. */
@@ -169,8 +174,8 @@
   top: 50%;
   width: 6px;
   height: 6px;
-  border-right: 1.5px solid var(--muted-light, #888);
-  border-bottom: 1.5px solid var(--muted-light, #888);
+  border-right: 1.5px solid var(--muted, #555);
+  border-bottom: 1.5px solid var(--muted, #555);
   transform: translateY(-70%) rotate(45deg);
   pointer-events: none;
 }
@@ -195,11 +200,11 @@
   min-width: 0;
 }
 .block .cellLbl {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--muted-light, #888);
+  color: var(--muted, #555);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -227,15 +232,15 @@
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--muted-light, #888);
+  color: var(--muted, #555);
 }
 .block .discVal {
   margin-left: auto;
   min-width: 0;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
-  font-weight: 600;
-  color: var(--muted, #555);
+  font-weight: 700;
+  color: var(--ink, #0a0a0a);
   font-variant-numeric: tabular-nums;
   text-align: right;
   overflow-wrap: anywhere;
@@ -253,8 +258,8 @@
   width: 7px;
   height: 7px;
   margin-bottom: 2px;
-  border-right: 1.5px solid var(--muted-light, #888);
-  border-bottom: 1.5px solid var(--muted-light, #888);
+  border-right: 1.5px solid var(--muted, #555);
+  border-bottom: 1.5px solid var(--muted, #555);
   transform: rotate(45deg);
   transition: transform 0.16s;
 }
@@ -358,18 +363,18 @@
   min-width: 0;
 }
 .block .footPartName {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--muted-light, #888);
+  color: var(--muted, #555);
 }
 .block .footPartAmt {
   min-width: 0;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
-  font-weight: 600;
-  color: var(--muted, #555);
+  font-weight: 700;
+  color: var(--ink, #0a0a0a);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -409,7 +414,7 @@
 .block .footNote {
   font-size: 11px;
   font-weight: 500;
-  color: var(--muted-light, #888);
+  color: var(--muted, #555);
 }
 
 /* ── TAX ─────────────────────────────────────────────────────
@@ -429,7 +434,7 @@
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--muted-light, #888);
+  color: var(--muted, #555);
 }
 .block .taxWrap {
   position: relative;

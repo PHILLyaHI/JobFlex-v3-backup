@@ -138,6 +138,13 @@ const MAX = 100;
  *  would produce values the page cannot show, and 18.4% vs 18.3% is not a
  *  distinction anyone quoting a job is making. */
 const STEP = 0.5;
+/** How often a drag writes to the page. The plate itself redraws every
+ *  pointer event; the FIGURES it moves (the rate, its dollar amount, the
+ *  estimate plate, the grand total, the client's copy) re-render the whole
+ *  sheet, and doing that on every frame is what made the plate stutter behind
+ *  the pointer. ~12 writes a second keeps the money visibly following the
+ *  drag; the release flushes the final value synchronously. */
+const COMMIT_MS = 80;
 /** PageUp / PageDown. Ten arrow presses is a long way to 20%. */
 const BIG_STEP = 5;
 
@@ -173,18 +180,69 @@ function Rate({
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const ratio = Math.min(1, Math.max(0, value / MAX));
+  /* THE DRAG HOLDS ITS OWN POSITION — the same lease the split rail in
+     lines-v2 takes, for the same reason: `onChange` lands in the page's single
+     draft object, which re-renders every card and the client's copy before
+     this plate could move, and `dragging` as STATE meant the first pointer
+     moves after a press were dropped until that render came back. `dragPos`
+     is set straight from the pointer and re-renders this component only, so
+     the plate tracks the finger at the pointer's own rate; the page commit is
+     coalesced behind it (COMMIT_MS) and flushed on release, at which point
+     the prop is the source of truth again. Continuous while dragging, so the
+     plate does not tick along in 0.5% steps; the VALUE is still quantised on
+     every commit. */
+  const [dragPos, setDragPos] = useState<number | null>(null);
+  const pendingRef = useRef<number | null>(null);
+  const timerRef = useRef<number | null>(null);
 
-  function valueFromClientX(clientX: number): number {
+  const shown = dragPos ?? value;
+  const ratio = Math.min(1, Math.max(0, shown / MAX));
+
+  function rawFromClientX(clientX: number): number | null {
     const el = trackRef.current;
-    if (!el) return value;
+    if (!el) return null;
     const r = el.getBoundingClientRect();
-    if (r.width <= 0) return value;
-    return quantise(((clientX - r.left) / r.width) * MAX);
+    if (r.width <= 0) return null;
+    return Math.min(MAX, Math.max(0, ((clientX - r.left) / r.width) * MAX));
   }
 
   function commit(next: number) {
-    if (next !== value) onChange(next);
+    const q = quantise(next);
+    if (q !== value) onChange(q);
+  }
+
+  /** Draw now, write to the page a little later. Repeated calls inside one
+   *  window overwrite the pending value rather than queueing another write. */
+  function trackTo(clientX: number) {
+    const raw = rawFromClientX(clientX);
+    if (raw === null) return;
+    setDragPos(raw);
+    pendingRef.current = raw;
+    if (timerRef.current !== null) return;
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      const v = pendingRef.current;
+      pendingRef.current = null;
+      if (v !== null) commit(v);
+    }, COMMIT_MS);
+  }
+
+  /** Released, cancelled, or the pointer was taken away. Flush the last
+   *  position synchronously, THEN drop the lease — the other order snaps the
+   *  plate to the last committed value for a frame. */
+  function endDrag(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const last = pendingRef.current;
+    pendingRef.current = null;
+    if (last !== null) commit(last);
+    setDragPos(null);
+    setDragging(false);
   }
 
   return (
@@ -222,19 +280,16 @@ function Rate({
           e.currentTarget.focus();
           e.currentTarget.setPointerCapture(e.pointerId);
           setDragging(true);
-          commit(valueFromClientX(e.clientX));
+          trackTo(e.clientX);
         }}
         onPointerMove={(e) => {
-          if (!dragging) return;
-          commit(valueFromClientX(e.clientX));
+          // Capture, not `dragging`: the state flag is a render behind the
+          // pointer and dropped the first moves after every press.
+          if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+          trackTo(e.clientX);
         }}
-        onPointerUp={(e) => {
-          if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-          }
-          setDragging(false);
-        }}
-        onPointerCancel={() => setDragging(false)}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
         onKeyDown={(e) => {
           let next: number | null = null;
           switch (e.key) {

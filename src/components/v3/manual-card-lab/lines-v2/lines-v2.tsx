@@ -376,12 +376,18 @@ function SplitBand({
     setDragPos(next);
     pendingRef.current = next;
     if (frameRef.current !== null) return;
-    frameRef.current = requestAnimationFrame(() => {
+    // A TIMER, NOT A FRAME (2026-09-02). One commit per frame still meant one
+    // full-page render per frame — ten cards plus the client's copy — and on
+    // a page that takes longer than a frame to render, the local redraw is
+    // batched into that same render and the rail stutters behind the pointer
+    // anyway. ~12 commits a second is enough for the two fields and the
+    // totals to visibly follow the plate; the release flushes the final value.
+    frameRef.current = window.setTimeout(() => {
       frameRef.current = null;
       const value = pendingRef.current;
       pendingRef.current = null;
       if (value !== null) commit(value);
-    });
+    }, 80);
   }
 
   /** Drop a scheduled commit — used when the drag ends and the final value is
@@ -389,7 +395,7 @@ function SplitBand({
    *  land AFTER the release and re-apply a stale position. */
   function cancelFrame() {
     if (frameRef.current !== null) {
-      cancelAnimationFrame(frameRef.current);
+      window.clearTimeout(frameRef.current);
       frameRef.current = null;
     }
     pendingRef.current = null;

@@ -790,13 +790,44 @@
    money column still lands hard right, on the same axis as the
    figure in every other card. */
 @media (max-width: 640px) {
+  /* THE RULE BETWEEN STAGES CAME UP from the 8%-ink hairline to the
+     field-edge tone (--muted-light, ~3.6:1). Folded, a stage is two
+     rows tall and its name field is the FIRST thing in it — with a
+     hairline nobody could see, "Completion" read as a caption on the
+     deposit's figure above it rather than as the start of the next
+     stage (owner, 2026-09-02). Each stage also gets 14px of air top
+     and bottom instead of 8, so the fold has a shape of its own. */
   :global(.jf-blueprint) .instRow {
     grid-template-columns: 108px 34px minmax(0, 1fr);
-    row-gap: 8px;
+    row-gap: 10px;
+    padding: 14px var(--mb-pad, 14px);
+    border-top: 1.5px solid var(--muted-light, #888);
+  }
+
+  :global(.jf-blueprint) .instFirst {
+    border-top: none;
+    padding-top: 4px;
   }
 
   :global(.jf-blueprint) .instRow > input {
     grid-column: 1 / -1;
+  }
+
+  /* The stage's dollars are the answer of the fold; a step up from
+     the desk's 14px so they lead the numeric row at a glance. */
+  :global(.jf-blueprint) .instValue {
+    font-size: 16px;
+  }
+
+  :global(.jf-blueprint) .meter {
+    margin-top: 24px;
+  }
+
+  /* "$20,424.45 of $20,424.45" does not fit beside its label at 375;
+     let the figure take the next line rather than squeeze the seam
+     out of it. */
+  :global(.jf-blueprint) .meterTop {
+    flex-wrap: wrap;
   }
 }
 
