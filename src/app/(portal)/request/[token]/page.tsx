@@ -67,6 +67,11 @@ export default async function RequestStatusPage({
           This page is private to you — anyone with the link can see your request status, so share
           it carefully. Questions? Reply to any of our emails.
         </p>
+        <p className="mt-3 text-[12px] text-[color:var(--ink-faint)]">
+          <Link href="/privacy" className="underline underline-offset-2">Privacy</Link>
+          {" · "}
+          <Link href="/terms" className="underline underline-offset-2">Terms</Link>
+        </p>
       </div>
     </main>
   );
