@@ -40,7 +40,8 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { toast } from "@/components/ui/Toast";
-import { checkEmailAvailable, registerAccount } from "@/actions/auth";
+import { checkEmailAvailable, completeCompanySetup, registerAccount } from "@/actions/auth";
+import type { SetupPrefill } from "@/app/(auth)/auth/register/register-responsive";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 // One definition of the success-panel hold, shared with the desktop surface.
 import { REDIRECT_SECONDS } from "@/components/v3/auth-register-blueprint/register-content";
@@ -90,21 +91,23 @@ function tradeNote(n: number): string {
     : n + (n === 1 ? " trade" : " trades") + " selected — leads will be matched to these.";
 }
 
-export function MobileRegisterContent() {
+export function MobileRegisterContent({ setup = null }: { setup?: SetupPrefill | null }) {
   const router = useRouter();
+  // A Google signup finishing its company step; see the desktop build.
+  const setupMode = setup !== null;
 
-  const [step, setStep] = React.useState<Step>(1);
+  const [step, setStep] = React.useState<Step>(setupMode ? 2 : 1);
 
-  const [name, setName] = React.useState("");
-  const [biz, setBiz] = React.useState("");
-  const [email, setEmail] = React.useState("");
+  const [name, setName] = React.useState(setup?.name ?? "");
+  const [biz, setBiz] = React.useState(setup?.businessName ?? "");
+  const [email, setEmail] = React.useState(setup?.email ?? "");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
   const [password2, setPassword2] = React.useState("");
   const [showPw2, setShowPw2] = React.useState(false);
 
   const [addr, setAddr] = React.useState("");
-  const [phone, setPhone] = React.useState("");
+  const [phone, setPhone] = React.useState(setup?.companyPhone || setup?.phone || "");
   const [trades, setTrades] = React.useState<TradeType[]>([]);
   // The free-text line behind the "Other" chip — see toggleTrade below.
   const [otherTrade, setOtherTrade] = React.useState("");
@@ -214,6 +217,28 @@ export function MobileRegisterContent() {
     setCreating(true);
     setErr2(null);
     try {
+      if (setupMode) {
+        if (!biz.trim()) {
+          setErr2("Enter your business name.");
+          return;
+        }
+        if (!addr.trim() || trades.length === 0) {
+          setErr2("Address and at least one trade are needed: leads are matched on them.");
+          return;
+        }
+        await completeCompanySetup({
+          businessName: biz.trim(),
+          companyAddress: addr.trim(),
+          companyPhone: phone.trim() || undefined,
+          phone: phone.trim() || undefined,
+          tradeTypes: trades,
+          otherTrade:
+            trades.includes("Other") && otherTrade.trim() ? otherTrade.trim() : undefined,
+        });
+        toast.success("Welcome to JobFlex", "Your company is set up. Pick a plan to go live.");
+        router.push("/dashboard/upgrade" as Route);
+        return;
+      }
       await registerAccount({
         name: name.trim(),
         businessName: biz.trim(),
@@ -301,7 +326,7 @@ export function MobileRegisterContent() {
               <span className="mr-cell-n">2</span>
               <span className="mr-cell-tx">
                 <span className="mr-cell-t">Your company</span>
-                <span className="mr-cell-h">Optional</span>
+                <span className="mr-cell-h">{setupMode ? "Required" : "Optional"}</span>
               </span>
             </div>
           </div>
@@ -311,7 +336,6 @@ export function MobileRegisterContent() {
         <section className={step === 1 ? "mr-step" : "mr-step is-hidden"} aria-hidden={step !== 1}>
           <h1 className="mr-h1">Register.</h1>
 
-          {pill && <MobileReferralPill pill={pill} />}
 
           <form id="mr-step1-form" noValidate onSubmit={(e) => void onStep1(e)}>
             <label className="mr-fld" htmlFor="mr-name">
@@ -415,7 +439,13 @@ export function MobileRegisterContent() {
 
             {/* the attribution entry affordance lives BELOW the required
                 fields; the earned pill (above) lives under the headline */}
-            <MobileReferralPanel resolved={pill} onResolved={setPill} />
+            {/* The applied code sits where the code field was — under the
+                form, not above it (owner, 2026-09-03). */}
+            {pill ? (
+              <MobileReferralPill pill={pill} />
+            ) : (
+              <MobileReferralPanel resolved={pill} onResolved={setPill} />
+            )}
 
             <div className={err1 ? "mr-err" : "mr-err is-hidden"} role="alert">
               {err1}
@@ -456,20 +486,23 @@ export function MobileRegisterContent() {
             </Link>
           </p>
 
-          <figure className="mr-quote">
-            <span className="mr-caps">Day one</span>
-            <blockquote className="mr-quote-q">
-              “Set up the shop, sent my first proposal before lunch.”
-            </blockquote>
-            <figcaption className="mr-quote-n">
-              A clean slate — your organization, your login, your first quote.
-            </figcaption>
-          </figure>
         </section>
 
         {/* ═══════════ STEP 2 ═══════════ */}
         <section className={step === 2 ? "mr-step" : "mr-step is-hidden"} aria-hidden={step !== 2}>
-          <h1 className="mr-h1">Tell us what you do.</h1>
+          <h1 className="mr-h1">{setupMode ? "Tell us about your company." : "Tell us what you do."}</h1>
+          {setupMode ? (
+            <label className="mr-fld">
+              <span className="mr-lbl">Business name</span>
+              <input
+                className="mr-in"
+                placeholder="Company name"
+                autoComplete="organization"
+                value={biz}
+                onChange={(e) => setBiz(e.target.value)}
+              />
+            </label>
+          ) : null}
 
           {/* the desktop right panel's perk block, re-cut as an inverse card */}
           <div className="mr-perk">
@@ -626,16 +659,18 @@ export function MobileRegisterContent() {
             </div>
           </form>
 
-          <p className="mr-foot">
-            <button
-              className="mr-link-quiet"
-              type="button"
-              disabled={creating}
-              onClick={() => void finish(false)}
-            >
-              Skip — set this up later
-            </button>
-          </p>
+          {setupMode ? null : (
+            <p className="mr-foot">
+              <button
+                className="mr-link-quiet"
+                type="button"
+                disabled={creating}
+                onClick={() => void finish(false)}
+              >
+                Skip — set this up later
+              </button>
+            </p>
+          )}
         </section>
 
         {/* ═══════════ DONE ═══════════ */}
@@ -676,6 +711,7 @@ export function MobileRegisterContent() {
           )}
           {step === 2 && (
             <>
+              {setupMode ? null : (
               <button
                 className="mr-btn mr-btn--ghost mr-btn--back"
                 type="button"
@@ -692,8 +728,9 @@ export function MobileRegisterContent() {
                   <use href="#mrg-back" />
                 </svg>
               </button>
+              )}
               <button className="mr-btn" type="submit" form="mr-step2-form" disabled={creating}>
-                {creating ? "Creating…" : "Create account"}
+                {creating ? (setupMode ? "Saving…" : "Creating…") : setupMode ? "Continue" : "Create account"}
               </button>
             </>
           )}

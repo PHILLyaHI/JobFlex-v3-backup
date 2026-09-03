@@ -213,6 +213,10 @@ body:has(.jf-proposal-portal)::before { content: none; }
   border-color: var(--danger); }
 .jf-proposal-portal .pv-btn--danger:hover { box-shadow: 3px 3px 0 var(--danger); }
 .jf-proposal-portal .pv-btn--danger:active { box-shadow: 1px 1px 0 var(--danger); }
+/* The quiet confirm inside the decline note: a grey plate under an ink
+   edge, so it reads as "go on, then" rather than a second alarm. */
+.jf-proposal-portal .pv-btn--grey { background: var(--paper-deep, #e6e3dc); color: var(--ink);
+  border-color: var(--ink); }
 /* Each way to pay gets its own line: a wrapped row of ghost buttons gave a card
    payment the same visual weight as walking away. `flex-basis: 100%` breaks the
    row inside the donor's own wrapping flex container, so no new layout system. */
@@ -241,6 +245,17 @@ body:has(.jf-proposal-portal)::before { content: none; }
   font-size: 13px; font-weight: 800; letter-spacing: .06em; }
 .jf-proposal-portal .pv-state--declined { border-color: rgba(10,10,10,.5); background: rgba(10,10,10,.05);
   color: var(--muted); }
+
+/* THE WAY BACK. Under the settled plate, only while the token from this
+   page's own click is in memory (portal-actions.tsx). A ghost plate, not
+   a text link: it undoes a decision and should cost a real press — but
+   not the primary's weight, or it would compete with "pay below". */
+.jf-proposal-portal .pv-revert { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
+  margin-top: 14px; }
+.jf-proposal-portal .pv-revert-b { padding: 9px 16px; font-size: 11px; letter-spacing: .12em; }
+.jf-proposal-portal .pv-revert-ic { font-size: 15px; line-height: 1; margin-right: -2px; }
+.jf-proposal-portal .pv-revert-n { font-family: var(--font-mono); font-size: 10px;
+  font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 
 /* Pay options, revealed once the proposal is accepted. */
 .jf-proposal-portal .pv-paynow { margin-top: 18px; }
@@ -393,4 +408,47 @@ body:has(.jf-proposal-portal)::before { content: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .jf-proposal-portal .rv { opacity: 1 !important; transform: none !important; transition: none !important; }
+}
+
+/* ── PAYMENT SCHEDULE, ACTIONABLE ─────────────────────────────────────────
+   The register keeps the donor's row; a status plate joins the label, and the
+   next payable stage grows an action band beneath its line. */
+.jf-proposal-portal .pv-pay-r { display: block; }
+.jf-proposal-portal .pv-pay-line { display: flex; align-items: baseline; gap: 16px; }
+.jf-proposal-portal .pv-pay-r.is-paid { background: rgba(58,125,68,.06); }
+.jf-proposal-portal .pv-pay-r.is-paid .pv-pay-v { color: rgba(58,125,68,1); }
+.jf-proposal-portal .pv-pay-r.is-waived .pv-pay-v { color: var(--muted); text-decoration: line-through; }
+.jf-proposal-portal .pv-pay-r.is-next { background: rgba(35,79,140,.05); }
+.jf-proposal-portal .pv-pay-st { font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid rgba(10,10,10,.25); color: var(--muted); white-space: nowrap; }
+.jf-proposal-portal .pv-pay-st--paid { border-color: rgba(58,125,68,.5); color: rgba(58,125,68,1); }
+.jf-proposal-portal .pv-pay-st--pending { border-color: rgba(184,132,32,.5); color: rgba(184,132,32,1); }
+.jf-proposal-portal .pv-pay-st--unpaid { }
+.jf-proposal-portal .pv-pay-r.is-next .pv-pay-st { border-color: var(--blueprint); color: var(--blueprint); }
+.jf-proposal-portal .pv-pay-act { padding: 12px 0 4px 34px; display: grid; gap: 10px; }
+.jf-proposal-portal .pv-pay-btns { margin: 0; }
+.jf-proposal-portal .pv-pay-bank summary { cursor: pointer; font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600; color: var(--blueprint); }
+.jf-proposal-portal .pv-pay-bank-body { margin: 8px 0 0; padding: 10px 12px; border: var(--border);
+  border-radius: var(--radius); background: var(--paper); font-family: var(--font-mono); font-size: 12px;
+  white-space: pre-wrap; word-break: break-word; }
+.jf-proposal-portal .pv-pay-bank-note { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.jf-proposal-portal .pv-pay-all { margin-top: 14px; padding: 14px 20px; border: var(--border);
+  border-radius: var(--radius); background: #fff; display: grid; gap: 10px; }
+.jf-proposal-portal .pv-pay-all-l { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.jf-proposal-portal .pv-pay-sum { margin-top: 12px; display: flex; justify-content: space-between; gap: 12px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.jf-proposal-portal .pv-pay-sum b { color: var(--ink); }
+.jf-proposal-portal .pv-pay-sum--done { color: rgba(58,125,68,1); font-weight: 700; }
+.jf-proposal-portal .pv-payret { margin: 0 0 14px; padding: 12px 16px; border-radius: var(--radius);
+  border: 1px solid rgba(35,79,140,.35); background: rgba(35,79,140,.06); font-size: 13.5px; font-weight: 700; }
+.jf-proposal-portal .pv-payret--paid { border-color: rgba(58,125,68,.5); background: rgba(58,125,68,.08);
+  color: rgba(58,125,68,1); }
+.jf-proposal-portal .pv-payret--slow { border-color: rgba(184,132,32,.5); background: rgba(184,132,32,.08); }
+.jf-proposal-portal .pv-paynow-link { text-decoration: none; color: var(--blueprint); }
+@media (max-width: 560px) {
+  .jf-proposal-portal .pv-pay-line { flex-wrap: wrap; row-gap: 6px; }
+  .jf-proposal-portal .pv-pay-act { padding-left: 0; }
 }

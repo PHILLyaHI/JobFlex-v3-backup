@@ -1,58 +1,39 @@
 "use client";
 
-// Blueprint settings — page CONTENT only. The donor's `.content` children,
-// verbatim (jobflex-settings-blueprint (6).html, lines 2005-2129); the sidebar,
-// topbar, graph-paper field and the 50-symbol shared sprite come from the
+// Blueprint settings — page CONTENT only. The donor's `.content` children;
+// the sidebar, topbar, graph-paper field and the shared sprite come from the
 // shared shell (components/v3/blueprint-shell), which persists across
 // navigation.
 //
 // Returning a fragment keeps `.page-head` and `.set` as DIRECT children of
-// `.content`, which the donor's grid and the shell's reveal cascade
-// (`.content > *`) both depend on.
+// `.content`, which the donor's grid and the shell's reveal cascade depend on.
 //
-// This file owns the page's two page-level assets:
-//   - `./settings-global.css` — the three keyframes (`settings_setIn`,
-//     `settings_maskIn`, `settings_modalIn`). Lightning CSS refuses
-//     `@keyframes` inside a CSS module, so they live in a plain stylesheet and
-//     are imported here, arriving with the page and leaving with it.
-//   - `<SettingsSprite/>` — the six symbols the shell sprite lacks (i-card,
-//     i-download, i-eye-off, i-globe, i-google, i-receipt).
-// It deliberately does NOT import settings.module.css: the shell imports that
-// and puts its `.bp` class on the shell root (see blueprint-shell.tsx's
-// PAGE_STYLES), which is what scopes every donor rule to this page.
+// This file owns the page's two page-level assets: `./settings-global.css`
+// (the keyframes) and `<SettingsSprite/>` (the symbols the shell sprite lacks).
 //
-// The donor's rail script (donor JS 2196-2202) is reproduced as React state
-// rather than DOM class-toggling: `active` picks the `.pane.on` and rewrites
-// the `.kicker`. The donor derives the kicker from the button's textContent
-// with "NEW" stripped — here the label is read straight from RAIL_ITEMS, so
-// the NEW badge is never part of the string to begin with.
+// The rail is React state. All five panes stay MOUNTED and are shown/hidden
+// by `.pane` / `.pane.on`, so field text survives a trip through another tab.
+// `?tab=payments` (and `&sub=stripe`) opens a rail/subtab on arrival — the
+// OAuth callbacks land here after connecting Stripe or Square — and a pane
+// can jump elsewhere through `navigate` (Payments → "Manage" → Integrations).
 //
-// All five panes stay MOUNTED and are shown/hidden by the donor's
-// `.pane` / `.pane.on` display rules, exactly as the donor does it. That is
-// not just fidelity: the panes hold uncontrolled `Field` inputs and local
-// dropdown/toggle state, and unmounting the inactive ones would silently
-// discard whatever the user had typed on another tab.
-//
-// The page is no longer presentational: the server component builds one
-// `SettingsData` object from the database and this component threads it into
-// every pane. ./settings-data.ts still owns the donor's copy, types and option
-// lists — only the VALUES moved out of it.
+// The donor's "Help center" page action is gone: it never led anywhere.
 
 import { useState } from "react";
 import type { ComponentType } from "react";
+import { useSearchParams } from "next/navigation";
 
 import "./settings-global.css";
 import { SettingsSprite } from "./sprite";
 import {
   DEFAULT_RAIL,
-  HELP_ACTION,
   PAGE_TITLE,
-  PANE_KICKER,
   RAIL_ITEMS,
   RAIL_NEW_BADGE,
   type PaneProps,
   type RailKey,
   type SettingsData,
+  type SubTabKey,
 } from "./settings-data";
 import { AccountPane } from "./panes/account-pane";
 import { PaymentsPane } from "./panes/payments-pane";
@@ -60,11 +41,6 @@ import { BillingPane } from "./panes/billing-pane";
 import { IntegrationsPane } from "./panes/integrations-pane";
 import { NotificationsPane } from "./panes/notifications-pane";
 
-/**
- * Rail key → the pane body that follows the shared `.pane-h` header. Keyed by
- * `RailKey`, so adding a rail item without its pane is a type error rather
- * than an empty tab.
- */
 const PANE_BODIES: Record<RailKey, ComponentType<PaneProps>> = {
   account: AccountPane,
   payments: PaymentsPane,
@@ -73,20 +49,35 @@ const PANE_BODIES: Record<RailKey, ComponentType<PaneProps>> = {
   notifications: NotificationsPane,
 };
 
+const RAIL_KEYS = new Set<string>(RAIL_ITEMS.map((r) => r.key));
+const SUB_KEYS = new Set<string>(["gmail", "meta", "stripe", "square"]);
+
 export function SettingsContent({
   data,
   initialPane,
 }: {
   data: SettingsData;
   /** Deep-link target (?pane=…): the legacy /dashboard/settings/* URLs now
-   *  redirect here and land on their pane instead of always on Account. */
+   *  redirect here and land on their pane instead of always on Account.
+   *  `?tab=` (read client-side below) wins when both are present. */
   initialPane?: RailKey;
 }) {
-  const [active, setActive] = useState<RailKey>(initialPane ?? DEFAULT_RAIL);
+  const params = useSearchParams();
+  const tabParam = params.get("tab");
+  const subParam = params.get("sub");
+  const [active, setActive] = useState<RailKey>(
+    tabParam && RAIL_KEYS.has(tabParam) ? (tabParam as RailKey) : (initialPane ?? DEFAULT_RAIL),
+  );
+  const [sub, setSub] = useState<SubTabKey | undefined>(
+    subParam && SUB_KEYS.has(subParam) ? (subParam as SubTabKey) : undefined,
+  );
 
-  // Donor JS 2201: the page kicker mirrors the active rail label. RAIL_ITEMS is
-  // never empty and `active` is always one of its keys, so the fallback is only
-  // there to keep the lookup total for TypeScript.
+  const navigate = (rail: RailKey, next?: SubTabKey) => {
+    setActive(rail);
+    if (next) setSub(next);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const activeLabel = RAIL_ITEMS.find((item) => item.key === active)?.label ?? PAGE_TITLE;
 
   return (
@@ -97,16 +88,6 @@ export function SettingsContent({
         <div>
           <div className="kicker">{activeLabel}</div>
           <h1 className="page-title">{PAGE_TITLE}</h1>
-        </div>
-        <div className="page-actions">
-          <button className="btn btn-ghost" type="button">
-            {HELP_ACTION.icon ? (
-              <svg className="ic">
-                <use href={`#${HELP_ACTION.icon}`} />
-              </svg>
-            ) : null}
-            {HELP_ACTION.label}
-          </button>
         </div>
       </div>
 
@@ -119,8 +100,6 @@ export function SettingsContent({
                 className={`rail-a${item.key === active ? " on" : ""}`}
                 type="button"
                 data-p={item.key}
-                // Purely assistive — the donor marks the active item with the
-                // `.on` class alone, and this adds no visual change.
                 aria-current={item.key === active ? "true" : undefined}
                 onClick={() => setActive(item.key)}
               >
@@ -145,10 +124,9 @@ export function SettingsContent({
                 data-pane={item.key}
               >
                 <div className="pane-h">
-                  <div className="pane-k">{PANE_KICKER}</div>
                   <div className="pane-t">{item.label}</div>
                 </div>
-                <PaneBody data={data} />
+                <PaneBody data={data} navigate={navigate} sub={sub} />
               </div>
             );
           })}

@@ -40,6 +40,16 @@ export async function getStripeClient(): Promise<{ stripe: Stripe; mode: StripeM
 }
 
 /**
+ * The client for an EXPLICIT mode, or null when that mode has no key. The
+ * Connect webhook uses this: an event says `livemode` itself, and any follow-up
+ * call must go to that account regardless of the admin switch.
+ */
+export function stripeClientForMode(mode: StripeMode): Stripe | null {
+  const key = stripeKeyFor(mode);
+  return key ? clientFor(key) : null;
+}
+
+/**
  * The LIVE-key client (falling back to the test key only when no live key is
  * set). The webhook, reconciliation, payouts and the admin's subscriber reads
  * stay on this: they mirror the account of record, and must not silently start

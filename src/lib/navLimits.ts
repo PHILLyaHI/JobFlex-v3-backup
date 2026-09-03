@@ -8,30 +8,59 @@
 // governed by two quotas (calendar: job events + appointment cards), the
 // tighter remaining wins.
 import { getOrgLimitUsage } from "@/lib/limitsEngine";
-import type { LimitKey } from "@/lib/planLimits";
+import { LIMIT_DEFS, type LimitKey } from "@/lib/planLimits";
 
 export interface NavLimitInfo {
   remaining: number;
   limit: number;
   /** The tighter resource bounding this one (e.g. estimators tied to proposals). */
   cappedBy?: LimitKey;
+  /** The metered thing, lower-cased for a sentence ("proposals created"). */
+  label: string;
+  /** "monthly" resets each cycle; "absolute" is a standing seat count. */
+  scope: "monthly" | "absolute";
 }
 
 const NAV_LIMIT_KEYS: Record<string, LimitKey[]> = {
   "/dashboard/proposals": ["proposalsCreated"],
+  "/dashboard/clients": ["clients"],
   "/dashboard/leads": ["leads"],
   "/dashboard/projects": ["projects"],
   "/dashboard/calendar": ["calendarEvents", "calendarCards"],
   "/dashboard/jobs": ["jobs"],
   "/dashboard/workers": ["workers"],
-  "/dashboard/messages": ["messagesSent"],
+  "/dashboard/messages": ["messagesSent", "conversationsStarted"],
   "/dashboard/phone": ["aiPhoneCalls"],
   "/dashboard/reviews": ["reviewRequests"],
-  // All three AI estimators share the estimatorUses pool, which is itself
-  // capped by proposalsCreated — so each shows the same proposal-bounded count.
+  // Every estimator surface draws down the same meter (and, through
+  // CAPPED_BY, the proposals it would create).
   "/dashboard/advanced-ai": ["estimatorUses"],
+  "/dashboard/roof-estimator": ["estimatorUses"],
+  "/dashboard/fence-estimator": ["estimatorUses"],
+  "/dashboard/video-estimator": ["estimatorUses"],
+  // Classic-shell paths, kept for the old sidebar.
   "/dashboard/advanced-ai/roof": ["estimatorUses"],
   "/dashboard/advanced-ai/fence/studio": ["estimatorUses"],
+};
+
+/* How the sidebar names each meter — a plain noun, not the admin label
+   ("Total workers" → "worker seats"). Falls back to the LIMIT_DEFS label. */
+const NAV_NOUN: Partial<Record<LimitKey, string>> = {
+  proposalsCreated: "proposals",
+  clients: "clients",
+  leads: "leads",
+  projects: "projects",
+  jobs: "jobs",
+  calendarEvents: "calendar events",
+  calendarCards: "appointments",
+  workers: "worker seats",
+  teamSeats: "team seats",
+  managers: "manager seats",
+  messagesSent: "messages",
+  conversationsStarted: "conversations",
+  aiPhoneCalls: "AI phone calls",
+  reviewRequests: "review requests",
+  estimatorUses: "estimator runs",
 };
 
 export async function getNavLimitCounters(
@@ -49,7 +78,14 @@ export async function getNavLimitCounters(
       const s = byKey.get(key);
       if (!s || s.limit === null || s.remaining === null) continue;
       if (!tightest || s.remaining < tightest.remaining) {
-        tightest = { remaining: s.remaining, limit: s.limit, cappedBy: s.cappedBy };
+        const def = LIMIT_DEFS.find((d) => d.key === (s.cappedBy ?? key));
+        tightest = {
+          remaining: s.remaining,
+          limit: s.limit,
+          cappedBy: s.cappedBy,
+          label: NAV_NOUN[s.cappedBy ?? key] ?? (def?.label ?? key).toLowerCase(),
+          scope: def?.scope === "absolute" ? "absolute" : "monthly",
+        };
       }
     }
     if (tightest) out[href] = tightest;

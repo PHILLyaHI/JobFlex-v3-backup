@@ -24,7 +24,7 @@
 // Status colour appears on the coverage reading — meter fill, meter note and the
 // percentage readout, which are one reading in three places — and nowhere else.
 
-import type { Installment } from "../manual-focus/manual-focus-types";
+import { isLockedInstallment, type Installment } from "../manual-focus/manual-focus-types";
 import {
   coverState,
   installmentValue,
@@ -135,6 +135,23 @@ export function PaymentBlock({
             aria-label="Payment stage"
             onChange={(e) => onPatch(inst.id, { label: e.target.value })}
           />
+          {isLockedInstallment(inst) ? (
+            <>
+              {/* Paid (or being paid): the amount is frozen at what landed. */}
+              <span className={m.amtField} aria-label="Locked stage">
+                <span className={styles.input} style={{ opacity: 0.7 }}>
+                  {inst.status === "PAID" && inst.paidAmount != null
+                    ? `$${inst.paidAmount.toFixed(2)}`
+                    : `${inst.amount}${inst.isPercent ? "%" : ""}`}
+                </span>
+              </span>
+              <span className={m.del} aria-hidden="true" style={{ visibility: "hidden" }} />
+              <span className={m.instValue}>
+                {inst.status === "PAID" ? "Paid" : inst.status === "WAIVED" ? "Closed" : "Paying"}
+              </span>
+            </>
+          ) : (
+          <>
           {/* ONE CONTROL, TWO UNITS, and the unit now lives INSIDE the field as
               an affix — the treatment the discount and tax fields already use.
               It was a ~100px bordered box holding a single static character,
@@ -165,6 +182,8 @@ export function PaymentBlock({
             <Ic name="trash" />
           </button>
           <span className={m.instValue}>{money(values[i] ?? 0)}</span>
+          </>
+          )}
         </div>
       ))}
 

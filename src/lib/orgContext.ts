@@ -88,23 +88,26 @@ export async function requireInfluencerSelf(resourceInfluencerId: string) {
 
 export async function requireOrg() {
   const user = await requireUser();
+  // A soft-deleted org (Settings → Danger zone) is gone from every membership
+  // lookup at once; the member falls through to another org or NoOrgError.
+  const alive = { organization: { deletedAt: null } };
   if (!user.activeOrgId) {
     const m = await db.membership.findFirst({
-      where: { userId: user.id },
+      where: { userId: user.id, ...alive },
       orderBy: { createdAt: "asc" },
     });
     if (!m) throw new NoOrgError();
     return { user, organizationId: m.organizationId, role: m.role };
   }
   const m = await db.membership.findFirst({
-    where: { userId: user.id, organizationId: user.activeOrgId },
+    where: { userId: user.id, organizationId: user.activeOrgId, ...alive },
   });
   if (m) return { user, organizationId: m.organizationId, role: m.role };
   // JWT has a stale activeOrgId (e.g. membership was removed and re-created, or
   // DB was partially reset). Fall back to the oldest remaining membership so a
   // valid user is never locked out by a stale token.
   const fallback = await db.membership.findFirst({
-    where: { userId: user.id },
+    where: { userId: user.id, ...alive },
     orderBy: { createdAt: "asc" },
   });
   if (!fallback) throw new NoOrgError();

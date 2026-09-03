@@ -1,5 +1,7 @@
 "use server";
 
+import { REFERRAL_DISCOUNT_PCT } from "@/lib/referralDiscount";
+
 // THE SIGN-UP PAYWALL — what the plan step needs from the server.
 //
 // Two PUBLIC calls — public because at this point in the flow there is no
@@ -91,8 +93,21 @@ export async function applySignupPromo(
     promo: {
       code: hit.code,
       displayName: hit.displayName,
-      percentOff: hit.kind === "promo" ? hit.percentOff : null,
+      // A referral is worth REFERRAL_DISCOUNT_PCT to the shop typing it (the
+      // referrer's 50% credit is separate, lib/referralRewards); checkout
+      // applies the same number as a coupon, so the price the step shows is
+      // the price Stripe charges.
+      percentOff: hit.kind === "promo" ? hit.percentOff : REFERRAL_DISCOUNT_PCT,
       kind: hit.kind,
     },
   };
+}
+
+/** The register page's read of a parked Google identity (`?gsu=`). */
+export async function googleSignupIdentity(
+  handle: string,
+): Promise<{ email: string; name: string | null } | null> {
+  const { readGoogleSignup } = await import("@/lib/googleSignup");
+  const g = await readGoogleSignup(String(handle ?? ""));
+  return g ? { email: g.email, name: g.name } : null;
 }

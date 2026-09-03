@@ -6,6 +6,8 @@ import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readAttributionCookie, validateAttribution } from "@/lib/attribution";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
+import { ensureReferralCoupon } from "@/lib/referralDiscount";
+import { CUSTOM_PLAN_SLUG, customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
 
 // Real SaaS subscription checkout. A captured influencer promo (the org's
 // permanent signup stamp, falling back to the 30-day capture cookie) is
@@ -19,7 +21,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Stripe is not configured." }, { status: 503 });
   }
 
-  const { planSlug, interval } = await req.json().catch(() => ({}));
+  const { planSlug, interval, customPages } = await req.json().catch(() => ({}));
   if (!planSlug || !interval) {
     return NextResponse.json({ error: "planSlug and interval are required." }, { status: 400 });
   }
@@ -27,9 +29,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "interval must be MONTH or YEAR." }, { status: 400 });
   }
 
-  // The PricingPlan row is the source of truth for what's sellable; the
-  // PlanPrice mirror below is only the Stripe charge handle.
-  const plan = await getPlanBySlug(String(planSlug), { includeInactive: true });
+  /* THE CUSTOM PLAN can be bought here too (owner, 2026-09-02) — it has no
+     catalog row: $20 base plus the pages picked, priced by lib/customPlan and
+     sold as a reused Stripe price (lib/stripePriceCache), exactly as the
+     signup route does. The picked pages ride the session metadata; the
+     return leg records them for the page gate. */
+  const isCustom = String(planSlug) === CUSTOM_PLAN_SLUG;
+  const pages = isCustom
+    ? normalizeCustomPages(Array.isArray(customPages) ? customPages.map(String) : [])
+    : [];
+  // A catalog row, or the custom plan's synthetic equivalent. The PricingPlan
+  // row is the source of truth for what's sellable; the PlanPrice mirror
+  // below is only the Stripe charge handle.
+  const plan = isCustom
+    ? {
+        slug: CUSTOM_PLAN_SLUG,
+        name: "Custom plan",
+        priceCents: customPriceCents(pages),
+        yearlyPriceCents: customPriceCents(pages, "YEAR"),
+        trialDays: 14,
+        active: true,
+        isFree: false,
+      }
+    : await getPlanBySlug(String(planSlug), { includeInactive: true });
   if (!plan) {
     return NextResponse.json({ error: "Unknown plan." }, { status: 404 });
   }
@@ -59,7 +81,7 @@ export async function POST(req: Request) {
      which also means a plan that was never synced can still be TRIALLED in the
      sandbox, and only its live checkout says "not available yet". */
   let livePriceId: string | null = null;
-  if (mode === "live") {
+  if (mode === "live" && !isCustom) {
     const price = await db.planPrice.findFirst({
       where: { planSlug: plan.slug, interval, active: true },
     });
@@ -113,6 +135,31 @@ export async function POST(req: Request) {
   // A stored promo_… id belongs to the LIVE account; on the sandbox it would
   // 400 the session. Test runs fall back to typing a code on Stripe's page.
   if (mode === "test") autoApplyPromotionCode = null;
+
+  /* THE REFERRED SHOP'S DISCOUNT (lib/referralDiscount). An org that came in
+     on a member's referral code carries a ReferralConversion naming it; a
+     visitor whose capture cookie holds a referral is treated the same. Promo
+     wins when both apply — one discount per session at Stripe. */
+  let referralCoupon: string | null = null;
+  if (!autoApplyPromotionCode) {
+    let referred = Boolean(
+      await db.referralConversion.findFirst({
+        where: { signupOrgId: organizationId },
+        select: { id: true },
+      }),
+    );
+    if (!referred) {
+      const captured = await readAttributionCookie();
+      if (captured?.k === "ref") referred = Boolean(await validateAttribution("ref", captured.c));
+    }
+    if (referred) {
+      try {
+        referralCoupon = await ensureReferralCoupon(stripe, mode);
+      } catch (err) {
+        console.warn("[checkout/subscription] referral coupon unavailable:", err);
+      }
+    }
+  }
   const cents = interval === "YEAR" ? (plan.yearlyPriceCents ?? 0) : plan.priceCents;
   // Sandbox path: a REUSED test-account price (lib/stripePriceCache), never
   // inline price_data — inline mints a fresh Product per checkout and would
@@ -130,6 +177,15 @@ export async function POST(req: Request) {
         }),
         quantity: 1,
       };
+  /* REPLACING, NOT ADDING. A shop that already holds a live subscription is
+     buying its successor: the new one is paid for on Stripe's page (the
+     owner's rule for upgrades, 2026-09-02) and the return leg cancels the old
+     one (upgrade/page.tsx verifyReturn), so an org never carries two. No
+     trial on a replacement — the trial was the first subscription's. */
+  const replacesSubId =
+    sub?.externalSubId && (sub.status === "ACTIVE" || sub.status === "TRIALING")
+      ? sub.externalSubId
+      : null;
   const baseParams = {
     mode: "subscription" as const,
     line_items: [lineItem],
@@ -138,12 +194,18 @@ export async function POST(req: Request) {
       : { customer_email: user.email ?? undefined }),
     subscription_data: {
       metadata: { organizationId },
-      ...(plan.trialDays ? { trial_period_days: plan.trialDays } : {}),
+      ...(plan.trialDays && !replacesSubId ? { trial_period_days: plan.trialDays } : {}),
     },
     // planSlug/interval ride the session so the upgrade page can verify the
     // return and write the plan change itself — the live webhook cannot see
     // sandbox events, and even live, the page landing first beats waiting.
-    metadata: { organizationId, planSlug: plan.slug, interval },
+    metadata: {
+      organizationId,
+      planSlug: plan.slug,
+      interval,
+      replacesSubId: replacesSubId ?? "",
+      ...(isCustom ? { customPages: pages.join(",") } : {}),
+    },
     success_url: `${origin}/dashboard/upgrade?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/dashboard/upgrade?checkout=cancelled`,
   };
@@ -157,6 +219,15 @@ export async function POST(req: Request) {
       session = await stripe.checkout.sessions.create({
         ...baseParams,
         discounts: [{ promotion_code: autoApplyPromotionCode }],
+      });
+    } catch {
+      session = await stripe.checkout.sessions.create({ ...baseParams, allow_promotion_codes: true });
+    }
+  } else if (referralCoupon) {
+    try {
+      session = await stripe.checkout.sessions.create({
+        ...baseParams,
+        discounts: [{ coupon: referralCoupon }],
       });
     } catch {
       session = await stripe.checkout.sessions.create({ ...baseParams, allow_promotion_codes: true });

@@ -144,6 +144,26 @@ export function initBlueprintShell(root: HTMLElement): ShellHandle {
   requestAnimationFrame(() => sbIndicator && sbIndicator.classList.add("ready"));
   on(window, "load", () => moveIndicator($(".sb-link.active")));
   document.fonts?.ready.then(() => moveIndicator($(".sb-link.active")));
+  /* THE PLATE FOLLOWS THE ROW. A plan change re-renders the nav in place —
+     quota pills and padlocks appear or vanish, rows wrap differently — and
+     the measured `top` went stale, leaving the frame a few pixels off its
+     item (owner's screenshot, 2026-09-02). Re-measure on any size change in
+     the nav and on any DOM change inside it. */
+  const sbNav = sbIndicator?.parentElement ?? null;
+  if (sbNav) {
+    const remeasure = () => moveIndicator($(".sb-link.active"));
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(remeasure);
+      ro.observe(sbNav);
+      $$(".sb-link").forEach((l) => ro.observe(l));
+      disposers.push(() => ro.disconnect());
+    }
+    if (typeof MutationObserver !== "undefined") {
+      const mo = new MutationObserver(() => requestAnimationFrame(remeasure));
+      mo.observe(sbNav, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+      disposers.push(() => mo.disconnect());
+    }
+  }
 
   return {
     destroy: () => disposers.forEach((d) => d()),

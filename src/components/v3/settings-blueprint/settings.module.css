@@ -407,7 +407,10 @@
    so all three buttons share one baseline even though the two-factor column
    carries an extra badge; the guaranteed gap above it comes from the
    description's own padding (13px = the donor's `.prow` inner rhythm). */
-.bp :global(.content .seccols) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+.bp :global(.content .seccols) { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: stretch; }
+.bp :global(.content .fin--area) { height: auto; min-height: 96px; padding: 10px 12px; resize: vertical; line-height: 1.45; font: inherit; }
+.bp :global(.content .prow-warn) { color: var(--bad, #a83232); }
+.bp :global(.content .prow-ok) { color: var(--ok, #3a7d44); }
 .bp :global(.content .seccol) { display: flex; flex-direction: column; align-items: flex-start; min-width: 0;
   padding: 0 18px; border-right: 1.5px solid var(--hair-soft); }
 .bp :global(.content .seccol:first-child) { padding-left: 0; }
@@ -415,7 +418,7 @@
 .bp :global(.content .seccol .prow-ic) { margin-bottom: 11px; }
 .bp :global(.content .seccol .prow-d) { padding-bottom: 13px; }
 .bp :global(.content .seccol .badge2) { margin-bottom: 13px; }
-.bp :global(.content .seccol-act) { margin-top: auto; width: 152px; }
+.bp :global(.content .seccol-act) { margin-top: auto; min-width: 152px; width: auto; padding: 0 16px; white-space: nowrap; justify-content: center; }
 
 /* F2 — Account > Danger zone: the Delete button sits at the right end of the
    title + description row, vertically centred, never wrapping. `padding: 0`
@@ -597,3 +600,101 @@
 .bp :global(.content .nwrap)::-webkit-scrollbar-thumb:hover,
 .bp :global(.content .sel-list)::-webkit-scrollbar-thumb:hover,
 .bp :global(.content .modal-b)::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
+/* Page-level Log out: a bare action bar after the last card, no card frame. */
+.bp :global(.content .sactions--logout) { border: none; background: transparent; padding: 18px 0 0; justify-content: flex-start; }
+.bp :global(.content .sactions--logout .btn) { padding: 0 18px; min-height: 42px; }
+
+/* ============================================================
+   LEDGER ROWS — the visual critique of 2026-09-03.
+   Every row-list card (`.sc-b--rows`) now runs its rules WALL TO WALL:
+   the body drops its 18px side padding and each row carries it instead,
+   so a divider meets the card frame like a line on a ledger instead of
+   stopping 18px short of it (the owner's "not connected to the wall").
+   `.prow-grp` is a row plus its sub-block (the ACH toggle under Stripe,
+   the bank-details field under Bank transfer): the GROUP owns the rule
+   beneath it, so the sub-block sits inside the row's band rather than
+   floating between two rules. `.prow-sub` indents the sub-block to the
+   text column (18px inset + 34px icon + 13px gap = 65px).
+   ============================================================ */
+.bp :global(.content .sc-b--rows) { padding: 0; }
+.bp :global(.content .sc-b--rows > .prow),
+.bp :global(.content .sc-b--rows > .trow),
+.bp :global(.content .sc-b--rows > .prow-grp > .prow),
+.bp :global(.content .sc-b--rows > .prow-grp > .trow) { padding-left: 18px; padding-right: 18px; }
+.bp :global(.content .sc-b--rows > .prow:first-child),
+.bp :global(.content .sc-b--rows > .trow:first-child) { padding-top: 16px; }
+.bp :global(.content .sc-b--rows > .prow:last-child),
+.bp :global(.content .sc-b--rows > .trow:last-child) { padding-bottom: 16px; }
+.bp :global(.content .prow-grp) { border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .prow-grp:first-child > .prow) { padding-top: 16px; }
+.bp :global(.content .prow-grp > .prow),
+.bp :global(.content .prow-grp > .trow) { border-bottom: none; }
+.bp :global(.content .prow-grp:last-of-type) { border-bottom: none; }
+.bp :global(.content .prow-sub) { padding: 0 18px 16px 65px; }
+.bp :global(.content .prow-sub > .trow) { padding: 0; border-bottom: none; }
+.bp :global(.content .prow-sub .fin--area) { min-height: 76px; }
+/* An unavailable processor: name drops to the annotation tone, the row
+   keeps its place in the ledger. */
+.bp :global(.content .prow--off .prow-n) { color: var(--muted); }
+.bp :global(.content .prow--off .prow-ic) { color: var(--muted-faint); border-color: var(--hair-soft); }
+/* Card footnote band: kicker + line pairs on a paper-deep ground, above the
+   Save bar's rule. */
+.bp :global(.content .sc-note) { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px;
+  align-items: baseline; padding: 12px 18px 14px; border-top: 1.5px solid var(--hair-soft);
+  background: var(--paper-deep); font-size: 12px; color: var(--muted); }
+.bp :global(.content .prow-grp:last-of-type + .sc-note) { border-top: 1.5px solid var(--hair-soft); }
+.bp :global(.content .sc-note-k) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-soft); white-space: nowrap; }
+
+/* ── Notification matrix as a ledger ──
+   The table runs wall to wall inside `.sc-b--matrix`; the header is a
+   paper-deep band under an ink rule; the per-column "All" master is a
+   framed chip so it reads as a control and not as one more cell; an event
+   nobody emails shows a dashed "In-app only" tag (the empty-state device)
+   instead of a ghost checkbox that looked unticked. */
+.bp :global(.content .sc-b--matrix) { padding: 0; }
+.bp :global(.content .sc-b--matrix .ntab) { min-width: 600px; }
+.bp :global(.content .sc-b--matrix .ntab col.nc) { width: 136px; }
+.bp :global(.content .sc-b--matrix .ntab th) { padding: 12px 0 11px; background: var(--paper-deep);
+  border-bottom: 1.5px solid var(--hair); vertical-align: middle; }
+.bp :global(.content .sc-b--matrix .ntab th:first-child) { padding-left: 18px; }
+.bp :global(.content .sc-b--matrix .ntab th:last-child) { padding-right: 18px; }
+.bp :global(.content .sc-b--matrix .ntab td) { padding: 12px 0; vertical-align: middle; border-top: none;
+  border-bottom: 1.5px solid var(--hair-soft); }
+.bp :global(.content .sc-b--matrix .ntab td:first-child) { padding-left: 18px; }
+.bp :global(.content .sc-b--matrix .ntab td:last-child) { padding-right: 18px; }
+.bp :global(.content .sc-b--matrix .ntab tbody tr:hover td) { background: var(--paper-deep); }
+.bp :global(.content .sc-b--matrix .nhead) { font-size: 10.5px; letter-spacing: .16em; }
+.bp :global(.content .sc-b--matrix .colw) { margin: 8px auto 0; padding: 4px 8px 4px 5px; gap: 7px;
+  border: 1.5px solid var(--hair); border-radius: var(--radius); background: #fff; }
+.bp :global(.content .sc-b--matrix .colw .cb) { width: 16px; height: 16px; }
+.bp :global(.content .sc-b--matrix .colw .cb-ic) { width: 11px; height: 11px; }
+.bp :global(.content .sc-b--matrix .colw-l) { color: var(--ink); }
+.bp :global(.content .ncell-off) { display: inline-block; padding: 3px 7px; border: 1.5px dashed var(--muted-faint);
+  border-radius: var(--radius); font-family: var(--font-mono); font-size: 8.5px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted-light); cursor: help; }
+.bp :global(.content .sc-b--matrix .nfoot) { margin-top: 0; padding: 14px 18px; border-top: none; align-items: center; }
+.bp :global(.content .nfoot-b) { width: auto; padding: 0 14px; }
+.bp :global(.content .nfoot-note) { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted); }
+
+/* Phone (≤560px): the ledger rows keep their wall-to-wall rules, but the
+   sub-blocks drop the desktop's 65px text-column indent (no room for it), and
+   the notification matrix FITS the screen instead of hiding its two channel
+   columns inside a sideways scroll — event icons go, the channel columns
+   narrow, the "All" chip is the box alone (its aria-label carries the word),
+   and the "In-app only" tag wraps to two short lines. */
+@media (max-width: 560px) {
+  .bp :global(.content .prow-sub) { padding-left: 18px; }
+  .bp :global(.content .sc-b--matrix .ntab) { min-width: 0; }
+  .bp :global(.content .sc-b--matrix .ntab col.nc) { width: 60px; }
+  .bp :global(.content .sc-b--matrix .nev-ic) { display: none; }
+  .bp :global(.content .sc-b--matrix .nrow) { padding-right: 8px; }
+  .bp :global(.content .sc-b--matrix .nhead) { font-size: 9px; letter-spacing: .1em; }
+  .bp :global(.content .sc-b--matrix .colw) { padding: 3px; gap: 0; }
+  .bp :global(.content .sc-b--matrix .colw-l) { display: none; }
+  .bp :global(.content .ncell-off) { width: 48px; padding: 3px 4px; font-size: 7.5px; letter-spacing: .06em;
+    line-height: 1.3; white-space: normal; }
+  .bp :global(.content .sc-b--matrix .nfoot) { padding: 12px 18px; }
+  .bp :global(.content .nfoot-b) { min-height: 44px; }
+}

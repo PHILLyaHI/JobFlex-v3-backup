@@ -69,7 +69,7 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
         select: { name: true, email: true, address: true, city: true, state: true, zip: true },
       },
       owner: { select: { name: true } },
-      installments: { orderBy: { position: "asc" } },
+      installments: { orderBy: { position: "asc" }, include: { payment: { select: { provider: true } } } },
       lineItems: {
         select: {
           id: true,
@@ -113,6 +113,9 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       due: plateDate(i.dueDate) ?? null,
       amount: i.amount,
       pct: i.isPercent,
+      status: i.status,
+      paidAmt: i.paidAmount,
+      paidVia: i.payment?.provider ?? null,
     }));
     const addr = {
       address: p.client?.address,

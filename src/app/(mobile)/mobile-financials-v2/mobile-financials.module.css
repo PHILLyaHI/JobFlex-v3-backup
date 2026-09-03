@@ -259,7 +259,10 @@
      tab if both tracks are exact. Plain 1fr floors at auto, and auto rows
      would let one tab's height desynchronise the vertical step. */
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, 52px);
+  /* Two 52px rows for the 2×2 pad, then one more for the Overhead link. The
+     indicator's translate is still index × 100% of a 52px row, and it only
+     ever addresses the first four cells. */
+  grid-template-rows: repeat(2, 52px) 52px;
   border: var(--border);
   border-radius: var(--radius);
   background: var(--paper);
@@ -286,6 +289,27 @@
 .ftab:nth-of-type(odd) { border-right: 1.5px solid var(--ink); }
 .ftab:nth-of-type(-n + 2) { border-bottom: 1.5px solid var(--ink); }
 .ftab.active { color: var(--ink); background: var(--paper-deep); }
+/* The Overhead link — a fifth cell spanning the pad, ruled off from the 2×2
+   above it. Declared after the nth-of-type dividers so it can zero them: as
+   the only <a>, it would otherwise count as "first of type" and inherit both
+   the right and bottom rules. */
+.ftab.ftabLink {
+  grid-column: 1 / -1;
+  border-right: 0; border-bottom: 0;
+  border-top: 1.5px solid var(--ink);
+  color: var(--ink);
+  text-decoration: none;
+}
+.ftab.ftabLink:active { background: var(--paper-deep); }
+.ftabIc {
+  width: 16px; height: 16px; flex-shrink: 0;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.ftabGo {
+  margin-left: 2px;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+  color: var(--blueprint);
+}
 .ftabCount {
   display: inline-flex; align-items: center; justify-content: center;
   /* A hair taller than the 13px label so the digits sit in a real badge

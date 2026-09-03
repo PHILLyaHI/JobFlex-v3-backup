@@ -93,7 +93,22 @@ export function ProposalActions({
           size="sm"
           variant="outline"
           loading={busy === "paid"}
-          onClick={() => wrap("paid", () => updateProposalStatus(id, "PAID"), "Marked paid")}
+          onClick={() =>
+            wrap(
+              "paid",
+              async () => {
+                const res = await updateProposalStatus(id, "PAID");
+                if (!res.ok) {
+                  throw new Error(
+                    res.reason === "payment_outstanding"
+                      ? `$${(res.remainingMinor / 100).toFixed(2)} is still owed — record it on the proposals page first.`
+                      : "This proposal can't be marked paid from here.",
+                  );
+                }
+              },
+              "Marked paid",
+            )
+          }
         >
           Mark paid
         </Button>

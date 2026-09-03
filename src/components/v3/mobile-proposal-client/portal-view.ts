@@ -20,9 +20,11 @@
 // hydration is the worst possible bug. Formatting once on the server means the
 // mobile tree receives strings and cannot disagree with anything.
 //
-// `total` is the one raw number that survives, because /api/checkout/[provider]
-// is posted `Math.round(total * 100)` and cents cannot be recovered from
-// "$15,794".
+// `pay` is the resolved payment model (src/lib/payments/portalModel.ts):
+// which stage is next, what "remaining" is, which buttons this contractor
+// can offer. The pay routes derive every amount server-side again.
+
+import type { PortalPayModel } from "@/lib/payments/portalModel";
 
 /** Donor rule: "roof_squares" → "roof squares", empty → null. */
 function measurementLabel(t: string | null | undefined) {
@@ -73,15 +75,11 @@ export type PortalView = {
   phone: string | null;
   telHref: string | null;
   pdfHref: string;
-  /** The payment providers this contractor actually switched on. The handheld
-   *  checkout sheet used to list all three unconditionally and only admit the
-   *  other two were off after the tap. */
-  providers: PayProvider[];
+  /** Resolved payment view — stages, status, next payable, providers. */
+  pay: PortalPayModel;
   /** Org standard terms, shown as a disclosure. Empty when none are set. */
   terms: string;
 };
-
-export type PayProvider = "stripe" | "square" | "paypal";
 
 /** The shape buildPortalView needs — structural, so this module never has to
  *  import Prisma's generated types and can stay safe to pull into a client
@@ -125,15 +123,15 @@ export function buildPortalView(
   publicId: string,
   proposal: ProposalRow,
   fmt: Fmt,
-  /** Read from the org by the caller, which already has the row. */
-  extras: { providers: PayProvider[]; terms: string } = { providers: [], terms: "" },
+  /** Built by the caller, which already has the row + org connections. */
+  extras: { pay: PortalPayModel; terms: string },
 ): PortalView {
   const { money, longDate } = fmt;
   const org = proposal.organization;
   const phone = org.phone?.trim() || null;
 
   return {
-    providers: extras.providers,
+    pay: extras.pay,
     terms: extras.terms,
     publicId,
     status: proposal.status,

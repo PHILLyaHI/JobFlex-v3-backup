@@ -2,289 +2,206 @@
 
 // Settings blueprint — Notifications pane.
 //
-// Faithful port of donor `jobflex-settings-blueprint (6).html` lines 2102-2127,
-// with the contract's owner fixes applied on top:
-//   F10 — the three donor <select class="fin"> controls (quiet hours from,
-//         quiet hours to, daily digest) are the custom `Sel` dropdown.
-//   F12 — every `.tg` is the `Toggle` primitive, which renders no child svg.
-//   F16 — each matrix event row leads with a `.nev-ic` icon box.
-//   F17 — the per-column `.colt` "All" badge is a real control (`.colw`) that
-//         drives its whole column and reflects whether the column is full;
-//         it is the same square `Cbx` as the cells beneath it.
-//   F13 — deliberately NOT applied here: neither `.sc-b` on this pane has a
-//         bare `.prow`/`.trow`/`.dlv` list as its direct children (the matrix
-//         card holds `.nwrap` + `.nfoot`, Delivery holds `.fgrid` + wrappers
-//         carrying the donor's own margin-top values).
+// The matrix is REAL: two channels per event (In-app · Email). The in-app
+// column filters the bell feed (recentNotifications); the email column gates
+// every office email to this member. The event list is the one the app can
+// actually produce — src/lib/notificationPrefsShared.ts — and an event nobody
+// emails carries an "In-app only" tag in its Email cell rather than a ghost
+// checkbox that looks unticked.
 //
-// The pane wrapper (`.pane`) and its `.pane-h` header belong to
-// settings-content.tsx; this file starts at the first `<section class="sc">`.
-// Class names are plain global strings — the stylesheet is applied upstream.
+// GONE (owner's call, 2026-09-03): the Delivery card. Quiet hours and the
+// weekend mute no longer exist — an Email cell that is on always sends.
 //
-// REAL DATA. The whole pane is one blob on the signed-in user's own row —
-// `User.notificationPrefsJson` — hydrated by `parseNotificationPrefs` on the
-// server and written back by `updateNotificationPrefs`. A user who has never
-// saved sees the donor's seed matrix; from then on it is theirs. The SMS number
-// lives in the same blob (`User.phone` is the Profile card's field, and is a
-// contact number rather than a notification route).
-//
-// "Send test notification" is the one footer button with nothing behind it —
-// no test-notification path exists — so it stays inert.
+// "Send test notification" writes a TEST row only this user's bell shows,
+// and mails them if the saved prefs allow it.
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { updateNotificationPrefs } from "@/actions/accountSettings";
-import { Cbx, Field, SaveBar, Sel, Toggle } from "../ui";
-import type { DeliveryToggleKey, MatrixAction, PaneProps } from "../settings-data";
+import { sendTestNotification } from "@/actions/notifications";
+import { Cbx, SaveBar, actionError } from "../ui";
+import type { MatrixAction, PaneProps, PrefKey } from "../settings-data";
 import {
-  DELIVERY_CARD,
-  DELIVERY_TOGGLES,
-  DIGEST_SELECT,
   EMAIL_COLUMN_INDEX,
+  EMAIL_UNAVAILABLE_TAG,
+  EMAIL_UNAVAILABLE_TITLE,
   NOTIFICATIONS_CARD,
   NOTIFICATION_CHANNELS,
   NOTIFICATION_COLUMN_LABEL,
-  NOTIFICATION_EVENTS,
   NOTIFICATION_EVENT_COLUMN,
   NOTIFICATION_FOOTER_ACTIONS,
-  QUIET_FROM_SELECT,
-  QUIET_TO_SELECT,
-  SMS_NUMBER_LABEL,
-  notificationCountBadge,
+  NOTIFICATION_ICONS,
+  PREF_EVENTS,
+  TEST_RESULT_COPY,
 } from "../settings-data";
 
-/** Donor inline sizing on the three `.nfoot` buttons (line 2111-2115). */
-const NFOOT_BTN_STYLE = { height: "38px", padding: "0 14px" } as const;
-
-type Triple = [boolean, boolean, boolean];
+type Pair = [boolean, boolean];
 
 export function NotificationsPane({ data }: PaneProps) {
-  const prefs = data.notifications;
+  const { prefs } = data.notifications;
+  const router = useRouter();
 
-  /* ── matrix: one boolean row per event, one column per channel ── */
-  const [matrix, setMatrix] = useState<Triple[]>(() =>
-    NOTIFICATION_EVENTS.map((event) => {
+  const [matrix, setMatrix] = useState<Pair[]>(() =>
+    PREF_EVENTS.map((event) => {
       const stored = prefs.matrix[event.key];
-      return stored ? ([...stored] as Triple) : ([...event.channels] as Triple);
+      return stored ? ([stored[0], stored[1]] as Pair) : ([event.seed[0], event.seed[1]] as Pair);
     }),
   );
 
-  const mapRow = (cells: Triple, fn: (on: boolean, ci: number) => boolean): Triple =>
-    [fn(cells[0], 0), fn(cells[1], 1), fn(cells[2], 2)] as Triple;
+  const available = (ri: number, ci: number) => ci !== EMAIL_COLUMN_INDEX || PREF_EVENTS[ri].emailAvailable;
 
   const setCell = (row: number, col: number, next: boolean) => {
-    setMatrix((prev) =>
-      prev.map((cells, ri) =>
-        ri === row ? mapRow(cells, (on, ci) => (ci === col ? next : on)) : cells,
-      ),
-    );
+    if (!available(row, col)) return;
+    setMatrix((prev) => prev.map((cells, ri) => (ri === row ? (cells.map((on, ci) => (ci === col ? next : on)) as Pair) : cells)));
   };
-
-  /** F17 — a column toggle drives every checkbox beneath it. */
   const setColumn = (col: number, next: boolean) => {
     setMatrix((prev) =>
-      prev.map((cells) => mapRow(cells, (on, ci) => (ci === col ? next : on))),
+      prev.map((cells, ri) => cells.map((on, ci) => (ci === col ? (available(ri, ci) ? next : false) : on)) as Pair),
     );
   };
+  const columnAllOn = (col: number) =>
+    matrix.every((cells, ri) => !available(ri, col) || cells[col] === true);
 
-  const columnAllOn = (col: number) => matrix.every((cells) => cells[col] === true);
-
-  /** Donor `data-nall="1"`. */
-  const enableAll = () => setMatrix((prev) => prev.map((cells) => mapRow(cells, () => true)));
-
-  /** Donor `data-nall="0"` — only the Email column survives. */
+  const enableAll = () =>
+    setMatrix((prev) => prev.map((cells, ri) => cells.map((_, ci) => available(ri, ci)) as Pair));
   const emailOnly = () =>
-    setMatrix((prev) => prev.map((cells) => mapRow(cells, (_, ci) => ci === EMAIL_COLUMN_INDEX)));
+    setMatrix((prev) =>
+      prev.map((cells, ri) => cells.map((_, ci) => ci === EMAIL_COLUMN_INDEX && available(ri, ci)) as Pair),
+    );
 
-  /** "Send test notification" has no path behind it, so it gets no handler. */
-  const footerHandler = (action: MatrixAction): (() => void) | undefined => {
+  const [testNote, setTestNote] = useState("");
+  const [testing, setTesting] = useState(false);
+  async function test() {
+    setTesting(true);
+    setTestNote("");
+    try {
+      const res = await sendTestNotification();
+      setTestNote(TEST_RESULT_COPY[res.email]);
+      router.refresh();
+    } catch (e) {
+      setTestNote(actionError(e));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const footerHandler = (action: MatrixAction): (() => void) => {
     if (action === "enable-all") return enableAll;
     if (action === "email-only") return emailOnly;
-    return undefined;
+    return () => void test();
   };
 
-  /* ── delivery ── */
-  const [quietFrom, setQuietFrom] = useState(prefs.quietFrom);
-  const [quietTo, setQuietTo] = useState(prefs.quietTo);
-  const [digest, setDigest] = useState(prefs.digest);
-  const [sms, setSms] = useState(prefs.sms);
-  const [delivery, setDelivery] = useState<Record<DeliveryToggleKey, boolean>>({
-    muteWeekends: prefs.muteWeekends,
-    desktopPush: prefs.desktopPush,
-    soundOnLead: prefs.soundOnLead,
-  });
-
   const save = () => {
-    const next: Record<string, Triple> = {};
-    NOTIFICATION_EVENTS.forEach((event, ri) => {
-      next[event.key] = matrix[ri] ?? ([...event.channels] as Triple);
+    const next: Record<string, Pair> = {};
+    PREF_EVENTS.forEach((event, ri) => {
+      next[event.key] = matrix[ri] ?? ([event.seed[0], event.seed[1]] as Pair);
     });
-    return updateNotificationPrefs({
-      matrix: next,
-      quietFrom,
-      quietTo,
-      digest,
-      sms,
-      ...delivery,
-    });
+    return updateNotificationPrefs({ matrix: next });
   };
 
   return (
-    <>
-      <section className="sc">
-        <div className="sc-h">
-          <div>
-            <div className="sc-t">{NOTIFICATIONS_CARD.title}</div>
-            <div className="sc-s">{NOTIFICATIONS_CARD.sub}</div>
-          </div>
-          {/* Counted from the event list, never typed. */}
-          <span className={`badge2 ${notificationCountBadge(NOTIFICATION_EVENTS.length).tone}`}>
-            <i />
-            {notificationCountBadge(NOTIFICATION_EVENTS.length).label}
-          </span>
+    <section className="sc">
+      <div className="sc-h">
+        <div>
+          <div className="sc-t">{NOTIFICATIONS_CARD.title}</div>
+          <div className="sc-s">{NOTIFICATIONS_CARD.sub}</div>
         </div>
+      </div>
 
-        <div className="sc-b">
-          <div className="nwrap">
-            <table className="ntab" id="nmatrix">
-              <colgroup>
-                <col />
-                {NOTIFICATION_CHANNELS.map((channel) => (
-                  <col className="nc" key={channel} />
+      {/* The matrix runs wall to wall: every row rule and the header band
+          meet the card frame, like a ledger. */}
+      <div className="sc-b sc-b--matrix">
+        <div className="nwrap">
+          <table className="ntab" id="nmatrix">
+            <colgroup>
+              <col />
+              {NOTIFICATION_CHANNELS.map((channel) => (
+                <col className="nc" key={channel} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                <th>
+                  <span className="nhead">{NOTIFICATION_EVENT_COLUMN}</span>
+                </th>
+                {NOTIFICATION_CHANNELS.map((channel, ci) => (
+                  <th key={channel}>
+                    <span className="nhead">{channel}</span>
+                    {/* The column master is a framed chip, not a bare box —
+                        a bare box in the header read as one more data cell. */}
+                    <span className="colw">
+                      <Cbx
+                        checked={columnAllOn(ci)}
+                        onChange={(next) => setColumn(ci, next)}
+                        ariaLabel={`${NOTIFICATION_COLUMN_LABEL} ${channel}`}
+                      />
+                      <span className="colw-l">{NOTIFICATION_COLUMN_LABEL}</span>
+                    </span>
+                  </th>
                 ))}
-              </colgroup>
-
-              <thead>
-                <tr>
-                  <th>{NOTIFICATION_EVENT_COLUMN}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PREF_EVENTS.map((event, ri) => (
+                <tr key={event.key}>
+                  <td>
+                    <span className="nrow">
+                      <span className="nev-ic">
+                        <svg className="ic">
+                          <use href={`#${NOTIFICATION_ICONS[event.key as PrefKey]}`} />
+                        </svg>
+                      </span>
+                      <span className="nrow-t">
+                        <span className="nev">{event.name}</span>
+                        <span className="nsub">{event.sub}</span>
+                      </span>
+                    </span>
+                  </td>
                   {NOTIFICATION_CHANNELS.map((channel, ci) => (
-                    <th key={channel}>
-                      <span className="nhead">{channel}</span>
-                      {/* F17 — the "All" badge is a real control now: the same
-                          square checkbox as the column's cells. */}
-                      <span className="colw">
-                        <Cbx
-                          checked={columnAllOn(ci)}
-                          onChange={(next) => setColumn(ci, next)}
-                          ariaLabel={`${NOTIFICATION_COLUMN_LABEL} ${channel}`}
-                        />
-                        <span className="colw-l">{NOTIFICATION_COLUMN_LABEL}</span>
-                      </span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody>
-                {NOTIFICATION_EVENTS.map((event, ri) => (
-                  <tr key={event.key}>
-                    <td>
-                      {/* F16 — icon box before the event text. */}
-                      <span className="nrow">
-                        <span className="nev-ic">
-                          <svg className="ic">
-                            <use href={`#${event.icon}`} />
-                          </svg>
-                        </span>
-                        <span className="nrow-t">
-                          <span className="nev">{event.name}</span>
-                          <span className="nsub">{event.sub}</span>
-                        </span>
-                      </span>
-                    </td>
-                    {NOTIFICATION_CHANNELS.map((channel, ci) => (
-                      <td key={channel}>
+                    <td key={channel}>
+                      {available(ri, ci) ? (
                         <Cbx
                           checked={matrix[ri]?.[ci] ?? false}
                           onChange={(next) => setCell(ri, ci, next)}
                           ariaLabel={`${channel} — ${event.name}`}
                         />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="nfoot">
-            {NOTIFICATION_FOOTER_ACTIONS.map((action) => (
-              <button
-                key={action.action}
-                className="btn btn-ghost"
-                type="button"
-                style={NFOOT_BTN_STYLE}
-                onClick={footerHandler(action.action)}
-              >
-                <svg className="ic">
-                  <use href={`#${action.icon}`} />
-                </svg>
-                {action.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="sc">
-        <div className="sc-h">
-          <div>
-            <div className="sc-t">{DELIVERY_CARD.title}</div>
-            <div className="sc-s">{DELIVERY_CARD.sub}</div>
-          </div>
+                      ) : (
+                        <span className="ncell-off" title={EMAIL_UNAVAILABLE_TITLE}>
+                          {EMAIL_UNAVAILABLE_TAG}
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        <div className="sc-b">
-          <div className="fgrid">
-            {/* F10 — donor <select class="fin"> becomes the custom Sel. */}
-            <Sel
-              label={QUIET_FROM_SELECT.label}
-              value={quietFrom}
-              options={QUIET_FROM_SELECT.options}
-              onChange={setQuietFrom}
-            />
-            <Sel
-              label={QUIET_TO_SELECT.label}
-              value={quietTo}
-              options={QUIET_TO_SELECT.options}
-              onChange={setQuietTo}
-            />
-          </div>
-
-          <div style={{ marginTop: "14px" }}>
-            <div className="fgrid">
-              <Sel
-                label={DIGEST_SELECT.label}
-                value={digest}
-                options={DIGEST_SELECT.options}
-                onChange={setDigest}
-              />
-              <Field label={SMS_NUMBER_LABEL} value={sms} onChange={setSms} />
-            </div>
-          </div>
-
-          <div style={{ marginTop: "6px" }}>
-            {DELIVERY_TOGGLES.map((row) => (
-              <div className="trow" key={row.key}>
-                <span className="trow-b">
-                  <span className="trow-n">{row.name}</span>
-                  <span className="trow-d">{row.desc}</span>
-                </span>
-                <Toggle
-                  checked={delivery[row.key]}
-                  onChange={(next) =>
-                    setDelivery((prev) => ({ ...prev, [row.key]: next }))
-                  }
-                  ariaLabel={row.name}
-                />
-              </div>
-            ))}
-          </div>
+        <div className="nfoot">
+          {NOTIFICATION_FOOTER_ACTIONS.map((action) => (
+            <button
+              key={action.action}
+              className="btn btn-ghost btn-sm nfoot-b"
+              type="button"
+              disabled={action.action === "test" && testing}
+              onClick={footerHandler(action.action)}
+            >
+              <svg className="ic">
+                <use href={`#${action.icon}`} />
+              </svg>
+              {action.label}
+            </button>
+          ))}
+          {testNote ? (
+            <span className="nfoot-note" role="status">
+              {testNote}
+            </span>
+          ) : null}
         </div>
-
-        {/* One blob, one Save bar — it writes the matrix and the delivery rules
-            together, so the matrix card above needs none of its own. */}
-        <SaveBar onSave={save} />
-      </section>
-    </>
+      </div>
+      <SaveBar onSave={save} />
+    </section>
   );
 }

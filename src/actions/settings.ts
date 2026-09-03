@@ -3,7 +3,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { parseGmailSettings } from "@/lib/settings";
+import { parseGmailSettings, parsePaymentSettings } from "@/lib/settings";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildTestEmail } from "@/lib/email/build/platform";
 import { sendOrgEmail } from "@/lib/email/orgSend";
@@ -12,28 +12,28 @@ import { sendOrgEmail } from "@/lib/email/orgSend";
 // writes it as a JSON-as-String column on Organization. Mirrors the canonical
 // company.ts pattern (requireOrg → parse → organization.update → revalidatePath).
 
+// Only the slice the Payments pane still edits. Provider on/off and bank
+// transfer live in src/actions/paymentConnections.ts; the write MERGES over
+// the stored blob so those (and any legacy keys) survive a save from here.
 const paymentSchema = z.object({
-  stripe: z.boolean(),
-  square: z.boolean(),
-  paypal: z.boolean(),
-  ach: z.boolean(),
-  autoRemind: z.boolean(),
-  lateFees: z.boolean(),
+  currency: z.string().trim().max(8),
+  depositPct: z.number().min(0).max(100),
   receiptsOnPayment: z.boolean(),
-  currency: z.string(),
-  depositPct: z.number(),
-  netTerms: z.string(),
-  lateFeePct: z.string(),
 });
 
 export async function updatePaymentSettings(raw: unknown) {
   const { organizationId } = await requireManager();
   const data = paymentSchema.parse(raw);
+  const org = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { paymentSettingsJson: true },
+  });
+  const current = parsePaymentSettings(org?.paymentSettingsJson);
   await db.organization.update({
     where: { id: organizationId },
-    data: { paymentSettingsJson: JSON.stringify(data) },
+    data: { paymentSettingsJson: JSON.stringify({ ...current, ...data }) },
   });
-  revalidatePath("/dashboard/settings/payment");
+  revalidatePath("/dashboard/settings");
   return { ok: true };
 }
 
@@ -92,7 +92,7 @@ export async function updateGmailSettings(raw: unknown) {
     where: { id: organizationId },
     data: { gmailSettingsJson: JSON.stringify(merged) },
   });
-  revalidatePath("/dashboard/settings/gmail");
+  revalidatePath("/dashboard/settings");
   return { ok: true };
 }
 
@@ -137,7 +137,7 @@ export async function disconnectGmail() {
       gmailSettingsJson: JSON.stringify({ ...current, connected: false, connectedEmail: "" }),
     },
   });
-  revalidatePath("/dashboard/settings/gmail");
+  revalidatePath("/dashboard/settings");
   return { ok: true };
 }
 

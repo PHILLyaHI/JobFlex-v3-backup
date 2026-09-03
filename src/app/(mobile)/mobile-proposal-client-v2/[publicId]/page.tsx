@@ -33,6 +33,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { money, longDate } from "@/lib/format";
 import { buildPortalView } from "@/components/v3/mobile-proposal-client/portal-view";
+import { buildPortalPayModel } from "@/lib/payments/portalModel";
 import { MobileProposalClient } from "@/components/v3/mobile-proposal-client/mobile-proposal-client";
 
 export const dynamic = "force-dynamic";
@@ -63,14 +64,25 @@ export default async function MobileProposalClientPage({
       installments: { orderBy: { position: "asc" } },
       client: true,
       organization: {
-        select: { name: true, logoUrl: true, phone: true, address: true },
+        select: {
+          name: true,
+          logoUrl: true,
+          phone: true,
+          address: true,
+          deletedAt: true,
+          paymentSettingsJson: true,
+          paymentConnections: true,
+        },
       },
     },
   });
 
-  if (!proposal) return notFound();
+  if (!proposal || proposal.organization.deletedAt) return notFound();
+  const pay = await buildPortalPayModel(publicId, proposal, proposal.organization, { money, longDate });
 
   return (
-    <MobileProposalClient view={buildPortalView(publicId, proposal, { money, longDate })} />
+    <MobileProposalClient
+      view={buildPortalView(publicId, proposal, { money, longDate }, { pay, terms: "" })}
+    />
   );
 }

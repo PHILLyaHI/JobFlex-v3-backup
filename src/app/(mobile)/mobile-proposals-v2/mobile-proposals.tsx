@@ -63,10 +63,10 @@ import {
   uploadProposalPhoto,
 } from "@/actions/proposals";
 import { notifyPaymentReminder } from "@/actions/notify";
+import { markInstallmentPaid } from "@/actions/installments";
 import { loadProposalBook } from "./proposals-actions";
 import {
   FILTERS,
-  OPEN_STATUSES,
   PAGE_ACC,
   PAGE_ALL,
   PAGE_DONE,
@@ -502,14 +502,21 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
   /* ---------- masthead: one numeral, mono kicker, TWO annotations ----- */
   const mast = useMemo(() => {
     if (tab === "all") {
-      const open = data.filter((p) => OPEN_STATUSES.includes(p.status));
-      const t = sumOf(open);
+      // THE PIPELINE IS EVERYTHING STILL ON THE TABLE OR WON (owner,
+      // 2026-09-02): drafts, sent, viewed, accepted and paid. Only a declined
+      // or expired sheet is out of it. The first cut summed the three OPEN
+      // statuses alone, so a book of one accepted and one declined proposal
+      // read "$0 · 0 proposals" — under two rows that plainly existed. The
+      // COUNT is the whole book, declined included: a declined proposal is
+      // still a proposal that was written.
+      const counted = data.filter((p) => p.status !== "DECLINED" && p.status !== "EXPIRED");
+      const t = sumOf(counted);
       return {
-        kicker: "Pipeline value · open",
+        kicker: "Pipeline value",
         value: t,
         good: false,
-        a1: { l: "Proposals", v: String(open.length) },
-        a2: { l: "Avg deal", v: money(open.length ? t / open.length : 0) },
+        a1: { l: "Proposals", v: String(data.length) },
+        a2: { l: "Avg deal", v: money(counted.length ? t / counted.length : 0) },
       };
     }
     if (tab === "accepted") {
@@ -566,7 +573,19 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
     if (writing) return;
     setWriting(true);
     try {
-      await updateProposalStatus(p.id, status);
+      const res = await updateProposalStatus(p.id, status);
+      if (!res.ok) {
+        setNote({
+          tone: "bad",
+          text:
+            res.reason === "payment_outstanding"
+              ? `${money(res.remainingMinor / 100)} is still owed — mark each stage paid first.`
+              : res.reason === "provider_paid"
+                ? "Paid through Stripe / Square — refund from that dashboard and it syncs back."
+                : "A proposal with paid stages can't go back to draft.",
+        });
+        return;
+      }
       patch(p.id, (x) => ({
         ...x,
         status,
@@ -575,6 +594,26 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
         paid: status === "PAID" ? todayPlate() : undefined,
       }));
       setNote({ tone: "ok", text: ok });
+      router.refresh();
+    } catch (err) {
+      setNote({ tone: "bad", text: actionError(err) });
+    } finally {
+      setWriting(false);
+    }
+  }
+
+  /** Mark a stage paid by hand (bank / cash / check). Two taps: the Mark paid
+   *  button becomes a method picker in place. The book is re-read afterwards
+   *  so the row shows the frozen amount the server recorded. */
+  const [pickingId, setPickingId] = useState<string | null>(null);
+  async function runMarkPaid(instId: string, method: string) {
+    if (writing) return;
+    setWriting(true);
+    try {
+      await markInstallmentPaid({ installmentId: instId, method });
+      setData(await loadProposalBook());
+      setPickingId(null);
+      setNote({ tone: "ok", text: "Payment recorded." });
       router.refresh();
     } catch (err) {
       setNote({ tone: "bad", text: actionError(err) });
@@ -911,12 +950,28 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                       {inst.length === 0 ? null : inst.length <= 5 ? (
                         <div className={styles.pcols}>
                           {inst.map((it) => {
-                            const sub = it.pct ? `${it.amount}% of total` : it.due ? `due ${it.due}` : "";
+                            const paid = it.status === "PAID";
+                            const sub = paid
+                              ? `Paid · ${it.paidVia === "STRIPE" ? "Stripe" : it.paidVia === "SQUARE" ? "Square" : "manual"}`
+                              : it.pct ? `${it.amount}% of total` : it.due ? `due ${it.due}` : "";
                             return (
                               <div className={styles.pcol} key={it.id}>
                                 <div className={styles.pcolLbl}>{it.label}</div>
                                 <div className={styles.pcolVal}>{money(instDollars(p, it))}</div>
                                 {sub ? <div className={styles.pcolSub}>{sub}</div> : null}
+                                {!paid && it.status !== "WAIVED" ? (
+                                  pickingId === it.id ? (
+                                    <div className={styles.pickRow}>
+                                      {[["BANK_TRANSFER", "Bank"], ["CASH", "Cash"], ["CHECK", "Check"]].map(([k, l]) => (
+                                        <button key={k} className={styles.pschedRem} type="button" disabled={writing}
+                                          onClick={() => void runMarkPaid(it.id, k)}>{l}</button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <button className={styles.pschedRem} type="button" disabled={writing}
+                                      onClick={() => setPickingId(it.id)}>Mark paid</button>
+                                  )
+                                ) : null}
                               </div>
                             );
                           })}
@@ -927,11 +982,26 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                             <div className={styles.pschedRow} key={it.id}>
                               <div className={styles.pschedLbl}>{it.label}</div>
                               <div className={styles.pschedAmt}>{money(instDollars(p, it))}</div>
-                              <div className={styles.pschedDue}>{it.due ? `due ${it.due}` : "on completion"}</div>
-                              {/* Real: mails THIS instalment's reminder. */}
-                              <button className={styles.pschedRem} type="button"
-                                disabled={writing || !p.clientEmail}
-                                onClick={() => void runReminder(p, it.id)}>Remind</button>
+                              <div className={styles.pschedDue}>
+                                {it.status === "PAID" ? "Paid" : it.due ? `due ${it.due}` : "on completion"}
+                              </div>
+                              {it.status === "PAID" || it.status === "WAIVED" ? null : pickingId === it.id ? (
+                                <div className={styles.pickRow}>
+                                  {[["BANK_TRANSFER", "Bank"], ["CASH", "Cash"], ["CHECK", "Check"]].map(([k, l]) => (
+                                    <button key={k} className={styles.pschedRem} type="button" disabled={writing}
+                                      onClick={() => void runMarkPaid(it.id, k)}>{l}</button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <>
+                                  <button className={styles.pschedRem} type="button" disabled={writing}
+                                    onClick={() => setPickingId(it.id)}>Mark paid</button>
+                                  {/* Real: mails THIS instalment's reminder. */}
+                                  <button className={styles.pschedRem} type="button"
+                                    disabled={writing || !p.clientEmail}
+                                    onClick={() => void runReminder(p, it.id)}>Remind</button>
+                                </>
+                              )}
                             </div>
                           ))}
                         </div>

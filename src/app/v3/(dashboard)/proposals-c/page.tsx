@@ -53,6 +53,7 @@ export default async function ProposalsCPage() {
       },
       installments: {
         orderBy: { position: "asc" },
+        include: { payment: { select: { provider: true } } },
       },
       lineItems: {
         select: {
@@ -104,6 +105,10 @@ export default async function ProposalsCPage() {
       isPercent: i.isPercent,
       dueDate: i.dueDate?.toISOString() ?? null,
       position: i.position,
+      status: i.status,
+      paidAt: i.paidAt?.toISOString() ?? null,
+      paidAmount: i.paidAmount,
+      paidVia: i.payment?.provider ?? null,
     })),
     materials: p.lineItems.map((l) => ({
       id: l.id,

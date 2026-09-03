@@ -26,7 +26,12 @@ import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { getStripeMode } from "@/lib/stripeMode";
 import { isOwnerRole } from "@/lib/orgContext";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
-import { UpgradeContent, type UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
+import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
+import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
+// One URL, two designs: the desktop build above 768px, the handheld build in
+// components/v3/mobile-upgrade at or below it. Same props, one loader — see
+// upgrade-responsive.tsx.
+import { UpgradeResponsive } from "./upgrade-responsive";
 
 export const metadata = { title: "Plans & upgrade — JobFlex" };
 export const dynamic = "force-dynamic";
@@ -57,6 +62,30 @@ async function verifyReturn(organizationId: string, sessionId: string): Promise<
     // currentPeriodEnd makes the row self-expiring should the webhook never
     // arrive (e.g. a sandbox-mode checkout the live webhook never sees).
     const status = trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE;
+    /* THE OLD SUBSCRIPTION ENDS HERE. The checkout route names the one this
+       purchase replaces; it is cancelled at once, without a proration credit
+       (the new plan starts now and was paid in full), so the org never bills
+       twice. Best-effort: a failure here leaves the old sub for the admin's
+       reconcile, it never blocks the plan change that was paid for. */
+    const replaces = (session.metadata?.replacesSubId as string | undefined) || null;
+    if (replaces && replaces !== subId) {
+      await stripe.subscriptions
+        .cancel(replaces, { prorate: false, invoice_now: false })
+        .catch((err) => console.warn("[upgrade] could not cancel replaced subscription:", err));
+    }
+    // A custom plan's pages, for the page gate and the sidebar locks.
+    if (planSlug === CUSTOM_PLAN_SLUG) {
+      const pages = normalizeCustomPages(
+        String(session.metadata?.customPages ?? "").split(",").filter(Boolean),
+      );
+      await db.syncState
+        .upsert({
+          where: { key: `orgPages:${organizationId}` },
+          update: { cursor: JSON.stringify(pages) },
+          create: { key: `orgPages:${organizationId}`, cursor: JSON.stringify(pages) },
+        })
+        .catch(() => {});
+    }
     await db.subscription.upsert({
       where: { organizationId },
       update: {
@@ -112,6 +141,19 @@ export default async function UpgradePage({
     getStripeMode(),
   ]);
 
+  // The pages a custom-plan org owns, for the "add a page" card.
+  let customPages: string[] = [];
+  if ((sub?.plan ?? "").toUpperCase() === "CUSTOM") {
+    const row = await db.syncState
+      .findUnique({ where: { key: `orgPages:${ctx.organizationId}` } })
+      .catch(() => null);
+    try {
+      customPages = normalizeCustomPages(row ? (JSON.parse(row.cursor) as string[]) : []);
+    } catch {
+      customPages = [];
+    }
+  }
+
   const plans: UpgradePlan[] = catalog
     .filter((p) => !p.isFree)
     .map((p) => ({
@@ -126,9 +168,10 @@ export default async function UpgradePage({
     }));
 
   return (
-    <UpgradeContent
+    <UpgradeResponsive
       plans={plans}
       currentPlan={sub?.plan ?? null}
+      customPages={customPages}
       isOwner={isOwnerRole(ctx.role)}
       checkoutReady={isStripeEnabled()}
       sandbox={mode === "test"}

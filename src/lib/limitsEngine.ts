@@ -357,10 +357,11 @@ async function statusFor(
  * Skips the count query entirely when the resource is unlimited. `needed` is
  * the headroom required (bulk creates like CSV imports pass their row count).
  */
-// 2026-08-14 (owner's call): quota enforcement disabled app-wide together with
-// the entitlements gates (src/lib/entitlements.ts) — no "Plan limit reached"
-// upsells anywhere. Flip to false to restore the engine untouched below.
-const LIMITS_DISABLED = true;
+// 2026-08-14 the engine was switched off app-wide (no upsells during testing).
+// 2026-09-02 (owner's call): back ON — the caps set in /admin/plans are meant
+// to hold, and the sidebar draws what is left of each. Flip to true to mute
+// every cap except "managers" again without touching the engine below.
+const LIMITS_DISABLED = false;
 
 export async function checkPlanLimit(
   organizationId: string,

@@ -16,8 +16,14 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireManager, requireUser } from "@/lib/orgContext";
+import { requireManager, requireOwner, requireUser } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { signOutEverywhereFor } from "@/lib/sessions";
+import { PREF_EVENTS } from "@/lib/notificationPrefs";
+import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { markSubscriptionCanceled } from "@/lib/stripeSync";
+import { disconnectSquareFor, disconnectStripeConnectFor } from "@/lib/payments/connections";
+import { ActivityKind } from "@/lib/prismaEnums";
 
 const SETTINGS_PATH = "/dashboard/settings";
 
@@ -93,28 +99,109 @@ export async function updateBusiness(raw: unknown) {
 
 /* ──────────────────────────── notifications ──────────────────────────── */
 
-// The whole preference blob is stored as one JSON-as-String column on User,
-// hydrated whole on load — the same shape as the org's *SettingsJson columns.
-// `matrix` is keyed by the event key with an [in-app, email, sms] triple.
+// One JSON-as-String column on User. `matrix` is keyed by event with an
+// [in-app, email] pair; only keys the app actually produces are kept
+// (src/lib/notificationPrefs.ts is the list). Read by the bell feed and by
+// every office email sender.
 const notificationSchema = z.object({
-  matrix: z.record(z.string(), z.tuple([z.boolean(), z.boolean(), z.boolean()])),
-  quietFrom: z.string().trim().max(10),
-  quietTo: z.string().trim().max(10),
-  digest: z.string().trim().max(10),
-  sms: z.string().trim().max(40),
-  muteWeekends: z.boolean(),
-  desktopPush: z.boolean(),
-  soundOnLead: z.boolean(),
+  matrix: z.record(z.string(), z.tuple([z.boolean(), z.boolean()])),
+  // Delivery rules are gone from the page (2026-09-03); the fields stay
+  // optional so the stored blob keeps its shape for older readers.
+  quietFrom: z.string().regex(/^\d{2}:\d{2}$/).default("20:00"),
+  quietTo: z.string().regex(/^\d{2}:\d{2}$/).default("07:00"),
+  muteWeekends: z.boolean().default(false),
 });
 
-/** The signed-in user's own notification matrix + delivery rules. */
+/** The signed-in user's own notification matrix. */
 export async function updateNotificationPrefs(raw: unknown) {
   const user = await requireUser();
   const data = notificationSchema.parse(raw);
+  const known = new Set<string>(PREF_EVENTS.map((e) => e.key));
+  const matrix: Record<string, [boolean, boolean]> = {};
+  for (const [k, v] of Object.entries(data.matrix)) if (known.has(k)) matrix[k] = v;
   await db.user.update({
     where: { id: user.id },
-    data: { notificationPrefsJson: JSON.stringify(data) },
+    data: { notificationPrefsJson: JSON.stringify({ ...data, matrix }) },
   });
   revalidatePath(SETTINGS_PATH);
   return { ok: true };
+}
+
+/* ─────────────────────────────── sessions ────────────────────────────── */
+
+/**
+ * "Sign out everywhere": bump the credential epoch. requireUser() compares
+ * the JWT's credentialVersion with the row on every request, so every other
+ * device's token dies at its next request. The caller then signs THIS browser
+ * out through next-auth as usual.
+ */
+export async function signOutEverywhere() {
+  const user = await requireUser();
+  await signOutEverywhereFor(user.id);
+  return { ok: true };
+}
+
+/* ─────────────────────────── delete organization ─────────────────────── */
+
+const deleteOrgSchema = z.object({ confirmName: z.string().max(200) });
+
+/**
+ * SOFT delete. Owner-only, and the owner has to type the company name
+ * exactly. Order matters: the org is marked deleted FIRST — from that
+ * instant requireOrg() and every public surface treat it as gone — then the
+ * external side is unwound best-effort (Stripe subscription, Stripe Connect,
+ * Square, Gmail). A failure there never resurrects the org; the purge cron
+ * (30 days) refuses to hard-delete while a subscription is still live and
+ * logs it. Members keep their rows so an admin restore is possible.
+ */
+export async function deleteOrganization(raw: unknown) {
+  const ctx = await requireOwner();
+  const { confirmName } = deleteOrgSchema.parse(raw);
+  const org = await db.organization.findUnique({
+    where: { id: ctx.organizationId },
+    select: { id: true, name: true, deletedAt: true, subscription: { select: { externalSubId: true } } },
+  });
+  if (!org) throw new Error("Not found");
+  if (org.deletedAt) return { ok: true as const, already: true as const, warnings: [] as string[] };
+  if (confirmName.trim() !== org.name) throw new Error("That name doesn't match your company name.");
+
+  await db.organization.update({
+    where: { id: org.id },
+    data: { deletedAt: new Date(), deletedById: ctx.user.id },
+  });
+
+  const warnings: string[] = [];
+  if (org.subscription?.externalSubId && isStripeEnabled()) {
+    try {
+      const canceled = await getStripe().subscriptions.cancel(org.subscription.externalSubId);
+      await markSubscriptionCanceled(canceled);
+    } catch (err) {
+      console.error("[deleteOrganization] stripe cancel failed", org.id, err);
+      warnings.push("stripe-subscription");
+    }
+  }
+  try {
+    await disconnectStripeConnectFor(org.id);
+  } catch (err) {
+    console.error("[deleteOrganization] stripe connect", org.id, err);
+    warnings.push("stripe-connect");
+  }
+  try {
+    await disconnectSquareFor(org.id);
+  } catch (err) {
+    console.error("[deleteOrganization] square", org.id, err);
+    warnings.push("square");
+  }
+  await db.organization.update({ where: { id: org.id }, data: { gmailTokensJson: null } });
+  // Every member's next request falls through to another org (or NoOrg).
+  await db.user.updateMany({ where: { activeOrgId: org.id }, data: { activeOrgId: null } });
+  await db.activityEvent.create({
+    data: {
+      organizationId: org.id,
+      actorId: ctx.user.id,
+      kind: ActivityKind.UPDATED,
+      summary: `Organization "${org.name}" scheduled for deletion`,
+    },
+  });
+  return { ok: true as const, already: false as const, warnings };
 }

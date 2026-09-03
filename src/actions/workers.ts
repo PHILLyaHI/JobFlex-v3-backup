@@ -51,6 +51,12 @@ export async function createWorkerInvite(raw: unknown) {
   if (alreadyAWorker?.inviteStatus === "ACCEPTED") {
     throw new Error("That worker has already joined. Use Edit or Remove instead.");
   }
+  // The absolute "workers" seat cap, charged only when this invite adds a
+  // seat. The comment above promised this since 2026-07; the call was missing
+  // and the ledger's client-side pre-flight was the only thing holding it.
+  if (!alreadyAWorker) {
+    await enforcePlanLimit(organizationId, "workers");
+  }
 
   // SELF / OFFICE-STAFF GUARD. The membership upsert below takes its UPDATE
   // branch for any user who already holds a seat in this org — and that update

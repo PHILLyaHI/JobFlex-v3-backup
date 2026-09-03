@@ -111,7 +111,14 @@ export type Installment = {
   label: string;
   amount: number;
   isPercent: boolean;
+  /** Server stage state (PAID / PENDING / WAIVED lock the row). */
+  status?: string;
+  paidAmount?: number | null;
 };
+
+export function isLockedInstallment(i: { status?: string }): boolean {
+  return i.status === "PAID" || i.status === "WAIVED" || i.status === "PENDING";
+}
 
 /**
  * The four presentation toggles. Every one of them changes what the client's

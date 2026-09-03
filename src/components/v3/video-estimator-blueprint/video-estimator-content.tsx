@@ -37,7 +37,9 @@ import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { MaterialThumb } from "@/components/materials/MaterialThumb";
 import { merchantUrl } from "@/lib/merchantLinks";
-import { lineTotal, unitOptionsFor, type LineGroup } from "@/lib/estimate/console-model";
+import { lineTotal, unitSelectOptions } from "@/lib/estimate/console-model";
+import { BlueprintSelect } from "@/components/v3/advanced-ai-blueprint/blueprint-select";
+import { HoverTitle } from "@/components/v3/advanced-ai-blueprint/hover-title";
 import { ClarifyDialog } from "./clarify-dialog";
 import { VIDEO_ACCEPT, fmtClock } from "./video-ingest";
 import { confidenceTone, money, useVideoEstimator } from "./use-video-estimator";
@@ -132,111 +134,116 @@ export function VideoEstimatorContent({
   // parses as 0 and the row's total flickers to $0 mid-keystroke.
   const [field, setField] = useState<{ key: string; text: string } | null>(null);
   const cellValue = (key: string, n: number) => (field?.key === key ? field.text : String(n));
-  const commitNumber = (id: string, k: "qty" | "price", raw: string) => {
+  type NumKey = "qty" | "materialPrice" | "laborPrice";
+  const commitNumber = (id: string, k: NumKey, raw: string) => {
     const v = Number(raw);
     ve.setLine(id, { [k]: Number.isFinite(v) && v >= 0 ? v : 0 });
     setField(null);
   };
-
-  /** One ledger section: its own rows, its own Add, and its OWN change box —
-   *  the split the Smart Proposal's estimate panel has. An instruction typed
-   *  here is fenced to this section server-side (see the hook), and the review
-   *  gate opens inside the section that asked rather than at the page foot, so
-   *  a diff always belongs to something. */
-  const ledger = (
-    heading: string,
-    group: LineGroup,
-    rows: typeof ve.matLines,
-    sectionTotal: number,
-  ) => {
+  /** A numeric cell: plain text with a decimal keyboard, never a native number
+   *  spinner — `type="number"` draws OS arrows on a drawn sheet and eats a
+   *  trailing "." while typing. */
+  const numberCell = (l: (typeof ve.lines)[number], k: NumKey, extra: string, label: string) => {
+    const key = `${l.id}:${k}`;
     return (
-      <section className={cx("vr-sec")} key={group}>
-        <div className={cx("vr-sec-bar")}>
-          <div className={cx("vr-sec-h")}>{heading}</div>
-          <b className={cx("vr-sec-total")}>{money(sectionTotal)}</b>
-        </div>
+      <input
+        className={cx("vr-in", extra)}
+        type="text"
+        inputMode="decimal"
+        aria-label={`${l.name || "Line item"} — ${label}`}
+        value={cellValue(key, l[k])}
+        onFocus={() => setField({ key, text: String(l[k]) })}
+        onChange={(e) => setField({ key, text: e.target.value })}
+        onBlur={(e) => commitNumber(l.id, k, e.target.value)}
+      />
+    );
+  };
 
-        <div className={cx("vr-thead")}>
-          <span>Item</span>
-          <span>Qty</span>
-          <span>Price</span>
-          <span>Total</span>
-          <span />
-        </div>
+  /** THE LEDGER — one section, one fused line per task (owner, 2026-09-02).
+   *  Material and labor are two $/unit COLUMNS of every row, not two ledgers:
+   *  the client reads "Install 6 ft cedar fence · 120 lf" once, with what the
+   *  materials and the labor for those 120 lf each cost beside it. */
+  const ledger = (
+    <section className={cx("vr-sec")}>
+      <div className={cx("vr-sec-bar")}>
+        <div className={cx("vr-sec-h")}>Line items</div>
+        <b className={cx("vr-sec-total")}>{money(ve.totals.subtotal)}</b>
+      </div>
 
-        {rows.length === 0 ? (
-          <div className={cx("vr-none")}>No {heading.toLowerCase()} lines on this estimate.</div>
-        ) : null}
+      {/* One header cell per grid track, so each label sits over the field it
+          names — Qty over the qty input, Unit over the select. */}
+      <div className={cx("vr-thead")}>
+        <span>Item</span>
+        <span>Qty</span>
+        <span className={cx("vr-th--l")}>Unit</span>
+        <span>Material</span>
+        <span>Labor</span>
+        <span>Total</span>
+        <span />
+      </div>
 
-        {rows.map((l) => (
-          <div
-            className={cx(
-              "vr-row",
-              l.badge === "Added" && "is-new",
-              l.badge === "Updated" && "is-upd",
-            )}
-            key={l.id}
-          >
+      {ve.lines.length === 0 ? (
+        <div className={cx("vr-none")}>No line items on this estimate.</div>
+      ) : null}
+
+      {ve.lines.map((l) => (
+        <div
+          className={cx(
+            "vr-row",
+            l.badge === "Added" && "is-new",
+            l.badge === "Updated" && "is-upd",
+          )}
+          key={l.id}
+        >
+          {/* Product names run past the column; the plate shows the whole
+              string at the cursor when — and only when — the field clips it. */}
+          <HoverTitle text={l.name}>
             <input
               className={cx("vr-name")}
               value={l.name}
               placeholder="Line item"
+              aria-label="Line item"
               onChange={(e) => ve.setLine(l.id, { name: e.target.value })}
             />
-            <span className={cx("vr-qty")}>
-              <input
-                className={cx("vr-in", "vr-in--qty")}
-                inputMode="decimal"
-                value={cellValue(`${l.id}:qty`, l.qty)}
-                onFocus={() => setField({ key: `${l.id}:qty`, text: String(l.qty) })}
-                onChange={(e) => setField({ key: `${l.id}:qty`, text: e.target.value })}
-                onBlur={(e) => commitNumber(l.id, "qty", e.target.value)}
-              />
-              <input
-                className={cx("vr-unit")}
-                value={l.unit}
-                list={`vr-units-${group}`}
-                onChange={(e) => ve.setLine(l.id, { unit: e.target.value })}
-              />
-            </span>
-            <input
-              className={cx("vr-in")}
-              inputMode="decimal"
-              value={cellValue(`${l.id}:price`, l.price)}
-              onFocus={() => setField({ key: `${l.id}:price`, text: String(l.price) })}
-              onChange={(e) => setField({ key: `${l.id}:price`, text: e.target.value })}
-              onBlur={(e) => commitNumber(l.id, "price", e.target.value)}
-            />
-            <span className={cx("vr-row-t")}>{money(lineTotal(l))}</span>
-            <button
-              className={cx("vr-row-x")}
-              type="button"
-              aria-label={`Remove ${l.name || "line"}`}
-              onClick={() => ve.removeLine(l.id)}
-            >
-              <svg className={cx("ic")}>
-                <use href="#i-x" />
-              </svg>
-            </button>
-          </div>
-        ))}
+          </HoverTitle>
+          {numberCell(l, "qty", "vr-in--qty", "quantity")}
+          {/* The manual builder's unit picker, drawn: the ten house units
+              (console-model ESTIMATE_UNITS), with the model's own unit kept
+              at the head of the list when it is not one of them, so
+              switching the control never silently rewrites a line. */}
+          <BlueprintSelect
+            value={l.unit}
+            onChange={(unit) => ve.setLine(l.id, { unit })}
+            options={unitSelectOptions(l.unit)}
+            placeholder="unit"
+            ariaLabel={`${l.name || "Line item"} — unit`}
+            triggerClass="vr-unit"
+            styles={s}
+          />
+          {numberCell(l, "materialPrice", "vr-in--mat", "material $ per unit")}
+          {numberCell(l, "laborPrice", "vr-in--lab", "labor $ per unit")}
+          <span className={cx("vr-row-t")}>{money(lineTotal(l))}</span>
+          <button
+            className={cx("vr-row-x")}
+            type="button"
+            aria-label={`Remove ${l.name || "line"}`}
+            onClick={() => ve.removeLine(l.id)}
+          >
+            <svg className={cx("ic")}>
+              <use href="#i-x" />
+            </svg>
+          </button>
+        </div>
+      ))}
 
-        <datalist id={`vr-units-${group}`}>
-          {unitOptionsFor(group).map((u) => (
-            <option value={u} key={u} />
-          ))}
-        </datalist>
-
-        <button className={cx("vr-add")} type="button" onClick={() => ve.addLine(group)}>
-          <svg className={cx("ic")}>
-            <use href="#i-plus" />
-          </svg>
-          Add {heading.toLowerCase()} line
-        </button>
-
-      </section>
-    );
-  };
+      <button className={cx("vr-add")} type="button" onClick={ve.addLine}>
+        <svg className={cx("ic")}>
+          <use href="#i-plus" />
+        </svg>
+        Add line
+      </button>
+    </section>
+  );
 
   return (
     <>
@@ -536,18 +543,29 @@ export function VideoEstimatorContent({
         {/* ── TOTALS ── */}
         <section className={cx("card", "card--flush", "vr-card")}>
           <div className={cx("vr-body")}>
-            {ledger("Materials", "materials", ve.matLines, ve.totals.materials)}
-            {ledger("Labor", "labor", ve.labLines, ve.totals.labor)}
+            {ledger}
 
-            {ve.totals.discountCash > 0 ? (
+            {/* The money chain, from console-model computeTotals: the two
+                column sums, then the discount, then the figure. */}
+            <div className={cx("vr-sums")}>
               <div className={cx("vr-line")}>
-                <b>Discount</b>
-                <span>&minus;{money(ve.totals.discountCash)}</span>
+                <b>Materials</b>
+                <span>{money(ve.totals.materials)}</span>
               </div>
-            ) : null}
-            <div className={cx("vr-total")}>
-              <span>Total</span>
-              <b>{money(ve.totals.total)}</b>
+              <div className={cx("vr-line")}>
+                <b>Labor</b>
+                <span>{money(ve.totals.labor)}</span>
+              </div>
+              {ve.totals.discountCash > 0 ? (
+                <div className={cx("vr-line")}>
+                  <b>Discount</b>
+                  <span>&minus;{money(ve.totals.discountCash)}</span>
+                </div>
+              ) : null}
+              <div className={cx("vr-total")}>
+                <span>Total</span>
+                <b>{money(ve.totals.total)}</b>
+              </div>
             </div>
           </div>
         </section>
@@ -598,14 +616,14 @@ export function VideoEstimatorContent({
                     <span className={cx("vr-req-price")}>
                       <b>{money(r.total)}</b>
                       <span>
-                        {/* The retail price is what the store charges and never
-                            follows a typed price — the override rides beside it
-                            in parentheses instead of replacing it. */}
-                        {r.retailUnitPrice != null
-                          ? `${money(r.retailUnitPrice)} / ${r.unit}`
-                          : `${money(r.unitPrice)} / ${r.unit}`}
-                        {r.overridden ? (
-                          <i className={cx("vr-req-ov")}> (billed {money(r.unitPrice)})</i>
+                        {/* Billed per measured unit; the listing is the package
+                            price at the store. Two figures, two meanings. */}
+                        {`${money(r.unitPrice)} / ${r.unit}`}
+                        {r.retailUnitPrice != null ? (
+                          <i className={cx("vr-req-ov")}>
+                            {" "}· listing {money(r.retailUnitPrice)}
+                            {r.dimensions ? ` (${r.dimensions})` : ""}
+                          </i>
                         ) : null}
                       </span>
                     </span>

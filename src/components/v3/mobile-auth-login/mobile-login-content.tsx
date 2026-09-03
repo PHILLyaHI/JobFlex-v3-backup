@@ -106,6 +106,26 @@ function GoogleIcon() {
   );
 }
 
+
+/** NextAuth's ?error= codes, in the product's words. */
+function authErrorMessage(code: string | null): string | null {
+  if (!code) return null;
+  switch (code) {
+    case "AccessDenied":
+      return "Google sign-in was refused for that address. Sign in with your email and password, or use the Google account that matches it.";
+    case "OAuthAccountNotLinked":
+      return "That email already has a password account. Sign in with the password.";
+    case "OAuthCallbackError":
+    case "OAuthSignin":
+    case "OAuthCallback":
+      return "Google sign-in didn't complete. Try again.";
+    case "Configuration":
+      return "Sign-in isn't configured on this server yet.";
+    default:
+      return "Sign in didn't work. Try again.";
+  }
+}
+
 export function MobileLoginContent() {
   const router = useRouter();
   const search = useSearchParams();
@@ -120,7 +140,9 @@ export function MobileLoginContent() {
   const [email, setEmail] = React.useState(isDev ? "owner@acme.test" : "");
   const [password, setPassword] = React.useState(isDev ? "password123" : "");
 
-  const [inlineError, setInlineError] = React.useState<string | null>(null);
+  const [inlineError, setInlineError] = React.useState<string | null>(() =>
+    authErrorMessage(search.get("error")),
+  );
   const [showPw, setShowPw] = React.useState(false);
   const [signedIn, setSignedIn] = React.useState(false);
   const [googleBusy, setGoogleBusy] = React.useState(false);
@@ -302,13 +324,6 @@ export function MobileLoginContent() {
           </Link>
         </p>
 
-        <figure className="proof">
-          <figcaption className="kpi-lbl">Today</figcaption>
-          <blockquote className="proof-q">
-            {"“Rohan Patel accepted the roof proposal — deposit collected at 10:42 am.”"}
-          </blockquote>
-          <p className="proof-n">The editorial dashboard, in a real contractor&apos;s hands.</p>
-        </figure>
       </main>
     </div>
   );

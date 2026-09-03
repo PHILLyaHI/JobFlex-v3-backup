@@ -2,6 +2,11 @@
 import { db } from "@/lib/db";
 import { requireManager, requireOrg } from "@/lib/orgContext";
 import { SEEN_SURFACES, countNewForSurface, type SeenKey } from "@/lib/badgeCounts";
+import { allowsInApp, loadPrefs, prefKeyForEvent } from "@/lib/notificationPrefs";
+import { ActivityKind } from "@/lib/prismaEnums";
+import { isEmailEnabled, sendEmail } from "@/lib/sdk/resend";
+import { renderEmail } from "@/lib/email/renderEmail";
+import { buildTestEmail } from "@/lib/email/build/platform";
 
 /**
  * Stamp a nav surface as seen for the current user — clears its badge until
@@ -137,27 +142,72 @@ export async function notificationFeed(): Promise<NotificationItem[]> {
  * ActivityEvent — there is no dedicated Notification model.
  */
 export async function recentNotifications(): Promise<NotificationItem[]> {
-  const { organizationId } = await requireManager();
-  const events = await db.activityEvent.findMany({
-    where: { organizationId },
-    orderBy: { createdAt: "desc" },
-    take: 12,
-    select: {
-      id: true,
-      kind: true,
-      summary: true,
-      createdAt: true,
-      proposalId: true,
-      clientId: true,
-      leadId: true,
+  const { organizationId, user } = await requireManager();
+  const [events, prefs] = await Promise.all([
+    db.activityEvent.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+      select: {
+        id: true,
+        kind: true,
+        summary: true,
+        meta: true,
+        actorId: true,
+        createdAt: true,
+        proposalId: true,
+        clientId: true,
+        leadId: true,
+      },
+    }),
+    loadPrefs(user.id),
+  ]);
+
+  // The caller's own matrix decides what the bell shows. A TEST row is only
+  // ever for the person who pressed the button.
+  return events
+    .filter((e) =>
+      e.kind === ActivityKind.TEST ? e.actorId === user.id : allowsInApp(prefs, prefKeyForEvent(e)),
+    )
+    .slice(0, 12)
+    .map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      summary: e.summary,
+      createdAt: e.createdAt,
+      href: hrefFor(e),
+    }));
+}
+
+export type TestNotificationResult = {
+  inApp: boolean;
+  email: "sent" | "off" | "disabled" | "no-address";
+};
+
+/**
+ * Settings → "Send test notification". Writes a TEST activity that only this
+ * user's bell shows, and mails them if any Email cell is on — so the button
+ * proves the settings as saved.
+ */
+export async function sendTestNotification(): Promise<TestNotificationResult> {
+  const { organizationId, user } = await requireOrg();
+  const [org, prefs] = await Promise.all([
+    db.organization.findUnique({ where: { id: organizationId }, select: { name: true, logoUrl: true } }),
+    loadPrefs(user.id),
+  ]);
+  await db.activityEvent.create({
+    data: {
+      organizationId,
+      actorId: user.id,
+      kind: ActivityKind.TEST,
+      summary: "Test notification — your settings are working.",
     },
   });
-
-  return events.map((e) => ({
-    id: e.id,
-    kind: e.kind,
-    summary: e.summary,
-    createdAt: e.createdAt,
-    href: hrefFor(e),
-  }));
+  const anyEmailOn = Object.values(prefs.matrix).some((cells) => cells[1]);
+  if (!anyEmailOn) return { inApp: true, email: "off" };
+  if (!isEmailEnabled()) return { inApp: true, email: "disabled" };
+  if (!user.email) return { inApp: true, email: "no-address" };
+  const { subject, html } = renderEmail(buildTestEmail({ org: { name: org?.name ?? "JobFlex", logoUrl: org?.logoUrl ?? null } }));
+  await sendEmail({ to: user.email, subject, html }).catch(() => null);
+  return { inApp: true, email: "sent" };
 }

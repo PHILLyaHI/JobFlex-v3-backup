@@ -20,6 +20,8 @@ import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { readPendingSignup } from "@/actions/signupCheckout";
 import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
+import { validateAttribution } from "@/lib/attribution";
+import { ensureReferralCoupon, referralCouponMonths } from "@/lib/referralDiscount";
 
 /** The custom plan trials for the same fortnight the catalog plans do. */
 const CUSTOM_TRIAL_DAYS = 14;
@@ -124,6 +126,34 @@ export async function POST(req: Request) {
     }
   }
 
+  /* THE CODE TYPED ON THE PLAN STEP IS APPLIED HERE — for real, this time.
+     Until 2026-09-02 this only opened Stripe's own promo field, so "code
+     applied" on our page met a full price on Stripe's (owner's report). The
+     validated code rides with the pending intent: an influencer promo becomes
+     its Stripe promotion code (live account only — the ids are live ids); a
+     member referral becomes the referral coupon (lib/referralDiscount).
+     `discounts` and `allow_promotion_codes` are mutually exclusive at Stripe,
+     so a session with a discount attached has no promo field. */
+  let discounts: Stripe.Checkout.SessionCreateParams.Discount[] | null = null;
+  const attr = pending.attribution;
+  if (attr?.kind === "promo" && mode === "live") {
+    const v = await validateAttribution("promo", attr.code);
+    if (v?.kind === "promo" && v.stripePromotionCodeId.startsWith("promo_")) {
+      discounts = [{ promotion_code: v.stripePromotionCodeId }];
+    }
+  } else if (attr?.kind === "ref") {
+    const v = await validateAttribution("ref", attr.code);
+    if (v) {
+      try {
+        discounts = [
+          { coupon: await ensureReferralCoupon(stripe, mode, referralCouponMonths(trialDays)) },
+        ];
+      } catch (err) {
+        console.warn("[checkout/signup] referral coupon unavailable:", err);
+      }
+    }
+  }
+
   const origin = new URL(req.url).origin;
   try {
     const session = await stripe.checkout.sessions.create({
@@ -132,9 +162,7 @@ export async function POST(req: Request) {
       client_reference_id: String(token),
       line_items: [lineItem],
       subscription_data: trialDays > 0 ? { trial_period_days: trialDays } : undefined,
-      // A code typed on the plan step is applied here; Stripe's own field stays
-      // open for anything else the customer holds.
-      allow_promotion_codes: true,
+      ...(discounts ? { discounts } : { allow_promotion_codes: true }),
       metadata: {
         signupToken: String(token),
         planSlug: planLabel,

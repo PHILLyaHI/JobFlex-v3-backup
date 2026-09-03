@@ -47,6 +47,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
+import { useRouter } from "next/navigation";
+import { toast } from "@/components/ui/Toast";
+import { changePlan } from "@/actions/billing";
+import { ConfirmPlanChange } from "@/components/billing/ConfirmPlanChange";
+import { longDate } from "@/lib/format";
+import { customPlanAddable, customPlanIncludes, customPriceCents } from "@/lib/customPlan";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initSubscriptionContent } from "./subscription-behavior";
 import { SubscriptionSprite } from "./subscription-sprite";
@@ -104,23 +110,86 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
      column is CURRENT when the org's Subscription.plan says so. */
   const plansStrip = useMemo(() => {
     const paid = props.plans.filter((p) => !p.isFree);
+    /* Up or down is decided by PRICE against the current plan; a custom
+       plan (or one that left the catalog) sits below every catalog tier. */
+    const curCents = paid.find((p) => p.slug === props.currentSlug)?.priceCents ?? -1;
     return [
       ...paid.map((p) => ({
         slug: p.slug,
         name: p.name,
         mo: Math.round(p.priceCents / 100) as number | null,
         cur: p.slug === props.currentSlug,
+        dir: (p.priceCents > curCents ? "up" : "down") as "up" | "down",
         features: p.features,
       })),
       {
         slug: "custom",
-        name: "Build your plan",
-        mo: null as number | null,
+        name: props.currentSlug === "custom" ? "Custom" : "Build your plan",
+        // Priced when it is THIS org's plan: base plus the pages it owns.
+        mo:
+          props.currentSlug === "custom"
+            ? (Math.round(customPriceCents(props.customPages ?? []) / 100) as number | null)
+            : (null as number | null),
         cur: props.currentSlug === "custom",
+        dir: "down" as "up" | "down",
         features: [] as string[],
       },
     ];
-  }, [props.plans, props.currentSlug]);
+  }, [props.plans, props.currentSlug, props.customPages]);
+
+  /* THE CUSTOM COLUMN TICKS (owner, 2026-09-02). On the custom plan the column
+     shows what the org actually has — base rows plus the pages it bought —
+     instead of a dashed "pick your own" placeholder on every row. Off the
+     plan, base rows tick and page rows show the pick mark. */
+  const customHas = useMemo(() => customPlanIncludes(props.customPages ?? []), [props.customPages]);
+  const customCould = useMemo(() => customPlanAddable(), []);
+  const onCustomPlan = props.currentSlug === "custom";
+
+  /* THE PLAN BUTTONS DO THE THING (owner, 2026-09-02). A shop with a Stripe
+     subscription is switched in place — up charges the difference, down is
+     free — and one without is sent through checkout. */
+  const router = useRouter();
+  const [switching, setSwitching] = useState<string | null>(null);
+  // Every change asks first (owner, 2026-09-02). An UPGRADE is then paid on
+  // Stripe's page and replaces the current subscription on the return; a
+  // DOWNGRADE is switched in place, free.
+  const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
+  const onPickPlan = useCallback(
+    async (slug: string, dir: "up" | "down") => {
+      if (switching) return;
+      setSwitching(slug);
+      try {
+        if (dir === "down") {
+          const res = await changePlan(slug, "MONTH");
+          if (!res.ok) {
+            toast.error("Couldn't change the plan", res.error);
+            return;
+          }
+          if (res.mode === "switched") {
+            toast.success(`Moved to ${res.planName}`, "Nothing was charged. The lower price starts now.");
+            router.refresh();
+            return;
+          }
+        }
+        const r = await fetch("/api/checkout/subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planSlug: slug, interval: "MONTH" }),
+        });
+        const body = (await r.json().catch(() => ({}))) as { url?: string; error?: string };
+        if (body.url) {
+          window.location.assign(body.url);
+          return;
+        }
+        toast.error("Couldn't open checkout", body.error ?? "Try again.");
+      } catch {
+        toast.error("Couldn't change the plan", "Try again.");
+      } finally {
+        setSwitching(null);
+      }
+    },
+    [switching, router],
+  );
 
   /* The comparison rows, "Everything in <plan>" expanded — the same rule the
      signup step and /dashboard/upgrade apply (lib/planCatalog). */
@@ -130,8 +199,9 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
   );
 
   const statusLabel = props.status
-    ? props.status.charAt(0).toUpperCase() + props.status.slice(1)
+    ? props.status.charAt(0).toUpperCase() + props.status.slice(1).toLowerCase()
     : "—";
+  const isTrial = props.status === "TRIALING";
 
   const copyCode = useCallback(() => {
     const code = props.referral.code;
@@ -198,26 +268,25 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
                 </>
               )}
             </span>
-            <span className={cx("sub-hero-sep")}></span>
-            <span className={cx("sub-hero-note")}>Billed monthly — cancel any time</span>
           </div>
         </div>
         <div className={cx("sub-hero-r")}>
           <div className={cx("sub-stamp-zone")}>
             <span className={cx("sub-stamp")}>{statusLabel}</span>
           </div>
+          {/* The stamp already says the status; the facts are the two dates,
+              as dates — "Sep 16, 2026", not an ISO timestamp (owner). A trial
+              shows its end; an active plan shows its next bill. */}
           <div className={cx("sub-hero-facts")}>
+            {isTrial && props.trialEndsAt ? (
+              <div>
+                <span>Trial ends</span>
+                <b>{longDate(props.trialEndsAt)}</b>
+              </div>
+            ) : null}
             <div>
-              <span>Status</span>
-              <b>{statusLabel}</b>
-            </div>
-            <div>
-              <span>Trial ends</span>
-              <b>{props.trialEndsAt ?? "—"}</b>
-            </div>
-            <div>
-              <span>Next bill</span>
-              <b>{props.nextBill ?? "—"}</b>
+              <span>{isTrial ? "First bill" : "Next bill"}</span>
+              <b>{longDate(props.nextBill ?? props.trialEndsAt)}</b>
             </div>
           </div>
         </div>
@@ -233,19 +302,70 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
               <div className={cx("spec-foot")}>
                 {p.cur ? (
                   <span className={cx("spec-cur")}>Current plan</span>
-                ) : (
-                  <Link
-                    className={cx("btn", p.slug === "custom" ? "btn-ghost" : "btn-primary")}
-                    href={UPGRADE}
-                  >
-                    {p.slug === "custom" ? "Get started" : "Upgrade"}
+                ) : p.slug === "custom" ? (
+                  <Link className={cx("btn", "btn-ghost")} href={`${UPGRADE}?custom=1` as Route}>
+                    Build it
                   </Link>
+                ) : (
+                  <button
+                    type="button"
+                    className={cx("btn", p.dir === "up" ? "btn-primary" : "btn-ghost")}
+                    disabled={switching !== null}
+                    onClick={() => setConfirmSlug(p.slug)}
+                  >
+                    {switching === p.slug ? "Switching…" : p.dir === "up" ? "Upgrade" : "Downgrade"}
+                  </button>
                 )}
               </div>
             </div>
           ))}
         </div>
       </section>
+
+      {(() => {
+        const target = plansStrip.find((p) => p.slug === confirmSlug) ?? null;
+        const down = target?.dir === "down";
+        return (
+          <ConfirmPlanChange
+            open={confirmSlug !== null}
+            kicker={down ? "Downgrade" : "Upgrade"}
+            title={
+              target
+                ? down
+                  ? `Downgrade to ${target.name}?`
+                  : `Upgrade to ${target.name}?`
+                : ""
+            }
+            body={
+              target ? (
+                down ? (
+                  <>
+                    You&rsquo;ll move to <b>{target.name}</b> right away. Nothing is charged
+                    today; pages and limits that plan does not include close as soon as you
+                    confirm.
+                  </>
+                ) : (
+                  <>
+                    You&rsquo;ll be taken to Stripe to pay{" "}
+                    <b>{target.mo !== null ? `$${target.mo}/mo` : "the plan price"}</b> for{" "}
+                    <b>{target.name}</b>. Your current plan is replaced the moment the payment
+                    goes through.
+                  </>
+                )
+              ) : null
+            }
+            confirmLabel={down ? "Downgrade" : "Continue to payment"}
+            busy={switching !== null}
+            onConfirm={() => {
+              const slug = confirmSlug;
+              if (!slug || !target) return;
+              if (down) setConfirmSlug(null);
+              void onPickPlan(slug, down ? "down" : "up");
+            }}
+            onCancel={() => setConfirmSlug(null)}
+          />
+        );
+      })()}
 
       {/* USAGE + BILLING */}
       <div className={cx("row-ub", RV)}>
@@ -257,8 +377,8 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
             </a>
           </div>
           <div className={cx("us-list")} id="usList">
-            {props.usage.length === 0 ? (
-              <div className={cx("us-note")}>No metered limits on this plan.</div>
+            {props.usage.length === 0 && (props.usageUnlimited ?? []).length === 0 ? (
+              <div className={cx("us-note")}>Nothing used yet this cycle.</div>
             ) : null}
             {props.usage.map((u) => {
               const pct = u.limit > 0 ? Math.min(100, (u.used / u.limit) * 100) : 0;
@@ -277,9 +397,19 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
                 </div>
               );
             })}
+            {(props.usageUnlimited ?? []).map((u) => (
+              <div key={u.label} className={cx("us-row")}>
+                <div className={cx("us-top")}>
+                  <span className={cx("us-lbl")}>{u.label}</span>
+                  <span className={cx("us-num")}>{u.used + " · no cap"}</span>
+                </div>
+              </div>
+            ))}
           </div>
           <div className={cx("us-note")}>
-            Limits reset each billing cycle · hitting one never blocks existing work
+            {props.usage.length > 0
+              ? "Limits reset each billing cycle · hitting one never blocks existing work"
+              : "This plan has no caps · counts reset each billing cycle"}
           </div>
         </div>
         <div className={cx("card")} id="billCard">
@@ -296,7 +426,34 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
             <span className={cx("ta-r")}>Amount</span>
           </div>
           <div className={cx("inv-list")} id="invList">
-            {!props.invoices.available || props.invoices.invoices.length === 0 ? (
+            {/* THE NEXT BILL, as Stripe will charge it — every coupon and the
+                referral credit already netted out (owner, 2026-09-02). */}
+            {props.invoices.upcoming ? (
+              <div className={cx("inv-row", "inv-row--next")}>
+                <span className={cx("inv-no")}>
+                  Next bill
+                  {props.invoices.upcoming.notes.length ? (
+                    <span className={cx("inv-notes")}>{props.invoices.upcoming.notes.join(" · ")}</span>
+                  ) : null}
+                </span>
+                <span className={cx("inv-date")}>
+                  {props.invoices.upcoming.dueAt ? fmtDate(props.invoices.upcoming.dueAt) : "—"}
+                </span>
+                <span>
+                  <span className={cx("st-badge", "warn")}>upcoming</span>
+                </span>
+                <span className={cx("inv-amt")}>
+                  {props.invoices.upcoming.discountCents + props.invoices.upcoming.creditCents > 0 ? (
+                    <s className={cx("inv-was")}>
+                      {"$" + (props.invoices.upcoming.subtotalCents / 100).toFixed(2)}
+                    </s>
+                  ) : null}
+                  {"$" + (props.invoices.upcoming.amountDueCents / 100).toFixed(2)}
+                </span>
+              </div>
+            ) : null}
+            {!props.invoices.available ||
+            (props.invoices.invoices.length === 0 && !props.invoices.upcoming) ? (
               <div className={cx("us-note")}>No invoices yet.</div>
             ) : null}
             {props.invoices.invoices.map((v) => (
@@ -392,7 +549,13 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
                   {plansStrip.map((p) => (
                     <td key={p.slug} className={p.cur ? cx("col-cur") : ""}>
                       {p.slug === "custom" ? (
-                        <span className={cx("mx-opt")}></span>
+                        customHas.has(f.toLowerCase()) ? (
+                          <span className={cx("mx-yes")}>✓</span>
+                        ) : !onCustomPlan && customCould.has(f.toLowerCase()) ? (
+                          <span className={cx("mx-opt")}></span>
+                        ) : (
+                          <span className={cx("mx-no")}>—</span>
+                        )
                       ) : included.get(p.slug)?.has(f.toLowerCase()) ? (
                         <span className={cx("mx-yes")}>✓</span>
                       ) : (
@@ -406,7 +569,10 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
           </table>
         </div>
         <div className={cx("mx-foot")}>
-          <span className={cx("mx-opt")}></span>Build your plan — pick exactly the features you need
+          <span className={cx("mx-opt")}></span>
+          {onCustomPlan
+            ? "Your custom plan — ticks are the pages you own; add more on Plans & upgrade"
+            : "Build your plan — base rows included, marked rows are $10/mo each"}
         </div>
       </section>
 

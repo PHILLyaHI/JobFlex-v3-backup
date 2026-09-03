@@ -1153,3 +1153,66 @@
   .bp :global(.topbar-right .btn-primary) { width: 40px; height: 40px; padding: 0; justify-content: center; }
   .bp :global(.topbar-right) { gap: 8px; }
 }
+/* ── QUOTA PILL (2026-09-02) — what is left of a metered page. Same plate as
+   the unread badge, outline only so the two read as different facts; red
+   once nothing is left; the note under it says what the number counts. */
+.bp :global(.sb-quota) {
+  position: relative;
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--blueprint);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--blueprint);
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 700;
+  line-height: 1;
+  cursor: default;
+  outline: none;
+}
+.bp :global(.sb-badge + .sb-quota) { margin-left: 6px; }
+.bp :global(.sb-quota.is-out) { border-color: var(--danger); color: var(--danger); }
+.bp :global(.sb-link.active .sb-quota) { border-color: var(--ink); color: var(--ink); }
+.bp :global(.sb-link.active .sb-quota.is-out) { border-color: var(--danger); color: var(--danger); }
+.bp :global(.sb-quota-tip) {
+  display: none;
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 60;
+  width: 208px; padding: 8px 10px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: #fff; color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  line-height: 1.4; letter-spacing: 0; text-transform: none; white-space: normal; text-align: left;
+}
+.bp :global(.sb-quota.is-out .sb-quota-tip) { border-color: var(--danger); box-shadow: 3px 3px 0 var(--danger); }
+.bp :global(.sb-quota:hover .sb-quota-tip), .bp :global(.sb-quota:focus-visible .sb-quota-tip) { display: block; }
+
+/* The hovered pill must paint over the rows below it: each .sb-link is its own
+   stacking context, so the row is lifted while its note is open. */
+.bp :global(.sb-link:has(.sb-quota:hover)), .bp :global(.sb-link:has(.sb-quota:focus-visible)) { position: relative; z-index: 61; }
+
+/* JetBrains Mono digits sit high in their em box; nudge the numeral so it
+   reads centred in the 18px plate (owner, 2026-09-02). */
+.bp :global(.sb-quota-n) { position: relative; top: 0.5px; letter-spacing: 0; }
+.bp :global(.sb-quota) { padding: 0 5px 0 5.5px; }
+
+/* ── PILL GEOMETRY (2026-09-02): badge and quota share one plate. 18×18 for
+   one digit; two digits widen to 24 with the same side air, so "18" and "20"
+   are a clean short rectangle instead of a cramped square. Digits are
+   tabular so the box never jitters between counts. */
+.bp :global(.sb-badge), .bp :global(.sb-quota) {
+  box-sizing: border-box;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  font-variant-numeric: tabular-nums; letter-spacing: 0; line-height: 1;
+}
+.bp :global(.sb-quota) { padding: 0 4px; }
+.bp :global(.sb-quota-n) { top: 0.5px; }
+.bp :global(.sb-badge) { position: relative; top: 0; }
+
+/* Same box as the quota pill: the badge carries the same 1.5px border (in its
+   own fill colour) so one- and two-digit plates match to the pixel. */
+.bp :global(.sb-badge) { border: 1.5px solid var(--blueprint); }

@@ -24,7 +24,7 @@ import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { BlueprintShell } from "@/components/v3/blueprint-shell/blueprint-shell";
 import { BlueprintHandheldFrame } from "./blueprint-handheld-frame";
-import { NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
+import { type NavLimit, NavRoleProvider, type NavIdentity } from "@/components/v3/blueprint-shell/nav-role";
 import { CustomGateSwap } from "@/components/v3/upgrade-gate/custom-gate-swap";
 import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-boundary";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
@@ -212,6 +212,9 @@ const PAGE_OWNED_HANDHELD = /^\/dashboard\/(projects|jobs)\/[^/]+$/;
  *    which needs the `?client=` row the page's own loader read. */
 const PAGE_OWNED_STATIC = new Set([
   "/dashboard/subscription",
+  // Plans & upgrade: its page-level switch (dashboard/upgrade/upgrade-responsive.tsx)
+  // carries the server-read catalog + plan into both editions (2026-09-02).
+  "/dashboard/upgrade",
   "/dashboard/subscription-blueprint",
   "/dashboard/client-detail",
   // Both editions need the org's next ticket number and whether the estimator
@@ -294,6 +297,7 @@ export function ResponsiveDashboardShell({
   identity,
   badges,
   locked,
+  limits,
 }: {
   children: React.ReactNode;
   /** Signed-in identity, read in the server layout and handed to the desktop
@@ -311,6 +315,8 @@ export function ResponsiveDashboardShell({
   /** Custom-plan blocked hrefs (lib/customPageAccess), same provider, same
    *  reason: every nav filter at every depth reads one list. */
   locked?: string[];
+  /** Remaining plan quota by nav href (lib/navLimits) for the sidebar pills. */
+  limits?: Record<string, NavLimit>;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const pathname = usePathname();
@@ -325,7 +331,7 @@ export function ResponsiveDashboardShell({
   if (isHandheld && Handheld) {
     const seenSurface = HANDHELD_SEEN[pathname ?? ""];
     return (
-      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
         {/* Keyed: this shell persists across navigation, and MarkNavSeen only
             stamps once per mount — a new key remounts it for the new surface. */}
         {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
@@ -367,21 +373,21 @@ export function ResponsiveDashboardShell({
   // MobileNav), so they need the provider just as much as the mapped ones.
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
     return (
-      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
         <CustomGateSwap>{children}</CustomGateSwap>
       </NavRoleProvider>
     );
   }
   if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
     return (
-      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
         <CustomGateSwap>{children}</CustomGateSwap>
       </NavRoleProvider>
     );
   }
   if (isHandheld && BLUEPRINT_HANDHELD.has(pathname ?? "")) {
     return (
-      <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+      <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
         <BlueprintHandheldFrame>
           <CustomGateSwap>{children}</CustomGateSwap>
         </BlueprintHandheldFrame>
@@ -410,7 +416,7 @@ export function ResponsiveDashboardShell({
     </BlueprintShell>
   );
   return (
-    <NavRoleProvider identity={identity} badges={badges} locked={locked}>
+    <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits}>
       {switchable ? (
         <div data-desk-fallback="" style={{ display: "contents" }}>
           {desk}

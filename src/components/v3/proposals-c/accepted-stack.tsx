@@ -20,11 +20,17 @@ import { toast } from "@/components/ui/Toast";
 import { money, relative } from "@/lib/format";
 import { updateProposalStatus } from "@/actions/proposals";
 import { notifyPaymentReminder } from "@/actions/notify";
+import {
+  markInstallmentPaid,
+  recordRemainingPayment,
+  unmarkInstallmentPaid,
+} from "@/actions/installments";
+import { RecordPaymentDialog } from "@/components/proposal/RecordPaymentDialog";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePagedList } from "@/lib/usePagedList";
 import { PaymentSchedule } from "./payment-schedule";
 import { MaterialsSheet } from "@/components/proposal/MaterialsSheet";
-import type { ProposalCRow } from "./types";
+import type { InstallmentLine, ProposalCRow } from "./types";
 
 // Stack of accepted proposals. Each card is a self-contained "work in motion"
 // dossier: title + total + accepted-on, the payment schedule strip, then a
@@ -56,7 +62,13 @@ export function AcceptedStack({ rows }: AcceptedStackProps) {
 
 function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
   const router = useRouter();
-  const [paidLines, setPaidLines] = React.useState<Set<string>>(new Set());
+  // Record-payment sheet: one stage ("Mark paid") or the remaining balance
+  // (when Mark completed finds money still owed).
+  const [recording, setRecording] = React.useState<
+    | { kind: "stage"; line: InstallmentLine; amount: number }
+    | { kind: "remaining"; amount: number }
+    | null
+  >(null);
   const [busy, setBusy] = React.useState(false);
   const [busyUnaccept, setBusyUnaccept] = React.useState(false);
   const [materialsOpen, setMaterialsOpen] = React.useState(false);
@@ -64,17 +76,43 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
   // Count of purchasable material lines — matches what the module shows.
   const materialCount = row.materials.filter((m) => (m.materialCost ?? 0) > 0).length;
 
-  function togglePaid(lineId: string) {
-    setPaidLines((prev) => {
-      const next = new Set(prev);
-      if (next.has(lineId)) next.delete(lineId);
-      else next.add(lineId);
-      return next;
-    });
-    toast.success(
-      paidLines.has(lineId) ? "Marked unpaid" : "Marked paid",
-      "Tracked locally. Mark the proposal completed to lock in the record.",
-    );
+  function stageDollars(line: InstallmentLine) {
+    return line.isPercent ? Math.round(row.total * (line.amount / 100)) : line.amount;
+  }
+
+  function openMarkPaid(line: InstallmentLine) {
+    setRecording({ kind: "stage", line, amount: stageDollars(line) });
+  }
+
+  async function unmark(line: InstallmentLine) {
+    try {
+      const res = await unmarkInstallmentPaid(line.id);
+      if (!res.ok) {
+        toast.error("Can't undo here", res.message);
+        return;
+      }
+      toast.success("Undone", `"${line.label}" is open again.`);
+      router.refresh();
+    } catch (err: unknown) {
+      toast.error("Couldn't undo", err instanceof Error ? err.message : "Try again.");
+    }
+  }
+
+  async function submitRecording(input: { method: "BANK_TRANSFER" | "CASH" | "CHECK" | "OTHER"; amount: number; note?: string }) {
+    if (!recording) return;
+    if (recording.kind === "stage") {
+      await markInstallmentPaid({ installmentId: recording.line.id, ...input });
+      toast.success("Payment recorded", `"${recording.line.label}" marked paid.`);
+    } else {
+      const res = await recordRemainingPayment({ proposalId: row.id, ...input });
+      toast.success(
+        "Payment recorded",
+        res.outcome === "settled" && res.proposalPaid
+          ? `${row.title} is paid in full and moved to Completed.`
+          : "Applied to the open stages.",
+      );
+    }
+    router.refresh();
   }
 
   async function sendReminder(lineId: string) {
@@ -95,7 +133,17 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
   async function markCompleted() {
     setBusy(true);
     try {
-      await updateProposalStatus(row.id, "PAID");
+      const res = await updateProposalStatus(row.id, "PAID");
+      if (!res.ok) {
+        if (res.reason === "payment_outstanding") {
+          // Money is still owed — record how it was paid, then the proposal
+          // flips to PAID on its own.
+          setRecording({ kind: "remaining", amount: res.remainingMinor / 100 });
+        } else {
+          toast.error("Couldn't mark completed", "This proposal can't be marked paid right now.");
+        }
+        return;
+      }
       toast.success("Marked completed", `${row.title} moved to the Completed tab.`);
       router.refresh();
     } catch (err: unknown) {
@@ -109,7 +157,11 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
   async function unaccept() {
     setBusyUnaccept(true);
     try {
-      await updateProposalStatus(row.id, "DRAFT");
+      const res = await updateProposalStatus(row.id, "DRAFT");
+      if (!res.ok) {
+        toast.error("Can't un-accept", "A proposal with paid stages can't go back to draft.");
+        return;
+      }
       toast.success("Proposal un-accepted", `${row.title} is back in draft — you can edit and re-send it.`);
       router.refresh();
     } catch (err: unknown) {
@@ -173,11 +225,23 @@ function AcceptedCard({ row, index }: { row: ProposalCRow; index: number }) {
         <PaymentSchedule
           installments={row.installments}
           total={row.total}
-          paidLineIds={paidLines}
-          onTogglePaid={togglePaid}
+          onMarkPaid={openMarkPaid}
+          onUnmark={unmark}
           onSendReminder={sendReminder}
         />
       </div>
+      <RecordPaymentDialog
+        open={recording !== null}
+        title={recording?.kind === "remaining" ? "Record payment" : "Mark paid"}
+        stageLabel={
+          recording?.kind === "stage"
+            ? `${recording.line.label} · ${row.title}`
+            : `Remaining balance · ${row.title}`
+        }
+        defaultAmount={recording?.amount ?? 0}
+        onClose={() => setRecording(null)}
+        onSubmit={submitRecording}
+      />
 
       {/* Action bar — hairline-divided */}
       <div className="border-t border-[color:var(--ink-line)] px-6 py-3 flex items-center justify-between gap-3 flex-wrap bg-[color:var(--paper)]/40">

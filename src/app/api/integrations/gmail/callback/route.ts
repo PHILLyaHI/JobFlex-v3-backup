@@ -10,7 +10,7 @@ import { parseGmailSettings } from "@/lib/settings";
 export async function GET(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? req.nextUrl.origin;
   const back = (status: string) =>
-    NextResponse.redirect(new URL(`/dashboard/settings/gmail?gmail=${status}`, appUrl));
+    NextResponse.redirect(new URL(`/dashboard/settings?tab=integrations&sub=gmail&gmail=${status}`, appUrl));
 
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     const ctx = await requireManager();
     organizationId = ctx.organizationId;
   } catch {
-    return NextResponse.redirect(new URL("/auth/login?next=/dashboard/settings/gmail", appUrl));
+    return NextResponse.redirect(new URL("/auth/login?next=%2Fdashboard%2Fsettings%3Ftab%3Dintegrations%26sub%3Dgmail", appUrl));
   }
   // The signed state must match the acting org (defense against cross-org replay).
   if (parsed.organizationId !== organizationId) return back("mismatch");

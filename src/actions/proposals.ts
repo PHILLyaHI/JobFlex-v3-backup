@@ -1,6 +1,9 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { InstallmentStatus } from "@/lib/prismaEnums";
+import { diffUnpaid, resolveSchedule } from "@/lib/paymentSchedule";
+import { expireOpenCheckoutsForProposal } from "@/lib/payments/checkouts";
 import { randomUUID } from "node:crypto";
 // Proposal actions use requireProposalStaff: managers operate on any org
 // proposal; SALES / ESTIMATOR callers get `proposalScope` ({ ownerId }) which is
@@ -31,7 +34,10 @@ const lineItemSchema = z.object({
   dimensions: z.string().nullable().optional(),
 });
 
+// `id` round-trips so an edit UPDATES a stage instead of recreating it —
+// a PAID stage keeps its money, a PENDING one keeps its open checkout.
 const installmentSchema = z.object({
+  id: z.string().optional(),
   label: z.string(),
   amount: z.number().min(0),
   isPercent: z.boolean(),
@@ -101,6 +107,128 @@ function computeTotals(
   return { subtotal, discountTotal, taxTotal, total: taxable + taxTotal };
 }
 
+type StageRow = {
+  id: string;
+  label: string;
+  amount: number;
+  isPercent: boolean;
+  position: number;
+  status: string;
+  paidAmount: number | null;
+  checkoutOpenedAt: Date | null;
+};
+type StageInput = z.infer<typeof installmentSchema>;
+
+const PENDING_LOCK_MS = 60 * 60 * 1000;
+
+/** PAID / WAIVED stages, and PENDING ones with a checkout open less than an
+ *  hour, may not be removed or re-priced. Labels may still change. */
+function isLockedStage(s: StageRow, now = Date.now()): boolean {
+  if (s.status === InstallmentStatus.PAID || s.status === InstallmentStatus.WAIVED) return true;
+  return (
+    s.status === InstallmentStatus.PENDING &&
+    s.checkoutOpenedAt !== null &&
+    now - s.checkoutOpenedAt.getTime() < PENDING_LOCK_MS
+  );
+}
+
+function assertLockedStagesUntouched(existing: StageRow[], incoming: StageInput[]) {
+  for (const s of existing) {
+    if (!isLockedStage(s)) continue;
+    const word = s.status === InstallmentStatus.PENDING ? "being paid right now" : "already paid";
+    const next = incoming.find((i) => i.id === s.id);
+    if (!next) throw new Error(`"${s.label}" is ${word} and can't be removed`);
+    if (next.amount !== s.amount || next.isPercent !== s.isPercent) {
+      throw new Error(`"${s.label}" is ${word} and its amount can't change`);
+    }
+  }
+}
+
+/**
+ * Upsert the schedule by id. Stale PENDING claims (>1 h, the provider session
+ * is dead) are released first. If anything a client could still be charged
+ * for changed, scheduleVersion bumps and any open checkout whose amount no
+ * longer matches is expired so the client gets a fresh one.
+ */
+async function upsertInstallments(
+  proposalId: string,
+  prev: { total: number; currency: string; installments: StageRow[] },
+  next: { total: number; currency: string },
+  incoming: StageInput[],
+) {
+  const now = Date.now();
+  const stale = prev.installments.filter(
+    (s) => s.status === InstallmentStatus.PENDING && !isLockedStage(s, now),
+  );
+  if (stale.length) {
+    await db.installment.updateMany({
+      where: { id: { in: stale.map((s) => s.id) } },
+      data: {
+        status: InstallmentStatus.UNPAID,
+        checkoutProvider: null,
+        checkoutRef: null,
+        checkoutOrderId: null,
+        checkoutOpenedAt: null,
+      },
+    });
+  }
+  const before = resolveSchedule({
+    total: prev.total,
+    currency: prev.currency,
+    installments: prev.installments,
+  });
+
+  const byId = new Map(prev.installments.map((s) => [s.id, s]));
+  const keep = new Set<string>();
+  for (let idx = 0; idx < incoming.length; idx += 1) {
+    const inst = incoming[idx];
+    const row = inst.id ? byId.get(inst.id) : undefined;
+    if (row) {
+      keep.add(row.id);
+      const locked = isLockedStage(row, now);
+      await db.installment.update({
+        where: { id: row.id },
+        data: {
+          label: inst.label,
+          position: idx,
+          ...(locked ? {} : { amount: inst.amount, isPercent: inst.isPercent }),
+        },
+      });
+    } else {
+      const created = await db.installment.create({
+        data: { proposalId, label: inst.label, amount: inst.amount, isPercent: inst.isPercent, position: idx },
+      });
+      keep.add(created.id);
+    }
+  }
+  const dropIds = prev.installments
+    .filter((s) => !keep.has(s.id) && !isLockedStage(s, now))
+    .map((s) => s.id);
+  if (dropIds.length) await db.installment.deleteMany({ where: { id: { in: dropIds } } });
+
+  const fresh = await db.installment.findMany({ where: { proposalId }, orderBy: { position: "asc" } });
+  const after = resolveSchedule({ total: next.total, currency: next.currency, installments: fresh });
+  if (diffUnpaid(before, after)) {
+    await db.proposal.update({ where: { id: proposalId }, data: { scheduleVersion: { increment: 1 } } });
+    // An in-flight checkout is only killed when the money it asks for is
+    // no longer right; one for an unchanged stage stays usable.
+    const changedPending = fresh
+      .filter((s) => s.status === InstallmentStatus.PENDING)
+      .filter((s) => {
+        const b = before.stages.find((x) => x.id === s.id);
+        const a = after.stages.find((x) => x.id === s.id);
+        return !b || !a || b.amountMinor !== a.amountMinor;
+      })
+      .map((s) => s.id);
+    if (changedPending.length) {
+      const untouched = fresh
+        .filter((s) => s.status === InstallmentStatus.PENDING && !changedPending.includes(s.id))
+        .map((s) => s.id);
+      await expireOpenCheckoutsForProposal(proposalId, { except: untouched });
+    }
+  }
+}
+
 export async function saveProposal(raw: unknown) {
   const { organizationId, user, proposalScope } = await requireProposalStaff();
   const data = proposalInput.parse(raw);
@@ -120,6 +248,19 @@ export async function saveProposal(raw: unknown) {
   };
 
   if (data.id) {
+    // The schedule BEFORE this edit — paid stages are frozen and any change
+    // to what the client can still be asked for bumps scheduleVersion.
+    const prev = await db.proposal.findFirst({
+      where: { id: data.id, organizationId, ...proposalScope },
+      select: {
+        total: true,
+        currency: true,
+        installments: { orderBy: { position: "asc" } },
+      },
+    });
+    if (!prev) throw new Error("Not found");
+    assertLockedStagesUntouched(prev.installments, data.installments);
+
     // Ownership-gated update in a single Prisma call (no TOCTOU window).
     // Proposal has no compound unique on (id, organizationId), so we use
     // updateMany which accepts non-unique filter fields and reports count.
@@ -183,19 +324,7 @@ export async function saveProposal(raw: unknown) {
         });
       }
     }
-    await db.installment.deleteMany({ where: { proposalId } });
-    for (let idx = 0; idx < data.installments.length; idx += 1) {
-      const inst = data.installments[idx];
-      await db.installment.create({
-        data: {
-          proposalId,
-          label: inst.label,
-          amount: inst.amount,
-          isPercent: inst.isPercent,
-          position: idx,
-        },
-      });
-    }
+    await upsertInstallments(proposalId, prev, { total, currency: prev.currency }, data.installments);
     const refreshed = await db.proposal.findUnique({
       where: { id: proposalId },
       select: { id: true, publicId: true },
@@ -336,10 +465,42 @@ export async function sendProposal(id: string) {
   return { ok: true };
 }
 
-export async function updateProposalStatus(id: string, status: ProposalStatus) {
+export type StatusResult =
+  | { ok: true }
+  | { ok: false; reason: "payment_outstanding"; remainingMinor: number }
+  | { ok: false; reason: "provider_paid" }
+  | { ok: false; reason: "has_paid_stages" };
+
+/**
+ * Manual status moves. PAID needs nothing outstanding on the schedule — the
+ * contractor records a manual payment first (src/actions/installments.ts).
+ * Un-marking is refused when a stage was paid through Stripe/Square (refund
+ * from the provider; it syncs back), and DRAFT is refused once anything is
+ * paid at all. These come back as results, not throws, so the UI can open
+ * the right dialog.
+ */
+export async function updateProposalStatus(id: string, status: ProposalStatus): Promise<StatusResult> {
   const { organizationId, user, proposalScope } = await requireProposalStaff();
-  const p = await db.proposal.findFirst({ where: { id, organizationId, ...proposalScope } });
+  const p = await db.proposal.findFirst({
+    where: { id, organizationId, ...proposalScope },
+    include: { installments: { include: { payment: { select: { provider: true } } } } },
+  });
   if (!p) throw new Error("Not found");
+  const paidStages = p.installments.filter((s) => s.status === InstallmentStatus.PAID);
+  if (status === "PAID") {
+    const schedule = resolveSchedule({ total: p.total, currency: p.currency, installments: p.installments });
+    if (schedule.remainingMinor > 0) {
+      return { ok: false, reason: "payment_outstanding", remainingMinor: schedule.remainingMinor };
+    }
+  }
+  if (status === "ACCEPTED" && p.status === "PAID") {
+    if (paidStages.some((s) => s.payment && s.payment.provider !== "MANUAL")) {
+      return { ok: false, reason: "provider_paid" };
+    }
+  }
+  if (status === "DRAFT" && paidStages.length > 0) {
+    return { ok: false, reason: "has_paid_stages" };
+  }
   await db.proposal.update({
     where: { id },
     data: {
@@ -377,6 +538,7 @@ export async function updateProposalStatus(id: string, status: ProposalStatus) {
   });
   revalidatePath("/dashboard/proposals");
   revalidatePath(`/dashboard/proposals/${id}`);
+  return { ok: true };
 }
 
 // ── Pricing snapshots ──────────────────────────────────────
@@ -426,8 +588,24 @@ export async function saveSnapshotManual(proposalId: string) {
 export async function bulkUpdateProposalStatus(ids: string[], status: ProposalStatus) {
   const { organizationId, proposalScope } = await requireProposalStaff();
   if (ids.length === 0) return { updated: 0 };
+  let eligible = ids;
+  if (status === "PAID") {
+    // Same rule as updateProposalStatus: only proposals with nothing owed.
+    const rows = await db.proposal.findMany({
+      where: { id: { in: ids }, organizationId, ...proposalScope },
+      select: { id: true, total: true, currency: true, installments: true },
+    });
+    eligible = rows
+      .filter(
+        (p) =>
+          resolveSchedule({ total: p.total, currency: p.currency, installments: p.installments })
+            .remainingMinor <= 0,
+      )
+      .map((p) => p.id);
+    if (eligible.length === 0) return { updated: 0, skipped: ids.length };
+  }
   const { count } = await db.proposal.updateMany({
-    where: { id: { in: ids }, organizationId, ...proposalScope },
+    where: { id: { in: eligible }, organizationId, ...proposalScope },
     data: {
       status,
       ...(status === "PAID" ? { paidAt: new Date() } : {}),

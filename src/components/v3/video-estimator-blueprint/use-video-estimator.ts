@@ -51,6 +51,7 @@ import {
 } from "@/lib/estimate/video-schema";
 import {
   NO_DISCOUNT,
+  blankLine,
   briefWithAnswers,
   computeTotals,
   discountFromSchema,
@@ -62,10 +63,9 @@ import {
   type ClarifyAnswer,
   materialsRequest,
   materialsRequestTotal,
-  newLineId,
+  unitPriceOf,
   type ConsoleLine,
   type DiscountState,
-  type LineGroup,
 } from "@/lib/estimate/console-model";
 import {
   TranscribeError,
@@ -125,9 +125,6 @@ export type SaveState = "idle" | "saving" | "saved" | "opening";
 
 export type DiffRow = { kind: "Added" | "Changed" | "Removed"; name: string; detail: string };
 
-/** Which ledger a change request is fenced to. `all` is the whole estimate. */
-export type RefineScope = "materials" | "labor" | "all";
-
 export type PendingRefine = {
   data: GeneratedEstimate;
   rows: DiffRow[];
@@ -136,8 +133,6 @@ export type PendingRefine = {
   instructions: string;
   totalBefore: number;
   totalAfter: number;
-  /** The section that asked — the gate opens inside it, not at the page foot. */
-  scope: RefineScope;
 };
 
 export type FrameRead = { frame: VideoFrame; label: string };
@@ -507,8 +502,6 @@ export function useVideoEstimator(opts: {
   );
 
   const totals = useMemo(() => computeTotals({ lines, discount }), [lines, discount]);
-  const matLines = useMemo(() => lines.filter((l) => l.group === "materials"), [lines]);
-  const labLines = useMemo(() => lines.filter((l) => l.group === "labor"), [lines]);
   /** The shoppable list, DERIVED from the ledger rather than stored beside it —
    *  editing a quantity moves its buy quantity, deleting a line removes its row,
    *  and there is no second copy to keep in sync. */
@@ -525,7 +518,10 @@ export function useVideoEstimator(opts: {
   }, []);
 
   const setLine = useCallback(
-    (id: string, patch: Partial<Pick<ConsoleLine, "name" | "qty" | "unit" | "price">>) => {
+    (
+      id: string,
+      patch: Partial<Pick<ConsoleLine, "name" | "qty" | "unit" | "materialPrice" | "laborPrice">>,
+    ) => {
       setLines((rows) => rows.map((l) => (l.id === id ? { ...l, ...patch } : l)));
       touch();
     },
@@ -540,43 +536,23 @@ export function useVideoEstimator(opts: {
     [touch],
   );
 
-  const addLine = useCallback(
-    (group: LineGroup) => {
-      setLines((rows) => [
-        ...rows,
-        {
-          id: newLineId(group === "labor" ? "l" : "m"),
-          group,
-          name: "",
-          qty: 1,
-          unit: group === "labor" ? "hour" : "each",
-          price: 0,
-          // Never shopped, so it carries no retail price and the request card
-          // shows it as having no retail source rather than inventing one.
-          retailPrice: null,
-        },
-      ]);
-      touch();
-    },
-    [touch],
-  );
+  /** A blank fused row — never shopped, so it carries no retail price and the
+   *  request card shows it as having no retail source rather than inventing one. */
+  const addLine = useCallback(() => {
+    setLines((rows) => [...rows, blankLine()]);
+    touch();
+  }, [touch]);
 
-  // ── Refine, gated, per section ──────────────────────────────────────────
-  // The change box is split across the two ledgers: each section carries its
-  // own, and the instruction it sends is fenced to that section so "make it
-  // cheaper" typed under Labor cannot quietly re-shop the materials. The gate
-  // then opens inside the section that asked, which is the only way a diff
-  // reads as belonging to something.
+  // ── Refine, gated ───────────────────────────────────────────────────────
+  // ONE change box for the one ledger (the fused model has no sections to fence
+  // an instruction to). The result is parked on a review gate — a diff of what
+  // the AI would change — and nothing lands until confirmRefine.
   const canRefine = refineText.trim().length > 0 && !refineBusy && lines.length > 0 && !pending;
 
   const applyRefine = useCallback(
-    async (target: RefineScope = "all") => {
+    async () => {
       if (!canRefine) return;
-      const typed = refineText.trim();
-      const instructions =
-        target === "all"
-          ? typed
-          : `Only change the ${target} lines. Leave every other line — its name, quantity, unit and price — exactly as it is.\n\n${typed}`;
+      const instructions = refineText.trim();
       setError("");
       setRefineBusy(true);
       try {
@@ -602,13 +578,20 @@ export function useVideoEstimator(opts: {
         for (const n of afterLines) {
           const o = before.get(n.id);
           if (!o) {
-            rows.push({ kind: "Added", name: n.name, detail: `${n.qty} × ${money(n.price)} · ${money(lineTotal(n))}` });
+            rows.push({
+              kind: "Added",
+              name: n.name,
+              detail: `${n.qty} × ${money(unitPriceOf(n))} · ${money(lineTotal(n))}`,
+            });
             continue;
           }
           const bits: string[] = [];
           if (o.name !== n.name) bits.push(`“${o.name}” → “${n.name}”`);
           if (o.qty !== n.qty) bits.push(`${o.qty} → ${n.qty} ${n.unit}`);
-          if (o.price !== n.price) bits.push(`${money(o.price)} → ${money(n.price)}`);
+          if (o.materialPrice !== n.materialPrice)
+            bits.push(`material ${money(o.materialPrice)} → ${money(n.materialPrice)}`);
+          if (o.laborPrice !== n.laborPrice)
+            bits.push(`labor ${money(o.laborPrice)} → ${money(n.laborPrice)}`);
           if (bits.length) rows.push({ kind: "Changed", name: o.name, detail: bits.join(" · ") });
         }
         const kept = new Set(afterLines.map((l) => l.id));
@@ -636,7 +619,6 @@ export function useVideoEstimator(opts: {
           instructions,
           totalBefore: totals.total,
           totalAfter: computeTotals({ lines: afterLines, discount: nextDiscount }).total,
-          scope: target,
         });
       } catch (err) {
         if (reportPlanLimit(err)) return;
@@ -813,8 +795,6 @@ export function useVideoEstimator(opts: {
     timelineDays,
     locationUsed,
     lines,
-    matLines,
-    labLines,
     reqRows,
     reqTotal,
     setLine,

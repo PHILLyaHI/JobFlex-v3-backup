@@ -53,6 +53,13 @@ const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
 /** Server actions reject with a message written for the user. Show that text;
  *  fall back to a generic line for anything unrecognisable. */
+/** The most one line may hold — the server's ceiling (actions/overhead.ts);
+ *  a percent line tops out at the whole of revenue. */
+const MAX_LINE = 100_000_000;
+const MAX_PCT = 100;
+/** How long after the last keystroke a month is written. */
+const SAVE_AFTER_MS = 700;
+
 function actionError(err: unknown): string {
   const msg = err instanceof Error ? err.message.trim() : "";
   if (!msg || msg.toLowerCase().includes("fetch failed")) {
@@ -85,8 +92,22 @@ export function MobileOverhead({ months, sheets: saved }: MobileOverheadProps) {
   const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set<string>());
   // Opens on the newest month — the one being lived in, not the oldest on file.
   const [idx, setIdx] = useState(Math.max(0, months.length - 1));
-  const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<{ text: string; tone: NoteTone }>({ text: "", tone: "" });
+
+  // Autosave bookkeeping. The book and the dirty set are mirrored into refs so
+  // a write scheduled 700ms ago reads what is on screen NOW, not the render it
+  // was scheduled in; `inFlight` / `again` guarantee one write per month at a
+  // time with the last keystroke winning.
+  const bookRef = useRef(book);
+  const dirtyRef = useRef(dirty);
+  const inFlight = useRef(new Set<string>());
+  const again = useRef(new Set<string>());
+  useEffect(() => {
+    bookRef.current = book;
+  }, [book]);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
 
   /** What is being TYPED right now, per field, as raw text.
    *
@@ -140,12 +161,21 @@ export function MobileOverhead({ months, sheets: saved }: MobileOverheadProps) {
 
   const onAmount = useCallback(
     (key: string, raw: string) => {
-      setDraft((d) => ({ ...d, [key]: raw }));
       const parsed = Number(raw);
-      const v = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      let v = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      // Clamped at entry to the server's own ceiling — a percent line to the
+      // whole of revenue — so a run-on keystroke cannot paint a 30-digit figure
+      // across a 390px sheet. When the clamp bites, the field shows the ceiling.
+      const isPct = Boolean(sheet?.[(key + "Pct") as keyof OverheadSheet]);
+      const max = isPct ? MAX_PCT : MAX_LINE;
+      if (v > max) {
+        v = max;
+        raw = String(max);
+      }
+      setDraft((d) => ({ ...d, [key]: raw }));
       patch((s) => ({ ...s, [key]: v }));
     },
-    [patch],
+    [patch, sheet],
   );
 
   const onUnit = useCallback(
@@ -164,40 +194,93 @@ export function MobileOverhead({ months, sheets: saved }: MobileOverheadProps) {
     [sheet, patch],
   );
 
+  /* ---------- The one write — now automatic ----------------------------- */
+
+  /** Write one month, by key, from the ref so it is whatever is on screen at
+   *  the moment of writing. Re-entrant: an edit that lands while the write is
+   *  on the wire marks the month to go again as soon as it returns. */
+  // The re-run at the bottom calls back into `persist` through a ref: a
+  // callback cannot name itself inside its own initializer.
+  const persistRef = useRef<(key: string) => Promise<void>>(async () => {});
+  const persist = useCallback(async (key: string): Promise<void> => {
+    const s = bookRef.current[key];
+    if (!s || !dirtyRef.current.has(key)) return;
+    if (inFlight.current.has(key)) {
+      again.current.add(key);
+      return;
+    }
+    inFlight.current.add(key);
+    setNote({ text: "Saving…", tone: "" });
+    try {
+      const row = await saveMonthlyOverhead({ ...s, year: s.year, month: s.month });
+      // Only the SERVER's shape replaces the local copy (clamped percents) —
+      // and only if nothing was typed meanwhile. If something was, the local
+      // copy is newer and goes out again next.
+      if (!again.current.has(key)) {
+        setBook((prev) => ({ ...prev, [key]: { ...row } }));
+        setDirty((prev) => {
+          if (!prev.has(key)) return prev;
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        setNote({ text: "Saved", tone: "ok" });
+      }
+    } catch (err) {
+      setNote({ text: actionError(err), tone: "bad" });
+      inFlight.current.delete(key);
+      again.current.delete(key);
+      return;
+    }
+    inFlight.current.delete(key);
+    if (again.current.has(key)) {
+      again.current.delete(key);
+      void persistRef.current(key);
+    }
+  }, []);
+  useEffect(() => {
+    persistRef.current = persist;
+  }, [persist]);
+
+  // Debounce: every edit re-runs this effect, which clears the previous timer
+  // and arms a new one — the month is written SAVE_AFTER_MS after the LAST
+  // keystroke. The cleanup also fires on a month step, which is why `step`
+  // flushes explicitly before moving.
+  useEffect(() => {
+    if (!month || !dirty.has(month.key)) return;
+    const key = month.key;
+    const t = window.setTimeout(() => void persist(key), SAVE_AFTER_MS);
+    return () => window.clearTimeout(t);
+  }, [book, dirty, month, persist]);
+
+  // A hidden tab, a closing window or an unmount fires no more keystrokes;
+  // whatever is dirty goes out on the way to the background.
+  useEffect(() => {
+    const flushAll = () => {
+      for (const key of Array.from(dirtyRef.current)) void persist(key);
+    };
+    const onVis = () => {
+      if (document.visibilityState === "hidden") flushAll();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      flushAll();
+    };
+  }, [persist]);
+
   const step = useCallback(
     (delta: number) => {
+      // Leaving a month writes it now rather than in 700ms: the cursor is a
+      // deliberate act, and a write that is due should not trail behind it.
+      if (month && dirtyRef.current.has(month.key)) void persist(month.key);
       setIdx((i) => Math.max(0, Math.min(months.length - 1, i + delta)));
       // The drafts belong to the month that is leaving.
       setDraft({});
       setNote({ text: "", tone: "" });
     },
-    [months.length],
+    [months.length, month, persist],
   );
-
-  /* ---------- The one write ---------------------------------------------- */
-
-  const save = useCallback(async () => {
-    if (saving || !month || !sheet) return;
-    setSaving(true);
-    setNote({ text: "Saving…", tone: "" });
-    try {
-      const row = await saveMonthlyOverhead({ ...sheet, year: month.year, month: month.month });
-      const key = month.key;
-      setBook((prev) => ({ ...prev, [key]: { ...row } }));
-      setDirty((prev) => {
-        if (!prev.has(key)) return prev;
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-      setDraft({});
-      setNote({ text: "Saved", tone: "ok" });
-    } catch (err) {
-      setNote({ text: actionError(err), tone: "bad" });
-    } finally {
-      setSaving(false);
-    }
-  }, [saving, month, sheet]);
 
   /* ---------- Motion: reveal on load ------------------------------------- */
   // Applied ONCE, at mount, to the blocks that exist then. Never through a
@@ -415,7 +498,9 @@ export function MobileOverhead({ months, sheets: saved }: MobileOverheadProps) {
                   </div>
                   <div className="moh-fig">
                     <span className="moh-lbl">{totals.left >= 0 ? "True profit" : "Shortfall"}</span>
-                    <b className={totals.left >= 0 ? "tone-ok" : "tone-bad"}>
+                    {/* No tone on an empty sheet — a green $4,563 "true profit"
+                        against no bills is the same lie as a green bar. */}
+                    <b className={untouched ? "" : totals.left >= 0 ? "tone-ok" : "tone-bad"}>
                       {money(Math.abs(totals.left))}
                     </b>
                   </div>
@@ -454,31 +539,23 @@ export function MobileOverhead({ months, sheets: saved }: MobileOverheadProps) {
         </div>
       </main>
 
-      {/* ============ THUMB-ZONE SAVE FOOT ============ */}
+      {/* ============ THUMB-ZONE FOOT ============
+          No Save button: the sheet writes itself 700ms after the last
+          keystroke. The foot carries the running total and the receipt. */}
       {month && sheet && (
         <div className="moh-foot">
-          <div
-            className={`moh-note${note.text ? (note.tone ? ` is-${note.tone}` : "") : isDirty ? " is-warn" : ""}`}
-            role="status"
-            aria-live="polite"
-            hidden={!note.text && !isDirty}
-          >
-            {note.text || (isDirty ? "Unsaved" : "")}
-          </div>
           <div className="moh-foot-row">
             <div className="moh-foot-l">
               <span className="moh-lbl">Total overhead</span>
               <b className="moh-foot-val">{money(totals.total)}</b>
             </div>
-            <button
-              type="button"
-              className="moh-btn moh-btn-primary"
-              disabled={saving}
-              onClick={() => void save()}
+            <div
+              className={`moh-note${note.tone ? ` is-${note.tone}` : ""}${note.text ? "" : " is-hint"}`}
+              role="status"
+              aria-live="polite"
             >
-              <Icon id="i-check" />
-              {saving ? "Saving" : "Save"}
-            </button>
+              {note.text || (isDirty ? "Saving…" : "Saves as you type")}
+            </div>
           </div>
         </div>
       )}

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { requireManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
 
 export async function createReviewRequest(jobId: string) {
   const { organizationId } = await requireManager();
@@ -14,6 +15,10 @@ export async function createReviewRequest(jobId: string) {
   // Idempotent per job
   const existing = await db.reviewRequest.findFirst({ where: { jobId } });
   if (existing) return { id: existing.id, publicToken: existing.publicToken };
+
+  // Per-cycle cap from the plan; a re-send of an existing request (above)
+  // costs nothing.
+  await enforcePlanLimit(organizationId, "reviewRequests");
 
   const req = await db.reviewRequest.create({
     data: {
@@ -96,7 +101,7 @@ export async function submitReviewPublic(token: string, raw: unknown) {
   await db.activityEvent.create({
     data: {
       organizationId: rr.organizationId,
-      kind: "NOTE",
+      kind: "REVIEW",
       summary: `Client submitted a ${data.rating}-star review`,
     },
   });

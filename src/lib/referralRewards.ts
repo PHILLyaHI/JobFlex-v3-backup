@@ -13,7 +13,7 @@
 
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
-import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { isStripeWriteAllowed } from "@/lib/stripeSafety";
 import { PLAN_MONTHLY_USD } from "@/lib/planPricing";
 
@@ -102,7 +102,11 @@ export async function applyReferralReward(
   if (monthlyCents <= 0) return { applied: false, reason: "no-priced-plan" };
   const rewardCents = Math.round(monthlyCents * (REFERRAL_REWARD_PCT / 100));
 
-  const txn = await getStripe().customers.createBalanceTransaction(
+  // Mode-aware: the referrer's customer lives on whichever account (live or
+  // sandbox) their subscription was started on; the live-only client could
+  // not find a sandbox customer and every sandbox reward silently failed.
+  const { stripe } = await getStripeClient();
+  const txn = await stripe.customers.createBalanceTransaction(
     referrerSub.externalCustomerId,
     {
       amount: -rewardCents, // negative = credit toward future invoices
@@ -139,4 +143,49 @@ async function referrerMonthlyPriceCents(plan: string): Promise<number> {
   });
   if (catalogRow) return catalogRow.priceCents;
   return Math.round((PLAN_MONTHLY_USD[plan.toUpperCase()] ?? 0) * 100);
+}
+
+/**
+ * THE REFERRAL COUNTS WHEN THE REFERRED SHOP'S SUBSCRIPTION STARTS (owner's
+ * rule, 2026-09-02) — not when its first non-zero invoice is paid, which with
+ * a 14-day trial left every conversion PENDING for two weeks, and in the
+ * sandbox (whose events the live webhook never sees) forever. Called from the
+ * signup return leg once the Subscription row carries a Stripe subscription;
+ * also run for a referrer's code from the subscription page, so a conversion
+ * that predates this rule catches up on the next visit. Idempotent: the
+ * status flip matches zero rows on re-runs and the credit is keyed per
+ * conversion.
+ */
+export async function settleReferralsForSignupOrg(orgId: string): Promise<void> {
+  await db.referralConversion.updateMany({
+    where: { signupOrgId: orgId, status: "PENDING" },
+    data: { status: "CONVERTED", convertedAt: new Date() },
+  });
+  const payable = await db.referralConversion.findMany({
+    where: { status: "CONVERTED", rewardAppliedAt: null, signupOrgId: orgId },
+    select: { id: true },
+  });
+  for (const c of payable) {
+    try {
+      await applyReferralReward(c.id);
+    } catch (err) {
+      console.warn(`[referral] reward credit failed for conversion ${c.id}:`, err);
+    }
+  }
+}
+
+/** Catch-up for one referrer's code: every PENDING conversion whose shop now
+ *  holds a Stripe subscription is settled. Cheap (one query, usually empty). */
+export async function settleReferralsForCode(codeId: string): Promise<void> {
+  const pending = await db.referralConversion.findMany({
+    where: { codeId, status: "PENDING", signupOrgId: { not: null } },
+    select: { signupOrgId: true },
+  });
+  if (pending.length === 0) return;
+  const orgIds = Array.from(new Set(pending.map((p) => p.signupOrgId as string)));
+  const live = await db.subscription.findMany({
+    where: { organizationId: { in: orgIds }, externalSubId: { not: null }, status: { in: ["ACTIVE", "TRIALING"] } },
+    select: { organizationId: true },
+  });
+  for (const s of live) await settleReferralsForSignupOrg(s.organizationId);
 }

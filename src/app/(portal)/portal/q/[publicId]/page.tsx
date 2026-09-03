@@ -31,9 +31,11 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { money, longDate } from "@/lib/format";
-import { parsePaymentSettings, parseProposalSettings } from "@/lib/settings";
+import { parseProposalSettings } from "@/lib/settings";
 import { buildPortalView } from "@/components/v3/mobile-proposal-client/portal-view";
+import { buildPortalPayModel } from "@/lib/payments/portalModel";
 import { PortalActions } from "./portal-actions";
+import { PortalPayment } from "./portal-payment";
 import { PortalReveal } from "./portal-reveal";
 import { PortalViewport } from "./portal-viewport";
 import "./proposal-portal.css";
@@ -83,25 +85,34 @@ export default async function PublicProposalPortal({
           logoUrl: true,
           phone: true,
           address: true,
+          deletedAt: true,
           paymentSettingsJson: true,
           proposalSettingsJson: true,
+          paymentConnections: true,
         },
       },
     },
   });
 
-  if (!proposal) return notFound();
+  // A soft-deleted org's proposals are gone from the outside world too.
+  if (!proposal || proposal.organization.deletedAt) return notFound();
 
-  // Track view
+  // Track view. EVERY open counts and stamps `viewedAt` — a declined or
+  // accepted proposal being re-read is still a fact the office wants (owner,
+  // 2026-09-02: the count sat frozen once a proposal settled). Only the STATUS
+  // is guarded: SENT becomes VIEWED on the first open, and nothing else moves —
+  // a decline stays a decline however many times the page is reloaded.
+  await db.proposal.update({
+    where: { id: proposal.id },
+    data: {
+      viewCount: { increment: 1 },
+      viewedAt: new Date(),
+      ...(proposal.status === "SENT" ? { status: "VIEWED" as const } : {}),
+    },
+  });
+  // The activity line is for the FIRST reading, not every reload — a feed
+  // entry per refresh would bury the events that matter.
   if (proposal.status === "SENT" || proposal.status === "DRAFT") {
-    await db.proposal.update({
-      where: { id: proposal.id },
-      data: {
-        viewCount: { increment: 1 },
-        viewedAt: new Date(),
-        status: proposal.status === "SENT" ? "VIEWED" : proposal.status,
-      },
-    });
     await db.activityEvent.create({
       data: {
         organizationId: proposal.organizationId,
@@ -114,9 +125,8 @@ export default async function PublicProposalPortal({
   }
 
   const org = proposal.organization;
-  // Only the providers the contractor actually switched on in settings/payment.
-  const pay = parsePaymentSettings(org.paymentSettingsJson);
-  const payProviders = (["stripe", "square", "paypal"] as const).filter((k) => pay[k]);
+  // What the client can pay, and how — resolved once, shared by both trees.
+  const payModel = await buildPortalPayModel(publicId, proposal, org, { money, longDate });
   const orgTerms = parseProposalSettings(org.proposalSettingsJson).terms?.trim() || "";
   const monogram = (org.name?.trim()?.[0] ?? "J").toUpperCase();
   const clientName = proposal.client?.name?.trim() || "you";
@@ -130,7 +140,6 @@ export default async function PublicProposalPortal({
 
   const hasScope = Boolean(proposal.scopeOfWork && proposal.scopeOfWork.trim());
   const hasDescription = Boolean(proposal.description && proposal.description.trim());
-  const hasInstallments = proposal.installments.length > 0;
   const telHref = org.phone ? `tel:${org.phone.replace(/\s+/g, "")}` : null;
 
   // ── HANDHELD ────────────────────────────────────────────────────────────
@@ -144,7 +153,7 @@ export default async function PublicProposalPortal({
   // row, already formatted, in a plain serialisable shape. No data-layer
   // change: same query, same includes, same endpoints.
   const view = buildPortalView(publicId, proposal, { money, longDate }, {
-    providers: [...payProviders],
+    pay: payModel,
     terms: orgTerms,
   });
 
@@ -185,8 +194,6 @@ export default async function PublicProposalPortal({
             <PortalActions
               publicId={publicId}
               status={proposal.status}
-              total={proposal.total}
-              providers={payProviders}
             />
           </div>
 
@@ -251,28 +258,10 @@ export default async function PublicProposalPortal({
           </section>
         ) : null}
 
-        {/* PAYMENT SCHEDULE */}
-        {hasInstallments ? (
-          <section className="pv-sec rv">
-            <h2 className="pv-sec-h">Payment schedule</h2>
-            <div className="pv-pay">
-              {proposal.installments.map((inst, i) => (
-                <div className="pv-pay-r" key={inst.id}>
-                  <span className="pv-pay-no">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="pv-pay-n">{inst.label}</span>
-                  {/* Kept even when empty: `margin-left: auto` on this span is
-                      what pushes the amount to the right edge. */}
-                  <span className="pv-pay-pct">{inst.isPercent ? `${inst.amount}%` : ""}</span>
-                  <span className="pv-pay-v">
-                    {money(
-                      inst.isPercent ? proposal.total * (inst.amount / 100) : inst.amount,
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+        {/* PAYMENT SCHEDULE — the stages, their state, and the pay buttons
+            on the next one. Always rendered: a proposal with no stages is one
+            "Full payment" stage, and that is exactly what the client pays. */}
+        <PortalPayment model={payModel} />
 
         {/* TERMS & CONDITIONS — a disclosure, closed by default.
             Source is the ORG's terms (settings/proposals). The manual builder

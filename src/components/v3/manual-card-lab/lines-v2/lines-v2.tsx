@@ -112,6 +112,8 @@ import {
   unitCost,
 } from "../manual-focus/manual-focus-math";
 import { stateDisplayName } from "../manual-focus/manual-focus-data";
+import { BlueprintSelect } from "@/components/v3/advanced-ai-blueprint/blueprint-select";
+import { HoverTitle } from "@/components/v3/advanced-ai-blueprint/hover-title";
 import s from "./lines-v2.module.css";
 
 /** Local class joiner. Deliberately NOT `@/lib/cn` — twMerge has Tailwind
@@ -628,15 +630,19 @@ function LineBlock({
           : "Unnamed line"
       }
     >
-      {/* BAND 1 — the entry row, on the header's own grid. */}
-      <input
-        type="text"
-        className={cx(s.f, s.fText, s.cName)}
-        value={line.name}
-        placeholder="Describe the work"
-        aria-label="Description"
-        onChange={(e) => onPatch({ name: e.target.value })}
-      />
+      {/* BAND 1 — the entry row, on the header's own grid. The description
+          clips past its track; the full text rides on the cursor while the
+          pointer rests on the field (owner, 2026-09-02). */}
+      <HoverTitle text={line.name}>
+        <input
+          type="text"
+          className={cx(s.f, s.fText, s.cName)}
+          value={line.name}
+          placeholder="Describe the work"
+          aria-label="Description"
+          onChange={(e) => onPatch({ name: e.target.value })}
+        />
+      </HoverTitle>
 
       {fixed ? (
         <input
@@ -664,19 +670,23 @@ function LineBlock({
           exactly one styled select and that a page re-deriving
           `appearance: none` plus a caret of its own is drift; this block used
           to be one of those pages. Only the FIT to a 36px row is set locally. */}
-      <span className={cx("bp-sel", s.sel, s.cUnit)}>
-        <select
-          className="bp-sel-in"
+      {/* The unit picker is the blueprint's DRAWN select (advanced-ai-blueprint/
+          blueprint-select.tsx): the native control drew its closed state from
+          our stylesheet and its OPEN list in OS chrome — system font, system
+          blue highlight — on a sheet whose whole argument is that it is a
+          drawing. The list is portalled into the shell's `.content` and drawn
+          by THIS module's `bsel*` rules, so the closed trigger keeps the exact
+          36px fit the native select had. */}
+      <span className={cx(s.sel, s.cUnit)}>
+        <BlueprintSelect
           value={line.unit}
-          aria-label="Unit of measure"
-          onChange={(e) => onPatch(applyUnitChange(line, e.target.value as Unit))}
-        >
-          {UNITS.map((u) => (
-            <option key={u.value} value={u.value}>
-              {u.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onPatch(applyUnitChange(line, v as Unit))}
+          options={UNITS.map((u) => ({ value: u.value, label: u.label }))}
+          placeholder="unit"
+          ariaLabel="Unit of measure"
+          triggerClass={s.unitBtn}
+          styles={s}
+        />
       </span>
 
       <NumField

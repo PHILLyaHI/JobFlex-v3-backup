@@ -68,18 +68,27 @@ const getSnapshot = () => window.matchMedia(HANDHELD).matches;
 // at every viewport, a worse trade on a signup page.
 const getServerSnapshot = () => false;
 
-function RegisterSwitch() {
+/** What a Google signup already gave us: the page opens on step 2 with it. */
+export interface SetupPrefill {
+  name: string;
+  email: string;
+  phone: string;
+  businessName: string;
+  companyPhone: string;
+}
+
+function RegisterSwitch({ setup }: { setup: SetupPrefill | null }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  return isHandheld ? <MobileRegister /> : <RegisterContent />;
+  return isHandheld ? <MobileRegister setup={setup} /> : <RegisterContent setup={setup} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
 // boundary wraps the switch rather than either branch — a bare useSearchParams
 // without one is a static-prerender bailout in Next.
-export function RegisterResponsive() {
+export function RegisterResponsive({ setup = null }: { setup?: SetupPrefill | null }) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch />
+      <RegisterSwitch setup={setup} />
     </Suspense>
   );
 }

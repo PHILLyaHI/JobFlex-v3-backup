@@ -9,12 +9,14 @@
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
+import { sendOrgEmail } from "@/lib/email/orgSend";
 import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
 import {
   buildProposalSent,
   buildProposalAccepted,
+  buildPaymentReceipt,
   formatUSD,
   isBareUrlParagraph,
 } from "@/lib/email/build/client";
@@ -23,8 +25,14 @@ import {
   buildLeadOffer,
   buildNewLead,
   buildOwnerAccepted,
+  buildOwnerPaymentReceived,
+  buildPaymentIssue,
   buildSupportTicket,
 } from "@/lib/email/build/operator";
+import { parsePaymentSettings } from "@/lib/settings";
+import { resolveSchedule, fromMinor } from "@/lib/paymentSchedule";
+import { resolveEmailRecipients, sendToMembersByPref, sendToUserByPref } from "@/lib/notificationPrefs";
+import { ActivityKind } from "@/lib/prismaEnums";
 import { buildAppointmentAssignment, buildJobAssignment } from "@/lib/email/build/worker";
 import {
   buildRequestReceived,
@@ -104,7 +112,7 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
       client: true,
       lineItems: { orderBy: { position: "asc" }, take: 13 },
       organization: {
-        select: { name: true, billingEmail: true, gmailSettingsJson: true, logoUrl: true, phone: true },
+        select: { name: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, logoUrl: true, phone: true },
       },
     },
   });
@@ -151,16 +159,18 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
     }),
   );
 
-  const res = await sendEmail({
+  // Customer-facing: goes out FROM the contractor's connected Gmail when they
+  // opted in (Settings → Integrations → Gmail), else from the platform with
+  // the contractor as reply-to. sendOrgEmail owns that decision.
+  await sendOrgEmail(proposal.organization, {
     to: proposal.client.email,
     subject: subj,
     html,
-    replyTo: replyToFor(proposal.organization),
   });
 
   return {
     skipped: false as const,
-    delivery: res.skipped ? "disabled" : "sent",
+    delivery: isEmailEnabled() ? "sent" : "disabled",
     enabled: isEmailEnabled(),
   };
 }
@@ -174,14 +184,13 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
     include: {
       client: true,
       organization: {
-        select: { name: true, billingEmail: true, gmailSettingsJson: true, logoUrl: true, phone: true },
+        select: { name: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, logoUrl: true, phone: true },
       },
     },
   });
   if (!proposal) return { skipped: true as const, reason: "not-found" };
 
   const appUrl = await appBaseUrl();
-  const replyTo = replyToFor(proposal.organization);
 
   // 1) Thank-you to the client (customer-facing → reply-to the contractor).
   //    Client half only — the internal owner heads-up below is unchanged
@@ -215,37 +224,32 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
         prose,
       }),
     );
-    await sendEmail({
+    await sendOrgEmail(proposal.organization, {
       to: proposal.client.email,
       subject: acceptedSubject,
       html: acceptedHtml,
-      replyTo,
     });
   }
 
-  // 2) Internal heads-up to the owner (system → no contractor reply-to).
-  if (proposal.organization.billingEmail) {
-    const { subject: ownerSubject, html: ownerHtml } = renderEmail(
-      buildOwnerAccepted({
-        org: {
-          name: proposal.organization.name,
-          logoUrl: proposal.organization.logoUrl,
-          phone: proposal.organization.phone,
-        },
-        clientName: proposal.client?.name ?? "A client",
-        title: proposal.title,
-        acceptedAt: new Date(),
-        total: proposal.total,
-        needsScheduling: true,
-        href: `${appUrl}/dashboard/proposals/${proposal.id}`,
-      }),
-    );
-    await sendEmail({
-      to: proposal.organization.billingEmail,
-      subject: ownerSubject,
-      html: ownerHtml,
-    });
-  }
+  // 2) Internal heads-up to the office — every owner/manager whose
+  //    "Proposal accepted" email pref is on (quiet hours respected).
+  await sendToMembersByPref(
+    proposal.organizationId,
+    "proposal-accepted",
+    buildOwnerAccepted({
+      org: {
+        name: proposal.organization.name,
+        logoUrl: proposal.organization.logoUrl,
+        phone: proposal.organization.phone,
+      },
+      clientName: proposal.client?.name ?? "A client",
+      title: proposal.title,
+      acceptedAt: new Date(),
+      total: proposal.total,
+      needsScheduling: true,
+      href: `${appUrl}/dashboard/proposals/${proposal.id}`,
+    }),
+  );
 
   return { skipped: false as const, enabled: isEmailEnabled() };
 }
@@ -291,10 +295,12 @@ export async function notifyLeadCreated(leadId: string) {
   });
   if (!lead || !lead.organization) return { skipped: true as const };
 
-  const ownerEmail = await ownerEmailFor(lead.organizationId, lead.organization.billingEmail);
-  if (ownerEmail) {
+  {
+    // Owner only (see the privacy note above) — through their own prefs.
     const appUrl = await appBaseUrl();
-    const { subject: leadSubject, html: leadHtml } = renderEmail(
+    await sendToMembersByPref(
+      lead.organizationId,
+      "lead-assigned",
       buildNewLead({
         org: {
           name: lead.organization.name,
@@ -308,8 +314,8 @@ export async function notifyLeadCreated(leadId: string) {
         enquiry: lead.description ?? null,
         href: `${appUrl}/dashboard/leads`,
       }),
+      { roles: ["OWNER"] },
     );
-    await sendEmail({ to: ownerEmail, subject: leadSubject, html: leadHtml });
   }
 
   // Optional SMS if owner phone is set
@@ -461,15 +467,18 @@ export async function notifyAssignmentResponded(
   if (!a) return { skipped: true as const };
   const organizationId = a.job.organizationId;
 
+  const workerEmail = a.worker.user?.email?.toLowerCase() ?? null;
   const [org, owners, assignedEvent] = await Promise.all([
     db.organization.findUnique({
       where: { id: organizationId },
       select: { name: true, logoUrl: true, phone: true },
     }),
-    db.membership.findMany({
-      where: { organizationId, role: "OWNER" },
-      select: { user: { select: { email: true } } },
+    // Owners through their own "Worker responded" prefs…
+    resolveEmailRecipients(organizationId, "worker-responded", {
+      roles: ["OWNER"],
+      excludeEmails: workerEmail ? [workerEmail] : [],
     }),
+    // …plus whoever made the assignment, always (it is their question).
     db.activityEvent.findFirst({
       where: { organizationId, kind: "ASSIGNED", meta: { contains: assignmentId } },
       orderBy: { createdAt: "desc" },
@@ -477,10 +486,9 @@ export async function notifyAssignmentResponded(
     }),
   ]);
 
-  const workerEmail = a.worker.user?.email?.toLowerCase() ?? null;
   const to = Array.from(
     new Set(
-      [...owners.map((m) => m.user?.email), assignedEvent?.actor?.email]
+      [...owners, assignedEvent?.actor?.email]
         .filter((e): e is string => Boolean(e))
         .map((e) => e.toLowerCase()),
     ),
@@ -546,24 +554,19 @@ export async function notifyLeadOfferCreated(offerId: string) {
   const appUrl = await appBaseUrl();
   const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "your area";
 
-  const offerOwnerEmail = await ownerEmailFor(offer.organizationId, offer.organization.billingEmail);
-  if (offerOwnerEmail) {
-    const { subject: offerSubject, html: offerHtml } = renderEmail(
-      buildLeadOffer({
-        trade: pl.detectedTrade ?? pl.projectType ?? "project",
-        where,
-        createdAt: offer.createdAt,
-        reservedHours: 24,
-        nextShop: "the next shop in line",
-        href: `${appUrl}/dashboard/leads`,
-      }),
-    );
-    await sendEmail({
-      to: offerOwnerEmail,
-      subject: offerSubject,
-      html: offerHtml,
-    });
-  }
+  await sendToMembersByPref(
+    offer.organizationId,
+    "lead-assigned",
+    buildLeadOffer({
+      trade: pl.detectedTrade ?? pl.projectType ?? "project",
+      where,
+      createdAt: offer.createdAt,
+      reservedHours: 24,
+      nextShop: "the next shop in line",
+      href: `${appUrl}/dashboard/leads`,
+    }),
+    { roles: ["OWNER"] },
+  );
 
   if (offer.organization.phone && isTwilioEnabled()) {
     await sendSMS(
@@ -944,17 +947,14 @@ export async function notifyTradeInterest(jobId: string, recipientUserId: string
     },
   });
   if (!isEmailEnabled()) return { skipped: true as const };
-  const email = await tradeEmailOf(job.authorId);
-  if (!email) return { skipped: true as const };
   const appUrl = await appBaseUrl();
-  await sendEmail({
-    to: email,
+  const { sent } = await sendToUserByPref(job.authorId, "trade-reply", {
     subject: `${who} raised a hand for "${job.title}"`,
     html:
       `<p>${tradeEsc(who)} is interested in your trade-network post <b>${tradeEsc(job.title)}</b>. A private chat is open with them.</p>` +
       `<p><a href="${appUrl}/trade-services">Open Trade services</a> to reply.</p>`,
   });
-  return { skipped: false as const };
+  return { skipped: !sent };
 }
 
 /** The poster marked a job FILLED — everyone who raised a hand hears it. The
@@ -985,17 +985,178 @@ export async function notifyTradeFilled(jobId: string) {
   if (!isEmailEnabled()) return { skipped: true as const };
   const appUrl = await appBaseUrl();
   await Promise.all(
-    job.recipients.map(async (r) => {
-      const email = await tradeEmailOf(r.recipientId);
-      if (!email) return;
-      await sendEmail({
-        to: email,
+    job.recipients.map((r) =>
+      sendToUserByPref(r.recipientId, "trade-reply", {
         subject: `"${job.title}" has been filled`,
         html:
           `<p>You raised a hand for <b>${tradeEsc(job.title)}</b> and the poster has marked it filled. If you agreed the work with them — congratulations, you're hired.</p>` +
           `<p><a href="${appUrl}/trade-services">Open Trade services</a> — the conversation stays available.</p>`,
-      });
+      }),
+    ),
+  );
+  return { skipped: false as const };
+}
+
+
+// ── Platform payments ────────────────────────────────────────────────────────
+
+function providerLabel(provider: string, method: string | null): string {
+  if (provider === "STRIPE") return method === "us_bank_account" ? "Stripe (bank debit)" : "Stripe";
+  if (provider === "SQUARE") return "Square";
+  switch (method) {
+    case "BANK_TRANSFER":
+      return "Bank transfer";
+    case "CASH":
+      return "Cash";
+    case "CHECK":
+      return "Check";
+    default:
+      return "Recorded manually";
+  }
+}
+
+function methodPhrase(provider: string, method: string | null): string {
+  if (method === "us_bank_account") return "bank account";
+  if (provider === "STRIPE" || provider === "SQUARE") return "card";
+  if (method === "BANK_TRANSFER") return "bank transfer";
+  if (method === "CASH") return "cash";
+  if (method === "CHECK") return "check";
+  return "";
+}
+
+/**
+ * A payment landed on a proposal (hosted checkout webhook, active verify, or
+ * a manual mark). Receipt to the client when the org wants receipts; heads-up
+ * to the owner always. Called AFTER the settle transaction commits.
+ */
+export async function notifyPaymentReceived({ paymentId }: { paymentId: string }) {
+  const payment = await db.payment.findUnique({
+    where: { id: paymentId },
+    include: {
+      installments: { select: { label: true } },
+      client: { select: { name: true, email: true } },
+      proposal: {
+        include: {
+          installments: true,
+          organization: {
+            select: {
+              name: true,
+              billingEmail: true,
+              gmailSettingsJson: true,
+              gmailTokensJson: true,
+              logoUrl: true,
+              phone: true,
+              paymentSettingsJson: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!payment || !payment.proposal) return { skipped: true as const, reason: "not-found" };
+  const proposal = payment.proposal;
+  const org = proposal.organization;
+  const appUrl = await appBaseUrl();
+  const schedule = resolveSchedule({
+    total: proposal.total,
+    currency: proposal.currency,
+    installments: proposal.installments,
+  });
+  const remaining = fromMinor(schedule.remainingMinor);
+  const paidToDate = fromMinor(schedule.paidMinor);
+  const stageLabel =
+    payment.installments.length === 0
+      ? "Payment"
+      : payment.installments.length === 1
+        ? payment.installments[0].label
+        : "Remaining balance";
+  const clientName = payment.client?.name ?? "Your client";
+  const ref = payment.id.slice(-8).toUpperCase();
+
+  const wantsReceipts = parsePaymentSettings(org.paymentSettingsJson).receiptsOnPayment;
+  if (wantsReceipts && payment.client?.email) {
+    const { subject, html } = renderEmail(
+      buildPaymentReceipt({
+        org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone },
+        clientName,
+        title: proposal.title,
+        stageLabel,
+        amount: payment.amount,
+        method: methodPhrase(payment.provider, payment.method) || "",
+        paidAt: payment.paidAt ?? new Date(),
+        paidToDate,
+        remaining,
+        href: `${appUrl}/portal/q/${proposal.publicId}`,
+        ref,
+      }),
+    );
+    await sendOrgEmail(org, { to: payment.client.email, subject, html }).catch((err) =>
+      console.warn("[notifyPaymentReceived] client receipt failed", err),
+    );
+  }
+
+  await sendToMembersByPref(
+    payment.organizationId,
+    "payment-received",
+    buildOwnerPaymentReceived({
+      org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone },
+      clientName,
+      title: proposal.title,
+      stageLabel,
+      amount: payment.amount,
+      fee: payment.feeAmount,
+      net: payment.netAmount ?? payment.amount - payment.feeAmount,
+      provider: providerLabel(payment.provider, payment.method),
+      remaining,
+      paidInFull: schedule.remainingMinor <= 0,
+      href: `${appUrl}/dashboard/proposals/${proposal.id}`,
     }),
+  );
+  return { skipped: false as const, enabled: isEmailEnabled() };
+}
+
+/**
+ * Money needs a human: overpayment to refund, an orphaned payment, a provider
+ * account restricted, a token that failed to refresh. Writes a PAYMENT_ALERT
+ * activity (bell) and emails the owner.
+ */
+export async function notifyPaymentIssue(input: {
+  organizationId: string;
+  proposalId?: string | null;
+  title: string;
+  detail: string;
+  amount?: number | null;
+}) {
+  const org = await db.organization.findUnique({
+    where: { id: input.organizationId },
+    select: { name: true, billingEmail: true, logoUrl: true, phone: true },
+  });
+  if (!org) return { skipped: true as const };
+  await db.activityEvent.create({
+    data: {
+      organizationId: input.organizationId,
+      proposalId: input.proposalId ?? undefined,
+      kind: ActivityKind.PAYMENT_ALERT,
+      summary: input.title,
+      meta: JSON.stringify({ detail: input.detail, amount: input.amount ?? null }),
+    },
+  });
+  const ownerEmail = await ownerEmailFor(input.organizationId, org.billingEmail);
+  if (!ownerEmail) return { skipped: true as const };
+  const appUrl = await appBaseUrl();
+  const { subject, html } = renderEmail(
+    buildPaymentIssue({
+      org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone },
+      title: input.title,
+      detail: input.detail,
+      amount: input.amount ?? null,
+      href: input.proposalId
+        ? `${appUrl}/dashboard/proposals/${input.proposalId}`
+        : `${appUrl}/dashboard/settings?tab=payments`,
+    }),
+  );
+  await sendEmail({ to: ownerEmail, subject, html }).catch((err) =>
+    console.warn("[notifyPaymentIssue] email failed", err),
   );
   return { skipped: false as const };
 }

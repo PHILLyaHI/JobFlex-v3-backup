@@ -1,0 +1,1003 @@
+/* ============================================================================
+   PLANS & UPGRADE · HANDHELD  —  /mobile-upgrade-v1 and /dashboard/upgrade ≤768px
+   ============================================================================
+
+   The phone build of the plans page. It stands BESIDE the desktop build
+   (src/components/v3/upgrade-blueprint/*, untouched) and shares its whole data
+   layer: the same catalog props, the same checkout route, the same two billing
+   server actions. No fixture, no second endpoint.
+
+   The design language is the desktop port's, unchanged: paper #f2f0eb,
+   ink #0a0a0a, blueprint #1854a0, Inter 800–900 uppercase headings, JetBrains
+   Mono for the drawing-annotation layer, 2px ink frames, 2px radii, hard 3px
+   offset shadows with NO blur, tabular numerals on every amount. What changes
+   is the COMPOSITION — four side-by-side columns restack into one scrolling
+   column of full-width cards, the in-card feature scroller becomes a per-card
+   disclosure, and both dialogs become bottom sheets in the thumb zone.
+
+   ── PLAIN STYLESHEET, NOT A CSS MODULE (deliberate) ────────────────────────
+   Two constructs here cannot survive class hashing:
+     · the scoped universal reset `.jf-mobile-upgrade *` — `*` is not a class,
+       so the modules pipeline leaves it UNSCOPED and it flattens every page in
+       the app. This has cost the project twice;
+     · the host neutralisers, which are attribute/`:has()` selectors that have
+       to reach <body> and the desk shell's own literal global class names.
+   A module would need a `:global()` escape on each, and one missed escape
+   silently drops this design's own reset so Tailwind preflight + globals.css
+   fill the vacuum. Same call, same reasoning, as the sibling
+   mobile-overhead.css and mobile-job-detail.css.
+
+   Every selector below therefore carries the single literal root class
+   `.jf-mobile-upgrade`, uniformly — so relative specificity among these rules
+   is exactly what it would be unprefixed, and nothing leaks out. The only
+   exceptions are the host neutralisers, which are all `:has()`-gated so they
+   undo themselves the moment this page unmounts.
+
+   ── TWO ROOTS, ONE SCOPE ───────────────────────────────────────────────────
+   `.jf-mobile-upgrade` carries ONLY the tokens, the font and the reset, because
+   it is worn by two very different nodes: the page shell (which adds
+   `.mu-shell` and becomes the fixed full-screen frame) and each portalled sheet
+   wrapper (which adds `.mu-portal` and must stay out of flow). The desktop
+   build learned this the hard way — a portal root that carried the page's own
+   layout rule laid the picker out inline at the foot of <body>, invisible, and
+   the button that opened it read as dead.
+
+   ── DOCUMENT-GLOBAL NAMES ──────────────────────────────────────────────────
+   `.jf-mobile-upgrade` and the element prefix `mu-` are new literals, checked
+   against every other `.jf-*` root and every prefix in the repo. The fleet's
+   literal globals `rv` / `rv-in` / `pressed` are NOT used — this page writes
+   `mu-rv` / `mu-rv-in` / `mu-pressed`. The keyframes are namespaced `jf-mu-*`;
+   keyframe names are document-global and `press2` / `rowIn` are each declared
+   20+ times across this app. The page emits no SVG <symbol> of its own, so
+   there is no id to collide with.
+
+   ── SCOPE ──────────────────────────────────────────────────────────────────
+   Light mode only, no `.dark`. globals.css NOT touched. No Tailwind classes and
+   no `md:` / `lg:` variants: the page is fluid 320px → 768px on clamp() and
+   intrinsic grids. Verified at 320 / 390 / 768.
+   ========================================================================= */
+
+.jf-mobile-upgrade {
+  /* ---- PALETTE — the desktop port's values, verbatim ---- */
+  --paper: #f2f0eb;
+  --paper-deep: #ebe8e1;
+  --sheet: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #2a2a2a;
+  --blueprint: #1854a0;
+  --blueprint-dark: #0e3d7a;
+  --blueprint-soft: rgba(24, 84, 160, 0.07);
+  --sky: #4a9eff;
+
+  --muted: #555555;
+  --muted-light: #888888;
+  --muted-faint: #b0aea8;
+
+  /* Status colours. STATUSES ONLY — never decoration. On this page the only
+     statuses are "the sandbox is on", "the change went through" and "it
+     didn't". */
+  --success: #3a7d44;
+  --success-dark: #2c6335;
+  --success-soft: rgba(58, 125, 68, 0.07);
+  --warning: #b88420;
+  --warning-dark: #96691a;
+  --warning-soft: rgba(184, 132, 32, 0.08);
+  --danger: #a83232;
+  --danger-soft: rgba(168, 50, 50, 0.08);
+
+  --grid-light: rgba(0, 0, 0, 0.035);
+  --hair: rgba(10, 10, 10, 0.12);
+  --hair-soft: rgba(10, 10, 10, 0.08);
+  --dash: rgba(10, 10, 10, 0.16);
+  --shadow: rgba(10, 10, 10, 0.06);
+
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: 2px;
+
+  --font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* ---- FLUID SCALE — one composition, 320px → 768px, no breakpoint ---- */
+  --pad-x: clamp(12px, 3.8vw, 22px);
+  --gap: clamp(12px, 3.4vw, 18px);
+  --card-pad: clamp(14px, 4.2vw, 20px);
+  /* "PLANS & UPGRADE" is long for an H1, so it is scaled a step below the
+     one-word titles in the fleet: 24px at 320, 34px at 768, and it wraps. */
+  --fs-h1: clamp(24px, 6.6vw, 34px);
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* Touch floor. CLAUDE.md and DESIGN.md both put it at 44px; every control on
+     this page is sized from this token so an audit has one number to check —
+     both halves of the billing switch, every card CTA, every disclosure, every
+     picker row and both sheet buttons. */
+  --tap: 44px;
+  /* CTA height. NOT --tap: a button carries a 2px frame and box-sizing is
+     border-box, so a 44px box hands the label 40px. +6px puts the INNER
+     surface of every primary control at ≥44px. */
+  --cta-h: calc(var(--tap) + 6px);
+
+  font-family: var(--font);
+  color: var(--ink);
+
+  /* ── HOST NEUTRALISERS, part 1 (the two that live on the root) ──────────
+     Tailwind preflight sets `html { line-height: 1.5 }` and globals.css sets
+     `text-rendering: optimizeLegibility`; both inherit, and without these two
+     lines every box that declares no line-height of its own grows 2–5px and a
+     five-card column drifts a screen longer than it should be.
+     font-feature-settings is deliberately RESTATED rather than neutralised to
+     `normal`: globals puts 'cv11','ss01','ss03' on html+body and every sibling
+     handheld page re-declares exactly that, so `normal` here would make this
+     the one page whose Inter draws different digits — and this page is a
+     column of prices. */
+  line-height: normal;
+  text-rendering: auto;
+  font-feature-settings: "cv11", "ss01", "ss03";
+}
+
+/* THE PAGE SHELL. Split off the root class on purpose — see the "TWO ROOTS"
+   header. The route renders inside the app's root wrapper (and, on
+   /dashboard/upgrade, inside the desk shell's content column), so it pins
+   itself rather than fighting the outer flow. */
+.jf-mobile-upgrade.mu-shell {
+  position: fixed;
+  inset: 0;
+  /* Above the desk shell's chrome. On /dashboard/upgrade this page renders
+     INSIDE that shell (the route is not in the responsive shell's exempt list
+     and that file is out of scope here), so the handheld build has to cover it
+     rather than replace it. The neutralisers below take the desk sidebar,
+     topbar and support dock out of the tab order to match. */
+  z-index: 40;
+  display: grid;
+  /* minmax(0, 1fr) on the single column, not the implicit `auto`: an auto track
+     grows to its widest item's max-content, and the shared topbar's
+     max-content is ~361px at a 320px viewport — which would widen the scroller
+     under it and clip the right edge off every card. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  height: var(--app-h, 100dvh);
+  overflow: hidden;
+  background: var(--paper);
+}
+
+/* Scoped universal reset — the construct a CSS Module cannot express.
+   WRAPPED IN :where(). Written bare it scores (0,1,0), the same as every class
+   rule in mobile-nav.module.css, and this sheet is imported after that module
+   — so `padding: 0` would win every tie and cancel the shared topbar's own
+   padding, leaving the nav flush to both screen edges on this page alone. At
+   (0,0,0) the reset still beats the UA defaults it exists for and loses to
+   every author rule. Do not un-wrap. */
+:where(.jf-mobile-upgrade),
+:where(.jf-mobile-upgrade *) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* :where() holds the control reset at element-level specificity (0,0,1).
+   Un-wrapped — the root class as a plain ancestor of a type selector — it
+   scores (0,2,1) and silently beats EVERY rule below that styles a button by
+   class (0,2,0): every background and every border on this page would be
+   cancelled at render time, and it would parse, lint and typecheck clean while
+   doing it. That trap has cost this fleet a day. Do not un-wrap. */
+:where(.jf-mobile-upgrade) button {
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+:where(.jf-mobile-upgrade) a { text-decoration: none; color: inherit; }
+:where(.jf-mobile-upgrade) h1,
+:where(.jf-mobile-upgrade) h2 { font-size: inherit; font-weight: inherit; }
+:where(.jf-mobile-upgrade) ul { list-style: none; }
+
+.jf-mobile-upgrade [hidden] { display: none !important; }
+.jf-mobile-upgrade ::selection { background: var(--blueprint); color: #fff; }
+.jf-mobile-upgrade :focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HOST NEUTRALISERS, part 2 — the only rules here that do not start with the
+   root class. All `:has()`-gated, so they restore themselves on unmount, which
+   matters because the App Router keeps this stylesheet in the document after a
+   client-side navigation away.
+
+   1–2. globals.css paints a 40px drafting grid on <body> (fixed attachment)
+        and a `body::before` paper-grain overlay with mix-blend-mode: multiply.
+        This page paints its own graph paper inside its own scroller,
+        parallaxed; the body copy would sit a second, non-parallaxing grid
+        behind it, and the grain's multiply blend would tint every white card.
+   3.   The document behind a fixed full-screen page must not scroll.
+   4.   THE DESK SHELL. On /dashboard/upgrade this build renders inside
+        BlueprintShell's `.content`, because the route is not in the responsive
+        shell's page-owned list and that module is out of scope for this work.
+        The shell's own chrome is therefore still in the DOM underneath: its
+        sidebar, its topbar and its support dock would sit in the tab order
+        below an opaque overlay, and the dock would draw a SECOND floating
+        support button beside the one <MobileNav /> mounts. Hidden by their
+        literal global class names (`.sb`, `.topbar`, `.jfsup` — set in
+        blueprint-shell.tsx, not hashed), each anchored with `>` to the shell
+        root so this can never reach the copies MobileNav mounts deeper in the
+        same tree. Inert on /mobile-upgrade-v1, where no `.jf-blueprint` exists.
+   ══════════════════════════════════════════════════════════════════════════ */
+body:has(.jf-mobile-upgrade.mu-shell) { background-image: none; overflow: hidden; }
+body:has(.jf-mobile-upgrade.mu-shell)::before { content: none; }
+body:has(.jf-mobile-upgrade.mu-shell) .jf-blueprint > .layout > .sb,
+body:has(.jf-mobile-upgrade.mu-shell) .jf-blueprint > .layout > .sb-overlay,
+body:has(.jf-mobile-upgrade.mu-shell) .jf-blueprint > .layout > .main > .topbar,
+body:has(.jf-mobile-upgrade.mu-shell) .jf-blueprint > .jfsup {
+  display: none !important;
+}
+
+/* ============================================================
+   SCROLLER — owns the graph-paper parallax
+   ============================================================ */
+.jf-mobile-upgrade .mu-scroll {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--paper);
+  /* No rail down the edge of the sheet — the graph paper reads as one
+     continuous drawing. globals' `* { scrollbar-width: thin }` is left alone
+     everywhere else. */
+  scrollbar-width: none;
+}
+.jf-mobile-upgrade .mu-scroll::-webkit-scrollbar { width: 0; height: 0; }
+/* A sheet is up: the page under it must not scroll behind the scrim. */
+.jf-mobile-upgrade.is-locked .mu-scroll { overflow: hidden; }
+
+.jf-mobile-upgrade .mu-scroll::before {
+  content: "";
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(var(--grid-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: 0 var(--gy, 0px);
+  pointer-events: none;
+  z-index: 0;
+}
+.jf-mobile-upgrade .mu-content {
+  position: relative;
+  z-index: 1;
+  padding: 16px var(--pad-x) calc(30px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  /* Every child is width-constrained by the flex column; this is the belt to
+     that braces: nothing in this tree may widen the page. */
+  min-width: 0;
+}
+
+/* ============================================================
+   PAGE HEAD — kicker + H1 + the one line of state that matters
+   ============================================================ */
+.jf-mobile-upgrade .mu-head { display: flex; flex-direction: column; gap: 8px; }
+.jf-mobile-upgrade .mu-kick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--muted);
+}
+.jf-mobile-upgrade .mu-kick::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--sky);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.jf-mobile-upgrade .mu-title {
+  font-size: var(--fs-h1);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+  text-transform: uppercase;
+  /* A page title wraps, never truncates — a clipped H1 reads as a bug. */
+  overflow-wrap: break-word;
+}
+.jf-mobile-upgrade .mu-lede {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-upgrade .mu-lede b { font-weight: 800; color: var(--ink); }
+
+/* ============================================================
+   BILLING SWITCH — one two-state control, not two buttons.
+   Full width so both halves are thumb-sized at 320px; the on-state is a solid
+   blueprint fill, because the owner's rule is that controls stay COLOURED.
+   ============================================================ */
+.jf-mobile-upgrade .mu-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 3px 3px 0 var(--shadow);
+  overflow: hidden;
+}
+.jf-mobile-upgrade .mu-seg-b {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--cta-h);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--sheet);
+  transition: background 0.14s var(--ease-out), color 0.14s var(--ease-out);
+}
+.jf-mobile-upgrade .mu-seg-b + .mu-seg-b { border-left: var(--border-thin); }
+.jf-mobile-upgrade .mu-seg-b.is-on { background: var(--blueprint); color: #fff; }
+.jf-mobile-upgrade .mu-seg-b i {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 5px;
+  border-radius: var(--radius);
+  background: var(--success-soft);
+  border: 1px solid var(--success);
+  color: var(--success-dark);
+  white-space: nowrap;
+}
+.jf-mobile-upgrade .mu-seg-b.is-on i {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.7);
+  color: #fff;
+}
+
+/* ============================================================
+   BANNERS — statuses, and only statuses.
+   ============================================================ */
+.jf-mobile-upgrade .mu-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 2px solid var(--warning);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+}
+.jf-mobile-upgrade .mu-note b {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--warning-dark);
+}
+.jf-mobile-upgrade .mu-note span {
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-upgrade .mu-note.is-bad { border-color: var(--danger); background: var(--danger-soft); }
+.jf-mobile-upgrade .mu-note.is-bad b { color: var(--danger); }
+
+/* The one loud plate on the page: the purchase went through. A filled green
+   stamp, per the brief — this is the peak moment of the flow. */
+.jf-mobile-upgrade .mu-done {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px var(--card-pad);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--success);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-upgrade .mu-done-k {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  border-radius: var(--radius);
+}
+.jf-mobile-upgrade .mu-done b {
+  font-size: clamp(18px, 5vw, 23px);
+  font-weight: 900;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   PLAN CARD — white sheet, 2px ink frame, hard 3px offset shadow, no blur.
+   One card is one decision, so it takes the full width and its CTA sits at
+   the foot where the thumb already is.
+   ============================================================ */
+.jf-mobile-upgrade .mu-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--sheet);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 3px 3px 0 var(--shadow);
+  min-width: 0;
+}
+/* The catalog's highlighted tier and the org's own plan are the two cards that
+   must be findable in a scroll. Highlight gets a blueprint frame and a deeper
+   shadow; the current plan gets the frame in ink and a tinted head. */
+.jf-mobile-upgrade .mu-card.is-hero {
+  border-color: var(--blueprint);
+  box-shadow: 4px 4px 0 rgba(24, 84, 160, 0.18);
+}
+.jf-mobile-upgrade .mu-card.is-cur { box-shadow: 3px 3px 0 var(--shadow); }
+.jf-mobile-upgrade .mu-card.is-cur .mu-card-top { background: var(--blueprint-soft); }
+
+.jf-mobile-upgrade .mu-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px var(--card-pad) 12px;
+  border-bottom: 1px solid var(--hair-soft);
+  min-width: 0;
+}
+.jf-mobile-upgrade .mu-card-id { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.jf-mobile-upgrade .mu-name {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-upgrade .mu-desc {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted-light);
+  overflow-wrap: anywhere;
+  /* A catalog description is contractor-typed text; two lines, then clamp. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.jf-mobile-upgrade .mu-tag {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--blueprint);
+  border-color: var(--blueprint);
+  color: #fff;
+  white-space: nowrap;
+}
+.jf-mobile-upgrade .mu-tag.is-cur {
+  background: var(--sheet);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* THE PRICE. Inter 900, tabular numerals, tracking relaxed a hair as DESIGN.md
+   asks for large numerals. The unit and the save chip are the annotation layer
+   and stay small beside it. */
+.jf-mobile-upgrade .mu-price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 13px var(--card-pad) 12px;
+  background: var(--paper-deep);
+  border-bottom: 1px solid var(--hair-soft);
+  min-width: 0;
+}
+.jf-mobile-upgrade .mu-price b {
+  font-size: clamp(30px, 8.4vw, 40px);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+  line-height: 0.95;
+}
+.jf-mobile-upgrade .mu-price i {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.jf-mobile-upgrade .mu-save,
+.jf-mobile-upgrade .mu-trial {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 7px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+.jf-mobile-upgrade .mu-save {
+  border: 1px solid var(--success);
+  background: var(--success-soft);
+  color: var(--success-dark);
+}
+.jf-mobile-upgrade .mu-save s { color: var(--muted-light); margin-right: 3px; }
+.jf-mobile-upgrade .mu-trial {
+  border: 1px solid var(--hair);
+  background: var(--sheet);
+  color: var(--muted);
+}
+
+/* ============================================================
+   FEATURE ROWS — estimate-sheet lines: a drawn tick, a hairline between.
+   Three included rows show outright; the rest live behind the disclosure, so
+   five cards stay comparable in one thumb sweep.
+   ============================================================ */
+.jf-mobile-upgrade .mu-feats { padding: 4px var(--card-pad) 6px; min-width: 0; }
+.jf-mobile-upgrade .mu-f {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--hair-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  min-width: 0;
+}
+.jf-mobile-upgrade .mu-f:last-child { border-bottom: none; }
+.jf-mobile-upgrade .mu-f span { min-width: 0; overflow-wrap: anywhere; }
+.jf-mobile-upgrade .mu-f.is-no { color: var(--muted-faint); font-weight: 500; }
+.jf-mobile-upgrade .mu-fic {
+  display: block;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--blueprint);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
+}
+.jf-mobile-upgrade .mu-f.is-no .mu-fic { stroke: var(--muted-faint); stroke-width: 2; }
+
+/* The disclosure. A full-width row button, mono like every other annotation,
+   with a chevron that turns. */
+.jf-mobile-upgrade .mu-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--card-pad);
+  border-top: 1px solid var(--hair-soft);
+  background: var(--sheet);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--blueprint);
+  transition: background 0.14s var(--ease-out);
+}
+.jf-mobile-upgrade .mu-chev {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.22s var(--ease-out);
+}
+.jf-mobile-upgrade .mu-more.is-open .mu-chev { transform: rotate(180deg); }
+
+/* ============================================================
+   CARD FOOT — the one action, full width, in the thumb's path.
+   ============================================================ */
+.jf-mobile-upgrade .mu-foot {
+  padding: 12px var(--card-pad) 14px;
+  border-top: var(--border-thin);
+  background: var(--paper-deep);
+}
+
+/* ============================================================
+   BUTTONS — COLOURED, ALWAYS. Primary is a blueprint fill with a 2px ink
+   frame; the press lifts into a hard 3px offset shadow with no blur. Ghost is
+   the same frame on white. Nothing here is ever flattened to outline grey.
+   ============================================================ */
+.jf-mobile-upgrade .mu-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--cta-h);
+  padding: 0 16px;
+  border: var(--border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out),
+    background 0.12s var(--ease-out);
+}
+.jf-mobile-upgrade .mu-cta.is-primary {
+  background: var(--blueprint);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-mobile-upgrade .mu-cta.is-ghost {
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+@media (hover: hover) {
+  .jf-mobile-upgrade .mu-cta:hover:not(:disabled) {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 var(--ink);
+  }
+  .jf-mobile-upgrade .mu-cta.is-primary:hover:not(:disabled) { background: var(--blueprint-dark); }
+  .jf-mobile-upgrade .mu-cta.is-ghost:hover:not(:disabled) { background: var(--paper-deep); }
+  .jf-mobile-upgrade .mu-more:hover { background: var(--paper-deep); }
+  .jf-mobile-upgrade .mu-seg-b:hover:not(.is-on) { background: rgba(10, 10, 10, 0.05); }
+  .jf-mobile-upgrade .mu-row:hover:not(.is-on) { background: var(--paper-deep); }
+}
+.jf-mobile-upgrade .mu-cta:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.jf-mobile-upgrade .mu-cta:disabled { opacity: 0.5; cursor: default; }
+
+/* "Current plan" is a LABEL, not a control: blueprint text in a blueprint
+   outline on white, so the card reads as settled rather than clickable. */
+.jf-mobile-upgrade .mu-cur-lbl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--cta-h);
+  border: 2px solid var(--blueprint);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--blueprint);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Fine print under the stack — reasons, never decoration. */
+.jf-mobile-upgrade .mu-fine {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BOTTOM SHEETS — portalled to <body>, so they clear the shared handheld
+   topbar and, on /dashboard/upgrade, the desk shell's content column (both are
+   stacking contexts a fixed child could not escape). The wrapper wears
+   `.jf-mobile-upgrade .mu-portal`, which is tokens only.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jf-mobile-upgrade.mu-portal { display: contents; }
+
+.jf-mobile-upgrade .mu-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.jf-mobile-upgrade .mu-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.45);
+  opacity: 0;
+  transition: opacity 0.22s var(--ease-out);
+}
+.jf-mobile-upgrade .mu-sheet.is-on .mu-scrim { opacity: 1; }
+
+.jf-mobile-upgrade .mu-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(var(--app-h, 100dvh) - 48px);
+  padding-bottom: var(--safe-b);
+  background: var(--sheet);
+  border-top: var(--border);
+  /* Near-square, per the house style: the sheet is a drawn plate, not a pill. */
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 -3px 0 var(--ink);
+  transform: translateY(12px);
+  opacity: 0;
+  transition: transform 0.24s var(--ease-out), opacity 0.2s var(--ease-out);
+  min-width: 0;
+}
+.jf-mobile-upgrade .mu-sheet.is-on .mu-box { transform: none; opacity: 1; }
+/* The picker can be long; give it a floor so its list never opens as a sliver. */
+.jf-mobile-upgrade .mu-sheet.is-tall .mu-box { min-height: min(72vh, 560px); }
+
+/* The grab handle — an ink dimension line, not a rounded iOS pill. */
+.jf-mobile-upgrade .mu-grab {
+  display: block;
+  width: 46px;
+  height: 3px;
+  margin: 10px auto 0;
+  background: var(--ink);
+  opacity: 0.28;
+}
+
+.jf-mobile-upgrade .mu-box-head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px var(--card-pad) 10px;
+}
+.jf-mobile-upgrade .mu-box-h {
+  font-size: clamp(21px, 5.8vw, 27px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  text-transform: uppercase;
+  overflow-wrap: break-word;
+  /* Clear of the close button. */
+  padding-right: 48px;
+}
+.jf-mobile-upgrade .mu-x {
+  position: absolute;
+  top: 8px;
+  right: calc(var(--card-pad) - 6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink);
+}
+.jf-mobile-upgrade .mu-x svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.jf-mobile-upgrade .mu-box-body {
+  padding: 0 var(--card-pad) 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-upgrade .mu-box-body b { font-weight: 800; color: var(--ink); }
+
+/* The confirmation's two buttons. Cancel is the wider-reaching mistake to
+   make by accident, so it is the ghost and it comes first in the DOM; both
+   clear the touch floor and neither is a text link. */
+.jf-mobile-upgrade .mu-box-foot {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+  padding: 12px var(--card-pad) 16px;
+  border-top: var(--border-thin);
+  background: var(--paper-deep);
+}
+
+/* ---- The page picker's list ---- */
+.jf-mobile-upgrade .mu-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--card-pad) 8px;
+  border-top: 1px solid var(--hair-soft);
+}
+.jf-mobile-upgrade .mu-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair-soft);
+  text-align: left;
+  transition: background 0.14s var(--ease-out);
+}
+.jf-mobile-upgrade .mu-row:last-child { border-bottom: none; }
+.jf-mobile-upgrade .mu-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: var(--border-thin);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  transition: background 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+}
+.jf-mobile-upgrade .mu-row.is-on .mu-check { background: var(--blueprint); border-color: var(--blueprint); }
+.jf-mobile-upgrade .mu-check svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jf-mobile-upgrade .mu-row-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.jf-mobile-upgrade .mu-row-n {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+}
+.jf-mobile-upgrade .mu-row-note {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--muted-light);
+  overflow-wrap: anywhere;
+}
+.jf-mobile-upgrade .mu-row-p {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.jf-mobile-upgrade .mu-row.is-on .mu-row-p { color: var(--blueprint); }
+
+/* Empty state — a note on a drawing. */
+.jf-mobile-upgrade .mu-empty {
+  border: 1.5px dashed var(--dash);
+  border-radius: var(--radius);
+  padding: 24px 16px;
+  margin: 12px 0;
+  text-align: center;
+}
+.jf-mobile-upgrade .mu-empty b {
+  display: block;
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+}
+.jf-mobile-upgrade .mu-empty span {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/* The picker's foot: the two numbers that matter, then the commit. Stacked
+   rather than side by side — at 320px "Add 9 pages · $90" beside a total is
+   two truncated strings. */
+.jf-mobile-upgrade .mu-list-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px var(--card-pad) 16px;
+  border-top: var(--border-thin);
+  background: var(--paper-deep);
+}
+.jf-mobile-upgrade .mu-total {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.jf-mobile-upgrade .mu-total b {
+  font-size: clamp(24px, 6.6vw, 30px);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.jf-mobile-upgrade .mu-total i {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   MOTION — Balanced. Reveal on load, press stamp, graph-paper parallax.
+   No MutationObserver anywhere: the reveal is applied once, at mount, by the
+   component — opening a card's feature list must never replay the entrance.
+   ============================================================ */
+.jf-mobile-upgrade .mu-rv {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.42s var(--ease-out), transform 0.42s var(--ease-out);
+}
+.jf-mobile-upgrade .mu-rv-in { opacity: 1; transform: none; }
+
+@keyframes jf-mu-press {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+.jf-mobile-upgrade .mu-pressed { animation: jf-mu-press 0.18s var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  .jf-mobile-upgrade *,
+  .jf-mobile-upgrade *::before,
+  .jf-mobile-upgrade *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .jf-mobile-upgrade .mu-rv { opacity: 1; transform: none; }
+  .jf-mobile-upgrade .mu-box { transform: none; opacity: 1; }
+  .jf-mobile-upgrade .mu-scrim { opacity: 1; }
+}

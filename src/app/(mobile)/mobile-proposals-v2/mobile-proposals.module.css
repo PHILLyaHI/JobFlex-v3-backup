@@ -986,3 +986,19 @@
    strip it stands in — otherwise the last row of every list ends
    underneath it with no way to scroll clear. */
 .scroll { padding-bottom: 60px; }
+
+/* Mark paid → in-place method picker (bank / cash / check). Same plate as
+   the Remind button so the row's rhythm does not change when it opens. */
+.pickRow {
+  grid-column: 2;
+  display: flex;
+  gap: 6px;
+  justify-self: end;
+  flex-wrap: wrap;
+}
+.pcol .pschedRem,
+.pcol .pickRow {
+  grid-column: auto;
+  justify-self: start;
+  margin-top: 8px;
+}

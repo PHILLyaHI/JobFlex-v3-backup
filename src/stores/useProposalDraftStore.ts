@@ -29,6 +29,15 @@ export interface DraftInstallment {
   label: string;
   amount: number;
   isPercent: boolean;
+  // Server-side stage state, hydrated from Installment. A PAID / WAIVED stage
+  // (or one the client is paying right now) is locked: its amount and its
+  // existence cannot change from the builder — saveProposal refuses too.
+  status?: string;
+  paidAmount?: number | null;
+}
+
+export function isLockedInstallment(i: { status?: string }): boolean {
+  return i.status === "PAID" || i.status === "WAIVED" || i.status === "PENDING";
 }
 
 interface ProposalDraft {
@@ -173,11 +182,19 @@ export const useProposalDraftStore = create<DraftStore>()(
     updateInstallment: (id, patch) =>
       set((s) => {
         const i = s.draft.installments.find((x) => x.id === id);
-        if (i) Object.assign(i, patch);
+        if (!i) return;
+        if (isLockedInstallment(i)) {
+          // Only the label may change on a locked stage.
+          if (patch.label !== undefined) i.label = patch.label;
+          return;
+        }
+        Object.assign(i, patch);
       }),
     removeInstallment: (id) =>
       set((s) => {
-        s.draft.installments = s.draft.installments.filter((x) => x.id !== id);
+        s.draft.installments = s.draft.installments.filter(
+          (x) => x.id !== id || isLockedInstallment(x),
+        );
       }),
     hydrate: (d) =>
       set((s) => {

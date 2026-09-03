@@ -7,6 +7,8 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { slugify, uniqueOrgSlug } from "@/lib/orgSlug";
 import { TRADE_TYPES } from "@/lib/tradeTypes";
 import { enforceRateLimit, clientIp, rateLimitShared, HOUR, MINUTE } from "@/lib/rateLimit";
+import { requireOwner } from "@/lib/orgContext";
+import { isPlaceholderOrgName } from "@/lib/orgSetup";
 
 // Public, unauthenticated auth actions: self-serve registration and the
 // forgot/reset-password flow. These run BEFORE the caller has a session, so they
@@ -344,5 +346,82 @@ export async function resetPassword(raw: unknown): Promise<{ ok: true }> {
     }
   }
 
+  return { ok: true };
+}
+
+
+/* ───────────────────── Google signup — the company step ───────────────────── */
+
+const companySetupSchema = z.object({
+  businessName: z.string().trim().min(1, "Business name is required.").max(160),
+  companyAddress: z.string().trim().min(1, "Company address is required.").max(300),
+  companyPhone: z.string().trim().max(40).optional(),
+  /** The signed-in person's own phone (Google gives us none). */
+  phone: z.string().trim().max(40).optional(),
+  tradeTypes: z.array(z.enum(TRADE_TYPES)).min(1, "Pick at least one trade."),
+  otherTrade: z.string().trim().max(80).optional(),
+});
+
+/**
+ * Step 2 for a Google signup. The auth callback provisioned a placeholder
+ * org ("Jamie's workspace") so the person was never org-less; this fills in
+ * what registerAccount would have written on a password signup — name,
+ * address, phone, trades — on that same org. Owner-only, and idempotent: a
+ * second submit just updates.
+ */
+export async function completeCompanySetup(raw: unknown): Promise<{ ok: true }> {
+  const ctx = await requireOwner();
+  const data = companySetupSchema.parse(raw);
+  const org = await db.organization.findUnique({
+    where: { id: ctx.organizationId },
+    select: { id: true, name: true, slug: true },
+  });
+  if (!org) throw new Error("Not found");
+
+  const renamed = data.businessName !== org.name;
+  const slug =
+    renamed && isPlaceholderOrgName(org.name)
+      ? await uniqueOrgSlug(slugify(data.businessName))
+      : org.slug;
+
+  await db.organization.update({
+    where: { id: org.id },
+    data: {
+      name: data.businessName,
+      slug,
+      address: data.companyAddress,
+      phone: data.companyPhone || null,
+      tradeTypesJson: JSON.stringify(data.tradeTypes),
+      otherTrade: data.otherTrade && data.tradeTypes.includes("Other") ? data.otherTrade : null,
+    },
+  });
+  if (data.phone !== undefined) {
+    await db.user.update({ where: { id: ctx.user.id }, data: { phone: data.phone || null } });
+  }
+
+  try {
+    await db.activityEvent.create({
+      data: {
+        organizationId: org.id,
+        actorId: ctx.user.id,
+        kind: "CREATED",
+        summary: `${ctx.user.name ?? ctx.user.email ?? "Owner"} set up the ${data.businessName} workspace`,
+      },
+    });
+  } catch {
+    /* non-fatal */
+  }
+  try {
+    const { geocodeAddress } = await import("@/lib/maps");
+    const geo = await geocodeAddress({ address: data.companyAddress });
+    if (geo) {
+      await db.organization.update({
+        where: { id: org.id },
+        data: { lat: geo.lat, lng: geo.lng, geocodedAt: new Date() },
+      });
+    }
+  } catch {
+    /* non-fatal */
+  }
   return { ok: true };
 }

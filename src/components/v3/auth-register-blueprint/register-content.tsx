@@ -32,19 +32,27 @@ import * as React from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
+import { attachPlacesSuggest } from "@/components/v3/blueprint-shell/places-suggest";
 import { toast } from "@/components/ui/Toast";
-import { checkEmailAvailable } from "@/actions/auth";
+import { checkEmailAvailable, completeCompanySetup } from "@/actions/auth";
+import type { SetupPrefill } from "@/app/(auth)/auth/register/register-responsive";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import { RegisterSprite } from "./register-sprite";
 import { ReferralBanner, type RegisterAttribution } from "./referral-banner";
 import {
   applySignupPromo,
+  googleSignupIdentity,
   signupPlans,
   type SignupPlan,
   type SignupPromo,
 } from "@/actions/signupPaywall";
-import { completePendingSignup, startPendingSignup, updatePendingSignupPages } from "@/actions/signupCheckout";
+import {
+  completePendingSignup,
+  startPendingSignup,
+  updatePendingSignupAttribution,
+  updatePendingSignupPages,
+} from "@/actions/signupCheckout";
 import {
   CUSTOM_BASE_CENTS,
   CUSTOM_BASE_FEATURES,
@@ -84,9 +92,14 @@ function tradeNote(n: number): string {
     : n + (n === 1 ? " trade" : " trades") + " selected — leads will be matched to these.";
 }
 
-export function RegisterContent() {
+export function RegisterContent({ setup = null }: { setup?: SetupPrefill | null }) {
   const router = useRouter();
+  /* SETUP MODE: a Google signup finishing step 2. Step 1 is done (Google did
+     it), the plan step follows in the app (/dashboard/upgrade), and there is
+     no pending-signup intent to park: the account already exists. */
+  const setupMode = setup !== null;
   const rootRef = React.useRef<HTMLDivElement>(null);
+  const addrRef = React.useRef<HTMLInputElement>(null);
 
   /* THE RETURN FROM STRIPE. `?signup=<token>&session_id=…` is the success URL
      the checkout route set, and it is the only input this needs. Read through
@@ -114,7 +127,15 @@ export function RegisterContent() {
      visitor saw the pricing they had just paid for flash past before "Your
      shop is live" — which read as being sent back (owner's report). The done
      panel now carries a finalizing state (`payBusy`) for that second. */
-  const [step, setStep] = React.useState<Step>(ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : 1);
+  const [step, setStep] = React.useState<Step>(
+    setupMode ? 2 : ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : 1,
+  );
+  /* GOOGLE ON THIS PAGE proves who the visitor is and nothing more (owner,
+     2026-09-03). The auth callback parks the verified identity and comes back
+     here with ?gsu=<handle>; the handle is read once and step 1 is filled
+     from it, with the password fields replaced by a "verified" note. */
+  const gsu = React.useMemo(() => searchParams?.get("gsu") ?? null, [searchParams]);
+  const [google, setGoogle] = React.useState<{ handle: string; email: string } | null>(null);
   /* True once the ticket minted by completePendingSignup has been redeemed:
      the browser holds a session, and step 4 may point at the dashboard. */
   const [signedIn, setSignedIn] = React.useState(false);
@@ -278,9 +299,9 @@ export function RegisterContent() {
     };
   }, [step, plans, customPages, interval]);
 
-  const [name, setName] = React.useState("");
-  const [biz, setBiz] = React.useState("");
-  const [email, setEmail] = React.useState("");
+  const [name, setName] = React.useState(setup?.name ?? "");
+  const [biz, setBiz] = React.useState(setup?.businessName ?? "");
+  const [email, setEmail] = React.useState(setup?.email ?? "");
   const [password, setPassword] = React.useState("");
   const [password2, setPassword2] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
@@ -290,7 +311,7 @@ export function RegisterContent() {
   const [checking, setChecking] = React.useState(false);
 
   const [addr, setAddr] = React.useState("");
-  const [phone, setPhone] = React.useState("");
+  const [phone, setPhone] = React.useState(setup?.companyPhone || setup?.phone || "");
   const [trades, setTrades] = React.useState<TradeType[]>([]);
   // "Other" is the one chip that cannot say what it means on its own. Picking it
   // opens a free-text line so the trade the taxonomy has no word for still
@@ -310,6 +331,45 @@ export function RegisterContent() {
   const [creating, setCreating] = React.useState(false);
   const [doneNote, setDoneNote] = React.useState("");
   const [googleBusy, setGoogleBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!gsu) return;
+    let live = true;
+    void googleSignupIdentity(gsu).then((g) => {
+      if (!live) return;
+      if (!g) {
+        setErr1("Your Google sign-in expired. Continue with Google again.");
+        return;
+      }
+      setGoogle({ handle: gsu, email: g.email });
+      setEmail(g.email);
+      if (g.name) setName(g.name);
+      // Stays on step 1: Google gives a name and an address, not the business
+      // name, and the password fields are what it replaces.
+    });
+    return () => {
+      live = false;
+    };
+  }, [gsu]);
+
+  /* ADDRESS SUGGESTIONS on the company address (owner, 2026-09-02). The same
+     Google Places attach every blueprint page uses; the list is appended to
+     <body>, so it carries its own class and its own styles (auth-register
+     .module.css, `.jf-reg-sug`) — the shell's `.bp-sug` sheet is not loaded
+     here. Free typing is left alone (`typed` picks are ignored); a chosen
+     suggestion writes the formatted address into the field. */
+  React.useEffect(() => {
+    if (step !== 2) return;
+    const el = addrRef.current;
+    if (!el) return;
+    return attachPlacesSuggest(el, {
+      className: "jf-reg-sug",
+      onPick: (p) => {
+        if (p.typed) return;
+        setAddr(p.formatted);
+      },
+    });
+  }, [step]);
 
   /* The catalog is read when the plan step opens, not on mount: before the
      account exists there is no owner to read it as. */
@@ -372,6 +432,15 @@ export function RegisterContent() {
           return;
         }
       }
+      /* THE CODE GOES WITH IT. Typed on this step, after the intent was
+         parked — the checkout route prices from the intent alone. */
+      if (token) {
+        const stamped = await updatePendingSignupAttribution(token, attribution);
+        if (!stamped.ok) {
+          setPlansErr(stamped.error);
+          return;
+        }
+      }
       const res = await fetch("/api/checkout/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -404,7 +473,9 @@ export function RegisterContent() {
         setPlansErr(res.error);
         return;
       }
-      const auth = await signIn("signup-ticket", { ticket: res.ticket, redirect: false });
+      const auth = res.ticket
+        ? await signIn("signup-ticket", { ticket: res.ticket, redirect: false })
+        : null;
       setSignedIn(Boolean(auth && !auth.error));
       setDoneNote("Your workspace is ready.");
       toast.success("Welcome to JobFlex", "Your workspace is ready.");
@@ -429,9 +500,31 @@ export function RegisterContent() {
     void completePendingSignup(ret.token, ret.sessionId)
       .then(async (res) => {
         if (!res.ok) {
+          /* A RELOAD after completion (see completePendingSignup): the shop
+             exists. If the browser still holds its session, carry on to the
+             dashboard; otherwise say so and point at sign-in. Never back to
+             the plan page — nothing is left to buy. */
+          if (res.done) {
+            const s = await getSession().catch(() => null);
+            const ok = Boolean(
+              s?.user?.email && res.email && s.user.email.toLowerCase() === res.email.toLowerCase(),
+            );
+            setSignedIn(ok);
+            setDoneNote(
+              ok
+                ? `Your subscription is active and your workspace is ready for ${res.email}.`
+                : `Your shop is already set up for ${res.email}. Sign in to open it.`,
+            );
+            return;
+          }
           // Back to the plan page, with the reason on it.
           setPlansErr(res.error);
           setStep(3);
+          return;
+        }
+        if (!res.ticket) {
+          setSignedIn(false);
+          setDoneNote(`Your workspace is ready for ${res.email}. Sign in to open it.`);
           return;
         }
         /* THE SESSION IS ESTABLISHED HERE. The password typed on step 1 is
@@ -507,13 +600,15 @@ export function RegisterContent() {
       setErr1("Enter a valid email address.");
       return;
     }
-    if (password.length < 8) {
-      setErr1("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== password2) {
-      setErr1("Passwords do not match.");
-      return;
+    if (!google) {
+      if (password.length < 8) {
+        setErr1("Password must be at least 8 characters.");
+        return;
+      }
+      if (password !== password2) {
+        setErr1("Passwords do not match.");
+        return;
+      }
     }
     setErr1(null);
     setChecking(true);
@@ -556,11 +651,29 @@ export function RegisterContent() {
     setCreating(true);
     setErr2(null);
     try {
+      if (setupMode) {
+        if (!biz.trim()) {
+          setErr2("Enter your business name.");
+          return;
+        }
+        await completeCompanySetup({
+          businessName: biz.trim(),
+          companyAddress: addr.trim(),
+          companyPhone: phone.trim() || undefined,
+          phone: phone.trim() || undefined,
+          tradeTypes: trades,
+          otherTrade:
+            trades.includes("Other") && otherTrade.trim() ? otherTrade.trim() : undefined,
+        });
+        toast.success("Welcome to JobFlex", "Your company is set up. Pick a plan to go live.");
+        router.push("/dashboard/upgrade" as Route);
+        return;
+      }
       const res = await startPendingSignup({
         name: name.trim(),
         businessName: biz.trim(),
         email: email.trim(),
-        password,
+        ...(google ? { googleToken: google.handle } : { password }),
         companyAddress: addr.trim(),
         companyPhone: phone.trim() || undefined,
         tradeTypes: trades,
@@ -586,7 +699,9 @@ export function RegisterContent() {
     if (googleBusy) return;
     setGoogleBusy(true);
     window.setTimeout(() => setGoogleBusy(false), 1600);
-    void signIn("google", { callbackUrl: "/dashboard" });
+    // A new address comes back here with ?gsu= (auth callback); an address
+    // that already has an account signs in and lands on the dashboard.
+    void signIn("google", { callbackUrl: "/auth/register" });
   }
 
   const brand = (
@@ -695,9 +810,23 @@ export function RegisterContent() {
                   autoComplete="email"
                   inputMode="email"
                   value={email}
+                  readOnly={Boolean(google)}
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </label>
+              {google ? (
+                <div className="gsu-note" role="status">
+                  <svg className="ic ic--brand">
+                    <use href="#i-google" />
+                  </svg>
+                  <span>
+                    Verified by Google as <b>{google.email}</b>. No password needed — you&apos;ll
+                    sign in with Google.
+                  </span>
+                </div>
+              ) : null}
+              {!google ? (
+              <>
               <label className="fld">
                 <span className="fld-lbl">Password</span>
                 <span className="pw-wrap">
@@ -749,6 +878,8 @@ export function RegisterContent() {
                   </button>
                 </span>
               </label>
+              </>
+              ) : null}
 
               <button className="btn" type="submit" id="nextBtn" disabled={checking}>
                 {checking ? "Checking…" : "Continue"}
@@ -792,7 +923,14 @@ export function RegisterContent() {
 
           {/* ───── ШАГ 2 ───── */}
           <div className={step === 2 ? "step" : "step is-hidden"} id="step2">
-            <h1 className="auth-h1">Tell us what you do.</h1>
+            <h1 className="auth-h1">
+              {setupMode
+                ? `Welcome${name.trim() ? `, ${name.trim().split(" ")[0]}` : ""}. Tell us about your company.`
+                : "Tell us what you do."}
+            </h1>
+            {setupMode ? (
+              <p className="auth-lede">{`Signed in with Google as ${email}. One more step and your shop is live.`}</p>
+            ) : null}
 
             <form
               id="step2Form"
@@ -802,14 +940,28 @@ export function RegisterContent() {
                 void finish();
               }}
             >
+              {setupMode ? (
+                <label className="fld">
+                  <span className="fld-lbl">Business name</span>
+                  <input
+                    className="fld-in"
+                    id="biz2"
+                    placeholder="Company name"
+                    autoComplete="organization"
+                    value={biz}
+                    onChange={(e) => setBiz(e.target.value)}
+                  />
+                </label>
+              ) : null}
               <div className="grid2">
                 <label className="fld">
                   <span className="fld-lbl">Company address</span>
                   <input
+                    ref={addrRef}
                     className="fld-in"
                     id="addr"
                     placeholder="Street, city, state, ZIP"
-                    autoComplete="street-address"
+                    autoComplete="off"
                     value={addr}
                     onChange={(e) => setAddr(e.target.value)}
                   />
@@ -862,19 +1014,21 @@ export function RegisterContent() {
               </div>
 
               <div className="btn-pair">
-                <button
-                  className="btn btn--ghost"
-                  type="button"
-                  id="backBtn"
-                  onClick={() => setStep(1)}
-                >
-                  <svg className="ic">
-                    <use href="#i-back" />
-                  </svg>
-                  Back
-                </button>
+                {setupMode ? null : (
+                  <button
+                    className="btn btn--ghost"
+                    type="button"
+                    id="backBtn"
+                    onClick={() => setStep(1)}
+                  >
+                    <svg className="ic">
+                      <use href="#i-back" />
+                    </svg>
+                    Back
+                  </button>
+                )}
                 <button className="btn" type="submit" id="createBtn" disabled={creating}>
-                  {creating ? "Creating…" : "Create account"}
+                  {creating ? (setupMode ? "Saving…" : "Creating…") : setupMode ? "Continue" : "Create account"}
                 </button>
               </div>
               <div className={err2 ? "err" : "err is-hidden"} id="err2">
@@ -934,8 +1088,10 @@ export function RegisterContent() {
                 </svg>
                 Free leads
               </span>
-              <h2 className="pk-h">Fill this in and homeowner jobs near you come to you.</h2>
-              <p className="pk-p">Matched by your trades and address. No cost, no cap.</p>
+              <h2 className="pk-h">Fill this out and you get free leads.</h2>
+              <p className="pk-p">
+                Homeowner jobs near you, matched to your trades and address. No cost, no cap.
+              </p>
             </div>
           </div>
 
@@ -1038,6 +1194,21 @@ export function RegisterContent() {
                       <span className="pw-save">
                         <s>${(listCents / 100).toFixed(0)}</s> Save {savePct}% · $
                         {((listCents - cents) / 100).toFixed(0)}
+                      </span>
+                    ) : null}
+                    {/* THE CODE'S EFFECT ON THIS PRICE. "Code applied" over an
+                        unchanged number read as nothing happening (owner,
+                        2026-09-02); the same percent checkout applies is
+                        shown here, against the price it applies to. */}
+                    {promo?.percentOff ? (
+                      <span className="pw-save pw-save--code">
+                        <s>${(cents / 100).toFixed(0)}</s> {promo.percentOff}% off · $
+                        {(() => {
+                          // Stripe's own number, to the cent: $22.50, not $23.
+                          const v = Math.round(cents * (1 - promo.percentOff / 100)) / 100;
+                          return Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2);
+                        })()}
+                        {per}
                       </span>
                     ) : null}
                     <span className="pw-pick" aria-hidden="true">

@@ -21,10 +21,10 @@ export async function GET(
       lineItems: { orderBy: { position: "asc" } },
       installments: { orderBy: { position: "asc" } },
       client: true,
-      organization: { select: { name: true } },
+      organization: { select: { name: true, deletedAt: true } },
     },
   });
-  if (!proposal) {
+  if (!proposal || proposal.organization.deletedAt) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

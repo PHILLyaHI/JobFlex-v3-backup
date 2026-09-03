@@ -104,8 +104,13 @@ export type MeasurementType = (typeof MeasurementType)[keyof typeof MeasurementT
 export const PaymentStatus = {
   PENDING: "PENDING",
   PAID: "PAID",
+  PARTIAL: "PARTIAL",
   FAILED: "FAILED",
   REFUNDED: "REFUNDED",
+  PARTIALLY_REFUNDED: "PARTIALLY_REFUNDED",
+  // A manual mark-paid that the contractor later undid. Kept for the audit
+  // trail; financials exclude it.
+  VOID: "VOID",
 } as const;
 export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus];
 
@@ -116,6 +121,33 @@ export const PaymentProvider = {
   MANUAL: "MANUAL",
 } as const;
 export type PaymentProvider = (typeof PaymentProvider)[keyof typeof PaymentProvider];
+
+// Payment-stage state on Installment (see src/lib/paymentSchedule.ts).
+export const InstallmentStatus = {
+  UNPAID: "UNPAID",
+  PENDING: "PENDING", // a hosted checkout is open for this stage
+  PAID: "PAID",
+  WAIVED: "WAIVED", // proposal reached PAID before this stage was collected
+} as const;
+export type InstallmentStatus = (typeof InstallmentStatus)[keyof typeof InstallmentStatus];
+
+// Manual payment methods a contractor can record against a stage.
+export const ManualPaymentMethod = {
+  BANK_TRANSFER: "BANK_TRANSFER",
+  CASH: "CASH",
+  CHECK: "CHECK",
+  OTHER: "OTHER",
+} as const;
+export type ManualPaymentMethod = (typeof ManualPaymentMethod)[keyof typeof ManualPaymentMethod];
+
+// PaymentConnection.status — the contractor's own Stripe/Square link.
+export const PaymentConnectionStatus = {
+  ACTIVE: "ACTIVE",
+  RESTRICTED: "RESTRICTED", // connected but cannot charge (Stripe charges_disabled / Square token trouble)
+  REVOKED: "REVOKED", // the contractor removed us from their provider dashboard
+} as const;
+export type PaymentConnectionStatus =
+  (typeof PaymentConnectionStatus)[keyof typeof PaymentConnectionStatus];
 
 export const JobStatus = {
   SCHEDULED: "SCHEDULED",
@@ -166,6 +198,16 @@ export const ActivityKind = {
   CALL: "CALL",
   EMAIL: "EMAIL",
   SMS: "SMS",
+  // Platform payments (contractor's Stripe/Square via JobFlex).
+  PAYMENT_RECEIVED: "PAYMENT_RECEIVED",
+  PAYMENT_REFUNDED: "PAYMENT_REFUNDED",
+  PAYMENT_MARKED: "PAYMENT_MARKED", // contractor recorded a manual payment
+  PAYMENT_UNMARKED: "PAYMENT_UNMARKED",
+  PAYMENT_ALERT: "PAYMENT_ALERT", // needs a human: overpayment, orphan, restricted account
+  PAYMENT_CONNECTED: "PAYMENT_CONNECTED",
+  PAYMENT_DISCONNECTED: "PAYMENT_DISCONNECTED",
+  // Settings → "Send test notification". Only visible to its actor.
+  TEST: "TEST",
 } as const;
 export type ActivityKind = (typeof ActivityKind)[keyof typeof ActivityKind];
 

@@ -85,6 +85,26 @@ function LoginSprite() {
   );
 }
 
+
+/** NextAuth's ?error= codes, in the product's words. */
+function authErrorMessage(code: string | null): string | null {
+  if (!code) return null;
+  switch (code) {
+    case "AccessDenied":
+      return "Google sign-in was refused for that address. Sign in with your email and password, or use the Google account that matches it.";
+    case "OAuthAccountNotLinked":
+      return "That email already has a password account. Sign in with the password.";
+    case "OAuthCallbackError":
+    case "OAuthSignin":
+    case "OAuthCallback":
+      return "Google sign-in didn't complete. Try again.";
+    case "Configuration":
+      return "Sign-in isn't configured on this server yet.";
+    default:
+      return "Sign in didn't work. Try again.";
+  }
+}
+
 function LoginInner() {
   const router = useRouter();
   const search = useSearchParams();
@@ -99,7 +119,9 @@ function LoginInner() {
   const [email, setEmail] = React.useState(isDev ? "owner@acme.test" : "");
   const [password, setPassword] = React.useState(isDev ? "password123" : "");
 
-  const [inlineError, setInlineError] = React.useState<string | null>(null);
+  const [inlineError, setInlineError] = React.useState<string | null>(() =>
+    authErrorMessage(search.get("error")),
+  );
   // The mockup's three transient UI states, kept as state rather than the
   // source's innerHTML rewrites.
   const [showPw, setShowPw] = React.useState(false);

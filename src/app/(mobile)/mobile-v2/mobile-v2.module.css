@@ -307,7 +307,6 @@
 }
 /* Pushes the bell to the right edge of the bar; the wordmark keeps its place
    next to the burger. */
-.tbarBell { margin-left: auto; }
 
 .bellDot {
   position: absolute;

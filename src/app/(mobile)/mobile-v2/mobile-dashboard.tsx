@@ -95,7 +95,9 @@ const R = {
   // the old design, and the handheld route map sends this one through the
   // mobile manual builder (responsive-dashboard-shell).
   newProposal: "/dashboard/manual-blueprint",
-  preferences: "/dashboard/settings/preferences",
+  // The hub, not the classic /dashboard/settings/preferences page: the gear
+  // on this surface was the last handheld link still landing on the old design.
+  settings: "/dashboard/settings",
   account: "/dashboard/settings/account",
   login: "/auth/login",
 } satisfies Record<string, Route>;
@@ -791,7 +793,6 @@ function DashboardView({ data }: { data: DashboardData }) {
      shell, which only wraps the authenticated route. On the standalone
      /mobile-v2 review URL there is no provider and no session, so the button
      would dispatch at nothing — it is not drawn there. */
-  const signedIn = Boolean(useNavIdentity().name);
   // Every engine the picker offers sits outside a field worker's allow-list, so
   // the button is only drawn for roles that can open one (same test the other
   // bars use).
@@ -848,21 +849,30 @@ function DashboardView({ data }: { data: DashboardData }) {
             again, mounted by the widget itself. New Estimate takes the slot it
             left — the same control the other handheld bar carries, opening the
             same picker dialog. */}
-        {canEstimate && (
-          <button
-            className={styles.tbarBtn}
-            type="button"
-            aria-label="New estimate"
-            onClick={() => document.dispatchEvent(new CustomEvent("jf:estimator-picker"))}
-          >
-            <Icon id="i-plus" />
-          </button>
-        )}
-        <NotificationBell
-          buttonClassName={signedIn ? styles.tbarBtn : `${styles.tbarBtn} ${styles.tbarBell}`}
-          dotClassName={styles.bellDot}
-          iconClassName={styles.ic}
-        />
+        {/* The right group. The search button that used to fill this bar left
+            with the Help move, and nothing after the wordmark pushed toward
+            the far edge any more: signed in, the plus and the bell sat ~70px
+            short of the right padding line while the burger sat 15px from
+            the left. `.tbarRight` (margin-left: auto) is the same wrapper the
+            shared mobile-nav bar uses; `.tbarBell`'s own auto margin only
+            covered the signed-out, no-plus case. */}
+        <div className={styles.tbarRight}>
+          {canEstimate && (
+            <button
+              className={styles.tbarBtn}
+              type="button"
+              aria-label="New estimate"
+              onClick={() => document.dispatchEvent(new CustomEvent("jf:estimator-picker"))}
+            >
+              <Icon id="i-plus" />
+            </button>
+          )}
+          <NotificationBell
+            buttonClassName={styles.tbarBtn}
+            dotClassName={styles.bellDot}
+            iconClassName={styles.ic}
+          />
+        </div>
       </header>
 
       {/* The dialog the bar's New Estimate button opens. Every other handheld
@@ -1304,7 +1314,7 @@ function DashboardView({ data }: { data: DashboardData }) {
           </span>
           <span className={styles.bnavLbl}>New Proposal</span>
         </Link>
-        <Link className={styles.bnavBtn} href={R.preferences}>
+        <Link className={styles.bnavBtn} href={R.settings}>
           <span className={styles.bnavPlate}>
             <Icon id="i-gear" />
           </span>
@@ -1421,7 +1431,7 @@ function DashboardView({ data }: { data: DashboardData }) {
           </Link>
           <Link
             className={styles.sbFootIc}
-            href={R.preferences}
+            href={R.settings}
             aria-label="Settings"
             onClick={() => setNavOpen(false)}
           >

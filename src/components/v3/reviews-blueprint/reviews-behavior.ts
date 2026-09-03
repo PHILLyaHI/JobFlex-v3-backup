@@ -55,7 +55,7 @@ function actionError(err: unknown): string {
   // shell renders the upgrade dialog, so the way out is spelled out where they
   // are looking.
   if (isPlanLimitError(err)) {
-    return "Plan limit reached — you have used this cycle's review requests. Upgrade under Settings → Billing to send more.";
+    return "Plan limit reached — you have used this cycle's review requests. Upgrade under Subscription to send more.";
   }
   const msg = err instanceof Error ? err.message.trim() : "";
   // A Next.js server-action transport failure has no useful message.

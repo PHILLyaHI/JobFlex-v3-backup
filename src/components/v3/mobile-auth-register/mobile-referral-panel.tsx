@@ -173,7 +173,10 @@ export function MobileReferralPill({ pill }: { pill: ResolvedAttribution }) {
       <span className="mr-ref-txt">
         <span className="mr-ref-t">
           {pill.kind === "ref" ? "Referred by " : "Code from "}
-          {pill.displayName} ✓
+          {pill.displayName}
+          <svg className="ic mr-ref-check" aria-hidden="true">
+            <use href="#mrg-check" />
+          </svg>
         </span>
         <span className="mr-ref-c">
           Code {pill.code} applied

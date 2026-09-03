@@ -36,6 +36,8 @@ import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 import { mintSigninTicket } from "@/lib/signinTicket";
+import { readGoogleSignup } from "@/lib/googleSignup";
+import { settleReferralsForSignupOrg } from "@/lib/referralRewards";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
  *  that an abandoned card never becomes an account a week later. */
@@ -45,7 +47,10 @@ const pendingSchema = z.object({
   name: z.string().trim().min(1, "Enter your name").max(120),
   businessName: z.string().trim().min(1, "Enter your business name").max(120),
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
-  password: z.string().min(8, "Password must be at least 8 characters").max(200),
+  // One of the two: a password, or the handle of a parked Google identity
+  // (lib/googleSignup) whose email must match.
+  password: z.string().min(8, "Password must be at least 8 characters").max(200).optional(),
+  googleToken: z.string().min(20).max(80).optional(),
   companyAddress: z.string().trim().max(240).optional(),
   companyPhone: z.string().trim().max(40).optional(),
   tradeTypes: z.array(z.enum(TRADE_TYPES)).max(TRADE_TYPES.length).optional(),
@@ -60,7 +65,13 @@ const pendingSchema = z.object({
 });
 
 type PendingRecord = z.infer<typeof pendingSchema> extends infer T
-  ? Omit<Extract<T, object>, "password"> & { hashedPassword: string; createdAt: number }
+  ? Omit<Extract<T, object>, "password" | "googleToken"> & {
+      /** Null for a Google-backed signup — the finished account signs in with Google. */
+      hashedPassword: string | null;
+      viaGoogle?: boolean;
+      image?: string | null;
+      createdAt: number;
+    }
   : never;
 
 function key(token: string): string {
@@ -70,6 +81,18 @@ function key(token: string): string {
 export async function startPendingSignup(raw: unknown): Promise<{ ok: true; token: string }> {
   const data = pendingSchema.parse(raw);
   await enforceRateLimit(`signup-start:${await clientIp()}`, 5, HOUR, "sign-ups");
+
+  // Google-backed: the address is the one Google verified, whatever the form
+  // says, and there is no password to hash.
+  let google: { email: string; image: string | null } | null = null;
+  if (data.googleToken) {
+    const g = await readGoogleSignup(data.googleToken);
+    if (!g) throw new Error("Your Google sign-in expired. Continue with Google again.");
+    google = { email: g.email, image: g.image };
+    data.email = g.email;
+  } else if (!data.password) {
+    throw new Error("Choose a password, or continue with Google.");
+  }
 
   // Same answer as registration gives, at the same point in the flow: you
   // cannot hide that an address is taken when the next step would collide.
@@ -89,7 +112,9 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
     otherTrade: data.otherTrade,
     attribution: data.attribution ?? null,
     customPages: normalizeCustomPages(data.customPages),
-    hashedPassword: await bcrypt.hash(data.password, 10),
+    hashedPassword: google ? null : await bcrypt.hash(data.password as string, 10),
+    viaGoogle: Boolean(google),
+    image: google?.image ?? null,
     createdAt: Date.now(),
   } as PendingRecord;
 
@@ -102,17 +127,50 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
 }
 
 /** Read a live intent, or null when it is missing or stale. */
-export async function readPendingSignup(
-  token: string,
-): Promise<{ email: string; businessName: string; customPages: string[] } | null> {
+export async function readPendingSignup(token: string): Promise<{
+  email: string;
+  businessName: string;
+  customPages: string[];
+  attribution: { kind: "promo" | "ref"; code: string } | null;
+} | null> {
   const rec = await loadPending(token);
   return rec
     ? {
         email: rec.email,
         businessName: rec.businessName,
         customPages: normalizeCustomPages(rec.customPages),
+        attribution: rec.attribution ?? null,
       }
     : null;
+}
+
+/* THE RELOAD PROBLEM. The intent is spent by its first completion, so a
+   reload of the return URL found nothing and said "That signup expired" over
+   a shop that had just been created (owner's report, 2026-09-02). Completion
+   now leaves a DONE marker behind the spent token for a day: a reload within
+   REPLAY_WINDOW_MS, carrying the same Stripe session id, is handed a fresh
+   sign-in ticket and lands where it left off; later reloads are told the shop
+   is already set up and pointed at sign-in. The marker never recreates
+   anything — the account exists exactly once. */
+const DONE_TTL_MS = 24 * 60 * 60 * 1000;
+const REPLAY_WINDOW_MS = 15 * 60 * 1000;
+
+type DoneRecord = { userId: string; email: string; sessionId: string | null; at: number };
+
+function doneKey(token: string): string {
+  return `signup-done:${token}`;
+}
+
+async function loadDone(token: string): Promise<DoneRecord | null> {
+  const row = await db.syncState.findUnique({ where: { key: doneKey(token) } }).catch(() => null);
+  if (!row) return null;
+  try {
+    const rec = JSON.parse(row.cursor) as DoneRecord;
+    if (!rec?.userId || Date.now() - (rec.at ?? 0) > DONE_TTL_MS) return null;
+    return rec;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -144,6 +202,30 @@ export async function updatePendingSignupPages(
   return { ok: true };
 }
 
+/**
+ * Stamp (or clear) the validated code on a live intent. The intent is parked
+ * at the END of step 2 and the code is typed on step 3 — so until 2026-09-02
+ * the checkout route, which reads attribution ONLY from the intent, never saw
+ * a code applied on the plan step, and Stripe charged full price under a
+ * "10% off" line (owner's report). The client calls this right before it asks
+ * for checkout, the same way it re-stamps the custom pages.
+ */
+export async function updatePendingSignupAttribution(
+  token: string,
+  attribution: { kind: "promo" | "ref"; code: string } | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const rec = await loadPending(token);
+  if (!rec) return { ok: false, error: "That signup expired. Start again." };
+  const parsed = pendingSchema.shape.attribution.safeParse(attribution);
+  const next: PendingRecord = { ...rec, attribution: parsed.success ? (parsed.data ?? null) : null };
+  await db.syncState.upsert({
+    where: { key: key(token) },
+    update: { cursor: JSON.stringify(next) },
+    create: { key: key(token), cursor: JSON.stringify(next) },
+  });
+  return { ok: true };
+}
+
 async function loadPending(token: string): Promise<PendingRecord | null> {
   if (!token) return null;
   const row = await db.syncState.findUnique({ where: { key: key(token) } }).catch(() => null);
@@ -167,9 +249,26 @@ async function loadPending(token: string): Promise<PendingRecord | null> {
 export async function completePendingSignup(
   token: string,
   sessionId: string | null,
-): Promise<{ ok: true; email: string; ticket: string } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; email: string; ticket: string | null }
+  | { ok: false; error: string; done?: boolean; email?: string }
+> {
   const rec = await loadPending(token);
-  if (!rec) return { ok: false, error: "That signup expired. Start again." };
+  if (!rec) {
+    const done = await loadDone(token);
+    if (done && sessionId && done.sessionId === sessionId) {
+      if (Date.now() - done.at <= REPLAY_WINDOW_MS) {
+        return { ok: true, email: done.email, ticket: await mintSigninTicket(done.userId) };
+      }
+      return {
+        ok: false,
+        done: true,
+        email: done.email,
+        error: "This signup is already complete. Sign in to open your shop.",
+      };
+    }
+    return { ok: false, error: "That signup expired. Start again." };
+  }
 
   // The skip path ("create the account with no subscription") is a testing
   // exit. It is a public server action, so it is gated HERE, not in the UI:
@@ -258,6 +357,7 @@ export async function completePendingSignup(
           email: rec.email,
           name: rec.name,
           hashedPassword: rec.hashedPassword,
+          image: rec.image ?? null,
           activeOrgId: org.id,
         },
         select: { id: true },
@@ -332,10 +432,25 @@ export async function completePendingSignup(
     await bindAttributionToOrg(orgId, rec.email, rec.attribution.kind, rec.attribution.code).catch(
       () => {},
     );
+    // A referral counts the moment the referred shop's subscription exists
+    // (see lib/referralRewards). Skipped on the no-subscription testing exit.
+    if (rec.attribution.kind === "ref" && stripeSubscriptionId) {
+      await settleReferralsForSignupOrg(orgId).catch((err) =>
+        console.warn("[signup] referral settle failed:", err),
+      );
+    }
   }
 
-  // The intent is spent.
+  // The intent is spent; the done marker takes its place (see loadDone).
   await db.syncState.delete({ where: { key: key(token) } }).catch(() => {});
+  const doneRec: DoneRecord = { userId, email: rec.email, sessionId, at: Date.now() };
+  await db.syncState
+    .upsert({
+      where: { key: doneKey(token) },
+      update: { cursor: JSON.stringify(doneRec) },
+      create: { key: doneKey(token), cursor: JSON.stringify(doneRec) },
+    })
+    .catch(() => {});
   // The session hand-off: the client redeems this through the `signup-ticket`
   // provider so the shop lands on its dashboard already signed in, instead of
   // at the login wall with a password it typed two screens and one Stripe

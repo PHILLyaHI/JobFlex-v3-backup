@@ -20,7 +20,7 @@ import { usePathname } from "next/navigation";
 // so the mobile hamburger drawers could share them instead of carrying a
 // second, href-less copy. Re-exported here for existing importers.
 import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor } from "./nav-map";
-import { useNavBadges, useNavLocked, useNavRole } from "./nav-role";
+import { useNavBadges, useNavLimits, type NavLimit, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
 
 export { NAV_SECTIONS };
@@ -41,6 +41,15 @@ function monogram(name: string): string {
     : (p[0][0] + p[p.length - 1][0]).toUpperCase();
 }
 
+/** The hover copy for a quota pill: what the number counts and when it resets. */
+function quotaTip(q: NavLimit): string {
+  const cycle = q.scope === "absolute" ? "" : " this cycle";
+  if (q.remaining <= 0) {
+    return `You've used all ${q.limit} ${q.label} in your plan${cycle}. Upgrade to add more.`;
+  }
+  return `${q.remaining} of ${q.limit} ${q.label} left${cycle}.`;
+}
+
 export function Sidebar({ user }: { user?: SidebarUser }) {
   const pathname = usePathname() ?? "";
   const active = activeHref(pathname);
@@ -58,6 +67,10 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
   // Unread / pending counts by href, from the layout via the nav provider.
   // Empty outside it, so nothing is drawn — a stale zero beats a wrong number.
   const badges = useNavBadges();
+  // Remaining plan quota by href — drawn as an OUTLINE pill beside the unread
+  // badge (owner, 2026-09-02): same size and type, no fill, red at zero, and
+  // a hover note that says what the number counts.
+  const limits = useNavLimits();
   // The footer's two links leave the nav's own surfaces, so they get the same
   // test everything else does. A limited role that cannot open /dashboard/
   // settings would otherwise be handed a gear that bounces it back to Jobs.
@@ -117,11 +130,27 @@ export function Sidebar({ user }: { user?: SidebarUser }) {
                       <path d="M8 11V7a4 4 0 0 1 8 0v4" />
                     </svg>
                   ) : (
-                    (badges[item.href] ?? 0) > 0 && (
-                      <span className="sb-badge" aria-label={`${badges[item.href]} new`}>
-                        {badges[item.href] > 99 ? "99+" : badges[item.href]}
-                      </span>
-                    )
+                    <>
+                      {(badges[item.href] ?? 0) > 0 && (
+                        <span className="sb-badge" aria-label={`${badges[item.href]} new`}>
+                          {badges[item.href] > 99 ? "99+" : badges[item.href]}
+                        </span>
+                      )}
+                      {limits[item.href] ? (
+                        <span
+                          className={`sb-quota${limits[item.href].remaining <= 0 ? " is-out" : ""}`}
+                          tabIndex={0}
+                          aria-label={quotaTip(limits[item.href])}
+                        >
+                          <span className="sb-quota-n">
+                            {limits[item.href].remaining > 99 ? "99+" : limits[item.href].remaining}
+                          </span>
+                          <span className="sb-quota-tip" role="tooltip">
+                            {quotaTip(limits[item.href])}
+                          </span>
+                        </span>
+                      ) : null}
+                    </>
                   )}
                 </Link>
               ),

@@ -10,15 +10,13 @@
 // /dashboard/video-estimator below 768px, through
 // ../video-estimator-blueprint/video-estimator-viewport-switch.tsx.
 //
-// ── PARITY WITH THE DESKTOP RESULT SHEET (2026-08-22) ──────────────
+// ── PARITY WITH THE DESKTOP RESULT SHEET (2026-08-22, fused 2026-09-02) ──
 // The desktop sheet was rebuilt and this one follows it, feature for feature:
-//   · Materials and Labor are two SECTIONS, each with its own total, its own
-//     editable rows, its own "Add … line", its own change box calling
-//     applyRefine("materials" | "labor"), and its own review gate — shown only
-//     when `pending.scope` is that section. While any gate is open every change
-//     box is hidden, so two sections can never carry pending diffs at once.
-//   · Every field (name, qty, unit, price) is editable in place with a per-row
-//     delete, over ve.setLine / ve.removeLine / ve.addLine.
+//   · ONE ledger of fused lines (lib/estimate/console-model): each row is a
+//     task with a quantity, a unit, a material $/unit and a labor $/unit.
+//     Material and labor are columns of every row, not two sections.
+//   · Every field (name, qty, unit, material, labor) is editable in place with
+//     a per-row delete, over ve.setLine / ve.removeLine / ve.addLine.
 //   · The Smart Proposal's MATERIALS REQUEST — thumbnail, dimensions, buy
 //     quantity, store chip, row total, retail unit price with the billed
 //     override beside it, and a guarded buy link — derived from the ledger.
@@ -77,7 +75,7 @@ import type { Route } from "next";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { MaterialThumb } from "@/components/materials/MaterialThumb";
 import { merchantUrl } from "@/lib/merchantLinks";
-import { lineTotal, unitOptionsFor, type LineGroup } from "@/lib/estimate/console-model";
+import { lineTotal, unitSelectOptions } from "@/lib/estimate/console-model";
 import {
   VIDEO_ACCEPT,
   fmtClock,
@@ -290,74 +288,79 @@ export function MobileVideoEstimator({
      parses as 0 and the row's total flickers to $0 mid-keystroke. */
   const [field, setField] = useState<{ key: string; text: string } | null>(null);
   const cellValue = (key: string, n: number) => (field?.key === key ? field.text : String(n));
-  const commitNumber = (id: string, k: "qty" | "price", raw: string) => {
+  type NumKey = "qty" | "materialPrice" | "laborPrice";
+  const commitNumber = (id: string, k: NumKey, raw: string) => {
     const v = Number(raw);
     ve.setLine(id, { [k]: Number.isFinite(v) && v >= 0 ? v : 0 });
     setField(null);
   };
-
-  /** One ledger section — the desktop's `ledger(heading, group, rows, total)`,
-   *  re-cut for a phone. Materials and Labor each carry their own rows, their
-   *  own Add, their OWN change box (fenced to that section server-side, see the
-   *  hook) and their own review gate, which opens inside the section that asked
-   *  rather than at the foot of the sheet.
-   *
-   *  THE ROW is where the geometry is re-decided. The desktop's five columns
-   *  (name · qty+unit · price · total · delete) do not survive a 320px measure,
-   *  so the name takes its own line with the row total set right against it —
-   *  the one figure a contractor reads without editing — and qty, unit, price
-   *  and delete share the line beneath. Every control is ≥44px and 16px, the
-   *  iOS zoom floor. */
-  const ledger = (
-    heading: string,
-    group: LineGroup,
-    rows: typeof ve.matLines,
-    sectionTotal: number,
-  ) => {
-    const low = heading.toLowerCase();
+  /** A numeric cell: plain text with a decimal keyboard, never a native number
+   *  spinner. */
+  const numberCell = (l: (typeof ve.lines)[number], k: NumKey, extra: string, label: string) => {
+    const key = `${l.id}:${k}`;
     return (
-      <div className="mve-sec" key={group}>
-        <div className="mve-sec-bar">
-          <div className="mve-sec-h">{heading}</div>
-          <b className="mve-sec-total">{money(sectionTotal)}</b>
-        </div>
+      <input
+        className={`mve-in ${extra}`}
+        type="text"
+        inputMode="decimal"
+        aria-label={label}
+        value={cellValue(key, l[k])}
+        onFocus={() => setField({ key, text: String(l[k]) })}
+        onChange={(e) => setField({ key, text: e.target.value })}
+        onBlur={(e) => commitNumber(l.id, k, e.target.value)}
+      />
+    );
+  };
 
-        {rows.length === 0 ? (
-          <div className="mve-none">No {low} lines on this estimate.</div>
-        ) : null}
+  /** THE LEDGER — one section, one fused line per task (owner, 2026-09-02):
+   *  material and labor are two $/unit columns of every row, not two ledgers.
+   *
+   *  THE ROW is where the geometry is re-decided. The desktop's seven columns
+   *  (name · qty · unit · material · labor · total · delete) do not survive a
+   *  320px measure, so the name takes its own line with the row total set right
+   *  against it — the one figure a contractor reads without editing — qty, unit
+   *  and delete share the line beneath, and the two prices share a third,
+   *  each under a caption so a $/unit is never a bare figure. Every control is
+   *  ≥44px and 16px, the iOS zoom floor. */
+  const ledger = (
+    <div className="mve-sec">
+      <div className="mve-sec-bar">
+        <div className="mve-sec-h">Line items</div>
+        <b className="mve-sec-total">{money(ve.totals.subtotal)}</b>
+      </div>
 
-        {rows.map((l) => (
-          <div
-            className={`mve-row${l.badge === "Added" ? " mve-is-new" : ""}${
-              l.badge === "Updated" ? " mve-is-upd" : ""
-            }`}
-            key={l.id}
-          >
-            <div className="mve-row-top">
-              <input
-                className="mve-rname"
-                value={l.name}
-                placeholder="Line item"
-                aria-label="Line item"
-                onChange={(e) => ve.setLine(l.id, { name: e.target.value })}
-              />
-              <span className="mve-row-t">{money(lineTotal(l))}</span>
-            </div>
-            <div className="mve-row-f">
-              <input
-                className="mve-in mve-in--qty"
-                inputMode="decimal"
-                aria-label="Quantity"
-                value={cellValue(`${l.id}:qty`, l.qty)}
-                onFocus={() => setField({ key: `${l.id}:qty`, text: String(l.qty) })}
-                onChange={(e) => setField({ key: `${l.id}:qty`, text: e.target.value })}
-                onBlur={(e) => commitNumber(l.id, "qty", e.target.value)}
-              />
-              {/* A real select, as the manual builder's line items have (owner,
-                  2026-09-02) — a text field with a datalist was a field that
-                  happened to suggest things. The model's own unit is kept at
-                  the head of the list when it is not one of the house options,
-                  so switching the control never silently rewrites a line. */}
+      {ve.lines.length === 0 ? (
+        <div className="mve-none">No line items on this estimate.</div>
+      ) : null}
+
+      {ve.lines.map((l) => (
+        <div
+          className={`mve-row${l.badge === "Added" ? " mve-is-new" : ""}${
+            l.badge === "Updated" ? " mve-is-upd" : ""
+          }`}
+          key={l.id}
+        >
+          <div className="mve-row-top">
+            <input
+              className="mve-rname"
+              value={l.name}
+              placeholder="Line item"
+              aria-label="Line item"
+              onChange={(e) => ve.setLine(l.id, { name: e.target.value })}
+            />
+            <span className="mve-row-t">{money(lineTotal(l))}</span>
+          </div>
+          <div className="mve-row-f">
+            <label className="mve-f mve-f--qty">
+              <span className="mve-fl">Qty</span>
+              {numberCell(l, "qty", "mve-in--qty", "Quantity")}
+            </label>
+            {/* A real select, as the manual builder's line items have (owner,
+                2026-09-02). The model's own unit is kept at the head of the
+                list when it is not one of the house options, so switching the
+                control never silently rewrites a line. */}
+            <label className="mve-f mve-f--unit">
+              <span className="mve-fl">Unit</span>
               <span className="mve-unit-wrap">
                 <select
                   className="mve-unit"
@@ -365,45 +368,42 @@ export function MobileVideoEstimator({
                   value={l.unit}
                   onChange={(e) => ve.setLine(l.id, { unit: e.target.value })}
                 >
-                  {(unitOptionsFor(group).includes(l.unit)
-                    ? unitOptionsFor(group)
-                    : [l.unit, ...unitOptionsFor(group)]
-                  ).map((u) => (
-                    <option value={u} key={u}>
-                      {u || "unit"}
+                  {unitSelectOptions(l.unit).map((o) => (
+                    <option value={o.value} key={o.value}>
+                      {o.label || "unit"}
                     </option>
                   ))}
                 </select>
               </span>
-              <input
-                className="mve-in mve-in--price"
-                inputMode="decimal"
-                aria-label="Unit price"
-                value={cellValue(`${l.id}:price`, l.price)}
-                onFocus={() => setField({ key: `${l.id}:price`, text: String(l.price) })}
-                onChange={(e) => setField({ key: `${l.id}:price`, text: e.target.value })}
-                onBlur={(e) => commitNumber(l.id, "price", e.target.value)}
-              />
-              <button
-                className="mve-row-x"
-                type="button"
-                aria-label={`Remove ${l.name || "line"}`}
-                onClick={() => ve.removeLine(l.id)}
-              >
-                <Icon id="i-x" />
-              </button>
-            </div>
+            </label>
+            <button
+              className="mve-row-x"
+              type="button"
+              aria-label={`Remove ${l.name || "line"}`}
+              onClick={() => ve.removeLine(l.id)}
+            >
+              <Icon id="i-x" />
+            </button>
           </div>
-        ))}
+          <div className="mve-row-p">
+            <label className="mve-f">
+              <span className="mve-fl">Material $ / unit</span>
+              {numberCell(l, "materialPrice", "mve-in--price", "Material price per unit")}
+            </label>
+            <label className="mve-f">
+              <span className="mve-fl">Labor $ / unit</span>
+              {numberCell(l, "laborPrice", "mve-in--price", "Labor price per unit")}
+            </label>
+          </div>
+        </div>
+      ))}
 
-        <button className="mve-addline" type="button" onClick={() => ve.addLine(group)}>
-          <Icon id="i-plus" />
-          Add {low} line
-        </button>
-
-      </div>
-    );
-  };
+      <button className="mve-addline" type="button" onClick={ve.addLine}>
+        <Icon id="i-plus" />
+        Add line
+      </button>
+    </div>
+  );
 
   return (
     <div
@@ -646,14 +646,21 @@ export function MobileVideoEstimator({
 
             </section>
 
-            {/* ── TOTALS, its own card. Materials and Labor are two sections
-                inside it, each with its own subtotal and editable rows; the
-                grand total closes the card. ── */}
+            {/* ── TOTALS, its own card. The one ledger of fused lines, then
+                the column sums (Materials / Labor), the discount and the
+                grand total closing the card. ── */}
             <section className="mve-card">
-              {ledger("Materials", "materials", ve.matLines, ve.totals.materials)}
-              {ledger("Labor", "labor", ve.labLines, ve.totals.labor)}
+              {ledger}
 
               <div className="mve-sec mve-sec--tot">
+                <div className="mve-line">
+                  <b>Materials</b>
+                  <span>{money(ve.totals.materials)}</span>
+                </div>
+                <div className="mve-line">
+                  <b>Labor</b>
+                  <span>{money(ve.totals.labor)}</span>
+                </div>
                 {ve.totals.discountCash > 0 ? (
                   <div className="mve-line">
                     <b>Discount</b>
@@ -727,14 +734,14 @@ export function MobileVideoEstimator({
                       <div className="mve-req-foot">
                         <b>{money(r.total)}</b>
                         <span>
-                          {/* The retail price is what the store charges and
-                              never follows a typed price — the override rides
-                              beside it in parentheses instead of replacing it. */}
-                          {r.retailUnitPrice != null
-                            ? `${money(r.retailUnitPrice)} / ${r.unit}`
-                            : `${money(r.unitPrice)} / ${r.unit}`}
-                          {r.overridden ? (
-                            <i className="mve-req-ov"> (billed {money(r.unitPrice)})</i>
+                          {/* Billed per measured unit; the listing is the
+                              package price at the store. */}
+                          {`${money(r.unitPrice)} / ${r.unit}`}
+                          {r.retailUnitPrice != null ? (
+                            <i className="mve-req-ov">
+                              {" "}· listing {money(r.retailUnitPrice)}
+                              {r.dimensions ? ` (${r.dimensions})` : ""}
+                            </i>
                           ) : null}
                         </span>
                       </div>

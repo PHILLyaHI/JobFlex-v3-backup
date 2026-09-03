@@ -83,6 +83,9 @@ export async function createInvite(raw: unknown) {
     });
     if (m) throw new Error("That person is already on your team.");
   }
+  // Office seats are plan-metered too (members + pending invites); the invite
+  // reserves the seat, same as the manager meter above.
+  await enforcePlanLimit(organizationId, "teamSeats");
 
   // The raw token lives only in the email/URL and the one-time return below; the
   // DB stores its sha256 hash (mirrors the password-reset flow).

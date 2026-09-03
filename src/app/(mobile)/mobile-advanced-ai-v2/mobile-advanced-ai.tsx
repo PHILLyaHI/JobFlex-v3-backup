@@ -72,8 +72,9 @@ import { AddressField } from "@/components/v3/mobile-shell/address-field";
 import { StatePicker } from "@/components/v3/mobile-shell/state-picker";
 import { stateTaxPct } from "./state-tax";
 import { lockScroll } from "@/lib/scrollLock";
-import { PROJECT_TYPES, SAMPLES, STAGES, STATES } from "./advanced-ai-data";
+import { SAMPLES, STAGES, STATES } from "./advanced-ai-data";
 import {
+  blankLine,
   briefWithAnswers,
   computeTotals,
   discountFromSchema,
@@ -86,11 +87,10 @@ import {
   mergeRefined,
   newLineId,
   NO_DISCOUNT,
-  unitOptionsFor,
+  unitSelectOptions,
   type ClarifyAnswer,
   type ConsoleLine,
   type DiscountState,
-  type LineGroup,
 } from "@/lib/estimate/console-model";
 import { merchantUrl, usableImageUrl } from "@/lib/merchantLinks";
 import { isPlanLimitError } from "@/lib/planLimits";
@@ -112,8 +112,10 @@ const cash = (n: number) =>
   `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
-const STEP_COUNT = 4;
-const STEP_NAMES = ["Project type", "Location", "The brief", "Review"];
+const STEP_COUNT = 3;
+// The brief first, then where it is, then the review — the project type is no
+// longer asked (owner, 2026-09-02); the planner names the work from the brief.
+const STEP_NAMES = ["The brief", "Location", "Review"];
 
 /** A hand-typed figure has to be absurd before it is refused, but it does have a ceiling. */
 const MAX_MONEY = 9_999_999;
@@ -283,12 +285,18 @@ type MenuRow = {
 };
 
 const clone = (list: ConsoleLine[]) => list.map((l) => ({ ...l }));
-const groupLabel = (g: LineGroup) => (g === "materials" ? "Materials" : "Labor");
 /** The search text a retail link is resolved against: what it is, and how big. */
 const buyQuery = (l: { name: string; dimensions?: string }) =>
   [l.name, l.dimensions].filter(Boolean).join(" ").trim();
+/** A line carries supply when it bills material $ or was matched to a product.
+ *  A labor-only task (demolition, haul-away) has nothing to buy. */
+const hasSupply = (l: ConsoleLine) =>
+  (Number(l.materialPrice) || 0) > 0 || Boolean(l.store || l.productUrl || l.retailPrice != null);
 const buyUrlFor = (l: ConsoleLine) =>
-  l.group === "materials" ? merchantUrl(l.store, buyQuery(l), l.productUrl) : null;
+  hasSupply(l) ? merchantUrl(l.store, buyQuery(l), l.productUrl) : null;
+/** Clamp a typed figure onto [0, cap]; garbage reads as 0. */
+const clampNum = (raw: string, cap: number) =>
+  Math.min(cap, Math.max(0, parseFloat(raw) || 0));
 
 const errText = (err: unknown) =>
   (err as { message?: string })?.message?.trim() || "Something went wrong. Try again.";
@@ -332,16 +340,12 @@ export function MobileSmartProposal() {
   const settleClarifyRef = useRef<(v: ClarifyAnswer[] | null) => void>(() => {});
 
   /* ---------- intake input (never cleared by going back) ---------------- */
-  const [type, setType] = useState<string | null>(null);
-  const [otherWork, setOtherWork] = useState("");
   const [locText, setLocText] = useState("");
   const [locState, setLocState] = useState("");
   const [brief, setBrief] = useState("");
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [photoErr, setPhotoErr] = useState("");
   const [dragOver, setDragOver] = useState(false);
-  const [errType, setErrType] = useState(false);
-  const [errOther, setErrOther] = useState(false);
   const [errBrief, setErrBrief] = useState(false);
   const libRef = useRef<HTMLInputElement>(null);
   const camRef = useRef<HTMLInputElement>(null);
@@ -383,7 +387,7 @@ export function MobileSmartProposal() {
   /* ---------- sheets ---------------------------------------------------- */
   const [sheetRef2, setSheetRef2] = useState<string | null>(null);
   const [editRef, setEditRef] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", qty: "1", unit: "each", price: "0" });
+  const [form, setForm] = useState({ name: "", qty: "1", unit: "unit", material: "0", labor: "0" });
   const [nameErr, setNameErr] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -583,33 +587,22 @@ export function MobileSmartProposal() {
   const reqRows = useMemo(() => materialsRequest(lines), [lines]);
   const reqTotal = useMemo(() => materialsRequestTotal(reqRows), [reqRows]);
 
-  const typeRow = PROJECT_TYPES.find((t) => t.id === type);
-  const typeLabel =
-    type === "other" && otherWork.trim() ? otherWork.trim() : typeRow ? typeRow.label : "";
+  // No project type is asked any more; the actions still take the field, so it
+  // rides through empty and the planner names the work from the brief.
+  const typeLabel = "";
   const where = locText.trim()
     ? `${locText.trim()}${locState ? `, ${locState}` : ""}`
     : "";
   const estTitle = title.trim() || brief.trim().split("\n")[0].slice(0, 90) || "New estimate";
 
-  const listOf = (grp: LineGroup) => lines.filter((l) => l.group === grp);
   const findLine = (id: string | null) => (id ? lines.find((l) => l.id === id) ?? null : null);
 
   /* ---------- wizard ---------------------------------------------------- */
   const validate = (n: number) => {
+    // Step 1 is the brief, and it is the only required field. Step 2 (location)
+    // has none: the estimator prices without a location too, it just skips the
+    // regional adjustment. Review says so out loud.
     if (n === 1) {
-      if (!type) {
-        setErrType(true);
-        return false;
-      }
-      if (type === "other" && !otherWork.trim()) {
-        setErrOther(true);
-        return false;
-      }
-      return true;
-    }
-    // Step 2 has no required field: the estimator prices without a location
-    // too, it just skips the regional adjustment. Review says so out loud.
-    if (n === 3) {
       if (!brief.trim()) {
         setErrBrief(true);
         return false;
@@ -762,8 +755,8 @@ export function MobileSmartProposal() {
   });
 
   const generate = async () => {
-    if (!validate(1) || !validate(3)) {
-      goStep(!type || (type === "other" && !otherWork.trim()) ? 1 : 3);
+    if (!validate(1)) {
+      goStep(1);
       return;
     }
     const ticket = (runSeq.current += 1);
@@ -889,16 +882,8 @@ export function MobileSmartProposal() {
   };
 
   /* ---------- line editing ---------------------------------------------- */
-  const addLine = (grp: LineGroup) => {
-    const line: ConsoleLine = {
-      id: newLineId(grp === "labor" ? "l" : "m"),
-      group: grp,
-      name: "New line",
-      qty: 1,
-      unit: grp === "labor" ? "hour" : "each",
-      price: 0,
-      retailPrice: null,
-    };
+  const addLine = () => {
+    const line: ConsoleLine = { ...blankLine(), name: "New line" };
     setLines((prev) => prev.concat(line));
     setLandedId(line.id);
     openEdit(line);
@@ -906,7 +891,13 @@ export function MobileSmartProposal() {
 
   const openEdit = (line: ConsoleLine) => {
     setSheetRef2(null);
-    setForm({ name: line.name, qty: String(line.qty), unit: line.unit, price: String(line.price) });
+    setForm({
+      name: line.name,
+      qty: String(line.qty),
+      unit: line.unit,
+      material: String(line.materialPrice ?? 0),
+      labor: String(line.laborPrice ?? 0),
+    });
     setNameErr(false);
     setEditRef(line.id);
     window.setTimeout(() => nameRef.current?.focus(), prefersReducedMotion() ? 0 : 320);
@@ -928,9 +919,10 @@ export function MobileSmartProposal() {
           ? {
               ...l,
               name,
-              qty: Math.min(MAX_QTY, Math.max(0, parseFloat(form.qty) || 0)),
-              unit: form.unit.trim() || (l.group === "labor" ? "hour" : "each"),
-              price: Math.min(MAX_MONEY, Math.max(0, parseFloat(form.price) || 0)),
+              qty: clampNum(form.qty, MAX_QTY),
+              unit: form.unit.trim() || "unit",
+              materialPrice: clampNum(form.material, MAX_MONEY),
+              laborPrice: clampNum(form.labor, MAX_MONEY),
             }
           : l,
       ),
@@ -955,15 +947,15 @@ export function MobileSmartProposal() {
     const before = new Map(prev.map((l) => [l.id, l]));
     const afterIds = new Set(after.map((l) => l.id));
     const out: Delta[] = [];
+    const group = "Line";
     for (const l of after) {
       const o = before.get(l.id);
-      const group = groupLabel(l.group);
       if (!o) {
         out.push({
           kind: "add",
           group,
           title: l.name,
-          note: `${l.qty} ${l.unit} × ${money(l.price)} — added`,
+          note: `${l.qty} ${l.unit} × ${cash(l.materialPrice + l.laborPrice)} — added`,
         });
         continue;
       }
@@ -976,10 +968,16 @@ export function MobileSmartProposal() {
           from: `${o.qty} ${o.unit}`, to: `${l.qty} ${l.unit}`,
         });
       }
-      if (Math.abs(o.price - l.price) > 0.005) {
+      if (Math.abs(o.materialPrice - l.materialPrice) > 0.005) {
         out.push({
-          kind: "chg", group, title: l.name, note: "Price",
-          from: money(o.price), to: money(l.price),
+          kind: "chg", group, title: l.name, note: "Material / unit",
+          from: cash(o.materialPrice), to: cash(l.materialPrice),
+        });
+      }
+      if (Math.abs(o.laborPrice - l.laborPrice) > 0.005) {
+        out.push({
+          kind: "chg", group, title: l.name, note: "Labor / unit",
+          from: cash(o.laborPrice), to: cash(l.laborPrice),
         });
       }
     }
@@ -987,7 +985,7 @@ export function MobileSmartProposal() {
       if (!afterIds.has(l.id)) {
         out.push({
           kind: "rem",
-          group: groupLabel(l.group),
+          group,
           title: l.name,
           note: "Removed from the estimate",
         });
@@ -1165,19 +1163,15 @@ export function MobileSmartProposal() {
 
   const menuRows = useMemo<MenuRow[]>(() => {
     if (!sheetLine) return [];
-    const other: LineGroup = sheetLine.group === "materials" ? "labor" : "materials";
     return [
       { act: "edit", icon: "i-file", tone: styles.miBp, title: "Edit line",
-        sub: "Description, quantity and price" },
+        sub: "Description, quantity, material and labor" },
       { act: "link", icon: "i-arrow", tone: styles.miSky, title: "Open retail link",
         sub: sheetBuy
           ? `Opens ${sheetLine.store ?? "the listing"} in a new tab`
           : "No retail source on this line",
         disabled: !sheetBuy },
       { act: "dup", icon: "i-copy", title: "Duplicate line", sub: "Copies it in below" },
-      { act: "move", icon: "i-rotate", tone: styles.miWarn,
-        title: other === "labor" ? "Move to labor" : "Move to materials",
-        sub: `Re-files it under ${groupLabel(other)}` },
       { act: "del", icon: "i-trash", tone: styles.miDanger, title: "Remove line",
         sub: "Deletes it from the estimate", danger: true },
     ];
@@ -1203,14 +1197,6 @@ export function MobileSmartProposal() {
         return prev.slice(0, at + 1).concat(copy, prev.slice(at + 1));
       });
       setLandedId(copy.id);
-    } else if (act === "move") {
-      const other: LineGroup = sheetLine.group === "materials" ? "labor" : "materials";
-      setLines((prev) =>
-        prev
-          .filter((l) => l.id !== id)
-          .concat({ ...sheetLine, group: other, unit: unitOptionsFor(other)[0] }),
-      );
-      setLandedId(id);
     } else if (act === "del") {
       setLines((prev) => prev.filter((l) => l.id !== id));
     }
@@ -1233,34 +1219,36 @@ export function MobileSmartProposal() {
       .filter((q) => (clarifyAns[q.id] ?? "").trim())
       .map((q) => ({ question: q.question, answer: (clarifyAns[q.id] ?? "").trim() }));
   const stepCls = `${styles.step} ${dir === "fwd" ? styles.stepFwd : styles.stepBack}`;
-  const editUnits = useMemo(() => {
-    if (!editLine) return [] as string[];
-    const base = unitOptionsFor(editLine.group).slice();
-    // Whatever the AI actually returned stays offered, even when it is off-list
-    // ("square", "lot") — dropping it would silently retype the line.
-    return base.includes(form.unit) || !form.unit ? base : base.concat(form.unit);
-  }, [editLine, form.unit]);
+  // The ten house units, with whatever the AI actually returned kept at the
+  // head when it is off-list ("square", "lot") — dropping it would silently
+  // retype the line. Full labels, never truncated.
+  const editUnits = useMemo(
+    () => (editLine ? unitSelectOptions(editLine.unit) : []),
+    [editLine],
+  );
 
-  /* ---------- one ledger, drawn as row cards ---------------------------- */
-  const renderLedger = (grp: LineGroup, label: string) => {
-    const list = listOf(grp);
-    const total = grp === "materials" ? totals.materials : totals.labor;
+  /* ---------- ONE ledger, drawn as row cards ----------------------------
+     One line per task, two prices per line: material $/unit and labor $/unit
+     are columns of every row, never row types. The line total is
+     qty × (material + labor). */
+  const renderLines = () => {
+    const list = lines;
+    const total = totals.subtotal;
     return (
-      <section className={styles.card}>
+      <section className={styles.card} key="lines">
         <div className={styles.cardHead}>
-          <span className={styles.cardLbl}>{label}</span>
+          <span className={styles.cardLbl}>Line items</span>
           <span className={`${styles.cardSum} ${total ? "" : styles.isZero}`}>
             {total ? money(total) : "—"}
           </span>
         </div>
         {list.length === 0 ? (
           <div className={styles.lempty}>
-            <div className={styles.lemptyT}>Nothing costed here</div>
+            <div className={styles.lemptyT}>Nothing costed yet</div>
             <div className={styles.lemptyS}>
-              Every line under {label.toLowerCase()} was removed. Add one back, or leave it out of
-              the estimate.
+              Every line was removed. Add one back, or refine the estimate below.
             </div>
-            <button className={styles.lemptyA} type="button" onClick={() => addLine(grp)}>
+            <button className={styles.lemptyA} type="button" onClick={addLine}>
               <Icon id="i-plus" />Add line
             </button>
           </div>
@@ -1269,6 +1257,7 @@ export function MobileSmartProposal() {
             {list.map((l, i) => {
               const t = lineTotal(l);
               const buy = buyUrlFor(l);
+              const supply = hasSupply(l);
               const armed = armedDel === l.id;
               return (
                 <div
@@ -1289,7 +1278,7 @@ export function MobileSmartProposal() {
                       {l.badge ? <span className={styles.lbadge}>{l.badge}</span> : null}
                     </span>
                     <span className={styles.lmeta}>
-                      {l.qty} {l.unit} × {money(l.price)}
+                      {l.qty} {l.unit} × {cash(l.materialPrice + l.laborPrice)}
                     </span>
                   </button>
                   <div className={styles.lrowActs}>
@@ -1313,11 +1302,30 @@ export function MobileSmartProposal() {
                       <Icon id="i-dots" />
                     </button>
                   </div>
+                  {/* The two prices, as two cells: what the client is billed
+                      per unit for the supply and for the work. A zero cell
+                      reads as "—", so a labor-only task is obviously so. */}
+                  <div className={styles.lsplit}>
+                    <span className={styles.lcell}>
+                      <span className={styles.lcellL}>Material</span>
+                      <span className={`${styles.lcellV} ${l.materialPrice ? "" : styles.isZero}`}>
+                        {l.materialPrice ? cash(l.materialPrice) : "—"}
+                        {l.materialPrice ? <em className={styles.lper}>/{l.unit}</em> : null}
+                      </span>
+                    </span>
+                    <span className={styles.lcell}>
+                      <span className={styles.lcellL}>Labor</span>
+                      <span className={`${styles.lcellV} ${l.laborPrice ? "" : styles.isZero}`}>
+                        {l.laborPrice ? cash(l.laborPrice) : "—"}
+                        {l.laborPrice ? <em className={styles.lper}>/{l.unit}</em> : null}
+                      </span>
+                    </span>
+                  </div>
                   <div className={styles.lfoot}>
-                    {/* "Own supply" is dropped on LABOR at the owner's request:
-                        a labour line has no supply to source, so the badge was
-                        only ever noise there. Materials keep it — on a
-                        shopping list, "not a retail link" is real information. */}
+                    {/* "Own supply" only where there IS a supply: a labor-only
+                        task has nothing to source, so the badge would be noise.
+                        On a shopping list, "not a retail link" is real
+                        information. */}
                     {buy ? (
                       <a
                         className={styles.llinkBtn}
@@ -1328,9 +1336,11 @@ export function MobileSmartProposal() {
                         {l.store ? `Buy at ${l.store}` : "Retail link"}
                         <Icon id="i-arrow" />
                       </a>
-                    ) : grp === "materials" ? (
+                    ) : supply ? (
                       <span className={styles.lown}>Own supply</span>
-                    ) : null}
+                    ) : (
+                      <span className={styles.lown}>Labor only</span>
+                    )}
                     <span className={`${styles.ltotal} ${t ? "" : styles.isZero}`}>
                       {t ? money(t) : "—"}
                     </span>
@@ -1343,7 +1353,7 @@ export function MobileSmartProposal() {
         {/* The empty state already carries the Add-line CTA — one per card. */}
         {list.length === 0 ? null : (
           <div className={styles.cardFoot}>
-            <button className={styles.addLine} type="button" onClick={() => addLine(grp)}>
+            <button className={styles.addLine} type="button" onClick={addLine}>
               <Icon id="i-plus" />Add line
             </button>
           </div>
@@ -1442,72 +1452,6 @@ export function MobileSmartProposal() {
 
               {/* ONE STEP, FULL WIDTH */}
               <section className={stepCls} key={`step-${step}-${phase}`}>
-                {/* ---------- STEP 1 — project type ---------- */}
-                {phase === "intake" && step === 1 && (
-                  <>
-                    <div className={styles.stepHead}>
-                      <span className={styles.stepMark}><Icon id="i-bulb" /></span>
-                      <div>
-                        <h2 className={styles.stepH}>Project type</h2>
-                        <p className={styles.stepHint}>
-                          Describe the job and real materials with retail pricing, labor and scope
-                          come back as separate, editable breakdowns. This choice shapes the pricing
-                          model.
-                        </p>
-                      </div>
-                    </div>
-                    <div className={styles.stepBody}>
-                      <div className={styles.ptypes}>
-                        {PROJECT_TYPES.map((t) => (
-                          <button
-                            key={t.id}
-                            className={`${styles.ptype} ${type === t.id ? styles.on : ""}`}
-                            type="button"
-                            aria-pressed={type === t.id}
-                            onClick={() => { setType(t.id); setErrType(false); }}
-                          >
-                            <Icon id={t.icon} />
-                            {t.label}
-                          </button>
-                        ))}
-                      </div>
-                      {errType ? (
-                        <span className={styles.fldErr}>Pick the kind of work first</span>
-                      ) : null}
-
-                      {/* Not a label: this text IS the project type the estimator
-                          prices against, so "Skylights" gets skylight materials
-                          rather than a generic "Other work" bill. */}
-                      {type === "other" ? (
-                        <div className={`${styles.fld} ${errOther ? styles.invalid : ""}`}>
-                          <label className={styles.fldLbl} htmlFor="maOther">
-                            What kind of work?<span className={styles.req}>*</span>
-                          </label>
-                          <input
-                            className={styles.pinput}
-                            id="maOther"
-                            type="text"
-                            placeholder="Skylights, pergola, storm repair…"
-                            autoComplete="off"
-                            value={otherWork}
-                            aria-invalid={errOther}
-                            onChange={(e) => {
-                              setOtherWork(e.target.value);
-                              if (e.target.value.trim()) setErrOther(false);
-                            }}
-                          />
-                          <span className={styles.fldHint}>
-                            This is what the AI prices — name the trade, not the customer.
-                          </span>
-                          {errOther ? (
-                            <span className={styles.fldErr}>Say what the work is</span>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  </>
-                )}
-
                 {/* ---------- STEP 2 — location ---------- */}
                 {phase === "intake" && step === 2 && (
                   <>
@@ -1562,8 +1506,8 @@ export function MobileSmartProposal() {
                   </>
                 )}
 
-                {/* ---------- STEP 3 — the brief ---------- */}
-                {phase === "intake" && step === 3 && (
+                {/* ---------- STEP 1 — the brief ---------- */}
+                {phase === "intake" && step === 1 && (
                   <>
                     <div className={styles.stepHead}>
                       <span className={styles.stepMark}><Icon id="i-file" /></span>
@@ -1678,15 +1622,11 @@ export function MobileSmartProposal() {
                       <div className={styles.fld}>
                         <span className={styles.fldLbl}>Start from an example</span>
                         <div className={styles.samples}>
-                          {SAMPLES.map((s, i) => (
+                          {SAMPLES.map((s) => (
                             <button key={s} className={styles.sample} type="button"
                               onClick={() => {
                                 setBrief(s);
                                 setErrBrief(false);
-                                if (!type) {
-                                  setType(i === 1 ? "fence" : i === 2 ? "deck" : i === 3 ? "gutters" : "roof");
-                                  setErrType(false);
-                                }
                               }}>
                               {s}
                             </button>
@@ -1697,8 +1637,8 @@ export function MobileSmartProposal() {
                   </>
                 )}
 
-                {/* ---------- STEP 4 — review, then the narration ---------- */}
-                {step === 4 && (
+                {/* ---------- STEP 3 — review, then the narration ---------- */}
+                {step === 3 && (
                   <>
                     <div className={styles.stepHead}>
                       <span className={styles.stepMark}><Icon id="i-check" /></span>
@@ -1753,11 +1693,10 @@ export function MobileSmartProposal() {
                            box inside a bordered step card was a card in a card. */
                         <div className={styles.revList}>
                           {[
-                            { n: 1, l: "Project type", v: typeLabel, miss: "Not picked" },
+                            { n: 1, l: "The brief", v: brief.trim(), miss: "Empty" },
                             { n: 2, l: "Location", v: where, miss: "Not set — priced without a regional adjustment" },
-                            { n: 3, l: "The brief", v: brief.trim(), miss: "Empty" },
                             {
-                              n: 3,
+                              n: 1,
                               l: "Photos",
                               v: photos.length
                                 ? `${photos.length} attached · read by the AI, not stored`
@@ -1841,8 +1780,7 @@ export function MobileSmartProposal() {
                 </div>
               </section>
 
-              {renderLedger("materials", "Materials")}
-              {renderLedger("labor", "Labor")}
+              {renderLines()}
 
               {/* MATERIALS REQUEST — derived from the very lines above via
                   materialsRequest(), never a second copy. Delete a line and its
@@ -1874,15 +1812,13 @@ export function MobileSmartProposal() {
                             </div>
                             <div className={styles.mline}>
                               <span className={styles.mqty}>
-                                {r.qty} {r.unit} ×{" "}
-                                {r.overridden && r.retailUnitPrice != null ? (
-                                  <>
-                                    {cash(r.retailUnitPrice)}
-                                    <em className={styles.mover}>({cash(r.unitPrice)} billed)</em>
-                                  </>
-                                ) : (
-                                  cash(r.unitPrice)
-                                )}
+                                {r.qty} {r.unit} × {cash(r.unitPrice)}
+                                {r.retailUnitPrice != null ? (
+                                  <em className={styles.mover}>
+                                    (listing {cash(r.retailUnitPrice)}
+                                    {r.dimensions ? ` · ${r.dimensions}` : ""})
+                                  </em>
+                                ) : null}
                               </span>
                               <span className={styles.mtotal}>{money(r.total)}</span>
                             </div>
@@ -2312,7 +2248,7 @@ export function MobileSmartProposal() {
         <div className={styles.sheetHead} {...actionsDrag.handleProps}>
           <div className={styles.sheetKicker}>
             {sheetLine
-              ? `${groupLabel(sheetLine.group)} · ${sheetLine.qty} ${sheetLine.unit} · ${money(lineTotal(sheetLine))}`
+              ? `Line · ${sheetLine.qty} ${sheetLine.unit} · ${money(lineTotal(sheetLine))}`
               : "Line · —"}
           </div>
           <div className={styles.sheetTitle}>{sheetLine?.name ?? "Actions"}</div>
@@ -2345,7 +2281,7 @@ export function MobileSmartProposal() {
         <div className={styles.sheetGrab} {...editDrag.handleProps} />
         <div className={styles.sheetHead} {...editDrag.handleProps}>
           <div className={styles.sheetKicker}>
-            {editLine?.group === "labor" ? "Labor / line" : "Materials / line"}
+            {editLine ? `Line item · ${editLine.qty} ${editLine.unit}` : "Line item"}
           </div>
           <div className={styles.sheetTitle} id="maEditTitle">Edit line</div>
         </div>
@@ -2367,37 +2303,60 @@ export function MobileSmartProposal() {
 
           <div className={styles.fld}>
             <label className={styles.fldLbl} htmlFor="maQty">Quantity</label>
-            <input className={`${styles.pinput} ${styles.isNum}`} id="maQty" type="number"
-              inputMode="decimal" min={0} max={MAX_QTY} step={0.5} value={form.qty}
+            {/* No native spinner anywhere on this page: a text field with a
+                decimal keypad, clamped on save. */}
+            <input className={`${styles.pinput} ${styles.isNum}`} id="maQty" type="text"
+              inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" autoComplete="off"
+              value={form.qty}
               onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} />
             <div className={styles.unitChips} role="group" aria-label="Unit">
               {editUnits.map((u) => (
                 <button
-                  key={u}
+                  key={u.value}
                   type="button"
-                  className={`${styles.unitChip} ${form.unit === u ? styles.on : ""}`}
-                  aria-pressed={form.unit === u}
-                  onClick={() => setForm((f) => ({ ...f, unit: u }))}
+                  className={`${styles.unitChip} ${form.unit === u.value ? styles.on : ""}`}
+                  aria-pressed={form.unit === u.value}
+                  onClick={() => setForm((f) => ({ ...f, unit: u.value }))}
                 >
-                  per {u}
+                  per {u.label}
                 </button>
               ))}
             </div>
           </div>
 
+          {/* ONE line, TWO prices: material and labor are columns of every
+              row, not row types, so both are edited here side by side. */}
           <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="maPrice">Price</label>
-            <input className={`${styles.pinput} ${styles.isNum}`} id="maPrice" type="number"
-              inputMode="decimal" min={0} max={MAX_MONEY} step={1} value={form.price}
-              onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} />
+            <div className={styles.fldPair}>
+              <div className={styles.fld}>
+                <label className={styles.fldLbl} htmlFor="maMaterial">Material $ / unit</label>
+                <div className={styles.moneyWrap}>
+                  <span className={styles.moneySign} aria-hidden="true">$</span>
+                  <input className={`${styles.pinput} ${styles.isNum} ${styles.moneyIn}`} id="maMaterial"
+                    type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" autoComplete="off"
+                    value={form.material}
+                    onChange={(e) => setForm((f) => ({ ...f, material: e.target.value }))} />
+                </div>
+              </div>
+              <div className={styles.fld}>
+                <label className={styles.fldLbl} htmlFor="maLabor">Labor $ / unit</label>
+                <div className={styles.moneyWrap}>
+                  <span className={styles.moneySign} aria-hidden="true">$</span>
+                  <input className={`${styles.pinput} ${styles.isNum} ${styles.moneyIn}`} id="maLabor"
+                    type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" autoComplete="off"
+                    value={form.labor}
+                    onChange={(e) => setForm((f) => ({ ...f, labor: e.target.value }))} />
+                </div>
+              </div>
+            </div>
             <span className={styles.fldHint}>
               Line total {money(
-                Math.min(MAX_QTY, Math.max(0, parseFloat(form.qty) || 0)) *
-                  Math.min(MAX_MONEY, Math.max(0, parseFloat(form.price) || 0)),
+                clampNum(form.qty, MAX_QTY) *
+                  (clampNum(form.material, MAX_MONEY) + clampNum(form.labor, MAX_MONEY)),
               )}
               {editLine?.retailPrice != null &&
-              Math.abs(editLine.retailPrice - (parseFloat(form.price) || 0)) > 0.005
-                ? ` · retail is ${cash(editLine.retailPrice)}`
+              Math.abs(editLine.retailPrice - (parseFloat(form.material) || 0)) > 0.005
+                ? ` · listing is ${cash(editLine.retailPrice)} per package`
                 : ""}
             </span>
           </div>

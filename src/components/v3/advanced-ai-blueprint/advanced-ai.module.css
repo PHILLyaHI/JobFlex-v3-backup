@@ -220,15 +220,20 @@
    `minmax(0, 1fr)` rather than `1fr`: a grid track's default `min-width: auto`
    refuses to shrink below its content, which is how a long name or a huge
    number used to widen the row past the card. */
+/* SEVEN TRACKS, ONE ROW PER TASK (owner, 2026-09-02): item · qty · unit ·
+   material $/unit · labor $/unit · total · ×. Qty and unit are separate tracks
+   so the header words sit over the fields they name — a shared "qty" cell put
+   the word over the unit select. The unit track is wide enough for "linear ft"
+   and "sq boards" to print whole. */
 :global(.jf-blueprint .content) .sp-thead { display: grid;
-  grid-template-columns: minmax(0, 1fr) 164px 96px 96px 26px; gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 62px 104px 84px 84px 92px 26px; gap: 10px;
   padding-bottom: 9px; border-bottom: 1.5px solid var(--ink); }
 :global(.jf-blueprint .content) .sp-thead span { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
   letter-spacing: .16em; text-transform: uppercase; color: var(--muted);
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :global(.jf-blueprint .content) .sp-thead span + span { text-align: right; }
 :global(.jf-blueprint .content) .sp-row { display: grid;
-  grid-template-columns: minmax(0, 1fr) 164px 96px 96px 26px; gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 62px 104px 84px 84px 92px 26px; gap: 10px;
   align-items: center; padding: 9px 0;
   border-bottom: 1px dashed rgba(10,10,10,.16); }
 :global(.jf-blueprint .content) .sp-row:last-child { border-bottom: none; }
@@ -246,6 +251,12 @@
   font-weight: 600; color: var(--ink); text-align: right;
   font-variant-numeric: tabular-nums; }
 :global(.jf-blueprint .content) .sp-in:focus { outline: none; border-color: var(--blueprint); }
+/* Numbers only, no OS spinner: the up/down arrows appeared on hover and ate the
+   field's right edge. The fields are inputMode=decimal text now; this keeps any
+   number-typed field quiet too. */
+:global(.jf-blueprint .content) .sp-in { appearance: textfield; -moz-appearance: textfield; }
+:global(.jf-blueprint .content) .sp-in::-webkit-inner-spin-button,
+:global(.jf-blueprint .content) .sp-in::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 /* MONEY OVERFLOW · 2/5 — the row's Total cell. Same story as the card total,
    inside a fixed 96px track: it clips instead of spilling into the next row. */
 :global(.jf-blueprint .content) .sp-row-t { font-family: var(--font-mono); font-size: 14.5px; font-weight: 600;
@@ -267,8 +278,7 @@
 :global(.jf-blueprint .content) .sp-name::placeholder { color: var(--muted-faint); font-weight: 600; }
 
 /* Quantity + its unit share one track. */
-:global(.jf-blueprint .content) .sp-qty { display: flex; align-items: center; gap: 6px; min-width: 0; }
-:global(.jf-blueprint .content) .sp-in--qty { flex: 0 1 62px; }
+:global(.jf-blueprint .content) .sp-in--qty { padding: 0 7px; }
 
 :global(.jf-blueprint .content) .sp-row-x { flex-shrink: 0; width: 26px; height: 26px; display: grid;
   place-items: center; border: 1.5px solid rgba(10,10,10,.28); border-radius: var(--radius);
@@ -388,6 +398,9 @@
    behind it. These are the inputs that number should always have had; the
    discount maps 1:1 onto the estimate schema's order-level discount, and the
    tax seeds from the picked state. */
+/* Convert to proposal, under the Summary card — full width of the rail, the
+   same primary button as the page head so it reads as the same action. */
+:global(.jf-blueprint .content) .sp-convert { width: 100%; justify-content: center; margin: -4px 0 14px; }
 :global(.jf-blueprint .content) .sp-adj { display: grid; grid-template-columns: 1fr 108px; gap: 12px;
   margin-top: 16px; padding-top: 14px; border-top: 1.5px dashed rgba(10,10,10,.2); }
 :global(.jf-blueprint .content) .sp-adj-f { display: block; min-width: 0; }
@@ -567,7 +580,7 @@
 :global(.jf-blueprint .content) .est-step.done .est-n { background: var(--blueprint); color: #fff; }
 :global(.jf-blueprint .content) .est-body { flex: 1; min-width: 0; }
 :global(.jf-blueprint .content) .est-h { font-size: 15px; font-weight: 800; }
-:global(.jf-blueprint .content) .est-hint { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+:global(.jf-blueprint .content) .est-hint { margin-top: 4px; font-size: 12.5px; color: var(--ink-muted, #555); }
 
 :global(.jf-blueprint .content) .ptypes { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 13px; }
 :global(.jf-blueprint .content) .ptype {
@@ -586,7 +599,7 @@
 
 :global(.jf-blueprint .content) .loc-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 12px; margin-top: 13px; }
 :global(.jf-blueprint .content) .est-field { display: block; }
-:global(.jf-blueprint .content) .est-lbl { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+:global(.jf-blueprint .content) .est-lbl { display: block; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); margin-bottom: 5px; }
 :global(.jf-blueprint .content) .est-in {
   width: 100%; height: 40px; padding: 0 12px;
   border: 1.5px solid var(--ink); border-radius: var(--radius);
@@ -595,7 +608,9 @@
   transition: border-color 0.12s;
 }
 :global(.jf-blueprint .content) .est-in:focus { outline: none; border-color: var(--blueprint); }
-:global(.jf-blueprint .content) .est-in::placeholder { color: var(--muted-faint); }
+/* Placeholders read as ink, not a whisper — the owner asked for every text on
+   the intake to hold contrast (2026-09-02). */
+:global(.jf-blueprint .content) .est-in::placeholder { color: var(--ink-muted, #555); opacity: 1; }
 
 /* — State: a select on the blueprint's own terms —
    A bare <select> renders with the OS chevron and OS font metrics — the one
@@ -635,16 +650,16 @@
   font-family: var(--font); font-size: 13.5px; line-height: 1.55; color: var(--ink);
 }
 :global(.jf-blueprint .content) .est-area:focus { outline: none; border-color: var(--blueprint); }
-:global(.jf-blueprint .content) .est-area::placeholder { color: var(--muted-faint); }
+:global(.jf-blueprint .content) .est-area::placeholder { color: var(--ink-muted, #555); opacity: 1; }
 
 :global(.jf-blueprint .content) .samples { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
 :global(.jf-blueprint .content) .sample {
   max-width: 100%; padding: 7px 11px;
-  border: 1.5px dashed var(--hair-soft); border-radius: var(--radius);
+  border: 1.5px dashed rgba(10,10,10,.45); border-radius: var(--radius);
   background: #fff; /* clickable chip — controls read white on this page (was var(--paper)) */
   font-family: inherit;
   cursor: pointer;
-  font-size: 12px; line-height: 1.35; text-align: left; color: var(--muted);
+  font-size: 12px; line-height: 1.35; text-align: left; color: var(--ink); font-weight: 500;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
 :global(.jf-blueprint .content) .sample:hover { border-style: solid; border-color: var(--ink); color: var(--ink); background: var(--paper-deep); }
@@ -710,9 +725,9 @@
 :global(.jf-blueprint .content) .ph { margin-top: 14px; padding-top: 13px;
   border-top: 1.5px dashed rgba(10,10,10,.16); }
 :global(.jf-blueprint .content) .ph-l { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
-  letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink); font-weight: 700; }
 :global(.jf-blueprint .content) .ph-l span { display: block; margin-top: 4px; font-family: var(--font);
-  font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  font-size: 12.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-muted, #555); }
 :global(.jf-blueprint .content) .ph-drop { margin-top: 9px; padding: 16px 14px;
   display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center;
   border: 1.5px dashed rgba(10,10,10,.32); border-radius: var(--radius);
@@ -721,10 +736,10 @@
 :global(.jf-blueprint .content) .ph-drop:hover,
 :global(.jf-blueprint .content) .ph-drop.on { border-style: solid; border-color: var(--blueprint);
   background: rgba(24,84,160,.05); }
-:global(.jf-blueprint .content) .ph-ic { width: 22px; height: 22px; color: var(--muted); }
-:global(.jf-blueprint .content) .ph-cta { font-size: 12.5px; font-weight: 700; color: var(--ink); }
-:global(.jf-blueprint .content) .ph-note { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
-  letter-spacing: .04em; color: var(--muted); }
+:global(.jf-blueprint .content) .ph-ic { width: 22px; height: 22px; color: var(--ink); }
+:global(.jf-blueprint .content) .ph-cta { font-size: 13px; font-weight: 800; color: var(--ink); }
+:global(.jf-blueprint .content) .ph-note { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .04em; color: var(--ink-muted, #555); }
 :global(.jf-blueprint .content) .ph-file { position: absolute; width: 1px; height: 1px; padding: 0;
   margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 :global(.jf-blueprint .content) .ph-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
@@ -747,7 +762,7 @@
    radii, on a page whose whole argument is that it is a drawing. Nothing here
    is decoration: it is the same control, drawn by us. */
 :global(.jf-blueprint .content) .bsel { display: block; min-width: 0; position: relative; }
-:global(.jf-blueprint .content) .sp-qty .bsel { flex: 1 1 auto; }
+:global(.jf-blueprint .content) .sp-row .bsel { width: 100%; }
 :global(.jf-blueprint .content) .bsel-btn { display: inline-flex; align-items: center; justify-content: space-between;
   gap: 8px; width: 100%; min-width: 0; font-family: inherit; text-align: left; cursor: pointer;
   color: var(--ink); }
@@ -772,14 +787,14 @@
   border: var(--border); border-radius: var(--radius); background: #ffffff;
   box-shadow: 4px 4px 0 rgba(10,10,10,.12);
   animation: cmdkBoxIn 160ms cubic-bezier(0.22, 0.61, 0.36, 1); }
-:global(.jf-blueprint .content) .bsel-opt { padding: 7px 10px; border-radius: var(--radius);
+:global(.jf-blueprint .content) .bsel-opt { padding: 6px 10px; border-radius: var(--radius);
   font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  white-space: nowrap; }
 :global(.jf-blueprint .content) .bsel-opt[data-on="1"] { background: var(--paper-deep); }
 :global(.jf-blueprint .content) .bsel-opt[data-picked="1"] { font-weight: 800; color: var(--blueprint);
   box-shadow: inset 3px 0 0 var(--blueprint); }
 /* The ledger's compact unit trigger. */
-:global(.jf-blueprint .content) .sp-unit { height: 35px; padding: 0 8px;
+:global(.jf-blueprint .content) .sp-unit { height: 35px; padding: 0 7px;
   border: 1.5px solid rgba(10,10,10,.45); border-radius: var(--radius); background: #ffffff;
   font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
 

@@ -47,6 +47,7 @@ import {
   uploadProposalPhoto,
 } from "@/actions/proposals";
 import { notifyPaymentReminder } from "@/actions/notify";
+import { markInstallmentPaid, unmarkInstallmentPaid } from "@/actions/installments";
 // The handheld surface's route-local read of the SAME book this page renders
 // from (same query, same requireProposalStaff guard) — used to pick up a row
 // the server just created without leaving the page.
@@ -187,7 +188,34 @@ export function initProposalsContent(
     return "$" + Math.round(n).toLocaleString("en-US");
   }
   function instDollars(p: ProposalRow, inst: Installment) {
+    if (inst.status === "PAID" && inst.paidAmt != null) return inst.paidAmt;
     return inst.pct ? Math.round(p.total * (inst.amount / 100)) : inst.amount;
+  }
+  function instCellActions(p: ProposalRow, inst: Installment): string {
+    if (inst.status === "PAID") {
+      const via = inst.paidVia === "STRIPE" ? "Stripe" : inst.paidVia === "SQUARE" ? "Square" : "manual";
+      return (
+        '<span class="pinst-paid"><svg class="ic"><use href="#i-check"/></svg>Paid · ' +
+        via +
+        "</span>" +
+        (inst.paidVia === "MANUAL"
+          ? '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark-line" data-inst="' +
+            esc(inst.id) +
+            '">Undo</button>'
+          : "")
+      );
+    }
+    if (inst.status === "WAIVED") return '<span class="pinst-paid">Closed</span>';
+    return (
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="markpaid" data-inst="' +
+      esc(inst.id) +
+      '"><svg class="ic"><use href="#i-check"/></svg>Mark paid</button>' +
+      '<button class="btn btn-ghost btn--sm" type="button" data-act="remind" data-inst="' +
+      esc(inst.id) +
+      '"' +
+      (p.clientEmail ? "" : " disabled") +
+      '><svg class="ic"><use href="#i-bell"/></svg>Remind</button>'
+    );
   }
   function sumOf(list: ProposalRow[]) {
     return list.reduce((a, p) => a + p.total, 0);
@@ -453,14 +481,11 @@ export function initProposalsContent(
               '<td class="td-price"><span class="pt-money">' +
               fmtMoney(instDollars(p, inst)) +
               "</span></td>" +
-              // Real: mails the client this instalment's reminder through
-              // notifyPaymentReminder(). Disabled when the client has no email,
-              // because the action would refuse anyway.
-              '<td class="td-remind"><button class="btn btn-ghost btn--sm" type="button" data-act="remind" data-inst="' +
-              esc(inst.id) +
-              '"' +
-              (p.clientEmail ? "" : " disabled") +
-              '><svg class="ic"><use href="#i-bell"/></svg>Remind</button></td>' +
+              // Real: Mark paid records a manual payment (bank / cash / check);
+              // Remind mails the client this instalment's reminder.
+              '<td class="td-remind pinst-acts">' +
+              instCellActions(p, inst) +
+              "</td>" +
               "</tr>",
           )
           .join("") +
@@ -470,19 +495,27 @@ export function initProposalsContent(
         '<div class="pcols">' +
         insts
           .map((inst) => {
-            const sub = inst.pct
-              ? inst.amount + "% of total"
-              : inst.due
-                ? "due " + esc(inst.due)
-                : "";
+            const sub =
+              inst.status === "PAID"
+                ? "Paid"
+                : inst.pct
+                  ? inst.amount + "% of total"
+                  : inst.due
+                    ? "due " + esc(inst.due)
+                    : "";
             return (
-              '<div class="pcol"><div class="kpi-lbl">' +
+              '<div class="pcol' +
+              (inst.status === "PAID" ? " pcol--paid" : "") +
+              '"><div class="kpi-lbl">' +
               esc(inst.label) +
               "</div>" +
               '<div class="pcol-val">' +
               fmtMoney(instDollars(p, inst)) +
               "</div>" +
               (sub ? '<div class="pcol-sub">' + sub + "</div>" : "") +
+              '<div class="pinst-acts">' +
+              instCellActions(p, inst) +
+              "</div>" +
               "</div>"
             );
           })
@@ -1118,6 +1151,18 @@ export function initProposalsContent(
         void runReminder(p, act.dataset.inst ?? "", act);
         return;
       }
+      if (kind === "markpaid" && p) {
+        openMarkPaidPicker(act, p, act.dataset.inst ?? "");
+        return;
+      }
+      if (kind === "markpaid-go" && p) {
+        void runMarkPaid(p, act.dataset.inst ?? "", act.dataset.method ?? "OTHER", act);
+        return;
+      }
+      if (kind === "unmark-line" && p) {
+        void runUnmark(p, act.dataset.inst ?? "", act);
+        return;
+      }
       if (kind === "request" && p) {
         void runReminder(p, "", act);
         return;
@@ -1317,7 +1362,26 @@ export function initProposalsContent(
     pstate.writing = true;
     card.classList.add("is-busy");
     try {
-      await updateProposalStatus(p.id, status);
+      const res = await updateProposalStatus(p.id, status);
+      if (!res.ok) {
+        pstate.writing = false;
+        card.classList.remove("is-busy");
+        if (res.reason === "payment_outstanding") {
+          showAlert(
+            "Money still owed",
+            fmtMoney(res.remainingMinor / 100) +
+              " is outstanding. Use Mark paid on each stage (or Record payment) first, then mark completed.",
+          );
+        } else if (res.reason === "provider_paid") {
+          showAlert(
+            "Paid through Stripe / Square",
+            "Refund it from that dashboard — the proposal syncs back automatically.",
+          );
+        } else {
+          showAlert("Stages already paid", "A proposal with paid stages can't go back to draft.");
+        }
+        return;
+      }
       p.status = status;
       p.updated = "just now";
       if (status === "PAID") p.paid = todayPlate();
@@ -1349,6 +1413,72 @@ export function initProposalsContent(
     return new Date()
       .toLocaleDateString("en-US", { month: "short", day: "2-digit" })
       .toUpperCase();
+  }
+
+  /**
+   * Mark paid (manual). The button turns into a three-way method picker in
+   * place — bank / cash / check — so recording a payment is two taps and no
+   * modal. The stage's own amount is recorded; a different figure is a job
+   * for the desktop editor.
+   */
+  function openMarkPaidPicker(btn: HTMLElement, p: ProposalRow, instId: string) {
+    const host = btn.parentElement;
+    if (!host) return;
+    host.innerHTML =
+      '<span class="pinst-pick">' +
+      ["BANK_TRANSFER|Bank", "CASH|Cash", "CHECK|Check"]
+        .map((m) => {
+          const [key, label] = m.split("|");
+          return (
+            '<button class="btn btn-ghost btn--sm" type="button" data-act="markpaid-go" data-inst="' +
+            esc(instId) +
+            '" data-method="' +
+            key +
+            '">' +
+            label +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</span>";
+    void p;
+  }
+  async function runMarkPaid(p: ProposalRow, instId: string, method: string, btn: HTMLElement) {
+    if (pstate.writing) return;
+    pstate.writing = true;
+    (btn as HTMLButtonElement).disabled = true;
+    try {
+      await markInstallmentPaid({ installmentId: instId, method });
+      proposalsData = cloneRows(await loadProposalBook());
+      renderAccepted();
+      repaintExcept("acc");
+    } catch (err) {
+      showAlert("Couldn't record payment", actionError(err));
+    } finally {
+      pstate.writing = false;
+    }
+  }
+  async function runUnmark(p: ProposalRow, instId: string, btn: HTMLElement) {
+    if (pstate.writing) return;
+    pstate.writing = true;
+    (btn as HTMLButtonElement).disabled = true;
+    try {
+      const res = await unmarkInstallmentPaid(instId);
+      if (!res.ok) {
+        showAlert("Can't undo here", res.message);
+        (btn as HTMLButtonElement).disabled = false;
+        return;
+      }
+      proposalsData = cloneRows(await loadProposalBook());
+      renderAccepted();
+      repaintExcept("acc");
+    } catch (err) {
+      showAlert("Couldn't undo", actionError(err));
+      (btn as HTMLButtonElement).disabled = false;
+    } finally {
+      pstate.writing = false;
+    }
+    void p;
   }
 
   /**

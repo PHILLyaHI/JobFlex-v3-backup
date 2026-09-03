@@ -43,7 +43,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/Toast";
 
-type Settled = "accepted" | "paid" | "declined" | null;
+/** `"open"` is the one local value the SERVER never sends: a revert has put the
+ *  proposal back, and the page must show it open before the refresh lands. */
+type Settled = "accepted" | "paid" | "declined" | "open" | null;
+
+/** The way back, held in memory only — a reload forgets it, which is the whole
+ *  point: "revert" exists for the tap that was a slip, not for next week. */
+type Revert = { token: string; kind: "accept" | "decline" };
 
 function settledFrom(status: string): Settled {
   if (status === "PAID") return "paid";
@@ -52,25 +58,9 @@ function settledFrom(status: string): Settled {
   return null;
 }
 
-export type PayProvider = "stripe" | "square" | "paypal";
-
-const PROVIDER_LABEL: Record<PayProvider, string> = {
-  stripe: "Pay with card",
-  square: "Pay with Square",
-  paypal: "Pay with PayPal",
-};
-
-export function PortalActions({
-  publicId,
-  status,
-  total,
-  providers,
-}: {
-  providers: readonly PayProvider[];
-  publicId: string;
-  status: string;
-  total: number;
-}) {
+// Paying moved to ./portal-payment.tsx — per stage, on the contractor's own
+// Stripe / Square. This block is Accept / Decline and the settled states.
+export function PortalActions({ publicId, status }: { publicId: string; status: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [declineOpen, setDeclineOpen] = useState(false);
@@ -83,8 +73,9 @@ export function PortalActions({
   // never on a reload of an already-accepted page, where a burst of confetti
   // over a week-old decision would be nonsense.
   const [cheer, setCheer] = useState(false);
+  const [revert, setRevert] = useState<Revert | null>(null);
 
-  const settled = local ?? settledFrom(status);
+  const settled = local === "open" ? null : (local ?? settledFrom(status));
 
   async function accept() {
     // OPTIMISTIC, and this is the whole point. The comment above has always
@@ -101,6 +92,8 @@ export function PortalActions({
     try {
       const res = await fetch(`/api/public-quote/${publicId}/accept`, { method: "POST" });
       if (!res.ok) throw new Error("Couldn't record acceptance");
+      const data = (await res.json().catch(() => ({}))) as { revertToken?: string };
+      if (data.revertToken) setRevert({ token: data.revertToken, kind: "accept" });
       router.refresh();
     } catch (err) {
       setLocal(previous);
@@ -126,11 +119,10 @@ export function PortalActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ note: trimmed }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error ?? "Couldn't record your response");
-      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string; revertToken?: string };
+      if (!res.ok) throw new Error(data?.error ?? "Couldn't record your response");
       setLocal("declined");
+      if (data.revertToken) setRevert({ token: data.revertToken, kind: "decline" });
       router.refresh();
     } catch (err) {
       toast.error("Couldn't decline", err instanceof Error ? err.message : undefined);
@@ -139,34 +131,56 @@ export function PortalActions({
     }
   }
 
-  async function checkout(provider: "stripe" | "square" | "paypal") {
+  /** Take the accept or decline back. One shot: the token is dropped on
+   *  success, and the server refuses it anyway once money has moved. */
+  async function undo() {
+    if (!revert) return;
+    setBusy("revert");
     try {
-      setBusy(provider);
-      const res = await fetch(`/api/checkout/${provider}`, {
+      const res = await fetch(`/api/public-quote/${publicId}/revert`, {
         method: "POST",
-        body: JSON.stringify({ publicId, amount: Math.round(total * 100) }),
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: revert.token }),
       });
-      const data = await res.json();
-      if (data?.url) {
-        // eslint-disable-next-line react-hooks/immutability -- external checkout redirect, not component state
-        window.location.href = data.url;
-      } else if (data?.disabled) {
-        toast.info(
-          `${provider[0].toUpperCase() + provider.slice(1)} isn't configured`,
-          `Add the ${provider.toUpperCase()} keys to .env to enable checkout.`,
-        );
-      } else {
-        throw new Error(data?.error ?? "Checkout failed");
-      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data?.error ?? "Couldn't revert");
+      setRevert(null);
+      setCheer(false);
+      setLocal("open");
+      setDeclineOpen(false);
+      setNote("");
+      router.refresh();
     } catch (err) {
-      toast.error("Couldn't start checkout", err instanceof Error ? err.message : undefined);
+      toast.error("Couldn't revert", err instanceof Error ? err.message : undefined);
     } finally {
       setBusy(null);
     }
   }
 
   const positive = settled === "accepted" || settled === "paid";
+
+  // Shown under whichever settled plate this page's own click produced, and
+  // only while the token from that click is in memory.
+  const revertRow =
+    revert && settled !== "paid" && settled !== null ? (
+      <div className="pv-revert" id="pvRevert">
+        {/* ONE ROW, TWO REGISTERS: the plate says what it does, the mono
+            note beside it says for how long. The first cut put a bold
+            13px question on the left of a caps plate — two voices at two
+            sizes on one line, and the eye could not tell which was the
+            control. The question is gone; the plate IS the question. */}
+        <button
+          className="pv-btn pv-btn--ghost pv-revert-b"
+          type="button"
+          disabled={busy !== null}
+          onClick={undo}
+        >
+          <span className="pv-revert-ic" aria-hidden="true">↺</span>
+          {busy === "revert" ? "Reverting…" : revert.kind === "accept" ? "Revert acceptance" : "Revert decline"}
+        </button>
+        <span className="pv-revert-n">Only while this page stays open</span>
+      </div>
+    ) : null;
 
   return (
     <div className="pv-actions" id="pvActions">
@@ -206,8 +220,12 @@ export function PortalActions({
           A note is required so the team knows why.
         </div>
         <div className="pv-decline-row">
+          {/* Grey, not red (owner, 2026-09-02): the red plate above already
+              said "this is the destructive answer"; the confirm inside the
+              note panel is the quiet second step, and two red plates one
+              above the other read as an alarm. */}
           <button
-            className="pv-btn pv-btn--danger"
+            className="pv-btn pv-btn--grey"
             type="button"
             id="pvDeclineGo"
             disabled={busy !== null}
@@ -239,28 +257,14 @@ export function PortalActions({
           ? "✓ Paid in full — thank you. The team has been notified."
           : "✓ Accepted — thank you. The team has been notified."}
       </div>
-      {/* HOW TO PAY — only after the deal is agreed.
-          These used to sit in the same row as Accept, which asked the client to
-          pay for something they had not yet said yes to and gave a card payment
-          the same weight as declining. Accepting is the decision; paying is the
-          next step, and it appears once that decision is made. Gone again once
-          the proposal is PAID — there is nothing left to pay. */}
-      {settled === "accepted" && providers.length > 0 ? (
+      {/* HOW TO PAY — after acceptance the payment schedule below carries the
+          buttons, one stage at a time; this is a pointer to it. */}
+      {revert?.kind === "accept" ? revertRow : null}
+      {settled === "accepted" ? (
         <div className="pv-paynow" id="pvPay">
-          <div className="pv-paynow-l">Ready when you are — pay your deposit</div>
-          <div className="pv-btnrow">
-            {providers.map((prov) => (
-              <button
-                key={prov}
-                className="pv-btn pv-btn--ghost pv-btn--pay"
-                type="button"
-                disabled={busy !== null}
-                onClick={() => checkout(prov)}
-              >
-                {PROVIDER_LABEL[prov]}
-              </button>
-            ))}
-          </div>
+          <a className="pv-paynow-l pv-paynow-link" href="#pvPayment">
+            Ready when you are — pay below ↓
+          </a>
         </div>
       ) : null}
 
@@ -271,6 +275,7 @@ export function PortalActions({
       >
         You declined this proposal.
       </div>
+      {revert?.kind === "decline" ? revertRow : null}
     </div>
   );
 }

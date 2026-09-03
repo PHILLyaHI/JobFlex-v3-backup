@@ -35,6 +35,12 @@ export const lineSchema = z.object({
   quantity: z.number(),
   unitPrice: z.number(),
   unit: trimmedOpt,
+  // The shop-list price: what the matched retail listing sells the package for
+  // (a $45 box, a $180 five-gallon pail). Set server-side from the chosen
+  // option, never by the model. Independent of `unitPrice`, which is the
+  // estimator's price per measured unit — the material list is a "where to buy
+  // it and what it costs" reference, not the line's pricing (owner, 2026-09-02).
+  retailPrice: z.number().nonnegative().optional(),
   // Product metadata surfaced by the live-pricing estimator so the purchases
   // page can render a real shoppable line (store, link, image, size, math notes).
   store: trimmedOpt,

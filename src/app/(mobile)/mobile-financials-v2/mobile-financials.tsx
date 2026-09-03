@@ -48,6 +48,8 @@
 // until the layout is signed off.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import styles from "./mobile-financials.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
@@ -944,6 +946,25 @@ export function MobileFinancials() {
                 )}
               </button>
             ))}
+            {/* Fifth cell, full width: the desktop's second tab. Overhead is its
+                own handheld surface (/mobile-overhead-v1, real data), so this is
+                a link out of the pad rather than a fifth in-page panel — and it
+                is an <a>, so the button-only nth-of-type dividers and the 2×2
+                indicator math above are untouched. */}
+            <Link
+              href={"/mobile-overhead-v1" as Route}
+              className={`${styles.ftab} ${styles.ftabLink}`}
+              aria-label="Overhead — monthly business costs"
+            >
+              <svg className={styles.ftabIc} viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 21V7l9-4 9 4v14" />
+                <path d="M3 21h18" />
+                <path d="M9 21v-6h6v6" />
+                <path d="M9 11h.01M15 11h.01" />
+              </svg>
+              Overhead
+              <span className={styles.ftabGo} aria-hidden="true">→</span>
+            </Link>
           </div>
 
           {/* ============ TAB: OVERVIEW ============ */}

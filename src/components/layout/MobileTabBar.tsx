@@ -20,7 +20,7 @@ import {
   MessagesSquare,
   Folder,
 } from "lucide-react";
-import { signOut } from "next-auth/react";
+import { logOutEverywhere } from "@/components/v3/blueprint-shell/sign-out";
 import { cn } from "@/lib/cn";
 import { MobileDrawer } from "@/components/ui/MobileDrawer";
 import { openSupportComposer } from "@/components/v3/support-widget/support-widget";
@@ -313,7 +313,7 @@ export function MobileTabBar({
               type="button"
               onClick={() => {
                 setMoreOpen(false);
-                signOut({ callbackUrl: "/" });
+                void logOutEverywhere("/");
               }}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-[var(--r-sm)] text-[13px] text-[color:var(--rose)] hover:bg-rose-50 focus-ring text-left"
             >

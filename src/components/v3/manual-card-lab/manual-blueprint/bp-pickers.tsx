@@ -206,7 +206,7 @@ export function ClientField({
   /** Writes the client, then appends it to the roster and selects it. Rejects
    *  with a message the form prints in place — the create is a real round trip
    *  now, so it can fail, and a silently discarded name is worse than an error. */
-  onCreate: (input: NewClientInput) => Promise<void>;
+  onCreate: (input: NewClientInput) => Promise<unknown>;
   /** Told whenever the inline "add a new client" form opens or closes, so the
    *  card above can hide the contact rows that belong to the SELECTED client —
    *  two Email/Phone/Address pairs stacked on one card read as one long form

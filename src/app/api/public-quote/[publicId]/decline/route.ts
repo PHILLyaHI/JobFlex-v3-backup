@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
+import { appBaseUrl } from "@/lib/appUrl";
+import { sendToMembersByPref } from "@/lib/notificationPrefs";
+import { buildOwnerDeclined } from "@/lib/email/build/operator";
+import { signRevert } from "@/lib/quoteRevert";
 
 // Public proposal decline. Mirrors ../accept, but a short note is REQUIRED so
 // the contractor learns why. The note is recorded on the DECLINED ActivityEvent
@@ -29,9 +33,11 @@ export async function POST(
 
   const proposal = await db.proposal.findUnique({
     where: { publicId },
-    include: { client: true },
+    include: { client: true, organization: { select: { deletedAt: true, name: true, logoUrl: true, phone: true } } },
   });
-  if (!proposal) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!proposal || proposal.organization.deletedAt) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   // Don't let a settled deal be flipped. Already-declined is idempotent.
   if (proposal.status === "ACCEPTED" || proposal.status === "PAID") {
@@ -49,6 +55,9 @@ export async function POST(
     req.headers.get("x-real-ip") ??
     null;
 
+  // What the row said BEFORE, so a revert can put it back exactly.
+  const prev = proposal.status;
+
   await db.proposal.update({
     where: { id: proposal.id },
     data: { status: "DECLINED", declinedAt: new Date() },
@@ -65,5 +74,28 @@ export async function POST(
     },
   });
 
-  return NextResponse.json({ ok: true });
+  // Office heads-up, gated by each member's "Proposal declined" email pref.
+  try {
+    const appUrl = await appBaseUrl();
+    await sendToMembersByPref(
+      proposal.organizationId,
+      "proposal-declined",
+      buildOwnerDeclined({
+        org: { name: proposal.organization.name, logoUrl: proposal.organization.logoUrl, phone: proposal.organization.phone },
+        clientName: proposal.client?.name ?? "A client",
+        title: proposal.title,
+        note: safeNote,
+        total: proposal.total,
+        href: `${appUrl}/dashboard/proposals/${proposal.id}`,
+      }),
+    );
+  } catch (err) {
+    console.warn("[decline] office email failed", err);
+  }
+
+  // The way back, for as long as the page stays open — see lib/quoteRevert.ts
+  // and ../revert.
+  const revertToken = signRevert({ p: proposal.id, a: "decline", prev, j: null });
+
+  return NextResponse.json({ ok: true, revertToken });
 }

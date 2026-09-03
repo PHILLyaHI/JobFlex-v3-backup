@@ -1537,3 +1537,45 @@
   .bp :global(.content .pmdl .mdl-x) { width: 44px; height: 44px; margin: -8px -8px 0 0; }
   .bp :global(.content .pmdl .mdl-x .ic) { width: 16px; height: 16px; }
 }
+
+/* Per-stage money state on the accepted card. Mark paid / Remind sit under
+   the figure in the column layout and in the last cell of the table layout;
+   a paid stage swaps them for a check + "Paid · Stripe". */
+.bp :global(.pinst-acts) {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.bp :global(.psched--div .pinst-acts) {
+  margin-top: 0;
+  padding: 4px 8px;
+  width: auto;
+  min-width: 220px;
+}
+.bp :global(.psched--div .td-remind .pinst-acts .btn) {
+  width: auto;
+  padding: 8px 10px;
+}
+.bp :global(.pinst-paid) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ok, #2f6b3a);
+}
+.bp :global(.pinst-paid .ic) {
+  width: 12px;
+  height: 12px;
+}
+.bp :global(.pinst-pick) {
+  display: inline-flex;
+  gap: 4px;
+}
+.bp :global(.pcol--paid .pcol-val) {
+  color: var(--ok, #2f6b3a);
+}

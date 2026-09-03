@@ -194,3 +194,32 @@
   :global(.jf-blueprint .content) .pr-helper { grid-template-columns: 1fr; }
   :global(.jf-blueprint .content) .pl-thead { padding: 16px 14px 0; }
 }
+
+/* ── BENEFITS LIST EDITOR (2026-09-02) — replaces the one-per-line textarea.
+   Rows reuse `.in`; only the row chrome is new. */
+.feat-list { display: flex; flex-direction: column; gap: 6px; }
+.feat-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) 30px 30px 30px; gap: 6px; align-items: center; }
+.feat-n {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em; color: var(--muted, #555); text-align: right;
+}
+.feat-btn {
+  height: 34px; display: inline-grid; place-items: center;
+  border: 1.5px solid var(--hair-soft, #d5d1c8); border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb); color: var(--ink, #0a0a0a);
+  font-size: 14px; font-weight: 800; line-height: 1; cursor: pointer;
+}
+.feat-btn:hover:not(:disabled) { border-color: var(--ink, #0a0a0a); }
+.feat-btn:disabled { opacity: 0.35; cursor: default; }
+.feat-x:hover:not(:disabled) { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
+.feat-add {
+  align-self: flex-start; margin-top: 4px; height: 34px; padding: 0 12px;
+  border: 1.5px dashed var(--ink, #0a0a0a); border-radius: var(--radius, 2px);
+  background: transparent; color: var(--ink, #0a0a0a);
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+}
+.feat-add:hover { background: var(--paper-deep, #ebe8e1); }
+.feat-hint {
+  margin: 4px 0 0; font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px; line-height: 1.5; color: var(--muted, #555);
+}

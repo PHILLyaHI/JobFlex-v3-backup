@@ -64,7 +64,14 @@ function CompletedCard({ row, index }: { row: ProposalCRow; index: number }) {
   async function unmark() {
     setUnmarking(true);
     try {
-      await updateProposalStatus(row.id, "ACCEPTED");
+      const res = await updateProposalStatus(row.id, "ACCEPTED");
+      if (!res.ok) {
+        toast.error(
+          "Paid through Stripe / Square",
+          "Refund it from that dashboard — the proposal syncs back automatically.",
+        );
+        return;
+      }
       toast.success("Unmarked as paid", `"${row.title}" moved back to the Accepted tab.`);
       router.refresh();
     } catch (err: unknown) {

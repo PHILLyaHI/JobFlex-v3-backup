@@ -561,7 +561,23 @@ function PlanForm({
   const isNew = !plan.id;
   const [local, setLocal] = useState<HydratedPlan>(plan);
   const [slugTouched, setSlugTouched] = useState(!isNew);
-  const [featuresText, setFeaturesText] = useState(plan.features.join("\n"));
+  /* THE BENEFITS, as a list rather than a textarea (owner, 2026-09-02): one
+     row per line with its own field, a remove, an up/down, and an "Add".
+     What is saved is unchanged — `features: string[]` — and every customer
+     surface still draws it the way it always did (tick per row). */
+  const [features, setFeatures] = useState<string[]>(plan.features);
+  const setFeature = (i: number, v: string) =>
+    setFeatures((list) => list.map((f, j) => (j === i ? v : f)));
+  const removeFeature = (i: number) => setFeatures((list) => list.filter((_, j) => j !== i));
+  const moveFeature = (i: number, dir: -1 | 1) =>
+    setFeatures((list) => {
+      const j = i + dir;
+      if (j < 0 || j >= list.length) return list;
+      const next = [...list];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  const addFeature = () => setFeatures((list) => [...list, ""]);
   // Prices are edited as raw text (dollars) so partially-typed decimals like
   // "29." survive keystrokes; cents are derived into `local` on each change.
   const [priceText, setPriceText] = useState(centsToText(plan.priceCents || null));
@@ -627,10 +643,7 @@ function PlanForm({
         name: local.name.trim(),
         slug: local.slug.trim().toLowerCase(),
         description: local.description?.trim() || null,
-        features: featuresText
-          .split("\n")
-          .map((f) => f.trim())
-          .filter(Boolean),
+        features: features.map((f) => f.trim()).filter(Boolean),
       });
     } catch (e) {
       setErr(errorMessage(e, "Couldn't save."));
@@ -849,17 +862,67 @@ function PlanForm({
 
         <div className={cx("sec")}>
           <div className={cx("sec-h")}>
-            <span className={cx("sec-t")}>Features</span>
-            <span className={cx("sec-m")}>One per line</span>
+            <span className={cx("sec-t")}>Benefits</span>
+            <span className={cx("sec-m")}>
+              {features.length} row{features.length === 1 ? "" : "s"} · shown top to bottom
+            </span>
           </div>
-          <textarea
-            className={cx("in", "ta")}
-            rows={6}
-            value={featuresText}
-            aria-label="Features, one per line"
-            placeholder={"Unlimited proposals\nSmart Proposal drafts\n5 team seats"}
-            onChange={(e) => setFeaturesText(e.target.value)}
-          />
+          <div className={cx("feat-list")} role="list" aria-label="Benefits">
+            {features.map((f, i) => (
+              <div key={i} className={cx("feat-row")} role="listitem">
+                <span className={cx("feat-n")}>{i + 1}</span>
+                <input
+                  className={cx("in")}
+                  value={f}
+                  aria-label={`Benefit ${i + 1}`}
+                  placeholder="e.g. Proposal management"
+                  onChange={(e) => setFeature(i, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addFeature();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className={cx("feat-btn")}
+                  aria-label="Move up"
+                  title="Move up"
+                  disabled={i === 0}
+                  onClick={() => moveFeature(i, -1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className={cx("feat-btn")}
+                  aria-label="Move down"
+                  title="Move down"
+                  disabled={i === features.length - 1}
+                  onClick={() => moveFeature(i, 1)}
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  className={cx("feat-btn", "feat-x")}
+                  aria-label="Remove benefit"
+                  title="Remove"
+                  onClick={() => removeFeature(i)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button type="button" className={cx("feat-add")} onClick={addFeature}>
+              + Add benefit
+            </button>
+            <p className={cx("feat-hint")}>
+              A row that starts with &ldquo;Everything in &lt;plan&gt;&rdquo; inherits that plan&rsquo;s
+              rows on every customer page; write the extras after it.
+            </p>
+          </div>
         </div>
 
         <div className={cx("sec")}>

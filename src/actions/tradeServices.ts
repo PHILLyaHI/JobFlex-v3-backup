@@ -107,12 +107,15 @@ export type DiscoverProfileDTO = {
   tradeTypes: string[];
   specialties: string[];
   serviceArea: string | null;
+  /** The caller's own company (their row or a teammate's). Listed so a
+   *  contractor can see what hirers see, but never contactable. */
+  isSelf: boolean;
 };
 
 export async function discoverTradeProfiles(): Promise<DiscoverProfileDTO[]> {
-  const { user, organizationId } = await requireOrg();
+  const { organizationId } = await requireOrg();
   const rows = await db.tradeNetworkProfile.findMany({
-    where: { optIn: true, userId: { not: user.id } },
+    where: { optIn: true },
     orderBy: { updatedAt: "desc" },
     take: 200,
     select: {
@@ -131,9 +134,9 @@ export async function discoverTradeProfiles(): Promise<DiscoverProfileDTO[]> {
       },
     },
   });
+  // Own-company rows were filtered out until 2026-09-02; now they are kept
+  // and flagged, and sorted to the top, so a contractor can find themselves.
   return rows
-    // Cross-org only: a teammate's profile is not "talent to discover".
-    .filter((p) => !p.user.memberships.some((m) => m.organizationId === organizationId))
     .map((p) => ({
       id: p.id,
       name: p.user.name ?? p.user.memberships[0]?.organization.name ?? "A contractor",
@@ -141,7 +144,9 @@ export async function discoverTradeProfiles(): Promise<DiscoverProfileDTO[]> {
       tradeTypes: parseList(p.tradeTypes),
       specialties: parseList(p.specialties),
       serviceArea: p.serviceArea,
-    }));
+      isSelf: p.user.memberships.some((m) => m.organizationId === organizationId),
+    }))
+    .sort((a, b) => Number(b.isSelf) - Number(a.isSelf));
 }
 
 /** "I'm interested" on a talent-directory row — the door from the HIRER side
@@ -342,6 +347,76 @@ function mapOwnPost(j: OwnPostRow): OwnPost {
   };
 }
 
+/** One open post on the network, as the Talent directory lists it. */
+export type NetworkJobDTO = {
+  id: string;
+  title: string;
+  description: string;
+  tradeType: string;
+  specialties: string[];
+  location: string | null;
+  budget: string | null;
+  hoursAgo: number;
+  /** The posting company, and the poster's display name. Never an email. */
+  company: string;
+  postedBy: string;
+  /** Posted by the viewer's own company. */
+  isMine: boolean;
+  /** The viewer's recipient state, or null when the post was not sent to them
+   *  (only recipients can raise a hand — respondToTradeJob enforces that). */
+  viewerStatus: "NEW" | "INTERESTED" | "NOT_INTERESTED" | null;
+};
+
+/** Every OPEN post on the network, newest first — the directory's second
+ *  list (owner, 2026-09-02: "I can't see the job I posted, from any account").
+ *  The inbox only ever showed posts BROADCAST to the viewer; this shows the
+ *  whole board, the viewer's own posts included. Bodies are public by design:
+ *  a post exists to be read by strangers. */
+export async function listOpenTradeJobs(): Promise<NetworkJobDTO[]> {
+  const { user, organizationId } = await requireOrg();
+  const jobs = await db.tradeJob.findMany({
+    where: { status: "OPEN" },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      tradeType: true,
+      specialties: true,
+      location: true,
+      budget: true,
+      createdAt: true,
+      authorOrgId: true,
+      author: { select: { name: true } },
+      recipients: { where: { recipientId: user.id }, select: { status: true }, take: 1 },
+    },
+  });
+  const orgIds = Array.from(new Set(jobs.map((j) => j.authorOrgId)));
+  const orgs = orgIds.length
+    ? await db.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })
+    : [];
+  const orgNames = new Map(orgs.map((o) => [o.id, o.name]));
+  return jobs.map((j) => {
+    const company = orgNames.get(j.authorOrgId) ?? "A contractor";
+    const rs = j.recipients[0]?.status;
+    return {
+      id: j.id,
+      title: j.title,
+      description: j.description,
+      tradeType: j.tradeType,
+      specialties: parseList(j.specialties),
+      location: j.location,
+      budget: j.budget,
+      hoursAgo: hoursSince(j.createdAt),
+      company,
+      postedBy: j.author.name ?? company,
+      isMine: j.authorOrgId === organizationId,
+      viewerStatus: rs === "NEW" || rs === "INTERESTED" || rs === "NOT_INTERESTED" ? rs : null,
+    };
+  });
+}
+
 export async function getMyTradeJobs(): Promise<OwnPost[]> {
   const user = await requireUser();
   const jobs = await db.tradeJob.findMany({
@@ -383,8 +458,10 @@ async function findMatchingRecipients(
 
 // ─── Create / broadcast ─────────────────────────────────────────────────────
 const createInput = z.object({
-  title: z.string().trim().min(5).max(140),
-  description: z.string().trim().min(20).max(4000),
+  // No floor on length (owner, 2026-09-02): a title is required, the brief
+  // is whatever the author wrote. The ceilings are storage sanity only.
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(20000).default(""),
   tradeType: z.string().trim().min(1).max(60),
   specialties: z.array(z.string().trim().min(1).max(60)).max(40).default([]),
   location: z.string().trim().max(160).optional().nullable(),
@@ -543,8 +620,10 @@ export async function setTradeJobStatus(
 // working because your role changed after you posted it.
 
 const updateInput = z.object({
-  title: z.string().trim().min(5).max(140),
-  description: z.string().trim().min(20).max(4000),
+  // No floor on length (owner, 2026-09-02): a title is required, the brief
+  // is whatever the author wrote. The ceilings are storage sanity only.
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(20000).default(""),
   tradeType: z.string().trim().min(1).max(60),
   specialties: z.array(z.string().trim().min(1).max(60)).max(40).default([]),
   location: z.string().trim().max(160).optional().nullable(),

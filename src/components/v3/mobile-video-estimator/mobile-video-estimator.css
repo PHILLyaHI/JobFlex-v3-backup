@@ -1124,16 +1124,43 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
    is painted blueprint. Both come back on the line's own badge. */
 .jf-mobile-video-estimator .mve-row.mve-is-new .mve-rname { color: var(--success); }
 .jf-mobile-video-estimator .mve-row.mve-is-upd .mve-rname { color: var(--blueprint); }
-/* qty · unit · price · delete. The three fixed tracks plus the gaps come to
-   197px, so at a 320px viewport — 259px of card measure — the unit keeps ~62px,
-   enough for "each" / "hour" / "sheet" at 16px mono. */
+/* THE FUSED ROW (2026-09-02): line two is qty · unit · delete, line three the
+   two $/unit prices side by side. Each field wears a mono caption so a price
+   is never a bare figure — on a phone there is no header row to name it. At
+   320px (259px of measure) the unit keeps ~130px, enough for "linear ft". */
 .jf-mobile-video-estimator .mve-row-f {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 7px;
   min-width: 0;
 }
+.jf-mobile-video-estimator .mve-row-p {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-f {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.jf-mobile-video-estimator .mve-f--qty { flex: 0 0 64px; }
+.jf-mobile-video-estimator .mve-f--unit { flex: 1 1 60px; }
+.jf-mobile-video-estimator .mve-fl {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .jf-mobile-video-estimator .mve-in {
+  width: 100%;
   min-width: 0;
   min-height: var(--tap);
   padding: 0 8px;
@@ -1146,10 +1173,17 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
   color: var(--ink);
   text-align: right;
   font-variant-numeric: tabular-nums;
+  /* Never a native number spinner: the fields are type=text with a decimal
+     keyboard, and this covers any that are not. */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.jf-mobile-video-estimator .mve-in::-webkit-inner-spin-button,
+.jf-mobile-video-estimator .mve-in::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 .jf-mobile-video-estimator .mve-in:focus { outline: none; border-color: var(--blueprint); }
-.jf-mobile-video-estimator .mve-in--qty { flex: 0 0 56px; }
-.jf-mobile-video-estimator .mve-in--price { flex: 0 0 76px; }
 /* THE RESULT IS A STACK OF CARDS, and it is one child of `.mve-content`, so
    the column's own gap never reached the cards inside it: the reading card,
    the totals card and the materials request were butted frame to frame,
@@ -1174,7 +1208,7 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
 .jf-mobile-video-estimator .mve-unit-wrap {
   position: relative;
   display: flex;
-  flex: 1 1 60px;
+  width: 100%;
   min-width: 0;
 }
 .jf-mobile-video-estimator .mve-unit-wrap::after {
@@ -1275,11 +1309,10 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
    page-foot pair did — they belong to the section above, not to the card. */
 .jf-mobile-video-estimator .mve-sec .mve-refine { margin-top: 14px; }
 .jf-mobile-video-estimator .mve-sec .mve-review { margin-top: 14px; }
-/* The estimate total gets its own band between the two ledgers and the request
-   list, so it is not read as belonging to Labor. Its rule is the section rule;
-   the ledger's own top margin would double it. */
+/* The column sums and the figure get their own band under the ledger. The
+   Materials / Labor lines sit under the section rule; the total keeps its own
+   ink rule above it so the figure closes the chain rather than the list. */
 .jf-mobile-video-estimator .mve-sec--tot { padding-top: 8px; }
-.jf-mobile-video-estimator .mve-sec--tot .mve-total { margin-top: 0; border-top: none; }
 
 /* ── MATERIALS REQUEST ────────────────────────────────────────────────────
    The Smart Proposal's shoppable list, DERIVED from the ledger above rather

@@ -57,10 +57,24 @@ const EMPTY_LOCKED: string[] = [];
 
 const NavLockedContext = createContext<string[]>(EMPTY_LOCKED);
 
+// What is LEFT on each metered page, fourth channel: remaining / limit by nav
+// href (lib/navLimits), computed by the layout beside the badges. Empty when
+// the plan caps nothing, so nothing is drawn — the same rule as the badges.
+export type NavLimit = {
+  remaining: number;
+  limit: number;
+  label: string;
+  scope: "monthly" | "absolute";
+};
+const EMPTY_LIMITS: Record<string, NavLimit> = {};
+
+const NavLimitsContext = createContext<Record<string, NavLimit>>(EMPTY_LIMITS);
+
 export function NavRoleProvider({
   identity,
   badges,
   locked,
+  limits,
   children,
 }: {
   identity?: NavIdentity;
@@ -68,17 +82,26 @@ export function NavRoleProvider({
   badges?: Record<string, number>;
   /** Custom-plan blocked hrefs, from the layout's getBlockedCustomPages. */
   locked?: string[];
+  /** Remaining plan quota by nav href, from the layout's getNavLimitCounters. */
+  limits?: Record<string, NavLimit>;
   children: React.ReactNode;
 }) {
   return (
     <NavRoleContext.Provider value={identity ?? EMPTY}>
       <NavBadgesContext.Provider value={badges ?? EMPTY_BADGES}>
         <NavLockedContext.Provider value={locked ?? EMPTY_LOCKED}>
-          {children}
+          <NavLimitsContext.Provider value={limits ?? EMPTY_LIMITS}>
+            {children}
+          </NavLimitsContext.Provider>
         </NavLockedContext.Provider>
       </NavBadgesContext.Provider>
     </NavRoleContext.Provider>
   );
+}
+
+/** Remaining quota by nav href, or an empty map outside the provider. */
+export function useNavLimits(): Record<string, NavLimit> {
+  return useContext(NavLimitsContext);
 }
 
 /** The custom plan's blocked hrefs, or an empty list outside the provider and

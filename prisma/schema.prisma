@@ -69,10 +69,16 @@ model Organization {
   signupPromoCode       String?
   signupPromoCodeId     String?
   attributionCapturedAt DateTime?
+  // Soft delete (Settings → Danger zone). A deleted org is invisible to
+  // requireOrg() and every public surface at once; the purge cron hard-deletes
+  // (cascade) 30 days later. deletedById = the owner who confirmed.
+  deletedAt             DateTime?
+  deletedById           String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   memberships          Membership[]
+  paymentConnections   PaymentConnection[]
   invites              Invite[]
   clients              Client[]
   leads                Lead[]
@@ -117,6 +123,7 @@ model Organization {
 
   @@index([slug])
   @@index([signupPromoCodeId])
+  @@index([deletedAt])
 }
 
 // One month's recurring business cost sheet — the costs that exist whether or
@@ -584,6 +591,10 @@ model Proposal {
   aiDraftId         String?
   beforePhotos      String?   @default("[]")
   afterPhotos       String?   @default("[]")
+  // Bumped whenever an UNPAID installment's amount/label/membership changes.
+  // Checkout sessions carry the version they were minted under, so a payment
+  // landing on a stale version is reconciled instead of trusted blindly.
+  scheduleVersion   Int       @default(1)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -669,8 +680,28 @@ model Installment {
   isPercent  Boolean   @default(false)
   dueDate    DateTime?
   position   Int       @default(0)
+  // Payment-stage state (src/lib/paymentSchedule.ts is the only place that
+  // derives money from these). UNPAID | PENDING (a checkout is open) | PAID |
+  // WAIVED (proposal reached PAID before this stage was collected).
+  status           String    @default("UNPAID")
+  paidAt           DateTime?
+  // Frozen dollars actually settled for this stage. A PAID stage never
+  // recomputes from `amount`/`isPercent` again, even if the total changes.
+  paidAmount       Float?
+  paymentId        String?
+  // Open checkout, while PENDING: provider + its session/link id (+ Square's
+  // order id, which is what payment.updated carries back).
+  checkoutProvider String?
+  checkoutRef      String?
+  checkoutOrderId  String?
+  checkoutOpenedAt DateTime?
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  payment  Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([proposalId, position])
+  @@index([checkoutRef])
+  @@index([checkoutOrderId])
 }
 
 model ProposalTemplate {
@@ -714,19 +745,69 @@ model Payment {
   clientId       String?
   amount         Float
   currency       String    @default("USD")
-  provider       String    @default("STRIPE")
-  status         String    @default("PENDING")
-  externalId     String?
-  method         String?
+  provider       String    @default("STRIPE") // STRIPE | SQUARE | MANUAL
+  status         String    @default("PENDING") // PENDING | PAID | PARTIAL | REFUNDED | PARTIALLY_REFUNDED | VOID
+  externalId     String? // Stripe checkout session id / Square order id — dedupe key
+  method         String? // card | us_bank_account | BANK_TRANSFER | CASH | CHECK | OTHER
   paidAt         DateTime?
+  // Platform payments (contractor's own Stripe/Square via JobFlex). Money in
+  // dollars like `amount`; the settle path is the only writer.
+  feeAmount         Float    @default(0) // JobFlex application fee
+  netAmount         Float? // amount − feeAmount
+  externalPaymentId String? // Stripe payment_intent / Square payment id — refunds key on this
+  livemode          Boolean  @default(true)
+  refundedAmount    Float    @default(0)
+  scheduleVersion   Int? // Proposal.scheduleVersion the checkout was minted under
+  meta              String? // JSON: {orphan, unappliedMinor, duplicate, note}
   createdAt      DateTime  @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  proposal     Proposal?    @relation(fields: [proposalId], references: [id])
-  invoice      Invoice?     @relation(fields: [invoiceId], references: [id])
-  client       Client?      @relation(fields: [clientId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  proposal     Proposal?     @relation(fields: [proposalId], references: [id])
+  invoice      Invoice?      @relation(fields: [invoiceId], references: [id])
+  client       Client?       @relation(fields: [clientId], references: [id])
+  installments Installment[]
 
+  @@unique([provider, externalId])
   @@index([organizationId, status])
+  @@index([provider, externalPaymentId])
+}
+
+// One row per org × provider for "get paid through JobFlex". Stripe = Connect
+// Standard account joined by OAuth (we only store the acct id — every API call
+// uses the platform key + Stripe-Account header). Square = OAuth tokens,
+// encrypted at rest (src/lib/crypto/secretBox.ts). Disconnect = delete row.
+model PaymentConnection {
+  id             String @id @default(cuid())
+  organizationId String
+  provider       String // STRIPE | SQUARE
+  status         String @default("ACTIVE") // ACTIVE | RESTRICTED | REVOKED
+
+  stripeAccountId        String?
+  stripeLivemode         Boolean?
+  stripeChargesEnabled   Boolean @default(false)
+  stripeDetailsSubmitted Boolean @default(false)
+  stripeAchEnabled       Boolean @default(false)
+
+  squareMerchantId      String?
+  squareLocationId      String?
+  squareLocationName    String?
+  squareAccessTokenEnc  String?
+  squareRefreshTokenEnc String?
+  squareTokenExpiresAt  DateTime?
+  squareEnv             String? // sandbox | production at connect time
+
+  currency          String? // provider default currency; checked against Proposal.currency
+  country           String? // Square app-fee same-country rule
+  lastError         String?
+  connectedByUserId String?
+  connectedAt       DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@index([stripeAccountId])
+  @@index([squareMerchantId])
 }
 
 // ─────────────────────────────────────────────
@@ -1729,8 +1810,8 @@ model PayoutTransfer {
 // Idempotency log for inbound Stripe webhooks — eventId @unique drops replays.
 model WebhookEvent {
   id          String    @id @default(cuid())
-  provider    String    @default("STRIPE")
-  eventId     String    @unique // evt_...
+  provider    String    @default("STRIPE") // STRIPE | SQUARE
+  eventId     String // evt_... / Square event_id
   type        String
   status      String    @default("RECEIVED") // WebhookEventStatus
   payloadHash String?
@@ -1738,7 +1819,9 @@ model WebhookEvent {
   receivedAt  DateTime  @default(now())
   processedAt DateTime?
 
+  @@unique([provider, eventId])
   @@index([type, receivedAt])
+  @@index([provider, receivedAt])
 }
 
 // Stripe Price mirror. At most one active price per (plan, interval). Stripe

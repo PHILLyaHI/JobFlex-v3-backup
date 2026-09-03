@@ -61,9 +61,7 @@ export const PAGE_ACC = 2;
 export const PAGE_DONE = 1;
 
 /** A percentage instalment resolves against the proposal total. */
-export function instDollars(p: ProposalRow, it: Installment): number {
-  return it.pct ? Math.round((p.total * it.amount) / 100) : it.amount;
-}
+export { instDollars } from "@/components/v3/proposals-blueprint/proposals-data";
 
 export const sumOf = (list: ProposalRow[]) => list.reduce((a, p) => a + p.total, 0);
 export const OPEN_STATUSES: string[] = ["DRAFT", "SENT", "VIEWED"];

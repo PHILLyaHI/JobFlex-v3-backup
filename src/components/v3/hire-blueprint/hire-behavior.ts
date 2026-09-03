@@ -28,9 +28,12 @@ import {
   createTradeJob,
   deleteTradeJob,
   getMyTradeJobs,
+  listOpenTradeJobs,
+  respondToTradeJob,
   setTradeJobStatus,
   updateTradeJob,
   type DiscoverProfileDTO,
+  type NetworkJobDTO,
 } from "@/actions/tradeServices";
 import type { OwnPost } from "@/app/(mobile)/trade-services/trade-data";
 import { TRADE_TYPES } from "@/lib/tradeTypes";
@@ -57,6 +60,8 @@ export type HireContentOptions = {
   tallies?: HireTallies;
   /** Other orgs' opted-in profiles — the "Discover talent" panel. */
   talent?: DiscoverProfileDTO[];
+  /** Every open post on the network — the directory's "Open jobs" list. */
+  networkJobs?: NetworkJobDTO[];
   /** Client-side route push for the cross-route hub rows. Falls back to
    *  location.assign — see the clients port for why the way matters. */
   navigate?: (href: string) => void;
@@ -167,6 +172,7 @@ export function initHireContent(
   /** Talent rows already contacted this visit — one send per profile. */
   const contacted = new Set<string>();
   const talentData: DiscoverProfileDTO[] = options.talent ?? [];
+  let networkJobs: NetworkJobDTO[] = options.networkJobs ?? [];
   const tallies: HireTallies = options.tallies ?? {
     hired: 0, openPosts: 0, totalPosts: 0, interestReceived: 0, interestSent: 0,
   };
@@ -317,13 +323,15 @@ export function initHireContent(
     const links = $("#hubList");
     if (doors) {
       doors.innerHTML = HUB_DOORS.map(function (d) {
-        return '<button class="door" type="button" data-goto="' + d.goto + '">' +
+        // The CTA is the only control: a whole-card target lit the button on
+        // a hover that never reached it (owner, 2026-09-02).
+        return '<div class="door">' +
           (d.kicker ? '<span class="door-kicker">' + d.kicker + '</span>' : '') +
           '<span class="door-ic"><svg class="ic"><use href="#' + d.icon + '"/></svg></span>' +
           '<span class="door-t" style="display:block">' + d.title + '</span>' +
           '<span class="door-b" style="display:block">' + d.body + '</span>' +
-          '<span class="door-cta">' + d.cta + '<svg class="ic"><use href="#i-arrow"/></svg></span>' +
-          '</button>';
+          '<button class="door-cta" type="button" data-goto="' + d.goto + '">' + d.cta + '<svg class="ic"><use href="#i-arrow"/></svg></button>' +
+          '</div>';
       }).join('');
     }
     if (tally) {
@@ -451,9 +459,8 @@ export function initHireContent(
   /** The three rules `createTradeJob` / `updateTradeJob` enforce server-side,
    *  said in the user's words before the round trip is spent. */
   function jobFormError(f: JobForm): string | null {
-    if (f.title.trim().length < 5) return "Give the post a short title (5+ characters).";
+    if (!f.title.trim()) return "Give the post a title.";
     if (!f.trade) return "Pick a trade so the right contractors are notified.";
-    if (f.details.trim().length < 20) return "Describe the work (20+ characters).";
     return null;
   }
 
@@ -484,16 +491,24 @@ export function initHireContent(
     const title = f.title.trim();
     const meta = [f.trade, f.area.trim(), "just now"].filter(Boolean).join(" · ");
     const budget = rateToBudget(f.rateMin, f.rateMax, f.rateUnit);
+    const reach = f.trade
+      ? "Goes to every " + esc(f.trade) + " contractor in the network"
+      : "Pick a trade to choose who is notified";
     box.innerHTML =
-      '<span class="mypost-draft-hint">Preview — how your post will appear</span>' +
-      '<div class="mypost-row mypost-draft" aria-live="polite">' +
-        '<span class="mypost-main">' +
-          '<span class="mypost-t' + (title ? "" : " is-empty") + '">' + (title ? esc(title) : "Untitled post") + "</span>" +
-          '<span class="mypost-m">' + esc(meta) + "</span>" +
-          '<span class="mypost-m">0 notified · 0 interested</span>' +
-        "</span>" +
-        (budget ? '<span class="mypost-rate">' + esc(budget) + "</span>" : "") +
-        '<span class="mypost-side"><span class="mypost-draft-tag">Draft — not posted</span></span>' +
+      '<div class="mypost-draft" aria-live="polite">' +
+        '<div class="mypost-draft-kick">' +
+          '<span class="mypost-draft-tag">Draft</span>' +
+          '<span>Preview — how your post will read</span>' +
+        "</div>" +
+        '<div class="mypost-row">' +
+          '<span class="mypost-main">' +
+            '<span class="mypost-t' + (title ? "" : " is-empty") + '">' + (title ? esc(title) : "Untitled post") + "</span>" +
+            '<span class="mypost-m">' + esc(meta) + "</span>" +
+            '<span class="mypost-m mypost-draft-reach">' + reach + "</span>" +
+          "</span>" +
+          (budget ? '<span class="mypost-rate">' + esc(budget) + "</span>" : "") +
+          '<span class="mypost-side"><span class="pstatus mypost-draft-st">Not posted yet</span></span>' +
+        "</div>" +
       "</div>";
   }
 
@@ -503,7 +518,6 @@ export function initHireContent(
     box.innerHTML =
       jobFieldsHTML(post, "postArea", false) +
       '<div class="mf-err is-hidden" id="profErr" role="alert"></div>' +
-      '<div class="pok is-hidden" id="postOk" role="status"></div>' +
       '<div class="sf-act"><button class="btn btn-primary btn--sm" type="button" data-act="post-job">' +
         '<svg class="ic"><use href="#i-send"/></svg><span data-save-lbl>Post a job</span></button></div>';
 
@@ -527,6 +541,56 @@ export function initHireContent(
         },
       });
     }
+  }
+
+  /** The "posted" confirmation: a real pop-up, the fleet's `.mask` + `.modal`
+   *  pair (settings-blueprint's F11 form, restated in hire-global.css as
+   *  `.jf-hire-mask` / `.jf-hire-modal`). Mounted on the shell root, not in
+   *  `.main`: that element carries the fluid-scale transform, and a fixed
+   *  child of a transformed box is not fixed to the viewport.
+   *  Closes on Done, the ×, the mask, or Escape, and leaves the way it came. */
+  function postedModal() {
+    document.querySelectorAll(".jf-hire-mask").forEach(function (n) { n.remove(); });
+    const mask = document.createElement("div");
+    mask.className = "jf-hire-mask";
+    mask.innerHTML =
+      '<div class="jf-hire-modal" role="dialog" aria-modal="true" aria-labelledby="jfPostedT">' +
+        '<div class="jf-hire-modal-h">' +
+          '<span class="jf-hire-modal-ic"><svg class="ic"><use href="#i-check"/></svg></span>' +
+          '<div><div class="jf-hire-modal-t" id="jfPostedT">Job posted</div>' +
+            '<div class="jf-hire-modal-s">Your post is live on the network.</div></div>' +
+          '<button class="jf-hire-modal-x" type="button" data-modal-close aria-label="Close">' +
+            '<svg class="ic"><use href="#i-x"/></svg></button>' +
+        "</div>" +
+        '<div class="jf-hire-modal-b">' +
+          "<p>It is listed under <b>Your job posts</b> below and under <b>Open jobs on the network</b> in the talent directory, " +
+          "where every company can read it. Contractors in that trade were notified.</p>" +
+        "</div>" +
+        '<div class="jf-hire-modal-f">' +
+          '<button class="btn btn-ghost" type="button" data-modal-goto="talent">See it in the directory</button>' +
+          '<button class="btn btn-primary" type="button" data-modal-close>Done</button>' +
+        "</div>" +
+      "</div>";
+    // Inside the shell root, where the `.bp` tokens (--blueprint, --border,
+    // --success…) resolve; outside `.main`, which is the transformed element.
+    (root.closest<HTMLElement>(".jf-blueprint") ?? document.body).appendChild(mask);
+    const dialog = mask.querySelector<HTMLElement>(".jf-hire-modal");
+    function close() {
+      mask.classList.add("is-leaving");
+      document.removeEventListener("keydown", onKey);
+      window.setTimeout(function () { mask.remove(); }, 220);
+    }
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") close(); }
+    document.addEventListener("keydown", onKey);
+    mask.addEventListener("click", function (e) {
+      const t = e.target as HTMLElement;
+      if (t === mask || t.closest("[data-modal-close]")) { close(); return; }
+      const go = t.closest<HTMLElement>("[data-modal-goto]");
+      if (go) { close(); switchTab(go.dataset.modalGoto || "talent"); }
+    });
+    mask.querySelector<HTMLButtonElement>('[data-modal-close].btn')?.focus();
+    disposers.push(function () { document.removeEventListener("keydown", onKey); mask.remove(); });
+    void dialog;
   }
 
   function agoText(h: number) {
@@ -694,20 +758,27 @@ export function initHireContent(
   function talentRowHTML(p: DiscoverProfileDTO) {
     const trades = p.tradeTypes.join(" · ");
     const skills = p.specialties.join(", ");
-    return '<li class="tal-row">' +
+    // Your own company's rows are in the list (owner, 2026-09-02: "make sure I
+    // can see myself") but carry no "I'm interested" — you cannot hire you.
+    const action = p.isSelf
+      ? '<button class="btn btn-ghost tal-contact" type="button" data-href="/dashboard/hire/profile">' +
+          '<svg class="ic"><use href="#i-pen"/></svg>Your listing</button>'
+      : contacted.has(p.id)
+        ? '<button class="btn btn-ghost tal-contact" type="button" disabled>Sent ✓</button>'
+        : '<button class="btn btn-primary tal-contact" type="button" data-contact="' + esc(p.id) + '">' +
+          '<svg class="ic"><use href="#i-send"/></svg>I’m interested</button>';
+    return '<li class="tal-row' + (p.isSelf ? " is-self" : "") + '">' +
       '<span class="hub-row-ic"><svg class="ic"><use href="#i-hardhat"/></svg></span>' +
       '<span class="tal-main">' +
-        '<span class="tal-name">' + esc(p.company || p.name) + "</span>" +
+        '<span class="tal-name">' + esc(p.company || p.name) +
+          (p.isSelf ? '<span class="tal-you">You</span>' : "") + "</span>" +
         (p.company && p.name !== p.company ? '<span class="tal-who">' + esc(p.name) + "</span>" : "") +
         (trades || skills
           ? '<span class="tal-sub">' + esc(trades) + (trades && skills ? " — " : "") + esc(skills) + "</span>"
           : "") +
+        (p.serviceArea ? '<span class="tal-area">' + esc(p.serviceArea) + "</span>" : "") +
       "</span>" +
-      (p.serviceArea ? '<span class="tal-area">' + esc(p.serviceArea) + "</span>" : "") +
-      (contacted.has(p.id)
-        ? '<button class="btn btn-ghost btn--sm tal-contact" type="button" disabled>Sent ✓</button>'
-        : '<button class="btn btn-ghost btn--sm tal-contact" type="button" data-contact="' + esc(p.id) + '">' +
-          '<svg class="ic"><use href="#i-send"/></svg>I’m interested</button>') +
+      action +
     "</li>";
   }
 
@@ -741,10 +812,79 @@ export function initHireContent(
             '<div style="margin-top:14px">' +
               '<button class="btn btn-ghost btn--sm" type="button" data-filter-clear="1">Clear filter</button>' +
             "</div></div></div>");
-    bindFilters(box, talentFilter, renderTalent);
+    bindFilters(box, talentFilter, function () { renderTalent(); renderNetworkJobs(); });
   }
 
-  function renderHire() { renderBoard(); renderHub(); renderPost(); renderMyPosts(); renderTalent(); }
+  // ---- "Open jobs on the network" — every OPEN post, the caller's included ----
+  function visibleNetworkJobs() {
+    return networkJobs.filter(function (j) {
+      return !talentFilter.trade || j.tradeType === talentFilter.trade;
+    });
+  }
+
+  function networkJobRowHTML(j: NetworkJobDTO) {
+    const meta = [j.company, j.tradeType, j.location, agoText(j.hoursAgo)].filter(Boolean).join(" · ");
+    const side = j.isMine
+      ? '<span class="pstatus pstatus--accepted">Your post</span>'
+      : j.viewerStatus === "INTERESTED"
+        ? '<button class="btn btn-ghost tal-contact" type="button" disabled>Interested ✓</button>'
+        : j.viewerStatus === "NEW" || j.viewerStatus === "NOT_INTERESTED"
+          ? '<button class="btn btn-primary tal-contact" type="button" data-job-interest="' + esc(j.id) + '">' +
+              '<svg class="ic"><use href="#i-send"/></svg>I’m interested</button>'
+          : '<span class="netjob-note">Sent to ' + esc(j.tradeType) + " contractors</span>";
+    return '<li class="mypost-row netjob-row' + (j.isMine ? " is-mine" : "") + '">' +
+      '<span class="mypost-main netjob-main">' +
+        '<span class="mypost-t">' + esc(j.title) + "</span>" +
+        '<span class="mypost-m">' + esc(meta) + "</span>" +
+        (j.description ? '<span class="netjob-body">' + esc(j.description) + "</span>" : "") +
+      "</span>" +
+      (j.budget ? '<span class="mypost-rate">' + esc(j.budget) + "</span>" : "") +
+      '<span class="mypost-side">' + side + "</span>" +
+    "</li>";
+  }
+
+  function renderNetworkJobs() {
+    const box = $("#netJobsBox");
+    if (!box) return;
+    if (!networkJobs.length) {
+      box.innerHTML =
+        '<div class="pempty" style="margin:0"><b>No open jobs on the network</b><br>' +
+        "Every company’s open post lands here, including yours.</div>";
+      return;
+    }
+    const rows = visibleNetworkJobs();
+    box.innerHTML = rows.length
+      ? '<ul class="mypost-list">' + rows.map(networkJobRowHTML).join("") + "</ul>"
+      : '<div class="pempty pempty--filtered" style="margin:0"><b>No open jobs under that trade</b><br>' +
+        "Clear the trade filter above to see every open post.</div>";
+  }
+
+  /** Refresh the board from the server — after a post, and after a hand is
+   *  raised, so the viewer's row state is the database's, not a guess. */
+  async function refreshNetworkJobs() {
+    try { networkJobs = await listOpenTradeJobs(); } catch { /* best-effort */ }
+    renderNetworkJobs();
+  }
+
+  async function raiseHand(btn: HTMLButtonElement) {
+    const id = btn.dataset.jobInterest || "";
+    if (!id) return;
+    btn.disabled = true;
+    const was = btn.innerHTML;
+    btn.textContent = "Sending\u2026";
+    const errBox = $("#netJobsErr");
+    if (errBox) errBox.classList.add("is-hidden");
+    try {
+      await respondToTradeJob(id, "INTERESTED");
+      await refreshNetworkJobs();
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerHTML = was;
+      if (errBox) { errBox.textContent = actionError(err); errBox.classList.remove("is-hidden"); }
+    }
+  }
+
+  function renderHire() { renderBoard(); renderHub(); renderPost(); renderMyPosts(); renderTalent(); renderNetworkJobs(); }
 
   // ================= PANELS =================
   function openSheet(title: string, html: string) {
@@ -1015,6 +1155,8 @@ export function initHireContent(
       openPostDetail(postOpen.dataset.postOpen || "");
       return;
     }
+    const handBtn = target.closest<HTMLButtonElement>("[data-job-interest]");
+    if (handBtn) { void raiseHand(handBtn); return; }
     const contactBtn = target.closest<HTMLButtonElement>("[data-contact]");
     if (contactBtn) {
       void contactTalent(contactBtn);
@@ -1065,23 +1207,17 @@ export function initHireContent(
       errBox.textContent = msg || "";
       errBox.classList.toggle("is-hidden", !msg);
     };
-    $("#postOk")?.classList.add("is-hidden");
     const invalid = jobFormError(post);
     if (invalid) { setErr(invalid); return; }
     setErr(null);
     setSaving(btn, true, "Posting…", "Post a job");
     try {
-      const res = await createTradeJob(jobFormPayload(post));
+      await createTradeJob(jobFormPayload(post));
       post = emptyPost();
       hire.saving = false;
       renderPost();
-      const ok = $("#postOk");
-      if (ok) {
-        ok.textContent =
-          "Posted — broadcast to " + res.broadcastCount +
-          " matching contractor" + (res.broadcastCount === 1 ? "" : "s") + ".";
-        ok.classList.remove("is-hidden");
-      }
+      postedModal();
+      void refreshNetworkJobs();
       try { myPostsData = await getMyTradeJobs(); } catch { /* list refresh is best-effort */ }
       renderMyPosts();
     } catch (err) {

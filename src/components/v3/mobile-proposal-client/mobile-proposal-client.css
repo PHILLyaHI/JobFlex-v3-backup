@@ -779,18 +779,29 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
      up. Same 3px depth as every card on the page. */
   box-shadow: 0 -3px 0 var(--shadow);
 }
+/* ONE ROW: Accept at ~two thirds, Decline at ~one third, both the full
+   54px. The stacked cut had a full-width slab over a half-width plate
+   that hung off the left edge under it; two answers on one line read
+   as the one decision they are, and the width says which one the page
+   expects. Decline never shrinks under its own word. */
 .jf-mobile-proposal-client .mpc-bar-in {
   width: 100%;
   max-width: 620px;
   margin: 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: 9px;
+  align-items: stretch;
+  gap: 10px;
 }
-.jf-mobile-proposal-client .mpc-bar-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 9px;
+.jf-mobile-proposal-client .mpc-bar-in .mpc-btn--primary {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.jf-mobile-proposal-client .mpc-bar-in .mpc-btn--danger {
+  flex: 0 0 auto;
+  width: 34%;
+  min-width: 112px;
+  min-height: 54px;
+  padding: 10px 8px;
 }
 .jf-mobile-proposal-client .mpc-btn {
   display: flex;
@@ -850,6 +861,32 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
 }
 .jf-mobile-proposal-client .mpc-btn--danger:active:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+/* THE WAY BACK. Under the settled plate, only while the token from this
+   page's own tap is in memory (see the component). A framed plate at the
+   pay button's weight, never the primary's. */
+.jf-mobile-proposal-client .mpc-revert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.jf-mobile-proposal-client .mpc-revert-b {
+  width: 100%;
+}
+.jf-mobile-proposal-client .mpc-revert-ic {
+  font-size: 16px;
+  line-height: 1;
+}
+.jf-mobile-proposal-client .mpc-revert-n {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
 }
 
 /* Pay action revealed under the accepted plate (the sticky bar is gone by then). */
@@ -1129,3 +1166,34 @@ body:has(.jf-mobile-proposal-client)::before { content: none; }
     transition: none !important;
   }
 }
+
+/* ── PAYMENT SCHEDULE, ACTIONABLE ─────────────────────────────────────────
+   Status rides in the sub-line; the next payable stage gets an action band
+   spanning the row (pay button + bank-transfer disclosure). */
+.jf-mobile-proposal-client .mpc-pay-r.is-paid { background: rgba(58,125,68,.06); }
+.jf-mobile-proposal-client .mpc-pay-r.is-paid .mpc-pay-v { color: rgba(58,125,68,1); }
+.jf-mobile-proposal-client .mpc-pay-r.is-next { background: rgba(35,79,140,.05); }
+.jf-mobile-proposal-client .mpc-pay-st--paid { color: rgba(58,125,68,1); }
+.jf-mobile-proposal-client .mpc-pay-st--pending { color: rgba(184,132,32,1); }
+.jf-mobile-proposal-client .mpc-pay-r.is-next .mpc-pay-st--unpaid { color: var(--blueprint); }
+.jf-mobile-proposal-client .mpc-pay-act { grid-column: 1 / -1; display: grid; gap: 10px; padding-top: 10px; }
+.jf-mobile-proposal-client .mpc-pay-act .mpc-btn { width: 100%; min-height: 48px; }
+.jf-mobile-proposal-client .mpc-pay-bank summary { cursor: pointer; font-size: 13px; font-weight: 700;
+  color: var(--blueprint); min-height: 44px; display: flex; align-items: center; }
+.jf-mobile-proposal-client .mpc-pay-bank-body { margin: 4px 0 0; padding: 10px 12px; border: 1px solid var(--hair);
+  border-radius: 10px; background: var(--paper); font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+.jf-mobile-proposal-client .mpc-pay-bank-note { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.jf-mobile-proposal-client .mpc-pay-sum { margin-top: 10px; display: flex; justify-content: space-between;
+  gap: 12px; font-size: 12.5px; color: var(--muted); }
+.jf-mobile-proposal-client .mpc-pay-sum b { color: var(--ink); }
+.jf-mobile-proposal-client .mpc-pay-sum--done { color: rgba(58,125,68,1); font-weight: 700; }
+.jf-mobile-proposal-client .mpc-payret { margin: 0 0 12px; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid rgba(35,79,140,.35); background: rgba(35,79,140,.06); font-size: 14px; font-weight: 700; }
+.jf-mobile-proposal-client .mpc-payret--paid { border-color: rgba(58,125,68,.5); background: rgba(58,125,68,.08);
+  color: rgba(58,125,68,1); }
+.jf-mobile-proposal-client .mpc-payret--slow { border-color: rgba(184,132,32,.5); background: rgba(184,132,32,.08); }
+.jf-mobile-proposal-client .mpc-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+.jf-mobile-proposal-client .mpc-seg-b { min-height: 48px; padding: 8px 10px; border: 1.5px solid var(--hair);
+  border-radius: 10px; background: #fff; font-size: 13px; font-weight: 700; text-align: left; }
+.jf-mobile-proposal-client .mpc-seg-b.on { border-color: var(--blueprint); color: var(--blueprint);
+  background: rgba(35,79,140,.06); }

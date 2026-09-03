@@ -21,6 +21,12 @@ export interface InstallmentLine {
   isPercent: boolean;
   dueDate: string | null;
   position: number;
+  /** Installment.status — UNPAID | PENDING | PAID | WAIVED. */
+  status: string;
+  paidAt: string | null;
+  paidAmount: number | null;
+  /** Payment.provider that settled it — STRIPE | SQUARE | MANUAL — or null. */
+  paidVia: string | null;
 }
 
 export interface ProposalPhoto {

@@ -26,7 +26,19 @@ export type Installment = {
   due: string | null;
   amount: number;
   pct: boolean;
+  /** Installment.status — UNPAID | PENDING | PAID | WAIVED. */
+  status: string;
+  /** Dollars that actually landed when PAID. */
+  paidAmt: number | null;
+  /** STRIPE | SQUARE | MANUAL for a PAID stage. */
+  paidVia: string | null;
 };
+
+/** What a stage is worth right now: frozen when paid, computed otherwise. */
+export function instDollars(p: { total: number }, it: Installment): number {
+  if (it.status === "PAID" && it.paidAmt != null) return it.paidAmt;
+  return it.pct ? Math.round((p.total * it.amount) / 100) : it.amount;
+}
 
 export type ProposalRow = {
   /** Proposal.id — the cuid every server action and the editor route take. */

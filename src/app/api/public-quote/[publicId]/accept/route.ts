@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { createJobFromProposalInternal } from "@/lib/jobFromProposal";
 import { rateLimitShared, ipFromRequest, HOUR } from "@/lib/rateLimit";
+import { signRevert } from "@/lib/quoteRevert";
 
 export async function POST(
   req: Request,
@@ -10,8 +11,13 @@ export async function POST(
   const { publicId } = await ctx.params;
   const gate = await rateLimitShared(`quote-respond:${ipFromRequest(req)}`, 20, HOUR);
   if (!gate.ok) return NextResponse.json({ error: "Too many requests — try again later." }, { status: 429 });
-  const proposal = await db.proposal.findUnique({ where: { publicId }, include: { client: true } });
-  if (!proposal) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const proposal = await db.proposal.findUnique({
+    where: { publicId },
+    include: { client: true, organization: { select: { deletedAt: true } } },
+  });
+  if (!proposal || proposal.organization.deletedAt) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   // Don't let a settled deal be re-flipped. Already-accepted is idempotent (no
   // duplicate side effects); a PAID or DECLINED proposal can't regress to
@@ -31,6 +37,9 @@ export async function POST(
     req.headers.get("x-real-ip") ??
     null;
 
+  // What the row said BEFORE, so a revert can put it back exactly.
+  const prev = proposal.status;
+
   await db.proposal.update({
     where: { id: proposal.id },
     data: { status: "ACCEPTED", acceptedAt: new Date(), acceptedIp: ip ?? undefined },
@@ -49,9 +58,13 @@ export async function POST(
 
   // Auto-create a Job + JobEvent so the new work shows up on calendar + jobs list immediately.
   let jobId: string | null = null;
+  // Only a job THIS click created may be removed by a revert; one that already
+  // existed belongs to the office.
+  let createdJobId: string | null = null;
   try {
-    const { id } = await createJobFromProposalInternal(proposal.id);
+    const { id, created } = await createJobFromProposalInternal(proposal.id);
     jobId = id;
+    if (created) createdJobId = id;
   } catch (err) {
     console.warn("[accept] Couldn't auto-create job:", err);
   }
@@ -64,5 +77,9 @@ export async function POST(
     console.warn("[accept] notify failed:", err);
   }
 
-  return NextResponse.json({ ok: true, jobId });
+  // The way back, for as long as the page stays open — see lib/quoteRevert.ts
+  // and ../revert. Never persisted by the page; a reload forgets it.
+  const revertToken = signRevert({ p: proposal.id, a: "accept", prev, j: createdJobId });
+
+  return NextResponse.json({ ok: true, jobId, revertToken });
 }

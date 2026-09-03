@@ -202,9 +202,12 @@ export async function loadManualBuilder({
               laborCost: l.laborCost,
             })),
             installments: proposalRow.installments.map((i) => ({
+              id: i.id,
               label: i.label,
               amount: i.amount,
               isPercent: i.isPercent,
+              status: i.status,
+              paidAmount: i.paidAmount,
             })),
           },
           defaults,

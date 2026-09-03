@@ -11,8 +11,7 @@
 
 import { isOpenAIEnabled } from "./openai";
 import { getStripe, isStripeEnabled } from "./stripe";
-import { isSquareEnabled } from "./square";
-import { isPayPalEnabled } from "./paypal";
+import { isSquareEnabled, isSquareWebhookConfigured } from "./square";
 import { isResendEnabled } from "./resend";
 import { isSmtpEnabled } from "./smtp";
 import { isTwilioEnabled } from "./twilio";
@@ -44,6 +43,13 @@ export function isSerpApiEnabled(): boolean {
   return Boolean(process.env.SERPAPI_API_KEY);
 }
 
+export function isStripeConnectConfigured(): boolean {
+  return Boolean(
+    (process.env.STRIPE_CONNECT_CLIENT_ID || process.env.STRIPE_CONNECT_CLIENT_ID_TEST) &&
+      (process.env.STRIPE_CONNECT_WEBHOOK_SECRET || process.env.STRIPE_CONNECT_WEBHOOK_SECRET_TEST),
+  );
+}
+
 export function isStripeWebhookConfigured(): boolean {
   return Boolean(process.env.STRIPE_WEBHOOK_SECRET);
 }
@@ -71,18 +77,25 @@ export function getIntegrationStatuses(): IntegrationStatus[] {
       envKeys: ["STRIPE_WEBHOOK_SECRET"],
     },
     {
-      key: "square",
-      name: "Square",
+      key: "stripe-connect",
+      name: "Stripe Connect (contractor payments)",
       group: "payments",
-      enabled: isSquareEnabled(),
-      envKeys: ["SQUARE_ACCESS_TOKEN", "SQUARE_LOCATION_ID"],
+      enabled: isStripeConnectConfigured(),
+      envKeys: ["STRIPE_CONNECT_CLIENT_ID", "STRIPE_CONNECT_WEBHOOK_SECRET"],
     },
     {
-      key: "paypal",
-      name: "PayPal",
+      key: "square",
+      name: "Square (OAuth app)",
       group: "payments",
-      enabled: isPayPalEnabled(),
-      envKeys: ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"],
+      enabled: isSquareEnabled(),
+      envKeys: ["SQUARE_APPLICATION_ID", "SQUARE_APPLICATION_SECRET"],
+    },
+    {
+      key: "square-webhook",
+      name: "Square webhooks",
+      group: "payments",
+      enabled: isSquareWebhookConfigured(),
+      envKeys: ["SQUARE_WEBHOOK_SIGNATURE_KEY"],
     },
 
     // ── Email & SMS ───────────────────────────────────────────────────────

@@ -862,7 +862,7 @@
   font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 :global(.jf-blueprint) .spec-foot { margin-top: 16px; min-height: 34px; display: flex; align-items: center; }
 :global(.jf-blueprint) .spec-cur { font-size: 10px; font-weight: 800; letter-spacing: .18em;
-  text-transform: uppercase; color: var(--ink); }
+  text-transform: uppercase; color: var(--blueprint); }
 :global(.jf-blueprint) .spec-cell .btn { width: 100%; justify-content: center; }
 :global(.jf-blueprint) .spec-cell.is-cur { background: rgba(24,84,160,.05); }
 
@@ -999,3 +999,16 @@
 :global(.jf-blueprint) .day.day-pressed { animation: daySel2 0.28s cubic-bezier(0.22, 0.61, 0.36, 1); }
 @keyframes press2 { 0% { transform: scale(0.97); } 100% { transform: scale(1); } }
 :global(.jf-blueprint) .pressed { animation: press2 0.18s ease-out; }
+
+/* ── NEXT BILL ROW (2026-09-02) ──────────────────────────────────────── */
+:global(.jf-blueprint) .inv-row--next { background: var(--paper-deep); }
+:global(.jf-blueprint) .inv-row--next .inv-no { font-weight: 800; }
+:global(.jf-blueprint) .inv-notes {
+  display: block; margin-top: 3px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.04em; color: var(--success);
+}
+:global(.jf-blueprint) .inv-was {
+  display: block; font-size: 11px; font-weight: 600; color: var(--muted-light, #888);
+  text-decoration-thickness: 1.5px;
+}

@@ -71,7 +71,7 @@ export async function buildRanking(lead: PlatformLeadLike): Promise<Candidate[]>
     lead.detectedTrade && isTradeType(lead.detectedTrade) ? lead.detectedTrade : "Other";
 
   const orgs = await db.organization.findMany({
-    where: { leadOffersEnabled: true, lat: { not: null }, lng: { not: null } },
+    where: { leadOffersEnabled: true, deletedAt: null, lat: { not: null }, lng: { not: null } },
     select: {
       id: true,
       name: true,

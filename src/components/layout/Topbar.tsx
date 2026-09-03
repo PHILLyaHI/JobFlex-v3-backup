@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { signOut } from "next-auth/react";
+import { logOutEverywhere } from "@/components/v3/blueprint-shell/sign-out";
 import { Search, Bell, Plus, Command, User, Settings, LogOut } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -255,7 +255,7 @@ function AccountMenu({ user }: { user?: { name?: string | null; email: string } 
             <button
               onClick={() => {
                 setOpen(false);
-                signOut({ callbackUrl: "/" });
+                void logOutEverywhere("/");
               }}
               className="w-full flex items-center gap-2.5 px-4 py-2 text-[13px] text-[color:var(--rose)] hover:bg-rose-50 transition-colors text-left"
             >

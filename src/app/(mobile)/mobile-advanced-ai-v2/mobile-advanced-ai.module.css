@@ -361,9 +361,32 @@
   color: var(--ink);
   width: 100%;
 }
-.pinput::placeholder { color: var(--muted-faint); }
+.pinput::placeholder { color: var(--ink-muted, #555); opacity: 1; }
 .pinput:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
 .pinput.isNum { font-variant-numeric: tabular-nums; }
+/* No native number spinner anywhere on this page: the quantity and both
+   price fields are text inputs with a decimal keypad, and any number input
+   that survives (the intake questions) loses its steppers here. */
+.pinput.isNum {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.pinput.isNum::-webkit-outer-spin-button,
+.pinput.isNum::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* ---- one line, two prices ----
+   The edit sheet asks for material $/unit and labor $/unit side by side, the
+   way the row shows them. Each field wears a drawn $ so the keypad value
+   reads as money without the label having to say so twice. */
+.fldPair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.moneyWrap { position: relative; display: flex; align-items: center; }
+.moneySign {
+  position: absolute; left: 12px;
+  font-family: var(--font-mono);
+  font-size: 15px; font-weight: 700;
+  color: var(--muted);
+  pointer-events: none;
+}
+.moneyIn { padding-left: 26px; font-family: var(--font-mono); font-weight: 700; }
 .area {
   width: 100%;
   min-height: 132px;
@@ -375,10 +398,10 @@
   font-size: 15px; font-weight: 500; line-height: 1.5;
   color: var(--ink);
 }
-.area::placeholder { color: var(--muted-faint); }
+.area::placeholder { color: var(--ink-muted, #555); opacity: 1; }
 .area:focus { outline: none; background: var(--paper-deep); border-color: var(--blueprint); }
 .rfArea { min-height: 96px; }
-.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); line-height: 1.45; }
+.fldHint { margin-top: 7px; font-size: 12.5px; font-weight: 500; color: var(--ink-muted, #555); line-height: 1.45; }
 .fldErr { margin-top: 8px; font-size: 12.5px; font-weight: 700; color: var(--danger); }
 .fld.invalid .pinput,
 .fld.invalid .area { border-color: var(--danger); background: var(--danger-soft); }
@@ -393,11 +416,11 @@
 .sample {
   min-height: 44px;
   padding: 11px 12px;
-  border: 1.5px dashed var(--muted-faint);
+  border: 1.5px dashed rgba(10, 10, 10, 0.45);
   border-radius: var(--radius);
   background: var(--paper);
   font-size: 13px; font-weight: 500; line-height: 1.45;
-  color: var(--muted);
+  color: var(--ink);
   text-align: left;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
@@ -752,13 +775,47 @@
   color: var(--muted-light);
   font-variant-numeric: tabular-nums;
 }
-.lfoot {
+/* ---- the two prices of a row ----
+   Material $/unit and labor $/unit are COLUMNS of every line, not row types.
+   Two ruled cells, label over mono figure, so a labor-only task reads as
+   "Material —" rather than vanishing into a separate ledger. */
+.lsplit {
   grid-column: 1 / -1; grid-row: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+.lcell {
+  min-width: 0;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 7px 9px 6px;
+  border: 1.5px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.lcellL {
+  font-size: 9.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted-light);
+}
+.lcellV {
+  font-family: var(--font-mono);
+  font-size: 13.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.lcellV.isZero { font-weight: 700; }
+.lper { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+.lfoot {
+  grid-column: 1 / -1; grid-row: 3;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: end;
   gap: 8px 10px;
-  margin-top: 5px;
+  margin-top: 10px;
 }
 /* The retail affordance is a REAL link now, resolved through merchantUrl() and
    opened in a new tab. Same 11px mono face as before; the invisible ::before

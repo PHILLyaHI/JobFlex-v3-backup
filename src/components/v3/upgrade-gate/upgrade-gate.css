@@ -1,6 +1,9 @@
 /* UPGRADE GATE — see upgrade-gate.tsx. Self-scoped: every rule sits under
    .jf-upgate, tokens are read with fallbacks, no shell's hash space is
-   assumed. Doubled root class where a host reset at (0,2,0) could win. */
+   assumed. EVERY selector doubles the root class — (0,3,0) — because the
+   blueprint shell's own `.content` reset is (0,2,0) and later in the
+   cascade, and at (0,2,0) it zeroed every padding and margin in this card
+   (owner's screenshot, 2026-09-02). */
 
 .jf-upgate,
 .jf-upgate *,
@@ -20,17 +23,19 @@
   color: var(--ink, #101010);
 }
 
-.jf-upgate .jf-upgate-card {
+.jf-upgate.jf-upgate .jf-upgate-card {
   width: min(520px, 100%);
   padding: clamp(24px, 4vh, 40px) clamp(20px, 3vw, 36px);
   border: 2px solid var(--ink, #101010);
   border-radius: var(--radius, 2px);
-  background: var(--paper, #f6f4ef);
-  box-shadow: 6px 6px 0 var(--shadow, rgba(16, 16, 16, 0.16));
+  /* White, not paper (owner, 2026-09-02): the card has to lift off the
+     graph-paper ground it sits on. */
+  background: #fff;
+  box-shadow: 6px 6px 0 var(--ink, #101010);
   text-align: center;
 }
 
-.jf-upgate .jf-upgate-kick {
+.jf-upgate.jf-upgate .jf-upgate-kick {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 10px;
   font-weight: 700;
@@ -39,10 +44,10 @@
   color: var(--blueprint, var(--accent, #1854a0));
 }
 
-.jf-upgate .jf-upgate-lock {
+.jf-upgate.jf-upgate .jf-upgate-lock {
   width: 40px;
   height: 40px;
-  margin: 18px auto 14px;
+  margin: 22px auto 16px;
   display: block;
   fill: none;
   stroke: var(--ink, #101010);
@@ -51,26 +56,26 @@
   stroke-linejoin: round;
 }
 
-.jf-upgate .jf-upgate-h {
+.jf-upgate.jf-upgate .jf-upgate-h {
   font-size: clamp(21px, 3.2vh, 28px);
   font-weight: 900;
   letter-spacing: -0.02em;
   line-height: 1.15;
 }
 
-.jf-upgate .jf-upgate-p {
+.jf-upgate.jf-upgate .jf-upgate-p {
   margin-top: 12px;
   font-size: 14px;
   line-height: 1.55;
   color: var(--muted, #57534b);
 }
-.jf-upgate .jf-upgate-p b {
+.jf-upgate.jf-upgate .jf-upgate-p b {
   color: var(--ink, #101010);
   font-weight: 800;
 }
 
-.jf-upgate .jf-upgate-row {
-  margin-top: 22px;
+.jf-upgate.jf-upgate .jf-upgate-row {
+  margin-top: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -78,7 +83,7 @@
   flex-wrap: wrap;
 }
 
-.jf-upgate .jf-upgate-go {
+.jf-upgate.jf-upgate .jf-upgate-go {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
@@ -94,12 +99,12 @@
   text-decoration: none;
   box-shadow: 3px 3px 0 var(--ink, #101010);
 }
-.jf-upgate .jf-upgate-go:hover {
+.jf-upgate.jf-upgate .jf-upgate-go:hover {
   transform: translate(-1px, -1px);
   box-shadow: 4px 4px 0 var(--ink, #101010);
 }
 
-.jf-upgate .jf-upgate-back {
+.jf-upgate.jf-upgate .jf-upgate-back {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
   font-weight: 700;
@@ -109,6 +114,6 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.jf-upgate .jf-upgate-back:hover {
+.jf-upgate.jf-upgate .jf-upgate-back:hover {
   color: var(--ink, #101010);
 }

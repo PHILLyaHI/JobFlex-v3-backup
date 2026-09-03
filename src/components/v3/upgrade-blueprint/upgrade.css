@@ -294,3 +294,333 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── 2026-09-02 REWORK ─────────────────────────────────────────────────
+   One height for every card; the benefit list scrolls inside; the button
+   is the card's foot, full width, blueprint blue. Four columns when the
+   custom card is in the row. */
+.jf-upgrade .jf-up-plans.has-custom {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.jf-upgrade .jf-up-plan {
+  height: clamp(520px, 72vh, 700px);
+  min-height: 0;
+}
+.jf-upgrade .jf-up-plan.custom {
+  border-style: dashed;
+}
+.jf-upgrade .jf-up-plan.cur.custom {
+  border-style: solid;
+}
+.jf-upgrade .jf-up-feats {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+.jf-upgrade .jf-up-feats::-webkit-scrollbar {
+  width: 4px;
+}
+.jf-upgrade .jf-up-feats::-webkit-scrollbar-thumb {
+  border: none;
+  border-radius: 2px;
+  background: var(--hair-soft, rgba(10, 10, 10, 0.18));
+}
+.jf-upgrade .jf-up-go,
+.jf-upgrade .jf-up-curlbl {
+  align-self: stretch;
+  width: 100%;
+  margin-top: auto;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12.5px;
+}
+.jf-upgrade .jf-up-go {
+  background: var(--blueprint, #1854a0);
+  border-color: var(--blueprint, #1854a0);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--ink, #101010);
+  transition: transform 0.1s, box-shadow 0.1s, background 0.12s;
+}
+.jf-upgrade .jf-up-go:hover:not(:disabled) {
+  background: var(--blueprint-dark, #0e3d7a);
+  border-color: var(--blueprint-dark, #0e3d7a);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink, #101010);
+}
+.jf-upgrade .jf-up-go.down {
+  background: var(--paper, #f6f4ef);
+  border-color: var(--ink, #101010);
+  color: var(--ink, #101010);
+}
+.jf-upgrade .jf-up-go.down:hover:not(:disabled) {
+  background: var(--paper-deep, #eceae3);
+  border-color: var(--ink, #101010);
+}
+.jf-upgrade .jf-up-curlbl {
+  background: transparent;
+  color: var(--blueprint, #1854a0);
+}
+@media (max-width: 1400px) {
+  .jf-upgrade .jf-up-plans.has-custom {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1100px) {
+  .jf-upgrade .jf-up-plans,
+  .jf-upgrade .jf-up-plans.has-custom {
+    grid-template-columns: 1fr;
+  }
+  .jf-upgrade .jf-up-plan {
+    height: auto;
+  }
+  .jf-upgrade .jf-up-feats {
+    overflow: visible;
+  }
+}
+
+/* ── THE PAGE PICKER (custom plan: add pages) ─────────────────────── */
+.jf-upgrade .jf-up-pick {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.jf-upgrade .jf-up-pick-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.55);
+}
+.jf-upgrade .jf-up-pick-box {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: min(86dvh, 760px);
+  display: flex;
+  flex-direction: column;
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  background: #fff;
+  box-shadow: 8px 8px 0 var(--ink, #101010);
+}
+.jf-upgrade .jf-up-pick-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 20px 22px 14px;
+  border-bottom: 2px solid var(--ink, #101010);
+}
+.jf-upgrade .jf-up-pick-h {
+  margin-top: 5px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.jf-upgrade .jf-up-pick-x {
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--muted, #57534b);
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.jf-upgrade .jf-up-pick-x:hover {
+  color: var(--ink, #101010);
+}
+.jf-upgrade .jf-up-pick-lede {
+  padding: 14px 22px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted, #57534b);
+}
+.jf-upgrade .jf-up-pick-list {
+  padding: 12px 22px 4px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jf-upgrade .jf-up-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 11px 13px;
+  border: 1.5px solid var(--hair-soft, #d5d1c8);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f6f4ef);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+}
+.jf-upgrade .jf-up-pick-row:hover {
+  border-color: var(--ink, #101010);
+}
+.jf-upgrade .jf-up-pick-row.on {
+  border-color: var(--blueprint, #1854a0);
+  background: rgba(24, 84, 160, 0.07);
+}
+.jf-upgrade .jf-up-pick-box-t {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink, #101010);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f6f4ef);
+}
+.jf-upgrade .jf-up-pick-row.on .jf-up-pick-box-t {
+  background: var(--blueprint, #1854a0);
+  border-color: var(--blueprint, #1854a0);
+}
+.jf-upgrade .jf-up-pick-box-t svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jf-upgrade .jf-up-pick-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jf-upgrade .jf-up-pick-n {
+  font-size: 14px;
+  font-weight: 800;
+}
+.jf-upgrade .jf-up-pick-note {
+  font-size: 11.5px;
+  color: var(--muted, #57534b);
+}
+.jf-upgrade .jf-up-pick-p {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.jf-upgrade .jf-up-pick-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 22px 18px;
+  border-top: 2px solid var(--ink, #101010);
+  margin-top: auto;
+}
+.jf-upgrade .jf-up-pick-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.jf-upgrade .jf-up-pick-total b {
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-upgrade .jf-up-pick-total i {
+  font-style: normal;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted, #57534b);
+}
+.jf-upgrade .jf-up-pick-foot .jf-up-go {
+  width: auto;
+  margin: 0;
+  padding: 0 22px;
+}
+
+/* ── DONE BANNER (2026-09-02): filled, bigger, unmistakable. */
+.jf-upgrade .jf-up-ok {
+  padding: 16px 20px;
+  border: 2px solid var(--ink, #101010);
+  background: var(--success, #3a7d44);
+  color: #fff;
+  font-family: var(--font, var(--font-sans, system-ui));
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  box-shadow: 4px 4px 0 var(--ink, #101010);
+}
+.jf-upgrade .jf-up-ok b {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 2px;
+}
+.jf-upgrade .jf-up-ok::before {
+  content: "✓";
+  display: inline-grid;
+  place-items: center;
+  width: 24px; height: 24px;
+  margin-right: 12px;
+  border: 2px solid #fff;
+  border-radius: var(--radius, 2px);
+  font-size: 14px;
+  vertical-align: -5px;
+}
+
+/* ── FOUR IN A ROW, WHITE (owner, 2026-09-02) ───────────────────────── */
+.jf-upgrade .jf-up-plans,
+.jf-upgrade .jf-up-plans.has-custom {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.jf-upgrade .jf-up-plan,
+.jf-upgrade .jf-up-plan.hero {
+  background: #fff;
+  padding: 18px 16px;
+  gap: 8px;
+  height: clamp(480px, 66vh, 640px);
+}
+.jf-upgrade .jf-up-price { font-size: clamp(28px, 2.4vw, 36px); }
+.jf-upgrade .jf-up-price i { font-size: 12px; }
+.jf-upgrade .jf-up-f { font-size: 12px; padding: 6px 0; gap: 8px; }
+.jf-upgrade .jf-up-go, .jf-upgrade .jf-up-curlbl { min-height: 42px; font-size: 11.5px; padding: 0 10px; }
+@media (max-width: 1400px) {
+  .jf-upgrade .jf-up-plans,
+  .jf-upgrade .jf-up-plans.has-custom { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 1180px) {
+  .jf-upgrade .jf-up-plans,
+  .jf-upgrade .jf-up-plans.has-custom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .jf-upgrade .jf-up-plans,
+  .jf-upgrade .jf-up-plans.has-custom { grid-template-columns: 1fr; }
+  .jf-upgrade .jf-up-plan { height: auto; }
+}
+
+/* ── THE PICKER, PORTALLED: the wrapper is a plain scope, the picker itself
+   enters on a curve (scrim leads in, box leads out). */
+.jf-upgrade.jf-up-portal { display: contents; }
+.jf-upgrade .jf-up-pick-scrim { opacity: 0; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1); }
+.jf-upgrade .jf-up-pick.is-on .jf-up-pick-scrim { opacity: 1; }
+.jf-upgrade .jf-up-pick-box {
+  opacity: 0; transform: translateY(12px) scale(0.985); transform-origin: 50% 0;
+  transition: opacity 0.16s cubic-bezier(0.4, 0, 0.2, 1), transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.jf-upgrade .jf-up-pick.is-on .jf-up-pick-box { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .jf-upgrade .jf-up-pick-scrim, .jf-upgrade .jf-up-pick-box { transition: none; }
+}

@@ -107,6 +107,8 @@ export function ProposalEditor({
           dimensions: l.dimensions,
         })),
       installments: draft.installments.map((i) => ({
+        // The DB id rides along so a paid stage is updated, never recreated.
+        id: i.id,
         label: i.label,
         amount: i.amount,
         isPercent: i.isPercent,

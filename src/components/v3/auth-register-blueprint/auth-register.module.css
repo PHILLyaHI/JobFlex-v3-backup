@@ -1049,3 +1049,96 @@
 @media (max-width: 1400px), (max-height: 760px) {
   .bp :global(.plan-sheet-in) { height: auto; min-height: 100%; }
 }
+
+/* ── PERK CARD, BOTTOM-LEFT (owner, 2026-09-02) ──────────────────────── */
+.bp :global(.side-perk) {
+  top: auto; right: auto;
+  bottom: clamp(28px, 5vh, 56px); left: clamp(28px, 3.4vw, 56px);
+  transform: translateY(14px);
+}
+.bp :global(.side-perk.is-on) { transform: none; }
+
+/* ── STEPPER PINNED, STEP CENTRED (owner, 2026-09-02) ─────────────────
+   The stepper is chrome like the brand: it stays under it at the top of the
+   column on every step. The step's own content sits in the middle of what is
+   left, so the done panel's mark and title no longer crowd the stepper. On
+   step 1 the form is tall enough that "the middle" is right under it. */
+.bp :global(.auth-form) { display: flex; flex-direction: column; }
+.bp :global(.auth-body) { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.bp :global(.auth-body) :global(.stepper) { flex: 0 0 auto; }
+.bp :global(.auth-body) :global(.step:not(.is-hidden)) { margin: auto 0; }
+
+/* ── PERK CARD, CENTRED AND LATER (owner, 2026-09-02) ─────────────────
+   Dead centre of the art panel, wider, and it waits ~3s after the step
+   settles so the form is read first and the card arrives as a second
+   thought — a reason, not a banner. */
+.bp :global(.side-perk) {
+  top: 50%; left: 50%; right: auto; bottom: auto;
+  width: min(480px, calc(100% - 64px));
+  transform: translate(-50%, calc(-50% + 18px));
+  transition: opacity 0.42s var(--ease-out), transform 0.56s var(--ease-out), visibility 0s linear 0.56s;
+}
+.bp :global(.side-perk.is-on) {
+  transform: translate(-50%, -50%);
+  transition: opacity 0.42s var(--ease-out) 3s, transform 0.56s var(--ease-out) 3s, visibility 0s linear 3s;
+}
+.bp :global(.pk) { padding: 30px 32px 32px; box-shadow: 8px 8px 0 var(--blueprint); }
+.bp :global(.pk-eyebrow) { padding: 6px 12px; font-size: 10px; }
+.bp :global(.pk-h) { margin-top: 16px; font-size: clamp(28px, 3.8vh, 38px); line-height: 1.06; letter-spacing: -0.03em; }
+.bp :global(.pk-p) { margin-top: 12px; font-size: 15px; line-height: 1.55; }
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.side-perk.is-on) { transition-delay: 0s; }
+}
+
+/* ── THE CODE LINE UNDER A PRICE ─────────────────────────────────── */
+.bp :global(.pw-save--code) { color: var(--blueprint); }
+.bp :global(.pw-save--code s) { color: var(--muted-light, #8a8a8a); }
+
+/* ── ADDRESS SUGGESTIONS (appended to <body> by places-suggest) ───────
+   Outside `.bp`, so literals instead of the page tokens. Same drawing as
+   the shell's `.bp-sug`: ink frame, hard offset, white sheet. */
+:global(.jf-reg-sug) {
+  position: fixed; z-index: 130; margin: 0; padding: 4px; list-style: none;
+  max-height: 288px; overflow-y: auto;
+  border: 2px solid #0a0a0a; border-radius: 2px;
+  background: #fff; box-shadow: 4px 4px 0 #0a0a0a;
+  font-family: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  display: none;
+}
+:global(.jf-reg-sug.open) { display: block; }
+:global(.jf-reg-sug .bp-sug-item) {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 10px; border: none; border-radius: 2px; background: none;
+  text-align: left; cursor: pointer; font: inherit; color: #0a0a0a;
+  transition: background 0.12s;
+}
+:global(.jf-reg-sug li + li .bp-sug-item) { border-top: 1.5px solid #d5d1c8; border-top-left-radius: 0; border-top-right-radius: 0; }
+:global(.jf-reg-sug .bp-sug-item:hover), :global(.jf-reg-sug .bp-sug-item.on) { background: rgba(24, 84, 160, 0.08); }
+:global(.jf-reg-sug .bp-sug-ic) {
+  width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: #888;
+}
+:global(.jf-reg-sug .bp-sug-item.on .bp-sug-ic), :global(.jf-reg-sug .bp-sug-item:hover .bp-sug-ic) { color: #1854a0; }
+:global(.jf-reg-sug .bp-sug-txt) { min-width: 0; flex: 1; }
+:global(.jf-reg-sug .bp-sug-main) {
+  display: block; font-size: 13px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+:global(.jf-reg-sug .bp-sug-sub) {
+  display: block; margin-top: 2px;
+  font-family: var(--font-jbmono), 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px; font-weight: 500; letter-spacing: 0.04em; color: #555;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── VERIFIED BY GOOGLE (step 1, replaces the password fields) ──────── */
+.bp :global(.gsu-note) {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-bottom: clamp(12px, 1.8vh, 16px); padding: 11px 13px;
+  border: 1.5px solid var(--success); border-radius: var(--radius);
+  background: var(--success-soft);
+  font-size: 13px; line-height: 1.45; color: var(--success-dark);
+}
+.bp :global(.gsu-note b) { font-weight: 800; color: var(--ink); }
+.bp :global(.gsu-note .ic) { width: 16px; height: 16px; margin-top: 1px; flex: 0 0 auto; }
+.bp :global(.fld-in[readonly]) { background: var(--paper-deep); color: var(--muted); }

@@ -15,11 +15,20 @@ function safeParse(json: string | null | undefined): Record<string, unknown> {
 }
 
 // ── Payment ──────────────────────────────────────────────────────────────────
+// `stripe` / `square` are "offer this at checkout" toggles; a client only sees a
+// provider when the toggle is on AND a healthy PaymentConnection row exists
+// (src/lib/payments/payOptions.ts). `bankTransfer` + `bankTransferInstructions`
+// are the manual path: the instructions are shown per stage on an accepted
+// proposal and the contractor marks the stage paid by hand. `paypal`, `ach`,
+// `autoRemind`, `lateFees`, `netTerms`, `lateFeePct` are legacy keys kept so
+// old blobs still parse; nothing reads them any more.
 export interface PaymentSettings {
   stripe: boolean;
   square: boolean;
   paypal: boolean;
   ach: boolean;
+  bankTransfer: boolean;
+  bankTransferInstructions: string;
   autoRemind: boolean;
   lateFees: boolean;
   receiptsOnPayment: boolean;
@@ -30,9 +39,11 @@ export interface PaymentSettings {
 }
 export const PAYMENT_DEFAULTS: PaymentSettings = {
   stripe: true,
-  square: false,
+  square: true,
   paypal: false,
   ach: true,
+  bankTransfer: false,
+  bankTransferInstructions: "",
   autoRemind: true,
   lateFees: true,
   receiptsOnPayment: true,
@@ -134,7 +145,7 @@ export interface MetaSettings {
 export const META_DEFAULTS: MetaSettings = {
   connected: true,
   autoCreate: true,
-  autoText: true,
+  autoText: false,
   defaultPage: "Patel Roofing & Co.",
   formCategory: "auto",
 };

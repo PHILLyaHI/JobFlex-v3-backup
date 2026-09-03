@@ -1,4 +1,5 @@
 "use server";
+import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { requireManager } from "@/lib/orgContext";
@@ -30,8 +31,7 @@ export async function notifyPaymentReminder({
       organization: {
         select: { name: true, billingEmail: true, gmailSettingsJson: true, logoUrl: true, phone: true },
       },
-      installments: { where: { id: installmentId } },
-      payments: { where: { status: "PAID" }, select: { amount: true } },
+      installments: { orderBy: { position: "asc" } },
     },
   });
   if (!proposal) return { skipped: true as const, reason: "not-found" };
@@ -40,14 +40,18 @@ export async function notifyPaymentReminder({
   }
   if (!proposal.client?.email) return { skipped: true as const, reason: "no-client-email" };
 
-  const installment = proposal.installments[0];
-  const dollars = installment
-    ? installment.isPercent
-      ? proposal.total * (installment.amount / 100)
-      : installment.amount
-    : proposal.total;
-  const label = installment?.label ?? "Payment";
-  const paidToDate = proposal.payments.reduce((sum, p) => sum + p.amount, 0);
+  // The schedule is the source of truth for what is owed: paid stages are
+  // frozen, unpaid ones recompute, and the balance is total − paid.
+  const schedule = resolveSchedule({
+    total: proposal.total,
+    currency: proposal.currency,
+    installments: proposal.installments,
+  });
+  const installment = proposal.installments.find((i) => i.id === installmentId) ?? null;
+  const stage = installment ? schedule.stages.find((s) => s.id === installment.id) : null;
+  const dollars = stage ? fromMinor(stage.amountMinor) : fromMinor(schedule.remainingMinor);
+  const label = installment?.label ?? (schedule.unpaidCount > 1 ? "Remaining balance" : "Payment");
+  const paidToDate = fromMinor(schedule.paidMinor);
 
   const appUrl = await appBaseUrl();
   const { subject, html } = renderEmail(

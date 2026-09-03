@@ -75,13 +75,15 @@ import {
   materialsRequestTotal,
   mergeRefined,
   newLineId,
-  unitOptionsFor,
+  blankLine,
+  unitPriceOf,
+  unitSelectOptions,
   NO_DISCOUNT,
   type ClarifyAnswer,
   type ConsoleLine,
   type DiscountState,
-  type LineGroup,
 } from "@/lib/estimate/console-model";
+import { HoverTitle } from "./hover-title";
 import { lockScroll } from "@/lib/scrollLock";
 import {
   GEN_DONE,
@@ -92,7 +94,6 @@ import {
   MAX_QTY,
   PHOTO_MAX_COUNT,
   PHOTO_MAX_TOTAL_BYTES,
-  PROJECT_TYPES,
   SAMPLES,
   STATES,
   money,
@@ -190,9 +191,6 @@ export function AdvancedAiContent() {
 
   // ── Panel 1: the intake console ──────────────────────────────────
   const [panel, setPanel] = useState<Panel>("intake");
-  const [ptype, setPtype] = useState<string | null>(null);
-  const [otherWork, setOtherWork] = useState("");
-  const [errOther, setErrOther] = useState(false);
   const [addr, setAddr] = useState("");
   const [usState, setUsState] = useState("");
   const [brief, setBrief] = useState("");
@@ -259,7 +257,6 @@ export function AdvancedAiContent() {
   const briefId = useId();
   const addrId = useId();
   const stateId = useId();
-  const otherId = useId();
   const photoInput = useRef<HTMLInputElement>(null);
   const addrRef = useRef<HTMLInputElement>(null);
 
@@ -328,13 +325,11 @@ export function AdvancedAiContent() {
   );
   const reqRows = useMemo(() => materialsRequest(lines), [lines]);
   const reqTotal = useMemo(() => materialsRequestTotal(reqRows), [reqRows]);
-  const materials = lines.filter((l) => l.group === "materials");
-  const labor = lines.filter((l) => l.group === "labor");
 
-  const projectType =
-    ptype === "other"
-      ? otherWork.trim()
-      : PROJECT_TYPES.find((t) => t.id === ptype)?.label ?? "";
+  // The intake no longer asks for a project type (owner, 2026-09-02): the
+  // planner names the kind of work from the brief itself. Kept as an empty
+  // string so every action's contract is untouched.
+  const projectType = "";
 
   // "City, ST" is what the actions localize prices against. The state is only
   // appended when the typed text does not already carry it.
@@ -353,11 +348,7 @@ export function AdvancedAiContent() {
   const canApply = (refineText.trim().length > 0 || assumptionsDirty) && !refineBusy;
   const uiLocked = refineBusy || !!pending;
 
-  const canGenerate =
-    !!ptype &&
-    (ptype !== "other" || otherWork.trim().length > 0) &&
-    brief.trim().length > 0 &&
-    !generating;
+  const canGenerate = brief.trim().length > 0 && !generating;
 
   // ── Failure funnel ───────────────────────────────────────────────
   // Every action returns the same three shapes: a plan-limit refusal (handed to
@@ -403,10 +394,7 @@ export function AdvancedAiContent() {
   }, []);
 
   async function generate() {
-    if (!canGenerate) {
-      if (ptype === "other" && !otherWork.trim()) setErrOther(true);
-      return;
-    }
+    if (!canGenerate) return;
     const photoUrls = photos.map((p) => p.dataUrl);
     const typedBrief = brief.trim();
     setGenError("");
@@ -540,19 +528,8 @@ export function AdvancedAiContent() {
   function removeLine(id: string) {
     setLines((rows) => rows.filter((r) => r.id !== id));
   }
-  function addLine(group: LineGroup) {
-    setLines((rows) => [
-      ...rows,
-      {
-        id: newLineId(group === "labor" ? "l" : "m"),
-        group,
-        name: "",
-        qty: 1,
-        unit: group === "labor" ? "hour" : "each",
-        price: 0,
-        retailPrice: null,
-      },
-    ]);
+  function addLine() {
+    setLines((rows) => [...rows, blankLine()]);
   }
 
   /** The edit buffer: raw text while a cell has focus, the model otherwise. */
@@ -602,14 +579,17 @@ export function AdvancedAiContent() {
           rows.push({
             kind: "Added",
             name: n.name,
-            detail: `${n.qty} × ${moneyU(n.price)} · ${money(lineTotal(n))}`,
+            detail: `${n.qty} ${n.unit} × ${moneyU(unitPriceOf(n))} · ${money(lineTotal(n))}`,
           });
           continue;
         }
         const bits: string[] = [];
         if (o.name !== n.name) bits.push(`“${o.name}” → “${n.name}”`);
         if (o.qty !== n.qty) bits.push(`${o.qty} → ${n.qty} ${n.unit}`);
-        if (o.price !== n.price) bits.push(`${moneyU(o.price)} → ${moneyU(n.price)}`);
+        if (o.materialPrice !== n.materialPrice)
+          bits.push(`material ${moneyU(o.materialPrice)} → ${moneyU(n.materialPrice)}`);
+        if (o.laborPrice !== n.laborPrice)
+          bits.push(`labor ${moneyU(o.laborPrice)} → ${moneyU(n.laborPrice)}`);
         if (bits.length) rows.push({ kind: "Changed", name: o.name, detail: bits.join(" · ") });
       }
       const kept = new Set(after.map((l) => l.id));
@@ -783,119 +763,114 @@ export function AdvancedAiContent() {
   }
 
   // ══════════════ ROW ══════════════
-  const row = (r: ConsoleLine) => {
-    const qtyKey = `${r.id}:q`;
-    const priceKey = `${r.id}:p`;
+  // ONE ROW PER TASK: name · qty · unit · material $/unit · labor $/unit ·
+  // total. Material and labor are columns of every row (owner, 2026-09-02).
+  // The three numeric fields are inputMode=decimal TEXT fields, not number
+  // inputs: the OS spinner appeared on hover and ate the right edge of a 62px
+  // quantity cell. `cellValue` keeps the half-typed text ("1." / "") while the
+  // model holds the parsed number.
+  const numField = (
+    r: ConsoleLine,
+    key: "q" | "m" | "l",
+    field: "qty" | "materialPrice" | "laborPrice",
+    max: number,
+    label: string,
+    extraClass?: string,
+  ) => {
+    const k = `${r.id}:${key}`;
     return (
-      <div className={cx("sp-row")} key={r.id}>
-        <span className={cx("sp-row-n")}>
+      <input
+        className={cx("sp-in", extraClass)}
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        value={cellValue(k, r[field])}
+        aria-label={`${r.name || "Line item"} — ${label}`}
+        disabled={uiLocked}
+        onChange={(e) => {
+          const text = e.target.value.replace(/[^0-9.]/g, "");
+          setField({ key: k, text });
+          patch(r.id, { [field]: clampNum(text, max) } as Partial<ConsoleLine>);
+        }}
+        onBlur={() => setField((f) => (f?.key === k ? null : f))}
+      />
+    );
+  };
+
+  const row = (r: ConsoleLine) => (
+    <div className={cx("sp-row")} key={r.id}>
+      <span className={cx("sp-row-n")}>
+        {/* Real product names run past the column ("BEHR Premium 1 gal.
+            #ST-533 Cedar Naturaltone Semi-Transparent…"); the field clips
+            them, so the full string rides on the cursor while it rests here. */}
+        <HoverTitle text={r.name}>
           <input
             className={cx("sp-name")}
             value={r.name}
             placeholder="Line item"
             aria-label="Item name"
-            // Real product names run past the column ("BEHR Premium 1 gal.
-            // #ST-533 Cedar Naturaltone Semi-Transparent…"); the field clips
-            // them, so the full string has to be reachable on hover.
-            title={r.name}
             disabled={uiLocked}
             onChange={(e) => patch(r.id, { name: e.target.value })}
           />
-          {r.badge && <em>{r.badge}</em>}
-        </span>
+        </HoverTitle>
+        {r.badge && <em>{r.badge}</em>}
+      </span>
 
-        <span className={cx("sp-qty")}>
-          <input
-            className={cx("sp-in", "sp-in--qty")}
-            type="number"
-            min="0"
-            max={MAX_QTY}
-            step="1"
-            inputMode="decimal"
-            value={cellValue(qtyKey, r.qty)}
-            aria-label={`${r.name || "Line item"} — quantity`}
-            disabled={uiLocked}
-            onChange={(e) => {
-              setField({ key: qtyKey, text: e.target.value });
-              patch(r.id, { qty: clampNum(e.target.value, MAX_QTY) });
-            }}
-            onBlur={() => setField((f) => (f?.key === qtyKey ? null : f))}
-          />
-          <BlueprintSelect
-            value={r.unit}
-            onChange={(unit) => patch(r.id, { unit })}
-            // Bare unit, not "per hour": the number sits immediately to its
-            // left, so "8 hour" already reads as the rate and "per" only ate
-            // the width that "crew day" needs.
-            options={unitOptionsFor(r.group).map((u) => ({ value: u, label: u }))}
-            placeholder="unit"
-            ariaLabel={`${r.name || "Line item"} — unit`}
-            triggerClass="sp-unit"
-            disabled={uiLocked}
-          />
-        </span>
+      {numField(r, "q", "qty", MAX_QTY, "quantity", "sp-in--qty")}
 
-        <input
-          className={cx("sp-in")}
-          type="number"
-          min="0"
-          max={MAX_MONEY}
-          step="0.5"
-          inputMode="decimal"
-          value={cellValue(priceKey, r.price)}
-          aria-label={`${r.name || "Line item"} — price`}
-          disabled={uiLocked}
-          onChange={(e) => {
-            setField({ key: priceKey, text: e.target.value });
-            patch(r.id, { price: clampNum(e.target.value, MAX_MONEY) });
-          }}
-          onBlur={() => setField((f) => (f?.key === priceKey ? null : f))}
-        />
+      <BlueprintSelect
+        value={r.unit}
+        onChange={(unit) => patch(r.id, { unit })}
+        options={unitSelectOptions(r.unit)}
+        placeholder="unit"
+        ariaLabel={`${r.name || "Line item"} — unit`}
+        triggerClass="sp-unit"
+        disabled={uiLocked}
+      />
 
-        <span className={cx("sp-row-t")}>{money(lineTotal(r))}</span>
+      {numField(r, "m", "materialPrice", MAX_MONEY, "material price per unit")}
+      {numField(r, "l", "laborPrice", MAX_MONEY, "labor price per unit")}
 
-        <button
-          className={cx("sp-row-x")}
-          type="button"
-          aria-label={`Remove ${r.name || "line item"}`}
-          disabled={uiLocked}
-          onClick={() => removeLine(r.id)}
-        >
-          <svg className={cx("ic")}>
-            <use href="#i-x" />
-          </svg>
-        </button>
-      </div>
-    );
-  };
+      <span className={cx("sp-row-t")}>{money(lineTotal(r))}</span>
 
-  const ledger = (heading: string, group: LineGroup, rows: ConsoleLine[], total: number) => (
+      <button
+        className={cx("sp-row-x")}
+        type="button"
+        aria-label={`Remove ${r.name || "line item"}`}
+        disabled={uiLocked}
+        onClick={() => removeLine(r.id)}
+      >
+        <svg className={cx("ic")}>
+          <use href="#i-x" />
+        </svg>
+      </button>
+    </div>
+  );
+
+  const ledger = (
     <section className={cx("card")}>
       <div className={cx("sp-h")}>
         <div className={cx("sp-h-txt")}>
-          <h2 className={cx("sp-t")}>{heading}</h2>
+          <h2 className={cx("sp-t")}>Line items</h2>
         </div>
-        <div className={cx("sp-cardtotal")}>{money(total)}</div>
+        <div className={cx("sp-cardtotal")}>{money(totals.subtotal)}</div>
       </div>
       <div className={cx("sp-thead")}>
         <span>Item</span>
         <span>Qty</span>
-        <span>Price</span>
+        <span>Unit</span>
+        <span>Material</span>
+        <span>Labor</span>
         <span>Total</span>
         <span className={cx("sp-th-x")} aria-hidden="true" />
       </div>
-      <div>{rows.map(row)}</div>
-      {rows.length === 0 && <div className={cx("sp-empty")}>Nothing here yet.</div>}
-      <button
-        className={cx("sp-add")}
-        type="button"
-        disabled={uiLocked}
-        onClick={() => addLine(group)}
-      >
+      <div>{lines.map(row)}</div>
+      {lines.length === 0 && <div className={cx("sp-empty")}>Nothing here yet.</div>}
+      <button className={cx("sp-add")} type="button" disabled={uiLocked} onClick={addLine}>
         <svg className={cx("ic")}>
           <use href="#i-plus" />
         </svg>
-        Add {group === "labor" ? "labor" : "material"} line
+        Add line item
       </button>
     </section>
   );
@@ -926,100 +901,9 @@ export function AdvancedAiContent() {
           </div>
 
           <div className={cx("est-rail")}>
-            {/* 1 — PROJECT TYPE */}
-            <div
-              className={cx(
-                "est-step",
-                ptype && (ptype !== "other" || otherWork.trim()) && "done",
-              )}
-            >
-              <span className={cx("est-n")}>1</span>
-              <div className={cx("est-body")}>
-                <div className={cx("est-h")}>{INTAKE.steps.type.h}</div>
-                <div className={cx("est-hint")}>{INTAKE.steps.type.hint}</div>
-                <div className={cx("ptypes")}>
-                  {PROJECT_TYPES.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      className={cx("ptype", ptype === t.id && "on")}
-                      aria-pressed={ptype === t.id}
-                      onClick={() => setPtype(t.id)}
-                    >
-                      <svg className={cx("ic")}>
-                        <use href={`#${t.icon}`} />
-                      </svg>
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-                {/* "Other work" used to select a dead flag: the trade never
-                    reached the pricing model, so a pergola priced as "other".
-                    Its text is now the projectType the actions receive. */}
-                {ptype === "other" && (
-                  <label className={cx("est-field", "other-field")} htmlFor={otherId}>
-                    <span className={cx("est-lbl")}>
-                      {LIVE.otherLabel} <b className={cx("req")}>*</b>
-                    </span>
-                    <input
-                      id={otherId}
-                      className={cx("est-in", errOther && "est-in--bad")}
-                      placeholder={LIVE.otherPlaceholder}
-                      autoComplete="off"
-                      value={otherWork}
-                      aria-invalid={errOther || undefined}
-                      onChange={(e) => {
-                        setOtherWork(e.target.value);
-                        if (e.target.value.trim()) setErrOther(false);
-                      }}
-                    />
-                    {errOther && <span className={cx("est-err")}>{LIVE.otherError}</span>}
-                  </label>
-                )}
-              </div>
-            </div>
-
-            {/* 2 — LOCATION */}
-            <div className={cx("est-step", (addr.trim() || usState) && "done")}>
-              <span className={cx("est-n")}>2</span>
-              <div className={cx("est-body")}>
-                <div className={cx("est-h")}>{INTAKE.steps.location.h}</div>
-                <div className={cx("est-hint")}>{INTAKE.steps.location.hint}</div>
-                <div className={cx("loc-row")}>
-                  <label className={cx("est-field")} htmlFor={addrId}>
-                    <span className={cx("est-lbl")}>Address or city</span>
-                    <input
-                      ref={addrRef}
-                      id={addrId}
-                      className={cx("est-in")}
-                      placeholder={INTAKE.addressPlaceholder}
-                      defaultValue={addr}
-                      // Uncontrolled ON PURPOSE: attachPlacesSuggest writes the
-                      // picked address straight into input.value, and a
-                      // controlled value would fight it on the next render.
-                    />
-                  </label>
-                  <div className={cx("est-field")}>
-                    <span className={cx("est-lbl")} id={`${stateId}-l`}>
-                      State
-                    </span>
-                    <BlueprintSelect
-                      id={stateId}
-                      value={usState}
-                      onChange={pickState}
-                      options={STATE_OPTIONS}
-                      placeholder="State"
-                      ariaLabel="State"
-                      triggerClass="est-in"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 3 — THE BRIEF */}
+            {/* 1 — THE BRIEF — first, so the job is described before it is placed (owner, 2026-09-02) */}
             <div className={cx("est-step", brief.trim() && "done")}>
-              <span className={cx("est-n")}>3</span>
+              <span className={cx("est-n")}>1</span>
               <div className={cx("est-body")}>
                 <div className={cx("est-h")}>{INTAKE.steps.brief.h}</div>
                 <div className={cx("est-hint")}>{INTAKE.steps.brief.hint}</div>
@@ -1119,6 +1003,44 @@ export function AdvancedAiContent() {
                 </div>
               </div>
             </div>
+            {/* 2 — LOCATION */}
+            <div className={cx("est-step", (addr.trim() || usState) && "done")}>
+              <span className={cx("est-n")}>2</span>
+              <div className={cx("est-body")}>
+                <div className={cx("est-h")}>{INTAKE.steps.location.h}</div>
+                <div className={cx("est-hint")}>{INTAKE.steps.location.hint}</div>
+                <div className={cx("loc-row")}>
+                  <label className={cx("est-field")} htmlFor={addrId}>
+                    <span className={cx("est-lbl")}>Address or city</span>
+                    <input
+                      ref={addrRef}
+                      id={addrId}
+                      className={cx("est-in")}
+                      placeholder={INTAKE.addressPlaceholder}
+                      defaultValue={addr}
+                      // Uncontrolled ON PURPOSE: attachPlacesSuggest writes the
+                      // picked address straight into input.value, and a
+                      // controlled value would fight it on the next render.
+                    />
+                  </label>
+                  <div className={cx("est-field")}>
+                    <span className={cx("est-lbl")} id={`${stateId}-l`}>
+                      State
+                    </span>
+                    <BlueprintSelect
+                      id={stateId}
+                      value={usState}
+                      onChange={pickState}
+                      options={STATE_OPTIONS}
+                      placeholder="State"
+                      ariaLabel="State"
+                      triggerClass="est-in"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           <div className={cx("est-bar")}>
@@ -1203,8 +1125,7 @@ export function AdvancedAiContent() {
 
       <div className={cx("sp-grid")}>
         <div className={cx("sp-main")}>
-          {ledger("Materials", "materials", materials, totals.materials)}
-          {ledger("Labor", "labor", labor, totals.labor)}
+          {ledger}
 
           {/* MATERIALS REQUEST — derived from the ledger, not mirrored from it. */}
           <section className={cx("card")}>
@@ -1245,14 +1166,15 @@ export function AdvancedAiContent() {
                     <span className={cx("sp-req-price")}>
                       <b>{money(r.total)}</b>
                       <span>
-                        {/* The retail price is what the store charges and never
-                            follows a typed price — the override rides beside it
-                            in parentheses instead of replacing it. */}
-                        {r.retailUnitPrice != null
-                          ? `${moneyU(r.retailUnitPrice)} / ${r.unit}`
-                          : `${moneyU(r.unitPrice)} / ${r.unit}`}
-                        {r.overridden && (
-                          <i className={cx("sp-req-ov")}> (billed {moneyU(r.unitPrice)})</i>
+                        {/* Two figures, two meanings: the line is billed per
+                            measured unit; the listing is what the store charges
+                            for the package. Neither replaces the other. */}
+                        {`${moneyU(r.unitPrice)} / ${r.unit}`}
+                        {r.retailUnitPrice != null && (
+                          <i className={cx("sp-req-ov")}>
+                            {" "}· listing {moneyU(r.retailUnitPrice)}
+                            {r.dimensions ? ` (${r.dimensions})` : ""}
+                          </i>
                         )}
                       </span>
                     </span>
@@ -1413,6 +1335,20 @@ export function AdvancedAiContent() {
               </div>
             )}
           </section>
+
+          {/* The second way out — the same action as the page-head button, placed
+              where the eye lands after reading the total (owner, 2026-09-02). */}
+          <button
+            className={cx("btn", "btn-primary", "sp-convert")}
+            type="button"
+            disabled={uiLocked || Boolean(saveBusy) || lines.length === 0}
+            onClick={saveAsProposal}
+          >
+            <svg className={cx("ic")}>
+              <use href="#i-file" />
+            </svg>
+            {saveBusy === "opening" ? "Opening…" : saveBusy ? "Saving…" : "Convert to proposal"}
+          </button>
 
           {/* REFINE */}
           <section className={cx("card")}>

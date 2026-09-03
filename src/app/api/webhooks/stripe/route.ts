@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
-import { WebhookEventStatus } from "@/lib/prismaEnums";
+import { runWebhookEnvelope } from "@/lib/webhookEnvelope";
 import {
   syncSubscriptionFromStripe,
   markSubscriptionCanceled,
@@ -33,42 +33,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Webhook signature: ${msg}` }, { status: 400 });
   }
 
-  // Idempotency envelope: the unique eventId drops duplicate deliveries before
-  // any side effect runs. A second delivery of the same event short-circuits here.
-  try {
-    await db.webhookEvent.create({
-      data: { eventId: event.id, type: event.type, status: WebhookEventStatus.RECEIVED },
-    });
-  } catch (createErr) {
-    // Only a PROCESSED duplicate is dropped. A FAILED row (handler threw, we
-    // returned 500, Stripe is retrying) or a RECEIVED row (crashed mid-flight)
-    // must fall through and re-dispatch — otherwise a transient error made the
-    // retry a "duplicate" 200 and the event (a cancellation, a paid invoice, a
-    // proposal payment) was lost for good. A missing row means the create
-    // failed for a real DB reason: surface it so Stripe retries.
-    const existing = await db.webhookEvent.findUnique({ where: { eventId: event.id } });
-    if (!existing) throw createErr;
-    if (existing.status === WebhookEventStatus.PROCESSED) {
-      return NextResponse.json({ duplicate: true });
-    }
-  }
-
-  try {
-    await dispatch(event, stripe);
-    await db.webhookEvent.update({
-      where: { eventId: event.id },
-      data: { status: WebhookEventStatus.PROCESSED, processedAt: new Date() },
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "handler error";
-    await db.webhookEvent.update({
-      where: { eventId: event.id },
-      data: { status: WebhookEventStatus.FAILED, error: msg.slice(0, 1000) },
-    });
-    // 500 so Stripe retries; the idempotency keys make re-processing safe.
-    return NextResponse.json({ error: msg }, { status: 500 });
-  }
-
+  const result = await runWebhookEnvelope(
+    { provider: "STRIPE", eventId: event.id, type: event.type },
+    () => dispatch(event, stripe),
+  );
+  if (result.outcome === "duplicate") return NextResponse.json({ duplicate: true });
+  // 500 so Stripe retries; the idempotency keys make re-processing safe.
+  if (result.outcome === "failed") return NextResponse.json({ error: result.error }, { status: 500 });
   return NextResponse.json({ received: true });
 }
 
@@ -134,6 +105,10 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
 // for a tampered amount (the checkout routes already derive the amount
 // server-side, so a shortfall should only ever come from an out-of-band session).
 async function handleProposalPayment(session: Stripe.Checkout.Session) {
+  // Contractor-account checkouts (metadata.kind set) never reach this route —
+  // they fire on the CONNECTED account and land in /api/webhooks/stripe-connect.
+  // The guard only matters if someone points a Connect endpoint here by mistake.
+  if (session.metadata?.kind) return;
   const publicId = session.metadata?.publicId;
   if (!publicId) return;
   const proposal = await db.proposal.findUnique({ where: { publicId } });

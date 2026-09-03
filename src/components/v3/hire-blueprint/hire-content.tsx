@@ -23,7 +23,7 @@ import { useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
-import type { DiscoverProfileDTO } from "@/actions/tradeServices";
+import type { DiscoverProfileDTO, NetworkJobDTO } from "@/actions/tradeServices";
 import type { OwnPost } from "@/app/(mobile)/trade-services/trade-data";
 import { initHireContent } from "./hire-behavior";
 import type { Applicant, HireTallies } from "./hire-data";
@@ -43,11 +43,14 @@ export function HireContent({
   myPosts,
   tallies,
   talent,
+  networkJobs,
 }: {
   applicants?: Applicant[];
   myPosts?: OwnPost[];
   tallies?: HireTallies;
   talent?: DiscoverProfileDTO[];
+  /** Every open post on the network — the directory's "Open jobs" list. */
+  networkJobs?: NetworkJobDTO[];
 }) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a
@@ -60,7 +63,7 @@ export function HireContent({
   // and keeps itself in step with the database through the server actions. A
   // navigation away unmounts the component, so the next visit gets a fresh ref
   // holding freshly-queried rows.
-  const seedRef = useRef({ applicants, myPosts, tallies, talent });
+  const seedRef = useRef({ applicants, myPosts, tallies, talent, networkJobs });
 
   // Cross-route rows ("Job posts", "Applications") leave through router.push —
   // a hard navigation replays the shell's entrance and double-takes (see the
@@ -89,6 +92,14 @@ export function HireContent({
             <div className="kicker">Marketplace</div>
             <h1 className="page-title">Hire &amp; Work</h1>
           </div>
+          <div className="page-actions">
+            <button className="btn btn-ghost" type="button" data-href="/dashboard/hire/profile">
+              <svg className="ic">
+                <use href="#i-userplus" />
+              </svg>
+              Your listing
+            </button>
+          </div>
         </div>
 
         {/* two doors in one card, split by a hairline */}
@@ -104,15 +115,6 @@ export function HireContent({
           <div className="tally-row" id="tallyRow"></div>
         </div>
 
-        {/* Go deeper */}
-        <div className="card hub-links">
-          <div className="card-head">
-            <div className="card-titles">
-              <div className="card-title">Go deeper</div>
-            </div>
-          </div>
-          <ul className="hub-list" id="hubList"></ul>
-        </div>
       </section>
 
       {/* ===== ROUTE: /dashboard/hire (applicant pipeline) ===== */}
@@ -175,6 +177,18 @@ export function HireContent({
         </div>
         <div className="mf-err mf-err--boxed is-hidden" id="talErr" role="alert"></div>
         <div className="card hub-talent" id="talentBox"></div>
+
+        {/* Every open post on the network, yours included — the answer to
+            "where did my post go". Filled by renderNetworkJobs. */}
+        <div className="card hub-jobs">
+          <div className="card-head">
+            <div className="card-titles">
+              <div className="card-title">Open jobs on the network</div>
+            </div>
+          </div>
+          <div className="mf-err mf-err--boxed is-hidden" id="netJobsErr" role="alert"></div>
+          <div id="netJobsBox"></div>
+        </div>
       </section>
 
       {/* ===== PANEL: open-for-work profile (Publish your profile) ===== */}

@@ -53,9 +53,14 @@ async function provisionStripePromo(opts: {
   if (isStripeEnabled()) {
     assertStripeWriteAllowed("create a Stripe promo code");
     const stripe = getStripe();
+    // FIRST MONTH ONLY (owner, 2026-09-02). `repeating` for one month rather
+    // than `once`, because a trial's $0 first invoice spends a once-coupon —
+    // see lib/referralDiscount for the arithmetic. Coupons already minted
+    // stay as they were: Stripe coupons are immutable.
     const coupon = await stripe.coupons.create({
       percent_off: opts.customerPercentOff,
-      duration: "forever",
+      duration: "repeating",
+      duration_in_months: 1,
       name: opts.label,
     });
     const promo = await stripe.promotionCodes.create({

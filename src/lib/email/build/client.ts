@@ -292,3 +292,40 @@ export function buildReviewRequest(i: ReviewRequestInput): EmailDoc {
     footer: orgFooter(i.org),
   };
 }
+
+export interface PaymentReceiptInput {
+  org: OrgBrand;
+  clientName: string;
+  title: string;
+  stageLabel: string;
+  amount: number;
+  method: string; // "card" | "bank account" | "bank transfer" | "check" …
+  paidAt: Date;
+  paidToDate: number;
+  remaining: number;
+  href: string;
+  ref: string;
+}
+
+/** Receipt for a stage payment (any provider, or a manual mark). */
+export function buildPaymentReceipt(i: PaymentReceiptInput): EmailDoc {
+  const box: BoxRow[] = [
+    { type: "item", name: i.stageLabel, amount: formatUSD(i.amount) },
+    { type: "item", name: "Paid to date", amount: formatUSD(i.paidToDate) },
+    { type: "anchor", label: "Remaining", value: formatUSD(i.remaining) },
+  ];
+  if (i.remaining <= 0) box.push({ type: "cond", label: "Proposal", chip: "Paid in full", tone: "ok" });
+  return {
+    subject: `Receipt — ${formatUSD(i.amount)} for ${truncate(i.title, 40)}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Receipt", tone: "ok" },
+    headline: `Thank you, ${i.clientName.split(" ")[0]}`,
+    prose: [
+      `We received your ${i.method} payment of ${formatUSD(i.amount)} toward ${i.title} on ${shortDate(i.paidAt)}.`,
+    ],
+    box,
+    link: { label: "View proposal", href: i.href },
+    fine: `Ref ${i.ref}`,
+    footer: orgFooter(i.org, i.ref),
+  };
+}

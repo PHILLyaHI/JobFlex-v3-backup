@@ -1,0 +1,179 @@
+/* PLAN LIMIT DIALOG — see PlanLimitDialog.tsx. Self-scoped plain stylesheet:
+   the dialog is mounted by BOTH shells, so it leans on neither hash space.
+   Every selector doubles the root class — (0,3,0) — for the same reason the
+   upgrade gate does: the blueprint shell's own reset is (0,2,0) and later in
+   the cascade, and at equal specificity it stripped every padding and margin
+   out of this box (owner's screenshot, 2026-09-02). Tokens read with
+   fallbacks, never re-declared. */
+
+.jf-limit,
+.jf-limit *,
+.jf-limit *::before,
+.jf-limit *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.jf-limit.jf-limit {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  font-family: var(--font, var(--font-sans, system-ui));
+  color: var(--ink, #0a0a0a);
+}
+.jf-limit.jf-limit .jf-limit-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.55);
+  opacity: 0;
+  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.jf-limit.jf-limit.is-on .jf-limit-scrim {
+  opacity: 1;
+}
+.jf-limit.jf-limit .jf-limit-box {
+  position: relative;
+  width: min(480px, 100%);
+  padding: 24px 26px 22px;
+  border: 2px solid var(--ink, #0a0a0a);
+  border-radius: var(--radius, 2px);
+  background: #fff;
+  box-shadow: 8px 8px 0 var(--ink, #0a0a0a);
+  opacity: 0;
+  transform: translateY(12px) scale(0.985);
+  transform-origin: 50% 0;
+  transition:
+    opacity 0.16s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.jf-limit.jf-limit.is-on .jf-limit-box {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-limit.jf-limit .jf-limit-scrim,
+  .jf-limit.jf-limit .jf-limit-box {
+    transition: none;
+  }
+}
+
+.jf-limit.jf-limit .jf-limit-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.jf-limit.jf-limit .jf-limit-lock {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink, #0a0a0a);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb);
+}
+.jf-limit.jf-limit .jf-limit-lock svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--ink, #0a0a0a);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jf-limit.jf-limit .jf-limit-kick {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--danger, #a83232);
+}
+.jf-limit.jf-limit .jf-limit-h {
+  margin-top: 3px;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.jf-limit.jf-limit .jf-limit-p {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted, #555);
+}
+.jf-limit.jf-limit .jf-limit-p b {
+  color: var(--ink, #0a0a0a);
+  font-weight: 800;
+}
+.jf-limit.jf-limit .jf-limit-meter {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--hair-soft, #d5d1c8);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink, #0a0a0a);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.jf-limit.jf-limit .jf-limit-meter span:last-child {
+  color: var(--danger, #a83232);
+}
+.jf-limit.jf-limit .jf-limit-row {
+  margin-top: 22px;
+  display: flex;
+  gap: 10px;
+}
+.jf-limit.jf-limit .jf-limit-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 2px solid var(--ink, #0a0a0a);
+  border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb);
+  color: var(--ink, #0a0a0a);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.jf-limit.jf-limit .jf-limit-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink, #0a0a0a);
+}
+.jf-limit.jf-limit .jf-limit-btn:active {
+  transform: none;
+  box-shadow: 1px 1px 0 var(--ink, #0a0a0a);
+}
+.jf-limit.jf-limit .jf-limit-btn.primary {
+  background: var(--blueprint, #1854a0);
+  color: #fff;
+}
+.jf-limit.jf-limit .jf-limit-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

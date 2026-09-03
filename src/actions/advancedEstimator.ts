@@ -11,6 +11,9 @@ import { checkPlanLimit, enforcePlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { readPriceCache, writePriceCache } from "@/lib/priceCache";
 import { sellUnitPrice, resolveMarkupRates } from "@/lib/pricing/markup";
+import { PRICING_RULES, UNIT_RULES } from "@/lib/estimate/master-prompt";
+import { normalizeUnit, pairEstimateLines } from "@/lib/estimate/console-model";
+import { buildLegacyEstimatePrompt, legacyEstimateFromText, LEGACY_SYSTEM_MESSAGE } from "@/lib/estimate/legacy-estimate";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
   discountSchema,
@@ -42,6 +45,13 @@ async function estimatorRunBlocked(
   };
 }
 
+/** The "Project type:" line of a user turn — omitted when the intake no longer
+ *  asks for one (2026-09-02), so the model reads the type off the brief. */
+function projectLine(projectType: string | null | undefined): string {
+  const t = (projectType ?? "").trim();
+  return t ? `Project type: ${t}` : "Project type: infer it from the description";
+}
+
 const STUB: GeneratedEstimate = {
   title: "Sample Roof Replacement Estimate · AI Disabled",
   scope:
@@ -53,16 +63,16 @@ const STUB: GeneratedEstimate = {
     "Pricing placeholders — add OPENAI_API_KEY for real generation",
   ],
   materials: [
-    { name: "Architectural shingles (30-yr)", quantity: 24, unitPrice: 115, unit: "square" },
-    { name: "Synthetic underlayment", quantity: 24, unitPrice: 32, unit: "square" },
+    { name: "Architectural shingles (30-yr)", quantity: 24, unitPrice: 115, unit: "sq boards" },
+    { name: "Synthetic underlayment", quantity: 24, unitPrice: 32, unit: "sq boards" },
     { name: "Ice & water shield", quantity: 400, unitPrice: 1.1, unit: "sqft" },
-    { name: "Ridge vent system", quantity: 60, unitPrice: 6, unit: "ln ft" },
-    { name: "Drip edge + flashing", quantity: 1, unitPrice: 480, unit: "lot" },
+    { name: "Ridge vent system", quantity: 60, unitPrice: 6, unit: "linear ft" },
+    { name: "Drip edge + flashing", quantity: 1, unitPrice: 480, unit: "fixed" },
   ],
   labor: [
     { name: "Tear-off + disposal", quantity: 2400, unitPrice: 0.8, unit: "sqft" },
     { name: "Installation labor", quantity: 2400, unitPrice: 1.8, unit: "sqft" },
-    { name: "Cleanup + magnetic sweep", quantity: 1, unitPrice: 380, unit: "lot" },
+    { name: "Cleanup + magnetic sweep", quantity: 1, unitPrice: 380, unit: "fixed" },
   ],
   estimatedTimelineDays: 3,
 };
@@ -449,17 +459,20 @@ function pickSellerDirectLink(sellers: OnlineSeller[], store: string | null | un
   return safeHttp(match.direct_link) ?? safeHttp(unwrapGoogleRedirect(String(match.link ?? "")));
 }
 
-// Step 1 output — the material planner's bill of materials.
-const plannerItemSchema = z.object({
-  category: z.string(),
-  materialName: z.string(),
-  estimatedQuantity: z.number(),
-  unit: z.string(),
-  searchQuery: z.string(),
-});
-const plannerSchema = z.object({
-  materials: z.array(plannerItemSchema).default([]),
-});
+/** Pick the shop-list product for a tier: cheapest for budget, the middle
+ *  listing for standard, the priciest for luxury. Deterministic — no model
+ *  call, and never a price the estimate depends on. */
+function pickOptionForTier(
+  options: ProductSearchResult[],
+  tier: "budget" | "standard" | "luxury",
+): ProductSearchResult | null {
+  const priced = options.filter((o) => Number.isFinite(o.price) && o.price > 0);
+  if (priced.length === 0) return options[0] ?? null;
+  const sorted = [...priced].sort((x, y) => x.price - y.price);
+  if (tier === "budget") return sorted[0];
+  if (tier === "luxury") return sorted[sorted.length - 1];
+  return sorted[Math.floor((sorted.length - 1) / 2)];
+}
 
 /**
  * Intake gate — runs BEFORE generation. Corrects the location and judges whether
@@ -518,7 +531,7 @@ export async function analyzeEstimatePrompt(input: {
         {
           role: "user",
           content: withPhotos(
-            `Project type: ${input.projectType}
+            `${projectLine(input.projectType)}
 ${input.location ? `Location: ${input.location}` : "Location: (none given)"}
 ${input.sqft ? `Approx size: ${input.sqft} sqft` : ""}
 Description: ${input.description}${
@@ -582,165 +595,132 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
   if (blocked) return blocked;
 
   if (!isOpenAIEnabled()) {
-    return { ok: true, data: { ...STUB, title: `${input.projectType} estimate · AI disabled` }, disabled: true };
+    return { ok: true, data: { ...STUB, title: `${input.projectType || "Sample"} estimate · AI disabled` }, disabled: true };
   }
 
   const qualityTier = input.qualityTier ?? "standard";
   // "Regenerate with AI" feeds the user's edited assumptions in as constraints.
   const cleanAssumptions = (input.assumptions ?? []).map((a) => a.trim()).filter(Boolean);
-  const assumptionsBlock =
-    cleanAssumptions.length > 0
-      ? `\n\nHonor these user assumptions/constraints as ground truth (adjust materials, quantities, and pricing to fit them):\n${cleanAssumptions
-          .map((a) => `- ${a}`)
-          .join("\n")}`
-      : "";
-
-  // Photos ride along into both model calls: the planner needs them to see what
+  // Photos ride into the estimate call: the estimator needs them to see what
   // is actually on site (a second layer of shingles, a rotted post, the fence
-  // that is already there), and the matcher needs them to pick a product that
-  // matches what it can see rather than what the sentence implied.
+  // that is already there) before it prices anything.
   const photos = safePhotos(input.photos);
-  const photoBlock = photos.length
-    ? `\n\n${photos.length} site photo(s) are attached. Use them as evidence for materials, quantities, condition and access — they outrank the written description where the two disagree.`
-    : "";
 
   try {
     const client = getOpenAI();
 
-    // ── Step 1 · Material Planner ───────────────────────────────────────────
-    console.info(
-      `[advancedEstimator] Step 1 (planner) · type="${input.projectType}" tier=${qualityTier} photos=${photos.length}`
+    // ── Step 1 · The estimate — the old quote-draft call, verbatim ─────────
+    // Owner, 2026-09-03: "exactly like the old one". lib/estimate/legacy-estimate
+    // assembles the previous JobFlex prompt (master prompt in the admin slot,
+    // specialty preamble, material profile, price book, tax guidance, template
+    // rules, pricing rules, key questions) and parses the reply with the old
+    // parser. One call at temperature 0 with seed 42, as it always ran.
+    const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
+    // gpt-5-class models (what the previous JobFlex ran) get the verbatim old
+    // prompt. gpt-4o-class models answer it with 4-6 lines, so they also get
+    // the trade profile + hard rules in the old "extra admin" slot, which
+    // brings them to the old output's 12-13 lines (harness, 2026-09-03).
+    const reasoningModel = /^(gpt-5|o[1-9])/.test(OPENAI_MODEL);
+    const legacy = buildLegacyEstimatePrompt(
+      {
+        description: input.description,
+        location: input.location,
+        projectType: input.projectType,
+        sqft: input.sqft,
+        companyName: org?.name ?? null,
+        assumptions: cleanAssumptions,
+        qualityTier,
+      },
+      { withTradeRules: !reasoningModel },
     );
-    const plannerCompletion = await client.chat.completions.create({
+    console.info(
+      `[advancedEstimator] Step 1 (estimate) · specialty=${legacy.specialty.id} tier=${qualityTier} photos=${photos.length} prompt=${legacy.prompt.length}ch`
+    );
+    const estimateCompletion = await client.chat.completions.create({
       model: OPENAI_MODEL,
-      temperature: 0.2,
+      // temperature 0 + seed 42, as the old provider sent — the same brief
+      // prices the same way twice. Reasoning models reject a temperature.
+      ...(reasoningModel ? {} : { temperature: 0, seed: 42 }),
       messages: [
-        {
-          role: "system",
-          content:
-            'You are a senior construction material planner. From a project description, output the full bill of materials needed to complete the job. Return JSON only matching: {"materials": [{"category": string, "materialName": string, "estimatedQuantity": number, "unit": string, "searchQuery": string}]}. ' +
-            "Rules: `category` is the trade grouping (e.g. 'Drywall', 'Framing', 'Tile', 'Fixtures'); `estimatedQuantity` is the raw measured quantity needed BEFORE waste or packaging; `unit` MUST be one of exactly these ten, spelled exactly as written: sqft, lf, linear ft, sq boards, cu yards, yards, sq yards, unit, hour, fixed — this is the proposal builder's own picker and no other word is a legal value (a box, roll, sheet, bag, gallon or 'each' is `unit`; the pack spec belongs in the estimate's `dimensions` field, never here); `searchQuery` is a highly optimized retail search term a buyer would type into Home Depot, Lowe's, or Amazon to find the exact product, including dimensions and spec (e.g. '1/2 in. moisture resistant greenboard drywall 4x8'). Include 5-12 line items covering both materials and key fixtures. Return JSON only.",
-        },
-        {
-          role: "user",
-          content: withPhotos(
-            `Project type: ${input.projectType}
-${input.location ? `Location: ${input.location}` : ""}
-${input.sqft ? `Approximate size: ${input.sqft} sqft` : ""}
-Quality tier: ${qualityTier}
-Description: ${input.description}${assumptionsBlock}${photoBlock}`,
-            photos,
-          ),
-        },
+        { role: "system", content: LEGACY_SYSTEM_MESSAGE },
+        { role: "user", content: withPhotos(legacy.prompt, photos) },
       ],
       response_format: { type: "json_object" },
     });
-    const plannerText = plannerCompletion.choices[0]?.message?.content ?? "{}";
-    const planned = plannerSchema.parse(JSON.parse(plannerText));
-    console.info(`[advancedEstimator] Step 1 produced ${planned.materials.length} planned materials`);
-
-    // ── Step 2 · Search Loop (throttled live pricing) ───────────────────────
-    // Bounded concurrency: an unbounded fan-out tripped SerpAPI's per-second
-    // throttle mid-batch, and the rate-limited queries silently degraded.
-    console.info(
-      `[advancedEstimator] Step 2 (search) · ${planned.materials.length} queries, ${SERP_CONCURRENCY} at a time`
-    );
-    const searchResults = await mapLimit(planned.materials, SERP_CONCURRENCY, (m) =>
-      searchProductPrices(m.searchQuery, input.location)
-    );
-    const research = planned.materials.map((m, i) => ({
-      category: m.category,
-      materialName: m.materialName,
-      estimatedQuantity: m.estimatedQuantity,
-      unit: m.unit,
-      searchQuery: m.searchQuery,
-      options: searchResults[i],
+    const estimateText = estimateCompletion.choices[0]?.message?.content ?? "{}";
+    const called = legacyEstimateFromText(estimateText, legacy.specialty);
+    if (called.warnings.length) console.warn(`[advancedEstimator] parser: ${called.warnings.join(" | ")}`);
+    if (called.items.length === 0) throw new Error("The estimator returned no line items — try a more specific description.");
+    // Guard the ledger's arithmetic: no negative or NaN quantities, no line
+    // with nothing on it. A zero-priced line is kept (the contractor fills it)
+    // but logged, so a silent regression in the prompt is visible.
+    const items = called.items.map((it) => ({
+      ...it,
+      dimensions: null as string | null,
+      quantity: Number.isFinite(it.quantity) && it.quantity > 0 ? it.quantity : 1,
+      unit: normalizeUnit(it.unit, it.materialUnitPrice > 0 ? "materials" : "labor"),
     }));
+    const zeroed = items.filter((it) => it.materialUnitPrice <= 0 && it.laborUnitPrice <= 0);
+    if (zeroed.length) {
+      console.warn(`[advancedEstimator] ${zeroed.length} line(s) came back unpriced: ${zeroed.map((z) => z.name).join(" | ")}`);
+    }
+    console.info(`[advancedEstimator] Step 1 produced ${items.length} lines`);
 
-    // ── Step 3 · Matcher & Estimator ────────────────────────────────────────
-    // The model CHOOSES a product per line but never transcribes URLs: options
-    // are sent index-only (no link/thumbnail — long high-entropy URLs that an
-    // LLM reliably corrupts into plausible fakes like
-    // homedepot.com/productImage/100000000), and the choice comes back as
-    // {sourceIndex, optionIndex}. Store/link/image are then attached
-    // server-side from the real SerpAPI data, so a hallucinated URL can never
-    // reach the estimate.
-    console.info(`[advancedEstimator] Step 3 (matcher) · pricing final purchase quantities`);
-    const promptResearch = research.map((r, index) => ({
-      index,
-      category: r.category,
-      materialName: r.materialName,
-      estimatedQuantity: r.estimatedQuantity,
-      unit: r.unit,
-      searchQuery: r.searchQuery,
-      options: r.options.map((o, oi) => ({
-        option: oi,
-        title: o.title,
-        price: o.price,
-        store: o.source,
-      })),
-    }));
-    const matcherLineSchema = lineSchema.extend({
-      sourceIndex: z.number().int().nullish(),
-      optionIndex: z.number().int().nullish(),
-    });
-    const matcherSchema = estimateSchema.extend({
-      materials: z.array(matcherLineSchema).default([]),
-    });
-    const matcherCompletion = await client.chat.completions.create({
-      model: OPENAI_MODEL,
-      temperature: 0.4,
-      messages: [
-        {
-          role: "system",
-          content:
-            'You are a senior contractor AI estimator and purchasing agent. You receive a planned bill of materials (each with an `index`) where each item carries up to 3 live retail product "options" (each with an `option` number) from web search. Produce a final, purchase-ready estimate as JSON matching: {title, scope, assumptions: string[], materials: [{name, quantity, unitPrice, unit, sourceIndex, optionIndex, dimensions, notes}], labor: [{name, quantity, unitPrice, unit}], estimatedTimelineDays: number}. ' +
-            `For every planned material: (1) choose the single best product option fitting the "${qualityTier}" quality tier — budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end — set \`sourceIndex\` to the planned material's \`index\`, set \`optionIndex\` to the chosen option's \`option\` number, and use the chosen option's price as \`unitPrice\`. If an item has no options, set optionIndex to null and price it from your own market knowledge. NEVER output store names, product URLs, or image URLs — they are attached automatically from your chosen option; ` +
-            "(2) apply standard construction waste factors to the estimatedQuantity: 10% for tile and drywall, 15% for lumber and trim, 0% for fixtures and fittings; " +
-            "(3) infer the purchase package from the chosen product (sold by box, roll, sheet, or each) and round the final purchase quantity UP to the nearest whole package so the crew never runs short — set `quantity` to that final purchase count. `unit` MUST be one of exactly these ten, spelled exactly as written: sqft, lf, linear ft, sq boards, cu yards, yards, sq yards, unit, hour, fixed — a product sold by the box, roll, sheet, bag, gallon or 'each' takes `unit`, and the package itself is described in `dimensions` (step 4), never in `unit`; " +
-            "(4) ALWAYS set `dimensions` to the chosen product's real size/pack spec (never omit it) — e.g. '4x8 sheet', '12x12 in tile', '5 gal', '16 oz', '50 lb bag', '8 ft board'; if a precise size is unknown, give the sell-unit (e.g. 'per sheet', 'per box'). " +
-            "(5) in `notes`, briefly explain the waste factor and any package rounding (e.g. 'Added 10% waste: 20 -> 22 sqft, rounded to 1 box of 30 sqft'). " +
-            "For labor: estimate 2-4 trade labor line items as DOLLAR amounts based on the final scope; each labor line's quantity x unitPrice must equal its labor dollars (e.g. quantity 1 with unitPrice = crew cost, or hours x hourly rate). Apply realistic US pricing adjusted for the stated location. Return JSON only.",
-        },
-        {
-          role: "user",
-          content: withPhotos(
-            `Project type: ${input.projectType}
-${input.location ? `Location: ${input.location}` : ""}
-${input.sqft ? `Approximate size: ${input.sqft} sqft` : ""}
-Quality tier: ${qualityTier}
-Description: ${input.description}${assumptionsBlock}${photoBlock}
+    // ── Step 2 · Shop the material lines (throttled live search) ───────────
+    // For the contractor's material list only — where to buy it and what the
+    // package costs. Bounded concurrency: an unbounded fan-out tripped
+    // SerpAPI's per-second throttle mid-batch.
+    const shopIdx = items
+      .map((it, i) => (it.materialUnitPrice > 0 && it.searchQuery?.trim() ? i : -1))
+      .filter((i) => i >= 0);
+    console.info(`[advancedEstimator] Step 2 (shop) · ${shopIdx.length} queries, ${SERP_CONCURRENCY} at a time`);
+    const shopResults = await mapLimit(shopIdx, SERP_CONCURRENCY, (i) =>
+      searchProductPrices(items[i].searchQuery!.trim(), input.location)
+    );
+    const optionsFor = new Map<number, ProductSearchResult[]>();
+    shopIdx.forEach((i, k) => optionsFor.set(i, shopResults[k] ?? []));
 
-Planned materials with live product options (JSON):
-${JSON.stringify(promptResearch)}`,
-            photos,
-          ),
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
-    const matcherText = matcherCompletion.choices[0]?.message?.content ?? "{}";
-    const parsed = matcherSchema.parse(JSON.parse(matcherText));
-    // Attach product identity (store/link/image) from the REAL option the model
-    // picked — never from model-authored text. Lines without a valid index pair
-    // carry no product link, exactly like an option-less line today.
+    // ── Step 3 · Attach the shop-list product ───────────────────────────────
+    // Deterministic pick per tier (no model call), then SPLIT each fused item
+    // into the wire format: a material row (every item, so pairing and order
+    // survive) and a labor row when the item carries labor, under ONE id so
+    // the client pairs them exactly (console-model pairEstimateLines).
     const chosen: (ProductSearchResult | null)[] = [];
-    const materials = parsed.materials.map(({ sourceIndex, optionIndex, ...line }) => {
-      const opt =
-        sourceIndex != null && optionIndex != null
-          ? research[sourceIndex]?.options[optionIndex] ?? null
-          : null;
+    const materials: GeneratedEstimate["materials"] = [];
+    const labor: GeneratedEstimate["labor"] = [];
+    items.forEach((it, i) => {
+      const opt = pickOptionForTier(optionsFor.get(i) ?? [], qualityTier);
       chosen.push(opt);
-      return {
-        ...line,
+      const id = `i${i + 1}-${randomUUID().slice(0, 8)}`;
+      materials.push({
+        id,
+        name: it.name.trim(),
+        quantity: it.quantity,
+        unit: it.unit,
+        unitPrice: it.materialUnitPrice,
+        dimensions: it.dimensions?.trim() || undefined,
+        notes: it.notes?.trim() || undefined,
+        // The listing's package price, for the shop list. The line's own
+        // unitPrice is the estimator's per-measured-unit price and stays.
+        retailPrice: opt && Number.isFinite(opt.price) && opt.price > 0 ? opt.price : undefined,
         store: opt?.source ?? undefined,
         productUrl: (opt && safeHttp(opt.link)) ?? undefined,
         imageUrl: (opt && safeHttp(opt.thumbnail)) ?? undefined,
-      };
+      });
+      if (it.laborUnitPrice > 0) {
+        labor.push({ id, name: it.name.trim(), quantity: it.quantity, unit: it.unit, unitPrice: it.laborUnitPrice });
+      }
     });
-    const estimate: GeneratedEstimate = { ...parsed, materials };
+    const estimate: GeneratedEstimate = {
+      title: called.title.trim(),
+      scope: called.scope,
+      assumptions: called.assumptions,
+      estimatedTimelineDays: called.estimatedTimelineDays,
+      materials,
+      labor,
+    };
     console.info(
-      `[advancedEstimator] Step 3 complete · ${materials.length} materials (${chosen.filter(Boolean).length} matched to live products), ${parsed.labor.length} labor lines`
+      `[advancedEstimator] Step 3 complete · ${materials.length} lines (${chosen.filter(Boolean).length} matched to live products), ${labor.length} carry labor`
     );
 
     // ── Step 4 · Resolve direct merchant links ──────────────────────────────
@@ -875,18 +855,18 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
           content:
             'You are a senior contractor AI estimator EDITING an existing estimate. You receive the current estimate as JSON plus a plain-English change request from the contractor. Apply ONLY the requested changes and return the COMPLETE updated estimate as JSON matching: {title, scope, assumptions: string[], materials: [{id, name, quantity, unitPrice, unit, store, productUrl, imageUrl, dimensions, notes}], labor: [{id, name, quantity, unitPrice, unit, notes}], estimatedTimelineDays: number, discount: {label, amount, isPercent} | null}. ' +
             "Rules: (1) Preserve every line, price, store, productUrl, imageUrl, and dimensions that the request does NOT touch — copy them through unchanged; do not re-price or re-shop untouched items. " +
-            `(2) Keep the same costing formula as the original: quality tier "${qualityTier}", waste factors (10% tile/drywall, 15% lumber/trim, 0% fixtures), and round purchase quantities UP to whole packages. EXCEPT if the instructions or assumptions explicitly ask for a different quality/grade for specific items, adjust those items. ` +
+            `(2) Keep the same costing formula as the original: quality tier "${qualityTier}", waste factors (10% tile/drywall/paint, 15% lumber/trim, 0% fixtures), quantities MEASURED in the line's unit (never package counts) and unitPrice = the estimator's price per ONE of that unit from the pricing guidelines, never a listing's package price. ${UNIT_RULES} ${PRICING_RULES} EXCEPT if the instructions or assumptions explicitly ask for a different quality/grade for specific items, adjust those items. ` +
             "(3) Keep `dimensions` set to each product's real size/pack spec. " +
             "(4) If you add a new material, OR if you upgrade/change a material's specification based on the instructions or assumptions, you MUST leave its store, productUrl, and imageUrl empty (or null) so it will be re-shopped live. Do not reuse the old link for a changed material. " +
             "(5) Treat the contractor's assumptions as ground truth. If an assumption conflicts with the current estimate (e.g. requires a different material, quantity, or scope), you MUST update the estimate to match. " +
-            "(6) Every existing line carries an `id`. Keep the SAME `id` on every line you keep or edit — including renamed or re-specced lines. Omit `id` only on brand-new lines. " +
+            "(6) Every existing line carries an `id`. Keep the SAME `id` on every line you keep or edit — including renamed or re-specced lines. A task's material row and its labor row share one id and one name (material and labor are two prices of ONE line item); keep them paired, and when you add a task that has both, give its material row and its labor row the same new id and name. Omit `id` only on brand-new lines. " +
             "(7) Renaming or rewording a line is NOT a spec change: keep its id, price, quantity, and product links unchanged unless the request explicitly changes the product itself. " +
             "(8) If the request asks for a discount ('10% off', 'knock $500 off'), do NOT alter any line prices — set `discount` to {label, amount, isPercent} (isPercent=true means amount is a 0-100 percentage). If asked to remove the discount, set it to null. Otherwise copy the existing discount through unchanged. " +
             "(9) Update `scope` and `estimatedTimelineDays` when the changes affect them; otherwise copy them through unchanged. Return JSON only.",
         },
         {
           role: "user",
-          content: `Project type: ${input.projectType}
+          content: `${projectLine(input.projectType)}
 ${input.location ? `Location: ${input.location}` : ""}
 Quality tier: ${qualityTier}
 
@@ -1008,7 +988,8 @@ ${JSON.stringify(input.current)}`,
               role: "system",
               content:
                 'You are a senior contractor purchasing agent. You receive specific material lines, each with up to 3 live retail product "options" (each with an `option` number) from web search. Return JSON only: {"materials": [{name, quantity, unitPrice, unit, optionIndex, dimensions, notes}]}. ' +
-                `For EACH line: (1) keep \`name\` and \`quantity\` EXACTLY as given — do NOT recompute the quantity; (2) choose the single best option fitting the contractor's request. Consider any change requests or assumptions provided. If no specific grade is requested for the item, default to the "${qualityTier}" quality tier (budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end). Set \`optionIndex\` to the chosen option's \`option\` number (or null if it has no options), unitPrice to its price, dimensions to its real size/pack spec, and unit to its sell-unit (e.g. bundle, roll, sheet, each). NEVER output store names, product URLs, or image URLs — they are attached automatically from your chosen option; ` +
+                PRICING_RULES + " " +
+                `For EACH line: (1) keep \`name\` and \`quantity\` EXACTLY as given — do NOT recompute the quantity; (2) choose the single best option fitting the contractor's request. Consider any change requests or assumptions provided. If no specific grade is requested for the item, default to the "${qualityTier}" quality tier (budget = lowest cost that does the job, standard = mid-grade contractor quality, luxury = premium/high-end). Set \`optionIndex\` to the chosen option's \`option\` number (or null if it has no options), keep \`unit\` EXACTLY as given (one of: sqft, lf, linear ft, sq boards, cu yards, yards, sq yards, unit, hour, fixed), keep \`unitPrice\` as given UNLESS the request or assumptions change the item's grade or specification — then re-price it per ONE of that unit from the pricing guidelines at the new grade, never from the listing's package price — and set dimensions to the chosen product's real size/pack spec. The chosen product feeds the contractor's material list (store, link, listing price are attached automatically). NEVER output store names, product URLs, or image URLs — they are attached automatically from your chosen option; ` +
                 "(3) in `notes`, one short line noting it was priced to the chosen product. Return ONE line per input, in the SAME order. Return JSON only.",
             },
             {
@@ -1048,6 +1029,7 @@ ${JSON.stringify(research)}`,
           parsed.materials[slotIdx] = {
             ...line,
             id: keepId,
+            retailPrice: opt && Number.isFinite(opt.price) ? opt.price : undefined,
             store: opt?.source ?? undefined,
             productUrl: (opt && safeHttp(opt.link)) ?? undefined,
             imageUrl: (opt && safeHttp(opt.thumbnail)) ?? undefined,
@@ -1240,51 +1222,44 @@ export async function convertEstimateToProposal(raw: unknown) {
   });
   const markupRates = resolveMarkupRates(null, org);
 
-  const lines = [
-    ...data.materials.map((l) => {
-      // Fold the product size into the line name so the proposal reads e.g.
-      // "Asphalt shingles (4x8 sheet)" — the buyer sees how big each unit is,
-      // not just the material name. Skip if the name already states the size.
-      const size = l.dimensions?.trim() || (l.unit?.trim() ? `per ${l.unit.trim()}` : "");
-      const name =
-        size && !l.name.toLowerCase().includes(size.toLowerCase())
-          ? `${l.name} (${size})`
-          : l.name;
-      const sell = sellUnitPrice({ unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0 }, markupRates);
-      return {
-        name,
-        description: l.unit ? `Measured in ${l.unit}` : null,
-        measurementType: measurementForUnit(l.unit),
-        quantity: l.quantity,
-        unitPrice: sell,
-        materialCost: l.unitPrice,
-        laborCost: 0,
-        total: l.quantity * sell,
-        // Carry the live-pricing product data so the Materials Request view can
-        // render a shoppable line. Empty strings normalize to null.
-        store: l.store?.trim() || null,
-        productUrl: l.productUrl?.trim() || null,
-        imageUrl: l.imageUrl?.trim() || null,
-        dimensions: l.dimensions?.trim() || null,
-      };
-    }),
-    ...data.labor.map((l) => ({
-      name: l.name,
-      description: l.unit ? `Measured in ${l.unit}` : null,
-      measurementType: measurementForUnit(l.unit),
-      quantity: l.quantity,
-      unitPrice: sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
-      materialCost: 0,
-      laborCost: l.unitPrice,
-      total:
-        l.quantity *
-        sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
-      store: null,
-      productUrl: null,
-      imageUrl: null,
-      dimensions: null,
-    })),
-  ];
+  // ONE LINE ITEM PER TASK. A material row and the labor row that shares its
+  // id (or name + unit) become one proposal line with both costs — the shape
+  // the proposal table has always had (Description | Qty | Unit | Material |
+  // Labor | Total). Unpaired rows become one-sided lines.
+  const lines = pairEstimateLines(data).map(({ material: m, labor: l }) => {
+    const src = (m ?? l)!;
+    const materialCost = m ? m.unitPrice : 0;
+    const laborCost = l ? l.unitPrice : 0;
+    // Fold the product size into the line name so the proposal reads e.g.
+    // "Asphalt shingles (4x8 sheet)" — the buyer sees how big each unit is,
+    // not just the material name. Skip if the name already states the size.
+    const size = m?.dimensions?.trim() || "";
+    const name =
+      size && !src.name.toLowerCase().includes(size.toLowerCase())
+        ? `${src.name} (${size})`
+        : src.name;
+    const sell = sellUnitPrice(
+      { unitPrice: materialCost + laborCost, materialCost, laborCost },
+      markupRates,
+    );
+    const quantity = m?.quantity ?? l?.quantity ?? 0;
+    return {
+      name,
+      description: src.unit ? `Measured in ${src.unit}` : null,
+      measurementType: measurementForUnit(src.unit),
+      quantity,
+      unitPrice: sell,
+      materialCost,
+      laborCost,
+      total: quantity * sell,
+      // Carry the live-pricing product data so the Materials Request view can
+      // render a shoppable line. Empty strings normalize to null.
+      store: m?.store?.trim() || null,
+      productUrl: m?.productUrl?.trim() || null,
+      imageUrl: m?.imageUrl?.trim() || null,
+      dimensions: m?.dimensions?.trim() || null,
+    };
+  });
 
   const subtotal = lines.reduce((a, l) => a + l.total, 0);
   // Order-level discount (estimator "10% off" etc). Percent clamps to 100,

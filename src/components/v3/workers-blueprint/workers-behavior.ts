@@ -46,7 +46,7 @@ function actionError(err: unknown): string {
   // blueprint shell renders the upgrade dialog (see advanced-ai-behavior.ts for
   // the same call), so the way out is spelled out where they are looking.
   if (isPlanLimitError(err)) {
-    return "Plan limit reached — your plan's worker seats are full. Upgrade under Settings → Billing to invite more.";
+    return "Plan limit reached — your plan's worker seats are full. Upgrade under Subscription to invite more.";
   }
   const msg = err instanceof Error ? err.message.trim() : "";
   // A Next.js server-action transport failure has no useful message.

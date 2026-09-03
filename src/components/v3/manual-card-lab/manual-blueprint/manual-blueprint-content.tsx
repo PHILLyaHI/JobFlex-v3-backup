@@ -298,6 +298,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     );
     setContact({ email: rec.email, phone: rec.phone });
     setNote(NOTE_EDITED);
+    return rec;
   }, []);
 
   const setAddress = (v: string) =>
@@ -363,8 +364,15 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
    * router push here would re-render the server component and replay the whole
    * entrance cascade over a form the user is still typing in.
    */
-  async function persist(opts?: { sendAfter?: boolean; sentTo?: string }) {
-    const why = whyNotSavable(draft);
+  async function persist(
+    opts?: { sendAfter?: boolean; sentTo?: string },
+    /* The draft to write. Defaults to state; the one-off-client path below
+       hands in a copy that already names the record it just created, because
+       the setDraft it triggers has not flushed by the time the send runs. */
+    draftOverride?: Draft,
+  ) {
+    const d = draftOverride ?? draft;
+    const why = whyNotSavable(d);
     if (why) {
       setNote({ tone: "err", text: why });
       // The chip is in the masthead, screens above the bar on a phone; the
@@ -382,10 +390,41 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     // point, so re-running the check here would read the stale record and
     // reopen the dialog forever.
     if (opts?.sendAfter && !opts.sentTo) {
-      const pick = draft.client;
+      const pick = d.client;
+      /* A ONE-OFF NAME WITH AN EMAIL IS ENOUGH (owner's report, 2026-09-02:
+         name, email and phone all filled in and the send still refused). The
+         proposal is filed against a client RECORD — that is where the send
+         reads its address — so the record is created here from what was
+         typed, exactly as the inline "add a new client" form would, and the
+         send carries on against it. */
+      if (pick.mode === "freeText" && pick.name.trim()) {
+        const email = contact.email.trim();
+        if (!email || !email.includes("@")) {
+          setNote({ tone: "err", text: "Add the client's email before sending" });
+          toast.error("Can't send yet", "Add the client's email address in card 02 first");
+          return;
+        }
+        try {
+          const rec = await createClientRecord({
+            name: pick.name.trim(),
+            email,
+            phone: contact.phone.trim(),
+            address: d.address ?? "",
+          });
+          await persist(
+            { sendAfter: true, sentTo: rec.email },
+            { ...d, client: { mode: "record", id: rec.id } },
+          );
+        } catch (err: unknown) {
+          const text = err instanceof Error && err.message ? err.message : "Couldn't save the client";
+          setNote({ tone: "err", text });
+          toast.error("Can't send yet", text);
+        }
+        return;
+      }
       if (pick.mode !== "record") {
-        setNote({ tone: "err", text: "Pick a client before sending" });
-        toast.error("Can't send yet", "Pick a client record in card 02 first");
+        setNote({ tone: "err", text: "Name the client before sending" });
+        toast.error("Can't send yet", "Name the client in card 02 first");
         return;
       }
       const rec = clients.find((c) => c.id === pick.id);
@@ -401,7 +440,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
     setBusy(opts?.sendAfter ? "send" : "save");
     setNote({ tone: "live", text: "Saving…" });
     try {
-      const res = await saveProposal(payloadFromDraft(draft, savedId ?? undefined));
+      const res = await saveProposal(payloadFromDraft(d, savedId ?? undefined));
       setSavedId(res.id);
       const ref = proposalRef(res.publicId);
       setIdentity((prev) => ({ ...prev, ref }));
@@ -419,7 +458,7 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
         // read from the record otherwise. The gate guarantees one exists.
         const to =
           opts.sentTo ||
-          clients.find((c) => (draft.client.mode === "record" ? c.id === draft.client.id : false))
+          clients.find((c) => (d.client.mode === "record" ? c.id === d.client.id : false))
             ?.email ||
           "";
         // No corner toast on success (owner, 2026-09-02): the panel below

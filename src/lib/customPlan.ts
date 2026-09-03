@@ -101,3 +101,44 @@ export function isCustomBlockedPath(
   if (!blocked?.length) return false;
   return blocked.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
+
+/* WHAT THE CUSTOM PLAN TICKS on the compare matrix (subscription page).
+   The matrix rows are the catalog's benefit strings; the custom plan is base
+   + pages, so each is mapped to the row it opens. Lower-cased to match the
+   matrix's own lookup. If a benefit is renamed in /admin/plans, rename it
+   here too or its tick goes missing — the matrix is text-keyed. */
+const CUSTOM_BASE_ROWS = [
+  "proposal management",
+  "client management",
+  "crm",
+  "financials",
+  "messages",
+  "1 user",
+];
+const CUSTOM_PAGE_ROWS: Record<string, string[]> = {
+  "smart-proposal": ["smart proposal generation"],
+  "roof-estimator": ["roof estimator"],
+  "fence-estimator": ["fence estimator"],
+  "video-estimator": ["video estimator"],
+  calendar: ["calendar"],
+  leads: ["free leads"],
+  workers: ["workers management"],
+  company: [],
+  phone: ["ai phone answering"],
+};
+
+/** Rows a custom plan with these pages includes (lower-cased). */
+export function customPlanIncludes(pages: readonly string[] | null | undefined): Set<string> {
+  const out = new Set<string>(CUSTOM_BASE_ROWS);
+  for (const id of normalizeCustomPages(pages)) {
+    for (const row of CUSTOM_PAGE_ROWS[id] ?? []) out.add(row);
+  }
+  return out;
+}
+
+/** Rows that a custom plan COULD add (any page's row), lower-cased. */
+export function customPlanAddable(): Set<string> {
+  const out = new Set<string>();
+  for (const rows of Object.values(CUSTOM_PAGE_ROWS)) for (const r of rows) out.add(r);
+  return out;
+}

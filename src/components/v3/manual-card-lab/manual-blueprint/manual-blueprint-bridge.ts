@@ -240,7 +240,7 @@ export type SaveProposalPayload = {
     materialCost: number;
     laborCost: number;
   }[];
-  installments: { label: string; amount: number; isPercent: boolean }[];
+  installments: { id?: string; label: string; amount: number; isPercent: boolean }[];
   materialMarkupPct: number;
   laborMarkupPct: number;
   overheadPct: number;
@@ -290,6 +290,7 @@ export function payloadFromDraft(draft: Draft, id?: string): SaveProposalPayload
       laborCost: l.laborCost,
     })),
     installments: draft.installments.map((i) => ({
+      id: i.id,
       label: i.label.trim() || "Payment",
       amount: i.amount,
       isPercent: i.isPercent,
@@ -342,7 +343,14 @@ export type ProposalRowForDraft = {
     materialCost: number;
     laborCost: number;
   }[];
-  installments: { label: string; amount: number; isPercent: boolean }[];
+  installments: {
+    id?: string;
+    label: string;
+    amount: number;
+    isPercent: boolean;
+    status?: string;
+    paidAmount?: number | null;
+  }[];
 };
 
 /**
@@ -420,10 +428,13 @@ export function draftFromProposal(row: ProposalRowForDraft, defaults: ManualDefa
       showScope: true,
     },
     installments: row.installments.map((i) => ({
-      id: newId("in"),
+      // Keep the DB id: a paid stage must be updated in place, never recreated.
+      id: i.id ?? newId("in"),
       label: i.label,
       amount: i.amount,
       isPercent: i.isPercent,
+      status: i.status,
+      paidAmount: i.paidAmount,
     })),
     files: [],
   };

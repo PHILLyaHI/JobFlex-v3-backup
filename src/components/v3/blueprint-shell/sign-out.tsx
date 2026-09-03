@@ -11,6 +11,12 @@
 // therefore lives in the shell footer, next to the identity plate, for every
 // role rather than only the gated ones.
 //
+// EVERY log out is "log out everywhere" (owner's call, 2026-09-03): the
+// credential epoch is bumped first, so every other device's JWT dies on its
+// next request, then THIS browser is signed out through next-auth. The bump
+// is best-effort — if the session is already dead the action throws and the
+// local sign-out still runs.
+//
 // next-auth's client `signOut` works without a SessionProvider — it reads the
 // CSRF token from /api/auth/csrf and posts, it does not read session context.
 // That matters here: the blueprint tree deliberately has no provider (see
@@ -18,11 +24,28 @@
 
 import { signOut } from "next-auth/react";
 
+import { signOutEverywhere } from "@/actions/accountSettings";
+
+/** Revoke every device's session, then sign this browser out. */
+export async function logOutEverywhere(callbackUrl = "/"): Promise<void> {
+  try {
+    await signOutEverywhere();
+  } catch {
+    /* already signed out elsewhere, or offline — the local sign-out still runs */
+  }
+  await signOut({ callbackUrl });
+}
+
 export function SignOutButton({
   className,
   iconClassName,
   onDone,
+  label,
+  callbackUrl = "/",
 }: {
+  /** Visible text after the icon — the settings page renders it as a labelled button. */
+  label?: string;
+  callbackUrl?: string;
   /** The footer icon-button class of whichever shell is rendering — the
    *  desktop's global `sb-foot-ic` or the handheld module's `sbFootIc`. */
   className?: string;
@@ -36,16 +59,17 @@ export function SignOutButton({
     <button
       className={className}
       type="button"
-      title="Sign out"
-      aria-label="Sign out"
+      title="Log out"
+      aria-label="Log out"
       onClick={() => {
         onDone?.();
-        signOut({ callbackUrl: "/" });
+        void logOutEverywhere(callbackUrl);
       }}
     >
       <svg className={iconClassName} aria-hidden="true">
         <use href="#i-out" />
       </svg>
+      {label ? label : null}
     </button>
   );
 }

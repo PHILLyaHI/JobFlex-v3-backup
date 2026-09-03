@@ -36,12 +36,14 @@ import { redirect } from "next/navigation";
 import type { Route } from "next";
 import { headers } from "next/headers";
 import { requireOrg } from "@/lib/orgContext";
+import { db } from "@/lib/db";
+import { SETUP_PATH, needsCompanySetup } from "@/lib/orgSetup";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { getBlockedCustomPages } from "@/lib/customPageAccess";
 import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
 import { isCustomBlockedPath } from "@/lib/customPlan";
 import { getBadgeCounts } from "@/lib/badgeCounts";
-import { db } from "@/lib/db";
+import { getNavLimitCounters, type NavLimitInfo } from "@/lib/navLimits";
 import { ResponsiveDashboardShell } from "@/components/v3/responsive-shell/responsive-dashboard-shell";
 import { LeadOfferPopup } from "@/components/leads/LeadOfferPopup";
 import { DashboardAnnouncementDismiss } from "@/app/(dashboard)/announcement-dismiss";
@@ -83,10 +85,26 @@ export default async function DashboardBlueprintLayout({
     createdAt: Date;
     expiresAt: Date | null;
   }> = [];
+  // What is left of each metered page, for the sidebar's quota pills. Same
+  // failure story as the badges: cosmetic, may fail quietly.
+  let navLimits: Record<string, NavLimitInfo> | undefined;
+  // Decided inside the try, acted on OUTSIDE it: redirect() throws, and the
+  // catch below would swallow it.
+  let needsSetup = false;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
     name = ctx.user.name || ctx.user.email || "Account";
+    // A Google signup lands here with a placeholder org. The owner finishes
+    // the company step (address + trades) before the app opens — the same
+    // step 2 a password signup cannot skip.
+    if (ctx.role === "OWNER") {
+      const org = await db.organization.findUnique({
+        where: { id: ctx.organizationId },
+        select: { address: true, tradeTypesJson: true },
+      });
+      needsSetup = Boolean(org && needsCompanySetup(org));
+    }
     user = { name, role: humanRole(ctx.role) };
     // SEPARATE awaits, each with its own failure story. Bundled in one
     // Promise.all, a transient badge-count failure (SQLite "database is
@@ -112,9 +130,12 @@ export default async function DashboardBlueprintLayout({
         select: { id: true, title: true, body: true, priority: true, createdAt: true, expiresAt: true },
       })
       .catch(() => []);
+    navLimits = await getNavLimitCounters(ctx.organizationId).catch(() => undefined);
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }
+
+  if (needsSetup) redirect(SETUP_PATH as Route);
 
   // Fail-closed: an unreadable path is not a pass. Only a role WITH a gate is
   // restricted, so office roles are untouched, and a signed-out visitor (role
@@ -158,6 +179,7 @@ export default async function DashboardBlueprintLayout({
       identity={{ role, name }}
       badges={badges}
       locked={lockedPages ?? undefined}
+      limits={navLimits}
     >
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
       {customGate ?? children}

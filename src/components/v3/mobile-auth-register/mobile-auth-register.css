@@ -958,3 +958,28 @@ body:has(.jf-mobile-auth-register)::before { content: none; }
     scroll-behavior: auto !important;
   }
 }
+
+/* ── CONTRAST PASS — 2026-09-02 (owner's call) ──────────────────────────
+   Labels and the promo toggle read faint on a phone in daylight: #555 mono
+   at 10px passes AA on paper and still looks like a watermark. Labels go
+   to ink-soft at 700; the toggle is a real control — ink text, solid ink
+   frame — not a dashed hint. */
+.jf-mobile-auth-register .mr-lbl { color: var(--ink-soft); font-weight: 700; font-size: 10.5px; }
+.jf-mobile-auth-register .mr-note { color: var(--ink-soft); }
+.jf-mobile-auth-register .mr-code-toggle {
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+}
+.jf-mobile-auth-register .mr-code-toggle .ic { color: var(--blueprint); }
+.jf-mobile-auth-register .mr-code-toggle[aria-expanded="true"] { background: var(--paper-deep); }
+.jf-mobile-auth-register .mr-code-note { color: var(--ink-soft); }
+
+/* ── the applied-code pill: below the form, with a drawn check (2026-09-03) */
+.jf-mobile-auth-register .mr-ref { margin-top: 16px; align-items: center; }
+.jf-mobile-auth-register .mr-ref-t { display: inline-flex; align-items: center; gap: 7px; }
+.jf-mobile-auth-register .mr-ref-check {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  fill: none; stroke: var(--success-dark); stroke-width: 2.6;
+  stroke-linecap: square; stroke-linejoin: miter;
+}

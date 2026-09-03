@@ -28,16 +28,12 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import s from "./advanced-ai.module.css";
+import defaultStyles from "./advanced-ai.module.css";
 
 export type SelectOption = { value: string; label: string };
 
-function cx(...names: Array<string | false | null | undefined>): string {
-  return names
-    .filter(Boolean)
-    .map((n) => (s as Record<string, string>)[n as string] ?? (n as string))
-    .join(" ");
-}
+/** A CSS-module map carrying the `bsel*` rules. */
+export type SelectStyles = Record<string, string>;
 
 type Props = {
   value: string;
@@ -50,6 +46,14 @@ type Props = {
   /** Extra module class for the trigger (e.g. the ledger's compact unit cell). */
   triggerClass?: string;
   disabled?: boolean;
+  /**
+   * The CSS module that draws it. Defaults to the Smart Proposal's; another
+   * page (the manual builder's line items, the video estimator's ledger)
+   * passes its own module carrying the same `bsel`, `bsel-btn`, `bsel-val`,
+   * `bsel-caret`, `bsel-list`, `bsel-opt` rules, so the one control is drawn
+   * by whichever stylesheet owns the page it sits on.
+   */
+  styles?: SelectStyles;
 };
 
 export function BlueprintSelect({
@@ -61,7 +65,14 @@ export function BlueprintSelect({
   id,
   triggerClass,
   disabled,
+  styles,
 }: Props) {
+  const s: SelectStyles = styles ?? (defaultStyles as SelectStyles);
+  const cx = (...names: Array<string | false | null | undefined>): string =>
+    names
+      .filter(Boolean)
+      .map((n) => s[n as string] ?? (n as string))
+      .join(" ");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -231,11 +242,16 @@ export function BlueprintSelect({
             role="listbox"
             aria-label={ariaLabel}
             className={cx("bsel-list")}
+            // As wide as the trigger, and WIDER when an option needs it —
+            // "linear ft" and "sq boards" were ellipsised inside a 80px unit
+            // column. The list is a popup, not a cell; it may overhang.
             style={{
               top: box.up ? undefined : box.top,
               bottom: box.up ? box.vh - box.top : undefined,
               left: box.left,
-              width: box.width,
+              minWidth: box.width,
+              width: "max-content",
+              maxWidth: 260,
             }}
           >
             {options.map((o, i) => (

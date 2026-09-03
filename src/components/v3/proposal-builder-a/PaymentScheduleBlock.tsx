@@ -1,5 +1,5 @@
 "use client";
-import { Plus, X } from "lucide-react";
+import { Lock, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
   Card,
@@ -8,6 +8,7 @@ import {
   CardSubtitle,
 } from "@/components/ui/Card";
 import {
+  isLockedInstallment,
   useProposalDraftStore,
   type DraftInstallment,
 } from "@/stores/useProposalDraftStore";
@@ -29,6 +30,36 @@ function InstallmentRow({
 }) {
   const update = useProposalDraftStore((s) => s.updateInstallment);
   const remove = useProposalDraftStore((s) => s.removeInstallment);
+  // A stage the client has paid (or is paying) keeps its amount and its place.
+  const locked = isLockedInstallment(installment);
+  const lockWord =
+    installment.status === "PAID" ? "Paid" : installment.status === "WAIVED" ? "Closed" : "Paying";
+
+  if (locked) {
+    return (
+      <div className="flex items-center gap-2 py-3" aria-label={`${installment.label} — ${lockWord}`}>
+        <span className="w-5 shrink-0 text-center text-[11px] tabular text-[color:var(--ink-faint)]">
+          {position}
+        </span>
+        <input
+          aria-label="Installment label"
+          value={installment.label}
+          onChange={(e) => update(installment.id, { label: e.target.value })}
+          className={cn(FIELD, "min-w-0 flex-1")}
+        />
+        <span className="w-[88px] text-right text-[14px] tabular text-[color:var(--ink-muted)]">
+          {installment.status === "PAID" && installment.paidAmount != null
+            ? `$${installment.paidAmount.toFixed(2)}`
+            : `${installment.amount}${installment.isPercent ? "%" : ""}`}
+        </span>
+        <span className="inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--r-sm)] bg-emerald-50 px-2 text-[11px] font-medium text-emerald-800">
+          <Lock className="h-3 w-3" />
+          {lockWord}
+        </span>
+        <span className="h-8 w-8 shrink-0" aria-hidden="true" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-2 py-3">

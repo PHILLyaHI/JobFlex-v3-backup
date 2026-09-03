@@ -3,7 +3,6 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { slugify, uniqueOrgSlug } from "@/lib/orgSlug";
 import { clientIp, rateLimitShared, MINUTE } from "@/lib/rateLimit";
 
 declare module "next-auth" {
@@ -28,7 +27,9 @@ declare module "next-auth" {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 7 },
-  pages: { signIn: "/auth/login" },
+  // Errors land on the sign-in page with ?error=…, where the page prints a
+  // sentence instead of NextAuth's bare /api/auth/error JSON (owner, 2026-09-03).
+  pages: { signIn: "/auth/login", error: "/auth/login" },
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID ?? "",
@@ -128,7 +129,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       if (!user?.email) return false;
       if (account?.provider === "google") {
         const email = user.email;
@@ -137,45 +138,74 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           select: { id: true, hashedPassword: true },
         });
         if (existing) {
-          // A password-based account already owns this email — don't let Google
-          // silently adopt it (pre-account-takeover defense). They can sign in
-          // with their password; linking Google to a password account is a
-          // future feature. A passwordless (Google-created) account is fine.
-          if (existing.hashedPassword) return false;
+          /* A password account already owns this address. Google may still
+             sign it in when Google itself vouches for the address
+             (`email_verified`) — the pre-account-takeover risk is a provider
+             that does NOT verify, and Google does. An unverified Google
+             address is still refused (owner's report of AccessDenied on a
+             Google signup for an email that was already registered,
+             2026-09-03). */
+          if (existing.hashedPassword) {
+            const verified =
+              (profile as { email_verified?: boolean } | undefined)?.email_verified === true;
+            if (!verified) {
+              console.warn("[auth] google refused: unverified address on a password account", email);
+              return false;
+            }
+            /* AUDIT TRAIL for the link. Google vouching for the address is
+               the same trust a password reset places in the inbox, but the
+               owner should still hear about it: an ActivityEvent on their org
+               and a mail to the address itself. Both best-effort — a mail
+               outage must not turn into a sign-in outage. */
+            console.info("[auth] google linked to a password account", email);
+            void (async () => {
+              try {
+                const member = await db.membership.findFirst({
+                  where: { userId: existing.id },
+                  select: { organizationId: true },
+                });
+                if (member) {
+                  await db.activityEvent.create({
+                    data: {
+                      organizationId: member.organizationId,
+                      actorId: existing.id,
+                      kind: "AUTH_GOOGLE_LINKED",
+                      summary: `Google sign-in was used for ${email} for the first time`,
+                    },
+                  });
+                }
+                const { sendEmail } = await import("@/lib/sdk/resend");
+                await sendEmail({
+                  to: email,
+                  subject: "Google sign-in was used on your JobFlex account",
+                  html: `<p>Someone signed in to your JobFlex account (${email}) with Google just now.</p><p>If that was you, nothing to do. If it wasn't, reset your password from the sign-in page right away — that signs every session out.</p>`,
+                });
+              } catch (err) {
+                console.warn("[auth] google-link notice failed:", err);
+              }
+            })();
+          }
           return true;
         }
-        // First Google sign-in → provision a usable workspace so the user isn't
-        // an org-less orphan (mirrors registerAccount: Org + OWNER Membership).
-        const firstName = user.name?.trim().split(" ")[0];
-        const orgName = firstName ? `${firstName}'s workspace` : "My workspace";
-        const slug = await uniqueOrgSlug(slugify(user.name ?? email.split("@")[0] ?? "workspace"));
+        /* A NEW ADDRESS. Nothing is created here any more (owner's rule,
+           2026-09-03: no account without a paid plan). The Google-verified
+           identity is parked (lib/googleSignup) and the visitor is sent into
+           the signup at step 2 with it; the account exists only when checkout
+           comes back. Returning a URL from this callback is Auth.js's
+           "refuse, and go here instead". */
+        const verified =
+          (profile as { email_verified?: boolean } | undefined)?.email_verified === true;
+        if (!verified) return false;
         try {
-          const orgId = await db.$transaction(async (tx) => {
-            const org = await tx.organization.create({
-              data: { name: orgName, slug, billingEmail: email },
-              select: { id: true },
-            });
-            const created = await tx.user.create({
-              data: { email, name: user.name, image: user.image, activeOrgId: org.id },
-              select: { id: true },
-            });
-            await tx.membership.create({
-              data: { userId: created.id, organizationId: org.id, role: "OWNER" },
-            });
-            return org.id;
+          const { stashGoogleSignup } = await import("@/lib/googleSignup");
+          const handle = await stashGoogleSignup({
+            email,
+            name: user.name ?? null,
+            image: user.image ?? null,
           });
-          // Best-effort attribution bind — Google signups never pass through
-          // registerAccount, so the ?promo/?ref capture cookie is read here
-          // (this callback runs in the auth route handler, where cookies() works).
-          try {
-            const { bindAttributionToOrg, readAttributionCookie } = await import("@/lib/attribution");
-            const captured = await readAttributionCookie();
-            if (captured) await bindAttributionToOrg(orgId, email, captured.k, captured.c);
-          } catch {
-            /* non-fatal — provisioning already succeeded */
-          }
+          return `/auth/register?gsu=${encodeURIComponent(handle)}`;
         } catch (e) {
-          console.error("[auth] Google account provisioning failed:", e);
+          console.error("[auth] could not park the Google identity for signup:", e);
           return false;
         }
       }

@@ -93,7 +93,6 @@ export const HUB_DOORS: HubDoor[] = [
 
 export const HUB_LINKS: HubLink[] = [
   // Applicant pipeline / Job posts / Applications were dropped (owner,
-  // 2026-08-24): all three re-entered panels the hub already puts a full card
-  // on, so the row was a second door to the same room.
-  { icon: 'i-userplus', label: 'Manage your profile', sub: 'Your trades, rate and service area', href: '/dashboard/hire/profile' },
+  // 2026-08-24); "Manage your profile" followed on 2026-09-02 — the "Go
+  // deeper" card is gone and Your listing is a head action instead.
 ];

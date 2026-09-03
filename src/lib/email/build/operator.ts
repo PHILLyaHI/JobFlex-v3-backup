@@ -203,3 +203,135 @@ export function buildSupportTicket(i: SupportTicketInput): EmailDoc {
     footer: { name: "JobFlex", ref: i.ref },
   };
 }
+
+export interface OwnerDeclinedInput {
+  org: OrgBrand;
+  clientName: string;
+  title: string;
+  note: string;
+  total: number;
+  href: string;
+}
+
+/** The client said no, and why. Link, not CTA. */
+export function buildOwnerDeclined(i: OwnerDeclinedInput): EmailDoc {
+  return {
+    subject: `Declined — ${truncate(i.title, 60)}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Declined", tone: "bad" },
+    headline: `${i.clientName} declined`,
+    prose: [`"${truncate(i.note, 400)}"`],
+    box: [
+      { type: "field", label: "Job", value: truncate(i.title, TITLE_MAX) },
+      { type: "anchor", label: "Value", value: formatUSD(i.total) },
+    ],
+    link: { label: "Open proposal", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
+
+export interface OwnerRevertedInput {
+  org: OrgBrand;
+  clientName: string;
+  title: string;
+  /** What was taken back. */
+  action: "accept" | "decline";
+  total: number;
+  href: string;
+}
+
+/** The client took back their accept or decline from the portal, on the same
+ *  page, before closing it. Sent so the earlier "accepted" / "declined" mail
+ *  does not stand as the last word. Link, not CTA. */
+export function buildOwnerReverted(i: OwnerRevertedInput): EmailDoc {
+  const took = i.action === "accept" ? "acceptance" : "decline";
+  return {
+    subject: `Reverted — ${truncate(i.title, 60)}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Reverted", tone: "bad" },
+    headline: `${i.clientName} took back their ${took}`,
+    prose: [
+      i.action === "accept"
+        ? "The proposal is open again. If a job was created from the acceptance and nothing had been added to it, it has been removed."
+        : "The proposal is open again — they may still accept.",
+    ],
+    box: [
+      { type: "field", label: "Job", value: truncate(i.title, TITLE_MAX) },
+      { type: "anchor", label: "Value", value: formatUSD(i.total) },
+    ],
+    link: { label: "Open proposal", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
+
+// ── Platform payments (contractor's own Stripe / Square via JobFlex) ─────────
+
+export interface OwnerPaymentReceivedInput {
+  org: OrgBrand;
+  clientName: string;
+  title: string;
+  stageLabel: string;
+  amount: number;
+  fee: number;
+  net: number;
+  provider: string; // "Stripe" | "Square" | "Bank transfer" | …
+  remaining: number;
+  paidInFull: boolean;
+  href: string;
+}
+
+/** Money landed. Link, not CTA — nothing to do but know it. */
+export function buildOwnerPaymentReceived(i: OwnerPaymentReceivedInput): EmailDoc {
+  const box: BoxRow[] = [
+    { type: "field", label: "Job", value: truncate(i.title, TITLE_MAX) },
+    { type: "field", label: "Stage", value: truncate(i.stageLabel, 40) },
+    { type: "field", label: "Via", value: i.provider },
+    { type: "item", name: "Paid", amount: formatUSD(i.amount) },
+  ];
+  if (i.fee > 0) {
+    box.push({ type: "item", name: "JobFlex fee", amount: `−${formatUSD(i.fee)}` });
+    box.push({ type: "anchor", label: "Net to you", value: formatUSD(i.net) });
+  } else {
+    box.push({ type: "anchor", label: "Remaining", value: formatUSD(i.remaining) });
+  }
+  if (i.paidInFull) box.push({ type: "cond", label: "Proposal", chip: "Paid in full", tone: "ok" });
+  else if (i.fee > 0)
+    box.push({ type: "cond", label: "Remaining", chip: formatUSD(i.remaining), tone: "neutral" });
+  return {
+    subject: `Payment received — ${formatUSD(i.amount)} from ${i.clientName}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Paid", tone: "ok" },
+    headline: `${i.clientName} paid ${i.stageLabel.toLowerCase()}`,
+    box,
+    link: { label: "Open proposal", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
+
+export interface PaymentIssueInput {
+  org: OrgBrand;
+  title: string;
+  detail: string;
+  amount?: number | null;
+  href: string;
+}
+
+/** Something about money needs a human: overpayment, orphaned payment,
+ *  provider account restricted, token expired. */
+export function buildPaymentIssue(i: PaymentIssueInput): EmailDoc {
+  const box: BoxRow[] = [];
+  if (typeof i.amount === "number" && i.amount > 0) {
+    box.push({ type: "anchor", label: "Amount", value: formatUSD(i.amount) });
+  }
+  box.push({ type: "cond", label: "Action", chip: "Needs you", tone: "warn" });
+  return {
+    subject: `Payments — ${truncate(i.title, 60)}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Payments", tone: "warn" },
+    headline: truncate(i.title, TITLE_MAX),
+    prose: [i.detail],
+    box,
+    cta: { label: "Open settings", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}

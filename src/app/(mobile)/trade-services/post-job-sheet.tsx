@@ -90,10 +90,7 @@ export function PostJobSheet({
     submitted && title.trim().length < 5
       ? "Add a short, clear title (at least 5 characters)."
       : undefined;
-  const descErr =
-    submitted && description.trim().length < 20
-      ? "Give enough detail to scope the job (at least 20 characters)."
-      : undefined;
+  const descErr: string | undefined = undefined;
   const tradeErr =
     submitted && !tradeType ? "Pick a trade so we notify the right pros." : undefined;
 
@@ -128,7 +125,7 @@ export function PostJobSheet({
 
   async function submit() {
     setSubmitted(true);
-    if (title.trim().length < 5 || description.trim().length < 20 || !tradeType) {
+    if (title.trim().length < 1 || !tradeType) {
       return;
     }
     const payload = {

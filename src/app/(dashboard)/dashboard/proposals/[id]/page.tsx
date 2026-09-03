@@ -116,6 +116,8 @@ export default async function ProposalEditorPage({ params }: { params: Promise<{
             label: i.label,
             amount: i.amount,
             isPercent: i.isPercent,
+            status: i.status,
+            paidAmount: i.paidAmount,
           })),
           materialMarkupPct: proposal.materialMarkupPct ?? 0,
           laborMarkupPct: proposal.laborMarkupPct ?? 0,

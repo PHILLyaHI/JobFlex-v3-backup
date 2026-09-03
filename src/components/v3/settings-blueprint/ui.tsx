@@ -55,6 +55,37 @@ export function Field({ label, value, placeholder, disabled, onChange }: FieldPr
   );
 }
 
+/* ────────────────────────────── TextArea ───────────────────────────── */
+
+export interface TextAreaProps {
+  label: string;
+  value: string;
+  placeholder?: string;
+  disabled?: boolean;
+  rows?: number;
+  maxLength?: number;
+  onChange: (next: string) => void;
+}
+
+/** `<label class="fld"><span>LABEL</span><textarea class="fin fin--area">` —
+ *  the donor's field, taller. Bank-transfer instructions use it. */
+export function TextArea({ label, value, placeholder, disabled, rows = 4, maxLength, onChange }: TextAreaProps) {
+  return (
+    <label className="fld">
+      <span>{label}</span>
+      <textarea
+        className="fin fin--area"
+        value={value}
+        rows={rows}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
 /* ──────────────────────────────── Sel ──────────────────────────────── */
 
 export interface SelProps {
@@ -299,7 +330,7 @@ export interface SaveBarProps {
 
 /** Server actions reject with a message written for the user. Show that text;
  *  fall back to a generic line for anything unrecognisable. */
-function actionError(err: unknown): string {
+export function actionError(err: unknown): string {
   const msg = err instanceof Error ? err.message.trim() : "";
   if (!msg || msg.toLowerCase().includes("fetch failed")) {
     return "Something went wrong. Check your connection and try again.";

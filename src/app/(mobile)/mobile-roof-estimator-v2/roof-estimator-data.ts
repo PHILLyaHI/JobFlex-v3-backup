@@ -245,7 +245,10 @@ export function buildTakeoff(waste: number): {
 
   const materials: TakeoffRow[] = [
     { n: "Architectural shingles", q: Math.ceil(sq), u: "square", p: 128 },
-    { n: "Synthetic underlayment", q: Math.ceil(sq / 4), u: "roll", p: 92 },
+    // A synthetic roll covers 10 squares (1,000 sqft) — the house rule the
+    // estimator prompt states ("1 roll = 10 sq"). The fixture had 4, which is
+    // a #15 felt roll, and priced two and a half times the underlayment.
+    { n: "Synthetic underlayment", q: Math.ceil(sq / 10), u: "roll", p: 92 },
     { n: "Ice & water shield", q: Math.ceil((eaveFt + valleyFt) / 65), u: "roll", p: 118 },
     { n: "Ridge vent", q: Math.ceil(ridgeFt / 4), u: "each", p: 21 },
     { n: "Drip edge", q: Math.ceil(eaveFt / 10), u: "each", p: 14 },
@@ -258,7 +261,13 @@ export function buildTakeoff(waste: number): {
     { n: "Shingle installation", q: Math.round(TOTALS.squares), u: "square", p: 118 },
     {
       n: "Steep-pitch surcharge",
-      q: Math.round(TOTALS.byPitch[8] ? TOTALS.byPitch[8] / 100 : 0),
+      // 8/12 OR STEEPER — the same rule the advisory above states. The
+      // fixture read `byPitch[8]` alone, so a 10/12 facet drew no surcharge.
+      q: Math.round(
+        Object.keys(TOTALS.byPitch)
+          .filter((p) => Number(p) >= 8)
+          .reduce((a, p) => a + TOTALS.byPitch[p], 0) / 100,
+      ),
       u: "square",
       p: 28,
     },
