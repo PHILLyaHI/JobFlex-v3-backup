@@ -162,10 +162,22 @@ const PLATES: Array<{ height: number; src: string; label: string }> = [
   { height: 129, src: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=400&q=62&auto=format&fit=crop", label: "Basement" },
 ];
 
+/* The shared house mark (/jobflex-mark.png), clipped the way landing-d does it
+   — the "JF" plate was the donor's placeholder, not the brand. Sized and inset
+   by mobile-homeowner.css (.brand-mark / .brand-mark-img). */
+function BrandMark() {
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset, sized by CSS */}
+      <img className="brand-mark-img" src="/jobflex-mark.png" alt="" />
+    </span>
+  );
+}
+
 function Plate({ height, src, label }: { height: number; src: string; label: string }) {
   const [dead, setDead] = useState(false);
   return (
-    <div className="plate" style={{ height }}>
+    <div className="plate" style={{ height: `calc(${height}px * var(--s))` }}>
       {dead ? null : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -207,7 +219,7 @@ export function MobileHomeowner() {
 
       <nav className="nav">
         <a className="brand" href="#jfmh-top" aria-label="JobFlex home">
-          <span className="brand-mark">JF</span>
+          <BrandMark />
           <span className="nav-txt">
             <span className="brand-txt">JOBFLEX</span>
             <span className="nav-tag">Homeowner Portal</span>
@@ -589,7 +601,7 @@ export function MobileHomeowner() {
 
       <footer className="foot">
         <div className="foot-b">
-          <span className="brand-mark">JF</span>
+          <BrandMark />
           <span>JobFlex</span>
         </div>
         <div className="foot-links">

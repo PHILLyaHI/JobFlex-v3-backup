@@ -169,10 +169,22 @@ const PLATES: Array<{ col?: string; height: string; src: string; label: string }
    imperative `.remove()`, because tearing a node out from under React invites
    a removeChild crash on the next reconcile. Same result: the plate keeps its
    hatch and its label, the broken photo is gone. */
+/* The shared house mark (/jobflex-mark.png), clipped exactly the way
+   landing-d/logo.tsx does it — the "JF" plate was the donor's placeholder, not
+   the brand. Sized and inset by homeowner.css (.brand-mark / .brand-mark-img). */
+function BrandMark() {
+  return (
+    <span className="brand-mark" aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset, sized by CSS */}
+      <img className="brand-mark-img" src="/jobflex-mark.png" alt="" />
+    </span>
+  );
+}
+
 function Plate({ height, src, label }: { height: string; src: string; label: string }) {
   const [dead, setDead] = useState(false);
   return (
-    <div className="plate" style={{ height }}>
+    <div className="plate" style={{ height: `calc(${height} * var(--s))` }}>
       {dead ? null : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -204,7 +216,7 @@ export function HomeownerContent() {
 
       <nav className="nav">
         <a className="brand" href="#top" aria-label="JobFlex home">
-          <span className="brand-mark">JF</span>
+          <BrandMark />
           <span className="brand-txt">JOBFLEX</span>
         </a>
         <div className="nav-tag">Homeowner Portal</div>
@@ -499,7 +511,7 @@ export function HomeownerContent() {
               <div
                 className="arch-col"
                 key={p.label}
-                style={p.col ? { marginTop: p.col } : undefined}
+                style={p.col ? { marginTop: `calc(${p.col} * var(--s))` } : undefined}
               >
                 <Plate height={p.height} src={p.src} label={p.label} />
               </div>
@@ -598,7 +610,7 @@ export function HomeownerContent() {
 
       <footer className="foot">
         <div className="foot-b">
-          <span className="brand-mark">JF</span>
+          <BrandMark />
           <span>JobFlex</span>
         </div>
         <div className="foot-links">
