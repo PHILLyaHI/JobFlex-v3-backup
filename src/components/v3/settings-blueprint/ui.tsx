@@ -321,7 +321,14 @@ export function SaveBar({ extra, onSave, disabled }: SaveBarProps) {
     [],
   );
 
+  // `disabled={busy}` alone leaves a gap: two clicks landing in the same tick
+  // both run before React re-renders the disabled state (the button audit's
+  // double-click sent two POSTs through it). The ref closes that gap — the
+  // second click returns before the action fires, no render required.
+  const inFlight = useRef(false);
+
   const save = useCallback(async () => {
+    if (inFlight.current) return;
     if (timer.current) clearTimeout(timer.current);
     setError("");
     if (!onSave) {
@@ -330,6 +337,7 @@ export function SaveBar({ extra, onSave, disabled }: SaveBarProps) {
       timer.current = setTimeout(() => setSaved(false), 2200);
       return;
     }
+    inFlight.current = true;
     setBusy(true);
     try {
       await onSave();
@@ -339,6 +347,7 @@ export function SaveBar({ extra, onSave, disabled }: SaveBarProps) {
       setSaved(false);
       setError(actionError(err));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }, [onSave]);
@@ -354,7 +363,7 @@ export function SaveBar({ extra, onSave, disabled }: SaveBarProps) {
         <svg className="ic">
           <use href="#i-check" />
         </svg>
-        Save changes
+        {busy ? "Saving…" : "Save changes"}
       </button>
       {extra}
       {/* One tag slot, two states: the donor's green "Saved", or the action's

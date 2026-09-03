@@ -73,8 +73,16 @@ const PANE_BODIES: Record<RailKey, ComponentType<PaneProps>> = {
   notifications: NotificationsPane,
 };
 
-export function SettingsContent({ data }: { data: SettingsData }) {
-  const [active, setActive] = useState<RailKey>(DEFAULT_RAIL);
+export function SettingsContent({
+  data,
+  initialPane,
+}: {
+  data: SettingsData;
+  /** Deep-link target (?pane=…): the legacy /dashboard/settings/* URLs now
+   *  redirect here and land on their pane instead of always on Account. */
+  initialPane?: RailKey;
+}) {
+  const [active, setActive] = useState<RailKey>(initialPane ?? DEFAULT_RAIL);
 
   // Donor JS 2201: the page kicker mirrors the active rail label. RAIL_ITEMS is
   // never empty and `active` is always one of its keys, so the fallback is only

@@ -95,7 +95,18 @@ function limitCell(limit: number | undefined, suffix = ""): string {
   return `${limit}${suffix}`;
 }
 
-export default async function SettingsPage() {
+const PANE_KEYS = ["account", "payments", "billing", "integrations", "notifications"] as const;
+type PaneKey = (typeof PANE_KEYS)[number];
+
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ pane?: string }>;
+}) {
+  // ?pane= deep-link: the legacy /dashboard/settings/* child routes redirect
+  // here and land on their pane. An unknown value falls back to the default.
+  const rawPane = (await searchParams).pane;
+  const initialPane = PANE_KEYS.includes(rawPane as PaneKey) ? (rawPane as PaneKey) : undefined;
   let ctx;
   try {
     ctx = await requireOrg();
@@ -295,5 +306,5 @@ export default async function SettingsPage() {
     notifications: parseNotificationPrefs(me?.notificationPrefsJson),
   };
 
-  return <SettingsContent data={data} />;
+  return <SettingsContent data={data} initialPane={initialPane} />;
 }

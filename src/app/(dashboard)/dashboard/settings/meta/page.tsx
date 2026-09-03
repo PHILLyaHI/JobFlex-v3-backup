@@ -1,13 +1,14 @@
-import { requireOrg } from "@/lib/orgContext";
-import { db } from "@/lib/db";
-import { parseMetaSettings } from "@/lib/settings";
-import { MetaForm } from "./meta-form";
+// Meta settings — SUPERSEDED by the Blueprint settings hub (2026-09-03).
+//
+// The classic page this route used to render duplicated a pane the hub at
+// /dashboard/settings already carries with working saves; the duplicate shipped
+// the classic shell's hydration mismatch and, on /account, an editable form
+// with no save path at all (button audit, 2026-09-03). Per the re-port
+// convention the old page is archived at
+// old-design-pages/dashboard/settings/meta/page.tsx and this URL now lands on
+// its pane of the hub.
+import { redirect } from "next/navigation";
 
-export default async function MetaSettingsPage() {
-  const { organizationId } = await requireOrg();
-  const org = await db.organization.findUnique({
-    where: { id: organizationId },
-    select: { metaSettingsJson: true },
-  });
-  return <MetaForm initial={parseMetaSettings(org?.metaSettingsJson)} />;
+export default function MetaSettingsRedirect() {
+  redirect("/dashboard/settings?pane=integrations");
 }
